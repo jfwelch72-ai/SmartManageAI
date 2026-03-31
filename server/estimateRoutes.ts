@@ -574,7 +574,20 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "COUNT") {
-            countTotal += (measurement.count ?? 1);
+            let meta: any = {};
+            try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+            const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
+            const qty = Number.isFinite(rawQty) ? rawQty : 1;
+            const unit = (meta.unit || "EA").toUpperCase();
+            if (unit === "CY") {
+              volumeTotal += qty;
+            } else if (unit === "SF") {
+              areaTotal += qty;
+            } else if (unit === "LF") {
+              linearTotal += qty;
+            } else {
+              countTotal += qty;
+            }
           }
         }
 
@@ -732,7 +745,20 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "COUNT") {
-              uncatCount += (measurement.count ?? 1);
+              let meta: any = {};
+              try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+              const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
+              const qty = Number.isFinite(rawQty) ? rawQty : 1;
+              const unit = (meta.unit || "EA").toUpperCase();
+              if (unit === "CY") {
+                uncatVolume += qty;
+              } else if (unit === "SF") {
+                uncatArea += qty;
+              } else if (unit === "LF") {
+                uncatLinear += qty;
+              } else {
+                uncatCount += qty;
+              }
             }
           }
 
@@ -995,7 +1021,20 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "COUNT") {
-            countTotal += (measurement.count ?? 1);
+            let meta: any = {};
+            try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+            const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
+            const qty = Number.isFinite(rawQty) ? rawQty : 1;
+            const unit = (meta.unit || "EA").toUpperCase();
+            if (unit === "CY") {
+              volumeTotal += qty;
+            } else if (unit === "SF") {
+              areaTotal += qty;
+            } else if (unit === "LF") {
+              linearTotal += qty;
+            } else {
+              countTotal += qty;
+            }
           }
         }
 
@@ -1125,7 +1164,20 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "COUNT") {
-              uncatCount += (measurement.count ?? 1);
+              let meta: any = {};
+              try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+              const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
+              const qty = Number.isFinite(rawQty) ? rawQty : 1;
+              const unit = (meta.unit || "EA").toUpperCase();
+              if (unit === "CY") {
+                uncatVolume += qty;
+              } else if (unit === "SF") {
+                uncatArea += qty;
+              } else if (unit === "LF") {
+                uncatLinear += qty;
+              } else {
+                uncatCount += qty;
+              }
             }
           }
 

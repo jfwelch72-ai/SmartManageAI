@@ -1174,10 +1174,21 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 {categories.map((category) => {
                   const categoryMeasurements = aggregatedMeasurements.byCategory[category.id] || [];
                   if (categoryMeasurements.length === 0) return null;
-                  const linearTotal = categoryMeasurements.filter((m: any) => m.type === "LINEAR").reduce((sum: number, m: any) => { const val = Number(m.computedLengthFt); return sum + (Number.isFinite(val) ? val : 0); }, 0);
-                  const areaTotal = categoryMeasurements.filter((m: any) => m.type === "AREA").reduce((sum: number, m: any) => { const val = Number(m.computedAreaFt2); return sum + (Number.isFinite(val) ? val : 0); }, 0);
-                  const volumeTotal = categoryMeasurements.filter((m: any) => m.type === "VOLUME").reduce((sum: number, m: any) => { const val = Number(m.computedVolumeCy); return sum + (Number.isFinite(val) ? val : 0); }, 0);
-                  const countTotal = categoryMeasurements.filter((m: any) => m.type === "COUNT").length;
+                  let linearTotal = categoryMeasurements.filter((m: any) => m.type === "LINEAR").reduce((sum: number, m: any) => { const val = Number(m.computedLengthFt); return sum + (Number.isFinite(val) ? val : 0); }, 0);
+                  let areaTotal = categoryMeasurements.filter((m: any) => m.type === "AREA").reduce((sum: number, m: any) => { const val = Number(m.computedAreaFt2); return sum + (Number.isFinite(val) ? val : 0); }, 0);
+                  let volumeTotal = categoryMeasurements.filter((m: any) => m.type === "VOLUME").reduce((sum: number, m: any) => { const val = Number(m.computedVolumeCy); return sum + (Number.isFinite(val) ? val : 0); }, 0);
+                  let countTotal = 0;
+                  categoryMeasurements.filter((m: any) => m.type === "COUNT").forEach((m: any) => {
+                    let meta: any = {};
+                    try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+                    const rawQty = Number(m.count ?? meta.quantity ?? 1);
+                    const qty = Number.isFinite(rawQty) ? rawQty : 1;
+                    const unit = (meta.unit || "EA").toUpperCase();
+                    if (unit === "CY") { volumeTotal += qty; }
+                    else if (unit === "SF") { areaTotal += qty; }
+                    else if (unit === "LF") { linearTotal += qty; }
+                    else { countTotal += qty; }
+                  });
                   return (
                     <div key={category.id} className="border-l-4 pl-3" style={{ borderColor: category.color }}>
                       <div className="flex items-center gap-2 mb-2">
@@ -1195,24 +1206,40 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   );
                 })}
 
-                {aggregatedMeasurements.uncategorized.length > 0 && (
+                {aggregatedMeasurements.uncategorized.length > 0 && (() => {
+                  let uncatLinear = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "LINEAR").reduce((sum: number, m: any) => { const val = Number(m.computedLengthFt); return sum + (Number.isFinite(val) ? val : 0); }, 0);
+                  let uncatArea = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "AREA").reduce((sum: number, m: any) => { const val = Number(m.computedAreaFt2); return sum + (Number.isFinite(val) ? val : 0); }, 0);
+                  let uncatVolume = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "VOLUME").reduce((sum: number, m: any) => { const val = Number(m.computedVolumeCy); return sum + (Number.isFinite(val) ? val : 0); }, 0);
+                  let uncatCount = 0;
+                  aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "COUNT").forEach((m: any) => {
+                    let meta: any = {};
+                    try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+                    const rawQty = Number(m.count ?? meta.quantity ?? 1);
+                    const qty = Number.isFinite(rawQty) ? rawQty : 1;
+                    const unit = (meta.unit || "EA").toUpperCase();
+                    if (unit === "CY") { uncatVolume += qty; }
+                    else if (unit === "SF") { uncatArea += qty; }
+                    else if (unit === "LF") { uncatLinear += qty; }
+                    else { uncatCount += qty; }
+                  });
+                  return (
                   <div className="border-l-4 border-muted pl-3">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="font-medium text-sm text-muted-foreground">Uncategorized</span>
                       <Badge variant="outline" className="text-xs">{aggregatedMeasurements.uncategorized.length}</Badge>
                     </div>
                     <div className="space-y-1 text-xs ml-5">
-                      {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "LINEAR").length > 0 && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Linear:</span><span>{(() => { const total = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "LINEAR").reduce((sum: number, m: any) => { const val = Number(m.computedLengthFt); return sum + (Number.isFinite(val) ? val : 0); }, 0); return (Number.isFinite(total) ? total : 0).toFixed(2); })()} LF</span></div>
+                      {uncatLinear > 0 && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Linear:</span><span>{uncatLinear.toFixed(2)} LF</span></div>
                       )}
-                      {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "AREA").length > 0 && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Area:</span><span>{(() => { const total = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "AREA").reduce((sum: number, m: any) => { const val = Number(m.computedAreaFt2); return sum + (Number.isFinite(val) ? val : 0); }, 0); return (Number.isFinite(total) ? total : 0).toFixed(2); })()} SF</span></div>
+                      {uncatArea > 0 && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Area:</span><span>{uncatArea.toFixed(2)} SF</span></div>
                       )}
-                      {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "VOLUME").length > 0 && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Volume:</span><span>{(() => { const total = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "VOLUME").reduce((sum: number, m: any) => { const val = Number(m.computedVolumeCy); return sum + (Number.isFinite(val) ? val : 0); }, 0); return (Number.isFinite(total) ? total : 0).toFixed(2); })()} CY</span></div>
+                      {uncatVolume > 0 && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Volume:</span><span>{uncatVolume.toFixed(2)} CY</span></div>
                       )}
-                      {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "COUNT").length > 0 && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Count:</span><span>{aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "COUNT").length}</span></div>
+                      {uncatCount > 0 && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Count:</span><span>{uncatCount}</span></div>
                       )}
                       {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "SEGMENT").length > 0 && (
                         <div className="flex justify-between"><span className="text-muted-foreground">Segment:</span><span>{(() => { const total = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "SEGMENT").reduce((sum: number, m: any) => { const val = Number(m.computedLengthFt); return sum + (Number.isFinite(val) ? val : 0); }, 0); return (Number.isFinite(total) ? total : 0).toFixed(2); })()} LF</span></div>
@@ -1222,7 +1249,8 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       )}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {measurements.length > 0 && (
                   <div className="pt-3 border-t space-y-2">

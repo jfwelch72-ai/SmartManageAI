@@ -514,7 +514,20 @@ export function useTakeoffData({
         volumeTotal += Number.isFinite(val) ? val : 0;
       } else if (m.type === "COUNT") {
         byType.count.push(m);
-        countTotal += 1;
+        let meta: any = {};
+        try { meta = typeof (m as any).metadata === 'string' ? JSON.parse((m as any).metadata) : ((m as any).metadata || {}); } catch {}
+        const rawQty = Number(m.count ?? meta.quantity ?? 1);
+        const qty = Number.isFinite(rawQty) ? rawQty : 1;
+        const unit = (meta.unit || "EA").toUpperCase();
+        if (unit === "CY") {
+          volumeTotal += qty;
+        } else if (unit === "SF") {
+          areaTotal += qty;
+        } else if (unit === "LF") {
+          linearTotal += qty;
+        } else {
+          countTotal += qty;
+        }
       } else if (m.type === "LINEAR_WITH_DROP") {
         byType.linearWithDrop.push(m);
         const val = Number(m.computedLengthFt);
