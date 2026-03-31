@@ -76,6 +76,7 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   availableUsers: User[];
   activeCallConversationIds?: Set<string>;
+  onJoinCall?: (conversationId: string) => void;
   compact?: boolean;
 }
 
@@ -88,6 +89,7 @@ export function Sidebar({
   onSelectConversation,
   availableUsers,
   activeCallConversationIds = new Set(),
+  onJoinCall,
   compact = false,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -204,11 +206,12 @@ export function Sidebar({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); onSelectConversation(companyConversation.id); }}
-                      className="shrink-0"
+                      onClick={(e) => { e.stopPropagation(); onJoinCall ? onJoinCall(companyConversation.id) : onSelectConversation(companyConversation.id); }}
+                      className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 hover:bg-green-500/20 transition-colors"
                       data-testid={`call-indicator-${companyConversation.id}`}
                     >
                       <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                      <span className="text-[10px] font-medium text-green-500">Join</span>
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>Ongoing call — click to join</TooltipContent>
@@ -321,11 +324,12 @@ export function Sidebar({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
-                        className="shrink-0"
+                        onClick={(e) => { e.stopPropagation(); onJoinCall ? onJoinCall(c.id) : onSelectConversation(c.id); }}
+                        className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 hover:bg-green-500/20 transition-colors"
                         data-testid={`call-indicator-${c.id}`}
                       >
                         <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                        <span className="text-[10px] font-medium text-green-500">Join</span>
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>Ongoing call — click to join</TooltipContent>
@@ -375,11 +379,12 @@ export function Sidebar({
                         <TooltipTrigger asChild>
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
-                            className="shrink-0"
+                            onClick={(e) => { e.stopPropagation(); onJoinCall ? onJoinCall(c.id) : onSelectConversation(c.id); }}
+                            className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 hover:bg-green-500/20 transition-colors"
                             data-testid={`call-indicator-${c.id}`}
                           >
                             <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                            <span className="text-[10px] font-medium text-green-500">Join</span>
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>Ongoing call — click to join</TooltipContent>
@@ -419,11 +424,12 @@ export function Sidebar({
                         <TooltipTrigger asChild>
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
-                            className="shrink-0"
+                            onClick={(e) => { e.stopPropagation(); onJoinCall ? onJoinCall(c.id) : onSelectConversation(c.id); }}
+                            className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 hover:bg-green-500/20 transition-colors"
                             data-testid={`call-indicator-${c.id}`}
                           >
                             <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                            <span className="text-[10px] font-medium text-green-500">Join</span>
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>Ongoing call — click to join</TooltipContent>
@@ -512,11 +518,12 @@ export function Sidebar({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
-                          className="shrink-0"
+                          onClick={(e) => { e.stopPropagation(); onJoinCall ? onJoinCall(c.id) : onSelectConversation(c.id); }}
+                          className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 hover:bg-green-500/20 transition-colors"
                           data-testid={`call-indicator-${c.id}`}
                         >
                           <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                          <span className="text-[10px] font-medium text-green-500">Join</span>
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>Ongoing call — click to join</TooltipContent>

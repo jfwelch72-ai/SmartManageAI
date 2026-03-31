@@ -808,6 +808,10 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 onSelectConversation={setSelectedConversationId}
                 availableUsers={availableUsers}
                 activeCallConversationIds={activeCallConversationIds}
+                onJoinCall={(conversationId) => {
+                  const callData = conversationActiveCalls[conversationId];
+                  if (callData) handleJoinOngoingCall(callData);
+                }}
                 compact={compact}
               />
             )}
@@ -823,6 +827,10 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 onSelectConversation={setSelectedConversationId}
                 availableUsers={availableUsers}
                 activeCallConversationIds={activeCallConversationIds}
+                onJoinCall={(conversationId) => {
+                  const callData = conversationActiveCalls[conversationId];
+                  if (callData) handleJoinOngoingCall(callData);
+                }}
                 compact={compact}
               />
             )}

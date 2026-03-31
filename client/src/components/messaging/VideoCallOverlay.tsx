@@ -96,6 +96,12 @@ export function VideoCallOverlay({
     };
   }, []);
 
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
   const sendSignal = useCallback(async (targetUserId: string, signal: unknown) => {
     try {
       await apiRequest("POST", `/api/calls/${call.id}/signal`, {
@@ -128,10 +134,25 @@ export function VideoCallOverlay({
     };
 
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteStream) {
-        setRemoteStreams(prev => ({ ...prev, [remoteUserId]: remoteStream }));
+      let remoteStream = event.streams[0];
+      if (!remoteStream) {
+        remoteStream = new MediaStream();
+        remoteStream.addTrack(event.track);
       }
+      setRemoteStreams(prev => {
+        const existing = prev[remoteUserId];
+        if (existing && event.streams[0]) {
+          return { ...prev, [remoteUserId]: event.streams[0] };
+        }
+        if (existing && !event.streams[0]) {
+          const hasTrack = existing.getTracks().some(t => t.id === event.track.id);
+          if (!hasTrack) {
+            existing.addTrack(event.track);
+          }
+          return { ...prev, [remoteUserId]: new MediaStream(existing.getTracks()) };
+        }
+        return { ...prev, [remoteUserId]: remoteStream };
+      });
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -555,8 +576,12 @@ function RemoteVideo({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
+    const el = videoRef.current;
+    if (el) {
+      el.srcObject = stream;
+      el.onloadedmetadata = () => {
+        el.play().catch(() => {});
+      };
     }
   }, [stream]);
 
