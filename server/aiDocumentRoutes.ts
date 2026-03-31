@@ -1211,6 +1211,152 @@ Be thorough in extracting scope items. Include quantities and units when availab
   }
 });
 
+router.post("/ai-bid-wizard/analyze-text", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { description } = req.body;
+    if (!description || typeof description !== "string" || description.trim().length < 10) {
+      return res.status(400).json({ error: "Please provide a project description of at least 10 characters." });
+    }
+
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (shouldFilter && !orgId) {
+      return res.status(403).json({ error: "Organization context required" });
+    }
+
+    let tradeType: string | undefined;
+    if (orgId) {
+      const [org] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+      tradeType = org?.tradeType || undefined;
+    }
+
+    console.log(`[AI Bid Text Analysis] Analyzing text description for org:${orgId}`);
+
+    const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
+
+    const systemPrompt = `You are an expert construction estimator AI assistant. You help contractors quickly create bids by analyzing project descriptions and bid invitation text.
+
+Your task is to extract structured project information and suggest scope of work items from the provided text description.
+
+IMPORTANT INSTRUCTIONS:
+- Extract REAL information from the text - do NOT guess or make up data
+- If a field is not mentioned in the text, return null for that field
+- For scope items, only use these categories: CONCRETE, EXCAVATION, PAVERS, BOLLARDS, GC, OVERHEAD, PROFIT, GENERAL
+- Suggest realistic scope items based on the project description even if specific quantities aren't mentioned
+- Parse dates in YYYY-MM-DD format
+- For estimatedValue, provide a numeric value if mentioned (no currency symbols or text)
+
+Respond with valid JSON matching the required structure.`;
+
+    const userPrompt = `Analyze this project description / bid invitation text and extract project information and scope of work items.
+
+${tradeContext}
+
+Project Description:
+${description.trim()}
+
+Extract and respond with JSON in this exact format:
+{
+  "projectName": "Extracted project name or null",
+  "clientName": "Client/GC/Owner company name or null",
+  "clientContactName": "Contact person name or null",
+  "clientContactEmail": "Contact email or null",
+  "clientContactPhone": "Contact phone or null",
+  "dueDate": "YYYY-MM-DD format or null",
+  "locationAddress": "Street address or null",
+  "city": "City name or null",
+  "state": "Two-letter state abbreviation or null",
+  "description": "Project description/overview or null",
+  "estimatedValue": null,
+  "scopeItems": [
+    {
+      "description": "Specific scope item description",
+      "quantity": 1,
+      "unit": "SF",
+      "category": "GENERAL",
+      "notes": "Any relevant notes"
+    }
+  ],
+  "keyRequirements": ["Requirement 1", "Requirement 2"],
+  "specialConditions": ["Condition 1", "Condition 2"],
+  "insuranceRequirements": "Insurance requirements text or null",
+  "bondingRequirements": "Bonding requirements text or null"
+}
+
+CATEGORY VALUES (use only these): CONCRETE, EXCAVATION, PAVERS, BOLLARDS, GC, OVERHEAD, PROFIT, GENERAL
+
+Be thorough in suggesting scope items based on the project type described. Include realistic quantities and units when possible. If estimatedValue is mentioned, provide it as a number.`;
+
+    try {
+      const governed = await governedAiCall({
+        orgId: orgId || "",
+        userId: req.user?.id || null,
+        actionType: "bid_text_analysis",
+        inputRefs: { descriptionLength: description.length },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.3,
+            max_tokens: 4096,
+            response_format: { type: "json_object" },
+          });
+          const content = completion.choices[0]?.message?.content;
+          if (!content) {
+            throw new Error('No response from AI');
+          }
+          return { result: JSON.parse(content), completion };
+        },
+      });
+
+      if (governed.blocked) {
+        return res.status(429).json({ error: "AI rate limit exceeded", reason: governed.reason });
+      }
+
+      const result = governed.result;
+      console.log(`[AI Bid Text Analysis] Extracted ${result.scopeItems?.length || 0} scope items`);
+      res.json(result);
+    } catch (aiError) {
+      logError('[AI Bid Text Analysis] AI analysis error', {}, aiError instanceof Error ? aiError : new Error(String(aiError)));
+
+      return res.status(200).json({
+        projectName: null,
+        clientName: null,
+        clientContactName: null,
+        clientContactEmail: null,
+        clientContactPhone: null,
+        dueDate: null,
+        locationAddress: null,
+        city: null,
+        state: null,
+        description: null,
+        estimatedValue: null,
+        scopeItems: [],
+        keyRequirements: [],
+        specialConditions: [],
+        insuranceRequirements: null,
+        bondingRequirements: null,
+        aiError: true,
+        message: "AI analysis could not complete. Please enter information manually.",
+      });
+    }
+  } catch (error) {
+    logError("[AI Bid Text Analysis] Error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ========================================
 // Routes from aiContractDocumentRoutes.ts
 // ========================================

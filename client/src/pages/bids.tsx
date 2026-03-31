@@ -26,6 +26,13 @@ import {
   ChevronDown,
   FileEdit,
   Inbox,
+  Sparkles,
+  Loader2,
+  ArrowRight,
+  ArrowLeft,
+  CheckCircle2,
+  ClipboardList,
+  Zap,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -41,10 +48,10 @@ const BidInboxPage = lazy(() => import("@/pages/bid-inbox"));
 import {
   useBids,
   useConvertBidToProject,
-  useCreateBid,
   useDeleteBid,
 } from "@/hooks/use-data";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   format,
@@ -71,6 +78,52 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+interface AIExtractedItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  category: string;
+  notes?: string;
+  selected: boolean;
+}
+
+interface AITextAnalysisResult {
+  projectName?: string;
+  clientName?: string;
+  clientContactName?: string;
+  clientContactEmail?: string;
+  clientContactPhone?: string;
+  dueDate?: string;
+  locationAddress?: string;
+  city?: string;
+  state?: string;
+  description?: string;
+  estimatedValue?: number;
+  scopeItems: Array<{
+    description: string;
+    quantity: number;
+    unit: string;
+    category: string;
+    notes?: string;
+  }>;
+  keyRequirements?: string[];
+  specialConditions?: string[];
+  aiError?: boolean;
+  message?: string;
+}
 
 // Extended bid type with estimate summary and estimator name
 type BidWithEstimate = Bid & {
@@ -160,7 +213,6 @@ export default function BidsPage() {
     queryKey: ["/api/users"],
   });
   const convertBid = useConvertBidToProject();
-  const createBid = useCreateBid();
   const deleteBid = useDeleteBid();
 
   // Filter active superintendents and managers for team assignment
@@ -194,6 +246,14 @@ export default function BidsPage() {
     useState<CrmOrganisation | null>(null);
   const [selectedOwnerRepContact, setSelectedOwnerRepContact] =
     useState<CrmContact | null>(null);
+
+  const [manualBidStep, setManualBidStep] = useState(1);
+  const [projectDescription, setProjectDescription] = useState("");
+  const [scopeItems, setScopeItems] = useState<AIExtractedItem[]>([]);
+  const [customItems, setCustomItems] = useState<AIExtractedItem[]>([]);
+  const [newItemDescription, setNewItemDescription] = useState("");
+  const [newItemQuantity, setNewItemQuantity] = useState("");
+  const [newItemUnit, setNewItemUnit] = useState("");
 
   // Cast to extended type with estimate summary
   const bids = bidsData as BidWithEstimate[];
@@ -291,6 +351,13 @@ export default function BidsPage() {
     setSelectedGcContact(null);
     setSelectedOwnerRepOrg(null);
     setSelectedOwnerRepContact(null);
+    setManualBidStep(1);
+    setProjectDescription("");
+    setScopeItems([]);
+    setCustomItems([]);
+    setNewItemDescription("");
+    setNewItemQuantity("");
+    setNewItemUnit("");
   };
 
   // Handle dialog open/close
@@ -300,6 +367,98 @@ export default function BidsPage() {
       resetFormAndCrmState();
     }
   };
+
+  const toggleScopeItem = (itemId: string) => {
+    setScopeItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, selected: !item.selected } : item
+    ));
+  };
+
+  const updateScopeItem = (itemId: string, field: 'quantity' | 'unit', value: string) => {
+    setScopeItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      if (field === 'quantity') {
+        const parsed = parseFloat(value);
+        return { ...item, quantity: Number.isFinite(parsed) ? parsed : 0 };
+      }
+      return { ...item, [field]: value };
+    }));
+  };
+
+  const addCustomItem = () => {
+    if (!newItemDescription.trim()) return;
+    const parsedQty = parseFloat(newItemQuantity);
+    const safeQuantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+    const newItem: AIExtractedItem = {
+      id: `custom-${Date.now()}`,
+      description: newItemDescription.trim(),
+      quantity: safeQuantity,
+      unit: newItemUnit || "EA",
+      category: "CUSTOM",
+      selected: true,
+    };
+    setCustomItems(prev => [...prev, newItem]);
+    setNewItemDescription("");
+    setNewItemQuantity("");
+    setNewItemUnit("");
+  };
+
+  const removeCustomItem = (itemId: string) => {
+    setCustomItems(prev => prev.filter(i => i.id !== itemId));
+  };
+
+  const analyzeTextMutation = useMutation({
+    mutationFn: async (description: string) => {
+      const response = await apiRequest("POST", "/api/ai-bid-wizard/analyze-text", { description });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Analysis failed' }));
+        throw new Error(errorData.error || 'Failed to analyze text');
+      }
+      return response.json() as Promise<AITextAnalysisResult>;
+    },
+    onSuccess: (data) => {
+      const items = (data.scopeItems || []).map((item: any, idx: number) => ({
+        ...item,
+        id: `ai-${idx}`,
+        quantity: typeof item.quantity === 'number' && !isNaN(item.quantity) ? item.quantity : 1,
+        unit: item.unit || 'EA',
+        category: item.category || 'GENERAL',
+        selected: true,
+      }));
+      setScopeItems(items);
+
+      if (data.projectName) form.setValue("name", data.projectName);
+      if (data.clientName) form.setValue("clientName", data.clientName);
+      if (data.clientContactName) form.setValue("clientContactName", data.clientContactName);
+      if (data.clientContactEmail) form.setValue("clientContactEmail", data.clientContactEmail);
+      if (data.clientContactPhone) form.setValue("clientContactPhone", data.clientContactPhone);
+      if (data.dueDate) form.setValue("dueDate", data.dueDate);
+      if (data.locationAddress) form.setValue("locationAddress", data.locationAddress);
+      if (data.city) form.setValue("city", data.city);
+      if (data.state) form.setValue("state", data.state);
+      if (data.description) form.setValue("description", data.description);
+      if (data.estimatedValue) form.setValue("bidAmount", String(data.estimatedValue));
+
+      if (data.aiError) {
+        toast({
+          title: "AI analysis incomplete",
+          description: data.message || "You can enter information manually.",
+        });
+      } else {
+        toast({ title: "Analysis complete", description: `Found ${items.length} scope items` });
+      }
+
+      setManualBidStep(2);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Analysis failed",
+        description: error.message || "Failed to analyze text. You can still proceed manually.",
+        variant: "destructive",
+      });
+      setManualBidStep(2);
+    },
+  });
 
   const filteredBids = useMemo(() => {
     const today = new Date();
@@ -452,9 +611,8 @@ export default function BidsPage() {
     }
   };
 
-  const handleCreateBid = async (data: CreateBidFormInput) => {
-    try {
-      // Clean up empty string values to undefined for optional fields
+  const createBidWithEstimateMutation = useMutation({
+    mutationFn: async (data: CreateBidFormInput) => {
       const cleanedData = {
         ...data,
         clientContactName: data.clientContactName || undefined,
@@ -470,23 +628,84 @@ export default function BidsPage() {
         ownerRepOrganizationId: selectedOwnerRepOrg?.id || undefined,
       };
 
-      const newBid = await createBid.mutateAsync(cleanedData);
+      const selectedScopeItems = [...scopeItems.filter(i => i.selected), ...customItems];
+
+      const response = await apiRequest("POST", "/api/bids", cleanedData);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to create bid' }));
+        throw new Error(errorData.message || 'Failed to create bid');
+      }
+      const bid = await response.json();
+
+      const estimateResponse = await apiRequest("POST", `/api/bids/${bid.id}/estimate`);
+      if (!estimateResponse.ok) {
+        const errorData = await estimateResponse.json().catch(() => ({ message: 'Failed to create estimate' }));
+        throw new Error(errorData.message || 'Failed to create estimate for bid.');
+      }
+      const estimate = await estimateResponse.json();
+
+      const validCategories = ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"];
+      const mapCategory = (cat: string | undefined) => {
+        if (!cat) return "GENERAL";
+        const upper = cat.toUpperCase();
+        return validCategories.includes(upper) ? upper : "GENERAL";
+      };
+
+      if (selectedScopeItems.length > 0 && estimate?.id) {
+        const failedItems: string[] = [];
+        for (const item of selectedScopeItems) {
+          const qty = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+          const lineItemData = {
+            description: item.description,
+            quantity: qty.toString(),
+            unit: item.unit || 'EA',
+            category: mapCategory(item.category),
+            notes: item.notes,
+            materialCost: "0",
+            laborCost: "0",
+            laborHours: "0",
+            equipmentCost: "0",
+            consumablesCost: "0",
+            subcontractCost: "0",
+            overheadAllocation: "0",
+            profitAllocation: "0",
+            totalCost: "0",
+          };
+          const lineItemResponse = await apiRequest("POST", `/api/estimates/${estimate.id}/line-items`, lineItemData);
+          if (!lineItemResponse.ok) {
+            failedItems.push(item.description);
+          }
+        }
+        if (failedItems.length > 0) {
+          throw new Error(`Failed to add ${failedItems.length} scope item(s) to estimate. Please add them manually.`);
+        }
+      }
+
+      return bid;
+    },
+    onSuccess: (bid) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      const totalItems = scopeItems.filter(i => i.selected).length + customItems.length;
       toast({
-        title: "Success",
-        description: `Bid ${newBid.code} has been created successfully!`,
+        title: "Bid created successfully",
+        description: `Bid ${bid.code} has been created${totalItems > 0 ? ` with ${totalItems} scope items` : ''}.`,
       });
       setShowCreateDialog(false);
       resetFormAndCrmState();
-      // Navigate to the new bid detail page using the auto-generated code
-      setLocation(`/bids/${newBid.code}`);
-    } catch (error: any) {
+      setLocation(`/bids/${bid.code}/estimate`);
+    },
+    onError: (error: any) => {
       toast({
         title: "Error",
         description: error.message || "Failed to create bid",
         variant: "destructive",
       });
-    }
-  };
+    },
+  });
+
+  const handleCreateBid = form.handleSubmit((data: CreateBidFormInput) => {
+    createBidWithEstimateMutation.mutate(data);
+  });
 
   const handleDeleteBid = async (code: string, name: string) => {
     setBidToDelete({ code, name });
@@ -561,11 +780,11 @@ export default function BidsPage() {
                     className="cursor-pointer py-3"
                     data-testid="menu-item-manual-bid"
                   >
-                    <FileEdit className="w-4 h-4 mr-3 text-muted-foreground" />
+                    <Zap className="w-4 h-4 mr-3 text-primary" />
                     <div>
-                      <div className="font-medium">Manual Bid Entry</div>
+                      <div className="font-medium">Quick Bid Entry</div>
                       <div className="text-xs text-muted-foreground">
-                        Enter bid details & line items manually
+                        AI helps fill details from your description
                       </div>
                     </div>
                   </DropdownMenuItem>
@@ -992,271 +1211,68 @@ export default function BidsPage() {
       {/* Create Bid Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={handleDialogOpenChange}>
         <DialogContent
-          className="max-w-2xl max-h-[90vh] overflow-y-auto"
+          className="max-w-3xl max-h-[90vh] overflow-y-auto"
           data-testid="dialog-create-bid"
         >
           <DialogHeader>
-            <DialogTitle>Create New Bid</DialogTitle>
+            <DialogTitle>
+              {manualBidStep === 1 && "Quick Bid Entry"}
+              {manualBidStep === 2 && "Review Scope Items"}
+              {manualBidStep === 3 && "Bid Details"}
+            </DialogTitle>
             <DialogDescription>
-              Enter the basic information for the new bid opportunity.
+              {manualBidStep === 1 && "Describe your project and let AI help fill in the details, or skip to enter manually."}
+              {manualBidStep === 2 && "Review AI-suggested scope items. Toggle items on/off, edit quantities, or add your own."}
+              {manualBidStep === 3 && "Review and finalize the bid details before creating."}
             </DialogDescription>
-          </DialogHeader>
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleCreateBid)}
-              className="space-y-4"
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>Bid Name *</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., Downtown Office Renovation"
-                          {...field}
-                          data-testid="input-bid-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="dueDate"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Due Date</FormLabel>
-                      <FormDatePicker
-                        field={field}
-                        placeholder="Pick a date"
-                        outputFormat="date"
-                        data-testid="input-bid-due-date"
-                      />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="col-span-2 space-y-4 border rounded-md p-4 bg-muted/30">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">
-                      CRM Integration
-                    </Label>
-                    <span className="text-xs text-muted-foreground">
-                      Select from CRM to auto-fill client info
-                    </span>
+            <div className="flex items-center gap-2 pt-2">
+              {[1, 2, 3].map((step) => (
+                <div key={step} className="flex items-center gap-1">
+                  <div
+                    className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium transition-colors",
+                      step < manualBidStep
+                        ? "bg-primary text-primary-foreground"
+                        : step === manualBidStep
+                          ? "bg-primary/20 text-primary border-2 border-primary"
+                          : "bg-muted text-muted-foreground"
+                    )}
+                    data-testid={`step-indicator-${step}`}
+                  >
+                    {step < manualBidStep ? <CheckCircle2 className="h-3.5 w-3.5" /> : step}
                   </div>
-
-                  <div className="flex flex-col gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-sm">GC / General Contractor</Label>
-                      <CrmOrganizationSelector
-                        value={selectedGcOrg?.id}
-                        onSelect={handleGcSelect}
-                        onContactSelect={handleGcContactSelect}
-                        filterTypes={["CONTRACTOR"]}
-                        placeholder="Select GC..."
-                        showContactSelector={true}
-                        selectedContactId={selectedGcContact?.id}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-sm">Owner Representative</Label>
-                      <CrmOrganizationSelector
-                        value={selectedOwnerRepOrg?.id}
-                        onSelect={handleOwnerRepSelect}
-                        onContactSelect={handleOwnerRepContactSelect}
-                        filterTypes={["OWNER_REP"]}
-                        placeholder="Select Owner Rep..."
-                        showContactSelector={true}
-                        selectedContactId={selectedOwnerRepContact?.id}
-                      />
-                    </div>
-                  </div>
+                  {step < 3 && <div className={cn("w-8 h-0.5", step < manualBidStep ? "bg-primary" : "bg-muted")} />}
                 </div>
+              ))}
+            </div>
+          </DialogHeader>
 
-                <FormField
-                  control={form.control}
-                  name="clientName"
-                  render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>Client Name *</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., ABC Corporation"
-                          {...field}
-                          data-testid="input-client-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="clientContactName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Contact Name</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., John Smith"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-contact-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="clientContactEmail"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Contact Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="email"
-                          placeholder="john@example.com"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-contact-email"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="clientContactPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Contact Phone</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="(555) 123-4567"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-contact-phone"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="bidAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bid Amount</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-bid-amount"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="locationAddress"
-                  render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>Location Address</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="123 Main St"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-location-address"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="city"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>City</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., Seattle"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-city"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="state"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>State</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., WA"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-state"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Brief description of the project scope..."
-                          className="min-h-[100px]"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-description"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+          {manualBidStep === 1 && (
+            <div className="space-y-4" data-testid="step-description">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Project Name</Label>
+                <Input
+                  placeholder="e.g., Downtown Office Renovation"
+                  value={form.getValues("name")}
+                  onChange={(e) => form.setValue("name", e.target.value)}
+                  data-testid="input-project-name-step1"
                 />
               </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Project Description / Bid Invitation Text</Label>
+                <Textarea
+                  placeholder="Paste bid invitation text or describe the project in detail... Include client name, location, scope of work, due dates, and any other relevant details."
+                  className="min-h-[180px]"
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  data-testid="input-project-description"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The more detail you provide, the better AI can auto-fill bid fields and suggest scope items.
+                </p>
+              </div>
 
-              <DialogFooter>
+              <div className="flex justify-between pt-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1265,16 +1281,488 @@ export default function BidsPage() {
                 >
                   Cancel
                 </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setManualBidStep(3)}
+                    data-testid="button-skip-ai"
+                  >
+                    Skip AI
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => analyzeTextMutation.mutate(projectDescription)}
+                    disabled={analyzeTextMutation.isPending || projectDescription.trim().length < 10}
+                    data-testid="button-ai-assist"
+                  >
+                    {analyzeTextMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        AI Assist
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {manualBidStep === 2 && (
+            <div className="space-y-4" data-testid="step-scope-items">
+              {scopeItems.length > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">
+                    AI-Suggested Items
+                  </span>
+                  <Badge variant="outline" data-testid="badge-selected-count">
+                    {scopeItems.filter(i => i.selected).length + customItems.length} selected
+                  </Badge>
+                </div>
+              )}
+
+              {scopeItems.length > 0 ? (
+                <ScrollArea className="h-[280px] rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">Include</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="w-20">Qty</TableHead>
+                        <TableHead className="w-16">Unit</TableHead>
+                        <TableHead className="w-24">Category</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {scopeItems.map((item) => (
+                        <TableRow key={item.id} data-testid={`scope-item-${item.id}`}>
+                          <TableCell>
+                            <Checkbox
+                              checked={item.selected}
+                              onCheckedChange={() => toggleScopeItem(item.id)}
+                              data-testid={`checkbox-${item.id}`}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium text-sm">{item.description}</TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              className="h-7 w-18 text-sm"
+                              value={item.quantity}
+                              onChange={(e) => updateScopeItem(item.id, 'quantity', e.target.value)}
+                              data-testid={`input-qty-${item.id}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-7 w-16 text-sm"
+                              value={item.unit}
+                              onChange={(e) => updateScopeItem(item.id, 'unit', e.target.value)}
+                              data-testid={`input-unit-${item.id}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">{item.category}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              ) : (
+                <div className="text-center py-8 border rounded-md bg-muted/30">
+                  <ClipboardList className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-muted-foreground text-sm">No AI-suggested items. Add your own below.</p>
+                </div>
+              )}
+
+              {customItems.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-sm font-medium">Your Custom Items</span>
+                  <div className="space-y-1">
+                    {customItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-2 rounded-md border bg-muted/30"
+                        data-testid={`custom-item-${item.id}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-medium">{item.description}</span>
+                          <Badge variant="outline" className="text-xs">{item.quantity} {item.unit}</Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => removeCustomItem(item.id)}
+                          data-testid={`remove-custom-${item.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <Separator />
+
+              <div className="space-y-2">
+                <span className="text-sm font-medium">Add Custom Scope Item</span>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Description"
+                    value={newItemDescription}
+                    onChange={(e) => setNewItemDescription(e.target.value)}
+                    className="flex-1"
+                    data-testid="input-custom-description"
+                  />
+                  <Input
+                    placeholder="Qty"
+                    type="number"
+                    value={newItemQuantity}
+                    onChange={(e) => setNewItemQuantity(e.target.value)}
+                    className="w-20"
+                    data-testid="input-custom-quantity"
+                  />
+                  <Input
+                    placeholder="Unit"
+                    value={newItemUnit}
+                    onChange={(e) => setNewItemUnit(e.target.value)}
+                    className="w-20"
+                    data-testid="input-custom-unit"
+                  />
+                  <Button onClick={addCustomItem} size="icon" data-testid="button-add-custom-item">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex justify-between pt-2">
                 <Button
-                  type="submit"
-                  disabled={createBid.isPending}
-                  data-testid="button-submit-create"
+                  type="button"
+                  variant="outline"
+                  onClick={() => setManualBidStep(1)}
+                  data-testid="button-back-to-step1"
                 >
-                  {createBid.isPending ? "Creating..." : "Create Bid"}
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
                 </Button>
-              </DialogFooter>
-            </form>
-          </Form>
+                <Button
+                  type="button"
+                  onClick={() => setManualBidStep(3)}
+                  data-testid="button-continue-to-details"
+                >
+                  Continue to Details
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {manualBidStep === 3 && (
+            <Form {...form}>
+              <form
+                onSubmit={handleCreateBid}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem className="col-span-2">
+                        <FormLabel>Bid Name *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Downtown Office Renovation"
+                            {...field}
+                            data-testid="input-bid-name"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="dueDate"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Due Date</FormLabel>
+                        <FormDatePicker
+                          field={field}
+                          placeholder="Pick a date"
+                          outputFormat="date"
+                          data-testid="input-bid-due-date"
+                        />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="col-span-2 space-y-4 border rounded-md p-4 bg-muted/30">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">
+                        CRM Integration
+                      </Label>
+                      <span className="text-xs text-muted-foreground">
+                        Select from CRM to auto-fill client info
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm">GC / General Contractor</Label>
+                        <CrmOrganizationSelector
+                          value={selectedGcOrg?.id}
+                          onSelect={handleGcSelect}
+                          onContactSelect={handleGcContactSelect}
+                          filterTypes={["CONTRACTOR"]}
+                          placeholder="Select GC..."
+                          showContactSelector={true}
+                          selectedContactId={selectedGcContact?.id}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-sm">Owner Representative</Label>
+                        <CrmOrganizationSelector
+                          value={selectedOwnerRepOrg?.id}
+                          onSelect={handleOwnerRepSelect}
+                          onContactSelect={handleOwnerRepContactSelect}
+                          filterTypes={["OWNER_REP"]}
+                          placeholder="Select Owner Rep..."
+                          showContactSelector={true}
+                          selectedContactId={selectedOwnerRepContact?.id}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="clientName"
+                    render={({ field }) => (
+                      <FormItem className="col-span-2">
+                        <FormLabel>Client Name *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., ABC Corporation"
+                            {...field}
+                            data-testid="input-client-name"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="clientContactName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Name</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., John Smith"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-contact-name"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="clientContactEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Email</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="email"
+                            placeholder="john@example.com"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-contact-email"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="clientContactPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Phone</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="(555) 123-4567"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-contact-phone"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="bidAmount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bid Amount</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-bid-amount"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="locationAddress"
+                    render={({ field }) => (
+                      <FormItem className="col-span-2">
+                        <FormLabel>Location Address</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="123 Main St"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-location-address"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Seattle"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-city"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., WA"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-state"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem className="col-span-2">
+                        <FormLabel>Description</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Brief description of the project scope..."
+                            className="min-h-[100px]"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-description"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {(scopeItems.filter(i => i.selected).length + customItems.length) > 0 && (
+                  <div className="flex items-center gap-2 p-3 rounded-md border bg-primary/5 border-primary/20">
+                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                    <span className="text-sm">
+                      <strong>{scopeItems.filter(i => i.selected).length + customItems.length}</strong> scope items will be added to an estimate when you create this bid.
+                    </span>
+                  </div>
+                )}
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setManualBidStep(scopeItems.length > 0 || customItems.length > 0 ? 2 : 1)}
+                    data-testid="button-back-to-previous"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={createBidWithEstimateMutation.isPending}
+                    data-testid="button-submit-create"
+                  >
+                    {createBidWithEstimateMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                        Create Bid
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          )}
         </DialogContent>
       </Dialog>
 
