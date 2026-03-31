@@ -53,39 +53,41 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
         itemCode: vendorPricingCatalogs.itemCode,
         category: vendorPricingCatalogs.category,
         unit: vendorPricingCatalogs.unit,
+        unitPrice: vendorPricingCatalogs.unitPrice,
       })
       .from(vendorPricingCatalogs)
       .where(eq(vendorPricingCatalogs.organizationId, organizationId));
 
     if (catalogItems.length === 0) return;
 
-    const updates: { id: string; vendorPricingId: string | null; vendorMatchConfidence: string }[] = [];
+    const updates: { id: string; vendorPricingId: string | null; vendorMatchConfidence: string; unitPrice: number | null; quantity: number; laborCost: number; equipmentCost: number; consumablesCost: number; subcontractCost: number }[] = [];
 
     for (const li of lineItems) {
       const desc = (li.description || "").toLowerCase().trim();
       const liUnit = (li.unit || "").toLowerCase().trim();
-      let bestMatch: { id: string; confidence: string } | null = null;
+      let bestMatch: { id: string; confidence: string; unitPrice: number } | null = null;
 
       for (const cat of catalogItems) {
         const catName = (cat.itemName || "").toLowerCase().trim();
         const catCode = (cat.itemCode || "").toLowerCase().trim();
         const catUnit = (cat.unit || "").toLowerCase().trim();
+        const catPrice = Number(cat.unitPrice) || 0;
 
         if (catCode && desc === catCode) {
-          bestMatch = { id: cat.id, confidence: "EXACT" };
+          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice };
           break;
         }
         if (desc === catName && liUnit === catUnit) {
-          bestMatch = { id: cat.id, confidence: "EXACT" };
+          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice };
           break;
         }
         if (desc === catName) {
-          bestMatch = { id: cat.id, confidence: "EXACT" };
+          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice };
           break;
         }
         if (catName && (desc.includes(catName) || catName.includes(desc)) && liUnit === catUnit) {
           if (!bestMatch || bestMatch.confidence !== "EXACT") {
-            bestMatch = { id: cat.id, confidence: "FUZZY" };
+            bestMatch = { id: cat.id, confidence: "FUZZY", unitPrice: catPrice };
           }
         }
       }
@@ -94,14 +96,30 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
         id: li.id,
         vendorPricingId: bestMatch?.id || null,
         vendorMatchConfidence: bestMatch?.confidence || "NO_MATCH",
+        unitPrice: bestMatch?.unitPrice ?? null,
+        quantity: Number(li.quantity) || 0,
+        laborCost: Number(li.laborCost) || 0,
+        equipmentCost: Number(li.equipmentCost) || 0,
+        consumablesCost: Number(li.consumablesCost) || 0,
+        subcontractCost: Number(li.subcontractCost) || 0,
       });
     }
 
-    await Promise.all(updates.map(u =>
-      db.update(estimateLineItems)
-        .set({ vendorPricingId: u.vendorPricingId, vendorMatchConfidence: u.vendorMatchConfidence })
-        .where(eq(estimateLineItems.id, u.id))
-    ));
+    await Promise.all(updates.map(u => {
+      const materialCost = (u.vendorPricingId !== null && u.unitPrice !== null && u.unitPrice > 0)
+        ? parseFloat((u.unitPrice * u.quantity).toFixed(2))
+        : 0;
+      const totalCost = parseFloat((materialCost + u.laborCost + u.equipmentCost + u.consumablesCost + u.subcontractCost).toFixed(2));
+
+      return db.update(estimateLineItems)
+        .set({
+          vendorPricingId: u.vendorPricingId,
+          vendorMatchConfidence: u.vendorMatchConfidence,
+          materialCost: materialCost.toFixed(2),
+          totalCost: totalCost.toFixed(2),
+        })
+        .where(eq(estimateLineItems.id, u.id));
+    }));
   } catch (err) {
     logError("[VendorMatch] Error matching vendor pricing:", {}, err instanceof Error ? err : new Error(String(err)));
   }
@@ -780,9 +798,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       }
 
       if (lineItemsToCreate.length > 0) {
-        const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
+        let newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
         if (req.user?.organizationId) {
-          matchVendorPricing(newLineItems, req.user.organizationId).catch(() => {});
+          await matchVendorPricing(newLineItems, req.user.organizationId);
+          const lineItemIds = newLineItems.map(li => li.id);
+          newLineItems = await db.query.estimateLineItems.findMany({
+            where: inArray(estimateLineItems.id, lineItemIds),
+          });
         }
         try {
           await createEstimateSnapshot(estimateId, req.user!.id);
@@ -1199,9 +1221,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       }
 
       if (lineItemsToCreate.length > 0) {
-        const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
+        let newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
         if (req.user?.organizationId) {
-          matchVendorPricing(newLineItems, req.user.organizationId).catch(() => {});
+          await matchVendorPricing(newLineItems, req.user.organizationId);
+          const lineItemIds = newLineItems.map(li => li.id);
+          newLineItems = await db.query.estimateLineItems.findMany({
+            where: inArray(estimateLineItems.id, lineItemIds),
+          });
         }
         const laborRateAppliedCount = newLineItems.filter((li) => li.laborRateUsed !== null && Number(li.laborRateUsed) > 0).length;
         try {
