@@ -28,9 +28,20 @@ export function useGlobalCallEvents(): GlobalCallState {
       try {
         const data = JSON.parse(e.data);
         const call = data.call as VideoCallData;
+        if (!call || !call.id) {
+          console.warn("[CallEvents] Received call_started with invalid call data", data);
+          return;
+        }
         if (call.initiatorId === userRef.current?.id) return;
         const overlay = document.querySelector('[data-testid="video-call-overlay"]');
         if (overlay) return;
+
+        if (!call.initiator || !call.initiator.firstName) {
+          call.initiator = call.initiator || { id: call.initiatorId, firstName: "Unknown", lastName: "Caller", role: "" };
+          if (!call.initiator.firstName) call.initiator.firstName = "Unknown";
+          if (!call.initiator.lastName) call.initiator.lastName = "Caller";
+        }
+
         setIncomingCall(call);
 
         fetch("/api/conversations", { credentials: "include" })
@@ -53,8 +64,13 @@ export function useGlobalCallEvents(): GlobalCallState {
               setConversationName("Video Call");
             }
           })
-          .catch(() => setConversationName("Video Call"));
-      } catch {}
+          .catch((err) => {
+            console.error("[CallEvents] Failed to fetch conversations for call notification:", err);
+            setConversationName("Video Call");
+          });
+      } catch (err) {
+        console.error("[CallEvents] Error handling call_started event:", err);
+      }
     };
 
     const handleCallEnded = (e: MessageEvent) => {
@@ -68,7 +84,9 @@ export function useGlobalCallEvents(): GlobalCallState {
           if (prev?.id === data.callId) return null;
           return prev;
         });
-      } catch {}
+      } catch (err) {
+        console.error("[CallEvents] Error handling call_ended event:", err);
+      }
     };
 
     const handleCallJoined = (e: MessageEvent) => {
@@ -78,17 +96,25 @@ export function useGlobalCallEvents(): GlobalCallState {
           if (!prev || prev.id !== data.callId) return prev;
           const alreadyIn = prev.participants.some((p: { userId: string }) => p.userId === data.userId);
           if (alreadyIn) return prev;
+          const nameParts = (data.userName || "").split(" ");
           const newParticipant = {
-            id: "",
+            id: `temp-${data.userId}`,
             callId: data.callId,
             userId: data.userId,
             joinedAt: new Date().toISOString(),
             leftAt: null,
-            user: { id: data.userId, firstName: data.userName?.split(" ")[0] || "", lastName: data.userName?.split(" ").slice(1).join(" ") || "", role: "" },
+            user: {
+              id: data.userId,
+              firstName: nameParts[0] || "User",
+              lastName: nameParts.slice(1).join(" ") || "",
+              role: "",
+            },
           };
           return { ...prev, status: "ACTIVE" as const, participants: [...prev.participants, newParticipant] };
         });
-      } catch {}
+      } catch (err) {
+        console.error("[CallEvents] Error handling call_joined event:", err);
+      }
     };
 
     const handleCallLeft = (e: MessageEvent) => {
@@ -98,14 +124,18 @@ export function useGlobalCallEvents(): GlobalCallState {
           if (!prev || prev.id !== data.callId) return prev;
           return { ...prev, participants: prev.participants.filter((p: { userId: string }) => p.userId !== data.userId) };
         });
-      } catch {}
+      } catch (err) {
+        console.error("[CallEvents] Error handling call_left event:", err);
+      }
     };
 
     const handleWebRTCSignal = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
         dispatchSignal(data);
-      } catch {}
+      } catch (err) {
+        console.error("[CallEvents] Error handling webrtc_signal event:", err);
+      }
     };
 
     addListener("call_started", handleCallStarted);

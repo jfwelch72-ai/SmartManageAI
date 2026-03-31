@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Video, VideoOff, Mic, MicOff, MonitorUp, PhoneOff,
-  FileText, Users, Maximize2, Minimize2, Clock
+  FileText, Users, Maximize2, Minimize2, Clock, Loader2, WifiOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -14,6 +14,21 @@ const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
 };
 
@@ -52,6 +67,7 @@ export function VideoCallOverlay({
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
+  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState>>({});
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -60,6 +76,9 @@ export function VideoCallOverlay({
   const localStreamRef = useRef<MediaStream | null>(null);
   const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const makingOfferRef = useRef<Record<string, boolean>>({});
+  const deferredConnectionsRef = useRef<Set<string>>(new Set());
+  const deferredOffersRef = useRef<Record<string, RTCSessionDescriptionInit>>({});
+  const iceTimeoutRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -159,12 +178,42 @@ export function VideoCallOverlay({
     };
 
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
+      const state = pc.iceConnectionState;
+      console.log(`[WebRTC] ICE state for ${remoteUserId}: ${state}`);
+      setPeerStates(prev => ({ ...prev, [remoteUserId]: state }));
+
+      if (state === "connected" || state === "completed") {
+        if (iceTimeoutRef.current[remoteUserId]) {
+          clearTimeout(iceTimeoutRef.current[remoteUserId]);
+          delete iceTimeoutRef.current[remoteUserId];
+        }
+      }
+
+      if (state === "failed") {
+        if (iceTimeoutRef.current[remoteUserId]) {
+          clearTimeout(iceTimeoutRef.current[remoteUserId]);
+          delete iceTimeoutRef.current[remoteUserId];
+        }
         setRemoteStreams(prev => {
           const next = { ...prev };
           delete next[remoteUserId];
           return next;
         });
+      } else if (state === "disconnected") {
+        setRemoteStreams(prev => {
+          const next = { ...prev };
+          delete next[remoteUserId];
+          return next;
+        });
+      }
+
+      if (state === "checking") {
+        iceTimeoutRef.current[remoteUserId] = setTimeout(() => {
+          if (pc.iceConnectionState === "checking") {
+            console.warn(`[WebRTC] ICE checking timeout for ${remoteUserId}, connection may fail`);
+            setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
+          }
+        }, 15000);
       }
     };
 
@@ -185,16 +234,24 @@ export function VideoCallOverlay({
   }, []);
 
   const initiateConnection = useCallback(async (remoteUserId: string) => {
+    if (!localStreamRef.current) {
+      console.log(`[WebRTC] Deferring connection to ${remoteUserId} — local stream not ready`);
+      deferredConnectionsRef.current.add(remoteUserId);
+      return;
+    }
     if (makingOfferRef.current[remoteUserId]) return;
     makingOfferRef.current[remoteUserId] = true;
 
     try {
+      console.log(`[WebRTC] Creating offer for ${remoteUserId}`);
+      setPeerStates(prev => ({ ...prev, [remoteUserId]: "new" }));
       const pc = createPeerConnection(remoteUserId);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await sendSignal(remoteUserId, { type: "offer", sdp: pc.localDescription });
+      console.log(`[WebRTC] Offer sent to ${remoteUserId}`);
     } catch (err) {
-      console.error("Failed to create offer:", err);
+      console.error("[WebRTC] Failed to create offer:", err);
     } finally {
       makingOfferRef.current[remoteUserId] = false;
     }
@@ -209,6 +266,12 @@ export function VideoCallOverlay({
     }
 
     if (signal.type === "offer") {
+      if (!localStreamRef.current) {
+        console.log(`[WebRTC] Received offer from ${fromUserId} but local stream not ready, deferring`);
+        deferredOffersRef.current[fromUserId] = signal.sdp!;
+        return;
+      }
+      console.log(`[WebRTC] Handling offer from ${fromUserId}`);
       const pc = createPeerConnection(fromUserId);
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp!));
@@ -216,8 +279,9 @@ export function VideoCallOverlay({
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         await sendSignal(fromUserId, { type: "answer", sdp: pc.localDescription });
+        console.log(`[WebRTC] Answer sent to ${fromUserId}`);
       } catch (err) {
-        console.error("Failed to handle offer:", err);
+        console.error("[WebRTC] Failed to handle offer:", err);
       }
     } else if (signal.type === "answer") {
       const pc = peerConnectionsRef.current[fromUserId];
@@ -261,6 +325,33 @@ export function VideoCallOverlay({
   useEffect(() => {
     if (!localStreamRef.current) return;
 
+    const deferredOffers = { ...deferredOffersRef.current };
+    deferredOffersRef.current = {};
+    const deferredOfferUserIds = Object.keys(deferredOffers);
+    if (deferredOfferUserIds.length > 0) {
+      console.log(`[WebRTC] Local stream ready, processing ${deferredOfferUserIds.length} deferred offer(s)`);
+      for (const userId of deferredOfferUserIds) {
+        const sdp = deferredOffers[userId];
+        const pc = createPeerConnection(userId);
+        pc.setRemoteDescription(new RTCSessionDescription(sdp))
+          .then(() => flushPendingCandidates(userId))
+          .then(() => pc.createAnswer())
+          .then(answer => pc.setLocalDescription(answer))
+          .then(() => sendSignal(userId, { type: "answer", sdp: pc.localDescription }))
+          .then(() => console.log(`[WebRTC] Deferred answer sent to ${userId}`))
+          .catch(err => console.error(`[WebRTC] Failed to process deferred offer from ${userId}:`, err));
+      }
+    }
+
+    const deferred = Array.from(deferredConnectionsRef.current);
+    if (deferred.length > 0) {
+      console.log(`[WebRTC] Local stream ready, initiating ${deferred.length} deferred connection(s)`);
+      deferredConnectionsRef.current.clear();
+      for (const userId of deferred) {
+        initiateConnection(userId);
+      }
+    }
+
     const activeParticipants = call.participants.filter(p => !p.leftAt && p.userId !== currentUserId);
     for (const participant of activeParticipants) {
       const existingPc = peerConnectionsRef.current[participant.userId];
@@ -273,18 +364,20 @@ export function VideoCallOverlay({
           existingPc.createOffer()
             .then(offer => existingPc.setLocalDescription(offer))
             .then(() => sendSignal(participant.userId, { type: "offer", sdp: existingPc.localDescription }))
-            .catch(err => console.error("Renegotiation failed:", err));
+            .catch(err => console.error("[WebRTC] Renegotiation failed:", err));
         }
       } else if (currentUserId > participant.userId) {
         initiateConnection(participant.userId);
       }
     }
-  }, [call.participants, currentUserId, localStream, initiateConnection, sendSignal]);
+  }, [call.participants, currentUserId, localStream, initiateConnection, sendSignal, createPeerConnection, flushPendingCandidates]);
 
   useEffect(() => {
     return () => {
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
       peerConnectionsRef.current = {};
+      Object.values(iceTimeoutRef.current).forEach(t => clearTimeout(t));
+      iceTimeoutRef.current = {};
     };
   }, []);
 
@@ -449,6 +542,9 @@ export function VideoCallOverlay({
             {otherParticipants.map(p => {
               const remoteStream = remoteStreams[p.userId];
               const peerCameraOff = remoteCameraOff[p.userId] ?? false;
+              const iceState = peerStates[p.userId];
+              const isConnecting = iceState === "new" || iceState === "checking";
+              const isFailed = iceState === "failed";
               return (
                 <div
                   key={p.userId}
@@ -457,15 +553,26 @@ export function VideoCallOverlay({
                 >
                   {remoteStream && !peerCameraOff && remoteStream.getVideoTracks().length > 0 ? (
                     <RemoteVideo stream={remoteStream} participant={p} />
+                  ) : isFailed ? (
+                    <div className="flex flex-col items-center gap-2 text-center px-4">
+                      <WifiOff className="w-10 h-10 text-red-400" />
+                      <p className="text-red-400 text-sm font-medium" data-testid="text-connection-failed">Connection failed</p>
+                      <p className="text-gray-500 text-xs">Unable to establish video connection</p>
+                    </div>
+                  ) : isConnecting ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-10 h-10 text-blue-400 animate-spin" />
+                      <p className="text-blue-400 text-sm" data-testid="text-connecting">Connecting...</p>
+                    </div>
                   ) : (
                     <Avatar className="h-20 w-20">
                       <AvatarFallback className="text-2xl bg-gray-700 text-gray-300">
-                        {getInitials(p.user.firstName, p.user.lastName)}
+                        {getInitials(p.user?.firstName ?? "", p.user?.lastName ?? "")}
                       </AvatarFallback>
                     </Avatar>
                   )}
                   <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
-                    {p.user.firstName} {p.user.lastName}
+                    {p.user?.firstName ?? ""} {p.user?.lastName ?? ""}
                   </div>
                 </div>
               );

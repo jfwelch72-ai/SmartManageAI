@@ -64,7 +64,7 @@ export function GlobalIncomingCallModal({
           <div className="absolute -inset-2 rounded-full animate-pulse bg-green-500/10" />
           <Avatar className="h-20 w-20 relative z-10 ring-4 ring-green-500/30">
             <AvatarFallback className="text-2xl bg-primary/10 text-primary">
-              {getInitials(call.initiator.firstName, call.initiator.lastName)}
+              {getInitials(call.initiator?.firstName ?? "Unknown", call.initiator?.lastName ?? "")}
             </AvatarFallback>
           </Avatar>
         </div>
@@ -75,7 +75,7 @@ export function GlobalIncomingCallModal({
             <span>Incoming Video Call</span>
           </div>
           <h2 className="text-xl font-semibold" data-testid="text-modal-caller-name">
-            {call.initiator.firstName} {call.initiator.lastName}
+            {call.initiator?.firstName ?? "Unknown"} {call.initiator?.lastName ?? "Caller"}
           </h2>
           <p className="text-sm text-muted-foreground" data-testid="text-modal-conversation-name">
             {conversationName}

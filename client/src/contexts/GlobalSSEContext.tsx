@@ -17,6 +17,8 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
   const esRef = useRef<EventSource | null>(null);
   const listenersRef = useRef<Map<string, Set<SSEEventCallback>>>(new Map());
   const registeredEventsRef = useRef<Set<string>>(new Set());
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isCleanedUpRef = useRef(false);
 
   const dispatchToListeners = useCallback((eventType: string, event: MessageEvent) => {
     const callbacks = listenersRef.current.get(eventType);
@@ -26,6 +28,15 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
       }
     }
   }, []);
+
+  const registerAllListenersOnSource = useCallback((es: EventSource) => {
+    registeredEventsRef.current.clear();
+    for (const eventType of listenersRef.current.keys()) {
+      const handler = (e: MessageEvent) => dispatchToListeners(eventType, e);
+      es.addEventListener(eventType, handler as EventListener);
+      registeredEventsRef.current.add(eventType);
+    }
+  }, [dispatchToListeners]);
 
   const ensureEventRegistered = useCallback((eventType: string) => {
     const es = esRef.current;
@@ -47,32 +58,56 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
-    esRef.current = es;
+    isCleanedUpRef.current = false;
 
-    const handleConnected = () => {
-      setIsConnected(true);
-      dispatchToListeners("connected", new MessageEvent("connected"));
+    const createEventSource = () => {
+      if (isCleanedUpRef.current) return;
+
+      const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
+      esRef.current = es;
+
+      const handleConnected = () => {
+        setIsConnected(true);
+        dispatchToListeners("connected", new MessageEvent("connected"));
+      };
+      es.addEventListener("connected", handleConnected);
+
+      registerAllListenersOnSource(es);
+
+      es.onerror = () => {
+        setIsConnected(false);
+        es.close();
+        esRef.current = null;
+        registeredEventsRef.current.clear();
+        if (!isCleanedUpRef.current) {
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!isCleanedUpRef.current && esRef.current === null) {
+              createEventSource();
+            }
+          }, 3000);
+        }
+      };
     };
-    es.addEventListener("connected", handleConnected);
 
-    for (const eventType of listenersRef.current.keys()) {
-      if (!registeredEventsRef.current.has(eventType)) {
-        const handler = (e: MessageEvent) => dispatchToListeners(eventType, e);
-        es.addEventListener(eventType, handler as EventListener);
-        registeredEventsRef.current.add(eventType);
-      }
-    }
-
-    es.onerror = () => setIsConnected(false);
+    createEventSource();
 
     return () => {
-      es.close();
+      isCleanedUpRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      const es = esRef.current;
+      if (es) {
+        es.onerror = null;
+        es.close();
+      }
       esRef.current = null;
       registeredEventsRef.current.clear();
       setIsConnected(false);
     };
-  }, [user, dispatchToListeners]);
+  }, [user, dispatchToListeners, registerAllListenersOnSource]);
 
   const addListener = useCallback((eventType: string, callback: SSEEventCallback) => {
     if (!listenersRef.current.has(eventType)) {
