@@ -30,6 +30,13 @@ export function MessagingWidget() {
       } else if (detail?.tab === "team") {
         setActiveTab("team");
       }
+      if (detail?.conversationId) {
+        window.dispatchEvent(
+          new CustomEvent("select-conversation", {
+            detail: { conversationId: detail.conversationId, callId: detail.callId },
+          })
+        );
+      }
     };
     window.addEventListener("open-messaging-widget", handleOpenMessages);
     return () => window.removeEventListener("open-messaging-widget", handleOpenMessages);

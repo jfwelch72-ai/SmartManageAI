@@ -10,6 +10,20 @@ import { CallNotesPanel } from "./CallNotesPanel";
 import { getInitials, type VideoCallData, type Conversation } from "./types";
 import { cn } from "@/lib/utils";
 
+const ICE_SERVERS: RTCConfiguration = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ],
+};
+
+interface SignalMessage {
+  type: "offer" | "answer" | "ice-candidate" | "camera-state";
+  sdp?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  cameraOff?: boolean;
+}
+
 interface VideoCallOverlayProps {
   call: VideoCallData;
   conversation: Conversation;
@@ -32,10 +46,17 @@ export function VideoCallOverlay({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const sseRef = useRef<EventSource | null>(null);
+  const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
+  const makingOfferRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -53,6 +74,7 @@ export function VideoCallOverlay({
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setLocalStream(stream);
+        localStreamRef.current = stream;
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
@@ -61,6 +83,7 @@ export function VideoCallOverlay({
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           setLocalStream(stream);
+          localStreamRef.current = stream;
           setIsVideoOff(true);
         } catch (audioErr) {
           console.error("Failed to access audio:", audioErr);
@@ -73,6 +96,184 @@ export function VideoCallOverlay({
     };
   }, []);
 
+  const sendSignal = useCallback(async (targetUserId: string, signal: unknown) => {
+    try {
+      await apiRequest("POST", `/api/calls/${call.id}/signal`, {
+        targetUserId,
+        signal,
+      });
+    } catch (err) {
+      console.error("Failed to send signal:", err);
+    }
+  }, [call.id]);
+
+  const createPeerConnection = useCallback((remoteUserId: string): RTCPeerConnection => {
+    if (peerConnectionsRef.current[remoteUserId]) {
+      peerConnectionsRef.current[remoteUserId].close();
+    }
+
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    peerConnectionsRef.current[remoteUserId] = pc;
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current!);
+      });
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendSignal(remoteUserId, { type: "ice-candidate", candidate: event.candidate.toJSON() });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        setRemoteStreams(prev => ({ ...prev, [remoteUserId]: remoteStream }));
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
+        setRemoteStreams(prev => {
+          const next = { ...prev };
+          delete next[remoteUserId];
+          return next;
+        });
+      }
+    };
+
+    return pc;
+  }, [sendSignal]);
+
+  const flushPendingCandidates = useCallback(async (remoteUserId: string) => {
+    const pc = peerConnectionsRef.current[remoteUserId];
+    const pending = pendingCandidatesRef.current[remoteUserId];
+    if (pc && pending && pending.length > 0) {
+      delete pendingCandidatesRef.current[remoteUserId];
+      for (const candidate of pending) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch {}
+      }
+    }
+  }, []);
+
+  const initiateConnection = useCallback(async (remoteUserId: string) => {
+    if (makingOfferRef.current[remoteUserId]) return;
+    makingOfferRef.current[remoteUserId] = true;
+
+    try {
+      const pc = createPeerConnection(remoteUserId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await sendSignal(remoteUserId, { type: "offer", sdp: pc.localDescription });
+    } catch (err) {
+      console.error("Failed to create offer:", err);
+    } finally {
+      makingOfferRef.current[remoteUserId] = false;
+    }
+  }, [createPeerConnection, sendSignal]);
+
+  const handleSignal = useCallback(async (fromUserId: string, signal: SignalMessage) => {
+    if (fromUserId === currentUserId) return;
+
+    if (signal.type === "camera-state") {
+      setRemoteCameraOff(prev => ({ ...prev, [fromUserId]: !!signal.cameraOff }));
+      return;
+    }
+
+    if (signal.type === "offer") {
+      const pc = createPeerConnection(fromUserId);
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp!));
+        await flushPendingCandidates(fromUserId);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await sendSignal(fromUserId, { type: "answer", sdp: pc.localDescription });
+      } catch (err) {
+        console.error("Failed to handle offer:", err);
+      }
+    } else if (signal.type === "answer") {
+      const pc = peerConnectionsRef.current[fromUserId];
+      if (pc) {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp!));
+          await flushPendingCandidates(fromUserId);
+        } catch (err) {
+          console.error("Failed to handle answer:", err);
+        }
+      }
+    } else if (signal.type === "ice-candidate") {
+      const pc = peerConnectionsRef.current[fromUserId];
+      if (pc && pc.remoteDescription) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate!));
+        } catch (err) {
+          console.error("Failed to add ICE candidate:", err);
+        }
+      } else {
+        if (!pendingCandidatesRef.current[fromUserId]) {
+          pendingCandidatesRef.current[fromUserId] = [];
+        }
+        pendingCandidatesRef.current[fromUserId].push(signal.candidate!);
+      }
+    }
+  }, [currentUserId, createPeerConnection, sendSignal, flushPendingCandidates]);
+
+  useEffect(() => {
+    const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
+    sseRef.current = es;
+
+    const handleWebRTCSignal = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { callId: string; fromUserId: string; signal: SignalMessage };
+        if (data.callId === call.id && data.fromUserId !== currentUserId) {
+          handleSignal(data.fromUserId, data.signal);
+        }
+      } catch {}
+    };
+
+    es.addEventListener("webrtc_signal", handleWebRTCSignal);
+
+    return () => {
+      es.removeEventListener("webrtc_signal", handleWebRTCSignal);
+      es.close();
+      sseRef.current = null;
+    };
+  }, [call.id, currentUserId, handleSignal]);
+
+  useEffect(() => {
+    if (!localStreamRef.current) return;
+
+    const activeParticipants = call.participants.filter(p => !p.leftAt && p.userId !== currentUserId);
+    for (const participant of activeParticipants) {
+      const existingPc = peerConnectionsRef.current[participant.userId];
+      if (existingPc) {
+        const hasSenders = existingPc.getSenders().some(s => s.track !== null);
+        if (!hasSenders) {
+          localStreamRef.current.getTracks().forEach(track => {
+            existingPc.addTrack(track, localStreamRef.current!);
+          });
+          existingPc.createOffer()
+            .then(offer => existingPc.setLocalDescription(offer))
+            .then(() => sendSignal(participant.userId, { type: "offer", sdp: existingPc.localDescription }))
+            .catch(err => console.error("Renegotiation failed:", err));
+        }
+      } else if (currentUserId > participant.userId) {
+        initiateConnection(participant.userId);
+      }
+    }
+  }, [call.participants, currentUserId, localStream, initiateConnection, sendSignal]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+      peerConnectionsRef.current = {};
+    };
+  }, []);
+
   const toggleMute = useCallback(() => {
     if (localStream) {
       localStream.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
@@ -82,10 +283,15 @@ export function VideoCallOverlay({
 
   const toggleVideo = useCallback(() => {
     if (localStream) {
-      localStream.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
-      setIsVideoOff(prev => !prev);
+      const newState = !isVideoOff;
+      localStream.getVideoTracks().forEach(t => { t.enabled = !newState; });
+      setIsVideoOff(newState);
+      const otherParticipants = call.participants.filter(p => !p.leftAt && p.userId !== currentUserId);
+      for (const p of otherParticipants) {
+        sendSignal(p.userId, { type: "camera-state", cameraOff: newState });
+      }
     }
-  }, [localStream]);
+  }, [localStream, isVideoOff, call.participants, currentUserId, sendSignal]);
 
   const toggleScreenShare = useCallback(async () => {
     if (isScreenSharing) {
@@ -97,6 +303,10 @@ export function VideoCallOverlay({
           const oldVideoTrack = localStream.getVideoTracks()[0];
           if (oldVideoTrack) localStream.removeTrack(oldVideoTrack);
           localStream.addTrack(newVideoTrack);
+          Object.entries(peerConnectionsRef.current).forEach(([, pc]) => {
+            const sender = pc.getSenders().find(s => s.track?.kind === "video");
+            if (sender) sender.replaceTrack(newVideoTrack);
+          });
         }
         if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
       } catch {}
@@ -112,6 +322,10 @@ export function VideoCallOverlay({
             localStream.removeTrack(oldVideoTrack);
           }
           localStream.addTrack(screenTrack);
+          Object.entries(peerConnectionsRef.current).forEach(([, pc]) => {
+            const sender = pc.getSenders().find(s => s.track?.kind === "video");
+            if (sender) sender.replaceTrack(screenTrack);
+          });
           screenTrack.onended = () => {
             setIsScreenSharing(false);
           };
@@ -132,11 +346,15 @@ export function VideoCallOverlay({
   }, []);
 
   const handleEndCall = () => {
+    Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+    peerConnectionsRef.current = {};
     localStream?.getTracks().forEach(t => t.stop());
     onEndCall();
   };
 
   const handleLeaveCall = () => {
+    Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+    peerConnectionsRef.current = {};
     localStream?.getTracks().forEach(t => t.stop());
     onLeaveCall();
   };
@@ -214,22 +432,30 @@ export function VideoCallOverlay({
                 </div>
               </div>
             )}
-            {otherParticipants.map(p => (
-              <div
-                key={p.userId}
-                className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden"
-                data-testid={`video-feed-${p.userId}`}
-              >
-                <Avatar className="h-20 w-20">
-                  <AvatarFallback className="text-2xl bg-gray-700 text-gray-300">
-                    {getInitials(p.user.firstName, p.user.lastName)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
-                  {p.user.firstName} {p.user.lastName}
+            {otherParticipants.map(p => {
+              const remoteStream = remoteStreams[p.userId];
+              const peerCameraOff = remoteCameraOff[p.userId] ?? false;
+              return (
+                <div
+                  key={p.userId}
+                  className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden"
+                  data-testid={`video-feed-${p.userId}`}
+                >
+                  {remoteStream && !peerCameraOff && remoteStream.getVideoTracks().length > 0 ? (
+                    <RemoteVideo stream={remoteStream} participant={p} />
+                  ) : (
+                    <Avatar className="h-20 w-20">
+                      <AvatarFallback className="text-2xl bg-gray-700 text-gray-300">
+                        {getInitials(p.user.firstName, p.user.lastName)}
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
+                  <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
+                    {p.user.firstName} {p.user.lastName}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-3 flex justify-end">
@@ -316,5 +542,31 @@ export function VideoCallOverlay({
         </Button>
       </div>
     </div>
+  );
+}
+
+function RemoteVideo({
+  stream,
+  participant,
+}: {
+  stream: MediaStream;
+  participant: { user: { firstName: string; lastName: string } };
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      className="w-full h-full object-cover"
+      data-testid="video-remote-feed"
+    />
   );
 }

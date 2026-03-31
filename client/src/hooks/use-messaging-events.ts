@@ -250,6 +250,7 @@ export function useMessagingEvents(
       try {
         const data = JSON.parse(e.data) as CallStartedEvent;
         callHandlerRef.current?.onCallStarted?.(data);
+        window.dispatchEvent(new CustomEvent("global-call-started", { detail: { call: data.call } }));
       } catch {}
     };
 
@@ -271,6 +272,7 @@ export function useMessagingEvents(
       try {
         const data = JSON.parse(e.data) as CallEndedEvent;
         callHandlerRef.current?.onCallEnded?.(data);
+        window.dispatchEvent(new CustomEvent("global-call-ended", { detail: { callId: data.callId } }));
       } catch {}
     };
 

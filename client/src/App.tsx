@@ -23,6 +23,8 @@ import RegisterPage from "@/pages/register";
 const AIAssistantWidget = lazy(() => import("@/components/AIAssistantWidget"));
 const MessagingWidget = lazy(() => import("@/components/MessagingWidget"));
 import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
+import { GlobalIncomingCallModal } from "@/components/GlobalIncomingCallModal";
+import { useGlobalCallEvents } from "@/hooks/use-global-call-events";
 import { TourProvider } from "@/components/TourProvider";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
@@ -512,6 +514,19 @@ function AuthGatedWidget() {
   );
 }
 
+function GlobalCallModalWrapper() {
+  const { incomingCall, conversationName, acceptCall, declineCall } = useGlobalCallEvents();
+  if (!incomingCall) return null;
+  return (
+    <GlobalIncomingCallModal
+      call={incomingCall}
+      conversationName={conversationName}
+      onAccept={acceptCall}
+      onDecline={declineCall}
+    />
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -523,6 +538,7 @@ function App() {
               <AppContent />
               <FirstTimeWelcomeModal />
               <AuthGatedWidget />
+              <GlobalCallModalWrapper />
             </TooltipProvider>
           </DashboardCustomizationProvider>
         </TourProvider>

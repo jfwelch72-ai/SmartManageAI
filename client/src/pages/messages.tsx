@@ -48,6 +48,42 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     }
   }, [searchString]);
 
+  useEffect(() => {
+    const win = window as unknown as Record<string, unknown>;
+    const pending = win.__pendingCallAccept as { conversationId: string; callId: string } | undefined;
+    if (pending) {
+      delete win.__pendingCallAccept;
+      setSelectedConversationId(pending.conversationId);
+      fetch(`/api/conversations/${pending.conversationId}/active-call`, { credentials: "include" })
+        .then(res => res.ok ? res.json() : null)
+        .then((callData: VideoCallData | null) => {
+          if (callData) setActiveCall(callData);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleSelectConversation = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.conversationId) {
+        setSelectedConversationId(detail.conversationId);
+        if (detail.callId) {
+          fetch(`/api/conversations/${detail.conversationId}/active-call`, { credentials: "include" })
+            .then(res => res.ok ? res.json() : null)
+            .then((callData: VideoCallData | null) => {
+              if (callData) {
+                setActiveCall(callData);
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    };
+    window.addEventListener("select-conversation", handleSelectConversation);
+    return () => window.removeEventListener("select-conversation", handleSelectConversation);
+  }, []);
+
   // ── Message composer state ──
   const [messageInput, setMessageInput] = useState("");
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -758,18 +794,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   return (
     <TooltipProvider>
       <div data-testid="team-messages-content">
-        {incomingCall && !activeCall && (() => {
-          const callConv = conversations.find(c => c.id === incomingCall.conversationId);
-          const convName = callConv ? getConversationName(callConv) : "Unknown conversation";
-          return (
-            <IncomingCallBanner
-              call={incomingCall}
-              conversationName={convName}
-              onAccept={handleAcceptCall}
-              onDecline={handleDeclineCall}
-            />
-          );
-        })()}
+        {}
         <Card className={compact ? "h-full border-0 shadow-none" : "h-[calc(100vh-280px)] min-h-[500px]"}>
           <div className="flex h-full">
             {/* ── SIDEBAR ── */}
