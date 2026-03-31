@@ -9,24 +9,19 @@ interface SseClient {
 
 /**
  * Registry of active SSE connections keyed by userId.
- * Each user may have multiple concurrent connections (e.g. messages page + global call listener).
- * Events are broadcast to all connections for that user.
+ * Using a Map allows O(1) per-user lookup and easy per-user lifecycle management.
+ * Multiple tabs for the same user will overwrite the previous entry (last-write-wins),
+ * which is acceptable since EventSource auto-reconnects on close.
  */
-const clients = new Map<string, Set<SseClient>>();
+const clients = new Map<string, SseClient>();
 
 export function registerSseClient(userId: string, orgId: string, res: Response): () => void {
   const client: SseClient = { userId, orgId, res };
-  if (!clients.has(userId)) {
-    clients.set(userId, new Set());
-  }
-  clients.get(userId)!.add(client);
+  clients.set(userId, client);
   return () => {
-    const userClients = clients.get(userId);
-    if (userClients) {
-      userClients.delete(client);
-      if (userClients.size === 0) {
-        clients.delete(userId);
-      }
+    // Only remove if this is still the registered client for this user
+    if (clients.get(userId) === client) {
+      clients.delete(userId);
     }
   };
 }
@@ -36,23 +31,7 @@ function sendEvent(client: SseClient, event: string, data: unknown): void {
     client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   } catch {
     logWarn("Non-critical operation failed");
-    const userClients = clients.get(client.userId);
-    if (userClients) {
-      userClients.delete(client);
-      if (userClients.size === 0) {
-        clients.delete(client.userId);
-      }
-    }
-  }
-}
-
-function sendToUser(userId: string, orgId: string, event: string, data: unknown): void {
-  const userClients = clients.get(userId);
-  if (!userClients) return;
-  for (const client of userClients) {
-    if (client.orgId === orgId) {
-      sendEvent(client, event, data);
-    }
+    clients.delete(client.userId);
   }
 }
 
@@ -68,10 +47,17 @@ export function emitMessageNew(
   message: unknown,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "message_new", { conversationId, message });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "message_new", { conversationId, message });
+    }
   }
 }
 
+/**
+ * Emit a message edited event.
+ * Only delivered to participants of the conversation.
+ */
 export function emitMessageEdited(
   orgId: string,
   conversationId: string,
@@ -79,10 +65,17 @@ export function emitMessageEdited(
   message: unknown,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "message_edited", { conversationId, message });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "message_edited", { conversationId, message });
+    }
   }
 }
 
+/**
+ * Emit a message deleted event.
+ * Only delivered to participants of the conversation.
+ */
 export function emitMessageDeleted(
   orgId: string,
   conversationId: string,
@@ -90,10 +83,17 @@ export function emitMessageDeleted(
   messageId: string,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "message_deleted", { conversationId, messageId });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "message_deleted", { conversationId, messageId });
+    }
   }
 }
 
+/**
+ * Emit a reaction update event for a single message.
+ * Only delivered to participants of the conversation.
+ */
 export function emitMessageReaction(
   orgId: string,
   conversationId: string,
@@ -102,10 +102,18 @@ export function emitMessageReaction(
   reactions: unknown,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "message_reaction", { conversationId, messageId, reactions });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "message_reaction", { conversationId, messageId, reactions });
+    }
   }
 }
 
+/**
+ * Emit a typing indicator event.
+ * Only delivered to other participants of the conversation (excludes the sender).
+ * Caller must verify `senderUserId` is a participant before calling.
+ */
 export function emitTyping(
   orgId: string,
   conversationId: string,
@@ -116,7 +124,10 @@ export function emitTyping(
 ): void {
   for (const uid of participantUserIds) {
     if (uid === senderUserId) continue;
-    sendToUser(uid, orgId, "user_typing", { conversationId, userId: senderUserId, firstName, lastName });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "user_typing", { conversationId, userId: senderUserId, firstName, lastName });
+    }
   }
 }
 
@@ -127,7 +138,10 @@ export function emitCallStarted(
   call: unknown,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "call_started", { conversationId, call });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_started", { conversationId, call });
+    }
   }
 }
 
@@ -140,7 +154,10 @@ export function emitCallJoined(
   userName: string,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "call_joined", { conversationId, callId, userId, userName });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_joined", { conversationId, callId, userId, userName });
+    }
   }
 }
 
@@ -152,7 +169,10 @@ export function emitCallLeft(
   userId: string,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "call_left", { conversationId, callId, userId });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_left", { conversationId, callId, userId });
+    }
   }
 }
 
@@ -163,7 +183,10 @@ export function emitCallEnded(
   callId: string,
 ): void {
   for (const uid of participantUserIds) {
-    sendToUser(uid, orgId, "call_ended", { conversationId, callId });
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_ended", { conversationId, callId });
+    }
   }
 }
 
@@ -172,5 +195,8 @@ export function emitWebRTCSignal(
   targetUserId: string,
   signal: unknown,
 ): void {
-  sendToUser(targetUserId, orgId, "webrtc_signal", signal);
+  const client = clients.get(targetUserId);
+  if (client && client.orgId === orgId) {
+    sendEvent(client, "webrtc_signal", signal);
+  }
 }

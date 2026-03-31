@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMessagingEvents, type CallEventHandler } from "@/hooks/use-messaging-events";
-import { getPendingAcceptedCall, clearPendingAcceptedCall, clearGlobalIncomingCall } from "@/hooks/use-global-call-events";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -170,7 +169,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
         return next;
       });
       setConversationActiveCalls(prev => ({ ...prev, [data.call.conversationId]: data.call }));
-      clearGlobalIncomingCall();
       if (activeCallRef.current) return;
       if (data.call.initiatorId === user?.id) {
         setActiveCall(data.call);
@@ -244,28 +242,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   }), [user?.id]);
 
   const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessage, callEventHandler);
-
-  useEffect(() => {
-    const pending = getPendingAcceptedCall();
-    if (pending) {
-      clearPendingAcceptedCall();
-      setSelectedConversationId(pending.conversationId);
-      fetch(`/api/conversations/${pending.conversationId}/active-call`, { credentials: "include" })
-        .then(res => res.ok ? res.json() : null)
-        .then((callData: VideoCallData | null) => {
-          if (callData) {
-            setActiveCall(callData);
-            setActiveCallConversationIds(prev => {
-              const next = new Set(prev);
-              next.add(pending.conversationId);
-              return next;
-            });
-            setConversationActiveCalls(prev => ({ ...prev, [pending.conversationId]: callData }));
-          }
-        })
-        .catch(() => {});
-    }
-  }, []);
 
   // ── Pagination state ──
   const [olderMessages, setOlderMessages] = useState<Message[]>([]);
@@ -691,7 +667,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       const fullCallData = await res.json();
       setActiveCall(fullCallData);
       setIncomingCall(null);
-      clearGlobalIncomingCall();
     } catch (err) {
       console.error("Failed to join call:", err);
     }
@@ -699,7 +674,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
 
   const handleDeclineCall = () => {
     setIncomingCall(null);
-    clearGlobalIncomingCall();
   };
 
   const handleJoinOngoingCall = async (callData: VideoCallData) => {

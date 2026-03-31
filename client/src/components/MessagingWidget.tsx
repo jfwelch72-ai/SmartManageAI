@@ -52,12 +52,11 @@ export function MessagingWidget() {
   }, [isMinimized]);
 
   useEffect(() => {
-    const teamActive = isOpen && !isMinimized && activeTab === "team";
-    window.dispatchEvent(new CustomEvent("messaging-widget-state", { detail: { isOpen, teamActive } }));
+    window.dispatchEvent(new CustomEvent("messaging-widget-state", { detail: { isOpen } }));
     return () => {
-      window.dispatchEvent(new CustomEvent("messaging-widget-state", { detail: { isOpen: false, teamActive: false } }));
+      window.dispatchEvent(new CustomEvent("messaging-widget-state", { detail: { isOpen: false } }));
     };
-  }, [isOpen, isMinimized, activeTab]);
+  }, [isOpen]);
 
   if (!user) return null;
 
