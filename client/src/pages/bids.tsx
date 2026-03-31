@@ -1252,7 +1252,7 @@ export default function BidsPage() {
                 <Label className="text-sm font-medium">Project Name</Label>
                 <Input
                   placeholder="e.g., Downtown Office Renovation"
-                  value={form.getValues("name")}
+                  value={form.watch("name")}
                   onChange={(e) => form.setValue("name", e.target.value)}
                   data-testid="input-project-name-step1"
                 />
