@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video } from "lucide-react";
 import { SidebarSection } from "./SidebarSection";
 import { getInitials, type User, type Channel, type Conversation, type ChannelRow } from "./types";
@@ -198,6 +199,21 @@ export function Sidebar({
             >
               <Building2 className="w-4 h-4 text-primary shrink-0" />
               <span className="flex-1 truncate">Company Chat</span>
+              {activeCallConversationIds.has(companyConversation.id) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onSelectConversation(companyConversation.id); }}
+                      className="shrink-0"
+                      data-testid={`call-indicator-${companyConversation.id}`}
+                    >
+                      <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Ongoing call — click to join</TooltipContent>
+                </Tooltip>
+              )}
               {companyConversation.unreadCount > 0 && (
                 <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{companyConversation.unreadCount}</Badge>
               )}
@@ -301,7 +317,19 @@ export function Sidebar({
                 <span className="flex-1 truncate">{c.name}</span>
                 <EntityBadge conversation={c} />
                 {activeCallConversationIds.has(c.id) && (
-                  <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
+                        className="shrink-0"
+                        data-testid={`call-indicator-${c.id}`}
+                      >
+                        <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Ongoing call — click to join</TooltipContent>
+                  </Tooltip>
                 )}
                 {c.unreadCount > 0 && (
                   <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
@@ -343,7 +371,19 @@ export function Sidebar({
                     {!unjoined && <EntityBadge conversation={c as Conversation} />}
                     {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
                     {!unjoined && activeCallConversationIds.has(c.id) && (
-                      <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
+                            className="shrink-0"
+                            data-testid={`call-indicator-${c.id}`}
+                          >
+                            <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Ongoing call — click to join</TooltipContent>
+                      </Tooltip>
                     )}
                     {!unjoined && (c as Conversation).unreadCount > 0 && (
                       <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
@@ -375,7 +415,19 @@ export function Sidebar({
                     {!unjoined && <EntityBadge conversation={c as Conversation} />}
                     {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
                     {!unjoined && activeCallConversationIds.has(c.id) && (
-                      <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
+                            className="shrink-0"
+                            data-testid={`call-indicator-${c.id}`}
+                          >
+                            <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Ongoing call — click to join</TooltipContent>
+                      </Tooltip>
                     )}
                     {!unjoined && (c as Conversation).unreadCount > 0 && (
                       <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
@@ -456,7 +508,19 @@ export function Sidebar({
                     {other ? `${other.user.firstName} ${other.user.lastName}` : "Unknown"}
                   </span>
                   {activeCallConversationIds.has(c.id) && (
-                    <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onSelectConversation(c.id); }}
+                          className="shrink-0"
+                          data-testid={`call-indicator-${c.id}`}
+                        >
+                          <Video className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Ongoing call — click to join</TooltipContent>
+                    </Tooltip>
                   )}
                   {c.unreadCount > 0 && (
                     <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>

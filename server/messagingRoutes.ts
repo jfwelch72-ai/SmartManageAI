@@ -2879,6 +2879,55 @@ const messagingSetup = (async () => {
     }
   });
 
+  router.get("/api/conversations/active-calls", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+
+      const userConvs = await db
+        .select({ conversationId: conversationParticipants.conversationId })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.userId, userId));
+
+      if (userConvs.length === 0) return res.json([]);
+
+      const convIds = userConvs.map(c => c.conversationId);
+
+      const activeCalls = await db.select().from(videoCalls)
+        .where(and(
+          sql`${videoCalls.conversationId} IN (${sql.join(convIds.map(id => sql`${id}`), sql`, `)})`,
+          sql`${videoCalls.status} IN ('RINGING', 'ACTIVE')`
+        ));
+
+      if (activeCalls.length === 0) return res.json([]);
+
+      const callsWithDetails = await Promise.all(activeCalls.map(async (call) => {
+        const participantsData = await db
+          .select({
+            participant: videoCallParticipants,
+            user: { id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role },
+          })
+          .from(videoCallParticipants)
+          .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+          .where(and(eq(videoCallParticipants.callId, call.id), sql`${videoCallParticipants.leftAt} IS NULL`));
+
+        const initiatorData = await db.select({
+          id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role,
+        }).from(users).where(eq(users.id, call.initiatorId)).limit(1);
+
+        return {
+          ...call,
+          initiator: initiatorData[0],
+          participants: participantsData.map(p => ({ ...p.participant, user: p.user })),
+        };
+      }));
+
+      res.json(callsWithDetails);
+    } catch (error) {
+      logError("Get active calls error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   router.get("/api/conversations/:id/active-call", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;

@@ -19,6 +19,7 @@ import { Sidebar } from "@/components/messaging/Sidebar";
 import { MessageList } from "@/components/messaging/MessageList";
 import { VideoCallOverlay } from "@/components/messaging/VideoCallOverlay";
 import { IncomingCallBanner } from "@/components/messaging/IncomingCallBanner";
+import { OngoingCallBanner } from "@/components/messaging/OngoingCallBanner";
 import { CallHistory } from "@/components/messaging/CallHistory";
 import {
   type User,
@@ -89,19 +90,58 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
   useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
 
-  // ── Hydrate active call when selecting a conversation ──
+  const [conversationActiveCalls, setConversationActiveCalls] = useState<Record<string, VideoCallData>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/conversations/active-calls", { credentials: "include" })
+      .then(res => res.ok ? res.json() : [])
+      .then((calls: VideoCallData[]) => {
+        if (cancelled) return;
+        if (!calls.length) {
+          setActiveCallConversationIds(new Set());
+          setConversationActiveCalls({});
+          return;
+        }
+        const ids = new Set<string>();
+        const callMap: Record<string, VideoCallData> = {};
+        for (const callData of calls) {
+          ids.add(callData.conversationId);
+          callMap[callData.conversationId] = callData;
+          if (!activeCallRef.current && !incomingCallRef.current) {
+            if (callData.initiatorId === user?.id || callData.participants.some(p => p.userId === user?.id)) {
+              setActiveCall(callData);
+            } else if (callData.status === "RINGING") {
+              setIncomingCall(callData);
+            }
+          }
+        }
+        setActiveCallConversationIds(ids);
+        setConversationActiveCalls(callMap);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   useEffect(() => {
     if (!selectedConversationId) return;
     let cancelled = false;
     fetch(`/api/conversations/${selectedConversationId}/active-call`, { credentials: "include" })
       .then(res => res.ok ? res.json() : null)
       .then((callData: VideoCallData | null) => {
-        if (cancelled || !callData) return;
+        if (cancelled) return;
+        if (!callData) {
+          setConversationActiveCalls(prev => {
+            const next = { ...prev };
+            delete next[selectedConversationId];
+            return next;
+          });
+          return;
+        }
         if (activeCall?.id === callData.id) return;
+        setConversationActiveCalls(prev => ({ ...prev, [callData.conversationId]: callData }));
         if (callData.initiatorId === user?.id || callData.participants.some(p => p.userId === user?.id)) {
           setActiveCall(callData);
-        } else {
-          setIncomingCall(callData);
         }
         setActiveCallConversationIds(prev => {
           const next = new Set(prev);
@@ -128,6 +168,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
         next.add(data.call.conversationId);
         return next;
       });
+      setConversationActiveCalls(prev => ({ ...prev, [data.call.conversationId]: data.call }));
       if (activeCallRef.current) return;
       if (data.call.initiatorId === user?.id) {
         setActiveCall(data.call);
@@ -136,6 +177,14 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       }
     },
     onCallJoined: (data) => {
+      const newParticipant = {
+        id: "",
+        callId: data.callId,
+        userId: data.userId,
+        joinedAt: new Date().toISOString(),
+        leftAt: null,
+        user: { id: data.userId, firstName: data.userName.split(" ")[0] || "", lastName: data.userName.split(" ").slice(1).join(" ") || "", role: "" },
+      };
       setActiveCall(prev => {
         if (!prev || prev.id !== data.callId) return prev;
         const alreadyIn = prev.participants.some(p => p.userId === data.userId);
@@ -143,15 +192,16 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
         return {
           ...prev,
           status: "ACTIVE",
-          participants: [...prev.participants, {
-            id: "",
-            callId: data.callId,
-            userId: data.userId,
-            joinedAt: new Date().toISOString(),
-            leftAt: null,
-            user: { id: data.userId, firstName: data.userName.split(" ")[0] || "", lastName: data.userName.split(" ").slice(1).join(" ") || "", role: "" },
-          }],
+          participants: [...prev.participants, newParticipant],
         };
+      });
+      setConversationActiveCalls(prev => {
+        const convId = data.conversationId;
+        const existing = prev[convId];
+        if (!existing || existing.id !== data.callId) return prev;
+        const alreadyIn = existing.participants.some(p => p.userId === data.userId);
+        if (alreadyIn) return prev;
+        return { ...prev, [convId]: { ...existing, status: "ACTIVE", participants: [...existing.participants, newParticipant] } };
       });
     },
     onCallLeft: (data) => {
@@ -162,11 +212,22 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
           participants: prev.participants.filter(p => p.userId !== data.userId),
         };
       });
+      setConversationActiveCalls(prev => {
+        const convId = data.conversationId;
+        const existing = prev[convId];
+        if (!existing || existing.id !== data.callId) return prev;
+        return { ...prev, [convId]: { ...existing, participants: existing.participants.filter(p => p.userId !== data.userId) } };
+      });
     },
     onCallEnded: (data) => {
       setActiveCallConversationIds(prev => {
         const next = new Set(prev);
         next.delete(data.conversationId);
+        return next;
+      });
+      setConversationActiveCalls(prev => {
+        const next = { ...prev };
+        delete next[data.conversationId];
         return next;
       });
       if (activeCallRef.current?.id === data.callId) {
@@ -599,6 +660,9 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   const handleAcceptCall = async () => {
     if (!incomingCall) return;
     try {
+      if (incomingCall.conversationId !== selectedConversationId) {
+        setSelectedConversationId(incomingCall.conversationId);
+      }
       const res = await apiRequest("POST", `/api/calls/${incomingCall.id}/join`);
       const fullCallData = await res.json();
       setActiveCall(fullCallData);
@@ -610,6 +674,19 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
 
   const handleDeclineCall = () => {
     setIncomingCall(null);
+  };
+
+  const handleJoinOngoingCall = async (callData: VideoCallData) => {
+    if (callData.conversationId !== selectedConversationId) {
+      setSelectedConversationId(callData.conversationId);
+    }
+    try {
+      const res = await apiRequest("POST", `/api/calls/${callData.id}/join`);
+      const fullCallData = await res.json();
+      setActiveCall(fullCallData);
+    } catch (err) {
+      console.error("Failed to join call:", err);
+    }
   };
 
   const handleEndCall = async () => {
@@ -681,6 +758,18 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   return (
     <TooltipProvider>
       <div data-testid="team-messages-content">
+        {incomingCall && !activeCall && (() => {
+          const callConv = conversations.find(c => c.id === incomingCall.conversationId);
+          const convName = callConv ? getConversationName(callConv) : "Unknown conversation";
+          return (
+            <IncomingCallBanner
+              call={incomingCall}
+              conversationName={convName}
+              onAccept={handleAcceptCall}
+              onDecline={handleDeclineCall}
+            />
+          );
+        })()}
         <Card className={compact ? "h-full border-0 shadow-none" : "h-[calc(100vh-280px)] min-h-[500px]"}>
           <div className="flex h-full">
             {/* ── SIDEBAR ── */}
@@ -854,12 +943,14 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                   </div>
                 </div>
 
-                {incomingCall && incomingCall.conversationId === selectedConversationId && (
-                  <IncomingCallBanner
-                    call={incomingCall}
-                    conversationName={getConversationName(selectedConversation)}
-                    onAccept={handleAcceptCall}
-                    onDecline={handleDeclineCall}
+                {selectedConversationId && !activeCall && selectedConversation?.type !== "DIRECT" &&
+                  conversationActiveCalls[selectedConversationId] &&
+                  !conversationActiveCalls[selectedConversationId].participants.some(p => p.userId === user?.id) &&
+                  conversationActiveCalls[selectedConversationId].status === "ACTIVE" &&
+                  incomingCall?.conversationId !== selectedConversationId && (
+                  <OngoingCallBanner
+                    call={conversationActiveCalls[selectedConversationId]}
+                    onJoin={() => handleJoinOngoingCall(conversationActiveCalls[selectedConversationId])}
                   />
                 )}
 
