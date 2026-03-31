@@ -1093,6 +1093,7 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
             message: `Your bid for "${request.title}" has been awarded. Congratulations!`,
             relatedEntityId: request.id,
             relatedEntityType: "bid_request",
+            organizationId: response.respondingOrganizationId,
           }));
 
           await insertNotifications(notificationValues);

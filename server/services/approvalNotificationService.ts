@@ -19,13 +19,15 @@ interface NotificationParams {
 
 export async function notifyUsers(
   userIds: string[],
-  params: NotificationParams
+  params: NotificationParams,
+  organizationId?: string
 ): Promise<void> {
   if (userIds.length === 0) return;
 
   try {
     const records = userIds.map(userId => ({
       userId,
+      organizationId: organizationId || null,
       type: params.type,
       title: params.title,
       message: params.message,
@@ -89,12 +91,13 @@ export async function notifyApprovers(
   roles?: readonly string[]
 ): Promise<void> {
   const approverIds = await getApproverUserIds(organizationId, excludeUserId, roles);
-  await notifyUsers(approverIds, params);
+  await notifyUsers(approverIds, params, organizationId);
 }
 
 export async function notifySubmitter(
   submitterUserId: string,
-  params: NotificationParams
+  params: NotificationParams,
+  organizationId?: string
 ): Promise<void> {
-  await notifyUsers([submitterUserId], params);
+  await notifyUsers([submitterUserId], params, organizationId);
 }

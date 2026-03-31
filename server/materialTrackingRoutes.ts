@@ -184,6 +184,7 @@ router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: 
               for (const manager of managers) {
                 await insertNotification({
                   userId: manager.id,
+                  organizationId: project.gcOrganizationId || orgId,
                   type: "MATERIAL_OVERAGE",
                   title: "Material Budget Alert",
                   message: `${budget.description} on project ${project.name} (${project.code}) has reached ${variancePercent.toFixed(1)}% of budgeted quantity. Consider a change order.`,

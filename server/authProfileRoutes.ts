@@ -1331,6 +1331,7 @@ const upload = multer({
 
         await insertNotification({
           userId: manager.id,
+          organizationId: orgId,
           type: "GENERAL",
           title: "Skill Verification Request",
           message: `${userName} has requested verification for skill: ${skillName}`,
@@ -1445,6 +1446,7 @@ const upload = multer({
       const verifierName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim();
       await insertNotification({
         userId: request.requestedByUserId,
+        organizationId: orgId,
         type: "GENERAL",
         title: `Skill Verification ${parsed.data.action === "approve" ? "Approved" : "Rejected"}`,
         message: `Your skill "${skillInfo?.name || "Unknown"}" has been ${parsed.data.action === "approve" ? "approved" : "rejected"} by ${verifierName}`,

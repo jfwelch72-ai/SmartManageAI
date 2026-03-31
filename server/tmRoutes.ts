@@ -143,7 +143,7 @@ function registerTMApprovalRoutes(app: Express) {
           message: `T&M Ticket ${ticket.ticketNumber} has been approved`,
           relatedEntityId: ticket.projectId || ticketId,
           relatedEntityType: "project",
-        });
+        }, req.user?.organizationId);
       }
 
       if (ticket.projectId) {
@@ -228,7 +228,7 @@ function registerTMApprovalRoutes(app: Express) {
           message: `T&M Ticket ${ticket.ticketNumber} has been rejected${reason ? `: ${reason}` : ""}`,
           relatedEntityId: ticket.projectId || ticketId,
           relatedEntityType: "project",
-        });
+        }, req.user?.organizationId);
       }
       
       res.json(updatedTicket);

@@ -1743,6 +1743,7 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
         if (inAppEnabled) {
           await insertNotification({
             userId: assigneeId,
+            organizationId: updated.organizationId,
             type: "CRM_STAGE_CHANGE",
             title: "Pipeline stage updated",
             message: `"${updated.name}" moved to ${STAGE_LABELS[updated.stage] ?? updated.stage}`,

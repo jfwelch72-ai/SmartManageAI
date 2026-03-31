@@ -710,6 +710,7 @@ router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requ
               message: `Pay application #${payApp.applicationNumber} for contract ${contract.contractNumber} has been ${status.toLowerCase().replace('_', ' ')}`,
               relatedEntityId: contractId,
               relatedEntityType: "subcontract" as const,
+              organizationId: project.gcOrganizationId,
             })));
           }
         }
@@ -1374,6 +1375,7 @@ router.post("/portal/subcontracts/:contractId/pay-applications", requirePortalAu
             message: `Subcontractor submitted pay application #${nextAppNumber} for contract ${contract.contractNumber}. Review required.`,
             relatedEntityId: contractId,
             relatedEntityType: "subcontract" as const,
+            organizationId: project.gcOrganizationId,
           })));
         }
       }

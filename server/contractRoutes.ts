@@ -522,6 +522,7 @@ router.post("/api/contracts/:id/request-approval", requireAuth, async (req: Auth
 
       await insertNotification({
         userId: reviewerId,
+        organizationId: orgId,
         type: "APPROVAL_REQUEST_NEW",
         title: "Contract Review Requested",
         message: `Contract ${existing.contractNumber} requires your review and approval.`,

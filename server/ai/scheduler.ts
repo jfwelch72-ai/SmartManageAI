@@ -119,7 +119,7 @@ async function checkStaleChangeOrders() {
   
   // Get admins and managers for notifications
   const adminsAndManagers = await db
-    .select({ id: users.id, role: users.role })
+    .select({ id: users.id, role: users.role, organizationId: users.organizationId })
     .from(users)
     .where(sql`${users.role} IN ('ADMIN', 'MANAGER') AND ${users.isActive} = true`);
   
@@ -187,6 +187,7 @@ async function checkStaleChangeOrders() {
     
     notificationsToCreate.push({
       userId: manager.id,
+      organizationId: manager.organizationId || null,
       type: 'AI_ALERT' as const,
       title: safeTitle,
       message: safeMessage,

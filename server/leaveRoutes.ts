@@ -356,6 +356,7 @@ router.post("/api/leave/requests", requireAuth, async (req: AuthRequest, res) =>
       await insertNotifications(
         adminsAndManagers.map((u) => ({
           userId: u.id,
+          organizationId: orgId,
           type: "TIME_OFF_REQUEST" as const,
           title: "Leave Request Submitted",
           message: `${req.user!.firstName} ${req.user!.lastName} requested ${leaveType.name} leave from ${parsed.data.startDate} to ${parsed.data.endDate}`,
@@ -423,6 +424,7 @@ router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN",
 
     await insertNotification({
       userId: request.employeeId,
+      organizationId: orgId,
       type: "LEAVE_APPROVED" as const,
       title: "Leave Request Approved",
       message: `Your ${leaveType?.name || "leave"} request (${request.startDate} to ${request.endDate}) has been approved${note ? `: ${note}` : ""}`,
@@ -490,6 +492,7 @@ router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "M
 
     await insertNotification({
       userId: request.employeeId,
+      organizationId: orgId,
       type: "LEAVE_DENIED" as const,
       title: `Leave Request ${actionLabel}`,
       message: `Your ${leaveType?.name || "leave"} request (${request.startDate} to ${request.endDate}) has been ${actionLabel.toLowerCase()}${note ? `: ${note}` : ""}`,

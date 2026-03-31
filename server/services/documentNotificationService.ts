@@ -22,6 +22,7 @@ export async function notifyDocumentEvent(
   try {
     const notificationValues = uniqueRecipients.map(userId => ({
       userId,
+      organizationId: orgId || null,
       type: "GENERAL" as const,
       title: `${type}: ${eventDescription}`,
       message: entityLabel

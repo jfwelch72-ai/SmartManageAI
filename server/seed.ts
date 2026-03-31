@@ -377,6 +377,7 @@ async function seed() {
       relatedEntityId: libraryProject.id,
       relatedEntityType: "project",
       isRead: false,
+      organizationId: demoOrg.id,
     },
     {
       userId: manager.id,
@@ -386,6 +387,7 @@ async function seed() {
       relatedEntityId: retailProject.id,
       relatedEntityType: "project",
       isRead: false,
+      organizationId: demoOrg.id,
     },
     {
       userId: manager.id,
@@ -393,6 +395,7 @@ async function seed() {
       title: "Time Off Request",
       message: "Mike Johnson requested vacation Dec 23-27, 2024",
       isRead: false,
+      organizationId: demoOrg.id,
     },
   ]);
 

@@ -341,6 +341,7 @@ export async function checkAndNotifyWeeklyReport(
       for (const admin of adminUsers) {
         await insertNotification({
           userId: admin.id,
+          organizationId,
           type: "GENERAL",
           title: "Weekly Payroll Report Ready",
           message: `Weekly payroll report ready: ${weekStartStr} to ${weekEndStr}. Total: ${(totalRegularHours + totalOvertimeHours).toFixed(2)} hours (${totalOvertimeHours.toFixed(2)} OT) across ${totalEmployees} employees. All shifts approved.`,

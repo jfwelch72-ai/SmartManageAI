@@ -51,16 +51,21 @@ import { Router } from "express";
 import { db } from "./db";
 import { notifications } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 const router = Router();
 
 router.get("/api/notifications", requireAuth, async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
+    const conditions = orgId
+      ? and(eq(notifications.userId, req.user!.id), eq(notifications.organizationId, orgId))
+      : and(eq(notifications.userId, req.user!.id), sql`${notifications.organizationId} IS NULL`);
+
     const userNotifications = await db
       .select()
       .from(notifications)
-      .where(eq(notifications.userId, req.user!.id))
+      .where(conditions)
       .orderBy(desc(notifications.createdAt))
       .limit(50);
 
@@ -73,10 +78,13 @@ router.get("/api/notifications", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/api/notifications/unread-count", requireAuth, async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
+    const orgFilter = orgId ? sql` AND ${notifications.organizationId} = ${orgId}` : sql` AND ${notifications.organizationId} IS NULL`;
+
     const [result] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
-      .where(sql`${notifications.userId} = ${req.user!.id} AND ${notifications.isRead} = false`);
+      .where(sql`${notifications.userId} = ${req.user!.id} AND ${notifications.isRead} = false${orgFilter}`);
 
     res.json({ count: result.count });
   } catch (error) {
@@ -87,10 +95,13 @@ router.get("/api/notifications/unread-count", requireAuth, async (req: AuthReque
 
 router.patch("/api/notifications/:id/read", requireAuth, async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
+    const orgFilter = orgId ? sql` AND ${notifications.organizationId} = ${orgId}` : sql` AND ${notifications.organizationId} IS NULL`;
+
     const [notification] = await db
       .update(notifications)
       .set({ isRead: true })
-      .where(sql`${notifications.id} = ${req.params.id} AND ${notifications.userId} = ${req.user!.id}`)
+      .where(sql`${notifications.id} = ${req.params.id} AND ${notifications.userId} = ${req.user!.id}${orgFilter}`)
       .returning();
 
     if (!notification) {
@@ -107,10 +118,15 @@ router.patch("/api/notifications/:id/read", requireAuth, async (req: AuthRequest
 
 router.post("/api/notifications/read-all", requireAuth, async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
+    const conditions = orgId
+      ? and(eq(notifications.userId, req.user!.id), eq(notifications.organizationId, orgId))
+      : and(eq(notifications.userId, req.user!.id), sql`${notifications.organizationId} IS NULL`);
+
     await db
       .update(notifications)
       .set({ isRead: true })
-      .where(eq(notifications.userId, req.user!.id));
+      .where(conditions);
 
     res.json({ success: true });
   } catch (error: any) {

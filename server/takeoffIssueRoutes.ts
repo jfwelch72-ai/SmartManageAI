@@ -169,6 +169,7 @@ router.post("/api/takeoff/issues", requireAuth, async (req: AuthRequest, res, ne
     if (assigneeId && assigneeId !== user.id) {
       await insertNotification({
         userId: assigneeId,
+        organizationId: user.organizationId,
         type: "TAKEOFF_ISSUE_ASSIGNED" as any,
         title: "Issue Assigned to You",
         message: `You have been assigned Issue #${nextNumber} on a takeoff sheet.`,
@@ -234,6 +235,7 @@ router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReques
     if (status !== undefined && status !== existingIssue.status) {
       await insertNotification({
         userId: existingIssue.createdById,
+        organizationId: user.organizationId,
         type: "TAKEOFF_ISSUE_STATUS_CHANGED" as any,
         title: "Issue Status Updated",
         message: `Issue #${existingIssue.issueNumber} status changed to ${status}.`,
@@ -245,6 +247,7 @@ router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReques
     if (assigneeId !== undefined && assigneeId && assigneeId !== existingIssue.assigneeId && assigneeId !== user.id) {
       await insertNotification({
         userId: assigneeId,
+        organizationId: user.organizationId,
         type: "TAKEOFF_ISSUE_ASSIGNED" as any,
         title: "Issue Assigned to You",
         message: `You have been assigned Issue #${existingIssue.issueNumber} on a takeoff sheet.`,

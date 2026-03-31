@@ -66,7 +66,7 @@ router.post("/:id/approve", requireAuth, async (req: AuthRequest, res) => {
         message: `Your ${entityLabel} has been approved${req.body.notes ? `: ${req.body.notes}` : ""}`,
         relatedEntityId: result.entityId || req.params.id,
         relatedEntityType: result.entityType || "approval",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json(result);
@@ -93,7 +93,7 @@ router.post("/:id/reject", requireAuth, async (req: AuthRequest, res) => {
         message: `Your ${entityLabel} has been rejected${req.body.notes ? `: ${req.body.notes}` : ""}`,
         relatedEntityId: result.entityId || req.params.id,
         relatedEntityType: result.entityType || "approval",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json(result);

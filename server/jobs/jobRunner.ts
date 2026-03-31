@@ -498,8 +498,10 @@ async function notifyPostOwnerOfFailure(
     if (!post.createdById) return;
     const postLabel = post.title || post.content.substring(0, 50);
     const platformLabel = post.platform || "Unknown";
+    const [owner] = await db.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, post.createdById)).limit(1);
     await insertNotification({
       userId: post.createdById,
+      organizationId: owner?.organizationId || null,
       type: "GENERAL",
       title: `Scheduled post failed: ${platformLabel}`,
       message: `Your scheduled ${platformLabel} post "${postLabel}" failed after 3 attempts. Error: ${errorMessage.substring(0, 200)}`,
@@ -640,6 +642,7 @@ async function processComplianceExpirations() {
 
   const notificationValues: Array<{
     userId: string;
+    organizationId: string | null;
     type: "GENERAL";
     title: string;
     message: string;
@@ -669,6 +672,7 @@ async function processComplianceExpirations() {
       for (const userId of recipients) {
         notificationValues.push({
           userId,
+          organizationId: org.organizationId,
           type: "GENERAL",
           title: `Compliance Alert: ${field.type} ${statusLabel}`,
           message: `${org.name} — ${field.type} ${statusLabel}. Please update compliance records.`,
@@ -806,6 +810,7 @@ async function processProfitabilityMonitor() {
         if (alreadyNotifiedUsers.has(u.id)) continue;
         notificationValues.push({
           userId: u.id,
+          organizationId: proj.organizationId || proj.gcOrganizationId || null,
           type: "GENERAL",
           title,
           message,
@@ -928,6 +933,7 @@ async function processIdleOpportunities() {
     const extra = count > 3 ? ` and ${count - 3} more` : "";
     toInsert.push({
       userId: entry.userId,
+      organizationId: entry.orgId || null,
       type: "CRM_IDLE_OPPORTUNITY",
       title: `${count} pipeline deal${count !== 1 ? "s" : ""} need attention`,
       message: `No activity in ${IDLE_DAYS}+ days: ${preview}${extra}. Open the pipeline to follow up.`,

@@ -1242,6 +1242,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       message: `Change order ${newOrder.changeOrderNumber} requires approval`,
       relatedEntityId: newOrder.id,
       relatedEntityType: "changeOrder",
+      organizationId: req.user?.organizationId,
     }));
 
     if (notificationsToCreate.length > 0) {

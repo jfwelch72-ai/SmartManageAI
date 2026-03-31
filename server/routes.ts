@@ -599,7 +599,16 @@ async function checkCertificationExpiry() {
   const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const fiveDaysFromNow = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
 
-  const allCerts = await db.select().from(userCertifications);
+  const allCerts = await db.select({
+    id: userCertifications.id,
+    userId: userCertifications.userId,
+    certificationName: userCertifications.certificationName,
+    expiryDate: userCertifications.expiryDate,
+    status: userCertifications.status,
+    expiryNotified30Days: userCertifications.expiryNotified30Days,
+    expiryNotified5Days: userCertifications.expiryNotified5Days,
+    organizationId: users.organizationId,
+  }).from(userCertifications).innerJoin(users, eq(users.id, userCertifications.userId));
 
   for (const cert of allCerts) {
     if (!cert.expiryDate) continue;
@@ -619,6 +628,7 @@ async function checkCertificationExpiry() {
 
       await insertNotification({
         userId: cert.userId,
+        organizationId: cert.organizationId || null,
         type: "GENERAL",
         title: "Certification Expiring Soon",
         message: `Your certification "${cert.certificationName}" will expire on ${new Date(cert.expiryDate).toLocaleDateString()}. Please renew it.`,
@@ -632,6 +642,7 @@ async function checkCertificationExpiry() {
 
       await insertNotification({
         userId: cert.userId,
+        organizationId: cert.organizationId || null,
         type: "GENERAL",
         title: "Certification Expiring Very Soon",
         message: `Your certification "${cert.certificationName}" will expire in less than 5 days on ${new Date(cert.expiryDate).toLocaleDateString()}. Immediate action is required.`,

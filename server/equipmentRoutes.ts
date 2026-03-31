@@ -3361,6 +3361,7 @@ Please provide:
       for (const recipientId of uniqueRecipientIds) {
         await insertNotification({
           userId: recipientId,
+          organizationId: orgId,
           type: type === 'REPAIR' ? 'REPAIR_REQUEST' : 'MAINTENANCE_REQUEST',
           title: type === 'REPAIR' ? 'New Repair Request' : 'Maintenance Required',
           message,

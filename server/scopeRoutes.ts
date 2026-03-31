@@ -2283,6 +2283,7 @@ router.patch("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER"
         message: `Scope item "${updatedItem.description}" is ready for billing`,
         relatedEntityId: updatedItem.id,
         relatedEntityType: "scopeItem",
+        organizationId: parentProject.gcOrganizationId ?? req.user?.organizationId,
       }));
 
       if (notificationsToCreate.length > 0) {
@@ -2430,6 +2431,7 @@ router.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN",
         message: `Overage on "${scopeItem.description}": ${overageDetails.join(", ")}`,
         relatedEntityId: scopeItem.id,
         relatedEntityType: "scopeItem",
+        organizationId: req.user?.organizationId,
       }));
 
       if (notificationsToCreate.length > 0) {
@@ -2618,6 +2620,7 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
                 message: `"${scopeItem.description}" has reached ${milestone}% completion on project ${project.code || "Unknown"}`,
                 relatedEntityId: project.id,
                 relatedEntityType: "project" as const,
+                organizationId: req.user?.organizationId,
               }))
             );
             await insertNotifications(milestoneNotifs);
@@ -2630,6 +2633,7 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
             message: `${newProgress.quantityCompleted} ${scopeItem.unit} logged for "${scopeItem.description}" on project ${project.code || "Unknown"}`,
             relatedEntityId: project.id,
             relatedEntityType: "project" as const,
+            organizationId: req.user?.organizationId,
           }));
           await insertNotifications(dailyNotifs);
         }
@@ -2736,6 +2740,7 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
               message: `${scopeItem.description} (${updatedProgress.billedQuantity} ${scopeItem.unit}) is ready to bill on project ${project?.code || 'Unknown'}`,
               relatedEntityId: updatedProgress.id,
               relatedEntityType: "daily_scope_progress" as const,
+              organizationId: req.user?.organizationId,
             }));
             
             await insertNotifications(notificationValues);

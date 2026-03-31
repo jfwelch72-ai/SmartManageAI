@@ -529,7 +529,7 @@ router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async 
           message: `T&M ticket ${ticket.ticketNumber} has been linked to change order ${order.changeOrderNumber}`,
           relatedEntityId: order.id,
           relatedEntityType: "changeOrder",
-        });
+        }, req.user?.organizationId);
       } catch (e) {
         logError("Failed to notify TM ticket submitter:", {}, e instanceof Error ? e : new Error(String(e)));
       }
@@ -598,7 +598,7 @@ router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async
           message: `RFI ${rfi.rfiNumber} has been linked to change order ${order.changeOrderNumber}`,
           relatedEntityId: order.id,
           relatedEntityType: "changeOrder",
-        });
+        }, req.user?.organizationId);
       } catch (e) {
         console.error("Failed to notify RFI submitter:", e);
       }

@@ -1434,6 +1434,7 @@ router.post("/equipment/:id/requests", requireAuth, async (req: AuthenticatedReq
     for (const admin of ownerAdmins) {
       await insertNotification({
         userId: admin.id,
+        organizationId: listing.organizationId,
         type: "EQUIPMENT_RENTAL_REQUEST_RECEIVED",
         title: "New Equipment Rental Request",
         message: `A rental inquiry has been submitted for your listing: ${listing.name}`,
@@ -1570,6 +1571,7 @@ router.patch("/equipment/:id/requests/:reqId", requireAuth, async (req: Authenti
     for (const admin of requesterAdmins) {
       await insertNotification({
         userId: admin.id,
+        organizationId: updated.requesterOrgId,
         type: "EQUIPMENT_RENTAL_REQUEST_RESPONDED",
         title: `Rental Request ${validation.data.status === "ACCEPTED" ? "Accepted" : "Declined"}`,
         message: `Your rental request for "${listing.name}" has been ${statusLabel}.`,

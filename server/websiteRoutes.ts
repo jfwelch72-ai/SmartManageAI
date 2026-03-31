@@ -3616,6 +3616,7 @@ router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.singl
       try {
         await insertNotification({
           userId: admin.id,
+          organizationId: orgId,
           type: "GENERAL",
           title: "New Job Application",
           message: `${firstName} ${lastName} applied for ${job.title} via the careers page.`,

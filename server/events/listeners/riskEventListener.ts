@@ -61,7 +61,8 @@ export function registerRiskEventListener(): void {
           `Risk Occurred: ${payload.title}`,
           `Risk "${payload.title}" has materialized on project. ${payload.costImpactDollars ? `Estimated cost impact: $${payload.costImpactDollars.toLocaleString()}` : ""}`,
           payload.riskId,
-          "project_risk"
+          "project_risk",
+          event.orgId
         );
       }
 
@@ -281,13 +282,15 @@ async function insertRiskNotifications(
   title: string,
   message: string,
   relatedEntityId: string,
-  relatedEntityType: string
+  relatedEntityType: string,
+  organizationId?: string
 ): Promise<void> {
   if (userIds.length === 0) return;
   try {
     const inserted = await db.insert(notifications).values(
       userIds.map((userId) => ({
         userId,
+        organizationId: organizationId || null,
         type: "SYSTEM" as const,
         title,
         message,

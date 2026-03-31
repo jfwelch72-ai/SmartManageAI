@@ -1126,6 +1126,7 @@ const messagingSetup = (async () => {
             // Link target: /projects?taskId=<id> — encoded in relatedEntityType/Id for notification routing
             const [insertedNotif] = await db.insert(notifications).values({
               userId: t.assignedToId,
+              organizationId: orgId,
               type: "TASK_MENTIONED",
               title: "You were mentioned in a message",
               message: `Someone referenced your task "${t.title}" in a conversation.`,

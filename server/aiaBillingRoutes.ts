@@ -445,6 +445,7 @@ router.patch("/pay-applications/:id/status", requireRole("SUPER_ADMIN", "ADMIN",
           if (clientUsers.length > 0) {
             await insertNotifications([{
               userId: clientUsers[0].id,
+              organizationId: req.user?.organizationId || null,
               type: "SOV_ITEM_COMPLETED" as const,
               title: "Pay Application Submitted for Review",
               message: `Pay Application #${app.applicationNumber} for ${project.clientName || "project"} has been submitted and requires your review`,

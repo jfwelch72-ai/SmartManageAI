@@ -42,11 +42,13 @@ async function insertHiringNotifications(
   title: string,
   message: string,
   relatedEntityId: string,
-  relatedEntityType: string
+  relatedEntityType: string,
+  organizationId?: string
 ): Promise<void> {
   if (userIds.length === 0) return;
   const records = userIds.map((userId) => ({
     userId,
+    organizationId: organizationId || null,
     type,
     title,
     message,
@@ -69,7 +71,8 @@ export function registerHiringEventListener(): void {
         "Job Published",
         `Your job posting "${event.payload.title}" has been published successfully`,
         event.payload.jobId,
-        "hiringJob"
+        "hiringJob",
+        event.orgId
       );
     } catch (err) {
       logError("hiringEventListener: hiring.job_published failed", { error: String(err) });
@@ -86,7 +89,8 @@ export function registerHiringEventListener(): void {
         "New Candidate Application",
         `${event.payload.fullName} has submitted an application`,
         event.payload.candidateId,
-        "hiringCandidate"
+        "hiringCandidate",
+        event.orgId
       );
     } catch (err) {
       logError("hiringEventListener: hiring.candidate_applied failed", { error: String(err) });
@@ -116,7 +120,8 @@ export function registerHiringEventListener(): void {
         "Candidate Hired",
         `${event.payload.fullName} has been hired`,
         event.payload.candidateId,
-        "hiringCandidate"
+        "hiringCandidate",
+        event.orgId
       );
     } catch (err) {
       logError("hiringEventListener: hiring.candidate_hired failed", { error: String(err) });
@@ -166,7 +171,8 @@ export function registerHiringEventListener(): void {
         "Interview Scheduled",
         `An interview${typeLabel} has been scheduled${scheduleLabel}`,
         event.payload.interviewId,
-        "hiringInterview"
+        "hiringInterview",
+        event.orgId
       );
     } catch (err) {
       logError("hiringEventListener: hiring.interview_scheduled failed", { error: String(err) });

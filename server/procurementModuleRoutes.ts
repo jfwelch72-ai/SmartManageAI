@@ -686,7 +686,7 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
       message: `Your purchase request ${existing.prNumber} "${existing.title}" has been approved.`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_REQUEST",
-    }).catch((err: unknown) => logError("Procurement PR approve notification failed", { error: String(err) }));
+    }, orgId).catch((err: unknown) => logError("Procurement PR approve notification failed", { error: String(err) }));
 
     res.json(updated);
   } catch (error) {
@@ -718,7 +718,7 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
       message: `Your purchase request ${existing.prNumber} "${existing.title}" has been rejected.${rejectionNotes ? ` Reason: ${rejectionNotes}` : ""}`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_REQUEST",
-    }).catch((err: unknown) => logError("Procurement PR reject notification failed", { error: String(err) }));
+    }, orgId).catch((err: unknown) => logError("Procurement PR reject notification failed", { error: String(err) }));
 
     res.json(updated);
   } catch (error) {
@@ -1158,7 +1158,7 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
         message: `Purchase order ${existing.poNumber} has been approved.`,
         relatedEntityId: existing.id,
         relatedEntityType: "PURCHASE_ORDER",
-      }).catch((err: unknown) => logError("Procurement PO approve notification failed", { error: String(err) }));
+      }, orgId).catch((err: unknown) => logError("Procurement PO approve notification failed", { error: String(err) }));
     }
 
     if (existing.projectId) {
@@ -1198,7 +1198,7 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
         message: `Purchase order ${existing.poNumber} has been rejected.${rejectionNotes ? ` Reason: ${rejectionNotes}` : ""}`,
         relatedEntityId: existing.id,
         relatedEntityType: "PURCHASE_ORDER",
-      }).catch((err: unknown) => logError("Procurement PO reject notification failed", { error: String(err) }));
+      }, orgId).catch((err: unknown) => logError("Procurement PO reject notification failed", { error: String(err) }));
     }
 
     res.json(updated);
@@ -1277,7 +1277,7 @@ router.post("/api/procurement-module/orders/bulk-approve", requireAuth, requireR
           message: `Purchase order ${po.poNumber} has been approved.`,
           relatedEntityId: po.id,
           relatedEntityType: "PURCHASE_ORDER",
-        }).catch((err: unknown) => logError("Procurement PO bulk approve notification failed", { error: String(err) }));
+        }, orgId).catch((err: unknown) => logError("Procurement PO bulk approve notification failed", { error: String(err) }));
       }
 
       if (po.projectId) {

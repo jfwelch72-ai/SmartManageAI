@@ -53,6 +53,7 @@ export async function notifyGcTeamOfPortalActivity(
       message,
       relatedEntityId: projectId,
       relatedEntityType: "project",
+      organizationId,
     }));
 
     await insertNotifications(notificationValues);
@@ -305,6 +306,7 @@ export async function notifyChatTeamMembers(orgId: string, projectId: string, se
         message: `${senderName} sent a message: "${content.substring(0, 80)}..."`,
         relatedEntityId: projectId,
         relatedEntityType: "project" as const,
+        organizationId: orgId,
       })));
     }
   } catch (error) {

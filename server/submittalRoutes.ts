@@ -1644,7 +1644,7 @@ router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireR
 
 // ==================== Chain Advancement Service ====================
 
-async function advanceChain(submittalId: string, actorUserId: string): Promise<void> {
+async function advanceChain(submittalId: string, actorUserId: string, organizationId?: string): Promise<void> {
   const [submittal] = await db
     .select()
     .from(submittals)
@@ -1702,7 +1702,7 @@ async function advanceChain(submittalId: string, actorUserId: string): Promise<v
         message: `Submittal ${submittal.submittalNumber} "${submittal.subject}" was ${lastStamped.status === "REJECTED" ? "rejected" : "marked for revision"} by ${lastStamped.reviewerName}`,
         relatedEntityId: submittalId,
         relatedEntityType: "submittal",
-      });
+      }, organizationId);
     }
     return;
   }
@@ -1740,7 +1740,7 @@ async function advanceChain(submittalId: string, actorUserId: string): Promise<v
         message: `Submittal ${submittal.submittalNumber} "${submittal.subject}" has been fully approved`,
         relatedEntityId: submittalId,
         relatedEntityType: "submittal",
-      });
+      }, organizationId);
     }
     return;
   }
@@ -1769,7 +1769,7 @@ async function advanceChain(submittalId: string, actorUserId: string): Promise<v
         message: `Submittal ${submittal.submittalNumber} "${submittal.subject}" is awaiting your review`,
         relatedEntityId: submittalId,
         relatedEntityType: "submittal",
-      });
+      }, organizationId);
     }
 
     if (submittal.submittedById) {
@@ -1779,7 +1779,7 @@ async function advanceChain(submittalId: string, actorUserId: string): Promise<v
         message: `${lastStamped.reviewerName} reviewed — now awaiting ${nextPending.reviewerName} (${nextPending.reviewerRole})`,
         relatedEntityId: submittalId,
         relatedEntityType: "submittal",
-      });
+      }, organizationId);
     }
   }
 }
@@ -1992,7 +1992,7 @@ router.post("/submittals/:id/reviews/:reviewId/start", requireAuth, requireRole(
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" is awaiting your review`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json(updatedReview);
@@ -2082,7 +2082,7 @@ router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: 
       comment: comments || null,
     });
 
-    await advanceChain(id, user.id);
+    await advanceChain(id, user.id, req.user?.organizationId);
 
     res.json(updatedReview);
   } catch (error) {
@@ -2161,7 +2161,7 @@ router.post("/submittals/:id/approve", requireAuth, requireRole("SUPER_ADMIN", "
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been approved`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json(updated);
@@ -2245,7 +2245,7 @@ router.post("/submittals/:id/approve-as-noted", requireAuth, requireRole("SUPER_
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been approved as noted`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json(updated);
@@ -2329,7 +2329,7 @@ router.post("/submittals/:id/reject", requireAuth, requireRole("SUPER_ADMIN", "A
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been rejected`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json(updated);
@@ -2413,7 +2413,7 @@ router.post("/submittals/:id/revise", requireAuth, requireRole("SUPER_ADMIN", "A
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" requires revision`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json(updated);

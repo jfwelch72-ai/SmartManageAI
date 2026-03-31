@@ -502,6 +502,7 @@ export async function createBidNetworkInAppNotification(
     for (const admin of admins) {
       await insertNotification({
         userId: admin.id,
+        organizationId,
         type,
         title,
         message,

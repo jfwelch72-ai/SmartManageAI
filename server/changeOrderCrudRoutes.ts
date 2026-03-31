@@ -840,7 +840,7 @@ router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER")
           message: `Change order ${updatedOrder.changeOrderNumber} pricing was approved and has been submitted to the client`,
           relatedEntityId: updatedOrder.id,
           relatedEntityType: "changeOrder",
-        });
+        }, orgId);
       } catch (e) { /* non-blocking */ }
     }
 
@@ -992,6 +992,7 @@ router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequ
       try {
         await insertNotifications([{
           userId: order.approvedById,
+          organizationId: orgId,
           type: "GENERAL" as const,
           title: "Change Order Voided",
           message: `CO ${updatedOrder.changeOrderNumber} that you approved has been voided: ${voidReason}`,

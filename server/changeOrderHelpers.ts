@@ -111,7 +111,7 @@ async function notifyStatusChange(
         message,
         relatedEntityId: order.id,
         relatedEntityType: "changeOrder",
-      });
+      }, orgId);
     }
   } catch (error) {
     logError("Failed to create change order notifications:", {}, error instanceof Error ? error : new Error(String(error)));

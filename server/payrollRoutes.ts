@@ -2282,6 +2282,7 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
     if (officeManagerId) {
       const [insertedNotif] = await db.insert(notifications).values({
         userId: officeManagerId,
+        organizationId: orgId,
         type: "GENERAL",
         title: "Payroll Ready for Processing",
         message: `Time entries for period ${data.periodStart} to ${data.periodEnd} have been approved and are ready for payroll processing.`,
@@ -2669,6 +2670,7 @@ router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADM
       for (const admin of adminUsers) {
         await insertNotification({
           userId: admin.id,
+          organizationId: orgId,
           type: "GENERAL",
           title: "Weekly Payroll Report Generated",
           message: `Weekly payroll report generated for ${weekStartStr} to ${weekEndStr}. Total: ${(totalRegularHours + totalOvertimeHours).toFixed(2)} hours (${totalOvertimeHours.toFixed(2)} OT) across ${totalEmployees} employees.`,

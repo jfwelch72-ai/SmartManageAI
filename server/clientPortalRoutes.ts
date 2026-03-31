@@ -976,6 +976,7 @@ router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter
             message: `CO #${updated.changeOrderNumber} has been acknowledged and approved by ${verified.access.name || email} via the client portal.`,
             relatedEntityId: coId,
             relatedEntityType: "change_order" as const,
+            organizationId: project.gcOrganizationId,
           })));
         }
       }
@@ -1074,6 +1075,7 @@ router.post("/client-portal/public/change-orders/:coId/request-revision", authLi
             message: `${verified.access.name || email} requested a revision on CO #${updated.changeOrderNumber} via the client portal: "${reason.trim().substring(0, 200)}"`,
             relatedEntityId: coId,
             relatedEntityType: "change_order" as const,
+            organizationId: project.gcOrganizationId,
           })));
         }
       }

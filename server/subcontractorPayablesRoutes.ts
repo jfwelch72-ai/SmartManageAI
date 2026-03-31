@@ -463,7 +463,7 @@ router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN",
         message: `Subcontractor payable for ${fullPayment.subcontractor.companyName} - $${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} has been approved`,
         relatedEntityId: id,
         relatedEntityType: "PAYABLE",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json({
@@ -572,7 +572,7 @@ router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", 
         message: `Subcontractor payable for ${fullPayment.subcontractor.companyName} - $${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} has been rejected: ${rejectionReason}`,
         relatedEntityId: id,
         relatedEntityType: "PAYABLE",
-      });
+      }, req.user?.organizationId);
     }
 
     res.json({

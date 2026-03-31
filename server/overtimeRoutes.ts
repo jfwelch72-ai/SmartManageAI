@@ -357,7 +357,7 @@ router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMI
       message: `Your overtime request for ${hours} hours has been approved`,
       relatedEntityId: id,
       relatedEntityType: "overtime_request",
-    });
+    }, req.user?.organizationId);
 
     res.json(updated);
   } catch (error) {
@@ -402,7 +402,7 @@ router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN
       message: `Your overtime request has been rejected: ${reason}`,
       relatedEntityId: id,
       relatedEntityType: "overtime_request",
-    });
+    }, req.user?.organizationId);
 
     res.json(updated);
   } catch (error) {

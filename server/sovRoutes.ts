@@ -1185,6 +1185,7 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
               message: `"${lineItem.description}" (${formattedValue}) is fully complete on ${sov.title} - project ${project.code || "Unknown"}`,
               relatedEntityId: project.id,
               relatedEntityType: "project" as const,
+              organizationId: req.user?.organizationId,
             }));
             await insertNotifications(sovNotifs);
           }

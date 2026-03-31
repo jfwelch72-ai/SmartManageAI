@@ -1186,6 +1186,7 @@ export const calendarEvents = pgTable("calendar_events", {
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
+  organizationId: varchar("organization_id").references(() => organizations.id),
   type: notificationTypeEnum("type").notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
@@ -1197,6 +1198,7 @@ export const notifications = pgTable("notifications", {
   userIdIdx: index("notifications_user_id_idx").on(table.userId),
   userReadIdx: index("notifications_user_read_idx").on(table.userId, table.isRead),
   createdAtIdx: index("notifications_created_at_idx").on(table.createdAt),
+  orgUserReadIdx: index("notifications_org_user_read_idx").on(table.organizationId, table.userId, table.isRead),
 }));
 
 // Payroll Notifications table - tracks when time entries are ready for payroll processing

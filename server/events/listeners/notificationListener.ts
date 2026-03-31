@@ -52,11 +52,13 @@ async function insertNotifications(
   title: string,
   message: string,
   relatedEntityId: string,
-  relatedEntityType: string
+  relatedEntityType: string,
+  organizationId?: string
 ): Promise<void> {
   if (userIds.length === 0) return;
   const records = userIds.map((userId) => ({
     userId,
+    organizationId: organizationId || null,
     type,
     title,
     message,
@@ -79,7 +81,8 @@ export function registerNotificationListener(): void {
         "Change Order Approved",
         `Change order on project was approved for $${event.payload.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
         event.payload.changeOrderId,
-        "changeOrder"
+        "changeOrder",
+        event.orgId
       );
       const { evaluateBudgetAlerts } = await import("../../costLedgerRoutes");
       evaluateBudgetAlerts(event.payload.projectId).catch(e =>
@@ -99,7 +102,8 @@ export function registerNotificationListener(): void {
         "Change Order Rejected",
         `Change order was rejected: ${event.payload.reason}`,
         event.payload.changeOrderId,
-        "changeOrder"
+        "changeOrder",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: change_order.rejected failed", { error: String(err) });
@@ -115,7 +119,8 @@ export function registerNotificationListener(): void {
         "Payroll Run Completed",
         `Pay run for ${event.payload.periodStart} – ${event.payload.periodEnd} has been marked PAID ($${event.payload.totalGross.toLocaleString("en-US", { minimumFractionDigits: 2 })} gross, ${event.payload.employeeCount} employees)`,
         event.payload.payRunId,
-        "payRun"
+        "payRun",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: payroll.run.completed failed", { error: String(err) });
@@ -131,7 +136,8 @@ export function registerNotificationListener(): void {
         "Bid Converted to Project",
         `Bid ${event.payload.bidCode} has been converted to project ${event.payload.projectCode}`,
         event.payload.projectId,
-        "project"
+        "project",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: bid.converted_to_project failed", { error: String(err) });
@@ -147,7 +153,8 @@ export function registerNotificationListener(): void {
         "Bid Submitted to Client",
         `Bid "${event.payload.title}" (${event.payload.bidCode}) has been submitted to ${event.payload.clientName || "client"}`,
         event.payload.bidId,
-        "bid"
+        "bid",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: bid.submitted failed", { error: String(err) });
@@ -180,7 +187,8 @@ export function registerNotificationListener(): void {
         "Bid Status Changed",
         message,
         event.payload.bidId,
-        "bid"
+        "bid",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: bid.status_changed failed", { error: String(err) });
@@ -195,7 +203,8 @@ export function registerNotificationListener(): void {
         "Bid Assignment",
         `You have been assigned to bid "${event.payload.title}" (${event.payload.bidCode})`,
         event.payload.bidId,
-        "bid"
+        "bid",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: bid.assigned failed", { error: String(err) });
@@ -215,7 +224,8 @@ export function registerNotificationListener(): void {
         "Bid Due Date Approaching",
         `Bid "${event.payload.title}" (${event.payload.bidCode}) is due within ${hoursLabel} (${event.payload.dueDate})`,
         event.payload.bidId,
-        "bid"
+        "bid",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: bid.due_date_approaching failed", { error: String(err) });
@@ -233,7 +243,8 @@ export function registerNotificationListener(): void {
         `Budget ${level}: ${event.payload.projectCode}`,
         `${costCodeLabel} has reached ${event.payload.currentPercent.toFixed(0)}% of budget (${level} threshold: ${event.payload.thresholdPercent.toFixed(0)}%)`,
         event.payload.projectId,
-        "project"
+        "project",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: budget.alert_triggered failed", { error: String(err) });
@@ -269,7 +280,8 @@ export function registerNotificationListener(): void {
         "New Project Created",
         `Project "${event.payload.name}" (${event.payload.projectCode}) has been created with status ${event.payload.projectStatus}`,
         event.payload.projectId,
-        "project"
+        "project",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: project.created failed", { error: String(err) });
@@ -313,7 +325,8 @@ export function registerNotificationListener(): void {
         "Project Status Changed",
         `Project ${event.payload.projectCode} status changed from ${event.payload.oldStatus} to ${event.payload.newStatus}`,
         event.payload.projectId,
-        "project"
+        "project",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: project.status_changed failed", { error: String(err) });
@@ -341,7 +354,8 @@ export function registerNotificationListener(): void {
         "Safety Incident Reported",
         `A safety incident (severity: ${event.payload.severity}) has been reported and requires attention`,
         event.payload.incidentId,
-        "safetyIncident"
+        "safetyIncident",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: safety.incident_created failed", { error: String(err) });
@@ -385,7 +399,8 @@ export function registerNotificationListener(): void {
         "Inspection Completed",
         `Inspection completed with status: ${event.payload.status}`,
         event.payload.inspectionId,
-        "inspection"
+        "inspection",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: inspection.completed failed", { error: String(err) });
@@ -437,7 +452,8 @@ export function registerNotificationListener(): void {
         "New Drawing Revision",
         `${uploaderLabel} uploaded revision #${event.payload.revisionNumber} for "${event.payload.documentTitle}" (${event.payload.sourceType})`,
         entityRef,
-        "drawingRevision"
+        "drawingRevision",
+        event.orgId
       );
     } catch (err) {
       logError("notificationListener: document.revision_created failed", { error: String(err) });
