@@ -28,7 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-interface DetectedItem {
+export interface DetectedItem {
   id: string;
   itemType: string;
   description: string;
@@ -45,7 +45,7 @@ interface AiTakeoffPanelProps {
   projectId?: string;
   bidId?: string;
   sheetId?: string | null;
-  onItemsImported?: (items: DetectedItem[]) => void;
+  onItemsImported?: (items: DetectedItem[]) => Promise<{ succeeded: number; failed: number; failedItems: string[] }>;
 }
 
 const ITEM_TYPE_ICONS: Record<string, any> = {
@@ -71,6 +71,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   
   const { toast } = useToast();
 
@@ -166,16 +167,45 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
     });
   };
 
-  const handleImportSelected = () => {
+  const handleImportSelected = async () => {
     if (!analysisResults?.detectedItems) return;
     const itemsToImport = analysisResults.detectedItems.filter((i: DetectedItem) => selectedItems.has(i.id));
-    onItemsImported?.(itemsToImport);
-    setImportDialogOpen(false);
-    setSelectedItems(new Set());
-    toast({
-      title: "Items Imported",
-      description: `Successfully imported ${itemsToImport.length} items to takeoff`,
-    });
+    if (itemsToImport.length === 0) return;
+
+    if (onItemsImported) {
+      setIsImporting(true);
+      try {
+        const result = await onItemsImported(itemsToImport);
+        setImportDialogOpen(false);
+        setSelectedItems(new Set());
+        if (result.failed === 0) {
+          toast({
+            title: "Items Imported",
+            description: `Successfully imported ${result.succeeded} items to takeoff`,
+          });
+        } else {
+          const failedDesc = result.failedItems.length > 0
+            ? `Failed: ${result.failedItems.join(", ")}`
+            : `${result.failed} failed`;
+          toast({
+            title: "Partial Import",
+            description: `Imported ${result.succeeded} items. ${failedDesc}`,
+            variant: "destructive",
+          });
+        }
+      } catch {
+        toast({
+          title: "Import Failed",
+          description: "Failed to import items to takeoff",
+          variant: "destructive",
+        });
+      } finally {
+        setIsImporting(false);
+      }
+    } else {
+      setImportDialogOpen(false);
+      setSelectedItems(new Set());
+    }
   };
 
   const groupItemsByType = (items: DetectedItem[]) => {
@@ -438,9 +468,13 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
             <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleImportSelected} data-testid="button-confirm-import">
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Import Items
+            <Button onClick={handleImportSelected} disabled={isImporting} data-testid="button-confirm-import">
+              {isImporting ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+              )}
+              {isImporting ? "Importing..." : "Import Items"}
             </Button>
           </DialogFooter>
         </DialogContent>

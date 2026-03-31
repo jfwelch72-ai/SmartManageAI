@@ -34,7 +34,7 @@ import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
-import AiTakeoffPanel from "@/components/AiTakeoffPanel";
+import AiTakeoffPanel, { type DetectedItem } from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
 import { onLibraryEvent } from "@/lib/libraryEvents";
 import { generateTakeoffExcel } from "@/utils/takeoff-export";
@@ -2518,6 +2518,39 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             bidId={context?.type === "bid" ? context.bidId : undefined}
             sheetId={selectedSheet}
             onClose={() => setAiPanelOpen(false)}
+            onItemsImported={async (items: DetectedItem[]) => {
+              let succeeded = 0;
+              let failed = 0;
+              const failedItems: string[] = [];
+              for (const item of items) {
+                try {
+                  await apiRequest("POST", "/api/takeoff/measurements", {
+                    sheetId: selectedSheet,
+                    type: "COUNT",
+                    points: [],
+                    label: item.description,
+                    count: item.quantity,
+                    source: "AI",
+                    costCodeId: item.suggestedSowItem?.code || undefined,
+                    metadata: JSON.stringify({
+                      source: "ai_takeoff",
+                      unit: item.unit,
+                      itemType: item.itemType,
+                      confidence: item.confidence,
+                      suggestedSowItem: item.suggestedSowItem || null,
+                    }),
+                  });
+                  succeeded++;
+                } catch {
+                  failed++;
+                  failedItems.push(item.description);
+                }
+              }
+              if (succeeded > 0) {
+                queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+              }
+              return { succeeded, failed, failedItems };
+            }}
           />
         </div>
       )}
