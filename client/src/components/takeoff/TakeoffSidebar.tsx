@@ -133,6 +133,8 @@ interface TakeoffSidebarProps {
   onUpdateCondition?: (data: { id: string; [key: string]: any }) => void;
   onDeleteCondition?: (id: string) => void;
   saveConditionPending?: boolean;
+  hideAiMeasurements?: boolean;
+  setHideAiMeasurements?: (v: boolean) => void;
 }
 
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
@@ -165,6 +167,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     onZoomToMeasurement, onZoomToFitMeasurement,
     conditions = [], activeCondition = null, onActivateCondition, onClearCondition,
     onSaveCondition, onUpdateCondition, onDeleteCondition, saveConditionPending = false,
+    hideAiMeasurements = false, setHideAiMeasurements,
   } = props;
 
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -574,6 +577,22 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     </DropdownMenu>
                   )}
                   <Badge variant="secondary" data-testid="badge-measurement-count">{measurements.length}</Badge>
+                  {measurements.some(m => m.source === "AI") && setHideAiMeasurements && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant={hideAiMeasurements ? "outline" : "ghost"}
+                          size="icon"
+                          className={cn("h-7 w-7", hideAiMeasurements && "text-purple-500 border-purple-300")}
+                          onClick={() => setHideAiMeasurements(!hideAiMeasurements)}
+                          data-testid="button-toggle-ai-measurements"
+                        >
+                          <Zap className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{hideAiMeasurements ? "Show AI measurements" : "Hide AI measurements"}</TooltipContent>
+                    </Tooltip>
+                  )}
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowNewGroupInput(true)} title="Create group" data-testid="button-create-group">
                     <FolderPlus className="w-4 h-4" />
                   </Button>
@@ -611,9 +630,10 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               ) : (
                 <div className="space-y-2">
                   {(() => {
+                    const filteredMeasurements = hideAiMeasurements ? measurements.filter(m => m.source !== "AI") : measurements;
                     const grouped: Record<string, TakeoffMeasurement[]> = {};
                     const ungrouped: TakeoffMeasurement[] = [];
-                    measurements.forEach((m) => {
+                    filteredMeasurements.forEach((m) => {
                       if (m.groupId) {
                         if (!grouped[m.groupId]) grouped[m.groupId] = [];
                         grouped[m.groupId].push(m);
@@ -655,6 +675,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             {m.source === "BIM" && (
                               <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
                             )}
+                            {m.source === "AI" && (
+                              <Badge variant="secondary" className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" data-testid={`badge-ai-source-${m.id}`}>
+                                <Zap className="w-2.5 h-2.5 mr-0.5" />AI
+                              </Badge>
+                            )}
                           </div>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
                             <Trash2 className="w-4 h-4 text-destructive" />
@@ -667,7 +692,17 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
                             : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
                             : m.type === "SEGMENT" && m.computedLengthFt ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF total`
-                            : m.type === "COUNT" ? "Count marker" : m.type === "NOTE" ? "Note" : ""}
+                            : m.type === "COUNT" ? (() => {
+                              if (m.source === "AI") {
+                                let meta: any = {};
+                                try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+                                const qty = m.count ?? meta.quantity ?? 1;
+                                const unit = meta.unit || "EA";
+                                const conf = meta.confidence ? ` · ${meta.confidence}% conf.` : "";
+                                return `${qty} ${unit}${conf}`;
+                              }
+                              return "Count marker";
+                            })() : m.type === "NOTE" ? "Note" : ""}
                         </p>
                         {m.type === "SEGMENT" && (() => {
                           const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;

@@ -23,7 +23,8 @@ import {
   MapPin,
   FileText,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,7 @@ interface AiTakeoffPanelProps {
   bidId?: string;
   sheetId?: string | null;
   onItemsImported?: (items: DetectedItem[]) => Promise<{ succeeded: number; failed: number; failedItems: string[] }>;
+  onClose?: () => void;
 }
 
 const ITEM_TYPE_ICONS: Record<string, any> = {
@@ -65,7 +67,7 @@ const ITEM_TYPE_ICONS: Record<string, any> = {
   default: FileText,
 };
 
-export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported }: AiTakeoffPanelProps) {
+export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported, onClose }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -243,11 +245,18 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
             <Sparkles className="w-5 h-5 text-primary" />
             <h3 className="font-semibold">AI Auto-Takeoff</h3>
           </div>
-          {isComplete && detectedItems.length > 0 && (
-            <Badge variant="secondary" data-testid="badge-items-detected">
-              {detectedItems.length} items
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {isComplete && detectedItems.length > 0 && (
+              <Badge variant="secondary" data-testid="badge-items-detected">
+                {detectedItems.length} items
+              </Badge>
+            )}
+            {onClose && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} data-testid="button-close-ai-panel">
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
         </div>
         <p className="text-sm text-muted-foreground mb-3">
           Automatically detect measurements from your blueprints using AI
@@ -449,16 +458,25 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
           <DialogHeader>
             <DialogTitle>Import Detected Items</DialogTitle>
             <DialogDescription>
-              The following {selectedItems.size} items will be added to your takeoff:
+              {selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} will be added to your takeoff as AI measurement markers.
             </DialogDescription>
           </DialogHeader>
+          <div className="flex items-start gap-2 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+            <Sparkles className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-purple-700 dark:text-purple-400">
+              Items will appear as labeled markers in the <span className="font-semibold">AI Detections zone</span> on the canvas (to the right of the blueprint). You can drag them to reposition near relevant areas.
+            </div>
+          </div>
           <ScrollArea className="max-h-64">
             <div className="space-y-2">
               {detectedItems
                 .filter((i: DetectedItem) => selectedItems.has(i.id))
                 .map((item: DetectedItem) => (
                   <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-muted rounded">
-                    <span className="text-sm">{item.description}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{item.description}</span>
+                      <Badge variant="secondary" className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">AI</Badge>
+                    </div>
                     <span className="text-sm font-mono">{item.quantity} {item.unit}</span>
                   </div>
                 ))}
@@ -474,7 +492,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
               ) : (
                 <CheckCircle2 className="w-4 h-4 mr-2" />
               )}
-              {isImporting ? "Importing..." : "Import Items"}
+              {isImporting ? "Importing..." : `Import ${selectedItems.size} Item${selectedItems.size !== 1 ? "s" : ""}`}
             </Button>
           </DialogFooter>
         </DialogContent>

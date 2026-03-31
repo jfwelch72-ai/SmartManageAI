@@ -35,6 +35,13 @@ import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
 import AiTakeoffPanel, { type DetectedItem } from "@/components/AiTakeoffPanel";
+
+const AI_ZONE = { MARGIN_X: 80, START_Y: 40, SPACING_X: 220, SPACING_Y: 60, COLS: 3 };
+function computeAiPosition(aiIdx: number, imageWidth: number) {
+  const col = aiIdx % AI_ZONE.COLS;
+  const row = Math.floor(aiIdx / AI_ZONE.COLS);
+  return { x: imageWidth + AI_ZONE.MARGIN_X + col * AI_ZONE.SPACING_X, y: AI_ZONE.START_Y + row * AI_ZONE.SPACING_Y };
+}
 import { cn } from "@/lib/utils";
 import { onLibraryEvent } from "@/lib/libraryEvents";
 import { generateTakeoffExcel } from "@/utils/takeoff-export";
@@ -103,6 +110,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [renameValue, setRenameValue] = useState("");
   const [deleteSheetConfirmOpen, setDeleteSheetConfirmOpen] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [hideAiMeasurements, setHideAiMeasurements] = useState(false);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Set<string>>(new Set());
   const [addendaOverlays, setAddendaOverlays] = useState<Record<string, { visible: boolean; opacity: number; imageUrl?: string }>>({});
@@ -124,6 +132,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [createLinkMode, setCreateLinkMode] = useState<{ step: "select-area" | "select-target"; startPoint?: { x: number; y: number }; endPoint?: { x: number; y: number } } | null>(null);
   const [createLinkTargetSheet, setCreateLinkTargetSheet] = useState<string | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
+  const [measurementContextMenu, setMeasurementContextMenu] = useState<{ x: number; y: number; measurementId: string } | null>(null);
   const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
   const [flashMeasurementId, setFlashMeasurementId] = useState<string | null>(null);
   const [flashPulse, setFlashPulse] = useState(0);
@@ -567,7 +576,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   };
 
   const getMeasurementCenter = (m: any): { x: number; y: number } | null => {
-    const pts = parseMeasurementPoints(m);
+    let pts = parseMeasurementPoints(m);
+    if (pts.length === 0 && m.source === "AI" && m.type === "COUNT") {
+      const aiCountMeasurements = measurements.filter(mm => mm.source === "AI" && mm.type === "COUNT");
+      const aiIdx = aiCountMeasurements.findIndex(mm => mm.id === m.id);
+      if (aiIdx >= 0) {
+        pts = [computeAiPosition(aiIdx, pdfImage?.width || 2000)];
+      }
+    }
     if (pts.length === 0) return null;
     if (m.type === "COUNT" || m.type === "NOTE") return pts[0];
     if ((m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && pts.length >= 2) {
@@ -595,6 +611,30 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     const avgY = pts.reduce((sum: number, p: any) => sum + p.y, 0) / pts.length;
     return { x: avgX, y: avgY };
   };
+
+  const backfilledAiIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!measurements.length || !pdfImage?.width) return;
+    const legacyAiMeasurements = measurements.filter(m => {
+      if (m.source !== "AI" || m.type !== "COUNT") return false;
+      if (backfilledAiIdsRef.current.has(m.id)) return false;
+      const pts = parseMeasurementPoints(m);
+      return !pts || pts.length === 0;
+    });
+    if (legacyAiMeasurements.length === 0) return;
+    const allAiCount = measurements.filter(mm => mm.source === "AI" && mm.type === "COUNT");
+    legacyAiMeasurements.forEach(m => {
+      const aiIdx = allAiCount.findIndex(mm => mm.id === m.id);
+      if (aiIdx < 0) return;
+      const pos = computeAiPosition(aiIdx, pdfImage.width);
+      const mId = m.id;
+      backfilledAiIdsRef.current.add(mId);
+      updateMeasurementMutation.mutate(
+        { id: mId, points: JSON.stringify([pos]) },
+        { onError: () => { backfilledAiIdsRef.current.delete(mId); } }
+      );
+    });
+  }, [measurements, pdfImage]);
 
   const getMeasurementBounds = (m: any): { minX: number; minY: number; maxX: number; maxY: number } | null => {
     const pts = parseMeasurementPoints(m);
@@ -1361,7 +1401,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               }
             }
           }}
-          onClick={() => { if (contextMenuPos) setContextMenuPos(null); }}
+          onClick={() => { if (contextMenuPos) setContextMenuPos(null); if (measurementContextMenu) setMeasurementContextMenu(null); }}
         >
           {selectedSheet ? (
             <Stage
@@ -1571,9 +1611,19 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   return [...gridLines, ...rulerElements];
                 })()}
 
-                {measurements.map((m) => {
+                {measurements.map((m, mIdx) => {
                   if (m.categoryId && hiddenCategoryIds.has(m.categoryId)) return null;
-                  const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+                  if (hideAiMeasurements && m.source === "AI") return null;
+                  let points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+                  const isAiMeasurement = m.source === "AI";
+                  if (isAiMeasurement && m.type === "COUNT" && (!points || points.length === 0)) {
+                    const aiMeasurements = measurements.filter(mm => mm.source === "AI" && mm.type === "COUNT");
+                    const aiIdx = aiMeasurements.findIndex(mm => mm.id === m.id);
+                    if (aiIdx >= 0) {
+                      const pos = computeAiPosition(aiIdx, pdfImage?.width || 2000);
+                      points = [pos];
+                    }
+                  }
                   const isSelected = selectedMeasurementId === m.id;
                   const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
                   const catColor = validateHexColor(category?.color);
@@ -1704,6 +1754,108 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       />
                     );
                   } else if (m.type === "COUNT" && points.length >= 1) {
+                    if (isAiMeasurement) {
+                      const aiColor = "#8b5cf6";
+                      let meta: any = {};
+                      try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+                      const qtyText = `${m.count ?? meta.quantity ?? 1} ${meta.unit || "EA"}`;
+                      const labelText = m.label || "AI Item";
+                      const displayText = `${labelText} — ${qtyText}`;
+                      const confText = meta.confidence ? `${meta.confidence}%` : "";
+                      return (
+                        <Group
+                          key={m.id}
+                          x={points[0].x}
+                          y={points[0].y}
+                          draggable={activeTool === "select"}
+                          onDragEnd={(e: any) => {
+                            const newX = e.target.x();
+                            const newY = e.target.y();
+                            updateMeasurementMutation.mutate({
+                              id: m.id,
+                              points: JSON.stringify([{ x: newX, y: newY }]),
+                            });
+                          }}
+                          onClick={handleMeasurementClick}
+                          onTap={handleMeasurementClick}
+                          onContextMenu={(e: any) => {
+                            e.evt.preventDefault();
+                            e.cancelBubble = true;
+                            const stage = stageRef.current;
+                            if (stage) {
+                              const containerRect = containerRef.current?.getBoundingClientRect();
+                              if (containerRect) {
+                                setMeasurementContextMenu({
+                                  x: e.evt.clientX - containerRect.left,
+                                  y: e.evt.clientY - containerRect.top,
+                                  measurementId: m.id,
+                                });
+                                setSelectedMeasurementId(m.id);
+                              }
+                            }
+                          }}
+                        >
+                          <Circle
+                            x={0}
+                            y={0}
+                            radius={isSelected ? 16 : 13}
+                            fill={aiColor}
+                            stroke={isSelected ? "#fbbf24" : "white"}
+                            strokeWidth={isSelected ? 3 : 2}
+                            opacity={isSelected ? 1 : 0.85}
+                            shadowColor="rgba(139,92,246,0.4)"
+                            shadowBlur={isSelected ? 8 : 4}
+                            shadowOffsetY={2}
+                          />
+                          <Text
+                            x={0}
+                            y={0}
+                            text="✦"
+                            fontSize={12}
+                            fill="white"
+                            fontStyle="bold"
+                            align="center"
+                            verticalAlign="middle"
+                            offsetX={6}
+                            offsetY={7}
+                            listening={false}
+                          />
+                          <Rect
+                            x={20}
+                            y={-14}
+                            width={Math.max(displayText.length * 6.5 + 16, 100)}
+                            height={confText ? 36 : 24}
+                            fill={isSelected ? aiColor : "rgba(139,92,246,0.9)"}
+                            cornerRadius={6}
+                            stroke={isSelected ? "#fbbf24" : "rgba(255,255,255,0.3)"}
+                            strokeWidth={isSelected ? 2 : 1}
+                            shadowColor="rgba(0,0,0,0.2)"
+                            shadowBlur={4}
+                            shadowOffsetY={2}
+                            opacity={isSelected ? 1 : 0.9}
+                          />
+                          <Text
+                            x={28}
+                            y={confText ? -10 : -6}
+                            text={displayText}
+                            fontSize={11}
+                            fill="white"
+                            fontStyle="bold"
+                            listening={false}
+                          />
+                          {confText && (
+                            <Text
+                              x={28}
+                              y={6}
+                              text={`Confidence: ${confText}`}
+                              fontSize={9}
+                              fill="rgba(255,255,255,0.7)"
+                              listening={false}
+                            />
+                          )}
+                        </Group>
+                      );
+                    }
                     return (
                       <Circle
                         key={m.id}
@@ -2493,6 +2645,42 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               </button>
             </div>
           )}
+
+          {measurementContextMenu && (() => {
+            const ctxMeasurement = measurements.find(m => m.id === measurementContextMenu.measurementId);
+            if (!ctxMeasurement) return null;
+            return (
+              <div
+                className="absolute z-50 bg-card border rounded-md shadow-lg py-1 min-w-48"
+                style={{ left: measurementContextMenu.x, top: measurementContextMenu.y }}
+                data-testid="measurement-context-menu"
+              >
+                <div className="px-3 py-1.5 text-xs text-muted-foreground border-b mb-1 truncate max-w-56">
+                  {ctxMeasurement.label || "Measurement"}
+                </div>
+                <button
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
+                  onClick={() => {
+                    setSelectedMeasurementId(ctxMeasurement.id);
+                    setMeasurementContextMenu(null);
+                  }}
+                  data-testid="context-menu-select-measurement"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit Details
+                </button>
+                <button
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent text-destructive flex items-center gap-2"
+                  onClick={() => {
+                    deleteMeasurementMutation.mutate(ctxMeasurement);
+                    setMeasurementContextMenu(null);
+                  }}
+                  data-testid="context-menu-delete-measurement"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -2522,12 +2710,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               let succeeded = 0;
               let failed = 0;
               const failedItems: string[] = [];
-              for (const item of items) {
+              const imgW = pdfImage?.width || 2000;
+              const existingAiCount = measurements.filter(m => m.source === "AI" && m.type === "COUNT").length;
+
+              const newMeasurementIds: string[] = [];
+              for (let idx = 0; idx < items.length; idx++) {
+                const item = items[idx];
+                const pos = computeAiPosition(existingAiCount + idx, imgW);
                 try {
-                  await apiRequest("POST", "/api/takeoff/measurements", {
+                  const res = await apiRequest("POST", "/api/takeoff/measurements", {
                     sheetId: selectedSheet,
                     type: "COUNT",
-                    points: [],
+                    points: [pos],
                     label: item.description,
                     count: item.quantity,
                     source: "AI",
@@ -2540,6 +2734,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       suggestedSowItem: item.suggestedSowItem || null,
                     }),
                   });
+                  const created = await res.json();
+                  if (created?.id) newMeasurementIds.push(created.id);
                   succeeded++;
                 } catch {
                   failed++;
@@ -2547,7 +2743,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 }
               }
               if (succeeded > 0) {
-                queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+                await queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+                if (newMeasurementIds.length > 0) {
+                  const flashSequence = async () => {
+                    for (const mId of newMeasurementIds) {
+                      setFlashMeasurementId(mId);
+                      setFlashPulse(1);
+                      await new Promise(resolve => setTimeout(resolve, 600));
+                    }
+                  };
+                  flashSequence();
+                }
               }
               return { succeeded, failed, failedItems };
             }}
@@ -2630,6 +2836,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onExportAllSheets={handleExportAllSheets}
         onZoomToMeasurement={handleZoomToMeasurement}
         onZoomToFitMeasurement={handleZoomToFitMeasurement}
+        hideAiMeasurements={hideAiMeasurements}
+        setHideAiMeasurements={setHideAiMeasurements}
       />
 
       <TakeoffDialogs
