@@ -13,6 +13,8 @@ import TopHeader from "@/components/TopHeader";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
 import OfflineStatusBanner from "@/components/OfflineStatusBanner";
+import { useGlobalCallEvents } from "@/hooks/use-global-call-events";
+import { GlobalIncomingCallBanner } from "@/components/GlobalIncomingCallBanner";
 const VoiceDictation = lazy(() => import("@/components/VoiceDictation"));
 import NotFound from "@/pages/not-found";
 const LandingPage = lazy(() => import("@/pages/landing"));
@@ -453,6 +455,21 @@ function AppContent() {
   );
 }
 
+function GlobalCallNotification() {
+  const { user } = useAuth();
+  const { incomingCall, acceptCall, declineCall } = useGlobalCallEvents();
+
+  if (!user || !incomingCall) return null;
+
+  return (
+    <GlobalIncomingCallBanner
+      call={incomingCall}
+      onAccept={acceptCall}
+      onDecline={declineCall}
+    />
+  );
+}
+
 function AuthGatedWidget() {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -522,6 +539,7 @@ function App() {
               <Toaster />
               <AppContent />
               <FirstTimeWelcomeModal />
+              <GlobalCallNotification />
               <AuthGatedWidget />
             </TooltipProvider>
           </DashboardCustomizationProvider>
