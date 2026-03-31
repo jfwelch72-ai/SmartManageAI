@@ -362,7 +362,7 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   points: text("points").notNull(),
   arcData: text("arc_data"),
   depthFeet: doublePrecision("depth_feet"),
-  count: integer("count"),
+  count: doublePrecision("count"),
   note: text("note"),
   color: text("color").default("#3b82f6"),
   visible: boolean("visible").notNull().default(true),

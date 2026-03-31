@@ -1,0 +1,1 @@
+ALTER TABLE "takeoff_measurements" ALTER COLUMN "count" SET DATA TYPE double precision;
