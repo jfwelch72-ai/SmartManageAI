@@ -162,10 +162,10 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
   });
 
   useEffect(() => {
-    if (layoutData?.layout) {
+    if (layoutData?.layout && !isEditMode) {
       setLocalLayout(layoutData.layout);
     }
-  }, [layoutData]);
+  }, [layoutData, isEditMode]);
 
   const saveLayoutMutation = useMutation({
     mutationFn: async (layout: DashboardLayoutConfig) => {
