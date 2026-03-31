@@ -6,3 +6,9 @@ id = "rw3OONixytpyP-HltA5gu"
 uri = "file://AUDIT_3_12_26_SYSTEM.md"
 type = "text"
 title = "AUDIT_3_12_26_SYSTEM — Full Platform Audit"
+
+[[outputs]]
+id = "kG7KXiKLjRRwQVOl9XEkA"
+uri = "file://.local/tasks/test-walkthrough.md"
+type = "text"
+title = "SmartManageAI — Complete Test Walkthrough"
