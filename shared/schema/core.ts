@@ -343,6 +343,7 @@ export const projects = pgTable("projects", {
   description: text("description"),
   budget: decimal("budget", { precision: 12, scale: 2 }),
   contractAmount: decimal("contract_amount", { precision: 12, scale: 2 }),
+  budgetAmount: decimal("budget_amount", { precision: 12, scale: 2 }),
   texturaDrawDate: date("textura_draw_date"),
   drawDayOfMonth: integer("draw_day_of_month"),
   estimatorId: varchar("estimator_id").references(() => users.id),
