@@ -527,7 +527,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         let countTotal = 0;
 
         for (const measurement of measurements) {
-          if (measurement.type === "LINEAR") {
+          if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
             if (measurement.computedLengthFt) {
               linearTotal += Number(measurement.computedLengthFt);
             } else if (measurement.points) {
@@ -574,7 +574,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "COUNT") {
-            countTotal += 1;
+            countTotal += (measurement.count ?? 1);
           }
         }
 
@@ -685,7 +685,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           let uncatLinear = 0, uncatArea = 0, uncatVolume = 0, uncatCount = 0;
 
           for (const measurement of uncategorizedMeasurements) {
-            if (measurement.type === "LINEAR") {
+            if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
               if (measurement.computedLengthFt) {
                 uncatLinear += Number(measurement.computedLengthFt);
               } else if (measurement.points) {
@@ -732,7 +732,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "COUNT") {
-              uncatCount += 1;
+              uncatCount += (measurement.count ?? 1);
             }
           }
 
@@ -948,7 +948,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         let countTotal = 0;
 
         for (const measurement of measurements) {
-          if (measurement.type === "LINEAR") {
+          if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
             if (measurement.computedLengthFt) {
               linearTotal += Number(measurement.computedLengthFt);
             } else if (measurement.points) {
@@ -995,7 +995,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "COUNT") {
-            countTotal += 1;
+            countTotal += (measurement.count ?? 1);
           }
         }
 
@@ -1078,7 +1078,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           let uncatLinear = 0, uncatArea = 0, uncatVolume = 0, uncatCount = 0;
 
           for (const measurement of uncategorizedMeasurements) {
-            if (measurement.type === "LINEAR") {
+            if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
               if (measurement.computedLengthFt) {
                 uncatLinear += Number(measurement.computedLengthFt);
               } else if (measurement.points) {
@@ -1125,7 +1125,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "COUNT") {
-              uncatCount += 1;
+              uncatCount += (measurement.count ?? 1);
             }
           }
 
