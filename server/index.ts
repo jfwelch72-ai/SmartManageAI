@@ -15,6 +15,7 @@ import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
 import { backfillMissingFeatureFlags } from "./services/featureFlagService";
 import { ensureVideoCallTables } from "./utils/ensureVideoCallTables";
+import { ensureEstimateSubcontractorTables } from "./utils/ensureEstimateSubcontractorTables";
 
 const app = express();
 
@@ -163,6 +164,7 @@ app.use((req, res, next) => {
   // environments so both dev and prod orgs are covered on first restart after
   // this fix was deployed.
   await ensureVideoCallTables();
+  await ensureEstimateSubcontractorTables();
   await backfillMissingFeatureFlags();
 
   let portRetryCount = 0;
