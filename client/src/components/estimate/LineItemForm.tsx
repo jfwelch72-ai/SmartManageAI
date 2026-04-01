@@ -573,7 +573,21 @@ export function LineItemFormDialog({
                   <FormItem>
                     <FormLabel>Quantity</FormLabel>
                     <FormControl>
-                      <Input type="number" step="0.01" {...field} placeholder="0" data-testid={`input-${testPrefix}quantity`} />
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        pattern="[0-9]*\.?[0-9]*"
+                        placeholder="0" 
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                            field.onChange(parseFloat(val) || 0);
+                          }
+                        }}
+                        data-testid={`input-${testPrefix}quantity`} 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -590,7 +604,21 @@ export function LineItemFormDialog({
                 <FormItem>
                   <FormLabel>Material Cost ($)</FormLabel>
                   <FormControl>
-                    <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid={`input-${testPrefix}material-cost`} />
+                    <Input 
+                      type="text"
+                      inputMode="decimal"
+                      pattern="[0-9]*\.?[0-9]*"
+                      placeholder="0.00" 
+                      {...field}
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                          field.onChange(parseFloat(val) || 0);
+                        }
+                      }}
+                      data-testid={`input-${testPrefix}material-cost`} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -705,10 +733,18 @@ export function LineItemFormDialog({
                         </FormLabel>
                         <FormControl>
                           <Input 
-                            type="number" 
-                            step="0.01" 
+                            type="text"
+                            inputMode="decimal"
+                            pattern="[0-9]*\.?[0-9]*"
                             placeholder="0.00" 
                             {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                field.onChange(parseFloat(val) || 0);
+                              }
+                            }}
                             readOnly={hasRate}
                             className={hasRate ? "bg-muted" : ""}
                             data-testid={`input-${testPrefix}labor-cost`}
