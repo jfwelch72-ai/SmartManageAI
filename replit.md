@@ -28,7 +28,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Live Project Profitability Tracking**: Automated real-time cost monitoring via background cron job with in-app notifications.
 *   **Subcontract Management**: Full subcontract lifecycle with SOV scope alignment, AIA G702/G703-style pay applications, retention tracking, performance scorecards, and document attachments.
 *   **Procurement Module**: Full procure-to-pay lifecycle with automated 3-Way Match and RBAC approvals.
-*   **Communication & Collaboration**: Unified Messaging System with Video Calling (WebRTC with in-call notes), Client Portal Chat, and Subcontractor Portal System.
+*   **Communication & Collaboration**: Unified Messaging System with Video Calling (WebRTC with in-call notes, dynamic ICE config via `/api/calls/ice-config`, TURN relay support via env vars `TURN_SERVER_URL`, `TURN_SERVER_USERNAME`, `TURN_SERVER_CREDENTIAL`), Client Portal Chat, and Subcontractor Portal System.
 *   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets.
 *   **Website Builder System**: White-label website management with AI Website Wizard, page builder, publishing controls, and SEO support.
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, feature flags, and a 4-tier subscription model.

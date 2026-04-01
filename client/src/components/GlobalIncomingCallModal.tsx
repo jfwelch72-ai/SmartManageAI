@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -18,6 +18,8 @@ export function GlobalIncomingCallModal({
   onAccept,
   onDecline,
 }: GlobalIncomingCallModalProps) {
+  const [countdown, setCountdown] = useState(30);
+
   useEffect(() => {
     const AudioCtx = window.AudioContext || ((window as unknown as Record<string, typeof AudioContext>).webkitAudioContext);
     const ctx = new AudioCtx();
@@ -44,11 +46,19 @@ export function GlobalIncomingCallModal({
     };
 
     playRing();
-    const interval = setInterval(playRing, 2000);
+    const ringInterval = setInterval(playRing, 2000);
+
+    const countdownInterval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) return 0;
+        return prev - 1;
+      });
+    }, 1000);
 
     return () => {
       stopped = true;
-      clearInterval(interval);
+      clearInterval(ringInterval);
+      clearInterval(countdownInterval);
       ctx.close().catch(() => {});
     };
   }, []);
@@ -87,7 +97,7 @@ export function GlobalIncomingCallModal({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
           </span>
-          Ringing...
+          Ringing... {countdown > 0 && <span className="tabular-nums">({countdown}s)</span>}
         </div>
 
         <div className="flex items-center gap-6">

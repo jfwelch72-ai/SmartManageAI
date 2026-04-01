@@ -30,8 +30,9 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const registerAllListenersOnSource = useCallback((es: EventSource) => {
+    const knownTypes = Array.from(listenersRef.current.keys());
     registeredEventsRef.current.clear();
-    for (const eventType of listenersRef.current.keys()) {
+    for (const eventType of knownTypes) {
       const handler = (e: MessageEvent) => dispatchToListeners(eventType, e);
       es.addEventListener(eventType, handler as EventListener);
       registeredEventsRef.current.add(eventType);

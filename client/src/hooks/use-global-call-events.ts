@@ -5,6 +5,9 @@ import { useGlobalSSE } from "@/contexts/GlobalSSEContext";
 import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
 import type { VideoCallData, Conversation } from "@/components/messaging/types";
 
+const INCOMING_CALL_TIMEOUT_MS = 30000;
+const ACTIVE_CALLS_POLL_INTERVAL_MS = 8000;
+
 interface GlobalCallState {
   incomingCall: VideoCallData | null;
   conversationName: string;
@@ -20,6 +23,8 @@ export function useGlobalCallEvents(): GlobalCallState {
   const { addListener, removeListener, isConnected } = useGlobalSSE();
   const userRef = useRef(user);
   const activeCallRef = useRef(activeCall);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPolledCallIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { userRef.current = user; }, [user]);
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
 
@@ -28,14 +33,22 @@ export function useGlobalCallEvents(): GlobalCallState {
 
     const handleCallStarted = (e: MessageEvent) => {
       try {
+        console.log("[CallEvents] Received call_started SSE event");
         const data = JSON.parse(e.data);
+        console.log("[CallEvents] call_started data:", { callId: data?.call?.id, initiatorId: data?.call?.initiatorId, status: data?.call?.status });
         const call = data.call as VideoCallData;
         if (!call || !call.id) {
           console.warn("[CallEvents] Received call_started with invalid call data", data);
           return;
         }
-        if (call.initiatorId === userRef.current?.id) return;
-        if (activeCallRef.current) return;
+        if (call.initiatorId === userRef.current?.id) {
+          console.log("[CallEvents] Ignoring call_started from self");
+          return;
+        }
+        if (activeCallRef.current) {
+          console.log("[CallEvents] Ignoring call_started while already in a call");
+          return;
+        }
 
         if (!call.initiator || !call.initiator.firstName) {
           call.initiator = call.initiator || { id: call.initiatorId, firstName: "Unknown", lastName: "Caller", role: "" };
@@ -153,6 +166,95 @@ export function useGlobalCallEvents(): GlobalCallState {
       removeListener("webrtc_signal", handleWebRTCSignal);
     };
   }, [user, isConnected, addListener, removeListener, updateActiveCall, dispatchSignal]);
+
+  useEffect(() => {
+    if (incomingCall) {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = setTimeout(() => {
+        console.log("[CallEvents] Auto-dismissing incoming call after timeout");
+        setIncomingCall(null);
+        setConversationName("");
+      }, INCOMING_CALL_TIMEOUT_MS);
+    } else {
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+    };
+  }, [incomingCall]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const pollActiveCalls = async () => {
+      try {
+        const res = await fetch("/api/conversations/active-calls", { credentials: "include" });
+        if (!res.ok) return;
+        const calls: VideoCallData[] = await res.json();
+
+        const ringingCalls = calls.filter(
+          (c) => c.status === "RINGING" && c.initiatorId !== userRef.current?.id
+        );
+
+        if (ringingCalls.length > 0 && !activeCallRef.current) {
+          const call = ringingCalls[0];
+          if (!lastPolledCallIdsRef.current.has(call.id)) {
+            lastPolledCallIdsRef.current.add(call.id);
+
+            if (!call.initiator || !call.initiator.firstName) {
+              call.initiator = call.initiator || { id: call.initiatorId, firstName: "Unknown", lastName: "Caller", role: "" };
+              if (!call.initiator.firstName) call.initiator.firstName = "Unknown";
+              if (!call.initiator.lastName) call.initiator.lastName = "Caller";
+            }
+
+            setIncomingCall((prev) => {
+              if (prev) return prev;
+              console.log("[CallEvents] Detected ringing call via polling:", call.id);
+              return call;
+            });
+
+            fetch("/api/conversations", { credentials: "include" })
+              .then((r) => (r.ok ? r.json() : []))
+              .then((convs: Conversation[]) => {
+                const conv = convs.find((c) => c.id === call.conversationId);
+                if (conv) {
+                  if (conv.isCompanyChannel) setConversationName("Company Chat");
+                  else if (conv.name) setConversationName(conv.name);
+                  else if (conv.type === "DIRECT") {
+                    const other = conv.participants.find((p) => p.userId !== userRef.current?.id);
+                    if (other) setConversationName(`${other.user.firstName} ${other.user.lastName}`);
+                    else setConversationName("Direct Message");
+                  } else setConversationName("Group Conversation");
+                } else {
+                  setConversationName("Video Call");
+                }
+              })
+              .catch(() => setConversationName("Video Call"));
+          }
+        }
+
+        const activeCallIds = new Set(calls.map((c) => c.id));
+        for (const id of lastPolledCallIdsRef.current) {
+          if (!activeCallIds.has(id)) {
+            lastPolledCallIdsRef.current.delete(id);
+          }
+        }
+      } catch (err) {
+        console.error("[CallEvents] Polling active calls failed:", err);
+      }
+    };
+
+    const interval = setInterval(pollActiveCalls, ACTIVE_CALLS_POLL_INTERVAL_MS);
+    pollActiveCalls();
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   const acceptCall = useCallback(async () => {
     if (!incomingCall) return;

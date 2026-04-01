@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Video, VideoOff, Mic, MicOff, MonitorUp, PhoneOff,
-  FileText, Users, Maximize2, Minimize2, Clock, Loader2, WifiOff
+  FileText, Users, Maximize2, Minimize2, Clock, Loader2, WifiOff, RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -10,25 +10,13 @@ import { CallNotesPanel } from "./CallNotesPanel";
 import { getInitials, type VideoCallData, type Conversation } from "./types";
 import { cn } from "@/lib/utils";
 
-const ICE_SERVERS: RTCConfiguration = {
+const FALLBACK_ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
   ],
 };
 
@@ -67,7 +55,8 @@ export function VideoCallOverlay({
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
-  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState>>({});
+  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying">>({});
+  const [iceConfig, setIceConfig] = useState<RTCConfiguration>(FALLBACK_ICE_SERVERS);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -79,6 +68,8 @@ export function VideoCallOverlay({
   const deferredConnectionsRef = useRef<Set<string>>(new Set());
   const deferredOffersRef = useRef<Record<string, RTCSessionDescriptionInit>>({});
   const iceTimeoutRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const retryCountRef = useRef<Record<string, number>>({});
+  const iceConfigRef = useRef<RTCConfiguration>(FALLBACK_ICE_SERVERS);
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -124,6 +115,29 @@ export function VideoCallOverlay({
     }
   }, [localStream]);
 
+  useEffect(() => {
+    fetch("/api/calls/ice-config", { credentials: "include" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.iceServers) {
+          const config: RTCConfiguration = { iceServers: data.iceServers };
+          setIceConfig(config);
+          iceConfigRef.current = config;
+          const turnCount = data.iceServers.filter((s: { urls: string | string[] }) => {
+            const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+            return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
+          }).length;
+          console.log(`[WebRTC] Loaded ICE config: ${data.iceServers.length} servers (${turnCount} TURN)`);
+          if (turnCount === 0) {
+            console.warn("[WebRTC] No TURN servers configured. Calls may fail behind restrictive NATs. Set TURN_SERVER_URL, TURN_SERVER_USERNAME, TURN_SERVER_CREDENTIAL env vars to enable TURN relay.");
+          }
+        }
+      })
+      .catch(err => {
+        console.warn("[WebRTC] Failed to fetch ICE config, using fallback:", err);
+      });
+  }, []);
+
   const sendSignal = useCallback(async (targetUserId: string, signal: unknown) => {
     try {
       await apiRequest("POST", `/api/calls/${call.id}/signal`, {
@@ -135,12 +149,12 @@ export function VideoCallOverlay({
     }
   }, [call.id]);
 
-  const createPeerConnection = useCallback((remoteUserId: string): RTCPeerConnection => {
+  const createPeerConnection = useCallback((remoteUserId: string, overrideConfig?: RTCConfiguration): RTCPeerConnection => {
     if (peerConnectionsRef.current[remoteUserId]) {
       peerConnectionsRef.current[remoteUserId].close();
     }
 
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new RTCPeerConnection(overrideConfig || iceConfigRef.current);
     peerConnectionsRef.current[remoteUserId] = pc;
 
     if (localStreamRef.current) {
@@ -187,6 +201,7 @@ export function VideoCallOverlay({
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
           delete iceTimeoutRef.current[remoteUserId];
         }
+        retryCountRef.current[remoteUserId] = 0;
       }
 
       if (state === "failed") {
@@ -194,11 +209,21 @@ export function VideoCallOverlay({
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
           delete iceTimeoutRef.current[remoteUserId];
         }
-        setRemoteStreams(prev => {
-          const next = { ...prev };
-          delete next[remoteUserId];
-          return next;
-        });
+        const retries = retryCountRef.current[remoteUserId] || 0;
+        if (retries < 1) {
+          retryCountRef.current[remoteUserId] = retries + 1;
+          console.log(`[WebRTC] Auto-retrying connection to ${remoteUserId} (attempt ${retries + 2})`);
+          setPeerStates(prev => ({ ...prev, [remoteUserId]: "retrying" }));
+          setTimeout(() => {
+            retryConnection(remoteUserId);
+          }, 1000);
+        } else {
+          setRemoteStreams(prev => {
+            const next = { ...prev };
+            delete next[remoteUserId];
+            return next;
+          });
+        }
       } else if (state === "disconnected") {
         if (iceTimeoutRef.current[remoteUserId]) {
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
@@ -219,10 +244,11 @@ export function VideoCallOverlay({
       if (state === "checking") {
         iceTimeoutRef.current[remoteUserId] = setTimeout(() => {
           if (pc.iceConnectionState === "checking") {
-            console.warn(`[WebRTC] ICE checking timeout for ${remoteUserId}, connection may fail`);
+            console.warn(`[WebRTC] ICE checking timeout for ${remoteUserId}`);
+            pc.close();
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
           }
-        }, 15000);
+        }, 20000);
       }
     };
 
@@ -265,6 +291,44 @@ export function VideoCallOverlay({
       makingOfferRef.current[remoteUserId] = false;
     }
   }, [createPeerConnection, sendSignal]);
+
+  const retryConnection = useCallback(async (remoteUserId: string) => {
+    if (!localStreamRef.current) return;
+    makingOfferRef.current[remoteUserId] = false;
+
+    try {
+      const currentConfig = iceConfigRef.current;
+      const hasTurnServers = currentConfig.iceServers?.some(
+        (s) => {
+          const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+          return urls.some(u => u.startsWith("turn:") || u.startsWith("turns:"));
+        }
+      );
+
+      const retryConfig: RTCConfiguration = {
+        ...currentConfig,
+        iceCandidatePoolSize: 4,
+        bundlePolicy: "max-bundle",
+        ...(hasTurnServers ? { iceTransportPolicy: "relay" } : {}),
+      };
+
+      console.log(`[WebRTC] Retrying connection to ${remoteUserId} (relay-only: ${hasTurnServers})`);
+      setPeerStates(prev => ({ ...prev, [remoteUserId]: "retrying" }));
+      const pc = createPeerConnection(remoteUserId, retryConfig);
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      await sendSignal(remoteUserId, { type: "offer", sdp: pc.localDescription });
+      console.log(`[WebRTC] Retry offer sent to ${remoteUserId}`);
+    } catch (err) {
+      console.error("[WebRTC] Retry failed:", err);
+      setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
+    }
+  }, [createPeerConnection, sendSignal]);
+
+  const handleRetryConnection = useCallback((remoteUserId: string) => {
+    retryCountRef.current[remoteUserId] = 0;
+    retryConnection(remoteUserId);
+  }, [retryConnection]);
 
   const handleSignal = useCallback(async (fromUserId: string, signal: SignalMessage) => {
     if (fromUserId === currentUserId) return;
@@ -569,6 +633,7 @@ export function VideoCallOverlay({
               const remoteStream = remoteStreams[p.userId];
               const peerCameraOff = remoteCameraOff[p.userId] ?? false;
               const iceState = peerStates[p.userId];
+              const isRetrying = iceState === "retrying";
               const isConnecting = iceState === "new" || iceState === "checking";
               const isFailed = iceState === "failed";
               return (
@@ -584,6 +649,21 @@ export function VideoCallOverlay({
                       <WifiOff className="w-10 h-10 text-red-400" />
                       <p className="text-red-400 text-sm font-medium" data-testid="text-connection-failed">Connection failed</p>
                       <p className="text-gray-500 text-xs">Unable to establish video connection</p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="mt-2 gap-1.5"
+                        onClick={() => handleRetryConnection(p.userId)}
+                        data-testid={`button-retry-connection-${p.userId}`}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Retry
+                      </Button>
+                    </div>
+                  ) : isRetrying ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="w-10 h-10 text-amber-400 animate-spin" />
+                      <p className="text-amber-400 text-sm" data-testid="text-retrying">Retrying connection...</p>
                     </div>
                   ) : isConnecting ? (
                     <div className="flex flex-col items-center gap-2">

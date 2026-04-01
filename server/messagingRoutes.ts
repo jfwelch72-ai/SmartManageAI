@@ -2940,6 +2940,34 @@ const messagingSetup = (async () => {
     }
   });
 
+  router.get("/api/calls/ice-config", requireAuth, async (_req: AuthRequest, res) => {
+    try {
+      const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
+        { urls: "stun:stun4.l.google.com:19302" },
+      ];
+
+      const turnUrl = process.env.TURN_SERVER_URL;
+      const turnUser = process.env.TURN_SERVER_USERNAME;
+      const turnCred = process.env.TURN_SERVER_CREDENTIAL;
+
+      if (turnUrl && turnUser && turnCred) {
+        const turnUrls = turnUrl.split(",").map(u => u.trim()).filter(Boolean);
+        for (const url of turnUrls) {
+          iceServers.push({ urls: url, username: turnUser, credential: turnCred });
+        }
+      }
+
+      res.json({ iceServers });
+    } catch (error) {
+      logError("ICE config error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   router.get("/api/conversations/active-calls", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
