@@ -1013,7 +1013,7 @@ export function LineItemFormDialog({
 
   if (isAdd) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
         <DialogTrigger asChild>
           <Button data-testid="button-open-add-line-item">
             <Plus className="h-4 w-4 mr-2" />
@@ -1026,7 +1026,7 @@ export function LineItemFormDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       {dialogContent}
     </Dialog>
   );

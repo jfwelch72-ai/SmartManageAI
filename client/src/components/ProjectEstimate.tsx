@@ -708,7 +708,7 @@ export default function ProjectEstimate() {
             if (!open) {
               setMaterialCalcData(getDefaultMaterialCalculatorData());
             }
-          }}>
+          }} modal={false}>
             <DialogTrigger asChild>
               <Button data-testid="button-open-add-line-item">
                 <Plus className="h-4 w-4 mr-2" />
