@@ -1483,8 +1483,6 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       // Normalize data to fix frontend/backend enum mismatches
       const normalizedLineItem = normalizeLineItemData(lineItem);
 
-      // Validate and create line item with calculated material quantities
-      // Schema handles number-to-string coercion for all decimal fields
       const parseInput: Record<string, any> = {
         ...normalizedLineItem,
         estimateId,
@@ -1502,6 +1500,28 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         materialRequirementsJson: generateMaterialRequirementsJson(materialResults),
         equipmentRequirementsJson: generateEquipmentRequirementsJson(materialResults),
       };
+
+      const decimalFields = [
+        'quantity', 'materialCost', 'laborHours', 'laborCost',
+        'equipmentHours', 'equipmentCost', 'consumablesCost',
+        'subcontractCost', 'overheadAllocation', 'profitAllocation', 'totalCost',
+        'computedQuantity', 'laborRateUsed',
+        'concreteDepthInches', 'dimensionWidthInches', 'dimensionHeightInches',
+        'concreteWasteFactor', 'calculatedConcreteYards',
+        'stoneDepthInches', 'stoneWasteFactor', 'calculatedStoneTons',
+        'excavationDepthInches', 'excavationWidthInches', 'excavationSwellFactor', 'calculatedExcavationYards',
+        'wireMeshCoverageSF', 'wireMeshWasteFactor', 'calculatedWireMeshRolls',
+        'rebarSpacingInches', 'rebarLengthFeet', 'rebarWasteFactor', 'calculatedRebarCount', 'calculatedRebarLinearFeet',
+        'dowelSpacingInches', 'dowelLengthInches', 'jointLengthFeet', 'calculatedDowelCount',
+        'sealerCoverageSFPerGallon', 'sealerWasteFactor', 'calculatedSealerGallons',
+        'underlaymentOverlapInches', 'underlaymentWasteFactor', 'calculatedUnderlaymentSF',
+      ];
+      for (const field of decimalFields) {
+        if (parseInput[field] !== undefined && parseInput[field] !== null && typeof parseInput[field] === 'number') {
+          parseInput[field] = String(parseInput[field]);
+        }
+      }
+
       const validatedData = insertEstimateLineItemSchema.parse(parseInput);
 
       if (DEBUG_LINE_ITEMS) {
@@ -1639,10 +1659,29 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         Number(updates.profitAllocation || 0)
       ).toString();
 
-      // Normalize data to fix frontend/backend enum mismatches
-      const normalizedUpdates = normalizeLineItemData(updates);
+      const normalizedUpdates: Record<string, any> = normalizeLineItemData(updates);
 
-      // Coerce decimal fields via schema (same coercion as POST route)
+      const decimalFields = [
+        'quantity', 'materialCost', 'laborHours', 'laborCost',
+        'equipmentHours', 'equipmentCost', 'consumablesCost',
+        'subcontractCost', 'overheadAllocation', 'profitAllocation', 'totalCost',
+        'computedQuantity', 'laborRateUsed',
+        'concreteDepthInches', 'dimensionWidthInches', 'dimensionHeightInches',
+        'concreteWasteFactor', 'calculatedConcreteYards',
+        'stoneDepthInches', 'stoneWasteFactor', 'calculatedStoneTons',
+        'excavationDepthInches', 'excavationWidthInches', 'excavationSwellFactor', 'calculatedExcavationYards',
+        'wireMeshCoverageSF', 'wireMeshWasteFactor', 'calculatedWireMeshRolls',
+        'rebarSpacingInches', 'rebarLengthFeet', 'rebarWasteFactor', 'calculatedRebarCount', 'calculatedRebarLinearFeet',
+        'dowelSpacingInches', 'dowelLengthInches', 'jointLengthFeet', 'calculatedDowelCount',
+        'sealerCoverageSFPerGallon', 'sealerWasteFactor', 'calculatedSealerGallons',
+        'underlaymentOverlapInches', 'underlaymentWasteFactor', 'calculatedUnderlaymentSF',
+      ];
+      for (const field of decimalFields) {
+        if (normalizedUpdates[field] !== undefined && normalizedUpdates[field] !== null && typeof normalizedUpdates[field] === 'number') {
+          normalizedUpdates[field] = String(normalizedUpdates[field]);
+        }
+      }
+
       const updateData = updateEstimateLineItemSchema.parse(normalizedUpdates);
 
       // Update line item with recalculated total and material quantities
