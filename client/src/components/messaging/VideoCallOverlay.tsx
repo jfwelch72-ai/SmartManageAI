@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Video, VideoOff, Mic, MicOff, MonitorUp, PhoneOff,
-  FileText, Users, Maximize2, Minimize2, Clock, Loader2, WifiOff, RefreshCw
+  FileText, Users, Maximize2, Minimize2, Clock, Loader2, WifiOff, RefreshCw, AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -22,6 +22,7 @@ const FALLBACK_ICE_SERVERS: RTCConfiguration = {
 
 const ICE_RETRY_BACKOFF = [1000, 3000, 5000];
 const MAX_ICE_RETRIES = 3;
+const PARTICIPANT_POLL_INTERVAL_MS = 3000;
 
 interface SignalMessage {
   type: "offer" | "answer" | "ice-candidate" | "camera-state";
@@ -36,6 +37,7 @@ interface VideoCallOverlayProps {
   currentUserId: string;
   onEndCall: () => void;
   onLeaveCall: () => void;
+  onUpdateCall?: (updater: (prev: VideoCallData | null) => VideoCallData | null) => void;
   registerSignalHandler?: (handler: (fromUserId: string, signal: unknown) => void) => void;
   unregisterSignalHandler?: () => void;
 }
@@ -46,6 +48,7 @@ export function VideoCallOverlay({
   currentUserId,
   onEndCall,
   onLeaveCall,
+  onUpdateCall,
   registerSignalHandler,
   unregisterSignalHandler,
 }: VideoCallOverlayProps) {
@@ -59,6 +62,8 @@ export function VideoCallOverlay({
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
   const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying" | "checking_slow" | "peer_unreachable">>({});
+  const [iceFailureReasons, setIceFailureReasons] = useState<Record<string, "no_turn" | "turn_unreachable" | "network_blocked">>({});
+  const iceFailureReasonsRef = useRef<Record<string, "no_turn" | "turn_unreachable" | "network_blocked">>({});
   const [iceConfig, setIceConfig] = useState<RTCConfiguration>(FALLBACK_ICE_SERVERS);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -149,6 +154,48 @@ export function VideoCallOverlay({
       });
   }, []);
 
+  useEffect(() => {
+    if (!onUpdateCall) return;
+    const pollParticipants = async () => {
+      try {
+        const res = await fetch(`/api/calls/${call.id}`, { credentials: "include" });
+        if (!res.ok) return;
+        const callData = await res.json();
+        if (callData?.participants) {
+          onUpdateCall(prev => {
+            if (!prev || prev.id !== call.id) return prev;
+            const existingIds = new Set(prev.participants.map((p: { userId: string }) => p.userId));
+            const newParticipants = callData.participants.filter(
+              (p: { userId: string; leftAt: string | null }) => !p.leftAt && !existingIds.has(p.userId)
+            );
+            const statusChanged = prev.status !== callData.status;
+            if (newParticipants.length === 0 && !statusChanged) {
+              const serverActiveIds = new Set(
+                callData.participants
+                  .filter((p: { leftAt: string | null }) => !p.leftAt)
+                  .map((p: { userId: string }) => p.userId)
+              );
+              const removed = prev.participants.filter(
+                (p: { userId: string; leftAt: string | null }) => !p.leftAt && !serverActiveIds.has(p.userId)
+              );
+              if (removed.length === 0) return prev;
+            }
+            console.log(`[WebRTC] Participant poll: found ${newParticipants.length} new participant(s)`);
+            const serverParticipants = callData.participants.filter(
+              (p: { leftAt: string | null }) => !p.leftAt
+            );
+            return { ...prev, status: callData.status, participants: serverParticipants };
+          });
+        }
+      } catch (err) {
+        console.warn("[WebRTC] Participant poll failed:", err);
+      }
+    };
+    const interval = setInterval(pollParticipants, PARTICIPANT_POLL_INTERVAL_MS);
+    pollParticipants();
+    return () => clearInterval(interval);
+  }, [call.id, onUpdateCall]);
+
   const sendSignal = useCallback(async (targetUserId: string, signal: unknown) => {
     try {
       const res = await apiRequest("POST", `/api/calls/${call.id}/signal`, {
@@ -232,6 +279,30 @@ export function VideoCallOverlay({
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
           delete iceTimeoutRef.current[remoteUserId];
         }
+        if (!iceFailureReasonsRef.current[remoteUserId]) {
+          const hasTurn = iceConfigRef.current.iceServers?.some(s => {
+            const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+            return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
+          });
+          pc.getStats().then(stats => {
+            let hasRelay = false;
+            stats.forEach(report => {
+              if (report.type === "local-candidate" && report.candidateType === "relay") {
+                hasRelay = true;
+              }
+            });
+            let reason: "no_turn" | "turn_unreachable" | "network_blocked";
+            if (!hasTurn) {
+              reason = "no_turn";
+            } else if (!hasRelay) {
+              reason = "turn_unreachable";
+            } else {
+              reason = "network_blocked";
+            }
+            iceFailureReasonsRef.current[remoteUserId] = reason;
+            setIceFailureReasons(prev => ({ ...prev, [remoteUserId]: reason }));
+          }).catch(() => {});
+        }
         const retries = retryCountRef.current[remoteUserId] || 0;
         if (retries < MAX_ICE_RETRIES) {
           retryCountRef.current[remoteUserId] = retries + 1;
@@ -268,13 +339,53 @@ export function VideoCallOverlay({
       if (state === "checking") {
         iceTimeoutRef.current[`${remoteUserId}_slow`] = setTimeout(() => {
           if (pc.iceConnectionState === "checking") {
-            console.warn(`[WebRTC] ICE connection to ${remoteUserId} taking longer than expected`);
+            console.warn(`[WebRTC] ICE connection to ${remoteUserId} taking longer than expected (>5s in checking state)`);
+            try {
+              pc.getStats().then(stats => {
+                const candidatePairs: string[] = [];
+                stats.forEach(report => {
+                  if (report.type === "candidate-pair") {
+                    candidatePairs.push(`  pair: state=${report.state}, local=${report.localCandidateId}, remote=${report.remoteCandidateId}, nominated=${report.nominated}`);
+                  }
+                });
+                if (candidatePairs.length > 0) {
+                  console.log(`[WebRTC] ICE candidate pairs for ${remoteUserId}:\n${candidatePairs.join("\n")}`);
+                } else {
+                  console.warn(`[WebRTC] No ICE candidate pairs found for ${remoteUserId} — candidates may not be exchanged`);
+                }
+              });
+            } catch {}
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "checking_slow" }));
           }
         }, 5000);
-        iceTimeoutRef.current[remoteUserId] = setTimeout(() => {
+        iceTimeoutRef.current[remoteUserId] = setTimeout(async () => {
           if (pc.iceConnectionState === "checking") {
-            console.warn(`[WebRTC] ICE checking timeout for ${remoteUserId}`);
+            const hasTurn = iceConfigRef.current.iceServers?.some(s => {
+              const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+              return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
+            });
+            let hasRelayCandidates = false;
+            try {
+              const stats = await pc.getStats();
+              stats.forEach(report => {
+                if (report.type === "local-candidate" && report.candidateType === "relay") {
+                  hasRelayCandidates = true;
+                }
+              });
+            } catch {}
+            if (!hasTurn) {
+              console.error(`[WebRTC] ICE checking timeout for ${remoteUserId}: No TURN server configured — direct connection failed, relay not available`);
+              iceFailureReasonsRef.current[remoteUserId] = "no_turn";
+              setIceFailureReasons(prev => ({ ...prev, [remoteUserId]: "no_turn" }));
+            } else if (!hasRelayCandidates) {
+              console.error(`[WebRTC] ICE checking timeout for ${remoteUserId}: TURN server configured but no relay candidates gathered — TURN server appears unreachable`);
+              iceFailureReasonsRef.current[remoteUserId] = "turn_unreachable";
+              setIceFailureReasons(prev => ({ ...prev, [remoteUserId]: "turn_unreachable" }));
+            } else {
+              console.error(`[WebRTC] ICE checking timeout for ${remoteUserId}: TURN relay candidates exist but connection still failed — network may be blocking all paths`);
+              iceFailureReasonsRef.current[remoteUserId] = "network_blocked";
+              setIceFailureReasons(prev => ({ ...prev, [remoteUserId]: "network_blocked" }));
+            }
             pc.close();
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
           }
@@ -366,6 +477,29 @@ export function VideoCallOverlay({
   const handleSignal = useCallback(async (fromUserId: string, signal: SignalMessage) => {
     if (fromUserId === currentUserId) return;
 
+    if (signal.type === "offer" || signal.type === "answer") {
+      const isKnownParticipant = call.participants.some(
+        (p: { userId: string; leftAt: string | null }) => p.userId === fromUserId && !p.leftAt
+      );
+      if (!isKnownParticipant && onUpdateCall) {
+        console.log(`[WebRTC] Auto-adding unknown peer ${fromUserId} from incoming ${signal.type}`);
+        onUpdateCall(prev => {
+          if (!prev || prev.id !== call.id) return prev;
+          const alreadyIn = prev.participants.some((p: { userId: string }) => p.userId === fromUserId);
+          if (alreadyIn) return prev;
+          const newParticipant = {
+            id: `signal-${fromUserId}`,
+            callId: call.id,
+            userId: fromUserId,
+            joinedAt: new Date().toISOString(),
+            leftAt: null,
+            user: { id: fromUserId, firstName: "Participant", lastName: "", role: "" },
+          };
+          return { ...prev, participants: [...prev.participants, newParticipant] };
+        });
+      }
+    }
+
     if (signal.type === "camera-state") {
       setRemoteCameraOff(prev => ({ ...prev, [fromUserId]: !!signal.cameraOff }));
       return;
@@ -431,7 +565,7 @@ export function VideoCallOverlay({
         pendingCandidatesRef.current[fromUserId].push(signal.candidate!);
       }
     }
-  }, [currentUserId, createPeerConnection, sendSignal, flushPendingCandidates]);
+  }, [currentUserId, createPeerConnection, sendSignal, flushPendingCandidates, call.id, call.participants, onUpdateCall]);
 
   const handleSignalRef = useRef(handleSignal);
   useEffect(() => { handleSignalRef.current = handleSignal; }, [handleSignal]);
@@ -708,11 +842,47 @@ export function VideoCallOverlay({
                     <div className="flex flex-col items-center gap-2 text-center px-4">
                       <WifiOff className="w-10 h-10 text-red-400" />
                       <p className="text-red-400 text-sm font-medium" data-testid="text-connection-failed">Connection failed</p>
-                      <p className="text-gray-500 text-xs">
-                        {noTurnServers
-                          ? "A relay (TURN) server is needed but not configured. Direct connection could not be established."
-                          : "This may be due to network restrictions or firewall settings"}
-                      </p>
+                      {(() => {
+                        const reason = iceFailureReasons[p.userId];
+                        if (reason === "no_turn" || noTurnServers) {
+                          return (
+                            <div className="flex flex-col items-center gap-1">
+                              <div className="flex items-center gap-1 text-amber-400">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <p className="text-xs font-medium">No TURN server configured</p>
+                              </div>
+                              <p className="text-gray-500 text-xs">
+                                Direct peer-to-peer connection failed. A TURN relay server is needed for calls behind firewalls or NATs. Ask your admin to configure TURN server environment variables.
+                              </p>
+                            </div>
+                          );
+                        }
+                        if (reason === "turn_unreachable") {
+                          return (
+                            <div className="flex flex-col items-center gap-1">
+                              <div className="flex items-center gap-1 text-amber-400">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <p className="text-xs font-medium">TURN server unreachable</p>
+                              </div>
+                              <p className="text-gray-500 text-xs">
+                                The TURN relay server is configured but could not be reached. Check that the TURN server is running and accessible from your network.
+                              </p>
+                            </div>
+                          );
+                        }
+                        if (reason === "network_blocked") {
+                          return (
+                            <p className="text-gray-500 text-xs">
+                              All connection paths (direct and relay) are blocked. Your network firewall may be preventing WebRTC connections entirely.
+                            </p>
+                          );
+                        }
+                        return (
+                          <p className="text-gray-500 text-xs">
+                            This may be due to network restrictions or firewall settings.
+                          </p>
+                        );
+                      })()}
                       <Button
                         variant="secondary"
                         size="sm"

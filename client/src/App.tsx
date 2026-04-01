@@ -519,7 +519,7 @@ function AuthGatedWidget() {
 
 function GlobalVideoCallOverlay() {
   const { user } = useAuth();
-  const { activeCall, activeCallConversation, endGlobalCall, leaveGlobalCall, registerSignalHandler, unregisterSignalHandler } = useGlobalVideoCall();
+  const { activeCall, activeCallConversation, endGlobalCall, leaveGlobalCall, updateActiveCall, registerSignalHandler, unregisterSignalHandler } = useGlobalVideoCall();
 
   if (!activeCall || !activeCallConversation || !user) return null;
 
@@ -530,6 +530,7 @@ function GlobalVideoCallOverlay() {
       currentUserId={user.id}
       onEndCall={endGlobalCall}
       onLeaveCall={leaveGlobalCall}
+      onUpdateCall={updateActiveCall}
       registerSignalHandler={registerSignalHandler}
       unregisterSignalHandler={unregisterSignalHandler}
     />

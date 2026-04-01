@@ -146,6 +146,23 @@ export function useGlobalCallEvents(): GlobalCallState {
     const handleWebRTCSignal = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
+        if (data.signal && (data.signal.type === "offer" || data.signal.type === "answer") && data.fromUserId) {
+          updateActiveCall(prev => {
+            if (!prev || prev.id !== data.callId) return prev;
+            const alreadyIn = prev.participants.some((p: { userId: string }) => p.userId === data.fromUserId);
+            if (alreadyIn) return prev;
+            console.log(`[CallEvents] Auto-adding peer ${data.fromUserId} from webrtc_signal`);
+            const newParticipant = {
+              id: `signal-${data.fromUserId}`,
+              callId: data.callId,
+              userId: data.fromUserId,
+              joinedAt: new Date().toISOString(),
+              leftAt: null,
+              user: { id: data.fromUserId, firstName: "Participant", lastName: "", role: "" },
+            };
+            return { ...prev, participants: [...prev.participants, newParticipant] };
+          });
+        }
         dispatchSignal(data);
       } catch (err) {
         console.error("[CallEvents] Error handling webrtc_signal event:", err);

@@ -2963,20 +2963,69 @@ const messagingSetup = (async () => {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
       } else {
-        iceServers.push({
-          urls: [
-            "turn:openrelay.metered.ca:80",
-            "turn:openrelay.metered.ca:443",
-            "turns:openrelay.metered.ca:443",
-          ],
-          username: "openrelayproject",
-          credential: "openrelayproject",
-        });
+        iceServers.push(
+          {
+            urls: [
+              "turn:a.relay.metered.ca:80",
+              "turn:a.relay.metered.ca:80?transport=tcp",
+              "turn:a.relay.metered.ca:443",
+              "turn:a.relay.metered.ca:443?transport=tcp",
+            ],
+            username: "e8dd65b92f0b960484ce053c",
+            credential: "uWdxVv8vn6sGMzR0",
+          },
+          {
+            urls: "turns:a.relay.metered.ca:443?transport=tcp",
+            username: "e8dd65b92f0b960484ce053c",
+            credential: "uWdxVv8vn6sGMzR0",
+          },
+        );
+        console.warn("[ICE Config] Using fallback Metered TURN servers. For production, configure TURN_SERVER_URL, TURN_SERVER_USERNAME, TURN_SERVER_CREDENTIAL environment variables with your own TURN provider.");
       }
 
-      res.json({ iceServers });
+      const hasTurn = iceServers.some(s => {
+        const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+        return urls.some(u => u.startsWith("turn:") || u.startsWith("turns:"));
+      });
+
+      res.json({ iceServers, hasTurn });
     } catch (error) {
       logError("ICE config error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/calls/:callId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const isParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      const participantsData = await db
+        .select({
+          participant: videoCallParticipants,
+          user: { id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role },
+        })
+        .from(videoCallParticipants)
+        .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+        .where(and(eq(videoCallParticipants.callId, callId), sql`${videoCallParticipants.leftAt} IS NULL`));
+
+      const initiatorData = await db.select({
+        id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role,
+      }).from(users).where(eq(users.id, call.initiatorId)).limit(1);
+
+      res.json({
+        ...call,
+        initiator: initiatorData[0],
+        participants: participantsData.map(p => ({ ...p.participant, user: p.user })),
+      });
+    } catch (error) {
+      logError("Get call error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
