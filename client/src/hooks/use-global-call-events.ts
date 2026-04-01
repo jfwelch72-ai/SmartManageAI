@@ -17,12 +17,12 @@ export function useGlobalCallEvents(): GlobalCallState {
   const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
   const [conversationName, setConversationName] = useState("");
   const { startGlobalCall, updateActiveCall, dispatchSignal } = useGlobalVideoCall();
-  const { addListener, removeListener } = useGlobalSSE();
+  const { addListener, removeListener, isConnected } = useGlobalSSE();
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isConnected) return;
 
     const handleCallStarted = (e: MessageEvent) => {
       try {
@@ -151,7 +151,7 @@ export function useGlobalCallEvents(): GlobalCallState {
       removeListener("call_left", handleCallLeft);
       removeListener("webrtc_signal", handleWebRTCSignal);
     };
-  }, [user, addListener, removeListener, updateActiveCall, dispatchSignal]);
+  }, [user, isConnected, addListener, removeListener, updateActiveCall, dispatchSignal]);
 
   const acceptCall = useCallback(async () => {
     if (!incomingCall) return;

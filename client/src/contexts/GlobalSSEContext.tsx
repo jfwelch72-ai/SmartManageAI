@@ -134,8 +134,13 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
   );
 }
 
+const noopFallback: GlobalSSEContextType = {
+  addListener: () => {},
+  removeListener: () => {},
+  isConnected: false,
+};
+
 export function useGlobalSSE() {
   const ctx = useContext(GlobalSSEContext);
-  if (!ctx) throw new Error("useGlobalSSE must be used within GlobalSSEProvider");
-  return ctx;
+  return ctx ?? noopFallback;
 }

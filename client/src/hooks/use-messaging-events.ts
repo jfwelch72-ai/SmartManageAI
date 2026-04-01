@@ -124,6 +124,8 @@ export function useMessagingEvents(
   useEffect(() => { setTypingNames({}); }, [activeConversationId]);
 
   useEffect(() => {
+    if (!isConnected) return;
+
     const handleMessageNew = (e: MessageEvent) => {
       try {
         const { conversationId: convId, message } = JSON.parse(e.data) as MessageNewEvent;
@@ -272,7 +274,7 @@ export function useMessagingEvents(
       removeListener("call_ended", handleCallEnded);
       removeListener("webrtc_signal", handleWebRTCSignal);
     };
-  }, [addListener, removeListener]);
+  }, [isConnected, addListener, removeListener]);
 
   return { sseLive: isConnected, typingNames };
 }
