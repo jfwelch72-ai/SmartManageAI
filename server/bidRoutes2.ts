@@ -2704,44 +2704,190 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
       return res.status(400).json({ error: "No recipient email provided and no client contact email on bid" });
     }
 
-    const finalAmount = bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "To be determined";
-    const dueDate = bid.dueDate ? new Date(bid.dueDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "Not specified";
+    const esc = (str: string): string => str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+    const finalAmount = bid.bidAmount ? `₱${Number(bid.bidAmount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "To be discussed";
+    const parsedDueDate = bid.dueDate ? new Date(bid.dueDate) : null;
+    const dueDate = (parsedDueDate && !isNaN(parsedDueDate.getTime())) ? parsedDueDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "To be discussed";
+    const projectLocation = [bid.locationAddress, bid.city, bid.state].filter(Boolean).join(", ") || "To be discussed";
+
+    const { organizations } = await import("@shared/schema");
+    const sender = req.user!;
+    const senderFullName = [sender.firstName, sender.lastName].filter(Boolean).join(" ") || "";
+    const senderRole = sender.role || "";
+    const senderEmail = sender.email || "";
+    const senderPhone = sender.phone || "";
+
+    let orgName = "";
+    let orgPhone = "";
+    let orgEmail = "";
+    if (sender.organizationId) {
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, sender.organizationId)).limit(1);
+      if (org) {
+        orgName = org.name || "";
+        orgPhone = org.phone || "";
+        orgEmail = org.email || "";
+      }
+    }
+
+    let scopeOfWorkHtml = "";
+    let scopeOfWorkText = "";
+    try {
+      const latestEstimate = await db.query.estimates.findFirst({
+        where: eq(estimates.bidId, bid.id),
+        orderBy: [desc(estimates.versionNumber)],
+      });
+      if (latestEstimate) {
+        const lineItems = await db.select().from(estimateLineItems).where(eq(estimateLineItems.estimateId, latestEstimate.id));
+        if (lineItems.length > 0) {
+          scopeOfWorkHtml = lineItems.map(item => `<li style="margin-bottom: 6px; color: #333;">${esc(item.description)}</li>`).join("\n");
+          scopeOfWorkText = lineItems.map(item => `  - ${item.description}`).join("\n");
+        }
+      }
+    } catch (e) {
+      // fall through to defaults
+    }
+
+    if (!scopeOfWorkHtml) {
+      if (bid.description) {
+        scopeOfWorkHtml = `<li style="margin-bottom: 6px; color: #333;">${esc(bid.description)}</li>`;
+        scopeOfWorkText = `  - ${bid.description}`;
+      } else {
+        scopeOfWorkHtml = `<li style="margin-bottom: 6px; color: #333;">As per project requirements (to be discussed)</li>`;
+        scopeOfWorkText = `  - As per project requirements (to be discussed)`;
+      }
+    }
+
+    const clientGreeting = bid.clientContactName || bid.clientName || "Valued Client";
+
+    const signOffParts = [
+      senderFullName ? `<strong>${esc(senderFullName)}</strong>` : null,
+      senderRole ? `<span style="color: #555;">${esc(senderRole)}</span>` : null,
+      orgName ? `<span style="color: #555;">${esc(orgName)}</span>` : null,
+      (senderPhone || orgPhone) ? `<span style="color: #555;">Contact: ${esc(senderPhone || orgPhone)}</span>` : null,
+      (senderEmail || orgEmail) ? `<span style="color: #555;">Email: ${esc(senderEmail || orgEmail)}</span>` : null,
+    ].filter(Boolean);
+    const signOffHtml = signOffParts.length > 0 ? signOffParts.join("<br/>") : `<span style="color: #555;">Your Project Team</span>`;
+
+    const signOffTextParts = [
+      senderFullName || null,
+      senderRole || null,
+      orgName || null,
+      (senderPhone || orgPhone) ? `Contact: ${senderPhone || orgPhone}` : null,
+      (senderEmail || orgEmail) ? `Email: ${senderEmail || orgEmail}` : null,
+    ].filter(Boolean);
+    const signOffText = signOffTextParts.length > 0 ? signOffTextParts.join("\n") : "Your Project Team";
 
     const emailHtml = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #1a1a1a;">Bid Proposal: ${bid.name}</h2>
-        <p style="color: #555;">Dear ${bid.clientContactName || bid.clientName},</p>
-        <p style="color: #555;">Please find below the details of our bid proposal for your review.</p>
+      <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; color: #333;">
+        <h2 style="color: #1a1a1a; border-bottom: 2px solid #2563eb; padding-bottom: 10px;">Bid Proposal: ${esc(bid.name)}</h2>
+
+        <p>Dear ${esc(clientGreeting)},</p>
+        <p>Thank you for the opportunity to submit our bid for the above-mentioned project. We are pleased to present the following proposal for your review and consideration.</p>
+
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
           <tr style="background: #f5f5f5;">
-            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Project</td>
-            <td style="padding: 10px; border: 1px solid #ddd;">${bid.name}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; width: 40%;">Project Name</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${esc(bid.name)}</td>
           </tr>
           <tr>
-            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Bid Reference</td>
-            <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">${bid.code}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Location</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${esc(projectLocation)}</td>
           </tr>
           <tr style="background: #f5f5f5;">
-            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Bid Amount</td>
-            <td style="padding: 10px; border: 1px solid #ddd; font-size: 1.1em; color: #2563eb;">${finalAmount}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Bid Reference</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">${esc(bid.code)}</td>
           </tr>
           <tr>
-            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Due Date</td>
-            <td style="padding: 10px; border: 1px solid #ddd;">${dueDate}</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Total Bid Price</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-size: 1.1em; color: #2563eb; font-weight: bold;">${esc(finalAmount)}</td>
           </tr>
-          ${bid.locationAddress ? `<tr style="background: #f5f5f5;"><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Location</td><td style="padding: 10px; border: 1px solid #ddd;">${[bid.locationAddress, bid.city, bid.state].filter(Boolean).join(", ")}</td></tr>` : ""}
-          ${bid.description ? `<tr><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Description</td><td style="padding: 10px; border: 1px solid #ddd;">${bid.description}</td></tr>` : ""}
         </table>
-        <p style="color: #555;">Please review this proposal and let us know if you have any questions or require additional information.</p>
-        <p style="color: #555;">Thank you for the opportunity to submit this bid.</p>
+
+        <h3 style="color: #1a1a1a; margin-top: 30px;">Scope of Work Includes:</h3>
+        <ul style="padding-left: 20px; line-height: 1.8;">
+          ${scopeOfWorkHtml}
+        </ul>
+
+        <h3 style="color: #1a1a1a; margin-top: 30px;">Project Timeline:</h3>
+        <p>Target completion date: ${esc(dueDate)}</p>
+        <p>Detailed project schedule will be provided upon contract award.</p>
+
+        <h3 style="color: #1a1a1a; margin-top: 30px;">Inclusions:</h3>
+        <ul style="padding-left: 20px; line-height: 1.8;">
+          <li style="margin-bottom: 6px;">All labor and materials as described in scope of work</li>
+          <li style="margin-bottom: 6px;">Equipment and tools required for the project</li>
+          <li style="margin-bottom: 6px;">Standard site cleanup upon completion</li>
+        </ul>
+
+        <h3 style="color: #1a1a1a; margin-top: 30px;">Exclusions:</h3>
+        <ul style="padding-left: 20px; line-height: 1.8;">
+          <li style="margin-bottom: 6px;">Permit fees (unless otherwise stated)</li>
+          <li style="margin-bottom: 6px;">Work outside the defined scope</li>
+          <li style="margin-bottom: 6px;">Unforeseen subsurface conditions</li>
+        </ul>
+
+        <h3 style="color: #1a1a1a; margin-top: 30px;">Payment Terms:</h3>
+        <ul style="padding-left: 20px; line-height: 1.8;">
+          <li style="margin-bottom: 6px;">Payment terms to be discussed and agreed upon prior to commencement</li>
+          <li style="margin-bottom: 6px;">Progress billing may apply for projects exceeding 30 days</li>
+        </ul>
+
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;" />
+
+        <p>We look forward to your favorable response. Should you have any questions or require further clarification, please do not hesitate to contact us.</p>
+
+        <p style="margin-top: 20px;">Warm regards,</p>
+        <div style="margin-top: 10px; line-height: 1.8;">
+          ${signOffHtml}
+        </div>
       </div>
     `;
+
+    const emailText = [
+      `Bid Proposal: ${bid.name}`,
+      ``,
+      `Dear ${clientGreeting},`,
+      ``,
+      `Thank you for the opportunity to submit our bid for the above-mentioned project. We are pleased to present the following proposal for your review and consideration.`,
+      ``,
+      `Project Name: ${bid.name}`,
+      `Location: ${projectLocation}`,
+      `Bid Reference: ${bid.code}`,
+      `Total Bid Price: ${finalAmount}`,
+      ``,
+      `Scope of Work Includes:`,
+      scopeOfWorkText,
+      ``,
+      `Project Timeline:`,
+      `  Target completion date: ${dueDate}`,
+      `  Detailed project schedule will be provided upon contract award.`,
+      ``,
+      `Inclusions:`,
+      `  - All labor and materials as described in scope of work`,
+      `  - Equipment and tools required for the project`,
+      `  - Standard site cleanup upon completion`,
+      ``,
+      `Exclusions:`,
+      `  - Permit fees (unless otherwise stated)`,
+      `  - Work outside the defined scope`,
+      `  - Unforeseen subsurface conditions`,
+      ``,
+      `Payment Terms:`,
+      `  - Payment terms to be discussed and agreed upon prior to commencement`,
+      `  - Progress billing may apply for projects exceeding 30 days`,
+      ``,
+      `We look forward to your favorable response. Should you have any questions or require further clarification, please do not hesitate to contact us.`,
+      ``,
+      `Warm regards,`,
+      signOffText,
+    ].join("\n");
 
     const emailSent = await sendEmail({
       to: toEmail,
       subject: `Bid Proposal: ${bid.name} (Ref: ${bid.code})`,
       html: emailHtml,
-      text: `Bid Proposal: ${bid.name}\nReference: ${bid.code}\nAmount: ${finalAmount}\nDue Date: ${dueDate}\n\nPlease review this proposal and contact us with any questions.`,
+      text: emailText,
     });
 
     if (!emailSent) {
