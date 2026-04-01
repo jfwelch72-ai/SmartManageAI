@@ -725,7 +725,7 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
 
   doc.moveDown(3);
   doc.fontSize(8).fillColor('#9ca3af')
-    .text('SmartManageAI | Construction Management Platform', { align: 'center' })
+    .text(`${companyName} | Construction Management Platform`, { align: 'center' })
     .text(`Quote #${data.bid.code} | Generated ${new Date().toLocaleDateString()}`, { align: 'center' });
 
   doc.end();

@@ -2298,6 +2298,8 @@ router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADM
     const profitAmount = baseCost * (profitPercent / 100);
     const finalBidAmount = baseCost + overheadAmount + profitAmount;
 
+    const orgBranding = await getOrganizationBranding(bid.gcOrganizationId);
+
     const pdfData = {
       bid: {
         id: bid.id,
@@ -2344,12 +2346,14 @@ router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADM
         profitAmount,
         finalBidAmount,
       },
+      branding: orgBranding,
     };
 
     const pdfStream = generateInternalBidSummaryPDF(pdfData);
 
+    const brandName = orgBranding.organizationName || 'SmartManageAI';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="SmartManageAI-Internal-Summary-${bid.code}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${brandName}-Internal-Summary-${bid.code}.pdf"`);
 
     pdfStream.pipe(res);
   } catch (error) {
@@ -2401,6 +2405,8 @@ router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN
     const profitAmount = totalDirectCost * (profitPercent / 100);
     const finalBidAmount = parseFloat(bid.bidAmount as any) || (totalDirectCost + overheadAmount + profitAmount);
 
+    const orgBranding = await getOrganizationBranding(bid.gcOrganizationId);
+
     const pdfData = {
       bid: {
         id: bid.id,
@@ -2431,12 +2437,14 @@ router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN
         taxRate: 0,
         taxAmount: 0,
       },
+      branding: orgBranding,
     };
 
     const pdfStream = generateCustomerQuotePDF(pdfData);
 
+    const brandName = orgBranding.organizationName || 'SmartManageAI';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="SmartManageAI-Quote-${bid.code}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${brandName}-Quote-${bid.code}.pdf"`);
 
     pdfStream.pipe(res);
   } catch (error) {
