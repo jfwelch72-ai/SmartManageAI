@@ -1411,6 +1411,14 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const { estimateId } = req.params;
       const lineItem = req.body;
 
+      const DEBUG_LINE_ITEMS = process.env.DEBUG_LINE_ITEMS === "true";
+      if (DEBUG_LINE_ITEMS) {
+        const costFields = ['materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
+        const rawCosts: Record<string, any> = {};
+        for (const f of costFields) rawCosts[f] = { value: lineItem[f], type: typeof lineItem[f] };
+        console.log("[DEBUG:LineItem:POST] Raw request cost values:", JSON.stringify(rawCosts));
+      }
+
       if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
@@ -1474,12 +1482,31 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       // Normalize data to fix frontend/backend enum mismatches
       const normalizedLineItem = normalizeLineItemData(lineItem);
 
+      const decimalFields = [
+        'quantity', 'materialCost', 'laborCost', 'laborHours',
+        'equipmentHours', 'equipmentCost', 'consumablesCost',
+        'subcontractCost', 'overheadAllocation', 'profitAllocation',
+        'laborRateUsed', 'equipmentRateUsed',
+      ] as const;
+      for (const field of decimalFields) {
+        if (normalizedLineItem[field] !== undefined && normalizedLineItem[field] !== null) {
+          normalizedLineItem[field] = String(normalizedLineItem[field]);
+        }
+      }
+
+      if (DEBUG_LINE_ITEMS) {
+        const costFields = ['materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
+        const normalizedCosts: Record<string, any> = {};
+        for (const f of costFields) normalizedCosts[f] = { value: normalizedLineItem[f], type: typeof normalizedLineItem[f] };
+        console.log("[DEBUG:LineItem:POST] After normalization/coercion:", JSON.stringify(normalizedCosts));
+      }
+
       // Validate and create line item with calculated material quantities
-      const validatedData = insertEstimateLineItemSchema.parse({
+      const parseInput = {
         ...normalizedLineItem,
         estimateId,
         source: "MANUAL",
-        totalCost,
+        totalCost: String(totalCost),
         calculatedConcreteYards: materialResults.calculatedConcreteYards?.toString(),
         calculatedStoneTons: materialResults.calculatedStoneTons?.toString(),
         calculatedExcavationYards: materialResults.calculatedExcavationYards?.toString(),
@@ -1491,7 +1518,22 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         calculatedUnderlaymentSF: materialResults.calculatedUnderlaymentSF?.toString(),
         materialRequirementsJson: generateMaterialRequirementsJson(materialResults),
         equipmentRequirementsJson: generateEquipmentRequirementsJson(materialResults),
-      });
+      };
+      const validatedData = insertEstimateLineItemSchema.parse(parseInput);
+
+      if (DEBUG_LINE_ITEMS) {
+        const costFields = ['materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
+        const parsedCosts: Record<string, any> = {};
+        for (const f of costFields) parsedCosts[f] = { value: (validatedData as any)[f], type: typeof (validatedData as any)[f] };
+        const zeroFields = costFields.filter(f => {
+          const v = (parseInput as any)[f];
+          return v !== undefined && v !== null && String(v) !== "0" && String((validatedData as any)[f]) === "0";
+        });
+        console.log("[DEBUG:LineItem:POST] After schema parse:", JSON.stringify(parsedCosts));
+        if (zeroFields.length > 0) {
+          console.warn("[DEBUG:LineItem:POST] WARNING: Cost fields zeroed by parse:", zeroFields);
+        }
+      }
 
       const [newLineItem] = await db.insert(estimateLineItems).values(validatedData).returning();
 
