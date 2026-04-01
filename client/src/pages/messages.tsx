@@ -18,7 +18,6 @@ import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
 
 import { Sidebar } from "@/components/messaging/Sidebar";
 import { MessageList } from "@/components/messaging/MessageList";
-import { IncomingCallBanner } from "@/components/messaging/IncomingCallBanner";
 import { OngoingCallBanner } from "@/components/messaging/OngoingCallBanner";
 import { CallHistory } from "@/components/messaging/CallHistory";
 import {
@@ -92,29 +91,17 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   const lastTypingSignalRef = useRef<number>(0);
 
   // ── Video call state ──
-  const [activeCall, setActiveCall] = useState<VideoCallData | null>(null);
-  const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
   const [activeCallConversationIds, setActiveCallConversationIds] = useState<Set<string>>(new Set());
   const [startingCall, setStartingCall] = useState(false);
-  const activeCallRef = useRef<VideoCallData | null>(null);
-  const incomingCallRef = useRef<VideoCallData | null>(null);
-
-  useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
-  useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
-
-  useEffect(() => {
-    if (!globalActiveCall && activeCall) {
-      setActiveCall(null);
-    }
-  }, [globalActiveCall, activeCall]);
 
   const [conversationActiveCalls, setConversationActiveCalls] = useState<Record<string, VideoCallData>>({});
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/conversations/active-calls", { credentials: "include" })
-      .then(res => res.ok ? res.json() : [])
-      .then((calls: VideoCallData[]) => {
+    (async () => {
+      try {
+        const res = await fetch("/api/conversations/active-calls", { credentials: "include" });
+        const calls: VideoCallData[] = res.ok ? await res.json() : [];
         if (cancelled) return;
         if (!calls.length) {
           setActiveCallConversationIds(new Set());
@@ -123,30 +110,35 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
         }
         const ids = new Set<string>();
         const callMap: Record<string, VideoCallData> = {};
+        let callToRestore: VideoCallData | null = null;
         for (const callData of calls) {
           ids.add(callData.conversationId);
           callMap[callData.conversationId] = callData;
-          if (!activeCallRef.current && !incomingCallRef.current) {
-            if (callData.initiatorId === user?.id || callData.participants.some(p => p.userId === user?.id)) {
-              setActiveCall(callData);
-            } else if (callData.status === "RINGING") {
-              setIncomingCall(callData);
-            }
+          if (!callToRestore && (callData.initiatorId === user?.id || callData.participants.some(p => p.userId === user?.id))) {
+            callToRestore = callData;
           }
         }
         setActiveCallConversationIds(ids);
         setConversationActiveCalls(callMap);
-      })
-      .catch(() => {});
+        if (callToRestore && !cancelled) {
+          const convsRes = await fetch("/api/conversations", { credentials: "include" });
+          const convs: Conversation[] = convsRes.ok ? await convsRes.json() : [];
+          if (cancelled) return;
+          const conv = convs.find(c => c.id === callToRestore!.conversationId);
+          if (conv) startGlobalCall(callToRestore, conv);
+        }
+      } catch {}
+    })();
     return () => { cancelled = true; };
   }, [user?.id]);
 
   useEffect(() => {
     if (!selectedConversationId) return;
     let cancelled = false;
-    fetch(`/api/conversations/${selectedConversationId}/active-call`, { credentials: "include" })
-      .then(res => res.ok ? res.json() : null)
-      .then((callData: VideoCallData | null) => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/conversations/${selectedConversationId}/active-call`, { credentials: "include" });
+        const callData: VideoCallData | null = res.ok ? await res.json() : null;
         if (cancelled) return;
         if (!callData) {
           setConversationActiveCalls(prev => {
@@ -156,18 +148,22 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
           });
           return;
         }
-        if (activeCall?.id === callData.id) return;
+        if (globalActiveCall?.id === callData.id) return;
         setConversationActiveCalls(prev => ({ ...prev, [callData.conversationId]: callData }));
-        if (callData.initiatorId === user?.id || callData.participants.some(p => p.userId === user?.id)) {
-          setActiveCall(callData);
+        if (!globalActiveCall && (callData.initiatorId === user?.id || callData.participants.some(p => p.userId === user?.id))) {
+          const convsRes = await fetch("/api/conversations", { credentials: "include" });
+          const convs: Conversation[] = convsRes.ok ? await convsRes.json() : [];
+          if (cancelled) return;
+          const conv = convs.find(c => c.id === callData.conversationId);
+          if (conv) startGlobalCall(callData, conv);
         }
         setActiveCallConversationIds(prev => {
           const next = new Set(prev);
           next.add(callData.conversationId);
           return next;
         });
-      })
-      .catch(() => {});
+      } catch {}
+    })();
     return () => { cancelled = true; };
   }, [selectedConversationId]);
 
@@ -187,12 +183,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
         return next;
       });
       setConversationActiveCalls(prev => ({ ...prev, [data.call.conversationId]: data.call }));
-      if (activeCallRef.current) return;
-      if (data.call.initiatorId === user?.id) {
-        setActiveCall(data.call);
-      } else {
-        setIncomingCall(data.call);
-      }
     },
     onCallJoined: (data) => {
       const newParticipant = {
@@ -203,16 +193,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
         leftAt: null,
         user: { id: data.userId, firstName: data.userName.split(" ")[0] || "", lastName: data.userName.split(" ").slice(1).join(" ") || "", role: "" },
       };
-      setActiveCall(prev => {
-        if (!prev || prev.id !== data.callId) return prev;
-        const alreadyIn = prev.participants.some(p => p.userId === data.userId);
-        if (alreadyIn) return prev;
-        return {
-          ...prev,
-          status: "ACTIVE",
-          participants: [...prev.participants, newParticipant],
-        };
-      });
       setConversationActiveCalls(prev => {
         const convId = data.conversationId;
         const existing = prev[convId];
@@ -223,13 +203,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       });
     },
     onCallLeft: (data) => {
-      setActiveCall(prev => {
-        if (!prev || prev.id !== data.callId) return prev;
-        return {
-          ...prev,
-          participants: prev.participants.filter(p => p.userId !== data.userId),
-        };
-      });
       setConversationActiveCalls(prev => {
         const convId = data.conversationId;
         const existing = prev[convId];
@@ -248,16 +221,10 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
         delete next[data.conversationId];
         return next;
       });
-      if (activeCallRef.current?.id === data.callId) {
-        setActiveCall(null);
-      }
-      if (incomingCallRef.current?.id === data.callId) {
-        setIncomingCall(null);
-      }
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", data.conversationId, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", data.conversationId, "calls"] });
     },
-  }), [user?.id]);
+  }), []);
 
   const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessage, callEventHandler);
 
@@ -662,7 +629,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     try {
       const res = await apiRequest("POST", `/api/conversations/${selectedConversationId}/calls`);
       const callData = await res.json();
-      setActiveCall(callData);
       startGlobalCall(callData, conv);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -677,27 +643,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     }
   };
 
-  const handleAcceptCall = async () => {
-    if (!incomingCall) return;
-    try {
-      if (incomingCall.conversationId !== selectedConversationId) {
-        setSelectedConversationId(incomingCall.conversationId);
-      }
-      const res = await apiRequest("POST", `/api/calls/${incomingCall.id}/join`);
-      const fullCallData = await res.json();
-      setActiveCall(fullCallData);
-      const conv = conversations.find(c => c.id === incomingCall.conversationId);
-      if (conv) startGlobalCall(fullCallData, conv);
-      setIncomingCall(null);
-    } catch (err) {
-      console.error("Failed to join call:", err);
-    }
-  };
-
-  const handleDeclineCall = () => {
-    setIncomingCall(null);
-  };
-
   const handleJoinOngoingCall = async (callData: VideoCallData) => {
     if (callData.conversationId !== selectedConversationId) {
       setSelectedConversationId(callData.conversationId);
@@ -705,42 +650,11 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     try {
       const res = await apiRequest("POST", `/api/calls/${callData.id}/join`);
       const fullCallData = await res.json();
-      setActiveCall(fullCallData);
       const conv = conversations.find(c => c.id === callData.conversationId);
       if (conv) startGlobalCall(fullCallData, conv);
     } catch (err) {
       console.error("Failed to join call:", err);
     }
-  };
-
-  const handleEndCall = async () => {
-    if (!activeCall) return;
-    const convId = activeCall.conversationId;
-    try {
-      await apiRequest("POST", `/api/calls/${activeCall.id}/end`);
-    } catch (err) {
-      console.error("Failed to end call:", err);
-    }
-    setActiveCall(null);
-    setActiveCallConversationIds(prev => {
-      const next = new Set(prev);
-      next.delete(convId);
-      return next;
-    });
-    if (convId) {
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations", convId, "messages"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations", convId, "calls"] });
-    }
-  };
-
-  const handleLeaveCall = async () => {
-    if (!activeCall) return;
-    try {
-      await apiRequest("POST", `/api/calls/${activeCall.id}/leave`);
-    } catch (err) {
-      console.error("Failed to leave call:", err);
-    }
-    setActiveCall(null);
   };
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId);
@@ -953,7 +867,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                           size="icon"
                           className="h-8 w-8"
                           onClick={handleStartCall}
-                          disabled={!!activeCall || startingCall}
+                          disabled={!!globalActiveCall || startingCall}
                           data-testid="button-start-call"
                         >
                           {startingCall ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
@@ -964,11 +878,10 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                   </div>
                 </div>
 
-                {selectedConversationId && !activeCall && selectedConversation?.type !== "DIRECT" &&
+                {selectedConversationId && !globalActiveCall && selectedConversation?.type !== "DIRECT" &&
                   conversationActiveCalls[selectedConversationId] &&
                   !conversationActiveCalls[selectedConversationId].participants.some(p => p.userId === user?.id) &&
-                  conversationActiveCalls[selectedConversationId].status === "ACTIVE" &&
-                  incomingCall?.conversationId !== selectedConversationId && (
+                  conversationActiveCalls[selectedConversationId].status === "ACTIVE" && (
                   <OngoingCallBanner
                     call={conversationActiveCalls[selectedConversationId]}
                     onJoin={() => handleJoinOngoingCall(conversationActiveCalls[selectedConversationId])}

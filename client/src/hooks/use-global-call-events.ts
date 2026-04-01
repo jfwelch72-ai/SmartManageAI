@@ -16,10 +16,12 @@ export function useGlobalCallEvents(): GlobalCallState {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
   const [conversationName, setConversationName] = useState("");
-  const { startGlobalCall, updateActiveCall, dispatchSignal } = useGlobalVideoCall();
+  const { startGlobalCall, updateActiveCall, dispatchSignal, activeCall } = useGlobalVideoCall();
   const { addListener, removeListener, isConnected } = useGlobalSSE();
   const userRef = useRef(user);
+  const activeCallRef = useRef(activeCall);
   useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
 
   useEffect(() => {
     if (!user || !isConnected) return;
@@ -33,8 +35,7 @@ export function useGlobalCallEvents(): GlobalCallState {
           return;
         }
         if (call.initiatorId === userRef.current?.id) return;
-        const overlay = document.querySelector('[data-testid="video-call-overlay"]');
-        if (overlay) return;
+        if (activeCallRef.current) return;
 
         if (!call.initiator || !call.initiator.firstName) {
           call.initiator = call.initiator || { id: call.initiatorId, firstName: "Unknown", lastName: "Caller", role: "" };
