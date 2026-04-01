@@ -376,6 +376,14 @@ export function LineItemFormDialog({
   const currentAssignments = form.watch("subcontractorAssignments") || [];
   const hasMultiSubAssignments = currentAssignments.length > 0;
 
+  type NumericLineItemField = 'quantity' | 'materialCost' | 'laborCost' | 'laborHours'
+    | 'equipmentCost' | 'equipmentHours' | 'consumablesCost'
+    | 'subcontractCost' | 'overheadAllocation' | 'profitAllocation';
+
+  const setNumericFormValue = (fieldName: NumericLineItemField, value: number) => {
+    form.setValue(fieldName, value, { shouldDirty: true, shouldValidate: false });
+  };
+
   const numericInputProps = (field: { value: number; onChange: (v: number) => void; onBlur: () => void; name: string; ref: React.Ref<HTMLInputElement> }) => {
     const displayValue = numericDisplayValues[field.name];
     const showValue = displayValue !== undefined ? displayValue : (field.value != null && field.value !== 0 ? String(field.value) : '');
@@ -386,6 +394,12 @@ export function LineItemFormDialog({
       ref: field.ref,
       name: field.name,
       onBlur: () => {
+        const pendingDisplay = numericDisplayValues[field.name];
+        if (pendingDisplay !== undefined) {
+          const parsed = pendingDisplay === '' ? 0 : parseFloat(pendingDisplay);
+          const value = Number.isNaN(parsed) ? 0 : parsed;
+          setNumericFormValue(field.name as NumericLineItemField, value);
+        }
         setNumericDisplayValues(prev => {
           const next = { ...prev };
           delete next[field.name];
@@ -399,10 +413,30 @@ export function LineItemFormDialog({
         if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
           setNumericDisplayValues(prev => ({ ...prev, [field.name]: raw }));
           const parsed = raw === '' ? 0 : parseFloat(raw);
-          field.onChange(Number.isNaN(parsed) ? 0 : parsed);
+          const value = Number.isNaN(parsed) ? 0 : parsed;
+          field.onChange(value);
+          setNumericFormValue(field.name as NumericLineItemField, value);
         }
       },
     };
+  };
+
+  const numericFieldNames: NumericLineItemField[] = [
+    'quantity', 'materialCost', 'laborCost', 'laborHours',
+    'equipmentCost', 'equipmentHours', 'consumablesCost',
+    'subcontractCost', 'overheadAllocation', 'profitAllocation',
+  ];
+
+  const handleSubmitWithFlush = (values: LineItemFormValues) => {
+    const flushed: LineItemFormValues = { ...values };
+    for (const fieldName of numericFieldNames) {
+      const displayVal = numericDisplayValues[fieldName];
+      if (displayVal !== undefined) {
+        const parsed = displayVal === '' ? 0 : parseFloat(displayVal);
+        flushed[fieldName] = Number.isNaN(parsed) ? 0 : parsed;
+      }
+    }
+    onSubmit(flushed);
   };
 
   const dialogContent = (
@@ -443,7 +477,7 @@ export function LineItemFormDialog({
       )}
       
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(handleSubmitWithFlush)} className="space-y-6">
           {isAdd && useHierarchicalBuilder ? (
             <>
               <HierarchicalLineItemBuilder
@@ -732,9 +766,10 @@ export function LineItemFormDialog({
                               const hours = raw === '' ? 0 : parseFloat(raw);
                               const safeHours = Number.isNaN(hours) ? 0 : hours;
                               field.onChange(safeHours);
+                              form.setValue("laborHours", safeHours, { shouldDirty: true, shouldValidate: false });
                               const rate = form.watch("laborRateUsed") || 0;
                               if (rate > 0) {
-                                form.setValue("laborCost", safeHours * rate);
+                                form.setValue("laborCost", safeHours * rate, { shouldDirty: true, shouldValidate: false });
                               }
                             }
                           }}
