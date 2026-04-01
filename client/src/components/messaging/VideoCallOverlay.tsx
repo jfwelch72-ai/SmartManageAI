@@ -17,6 +17,26 @@ const FALLBACK_ICE_SERVERS: RTCConfiguration = {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
     { urls: "stun:stun4.l.google.com:19302" },
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turns:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
 };
 
@@ -65,8 +85,8 @@ export function VideoCallOverlay({
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
   const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying" | "checking_slow" | "peer_unreachable">>({});
-  const [iceFailureReasons, setIceFailureReasons] = useState<Record<string, "no_turn" | "turn_unreachable" | "network_blocked">>({});
-  const iceFailureReasonsRef = useRef<Record<string, "no_turn" | "turn_unreachable" | "network_blocked">>({});
+  const [iceFailureReasons, setIceFailureReasons] = useState<Record<string, "turn_unreachable" | "network_blocked">>({});
+  const iceFailureReasonsRef = useRef<Record<string, "turn_unreachable" | "network_blocked">>({});
   const [iceConfig, setIceConfig] = useState<RTCConfiguration>(FALLBACK_ICE_SERVERS);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -82,8 +102,7 @@ export function VideoCallOverlay({
   const retryCountRef = useRef<Record<string, number>>({});
   const iceConfigRef = useRef<RTCConfiguration>(FALLBACK_ICE_SERVERS);
   const signalHandlerRegisteredRef = useRef(false);
-  const [noTurnServers, setNoTurnServers] = useState(false);
-  const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "unreachable" | "no_turn">("pending");
+  const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "unreachable">("pending");
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -130,6 +149,54 @@ export function VideoCallOverlay({
   }, [localStream]);
 
   useEffect(() => {
+    const runTurnPreCheck = async (turnServers: Array<{ urls: string | string[]; username?: string; credential?: string }>) => {
+      try {
+        const testConfig: RTCConfiguration = {
+          iceServers: turnServers,
+          iceTransportPolicy: "relay",
+        };
+        const testPc = new RTCPeerConnection(testConfig);
+        let foundRelay = false;
+        const preCheckPromise = new Promise<boolean>((resolve) => {
+          const timeout = setTimeout(() => {
+            testPc.close();
+            resolve(false);
+          }, 8000);
+          testPc.onicecandidate = (e) => {
+            if (e.candidate) {
+              const isRelay = e.candidate.type === "relay" ||
+                (e.candidate.candidate && e.candidate.candidate.includes(" typ relay"));
+              if (isRelay) {
+                foundRelay = true;
+                clearTimeout(timeout);
+                testPc.close();
+                resolve(true);
+              }
+            }
+            if (!e.candidate && !foundRelay) {
+              clearTimeout(timeout);
+              testPc.close();
+              resolve(false);
+            }
+          };
+        });
+        testPc.createDataChannel("connectivity-test");
+        const offer = await testPc.createOffer();
+        await testPc.setLocalDescription(offer);
+        const reachable = await preCheckPromise;
+        if (reachable) {
+          console.log("[WebRTC] TURN server connectivity pre-check: OK");
+          setTurnPreCheckStatus("ok");
+        } else {
+          console.warn("[WebRTC] TURN server connectivity pre-check: UNREACHABLE — relay candidates could not be gathered");
+          setTurnPreCheckStatus("unreachable");
+        }
+      } catch (err) {
+        console.warn("[WebRTC] TURN server connectivity pre-check failed:", err);
+        setTurnPreCheckStatus("unreachable");
+      }
+    };
+
     fetch("/api/calls/ice-config", { credentials: "include" })
       .then(res => res.ok ? res.json() : null)
       .then(async (data) => {
@@ -144,66 +211,27 @@ export function VideoCallOverlay({
           const turnCount = turnServers.length;
           console.log(`[WebRTC] Loaded ICE config: ${data.iceServers.length} servers (${turnCount} TURN)`);
           if (turnCount === 0) {
-            console.warn("[WebRTC] No TURN servers configured. Calls may fail behind restrictive NATs. Set TURN_SERVER_URL, TURN_SERVER_USERNAME, TURN_SERVER_CREDENTIAL env vars to enable TURN relay.");
-            setNoTurnServers(true);
-            setTurnPreCheckStatus("no_turn");
+            console.warn("[WebRTC] No TURN servers in ICE config. Calls may fail behind restrictive NATs.");
+            setTurnPreCheckStatus("unreachable");
           } else {
-            setNoTurnServers(false);
-            try {
-              const testConfig: RTCConfiguration = {
-                iceServers: turnServers,
-                iceTransportPolicy: "relay",
-              };
-              const testPc = new RTCPeerConnection(testConfig);
-              let foundRelay = false;
-              const preCheckPromise = new Promise<boolean>((resolve) => {
-                const timeout = setTimeout(() => {
-                  testPc.close();
-                  resolve(false);
-                }, 8000);
-                testPc.onicecandidate = (e) => {
-                  if (e.candidate) {
-                    const isRelay = e.candidate.type === "relay" ||
-                      (e.candidate.candidate && e.candidate.candidate.includes(" typ relay"));
-                    if (isRelay) {
-                      foundRelay = true;
-                      clearTimeout(timeout);
-                      testPc.close();
-                      resolve(true);
-                    }
-                  }
-                  if (!e.candidate && !foundRelay) {
-                    clearTimeout(timeout);
-                    testPc.close();
-                    resolve(false);
-                  }
-                };
-              });
-              testPc.createDataChannel("connectivity-test");
-              const offer = await testPc.createOffer();
-              await testPc.setLocalDescription(offer);
-              const reachable = await preCheckPromise;
-              if (reachable) {
-                console.log("[WebRTC] TURN server connectivity pre-check: OK");
-                setTurnPreCheckStatus("ok");
-              } else {
-                console.warn("[WebRTC] TURN server connectivity pre-check: UNREACHABLE — relay candidates could not be gathered");
-                setTurnPreCheckStatus("unreachable");
-              }
-            } catch (err) {
-              console.warn("[WebRTC] TURN server connectivity pre-check failed:", err);
-              setTurnPreCheckStatus("unreachable");
-            }
+            await runTurnPreCheck(turnServers);
           }
         } else {
-          setNoTurnServers(true);
-          setTurnPreCheckStatus("no_turn");
+          console.warn("[WebRTC] Backend returned no ICE config, using fallback with free TURN servers");
+          const fallbackTurn = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
+            const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+            return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
+          });
+          await runTurnPreCheck(fallbackTurn);
         }
       })
-      .catch(err => {
-        console.warn("[WebRTC] Failed to fetch ICE config, using STUN-only fallback:", err);
-        setNoTurnServers(true);
-        setTurnPreCheckStatus("no_turn");
+      .catch(async (err) => {
+        console.warn("[WebRTC] Failed to fetch ICE config, using fallback with free TURN servers:", err);
+        const fallbackTurn = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
+          const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+          return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
+        });
+        await runTurnPreCheck(fallbackTurn);
       });
   }, []);
 
@@ -354,10 +382,8 @@ export function VideoCallOverlay({
                 hasRelay = true;
               }
             });
-            let reason: "no_turn" | "turn_unreachable" | "network_blocked";
-            if (!hasTurn) {
-              reason = "no_turn";
-            } else if (!hasRelay) {
+            let reason: "turn_unreachable" | "network_blocked";
+            if (!hasTurn || !hasRelay) {
               reason = "turn_unreachable";
             } else {
               reason = "network_blocked";
@@ -438,9 +464,9 @@ export function VideoCallOverlay({
               });
             } catch {}
             if (!hasTurnConfig) {
-              console.error(`[WebRTC] ICE checking timeout for ${remoteUserId}: No TURN server configured — direct connection failed, relay not available`);
-              iceFailureReasonsRef.current[remoteUserId] = "no_turn";
-              setIceFailureReasons(prev => ({ ...prev, [remoteUserId]: "no_turn" }));
+              console.error(`[WebRTC] ICE checking timeout for ${remoteUserId}: TURN relay not reachable — direct connection failed`);
+              iceFailureReasonsRef.current[remoteUserId] = "turn_unreachable";
+              setIceFailureReasons(prev => ({ ...prev, [remoteUserId]: "turn_unreachable" }));
             } else if (!hasRelayCandidates) {
               console.error(`[WebRTC] ICE checking timeout for ${remoteUserId}: TURN server configured but no relay candidates gathered — TURN server appears unreachable`);
               iceFailureReasonsRef.current[remoteUserId] = "turn_unreachable";
@@ -862,14 +888,6 @@ export function VideoCallOverlay({
           </p>
         </div>
       )}
-      {turnPreCheckStatus === "no_turn" && (
-        <div className="mx-4 mt-2 px-3 py-2 bg-amber-900/40 border border-amber-700/50 rounded-lg flex items-center gap-2" data-testid="banner-no-turn">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-          <p className="text-amber-300 text-xs">
-            No TURN relay server is configured. Calls between users on different networks may not connect. Ask your administrator to configure TURN server credentials or set a METERED_API_KEY for free relay access.
-          </p>
-        </div>
-      )}
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 p-4 flex flex-col">
@@ -926,20 +944,6 @@ export function VideoCallOverlay({
                       <WifiOff className="w-10 h-10 text-red-400" />
                       {(() => {
                         const reason = iceFailureReasons[p.userId];
-                        if (reason === "no_turn" || noTurnServers) {
-                          return (
-                            <div className="flex flex-col items-center gap-1">
-                              <p className="text-red-400 text-sm font-medium" data-testid="text-connection-failed">Unable to connect — no relay server</p>
-                              <div className="flex items-center gap-1 text-amber-400">
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                <p className="text-xs font-medium">TURN relay not configured</p>
-                              </div>
-                              <p className="text-gray-500 text-xs">
-                                A direct peer-to-peer connection could not be established. This usually happens when one or both users are behind a firewall or NAT. To fix this, ask your administrator to configure a TURN relay server via environment variables, or set a METERED_API_KEY for free relay access.
-                              </p>
-                            </div>
-                          );
-                        }
                         if (reason === "turn_unreachable") {
                           return (
                             <div className="flex flex-col items-center gap-1">

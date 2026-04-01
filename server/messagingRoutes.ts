@@ -2943,6 +2943,29 @@ const messagingSetup = (async () => {
     }
   });
 
+  const freeOpenRelayTurnServers = [
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turns:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+  ];
+
   router.get("/api/calls/ice-config", requireAuth, async (_req: AuthRequest, res) => {
     try {
       const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [
@@ -2964,6 +2987,7 @@ const messagingSetup = (async () => {
         }
         console.log(`[ICE Config] Using configured TURN server(s): ${turnUrls.join(", ")}`);
       } else if (process.env.METERED_API_KEY) {
+        let meteredSuccess = false;
         try {
           const meteredDomain = process.env.METERED_DOMAIN || "helloworld.metered.live";
           const meteredResp = await fetch(
@@ -2980,17 +3004,23 @@ const messagingSetup = (async () => {
                 });
               }
               console.log(`[ICE Config] Using Metered.ca TURN servers (${meteredServers.length} entries)`);
+              meteredSuccess = true;
             } else {
-              console.warn("[ICE Config] Metered.ca returned empty TURN credentials. Falling back to STUN-only.");
+              console.warn("[ICE Config] Metered.ca returned empty TURN credentials. Falling back to free Open Relay TURN servers.");
             }
           } else {
-            console.warn(`[ICE Config] Metered.ca API returned ${meteredResp.status}. Falling back to STUN-only.`);
+            console.warn(`[ICE Config] Metered.ca API returned ${meteredResp.status}. Falling back to free Open Relay TURN servers.`);
           }
         } catch (meteredErr) {
           console.warn("[ICE Config] Failed to fetch Metered.ca TURN credentials:", meteredErr);
         }
+        if (!meteredSuccess) {
+          iceServers.push(...freeOpenRelayTurnServers);
+          console.log("[ICE Config] Using free Open Relay Project TURN servers as fallback for failed Metered.ca fetch");
+        }
       } else {
-        console.warn("[ICE Config] No TURN servers configured. Only STUN servers will be used. For reliable calls behind NAT/firewalls, set either TURN_SERVER_URL + TURN_SERVER_USERNAME + TURN_SERVER_CREDENTIAL, or METERED_API_KEY (free at metered.ca).");
+        iceServers.push(...freeOpenRelayTurnServers);
+        console.log("[ICE Config] Using free Open Relay Project TURN servers as built-in fallback");
       }
 
       const hasTurn = iceServers.some(s => {

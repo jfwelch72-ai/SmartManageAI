@@ -1412,7 +1412,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const { estimateId } = req.params;
       const lineItem = req.body;
 
-      {
+      if (process.env.DEBUG_LINE_ITEMS === "true") {
         const costFields = ['quantity', 'materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
         const rawCosts: Record<string, any> = {};
         for (const f of costFields) rawCosts[f] = { value: lineItem[f], type: typeof lineItem[f] };
@@ -1523,7 +1523,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       const validatedData = insertEstimateLineItemSchema.parse(parseInput);
 
-      {
+      if (process.env.DEBUG_LINE_ITEMS === "true") {
         const costFields = ['quantity', 'materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation', 'totalCost'];
         const parsedCosts: Record<string, any> = {};
         for (const f of costFields) parsedCosts[f] = { value: (validatedData as any)[f], type: typeof (validatedData as any)[f] };
