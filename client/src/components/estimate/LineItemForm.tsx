@@ -364,15 +364,46 @@ export function LineItemFormDialog({
   const isEdit = mode === "edit";
   const testPrefix = isEdit ? "edit-" : "";
   const [manualCalcToggle, setManualCalcToggle] = useState(false);
+  const [numericDisplayValues, setNumericDisplayValues] = useState<Record<string, string>>({});
   
   useEffect(() => {
     if (!open) {
       setManualCalcToggle(false);
+      setNumericDisplayValues({});
     }
   }, [open]);
 
   const currentAssignments = form.watch("subcontractorAssignments") || [];
   const hasMultiSubAssignments = currentAssignments.length > 0;
+
+  const numericInputProps = (field: { value: number; onChange: (v: number) => void; onBlur: () => void; name: string; ref: React.Ref<HTMLInputElement> }) => {
+    const displayValue = numericDisplayValues[field.name];
+    const showValue = displayValue !== undefined ? displayValue : (field.value != null && field.value !== 0 ? String(field.value) : '');
+
+    return {
+      type: "text" as const,
+      inputMode: "decimal" as const,
+      ref: field.ref,
+      name: field.name,
+      onBlur: () => {
+        setNumericDisplayValues(prev => {
+          const next = { ...prev };
+          delete next[field.name];
+          return next;
+        });
+        field.onBlur();
+      },
+      value: showValue,
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value;
+        if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+          setNumericDisplayValues(prev => ({ ...prev, [field.name]: raw }));
+          const parsed = raw === '' ? 0 : parseFloat(raw);
+          field.onChange(Number.isNaN(parsed) ? 0 : parsed);
+        }
+      },
+    };
+  };
 
   const dialogContent = (
     <DialogContent className={`${isAdd ? "max-w-4xl" : "max-w-3xl"} max-h-[90vh] overflow-y-auto`}>
@@ -596,18 +627,8 @@ export function LineItemFormDialog({
                     <FormLabel>Quantity</FormLabel>
                     <FormControl>
                       <Input 
-                        type="text"
-                        inputMode="decimal"
-                        pattern="[0-9]*\.?[0-9]*"
+                        {...numericInputProps(field)}
                         placeholder="0" 
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                            field.onChange(parseFloat(val) || 0);
-                          }
-                        }}
                         data-testid={`input-${testPrefix}quantity`} 
                       />
                     </FormControl>
@@ -627,18 +648,8 @@ export function LineItemFormDialog({
                   <FormLabel>Material Cost ($)</FormLabel>
                   <FormControl>
                     <Input 
-                      type="text"
-                      inputMode="decimal"
-                      pattern="[0-9]*\.?[0-9]*"
+                      {...numericInputProps(field)}
                       placeholder="0.00" 
-                      {...field}
-                      value={field.value ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                          field.onChange(parseFloat(val) || 0);
-                        }
-                      }}
                       data-testid={`input-${testPrefix}material-cost`} 
                     />
                   </FormControl>
@@ -712,20 +723,18 @@ export function LineItemFormDialog({
                       <FormLabel>Labor Hours</FormLabel>
                       <FormControl>
                         <Input 
-                          type="text"
-                          inputMode="decimal"
-                          pattern="[0-9]*\.?[0-9]*"
+                          {...numericInputProps(field)}
                           placeholder="0.0" 
-                          {...field}
-                          value={field.value ?? ''}
                           onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                              const hours = parseFloat(val) || 0;
-                              field.onChange(hours);
+                            const raw = e.target.value;
+                            if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                              setNumericDisplayValues(prev => ({ ...prev, [field.name]: raw }));
+                              const hours = raw === '' ? 0 : parseFloat(raw);
+                              const safeHours = Number.isNaN(hours) ? 0 : hours;
+                              field.onChange(safeHours);
                               const rate = form.watch("laborRateUsed") || 0;
                               if (rate > 0) {
-                                form.setValue("laborCost", hours * rate);
+                                form.setValue("laborCost", safeHours * rate);
                               }
                             }
                           }}
@@ -755,18 +764,8 @@ export function LineItemFormDialog({
                         </FormLabel>
                         <FormControl>
                           <Input 
-                            type="text"
-                            inputMode="decimal"
-                            pattern="[0-9]*\.?[0-9]*"
+                            {...numericInputProps(field)}
                             placeholder="0.00" 
-                            {...field}
-                            value={field.value ?? ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                field.onChange(parseFloat(val) || 0);
-                              }
-                            }}
                             readOnly={hasRate}
                             className={hasRate ? "bg-muted" : ""}
                             data-testid={`input-${testPrefix}labor-cost`}
@@ -824,17 +823,7 @@ export function LineItemFormDialog({
                     </FormLabel>
                     <FormControl>
                       <Input 
-                        type="text"
-                        inputMode="decimal"
-                        pattern="[0-9]*\.?[0-9]*"
-                        {...field} 
-                        value={field.value ?? ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                            field.onChange(parseFloat(val) || 0);
-                          }
-                        }}
+                        {...numericInputProps(field)}
                         placeholder="0.00" 
                         data-testid={`input-${testPrefix}equipment-cost`} 
                       />
@@ -853,17 +842,7 @@ export function LineItemFormDialog({
                   <FormLabel>Subcontract Cost ($)</FormLabel>
                   <FormControl>
                     <Input 
-                      type="text"
-                      inputMode="decimal"
-                      pattern="[0-9]*\.?[0-9]*"
-                      {...field} 
-                      value={field.value ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                          field.onChange(parseFloat(val) || 0);
-                        }
-                      }}
+                      {...numericInputProps(field)}
                       placeholder="0.00"
                       disabled={hasMultiSubAssignments}
                       data-testid={`input-${testPrefix}subcontract-cost`} 

@@ -1412,12 +1412,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const { estimateId } = req.params;
       const lineItem = req.body;
 
-      const DEBUG_LINE_ITEMS = process.env.DEBUG_LINE_ITEMS === "true";
-      if (DEBUG_LINE_ITEMS) {
-        const costFields = ['materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
+      {
+        const costFields = ['quantity', 'materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
         const rawCosts: Record<string, any> = {};
         for (const f of costFields) rawCosts[f] = { value: lineItem[f], type: typeof lineItem[f] };
-        console.log("[DEBUG:LineItem:POST] Raw request cost values:", JSON.stringify(rawCosts));
+        console.log("[DEBUG:LineItem:POST] Raw request body values:", JSON.stringify(rawCosts));
       }
 
       if (!hasEstimateAccess(req.user!.role)) {
@@ -1524,18 +1523,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       const validatedData = insertEstimateLineItemSchema.parse(parseInput);
 
-      if (DEBUG_LINE_ITEMS) {
-        const costFields = ['materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
+      {
+        const costFields = ['quantity', 'materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation', 'totalCost'];
         const parsedCosts: Record<string, any> = {};
         for (const f of costFields) parsedCosts[f] = { value: (validatedData as any)[f], type: typeof (validatedData as any)[f] };
-        const zeroFields = costFields.filter(f => {
-          const v = (parseInput as any)[f];
-          return v !== undefined && v !== null && String(v) !== "0" && String((validatedData as any)[f]) === "0";
-        });
-        console.log("[DEBUG:LineItem:POST] After schema parse:", JSON.stringify(parsedCosts));
-        if (zeroFields.length > 0) {
-          console.warn("[DEBUG:LineItem:POST] WARNING: Cost fields zeroed by parse:", zeroFields);
-        }
+        console.log("[DEBUG:LineItem:POST] After parse+coercion:", JSON.stringify(parsedCosts));
       }
 
       const [newLineItem] = await db.insert(estimateLineItems).values(validatedData).returning();

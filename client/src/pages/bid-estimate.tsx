@@ -448,6 +448,14 @@ export default function BidEstimate() {
   const onSubmit = (values: LineItemFormValues) => {
     if (!estimateData?.estimate) return;
 
+    console.error("[LineItem:Submit] Form values:", JSON.stringify({
+      materialCost: values.materialCost,
+      laborCost: values.laborCost,
+      equipmentCost: values.equipmentCost,
+      quantity: values.quantity,
+      description: values.description,
+    }));
+
     const materialCalcPayload =
       buildMaterialCalculatorPayload(materialCalcData);
 
