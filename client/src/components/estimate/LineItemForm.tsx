@@ -527,12 +527,34 @@ export function LineItemFormDialog({
                           ))
                         ) : (
                           <>
-                            <SelectItem value="GENERAL">General</SelectItem>
-                            <SelectItem value="EXCAVATION">Excavation</SelectItem>
                             <SelectItem value="CONCRETE">Concrete</SelectItem>
-                            <SelectItem value="FOUNDATIONS">Foundations</SelectItem>
-                            <SelectItem value="UTILITIES">Utilities</SelectItem>
+                            <SelectItem value="EXCAVATION">Excavation</SelectItem>
                             <SelectItem value="GRADING">Grading</SelectItem>
+                            <SelectItem value="PAVING">Paving</SelectItem>
+                            <SelectItem value="PAVERS">Pavers</SelectItem>
+                            <SelectItem value="DEMOLITION">Demolition</SelectItem>
+                            <SelectItem value="SITEWORK">Sitework</SelectItem>
+                            <SelectItem value="STRUCTURAL_STEEL">Structural Steel</SelectItem>
+                            <SelectItem value="MASONRY">Masonry</SelectItem>
+                            <SelectItem value="FRAMING">Framing</SelectItem>
+                            <SelectItem value="CARPENTRY">Carpentry</SelectItem>
+                            <SelectItem value="ROOFING">Roofing</SelectItem>
+                            <SelectItem value="WATERPROOFING">Waterproofing</SelectItem>
+                            <SelectItem value="INSULATION">Insulation</SelectItem>
+                            <SelectItem value="DRYWALL">Drywall</SelectItem>
+                            <SelectItem value="PAINTING">Painting</SelectItem>
+                            <SelectItem value="FLOORING">Flooring</SelectItem>
+                            <SelectItem value="WINDOWS_DOORS">Windows & Doors</SelectItem>
+                            <SelectItem value="PLUMBING">Plumbing</SelectItem>
+                            <SelectItem value="HVAC">HVAC</SelectItem>
+                            <SelectItem value="MECHANICAL">Mechanical</SelectItem>
+                            <SelectItem value="ELECTRICAL">Electrical</SelectItem>
+                            <SelectItem value="FIRE_PROTECTION">Fire Protection</SelectItem>
+                            <SelectItem value="ELEVATOR">Elevator</SelectItem>
+                            <SelectItem value="BOLLARDS">Bollards</SelectItem>
+                            <SelectItem value="STRIPING">Striping</SelectItem>
+                            <SelectItem value="SIGNAGE">Signage</SelectItem>
+                            <SelectItem value="LANDSCAPING">Landscaping</SelectItem>
                             <SelectItem value="OTHER">Other</SelectItem>
                           </>
                         )}

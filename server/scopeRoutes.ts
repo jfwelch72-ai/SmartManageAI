@@ -938,7 +938,12 @@ router.delete("/api/material-calculator/presets/:id", requireAuth, async (req: A
 // These are the only valid category values for catalog lookups and estimate persistence
 const VALID_LEGACY_ENUMS = [
   "CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", 
-  "STRIPING", "SIGNAGE", "LANDSCAPING", "ELECTRICAL", "OTHER"
+  "STRIPING", "SIGNAGE", "LANDSCAPING", "ELECTRICAL",
+  "PLUMBING", "HVAC", "ROOFING", "STRUCTURAL_STEEL", "MASONRY",
+  "DRYWALL", "PAINTING", "FLOORING", "FIRE_PROTECTION", "DEMOLITION",
+  "CARPENTRY", "INSULATION", "WINDOWS_DOORS", "ELEVATOR", "GRADING",
+  "PAVING", "SITEWORK", "WATERPROOFING", "MECHANICAL", "FRAMING",
+  "OTHER"
 ] as const;
 
 // Comprehensive mapping from category name keywords to legacy enum values
@@ -990,22 +995,116 @@ const categoryMappings: CategoryMapping[] = [
               "pt slab"],
     words: ["concrete", "sidewalk", "driveway", "foundation", "patio", "flatwork",
             "footing", "slab", "pier", "rebar", "reinforcing", "dowel", "curb", 
-            "gutter", "cmu", "masonry", "sawcut", "sawcutting"] },
+            "gutter", "sawcut", "sawcutting"] },
   // Paving/Asphalt
   { legacyEnum: "PAVERS", priority: 3,
     phrases: ["ac paving", "hot mix", "cold patch", "base rock", "base course", 
               "seal coat", "slurry seal", "crack seal", "pothole repair", 
               "mill and overlay", "grind and overlay"],
-    words: ["asphalt", "paving", "blacktop", "overlay", "paver"] },
+    words: ["asphalt", "blacktop", "overlay", "paver"] },
+  // Plumbing
+  { legacyEnum: "PLUMBING", priority: 2,
+    phrases: ["water heater", "drain line", "waste line", "water supply", "sewer pipe",
+              "plumbing fixture", "gas line", "backflow preventer"],
+    words: ["plumbing", "faucet", "toilet", "sink", "piping"] },
+  // HVAC
+  { legacyEnum: "HVAC", priority: 2,
+    phrases: ["air conditioning", "air handler", "heat pump", "duct work", "hvac system",
+              "mechanical ventilation", "chilled water"],
+    words: ["hvac", "ductwork", "furnace", "thermostat", "ventilation"] },
+  // Roofing
+  { legacyEnum: "ROOFING", priority: 2,
+    phrases: ["roof membrane", "roof deck", "built up roof", "standing seam",
+              "roof flashing", "roof drain"],
+    words: ["roofing", "shingle", "soffit", "fascia"] },
+  // Structural Steel
+  { legacyEnum: "STRUCTURAL_STEEL", priority: 2,
+    phrases: ["steel beam", "steel column", "steel joist", "metal deck",
+              "structural steel", "steel erection", "steel framing"],
+    words: ["steelwork", "ironwork"] },
+  // Masonry
+  { legacyEnum: "MASONRY", priority: 2,
+    phrases: ["brick wall", "block wall", "stone veneer", "masonry wall",
+              "brick veneer", "concrete block"],
+    words: ["masonry", "brick", "mortar", "tuckpointing", "stonework", "cmu"] },
+  // Drywall
+  { legacyEnum: "DRYWALL", priority: 2,
+    phrases: ["drywall finish", "gypsum board", "metal stud", "drywall partition"],
+    words: ["drywall", "sheetrock", "gypsum", "taping"] },
+  // Painting
+  { legacyEnum: "PAINTING", priority: 2,
+    phrases: ["interior painting", "exterior painting", "wall coating",
+              "paint prep", "surface preparation"],
+    words: ["painting", "primer", "staining", "wallcovering"] },
+  // Flooring
+  { legacyEnum: "FLOORING", priority: 2,
+    phrases: ["vinyl tile", "ceramic tile", "hardwood floor", "carpet tile",
+              "epoxy floor", "polished concrete floor"],
+    words: ["flooring", "carpet", "tile", "terrazzo", "laminate", "vinyl"] },
+  // Fire Protection
+  { legacyEnum: "FIRE_PROTECTION", priority: 2,
+    phrases: ["fire sprinkler", "fire alarm", "fire suppression", "fire stopping",
+              "fire rated", "fire extinguisher", "smoke detector"],
+    words: ["sprinkler", "firestop", "firestopping"] },
+  // Demolition
+  { legacyEnum: "DEMOLITION", priority: 2,
+    phrases: ["selective demolition", "interior demolition", "structural demolition",
+              "concrete removal", "asbestos abatement"],
+    words: ["demolition", "abatement", "hazmat"] },
+  // Carpentry
+  { legacyEnum: "CARPENTRY", priority: 2,
+    phrases: ["rough carpentry", "finish carpentry", "cabinet install",
+              "millwork installation", "wood blocking"],
+    words: ["carpentry", "cabinetry", "millwork", "casework", "woodwork"] },
+  // Insulation
+  { legacyEnum: "INSULATION", priority: 2,
+    phrases: ["spray foam", "batt insulation", "rigid insulation", "pipe insulation",
+              "blown in insulation", "thermal insulation"],
+    words: ["insulation", "fiberglass", "rockwool"] },
+  // Windows & Doors
+  { legacyEnum: "WINDOWS_DOORS", priority: 2,
+    phrases: ["window installation", "door installation", "curtain wall",
+              "storefront glazing", "overhead door", "hollow metal"],
+    words: ["windows", "doors", "glazing", "skylight"] },
+  // Elevator
+  { legacyEnum: "ELEVATOR", priority: 2,
+    phrases: ["elevator installation", "elevator modernization", "elevator cab"],
+    words: ["elevator", "escalator", "conveyor"] },
+  // Grading
+  { legacyEnum: "GRADING", priority: 3,
+    phrases: ["rough grading", "fine grading", "finish grading", "site grading"],
+    words: ["grading"] },
+  // Paving
+  { legacyEnum: "PAVING", priority: 3,
+    phrases: ["ac paving", "concrete paving"],
+    words: ["paving"] },
+  // Sitework
+  { legacyEnum: "SITEWORK", priority: 4,
+    phrases: ["site work", "site clearing", "construction entrance",
+              "temporary fencing", "stabilized entrance"],
+    words: ["sitework"] },
+  // Waterproofing
+  { legacyEnum: "WATERPROOFING", priority: 2,
+    phrases: ["below grade waterproofing", "foundation waterproofing",
+              "deck coating", "traffic coating", "moisture barrier"],
+    words: ["waterproofing", "dampproofing", "membrane"] },
+  // Mechanical
+  { legacyEnum: "MECHANICAL", priority: 3,
+    phrases: ["mechanical system", "mechanical piping", "process piping"],
+    words: ["mechanical"] },
+  // Framing
+  { legacyEnum: "FRAMING", priority: 3,
+    phrases: ["wood framing", "steel framing", "metal framing", "wall framing"],
+    words: ["framing"] },
   // Excavation/Earthwork-related (lowest priority - catches remaining site work)
   { legacyEnum: "EXCAVATION", priority: 4,
-    phrases: ["site work", "rough grading", "fine grading", "haul off", "import fill",
+    phrases: ["haul off", "import fill",
               "storm drain", "sewer line", "underground utilities", "catch basin",
-              "traffic control", "construction entrance", "jack and bore", 
-              "pipe installation", "utility install", "temporary fencing", 
-              "stabilized entrance", "site clearing", "directional drill"],
-    words: ["excavation", "earthwork", "grading", "trenching", "backfill", "sitework",
-            "demolition", "compaction", "subgrade", "manhole", "survey", "layout",
+              "traffic control", "jack and bore", 
+              "pipe installation", "utility install",
+              "directional drill"],
+    words: ["excavation", "earthwork", "trenching", "backfill",
+            "compaction", "subgrade", "manhole", "survey", "layout",
             "barricade", "flagging", "dewatering", "shoring", "boring", "grubbing",
             "stockpile", "stripping", "trench", "export"] },
 ].sort((a, b) => a.priority - b.priority);
@@ -1084,12 +1183,32 @@ router.get("/api/organization/work-categories", requireAuth, async (req: AuthReq
     const defaultCategories = [
       { value: "CONCRETE", label: "Concrete", itemCount: 0, items: [], isDefault: false },
       { value: "EXCAVATION", label: "Excavation", itemCount: 0, items: [], isDefault: false },
+      { value: "GRADING", label: "Grading", itemCount: 0, items: [], isDefault: false },
+      { value: "PAVING", label: "Paving", itemCount: 0, items: [], isDefault: false },
       { value: "PAVERS", label: "Pavers", itemCount: 0, items: [], isDefault: false },
+      { value: "DEMOLITION", label: "Demolition", itemCount: 0, items: [], isDefault: false },
+      { value: "SITEWORK", label: "Sitework", itemCount: 0, items: [], isDefault: false },
+      { value: "STRUCTURAL_STEEL", label: "Structural Steel", itemCount: 0, items: [], isDefault: false },
+      { value: "MASONRY", label: "Masonry", itemCount: 0, items: [], isDefault: false },
+      { value: "FRAMING", label: "Framing", itemCount: 0, items: [], isDefault: false },
+      { value: "CARPENTRY", label: "Carpentry", itemCount: 0, items: [], isDefault: false },
+      { value: "ROOFING", label: "Roofing", itemCount: 0, items: [], isDefault: false },
+      { value: "WATERPROOFING", label: "Waterproofing", itemCount: 0, items: [], isDefault: false },
+      { value: "INSULATION", label: "Insulation", itemCount: 0, items: [], isDefault: false },
+      { value: "DRYWALL", label: "Drywall", itemCount: 0, items: [], isDefault: false },
+      { value: "PAINTING", label: "Painting", itemCount: 0, items: [], isDefault: false },
+      { value: "FLOORING", label: "Flooring", itemCount: 0, items: [], isDefault: false },
+      { value: "WINDOWS_DOORS", label: "Windows & Doors", itemCount: 0, items: [], isDefault: false },
+      { value: "PLUMBING", label: "Plumbing", itemCount: 0, items: [], isDefault: false },
+      { value: "HVAC", label: "HVAC", itemCount: 0, items: [], isDefault: false },
+      { value: "MECHANICAL", label: "Mechanical", itemCount: 0, items: [], isDefault: false },
+      { value: "ELECTRICAL", label: "Electrical", itemCount: 0, items: [], isDefault: false },
+      { value: "FIRE_PROTECTION", label: "Fire Protection", itemCount: 0, items: [], isDefault: false },
+      { value: "ELEVATOR", label: "Elevator", itemCount: 0, items: [], isDefault: false },
       { value: "BOLLARDS", label: "Bollards", itemCount: 0, items: [], isDefault: false },
       { value: "STRIPING", label: "Striping", itemCount: 0, items: [], isDefault: false },
       { value: "SIGNAGE", label: "Signage", itemCount: 0, items: [], isDefault: false },
       { value: "LANDSCAPING", label: "Landscaping", itemCount: 0, items: [], isDefault: false },
-      { value: "ELECTRICAL", label: "Electrical", itemCount: 0, items: [], isDefault: false },
       { value: "OTHER", label: "Other", itemCount: 0, items: [], isDefault: true }
     ];
 
