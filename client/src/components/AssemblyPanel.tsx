@@ -191,23 +191,24 @@ export default function AssemblyPanel({ selectedMeasurementId }: AssemblyPanelPr
   const alreadyLinked = new Set(computedQuantities.map((q) => q.assemblyId));
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm flex items-center gap-2">
-          <Layers className="w-4 h-4" /> Assemblies
+    <div className="space-y-4 min-w-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <h3 className="font-semibold text-sm flex items-center gap-2 min-w-0 truncate">
+          <Layers className="w-4 h-4 shrink-0" /> Assemblies
         </h3>
-        <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="button-create-assembly">
+        <Button size="sm" className="shrink-0" onClick={() => setCreateOpen(true)} data-testid="button-create-assembly">
           <Plus className="w-4 h-4 mr-1" /> New
         </Button>
       </div>
 
       {selectedMeasurementId && (
         <>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Applied to selected measurement</span>
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <span className="text-xs text-muted-foreground truncate">Applied to selected measurement</span>
             <Button
               size="sm"
               variant="outline"
+              className="shrink-0"
               onClick={() => setLinkOpen(true)}
               disabled={assemblies.length === 0}
               data-testid="button-apply-assembly"
@@ -221,7 +222,7 @@ export default function AssemblyPanel({ selectedMeasurementId }: AssemblyPanelPr
               <Loader2 className="w-4 h-4 animate-spin" />
             </div>
           ) : computedQuantities.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-2">
+            <p className="text-xs text-muted-foreground text-center py-2 break-words">
               No assemblies applied. Select one to auto-calculate quantities.
             </p>
           ) : (
@@ -299,7 +300,7 @@ export default function AssemblyPanel({ selectedMeasurementId }: AssemblyPanelPr
             <Loader2 className="w-4 h-4 animate-spin" />
           </div>
         ) : assemblies.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-2">
+          <p className="text-xs text-muted-foreground text-center py-2 break-words">
             No assemblies yet. Create one to speed up your takeoffs.
           </p>
         ) : (

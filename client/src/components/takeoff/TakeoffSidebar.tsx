@@ -407,7 +407,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   })();
 
   return (
-    <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col shrink-0", aiPanelOpen && "hidden md:flex")}>
+    <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
       <div className="flex border-b shrink-0">
         <button
           className={cn("flex-1 py-2 text-xs font-medium transition-colors", sidebarTab === "tools" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
@@ -1625,16 +1625,16 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 {measurements.length > 0 && (
                   <div className="pt-3 border-t space-y-2">
                     <h4 className="font-semibold text-sm">Total Quantities</h4>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between"><span className="text-muted-foreground">Linear:</span><span className="font-medium">{(Number.isFinite(aggregatedMeasurements.grandTotals.linearTotal) ? aggregatedMeasurements.grandTotals.linearTotal : 0).toFixed(2)} LF</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Area:</span><span className="font-medium">{(Number.isFinite(aggregatedMeasurements.grandTotals.areaTotal) ? aggregatedMeasurements.grandTotals.areaTotal : 0).toFixed(2)} SF</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Volume:</span><span className="font-medium">{(Number.isFinite(aggregatedMeasurements.grandTotals.volumeTotal) ? aggregatedMeasurements.grandTotals.volumeTotal : 0).toFixed(2)} CY</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Count:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.countTotal}</span></div>
-                      {aggregatedMeasurements.grandTotals.linearWithDropTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Linear+Drop:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.linearWithDropTotal.toFixed(2)} LF</span></div>}
-                      {aggregatedMeasurements.grandTotals.pitchedLinearTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Pitched Linear:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.pitchedLinearTotal.toFixed(2)} LF</span></div>}
-                      {aggregatedMeasurements.grandTotals.pitchedAreaTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Pitched Area:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.pitchedAreaTotal.toFixed(2)} SF</span></div>}
-                      {aggregatedMeasurements.grandTotals.surfaceAreaTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Surface Area:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.surfaceAreaTotal.toFixed(2)} SF</span></div>}
-                      {aggregatedMeasurements.grandTotals.segmentTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Segment:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.segmentTotal.toFixed(2)} LF</span></div>}
+                    <div className="space-y-1 text-sm min-w-0">
+                      <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Linear:</span><span className="font-medium text-right break-all">{(Number.isFinite(aggregatedMeasurements.grandTotals.linearTotal) ? aggregatedMeasurements.grandTotals.linearTotal : 0).toFixed(2)} LF</span></div>
+                      <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Area:</span><span className="font-medium text-right break-all">{(Number.isFinite(aggregatedMeasurements.grandTotals.areaTotal) ? aggregatedMeasurements.grandTotals.areaTotal : 0).toFixed(2)} SF</span></div>
+                      <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Volume:</span><span className="font-medium text-right break-all">{(Number.isFinite(aggregatedMeasurements.grandTotals.volumeTotal) ? aggregatedMeasurements.grandTotals.volumeTotal : 0).toFixed(2)} CY</span></div>
+                      <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Count:</span><span className="font-medium text-right break-all">{aggregatedMeasurements.grandTotals.countTotal}</span></div>
+                      {aggregatedMeasurements.grandTotals.linearWithDropTotal > 0 && <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Linear+Drop:</span><span className="font-medium text-right break-all">{aggregatedMeasurements.grandTotals.linearWithDropTotal.toFixed(2)} LF</span></div>}
+                      {aggregatedMeasurements.grandTotals.pitchedLinearTotal > 0 && <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Pitched Linear:</span><span className="font-medium text-right break-all">{aggregatedMeasurements.grandTotals.pitchedLinearTotal.toFixed(2)} LF</span></div>}
+                      {aggregatedMeasurements.grandTotals.pitchedAreaTotal > 0 && <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Pitched Area:</span><span className="font-medium text-right break-all">{aggregatedMeasurements.grandTotals.pitchedAreaTotal.toFixed(2)} SF</span></div>}
+                      {aggregatedMeasurements.grandTotals.surfaceAreaTotal > 0 && <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Surface Area:</span><span className="font-medium text-right break-all">{aggregatedMeasurements.grandTotals.surfaceAreaTotal.toFixed(2)} SF</span></div>}
+                      {aggregatedMeasurements.grandTotals.segmentTotal > 0 && <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Segment:</span><span className="font-medium text-right break-all">{aggregatedMeasurements.grandTotals.segmentTotal.toFixed(2)} LF</span></div>}
                     </div>
                   </div>
                 )}
@@ -1652,12 +1652,12 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
           {selectedSheet && (
             <Card>
-              <CardContent className="pt-6 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-primary" />
-                  <h3 className="font-semibold text-sm">Addenda Overlays</h3>
+              <CardContent className="pt-6 space-y-3 overflow-hidden">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Layers className="w-4 h-4 text-primary shrink-0" />
+                  <h3 className="font-semibold text-sm truncate">Addenda Overlays</h3>
                 </div>
-                <p className="text-xs text-muted-foreground">Toggle addendum documents as overlays on the plan sheet.</p>
+                <p className="text-xs text-muted-foreground break-words">Toggle addendum documents as overlays on the plan sheet.</p>
                 {projectAddenda.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-2">No addenda for this project.</p>
                 ) : (
@@ -1684,13 +1684,13 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             <Badge variant="outline" className="text-[10px] shrink-0">{addendum.status}</Badge>
                           </div>
                           {isVisible && (
-                            <div className="flex items-center gap-2 pl-8">
-                              <span className="text-[10px] text-muted-foreground w-10">Opacity</span>
+                            <div className="flex items-center gap-2 pl-8 min-w-0">
+                              <span className="text-[10px] text-muted-foreground w-10 shrink-0">Opacity</span>
                               <input type="range" min={0} max={100} value={Math.round(opacity * 100)} onChange={(e) => {
                                 const newOpacity = parseInt(e.target.value) / 100;
                                 setAddendaOverlays((prev: any) => ({ ...prev, [addendum.id]: { ...prev[addendum.id], opacity: newOpacity } }));
                               }} className="flex-1 h-1 accent-primary" data-testid={`slider-opacity-addendum-${addendum.id}`} />
-                              <span className="text-[10px] text-muted-foreground w-8 text-right">{Math.round(opacity * 100)}%</span>
+                              <span className="text-[10px] text-muted-foreground w-8 text-right shrink-0">{Math.round(opacity * 100)}%</span>
                             </div>
                           )}
                         </div>
@@ -1704,7 +1704,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       });
                       const nonImageCount = projectAddenda.length - imageAddenda.length;
                       if (nonImageCount > 0) return (
-                        <p className="text-[10px] text-muted-foreground italic">
+                        <p className="text-[10px] text-muted-foreground italic break-words">
                           {nonImageCount} addenda not shown (PDF or no file attached — only image overlays supported)
                         </p>
                       );
@@ -1718,15 +1718,15 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
           {selectedSheet && currentSheet?.scalePxPerFoot && (
             <Card>
-              <CardContent className="pt-6 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Info className="w-4 h-4 text-primary" />
-                  <h3 className="font-semibold text-sm">Calibration Info</h3>
+              <CardContent className="pt-6 space-y-3 overflow-hidden">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Info className="w-4 h-4 text-primary shrink-0" />
+                  <h3 className="font-semibold text-sm truncate">Calibration Info</h3>
                 </div>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Scale:</span><span className="font-mono">{currentSheet.scalePxPerFoot.toFixed(2)} px/{currentSheet.units || "ft"}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Units:</span><span>{currentSheet.units === "m" ? "Meters" : "Feet"}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Status:</span><Badge variant="default" className="text-[10px]"><CheckCircle2 className="w-3 h-3 mr-1" /> Calibrated</Badge></div>
+                <div className="space-y-2 text-xs min-w-0">
+                  <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Scale:</span><span className="font-mono text-right break-all">{currentSheet.scalePxPerFoot.toFixed(2)} px/{currentSheet.units || "ft"}</span></div>
+                  <div className="flex justify-between gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Units:</span><span className="text-right">{currentSheet.units === "m" ? "Meters" : "Feet"}</span></div>
+                  <div className="flex justify-between items-center gap-2 min-w-0"><span className="text-muted-foreground shrink-0">Status:</span><Badge variant="default" className="text-[10px] shrink-0"><CheckCircle2 className="w-3 h-3 mr-1" /> Calibrated</Badge></div>
                 </div>
                 <Separator />
                 <div className="space-y-2">
