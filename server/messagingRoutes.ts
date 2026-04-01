@@ -2963,25 +2963,34 @@ const messagingSetup = (async () => {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
         console.log(`[ICE Config] Using configured TURN server(s): ${turnUrls.join(", ")}`);
+      } else if (process.env.METERED_API_KEY) {
+        try {
+          const meteredDomain = process.env.METERED_DOMAIN || "helloworld.metered.live";
+          const meteredResp = await fetch(
+            `https://${meteredDomain}/api/v1/turn/credentials?apiKey=${process.env.METERED_API_KEY}`
+          );
+          if (meteredResp.ok) {
+            const meteredServers = await meteredResp.json();
+            if (Array.isArray(meteredServers) && meteredServers.length > 0) {
+              for (const server of meteredServers) {
+                iceServers.push({
+                  urls: server.urls,
+                  username: server.username,
+                  credential: server.credential,
+                });
+              }
+              console.log(`[ICE Config] Using Metered.ca TURN servers (${meteredServers.length} entries)`);
+            } else {
+              console.warn("[ICE Config] Metered.ca returned empty TURN credentials. Falling back to STUN-only.");
+            }
+          } else {
+            console.warn(`[ICE Config] Metered.ca API returned ${meteredResp.status}. Falling back to STUN-only.`);
+          }
+        } catch (meteredErr) {
+          console.warn("[ICE Config] Failed to fetch Metered.ca TURN credentials:", meteredErr);
+        }
       } else {
-        iceServers.push(
-          {
-            urls: [
-              "turn:openrelay.metered.ca:80",
-              "turn:openrelay.metered.ca:80?transport=tcp",
-              "turn:openrelay.metered.ca:443",
-              "turn:openrelay.metered.ca:443?transport=tcp",
-            ],
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-          {
-            urls: "turns:openrelay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-        );
-        console.warn("[ICE Config] Using free Open Relay TURN servers. For production, configure TURN_SERVER_URL, TURN_SERVER_USERNAME, TURN_SERVER_CREDENTIAL environment variables with your own TURN provider.");
+        console.warn("[ICE Config] No TURN servers configured. Only STUN servers will be used. For reliable calls behind NAT/firewalls, set either TURN_SERVER_URL + TURN_SERVER_USERNAME + TURN_SERVER_CREDENTIAL, or METERED_API_KEY (free at metered.ca).");
       }
 
       const hasTurn = iceServers.some(s => {
