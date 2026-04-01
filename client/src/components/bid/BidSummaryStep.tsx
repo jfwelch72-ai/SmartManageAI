@@ -1,12 +1,17 @@
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Calculator, Package, Truck, Users, Clock, FileText, DollarSign, Building2, Calendar, CheckCircle2, Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Calculator, Package, Truck, Users, Clock, FileText, DollarSign, Building2, Calendar, CheckCircle2, Send, Pencil, Check, X } from "lucide-react";
 import BidDocumentDistribution from "@/components/BidDocumentDistribution";
 import JobInformationForm from "@/components/JobInformationForm";
 import { format } from "date-fns";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface BidSummaryStepProps {
   bid: any;
@@ -63,6 +68,68 @@ export default function BidSummaryStep({
   onSubmitBid,
   isSubmittingBid = false,
 }: BidSummaryStepProps) {
+  const { toast } = useToast();
+  const [isEditingBidAmount, setIsEditingBidAmount] = useState(false);
+  const [editBidAmountValue, setEditBidAmountValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const autoPopulatedForBid = useRef<string | null>(null);
+
+  const updateBidAmountMutation = useMutation({
+    mutationFn: async (amount: string) => {
+      return apiRequest("PATCH", `/api/bids/${bidCode}`, { bidAmount: amount });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      toast({ title: "Success", description: "Bid amount updated" });
+      setIsEditingBidAmount(false);
+    },
+    onError: (_, variables) => {
+      if (autoPopulatedForBid.current === bidCode) {
+        autoPopulatedForBid.current = null;
+      }
+      toast({ title: "Error", description: "Failed to update bid amount", variant: "destructive" });
+    },
+  });
+
+  useEffect(() => {
+    if (
+      canEdit &&
+      (bid.bidAmount === null || bid.bidAmount === undefined) &&
+      finalBidAmount > 0 &&
+      autoPopulatedForBid.current !== bidCode
+    ) {
+      autoPopulatedForBid.current = bidCode;
+      updateBidAmountMutation.mutate(String(finalBidAmount.toFixed(2)));
+    }
+  }, [finalBidAmount, bid.bidAmount, bidCode, canEdit]);
+
+  const handleStartEdit = () => {
+    setEditBidAmountValue(bid.bidAmount ? String(Number(bid.bidAmount)) : "");
+    setIsEditingBidAmount(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleSaveEdit = () => {
+    const val = parseFloat(editBidAmountValue);
+    if (isNaN(val) || val <= 0) {
+      toast({ title: "Invalid amount", description: "Please enter a valid positive number", variant: "destructive" });
+      return;
+    }
+    updateBidAmountMutation.mutate(String(val));
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingBidAmount(false);
+    setEditBidAmountValue("");
+  };
+
+  const handleSetToFinalAmount = () => {
+    if (finalBidAmount > 0) {
+      updateBidAmountMutation.mutate(String(finalBidAmount.toFixed(2)));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card data-testid="card-bid-summary">
@@ -287,11 +354,85 @@ export default function BidSummaryStep({
           <CardContent className="space-y-3">
             <div className="flex items-start gap-3">
               <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
-              <div>
+              <div className="flex-1">
                 <p className="text-sm font-medium">Current Bid Amount</p>
-                <p className="text-lg font-bold font-mono">
-                  {bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : 'Not Set'}
-                </p>
+                {isEditingBidAmount ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="relative flex-1">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                      <Input
+                        ref={inputRef}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editBidAmountValue}
+                        onChange={(e) => setEditBidAmountValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveEdit();
+                          if (e.key === "Escape") handleCancelEdit();
+                        }}
+                        className="pl-6 h-8 font-mono"
+                        placeholder="0.00"
+                        data-testid="input-inline-bid-amount"
+                      />
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-green-600 hover:text-green-700"
+                      onClick={handleSaveEdit}
+                      disabled={updateBidAmountMutation.isPending}
+                      data-testid="button-save-bid-amount"
+                    >
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={handleCancelEdit}
+                      disabled={updateBidAmountMutation.isPending}
+                      data-testid="button-cancel-bid-amount"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p
+                      className={`text-lg font-bold font-mono ${canEdit ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
+                      onClick={canEdit ? handleStartEdit : undefined}
+                      title={canEdit ? "Click to edit" : undefined}
+                      data-testid="text-current-bid-amount"
+                    >
+                      {bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : 'Not Set'}
+                    </p>
+                    {canEdit && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={handleStartEdit}
+                        disabled={updateBidAmountMutation.isPending}
+                        data-testid="button-edit-bid-amount"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                    )}
+                    {canEdit && bid.bidAmount && Number(bid.bidAmount) !== finalBidAmount && finalBidAmount > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-xs"
+                        onClick={handleSetToFinalAmount}
+                        disabled={updateBidAmountMutation.isPending}
+                        data-testid="button-set-to-final-amount"
+                      >
+                        Set to Final Amount
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-start gap-3">
