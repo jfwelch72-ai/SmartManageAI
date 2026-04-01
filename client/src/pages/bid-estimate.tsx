@@ -478,7 +478,7 @@ export default function BidEstimate() {
             : {}),
           overheadAllocation: values.overheadAllocation,
           profitAllocation: values.profitAllocation,
-          notes: values.notes || undefined,
+          notes: values.notes || null,
           scopeWorkTypeId: values.scopeWorkTypeId || undefined,
           ...materialCalcPayload,
         },
@@ -508,7 +508,7 @@ export default function BidEstimate() {
         overheadAllocation: String(values.overheadAllocation),
         profitAllocation: String(values.profitAllocation),
         source: "MANUAL",
-        notes: values.notes || undefined,
+        notes: values.notes || null,
         scopeWorkTypeId: values.scopeWorkTypeId || undefined,
         workTypeCode:
           selectedScopeData?.workTypeCode ||
@@ -574,7 +574,7 @@ export default function BidEstimate() {
       subcontractorAssignments: subAssignments,
       overheadAllocation: 0,
       profitAllocation: 0,
-      notes: lineItemAny.metadata || "",
+      notes: lineItemAny.notes || "",
     });
     setMaterialCalcData({
       concreteDepthInches: lineItemAny.concreteDepthInches || "",

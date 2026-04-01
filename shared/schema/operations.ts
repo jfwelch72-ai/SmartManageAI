@@ -1354,6 +1354,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   profitAllocation: decimal("profit_allocation", { precision: 12, scale: 2 }).notNull().default('0'),
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
   userAdjusted: boolean("user_adjusted").notNull().default(false),
+  notes: text("notes"),
   metadata: text("metadata"),
   
   // Material Calculator Fields - Concrete
