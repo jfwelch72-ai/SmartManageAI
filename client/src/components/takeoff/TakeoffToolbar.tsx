@@ -69,7 +69,7 @@ export function TakeoffToolbar({
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
 
   return (
-    <>
+    <div>
       <div className="hidden sm:flex w-20 bg-card border-r flex-col items-center py-2 gap-1 overflow-y-auto scrollbar-hide shrink-0">
         {TOOL_CONFIG.map((tool, idx) => {
           const Icon = tool.icon;
@@ -582,6 +582,6 @@ export function TakeoffToolbar({
           </>
         )}
       </div>
-    </>
+    </div>
   );
 }
