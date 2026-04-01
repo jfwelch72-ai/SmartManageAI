@@ -200,11 +200,20 @@ export function VideoCallOverlay({
           return next;
         });
       } else if (state === "disconnected") {
-        setRemoteStreams(prev => {
-          const next = { ...prev };
-          delete next[remoteUserId];
-          return next;
-        });
+        if (iceTimeoutRef.current[remoteUserId]) {
+          clearTimeout(iceTimeoutRef.current[remoteUserId]);
+          delete iceTimeoutRef.current[remoteUserId];
+        }
+        iceTimeoutRef.current[remoteUserId] = setTimeout(() => {
+          if (pc.iceConnectionState === "disconnected") {
+            console.warn(`[WebRTC] ICE disconnected timeout for ${remoteUserId}, removing stream`);
+            setRemoteStreams(prev => {
+              const next = { ...prev };
+              delete next[remoteUserId];
+              return next;
+            });
+          }
+        }, 5000);
       }
 
       if (state === "checking") {
@@ -271,9 +280,26 @@ export function VideoCallOverlay({
         deferredOffersRef.current[fromUserId] = signal.sdp!;
         return;
       }
+
+      const existingPc = peerConnectionsRef.current[fromUserId];
+      const isPolite = currentUserId < fromUserId;
+
+      if (existingPc && existingPc.signalingState === "have-local-offer") {
+        if (!isPolite) {
+          console.log(`[WebRTC] Glare: impolite peer ignoring offer from ${fromUserId}`);
+          return;
+        }
+        console.log(`[WebRTC] Glare: polite peer rolling back for ${fromUserId}`);
+      }
+
       console.log(`[WebRTC] Handling offer from ${fromUserId}`);
-      const pc = createPeerConnection(fromUserId);
+      const pc = existingPc && isPolite && existingPc.signalingState === "have-local-offer"
+        ? existingPc
+        : createPeerConnection(fromUserId);
       try {
+        if (pc.signalingState === "have-local-offer") {
+          await pc.setLocalDescription({ type: "rollback" });
+        }
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp!));
         await flushPendingCandidates(fromUserId);
         const answer = await pc.createAnswer();
@@ -366,7 +392,7 @@ export function VideoCallOverlay({
             .then(() => sendSignal(participant.userId, { type: "offer", sdp: existingPc.localDescription }))
             .catch(err => console.error("[WebRTC] Renegotiation failed:", err));
         }
-      } else if (currentUserId > participant.userId) {
+      } else {
         initiateConnection(participant.userId);
       }
     }
@@ -656,7 +682,7 @@ export function VideoCallOverlay({
           variant="destructive"
           size="icon"
           className="h-14 w-14 rounded-full"
-          onClick={isInitiator ? handleEndCall : handleLeaveCall}
+          onClick={(activeParticipants.length === 2 || isInitiator) ? handleEndCall : handleLeaveCall}
           data-testid="button-end-call"
         >
           <PhoneOff className="w-6 h-6" />
@@ -674,15 +700,37 @@ function RemoteVideo({
   participant: { user: { firstName: string; lastName: string } };
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const streamIdRef = useRef<string>("");
 
   useEffect(() => {
     const el = videoRef.current;
-    if (el) {
+    if (!el) return;
+
+    const currentStreamId = stream.id + "_" + stream.getTracks().map(t => t.id).join(",");
+    if (streamIdRef.current !== currentStreamId || el.srcObject !== stream) {
+      streamIdRef.current = currentStreamId;
       el.srcObject = stream;
-      el.onloadedmetadata = () => {
-        el.play().catch(() => {});
-      };
+      el.play().catch(() => {});
     }
+  }, [stream]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !stream) return;
+
+    const handleTrackChange = () => {
+      if (el.srcObject !== stream) {
+        el.srcObject = stream;
+        el.play().catch(() => {});
+      }
+    };
+
+    stream.addEventListener("addtrack", handleTrackChange);
+    stream.addEventListener("removetrack", handleTrackChange);
+    return () => {
+      stream.removeEventListener("addtrack", handleTrackChange);
+      stream.removeEventListener("removetrack", handleTrackChange);
+    };
   }, [stream]);
 
   return (

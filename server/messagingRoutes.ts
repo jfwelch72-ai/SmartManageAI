@@ -2830,6 +2830,66 @@ const messagingSetup = (async () => {
     }
   });
 
+  router.post("/api/calls/:callId/notes/summarize", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const isConvParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      const allNotes = await db
+        .select({
+          content: videoCallNotes.content,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        })
+        .from(videoCallNotes)
+        .innerJoin(users, eq(videoCallNotes.authorId, users.id))
+        .where(eq(videoCallNotes.callId, callId));
+
+      const nonEmptyNotes = allNotes.filter(n => n.content && n.content.trim().length > 0);
+      if (nonEmptyNotes.length === 0) {
+        return res.status(400).json({ error: "No notes to summarize" });
+      }
+
+      const notesText = nonEmptyNotes
+        .map(n => `${n.firstName} ${n.lastName}'s notes:\n${n.content}`)
+        .join("\n\n---\n\n");
+
+      const { openai: openaiClient, AI_MODEL_GPT4O } = await import("./ai/openaiClient");
+
+      const completion = await openaiClient.chat.completions.create({
+        model: AI_MODEL_GPT4O,
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant that summarizes meeting notes. Produce a clear, concise summary of the key points discussed, decisions made, and action items identified. Use bullet points for clarity. Keep it brief but comprehensive.",
+          },
+          {
+            role: "user",
+            content: `Please summarize the following call notes:\n\n${notesText}`,
+          },
+        ],
+        temperature: 0.5,
+        max_tokens: 1024,
+      });
+
+      const summary = completion.choices[0]?.message?.content;
+      if (!summary) {
+        return res.status(500).json({ error: "Failed to generate summary" });
+      }
+
+      res.json({ summary });
+    } catch (error) {
+      logError("Summarize call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   router.get("/api/conversations/:id/calls", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
