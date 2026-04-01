@@ -497,7 +497,7 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
   doc.fontSize(28).fillColor(primaryColor).text(companyName, { align: 'center' });
   doc.fontSize(10).fillColor('#6b7280').text('Construction Management', { align: 'center' });
   doc.moveDown(0.3);
-  doc.fontSize(9).text(`Powered by ${companyName}`, { align: 'center' });
+  doc.fontSize(9).text('Powered by SmartManageAI', { align: 'center' });
   doc.moveDown();
 
   doc.strokeColor('#e5e7eb').lineWidth(1)
@@ -743,7 +743,7 @@ export function generateWarrantyContractPDF(data: BidData): PassThrough {
   doc.fontSize(28).fillColor(primaryColor).text(companyName, { align: 'center' });
   doc.fontSize(10).fillColor('#6b7280').text('Construction Management', { align: 'center' });
   doc.moveDown(0.3);
-  doc.fontSize(9).text(`Powered by ${companyName}`, { align: 'center' });
+  doc.fontSize(9).text('Powered by SmartManageAI', { align: 'center' });
   doc.moveDown();
 
   doc.strokeColor(primaryColor).lineWidth(2)
