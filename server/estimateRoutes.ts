@@ -1511,7 +1511,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       }
 
       // Validate and create line item with calculated material quantities
-      const parseInput = {
+      const parseInput: Record<string, any> = {
         ...normalizedLineItem,
         estimateId,
         source: "MANUAL",
@@ -1528,6 +1528,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         materialRequirementsJson: generateMaterialRequirementsJson(materialResults),
         equipmentRequirementsJson: generateEquipmentRequirementsJson(materialResults),
       };
+      for (const field of decimalFields) {
+        if (parseInput[field] !== undefined && parseInput[field] !== null) {
+          parseInput[field] = String(parseInput[field]);
+        }
+      }
       const validatedData = insertEstimateLineItemSchema.parse(parseInput);
 
       if (DEBUG_LINE_ITEMS) {
@@ -1689,10 +1694,20 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
       }
 
+      // Ensure decimal fields are strings in normalizedUpdates before DB update
+      const updateData: Record<string, any> = {
+        ...normalizedUpdates,
+      };
+      for (const field of decimalFields) {
+        if (updateData[field] !== undefined && updateData[field] !== null) {
+          updateData[field] = String(updateData[field]);
+        }
+      }
+
       // Update line item with recalculated total and material quantities
       let [updatedLineItem] = await db.update(estimateLineItems)
         .set({ 
-          ...normalizedUpdates, 
+          ...updateData, 
           totalCost, 
           userAdjusted: true, 
           updatedAt: new Date(),
