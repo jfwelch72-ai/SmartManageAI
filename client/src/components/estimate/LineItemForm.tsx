@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { UseFormReturn } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,7 @@ import { EquipmentRateSelector } from "@/components/EquipmentRateSelector";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { BidSubcontractorQuote } from "@shared/schema";
 import type { LineItemFormValues, CatalogPriceItem, WorkCategory, SubcontractorAssignment } from "@/lib/estimate-utils";
+import { shouldAutoShowMaterialCalc } from "@/lib/estimate-utils";
 
 function SubcontractorAssignmentPanel({
   quotes,
@@ -201,6 +202,7 @@ interface LineItemFormDialogProps {
   onApplyCatalogPrice: (item: CatalogPriceItem) => void;
   equipmentSelectorKey: number;
   lineItemId?: string;
+  lineItemSource?: string;
   useHierarchicalBuilder?: boolean;
   onUseHierarchicalBuilderChange?: (value: boolean) => void;
   selectedScopeData?: ScopeSelectionData | null;
@@ -346,6 +348,7 @@ export function LineItemFormDialog({
   onApplyCatalogPrice,
   equipmentSelectorKey,
   lineItemId,
+  lineItemSource,
   useHierarchicalBuilder = false,
   onUseHierarchicalBuilderChange,
   selectedScopeData,
@@ -360,6 +363,14 @@ export function LineItemFormDialog({
   const isAdd = mode === "add";
   const isEdit = mode === "edit";
   const testPrefix = isEdit ? "edit-" : "";
+  const [manualCalcToggle, setManualCalcToggle] = useState(false);
+  
+  useEffect(() => {
+    if (!open) {
+      setManualCalcToggle(false);
+    }
+  }, [open]);
+
   const currentAssignments = form.watch("subcontractorAssignments") || [];
   const hasMultiSubAssignments = currentAssignments.length > 0;
 
@@ -875,32 +886,42 @@ export function LineItemFormDialog({
             const quantity = Number(watchedValues.quantity) || 0;
             const category = watchedValues.category || "";
             const description = watchedValues.description || "";
+
+            const { unitMatch, autoShow } = shouldAutoShowMaterialCalc({
+              unit, category, description, materialCalcData, source: lineItemSource,
+            });
+            const showMaterialCalc = autoShow || (unitMatch && manualCalcToggle);
             
-            const materialKeywords = /concrete|flatwork|foundation|patio|driveway|sidewalk|curb|excavat|grading|site.?work|trench|earthwork|stone|slab|footing|masonry|paving|asphalt/i;
-
-            const hasExistingCalcData = !!(
-              materialCalcData.concreteDepthInches ||
-              materialCalcData.requiresStoneBase ||
-              materialCalcData.requiresExcavation ||
-              materialCalcData.requiresWireMesh ||
-              materialCalcData.requiresRebar
-            );
-
-            const unitMatch = unit === "SF" || unit === "LF" || unit === "SY" || unit === "CY";
-            const categoryMatch = materialKeywords.test(category);
-            const descriptionMatch = materialKeywords.test(description);
-
-            const showMaterialCalc = unitMatch && (categoryMatch || descriptionMatch || hasExistingCalcData);
+            if (showMaterialCalc) {
+              return (
+                <MaterialCalculator
+                  unit={unit}
+                  quantity={quantity}
+                  description={description}
+                  value={materialCalcData}
+                  onChange={onMaterialCalcChange}
+                />
+              );
+            }
             
-            return showMaterialCalc ? (
-              <MaterialCalculator
-                unit={unit}
-                quantity={quantity}
-                description={description}
-                value={materialCalcData}
-                onChange={onMaterialCalcChange}
-              />
-            ) : null;
+            if (unitMatch && !autoShow) {
+              return (
+                <div className="flex justify-center py-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setManualCalcToggle(true)}
+                    data-testid={`button-${testPrefix}show-material-calculator`}
+                  >
+                    <Calculator className="h-4 w-4 mr-2" />
+                    Show Material Calculator
+                  </Button>
+                </div>
+              );
+            }
+            
+            return null;
           })()}
 
           <CalculatedQuantitiesSummary materialCalcData={materialCalcData} testPrefix={testPrefix} />

@@ -1,6 +1,38 @@
 import { z } from "zod";
 import type { MaterialCalculatorData } from "@/components/MaterialCalculator";
 
+export const MATERIAL_KEYWORDS = /concrete|flatwork|foundation|patio|driveway|sidewalk|curb|excavat|grading|site.?work|trench|earthwork|stone|slab|footing|masonry|paving|asphalt/i;
+
+export const MATERIAL_QUALIFYING_UNITS = ["SF", "LF", "SY", "CY"];
+
+export function shouldAutoShowMaterialCalc(opts: {
+  unit: string;
+  category: string;
+  description: string;
+  materialCalcData: MaterialCalculatorData;
+  source?: string;
+}): { unitMatch: boolean; autoShow: boolean } {
+  const { unit, category, description, materialCalcData, source } = opts;
+
+  const unitMatch = MATERIAL_QUALIFYING_UNITS.includes(unit);
+
+  const hasExistingCalcData = !!(
+    materialCalcData.concreteDepthInches ||
+    materialCalcData.requiresStoneBase ||
+    materialCalcData.requiresExcavation ||
+    materialCalcData.requiresWireMesh ||
+    materialCalcData.requiresRebar
+  );
+
+  const categoryMatch = MATERIAL_KEYWORDS.test(category);
+  const descriptionMatch = MATERIAL_KEYWORDS.test(description);
+  const isAIImported = source === "TAKEOFF" || source === "GENERATED";
+
+  const autoShow = unitMatch && (categoryMatch || descriptionMatch || hasExistingCalcData || isAIImported);
+
+  return { unitMatch, autoShow };
+}
+
 export const subcontractorAssignmentSchema = z.object({
   subcontractorQuoteId: z.string(),
   allocatedCost: z.coerce.number().min(0).default(0),

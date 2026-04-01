@@ -813,6 +813,7 @@ export default function BidEstimate() {
               onApplyCatalogPrice={applyCatalogPrice}
               equipmentSelectorKey={equipmentSelectorKey}
               lineItemId={editingLineItem?.id}
+              lineItemSource={editingLineItem?.source}
             />
           </div>
         )}
