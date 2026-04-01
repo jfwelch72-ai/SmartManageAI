@@ -162,29 +162,25 @@ export function VideoCallOverlay({
         if (!res.ok) return;
         const callData = await res.json();
         if (callData?.participants) {
+          const serverActive = callData.participants.filter(
+            (p: { leftAt: string | null }) => !p.leftAt
+          );
           onUpdateCall(prev => {
             if (!prev || prev.id !== call.id) return prev;
-            const existingIds = new Set(prev.participants.map((p: { userId: string }) => p.userId));
-            const newParticipants = callData.participants.filter(
-              (p: { userId: string; leftAt: string | null }) => !p.leftAt && !existingIds.has(p.userId)
-            );
-            const statusChanged = prev.status !== callData.status;
-            if (newParticipants.length === 0 && !statusChanged) {
-              const serverActiveIds = new Set(
-                callData.participants
-                  .filter((p: { leftAt: string | null }) => !p.leftAt)
-                  .map((p: { userId: string }) => p.userId)
-              );
-              const removed = prev.participants.filter(
-                (p: { userId: string; leftAt: string | null }) => !p.leftAt && !serverActiveIds.has(p.userId)
-              );
-              if (removed.length === 0) return prev;
+            const prevIds = new Set(prev.participants.map((p: { userId: string }) => p.userId));
+            const serverIds = new Set(serverActive.map((p: { userId: string }) => p.userId));
+            const added = serverActive.filter((p: { userId: string }) => !prevIds.has(p.userId));
+            const removed = prev.participants.filter((p: { userId: string }) => !serverIds.has(p.userId));
+            if (added.length === 0 && removed.length === 0 && prev.status === callData.status) {
+              return prev;
             }
-            console.log(`[WebRTC] Participant poll: found ${newParticipants.length} new participant(s)`);
-            const serverParticipants = callData.participants.filter(
-              (p: { leftAt: string | null }) => !p.leftAt
-            );
-            return { ...prev, status: callData.status, participants: serverParticipants };
+            if (added.length > 0) {
+              console.log(`[WebRTC] Participant poll: ${added.length} new participant(s) detected`, added.map((p: { userId: string }) => p.userId));
+            }
+            if (removed.length > 0) {
+              console.log(`[WebRTC] Participant poll: ${removed.length} participant(s) removed`, removed.map((p: { userId: string }) => p.userId));
+            }
+            return { ...prev, status: callData.status, participants: serverActive };
           });
         }
       } catch (err) {
@@ -196,7 +192,9 @@ export function VideoCallOverlay({
     return () => clearInterval(interval);
   }, [call.id, onUpdateCall]);
 
-  const sendSignal = useCallback(async (targetUserId: string, signal: unknown) => {
+  const signalRetryTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const sendSignal = useCallback(async (targetUserId: string, signal: unknown, retryAttempt = 0) => {
     try {
       const res = await apiRequest("POST", `/api/calls/${call.id}/signal`, {
         targetUserId,
@@ -204,10 +202,22 @@ export function VideoCallOverlay({
       });
       const data = await res.json();
       if (data.delivered === false) {
-        console.warn(`[WebRTC] Signal not delivered to ${targetUserId}: ${data.reason}`);
+        console.warn(`[WebRTC] Signal not delivered to ${targetUserId}: ${data.reason} (attempt ${retryAttempt + 1})`);
         const signalObj = signal as SignalMessage;
-        if (signalObj.type === "offer") {
-          setPeerStates(prev => ({ ...prev, [targetUserId]: "peer_unreachable" }));
+        const maxRetries = 3;
+        if (retryAttempt < maxRetries) {
+          const retryKey = `${targetUserId}_${signalObj.type}_${retryAttempt}`;
+          const delay = [1000, 2000, 3000][retryAttempt] || 3000;
+          console.log(`[WebRTC] Scheduling signal retry for ${targetUserId} (${signalObj.type}) in ${delay}ms`);
+          signalRetryTimerRef.current[retryKey] = setTimeout(() => {
+            delete signalRetryTimerRef.current[retryKey];
+            sendSignal(targetUserId, signal, retryAttempt + 1);
+          }, delay);
+        } else {
+          console.warn(`[WebRTC] Signal delivery to ${targetUserId} failed after ${maxRetries + 1} attempts`);
+          if (signalObj.type === "offer" || signalObj.type === "answer") {
+            setPeerStates(prev => ({ ...prev, [targetUserId]: "peer_unreachable" }));
+          }
         }
       }
     } catch (err) {
@@ -389,7 +399,7 @@ export function VideoCallOverlay({
             pc.close();
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
           }
-        }, 15000);
+        }, 10000);
       }
     };
 
@@ -646,6 +656,8 @@ export function VideoCallOverlay({
       peerConnectionsRef.current = {};
       Object.values(iceTimeoutRef.current).forEach(t => clearTimeout(t));
       iceTimeoutRef.current = {};
+      Object.values(signalRetryTimerRef.current).forEach(t => clearTimeout(t));
+      signalRetryTimerRef.current = {};
     };
   }, []);
 

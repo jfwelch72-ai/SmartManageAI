@@ -106,10 +106,17 @@ export function useGlobalCallEvents(): GlobalCallState {
     const handleCallJoined = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
+        console.log(`[CallEvents] SSE call_joined received: userId=${data.userId}, callId=${data.callId}, userName=${data.userName}`);
         updateActiveCall(prev => {
-          if (!prev || prev.id !== data.callId) return prev;
+          if (!prev || prev.id !== data.callId) {
+            console.log(`[CallEvents] call_joined ignored: active call mismatch (active=${prev?.id}, event=${data.callId})`);
+            return prev;
+          }
           const alreadyIn = prev.participants.some((p: { userId: string }) => p.userId === data.userId);
-          if (alreadyIn) return prev;
+          if (alreadyIn) {
+            console.log(`[CallEvents] call_joined: user ${data.userId} already in participant list`);
+            return prev;
+          }
           const nameParts = (data.userName || "").split(" ");
           const newParticipant = {
             id: `temp-${data.userId}`,
@@ -124,6 +131,7 @@ export function useGlobalCallEvents(): GlobalCallState {
               role: "",
             },
           };
+          console.log(`[CallEvents] call_joined: adding participant ${data.userId} to call ${data.callId}`);
           return { ...prev, status: "ACTIVE" as const, participants: [...prev.participants, newParticipant] };
         });
       } catch (err) {
@@ -146,12 +154,13 @@ export function useGlobalCallEvents(): GlobalCallState {
     const handleWebRTCSignal = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
+        console.log(`[CallEvents] SSE webrtc_signal received: type=${data.signal?.type}, from=${data.fromUserId}, callId=${data.callId}`);
         if (data.signal && (data.signal.type === "offer" || data.signal.type === "answer") && data.fromUserId) {
           updateActiveCall(prev => {
             if (!prev || prev.id !== data.callId) return prev;
             const alreadyIn = prev.participants.some((p: { userId: string }) => p.userId === data.fromUserId);
             if (alreadyIn) return prev;
-            console.log(`[CallEvents] Auto-adding peer ${data.fromUserId} from webrtc_signal`);
+            console.log(`[CallEvents] Auto-adding peer ${data.fromUserId} from webrtc_signal (${data.signal.type})`);
             const newParticipant = {
               id: `signal-${data.fromUserId}`,
               callId: data.callId,

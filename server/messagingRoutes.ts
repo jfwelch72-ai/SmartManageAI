@@ -2962,25 +2962,26 @@ const messagingSetup = (async () => {
         for (const url of turnUrls) {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
+        console.log(`[ICE Config] Using configured TURN server(s): ${turnUrls.join(", ")}`);
       } else {
         iceServers.push(
           {
             urls: [
-              "turn:a.relay.metered.ca:80",
-              "turn:a.relay.metered.ca:80?transport=tcp",
-              "turn:a.relay.metered.ca:443",
-              "turn:a.relay.metered.ca:443?transport=tcp",
+              "turn:openrelay.metered.ca:80",
+              "turn:openrelay.metered.ca:80?transport=tcp",
+              "turn:openrelay.metered.ca:443",
+              "turn:openrelay.metered.ca:443?transport=tcp",
             ],
-            username: "e8dd65b92f0b960484ce053c",
-            credential: "uWdxVv8vn6sGMzR0",
+            username: "openrelayproject",
+            credential: "openrelayproject",
           },
           {
-            urls: "turns:a.relay.metered.ca:443?transport=tcp",
-            username: "e8dd65b92f0b960484ce053c",
-            credential: "uWdxVv8vn6sGMzR0",
+            urls: "turns:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject",
           },
         );
-        console.warn("[ICE Config] Using fallback Metered TURN servers. For production, configure TURN_SERVER_URL, TURN_SERVER_USERNAME, TURN_SERVER_CREDENTIAL environment variables with your own TURN provider.");
+        console.warn("[ICE Config] Using free Open Relay TURN servers. For production, configure TURN_SERVER_URL, TURN_SERVER_USERNAME, TURN_SERVER_CREDENTIAL environment variables with your own TURN provider.");
       }
 
       const hasTurn = iceServers.some(s => {
