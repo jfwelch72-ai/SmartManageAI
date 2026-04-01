@@ -17,26 +17,6 @@ const FALLBACK_ICE_SERVERS: RTCConfiguration = {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
     { urls: "stun:stun4.l.google.com:19302" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turns:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
   ],
 };
 
@@ -217,7 +197,7 @@ export function VideoCallOverlay({
             await runTurnPreCheck(turnServers);
           }
         } else {
-          console.warn("[WebRTC] Backend returned no ICE config, using fallback with free TURN servers");
+          console.warn("[WebRTC] Backend returned no ICE config, using STUN-only fallback");
           const fallbackTurn = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
             const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
             return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
@@ -226,7 +206,7 @@ export function VideoCallOverlay({
         }
       })
       .catch(async (err) => {
-        console.warn("[WebRTC] Failed to fetch ICE config, using fallback with free TURN servers:", err);
+        console.warn("[WebRTC] Failed to fetch ICE config, using STUN-only fallback:", err);
         const fallbackTurn = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
           const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
           return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));

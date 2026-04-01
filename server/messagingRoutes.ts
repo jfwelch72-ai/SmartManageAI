@@ -2943,28 +2943,39 @@ const messagingSetup = (async () => {
     }
   });
 
-  const freeOpenRelayTurnServers = [
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turns:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-  ];
+  let meteredCredentialsCache: {
+    credentials: Array<{ urls: string | string[]; username?: string; credential?: string }>;
+    fetchedAt: number;
+  } | null = null;
+  const METERED_CACHE_TTL_MS = 5 * 60 * 1000;
+
+  async function fetchMeteredCredentials(): Promise<Array<{ urls: string | string[]; username?: string; credential?: string }>> {
+    if (meteredCredentialsCache && Date.now() - meteredCredentialsCache.fetchedAt < METERED_CACHE_TTL_MS) {
+      return meteredCredentialsCache.credentials;
+    }
+
+    const apiKey = process.env.METERED_API_KEY;
+    if (!apiKey) {
+      console.warn("[ICE Config] METERED_API_KEY not set, cannot fetch Metered TURN credentials");
+      return [];
+    }
+
+    try {
+      const response = await fetch(`https://smartmanageai.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`);
+      if (!response.ok) {
+        console.error(`[ICE Config] Metered API returned status ${response.status}`);
+        return meteredCredentialsCache?.credentials ?? [];
+      }
+
+      const credentials = await response.json() as Array<{ urls: string | string[]; username?: string; credential?: string }>;
+      meteredCredentialsCache = { credentials, fetchedAt: Date.now() };
+      console.log(`[ICE Config] Fetched ${credentials.length} Metered TURN credential(s)`);
+      return credentials;
+    } catch (err) {
+      console.error("[ICE Config] Failed to fetch Metered TURN credentials:", err);
+      return meteredCredentialsCache?.credentials ?? [];
+    }
+  }
 
   router.get("/api/calls/ice-config", requireAuth, async (_req: AuthRequest, res) => {
     try {
@@ -2986,10 +2997,15 @@ const messagingSetup = (async () => {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
         console.log(`[ICE Config] Using configured TURN server(s): ${turnUrls.join(", ")}`);
+      } else {
+        const meteredServers = await fetchMeteredCredentials();
+        if (meteredServers.length > 0) {
+          iceServers.push(...meteredServers);
+          console.log("[ICE Config] Metered TURN servers included");
+        } else {
+          console.warn("[ICE Config] No TURN servers available");
+        }
       }
-
-      iceServers.push(...freeOpenRelayTurnServers);
-      console.log("[ICE Config] Free Open Relay Project TURN servers included as fallback");
 
       const hasTurn = iceServers.some(s => {
         const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
