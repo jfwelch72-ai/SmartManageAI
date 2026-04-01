@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { 
   Sparkles, 
@@ -24,10 +27,23 @@ import {
   FileText,
   Zap,
   AlertTriangle,
-  X
+  X,
+  Filter,
+  ArrowUpDown,
+  BarChart3,
+  Clock,
+  Layers,
+  SlidersHorizontal
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+
+export interface BoundingBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface DetectedItem {
   id: string;
@@ -36,10 +52,34 @@ export interface DetectedItem {
   quantity: number;
   unit: string;
   confidence: number;
+  boundingBox?: BoundingBox;
   suggestedSowItem?: {
     name: string;
     code: string;
   };
+}
+
+function RegionThumbnail({ bbox, label }: { bbox: BoundingBox; label: string }) {
+  return (
+    <div
+      className="relative w-12 h-10 bg-muted/50 border border-border/50 rounded overflow-hidden flex-shrink-0"
+      title={`Region: ${bbox.x.toFixed(0)}%, ${bbox.y.toFixed(0)}% (${bbox.w.toFixed(0)}×${bbox.h.toFixed(0)}%)`}
+      data-testid={`thumbnail-region-${label}`}
+    >
+      <div
+        className="absolute bg-purple-500/30 border border-purple-500/60 rounded-[1px]"
+        style={{
+          left: `${bbox.x}%`,
+          top: `${bbox.y}%`,
+          width: `${Math.max(bbox.w, 8)}%`,
+          height: `${Math.max(bbox.h, 8)}%`,
+        }}
+      />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <MapPin className="w-2.5 h-2.5 text-purple-500/50" />
+      </div>
+    </div>
+  );
 }
 
 interface AiTakeoffPanelProps {
@@ -48,6 +88,10 @@ interface AiTakeoffPanelProps {
   sheetId?: string | null;
   onItemsImported?: (items: DetectedItem[]) => Promise<{ succeeded: number; failed: number; failedItems: string[] }>;
   onClose?: () => void;
+  onHighlightItem?: (item: DetectedItem | null) => void;
+  onDetectedItemsChanged?: (items: DetectedItem[]) => void;
+  showOverlays?: boolean;
+  onToggleOverlays?: (show: boolean) => void;
 }
 
 const ITEM_TYPE_ICONS: Record<string, any> = {
@@ -67,13 +111,17 @@ const ITEM_TYPE_ICONS: Record<string, any> = {
   default: FileText,
 };
 
-export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported, onClose }: AiTakeoffPanelProps) {
+export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0);
+  const [analysisMode, setAnalysisMode] = useState<"QUICK" | "DETAILED">("QUICK");
+  const [compareRunId, setCompareRunId] = useState<string | null>(null);
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   
   const { toast } = useToast();
 
@@ -99,9 +147,25 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
     },
   });
 
-  const { data: analysisHistory } = useQuery<{ analyses: AnalysisResult[] }>({
-    queryKey: ["/api/ai-features/takeoff/history", projectId || bidId],
-    enabled: !!(projectId || bidId),
+  const historyContextId = projectId || bidId;
+  const historyContextType = bidId && !projectId ? "bid" : "project";
+  interface AnalysisHistoryEntry {
+    id: string;
+    status: string;
+    analysisMode: string;
+    tradeType: string;
+    createdAt: string;
+    processingTimeMs: number | null;
+    detectedItemsJson: string | null;
+  }
+  const { data: analysisHistory } = useQuery<{ analyses: AnalysisHistoryEntry[] }>({
+    queryKey: [`/api/ai-features/takeoff/history/${historyContextId}?type=${historyContextType}`],
+    enabled: !!historyContextId,
+  });
+
+  const { data: compareResults } = useQuery<AnalysisResult | null>({
+    queryKey: ["/api/ai-features/takeoff/results", compareRunId],
+    enabled: !!compareRunId,
   });
 
   const analyzeMutation = useMutation({
@@ -110,7 +174,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
         ...(projectId ? { projectId } : {}),
         ...(bidId ? { bidId } : {}),
         takeoffSheetId: sheetId,
-        analysisMode: "QUICK",
+        analysisMode,
       });
       return response.json();
     },
@@ -119,10 +183,10 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
       setIsAnalyzing(true);
       toast({
         title: "AI Analysis Started",
-        description: `Analyzing blueprints... Estimated time: ${data.estimatedTime}s`,
+        description: `${analysisMode === "DETAILED" ? "Detailed (multi-pass)" : "Quick"} analysis... Estimated time: ${data.estimatedTime}s`,
       });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
         title: "Analysis Failed",
         description: error.message || "Failed to start AI analysis",
@@ -149,11 +213,10 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
   };
 
   const handleSelectAll = () => {
-    if (!analysisResults?.detectedItems) return;
-    if (selectedItems.size === analysisResults.detectedItems.length) {
+    if (selectedItems.size === filteredItems.length) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(analysisResults.detectedItems.map((i: DetectedItem) => i.id)));
+      setSelectedItems(new Set(filteredItems.map((i: DetectedItem) => i.id)));
     }
   };
 
@@ -226,7 +289,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
     return "text-orange-500";
   };
 
-  const getConfidenceBadge = (confidence: number) => {
+  const getConfidenceBadge = (confidence: number): "default" | "secondary" | "outline" => {
     if (confidence >= 85) return "default";
     if (confidence >= 70) return "secondary";
     return "outline";
@@ -235,7 +298,30 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
   const isComplete = analysisResults?.status === "COMPLETE";
   const isPending = analysisResults?.status === "PENDING" || analysisResults?.status === "PROCESSING";
   const detectedItems = analysisResults?.detectedItems || [];
-  const groupedItems = groupItemsByType(detectedItems);
+
+  const filteredItems = useMemo(() => {
+    return detectedItems
+      .filter((item: DetectedItem) => item.confidence >= confidenceThreshold)
+      .sort((a: DetectedItem, b: DetectedItem) => b.confidence - a.confidence);
+  }, [detectedItems, confidenceThreshold]);
+
+  const groupedItems = groupItemsByType(filteredItems);
+
+  const avgConfidence = detectedItems.length > 0
+    ? Math.round(detectedItems.reduce((sum: number, i: DetectedItem) => sum + i.confidence, 0) / detectedItems.length)
+    : 0;
+
+  const pastRuns = analysisHistory?.analyses?.filter((a) => a.status === "COMPLETE" && a.id !== analysisId) || [];
+
+  useEffect(() => {
+    if (isComplete || analysisResults?.status === "FAILED") {
+      setIsAnalyzing(false);
+    }
+  }, [isComplete, analysisResults?.status]);
+
+  useEffect(() => {
+    onDetectedItemsChanged?.(detectedItems);
+  }, [detectedItems]);
 
   return (
     <div className="flex flex-col h-full">
@@ -248,7 +334,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
           <div className="flex items-center gap-2">
             {isComplete && detectedItems.length > 0 && (
               <Badge variant="secondary" data-testid="badge-items-detected">
-                {detectedItems.length} items
+                {filteredItems.length}/{detectedItems.length} items
               </Badge>
             )}
             {onClose && (
@@ -269,24 +355,38 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
         </div>
         
         {!isAnalyzing && !isComplete && (
-          <Button 
-            onClick={handleStartAnalysis} 
-            className="w-full"
-            disabled={analyzeMutation.isPending}
-            data-testid="button-ai-analyze"
-          >
-            {analyzeMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4 mr-2" />
-                Analyze Blueprint
-              </>
-            )}
-          </Button>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Analysis Mode</label>
+              <Select value={analysisMode} onValueChange={(v: "QUICK" | "DETAILED") => setAnalysisMode(v)}>
+                <SelectTrigger className="h-9" data-testid="select-analysis-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="QUICK">Quick Analysis (~30s)</SelectItem>
+                  <SelectItem value="DETAILED">Detailed Multi-Pass (~2min)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button 
+              onClick={handleStartAnalysis} 
+              className="w-full"
+              disabled={analyzeMutation.isPending}
+              data-testid="button-ai-analyze"
+            >
+              {analyzeMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 mr-2" />
+                  Analyze Blueprint
+                </>
+              )}
+            </Button>
+          </div>
         )}
 
         {isPending && (
@@ -298,6 +398,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
             <Progress value={45} className="h-2" />
             <p className="text-xs text-muted-foreground">
               Detecting {analysisResults?.tradeType || "trade"}-specific items
+              {analysisMode === "DETAILED" && " (multi-pass verification)"}
             </p>
           </div>
         )}
@@ -305,33 +406,92 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
 
       {isComplete && detectedItems.length > 0 && (
         <>
-          {analysisResults?.metadata?.analysisSource === "openai_vision" && (
-            <div className="flex items-center gap-2 p-2 mx-4 mt-4 bg-green-500/10 border border-green-500/30 rounded-lg mb-3">
-              <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <span className="text-xs text-green-700 dark:text-green-400 font-medium">
-                AI Vision Analysis - Results based on your blueprint
-              </span>
+          {analysisResults?.metadata && (
+            <div className="px-4 pt-3 pb-2 border-b bg-muted/20 space-y-2">
+              <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+                {analysisResults.metadata.drawingType && (
+                  <span className="flex items-center gap-1">
+                    <Layers className="w-3 h-3" />
+                    {analysisResults.metadata.drawingType}
+                  </span>
+                )}
+                {analysisResults.metadata.drawingScale && (
+                  <span className="flex items-center gap-1">
+                    <Ruler className="w-3 h-3" />
+                    {analysisResults.metadata.drawingScale}
+                  </span>
+                )}
+                {analysisResults.processingTimeMs && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {(analysisResults.processingTimeMs / 1000).toFixed(1)}s
+                  </span>
+                )}
+                <span className="flex items-center gap-1">
+                  <BarChart3 className="w-3 h-3" />
+                  Avg {avgConfidence}%
+                </span>
+              </div>
+              {analysisResults.metadata.analysisSource === "openai_vision" && (
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                  <span className="text-[11px] text-green-700 dark:text-green-400 font-medium">
+                    AI Vision {analysisResults.metadata.analysisMethod?.includes("Multi-Pass") ? "(Multi-Pass)" : ""}
+                  </span>
+                </div>
+              )}
+              {analysisResults.metadata.analysisSource && analysisResults.metadata.analysisSource !== "openai_vision" && (
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                  <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                    Demo Data - Upload a blueprint for real AI detection
+                  </span>
+                </div>
+              )}
             </div>
           )}
-          {analysisResults?.metadata?.analysisSource && analysisResults.metadata.analysisSource !== "openai_vision" && (
-            <div className="flex items-center gap-2 p-2 mx-4 mt-4 bg-amber-500/10 border border-amber-500/30 rounded-lg mb-3">
-              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <span className="text-xs text-amber-700 dark:text-amber-400">
-                Demo Data - Upload a blueprint image to get real AI-detected quantities
-              </span>
+
+          <div className="px-4 py-3 border-b space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <SlidersHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium">Confidence: {confidenceThreshold}%+</span>
+              </div>
+              <span className="text-[10px] text-muted-foreground">{filteredItems.length} of {detectedItems.length}</span>
             </div>
-          )}
+            <Slider
+              value={[confidenceThreshold]}
+              onValueChange={([v]) => setConfidenceThreshold(v)}
+              min={0}
+              max={95}
+              step={5}
+              className="w-full"
+              data-testid="slider-confidence-threshold"
+            />
+            {onToggleOverlays && (
+              <div className="flex items-center justify-between pt-1">
+                <label htmlFor="ai-overlays" className="text-xs text-muted-foreground cursor-pointer">Show overlays on blueprint</label>
+                <Switch
+                  id="ai-overlays"
+                  checked={showOverlays ?? true}
+                  onCheckedChange={onToggleOverlays}
+                  data-testid="switch-ai-overlays"
+                />
+              </div>
+            )}
+          </div>
+
           <div className="p-4 border-b bg-muted/30">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="select-all"
-                  checked={selectedItems.size === detectedItems.length}
+                  checked={selectedItems.size > 0 && selectedItems.size === filteredItems.length}
                   onCheckedChange={handleSelectAll}
                   data-testid="checkbox-select-all"
                 />
                 <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
-                  Select All ({detectedItems.length})
+                  Select All ({filteredItems.length})
                 </label>
               </div>
               <Button
@@ -352,6 +512,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                 const isExpanded = expandedGroups.has(groupName) || expandedGroups.size === 0;
                 const groupIcon = ITEM_TYPE_ICONS[groupName] || ITEM_TYPE_ICONS.default;
                 const GroupIcon = groupIcon;
+                const groupAvgConf = Math.round(items.reduce((s, i) => s + i.confidence, 0) / items.length);
                 
                 return (
                   <Card key={groupName} className="overflow-hidden">
@@ -363,7 +524,10 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                       <div className="flex items-center gap-2">
                         <GroupIcon className="w-4 h-4 text-muted-foreground" />
                         <span className="font-medium capitalize">{groupName.replace(/_/g, ' ')}</span>
-                        <Badge variant="outline" className="ml-2">{items.length}</Badge>
+                        <Badge variant="outline" className="ml-1">{items.length}</Badge>
+                        <Badge variant={getConfidenceBadge(groupAvgConf)} className={cn("text-[10px]", getConfidenceColor(groupAvgConf))}>
+                          ~{groupAvgConf}%
+                        </Badge>
                       </div>
                       {isExpanded ? (
                         <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -378,9 +542,18 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                           <div 
                             key={item.id}
                             className={cn(
-                              "px-4 py-3 flex items-start gap-3 hover-elevate",
-                              idx !== items.length - 1 && "border-b"
+                              "px-4 py-3 flex items-start gap-3 hover-elevate cursor-pointer transition-colors",
+                              idx !== items.length - 1 && "border-b",
+                              hoveredItemId === item.id && "bg-primary/5"
                             )}
+                            onMouseEnter={() => {
+                              setHoveredItemId(item.id);
+                              onHighlightItem?.(item);
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredItemId(null);
+                              onHighlightItem?.(null);
+                            }}
                           >
                             <Checkbox
                               id={item.id}
@@ -389,6 +562,9 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                               className="mt-0.5"
                               data-testid={`checkbox-item-${item.id}`}
                             />
+                            {item.boundingBox && (
+                              <RegionThumbnail bbox={item.boundingBox} label={item.id} />
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-medium text-sm">{item.description}</span>
@@ -403,10 +579,16 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                                 <span className="font-mono">{item.quantity} {item.unit}</span>
                                 {item.suggestedSowItem && (
                                   <span className="text-xs">
-                                    → {item.suggestedSowItem.code}
+                                    &rarr; {item.suggestedSowItem.code}
                                   </span>
                                 )}
                               </div>
+                              {item.boundingBox && (
+                                <div className="mt-1 text-[10px] text-muted-foreground/70">
+                                  <MapPin className="w-2.5 h-2.5 inline mr-0.5" />
+                                  {item.boundingBox.x.toFixed(0)}%, {item.boundingBox.y.toFixed(0)}% ({item.boundingBox.w.toFixed(0)}×{item.boundingBox.h.toFixed(0)}%)
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -418,9 +600,9 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
             </div>
           </ScrollArea>
 
-          <div className="p-4 border-t bg-muted/30">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
+          <div className="p-3 border-t bg-muted/30 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground truncate max-w-[70%]">
                 {analysisResults?.aiNotes}
               </span>
               <Button
@@ -433,6 +615,61 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                 Re-analyze
               </Button>
             </div>
+            {pastRuns.length > 0 && (
+              <div className="pt-1 border-t">
+                <label className="text-[10px] font-medium text-muted-foreground block mb-1">Compare with previous run</label>
+                <Select value={compareRunId || ""} onValueChange={(v) => setCompareRunId(v || null)}>
+                  <SelectTrigger className="h-7 text-[11px]" data-testid="select-compare-run">
+                    <SelectValue placeholder="Select a previous run..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pastRuns.map((run) => (
+                      <SelectItem key={run.id} value={run.id}>
+                        {new Date(run.createdAt).toLocaleString()} — {run.tradeType || "general"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {compareResults && compareResults.status === "COMPLETE" && (() => {
+                  const prevItems = compareResults.detectedItems || [];
+                  const prevByType: Record<string, DetectedItem[]> = {};
+                  prevItems.forEach(i => { const t = i.itemType || "other"; if (!prevByType[t]) prevByType[t] = []; prevByType[t].push(i); });
+                  const currByType: Record<string, DetectedItem[]> = {};
+                  detectedItems.forEach(i => { const t = i.itemType || "other"; if (!currByType[t]) currByType[t] = []; currByType[t].push(i); });
+                  const allTypes = [...new Set([...Object.keys(prevByType), ...Object.keys(currByType)])].sort();
+                  const prevAvgConf = prevItems.length > 0 ? Math.round(prevItems.reduce((s, i) => s + i.confidence, 0) / prevItems.length) : 0;
+                  return (
+                    <div className="mt-2 p-2 bg-blue-500/5 border border-blue-500/20 rounded text-[10px] space-y-2">
+                      <div className="grid grid-cols-3 gap-1 text-[10px] font-medium border-b border-blue-500/20 pb-1">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="text-center">Previous</span>
+                        <span className="text-center">Current</span>
+                      </div>
+                      {allTypes.map(type => {
+                        const prevCount = prevByType[type]?.length || 0;
+                        const currCount = currByType[type]?.length || 0;
+                        const diff = currCount - prevCount;
+                        return (
+                          <div key={type} className="grid grid-cols-3 gap-1 text-[10px]">
+                            <span className="capitalize text-muted-foreground truncate">{type.replace(/_/g, " ")}</span>
+                            <span className="text-center">{prevCount}</span>
+                            <span className={cn("text-center", diff > 0 && "text-green-600", diff < 0 && "text-red-500")}>
+                              {currCount} {diff !== 0 && `(${diff > 0 ? "+" : ""}${diff})`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      <Separator />
+                      <div className="grid grid-cols-3 gap-1 text-[10px] font-medium">
+                        <span className="text-muted-foreground">Total</span>
+                        <span className="text-center">{prevItems.length} ({prevAvgConf}%)</span>
+                        <span className="text-center">{detectedItems.length} ({avgConfidence}%)</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         </>
       )}
@@ -446,7 +683,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
               AI could not detect any measurable items in this blueprint.
               Try uploading a clearer image or selecting a different sheet.
             </p>
-            <Button variant="outline" onClick={handleStartAnalysis}>
+            <Button variant="outline" onClick={handleStartAnalysis} data-testid="button-retry-analysis">
               Try Again
             </Button>
           </div>
@@ -458,24 +695,29 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
           <DialogHeader>
             <DialogTitle>Import Detected Items</DialogTitle>
             <DialogDescription>
-              {selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} will be added to your takeoff as AI measurement markers.
+              {selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} will be added to your takeoff measurements.
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-start gap-2 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
             <Sparkles className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
             <div className="text-xs text-purple-700 dark:text-purple-400">
-              Items will appear as labeled markers in the <span className="font-semibold">AI Detections zone</span> on the canvas (to the right of the blueprint). You can drag them to reposition near relevant areas.
+              Items with detected regions will be placed at their <span className="font-semibold">detected location</span> on the blueprint. Others will appear in the AI Detections zone.
             </div>
           </div>
           <ScrollArea className="max-h-64">
             <div className="space-y-2">
-              {detectedItems
+              {filteredItems
                 .filter((i: DetectedItem) => selectedItems.has(i.id))
                 .map((item: DetectedItem) => (
                   <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-muted rounded">
                     <div className="flex items-center gap-2">
                       <span className="text-sm">{item.description}</span>
                       <Badge variant="secondary" className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">AI</Badge>
+                      {item.boundingBox && (
+                        <Badge variant="outline" className="text-[9px]">
+                          <MapPin className="w-2.5 h-2.5 mr-0.5" />Located
+                        </Badge>
+                      )}
                     </div>
                     <span className="text-sm font-mono">{item.quantity} {item.unit}</span>
                   </div>

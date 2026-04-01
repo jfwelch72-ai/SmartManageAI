@@ -1447,6 +1447,114 @@ router.get("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRe
   }
 });
 
+router.get("/api/crm/organisations/:id/pricing/search", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
+    if (!org) { res.status(404).json({ error: "Organisation not found" }); return; }
+
+    const { q, category, minPrice, maxPrice, unit } = req.query;
+    const conditions = [eq(vendorPricingCatalogs.crmOrganisationId, req.params.id)];
+
+    let items = await db
+      .select()
+      .from(vendorPricingCatalogs)
+      .where(and(...conditions))
+      .orderBy(vendorPricingCatalogs.category, vendorPricingCatalogs.itemName);
+
+    if (q && typeof q === "string" && q.trim()) {
+      const searchTerm = q.toLowerCase().trim();
+      items = items.filter(item => {
+        const name = (item.itemName || "").toLowerCase();
+        const code = (item.itemCode || "").toLowerCase();
+        const cat = (item.category || "").toLowerCase();
+        return name.includes(searchTerm) || code.includes(searchTerm) || cat.includes(searchTerm);
+      });
+    }
+    if (category && typeof category === "string") {
+      items = items.filter(item => (item.category || "").toLowerCase() === category.toLowerCase());
+    }
+    if (unit && typeof unit === "string") {
+      items = items.filter(item => (item.unit || "").toLowerCase() === unit.toLowerCase());
+    }
+    if (minPrice) {
+      const min = Number(minPrice);
+      if (!isNaN(min)) items = items.filter(item => Number(item.unitPrice) >= min);
+    }
+    if (maxPrice) {
+      const max = Number(maxPrice);
+      if (!isNaN(max)) items = items.filter(item => Number(item.unitPrice) <= max);
+    }
+
+    const categories = [...new Set(items.map(i => i.category).filter(Boolean))];
+    const units = [...new Set(items.map(i => i.unit).filter(Boolean))];
+    res.json({ items, facets: { categories, units }, total: items.length });
+  } catch (error) {
+    logError("Search vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/crm/organisations/:id/pricing/bulk-import", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: "items array required" });
+      return;
+    }
+
+    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
+    if (!org) {
+      res.status(404).json({ error: "Organisation not found" });
+      return;
+    }
+
+    let imported = 0;
+    let failed = 0;
+    for (const item of items) {
+      try {
+        await db.insert(vendorPricingCatalogs).values({
+          crmOrganisationId: req.params.id,
+          organizationId: org.organizationId || req.user!.organizationId,
+          itemName: item.itemName || item.name,
+          itemCode: item.itemCode || item.code || null,
+          category: item.category || null,
+          unit: item.unit || "EA",
+          unitPrice: String(item.unitPrice || item.price || 0),
+          effectiveDate: new Date(),
+          isActive: true,
+        });
+        imported++;
+      } catch {
+        failed++;
+      }
+    }
+    res.json({ imported, failed, total: items.length });
+  } catch (error) {
+    logError("Bulk import vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/crm/organisations/:id/pricing/history/:itemId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
+    if (!org) { res.status(404).json({ error: "Organisation not found" }); return; }
+
+    const items = await db
+      .select()
+      .from(vendorPricingCatalogs)
+      .where(and(
+        eq(vendorPricingCatalogs.crmOrganisationId, req.params.id),
+        eq(vendorPricingCatalogs.itemCode, req.params.itemId)
+      ))
+      .orderBy(desc(vendorPricingCatalogs.createdAt));
+    res.json(items);
+  } catch (error) {
+    logError("Get pricing history error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/api/crm/organisations/:id/pricing/current", requireAuth, async (req: AuthRequest, res) => {
   try {
     const now = new Date();
@@ -1578,12 +1686,16 @@ router.delete("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res)
 
 router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, res) => {
   try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const { category, search, quarter } = req.query;
-    const now = new Date();
-    const currentQuarter = quarter as string || `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
 
     const conditions: any[] = [
       eq(vendorPricingCatalogs.isActive, true),
+      eq(vendorPricingCatalogs.organizationId, organizationId),
     ];
 
     if (category) {
@@ -1591,6 +1703,9 @@ router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, r
     }
     if (search) {
       conditions.push(sql`LOWER(${vendorPricingCatalogs.itemName}) LIKE LOWER(${'%' + search + '%'})`);
+    }
+    if (quarter) {
+      conditions.push(eq(vendorPricingCatalogs.effectiveQuarter, quarter as string));
     }
 
     const items = await db
@@ -1611,7 +1726,7 @@ router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, r
         vendorType: crmOrganisations.type,
       })
       .from(vendorPricingCatalogs)
-      .innerJoin(crmOrganisations, eq(crmOrganisations.id, vendorPricingCatalogs.crmOrganisationId))
+      .leftJoin(crmOrganisations, eq(crmOrganisations.id, vendorPricingCatalogs.crmOrganisationId))
       .where(and(...conditions))
       .orderBy(vendorPricingCatalogs.unitPrice)
       .limit(50);
@@ -1619,6 +1734,88 @@ router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, r
     res.json(items);
   } catch (error) {
     logError("Search vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/vendor-pricing/bulk-import", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { items, vendorId } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "items array required" });
+    }
+    if (!vendorId) {
+      return res.status(400).json({ error: "vendorId required" });
+    }
+
+    const [vendor] = await db.select().from(crmOrganisations)
+      .where(and(eq(crmOrganisations.id, vendorId), eq(crmOrganisations.organizationId, organizationId)))
+      .limit(1);
+    if (!vendor) {
+      return res.status(404).json({ error: "Vendor not found in your organization" });
+    }
+
+    const now = new Date();
+    const quarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+    let imported = 0;
+    let skipped = 0;
+
+    for (const item of items) {
+      try {
+        await db.insert(vendorPricingCatalogs).values({
+          organizationId,
+          crmOrganisationId: vendorId,
+          itemCode: item.itemCode || `IMPORT-${Date.now()}-${imported}`,
+          itemName: item.itemName || item.itemCode || "Unnamed",
+          category: item.category || "General",
+          unit: item.unit || "EA",
+          unitPrice: String(item.unitPrice || "0"),
+          effectiveQuarter: quarter,
+          isActive: true,
+        });
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    res.json({ imported, skipped, total: items.length });
+  } catch (error) {
+    logError("Bulk import vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor-pricing/history/:itemCode", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const entries = await db
+      .select({
+        quarter: vendorPricingCatalogs.effectiveQuarter,
+        unitPrice: vendorPricingCatalogs.unitPrice,
+        leadTimeDays: vendorPricingCatalogs.leadTimeDays,
+        minimumOrder: vendorPricingCatalogs.minimumOrder,
+      })
+      .from(vendorPricingCatalogs)
+      .where(and(
+        eq(vendorPricingCatalogs.itemCode, req.params.itemCode),
+        eq(vendorPricingCatalogs.organizationId, organizationId)
+      ))
+      .orderBy(desc(vendorPricingCatalogs.effectiveQuarter))
+      .limit(20);
+
+    res.json(entries);
+  } catch (error) {
+    logError("Vendor pricing history error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

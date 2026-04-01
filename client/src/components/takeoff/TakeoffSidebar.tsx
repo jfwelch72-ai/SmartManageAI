@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
   History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download,
-  FolderPlus, GripVertical, FolderOpen
+  FolderPlus, GripVertical, FolderOpen, Loader2
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -137,6 +137,27 @@ interface TakeoffSidebarProps {
   setHideAiMeasurements?: (v: boolean) => void;
 }
 
+interface MeasurementMeta {
+  unit?: string;
+  quantity?: number;
+  confidence?: number;
+  costCodeId?: string;
+  unitCost?: number;
+  computedSurfaceAreaFt2?: number;
+  pitchRatio?: string;
+  segmentProperties?: Array<{ label?: string; color?: string }>;
+  [key: string]: unknown;
+}
+
+function parseMeta(metadata: string | null | undefined | Record<string, unknown>): MeasurementMeta {
+  if (!metadata) return {};
+  try {
+    return typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+  } catch {
+    return {};
+  }
+}
+
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const { toast } = useToast();
   const [scaleCategory, setScaleCategory] = useState<string>("");
@@ -184,6 +205,23 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddLabel, setQuickAddLabel] = useState("");
+  const [quickAddType, setQuickAddType] = useState<string>("COUNT");
+  const [quickAddQty, setQuickAddQty] = useState("1");
+  const [quickAddUnit, setQuickAddUnit] = useState("EA");
+  const [quickAddCategory, setQuickAddCategory] = useState<string>("");
+  const [quickAddPending, setQuickAddPending] = useState(false);
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set());
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [inlineEditLabel, setInlineEditLabel] = useState("");
+  const [inlineEditQty, setInlineEditQty] = useState("");
+  const [inlineEditUnit, setInlineEditUnit] = useState("");
+  const [inlineEditCost, setInlineEditCost] = useState("");
+  const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState("");
+  const [bulkPastePending, setBulkPastePending] = useState(false);
 
   const exportGroupCSV = (groupName: string, items: TakeoffMeasurement[]) => {
     const rows = [["Label", "Type", "Length (LF)", "Area (SF)", "Volume (CY)", "Category", "Line Style", "Line Width"]];
@@ -211,6 +249,132 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast({ title: "Exported", description: `${items.length} measurements exported as CSV` });
+  };
+
+  const handleQuickAdd = async () => {
+    if (!selectedSheet || !quickAddLabel.trim()) return;
+    setQuickAddPending(true);
+    try {
+      await apiRequest("POST", "/api/takeoff/measurements", {
+        sheetId: selectedSheet,
+        type: quickAddType,
+        points: [{ x: 100, y: 100 }],
+        label: quickAddLabel.trim(),
+        count: quickAddType === "COUNT" ? parseInt(quickAddQty) || 1 : undefined,
+        categoryId: quickAddCategory || undefined,
+        source: "MANUAL",
+        metadata: JSON.stringify({ unit: quickAddUnit, quantity: parseInt(quickAddQty) || 1 }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      toast({ title: "Item Added", description: `Added "${quickAddLabel.trim()}" to measurements` });
+      setQuickAddLabel("");
+      setQuickAddQty("1");
+      setQuickAddUnit("EA");
+      setQuickAddCategory("");
+    } catch {
+      toast({ title: "Failed to add item", variant: "destructive" });
+    } finally {
+      setQuickAddPending(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkSelectedIds.size === 0) return;
+    const ids = Array.from(bulkSelectedIds);
+    for (const id of ids) {
+      const m = measurements.find(mm => mm.id === id);
+      if (m) deleteMeasurementMutation.mutate(m);
+    }
+    setBulkSelectedIds(new Set());
+    setBulkSelectMode(false);
+  };
+
+  const handleBulkCategoryAssign = async (categoryId: string) => {
+    if (bulkSelectedIds.size === 0) return;
+    for (const id of bulkSelectedIds) {
+      updateMeasurementMutation.mutate({ id, categoryId });
+    }
+    setBulkSelectedIds(new Set());
+    toast({ title: "Category assigned", description: `Updated ${bulkSelectedIds.size} items` });
+  };
+
+  const handleInlineEditSave = (mId: string) => {
+    const updates: { id: string; label?: string; count?: number; metadata?: string } = { id: mId };
+    if (inlineEditLabel.trim()) updates.label = inlineEditLabel.trim();
+    if (inlineEditQty) updates.count = parseInt(inlineEditQty) || undefined;
+
+    const m = measurements.find(mm => mm.id === mId);
+    const existingMeta = m ? parseMeta(m.metadata) : {};
+    const metaUpdates: Record<string, unknown> = { ...existingMeta };
+
+    if (inlineEditUnit.trim()) {
+      metaUpdates.unit = inlineEditUnit.trim();
+    }
+    if (inlineEditCost) {
+      const cost = parseFloat(inlineEditCost);
+      if (!isNaN(cost)) {
+        metaUpdates.unitCost = cost;
+      }
+    } else {
+      delete metaUpdates.unitCost;
+    }
+
+    updates.metadata = JSON.stringify(metaUpdates);
+    updateMeasurementMutation.mutate(updates);
+    setInlineEditId(null);
+  };
+
+  const handleBulkPaste = async () => {
+    if (!selectedSheet || !bulkPasteText.trim()) return;
+    setBulkPastePending(true);
+    const lines = bulkPasteText.trim().split("\n").filter(l => l.trim());
+    let added = 0;
+    let errors = 0;
+    for (const line of lines) {
+      const parts = line.split(/[\t,]/).map(p => p.trim());
+      const label = parts[0] || "Item";
+      const qty = parseInt(parts[1]) || 1;
+      const unit = parts[2] || "EA";
+      try {
+        await apiRequest("POST", "/api/takeoff/measurements", {
+          sheetId: selectedSheet,
+          type: "COUNT",
+          points: [{ x: 100 + added * 30, y: 100 + added * 30 }],
+          label,
+          count: qty,
+          source: "MANUAL",
+          metadata: JSON.stringify({ unit, quantity: qty }),
+        });
+        added++;
+      } catch { errors++; }
+    }
+    await queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+    toast({ title: "Bulk Paste Complete", description: `Added ${added} items${errors > 0 ? `, ${errors} failed` : ""}` });
+    setBulkPasteText("");
+    setBulkPasteOpen(false);
+    setBulkPastePending(false);
+  };
+
+  const handleDuplicateMeasurement = async (m: TakeoffMeasurement) => {
+    if (!selectedSheet) return;
+    try {
+      const pts = typeof m.points === "string" ? JSON.parse(m.points) : m.points;
+      const offsetPts = Array.isArray(pts) ? pts.map((p: any) => ({ x: (p.x || 0) + 30, y: (p.y || 0) + 30 })) : [{ x: 130, y: 130 }];
+      await apiRequest("POST", "/api/takeoff/measurements", {
+        sheetId: selectedSheet,
+        type: m.type,
+        points: offsetPts,
+        label: `${m.label || "Untitled"} (copy)`,
+        count: m.count,
+        categoryId: m.categoryId || undefined,
+        source: "MANUAL",
+        metadata: m.metadata || undefined,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      toast({ title: "Duplicated", description: `Cloned "${m.label || "Untitled"}"` });
+    } catch {
+      toast({ title: "Failed to duplicate", variant: "destructive" });
+    }
   };
 
   const openIssueCount = allSheetIssues.filter((i: any) => i.status === "OPEN").length;
@@ -596,6 +760,48 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowNewGroupInput(true)} title="Create group" data-testid="button-create-group">
                     <FolderPlus className="w-4 h-4" />
                   </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={quickAddOpen ? "secondary" : "ghost"}
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setQuickAddOpen(!quickAddOpen)}
+                        data-testid="button-quick-add-toggle"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Quick add line item</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setBulkPasteOpen(true)}
+                        data-testid="button-bulk-paste-toggle"
+                      >
+                        <BookOpen className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Bulk paste items</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={bulkSelectMode ? "secondary" : "ghost"}
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => { setBulkSelectMode(!bulkSelectMode); setBulkSelectedIds(new Set()); }}
+                        data-testid="button-bulk-select-toggle"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Bulk select</TooltipContent>
+                  </Tooltip>
                 </div>
               </div>
 
@@ -625,6 +831,91 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 </div>
               )}
 
+              {quickAddOpen && (
+                <Card className="p-3 mb-3 space-y-2 border-dashed">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Item label..."
+                      value={quickAddLabel}
+                      onChange={(e) => setQuickAddLabel(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleQuickAdd(); }}
+                      className="h-8 text-sm flex-1"
+                      autoFocus
+                      data-testid="input-quick-add-label"
+                    />
+                    <Select value={quickAddType} onValueChange={setQuickAddType}>
+                      <SelectTrigger className="h-8 w-24 text-xs" data-testid="select-quick-add-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="COUNT">Count</SelectItem>
+                        <SelectItem value="LINEAR">Linear</SelectItem>
+                        <SelectItem value="AREA">Area</SelectItem>
+                        <SelectItem value="VOLUME">Volume</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Qty"
+                      type="number"
+                      value={quickAddQty}
+                      onChange={(e) => setQuickAddQty(e.target.value)}
+                      className="h-8 text-sm w-16"
+                      data-testid="input-quick-add-qty"
+                    />
+                    <Input
+                      placeholder="Unit"
+                      value={quickAddUnit}
+                      onChange={(e) => setQuickAddUnit(e.target.value)}
+                      className="h-8 text-sm w-16"
+                      data-testid="input-quick-add-unit"
+                    />
+                    {categories.length > 0 && (
+                      <Select value={quickAddCategory} onValueChange={setQuickAddCategory}>
+                        <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-quick-add-category">
+                          <SelectValue placeholder="Category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map(cat => (
+                            <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Button size="sm" className="h-8" onClick={handleQuickAdd} disabled={quickAddPending || !quickAddLabel.trim()} data-testid="button-quick-add-submit">
+                      {quickAddPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                    </Button>
+                  </div>
+                </Card>
+              )}
+
+              {bulkSelectMode && bulkSelectedIds.size > 0 && (
+                <div className="flex items-center gap-2 mb-2 p-2 bg-primary/5 rounded-md border border-primary/20">
+                  <Badge variant="secondary" className="text-xs">{bulkSelectedIds.size} selected</Badge>
+                  {categories.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="button-bulk-assign-category">
+                          Assign Category
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {categories.map(cat => (
+                          <DropdownMenuItem key={cat.id} onClick={() => handleBulkCategoryAssign(cat.id)}>
+                            <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: cat.color || "#3b82f6" }} />
+                            {cat.name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  <Button size="sm" variant="destructive" className="h-7 text-xs ml-auto" onClick={handleBulkDelete} data-testid="button-bulk-delete">
+                    <Trash2 className="w-3 h-3 mr-1" /> Delete
+                  </Button>
+                </div>
+              )}
+
               {measurements.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No measurements yet</p>
               ) : (
@@ -645,8 +936,16 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     const renderMeasurementItem = (m: TakeoffMeasurement) => (
                       <div
                         key={m.id}
-                        className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? "ring-2 ring-primary" : ""}`}
+                        className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? "ring-2 ring-primary" : ""} ${bulkSelectMode && bulkSelectedIds.has(m.id) ? "ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-950/30" : ""}`}
                         onClick={() => {
+                          if (bulkSelectMode) {
+                            setBulkSelectedIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(m.id)) next.delete(m.id); else next.add(m.id);
+                              return next;
+                            });
+                            return;
+                          }
                           if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
                           clickTimerRef.current = setTimeout(() => {
                             setSelectedMeasurementId(m.id);
@@ -656,6 +955,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           }, 200);
                         }}
                         onDoubleClick={() => {
+                          if (bulkSelectMode) return;
                           if (clickTimerRef.current) {
                             clearTimeout(clickTimerRef.current);
                             clickTimerRef.current = null;
@@ -664,13 +964,65 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           setSelectedSegmentIndex(null);
                           onZoomToFitMeasurement?.(m);
                         }}
-                        draggable
+                        draggable={!bulkSelectMode}
                         onDragStart={(e) => { e.dataTransfer.setData("measurement-id", m.id); e.dataTransfer.effectAllowed = "move"; }}
                         data-testid={`measurement-item-${m.id}`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{m.label || "Untitled"}</span>
+                            {bulkSelectMode && (
+                              <input type="checkbox" checked={bulkSelectedIds.has(m.id)} readOnly className="w-3.5 h-3.5 rounded" />
+                            )}
+                            {inlineEditId === m.id ? (
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Input
+                                  value={inlineEditLabel}
+                                  onChange={(e) => setInlineEditLabel(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter") handleInlineEditSave(m.id); if (e.key === "Escape") setInlineEditId(null); }}
+                                  className="h-6 text-sm w-24"
+                                  autoFocus
+                                  placeholder="Label"
+                                  data-testid={`input-inline-edit-label-${m.id}`}
+                                />
+                                <Input
+                                  value={inlineEditQty}
+                                  onChange={(e) => setInlineEditQty(e.target.value)}
+                                  className="h-6 text-sm w-12"
+                                  placeholder="Qty"
+                                  type="number"
+                                  data-testid={`input-inline-edit-qty-${m.id}`}
+                                />
+                                <Input
+                                  value={inlineEditUnit}
+                                  onChange={(e) => setInlineEditUnit(e.target.value)}
+                                  className="h-6 text-sm w-12"
+                                  placeholder="Unit"
+                                  data-testid={`input-inline-edit-unit-${m.id}`}
+                                />
+                                <Input
+                                  value={inlineEditCost}
+                                  onChange={(e) => setInlineEditCost(e.target.value)}
+                                  className="h-6 text-sm w-14"
+                                  placeholder="Cost"
+                                  type="number"
+                                  step="0.01"
+                                  data-testid={`input-inline-edit-cost-${m.id}`}
+                                />
+                                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => handleInlineEditSave(m.id)} data-testid={`button-inline-save-${m.id}`}>
+                                  <Save className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="font-medium text-sm" onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setInlineEditId(m.id);
+                                setInlineEditLabel(m.label || "");
+                                setInlineEditQty(m.count ? String(m.count) : "");
+                                const editMeta = parseMeta(m.metadata);
+                                setInlineEditUnit(editMeta.unit ? String(editMeta.unit) : "");
+                                setInlineEditCost(editMeta.unitCost ? String(editMeta.unitCost) : "");
+                              }}>{m.label || "Untitled"}</span>
+                            )}
                             <Badge variant="outline" className="text-xs">{m.type}</Badge>
                             {m.source === "BIM" && (
                               <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
@@ -681,9 +1033,19 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               </Badge>
                             )}
                           </div>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
+                          <div className="flex items-center gap-0.5">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); handleDuplicateMeasurement(m); }} data-testid={`button-duplicate-measurement-${m.id}`}>
+                                  <Copy className="w-3 h-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Duplicate</TooltipContent>
+                            </Tooltip>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
+                              <Trash2 className="w-3 h-3 text-destructive" />
+                            </Button>
+                          </div>
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
@@ -694,11 +1056,10 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             : m.type === "SEGMENT" && m.computedLengthFt ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF total`
                             : m.type === "COUNT" ? (() => {
                               if (m.source === "AI") {
-                                let meta: any = {};
-                                try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
-                                const qty = m.count ?? meta.quantity ?? 1;
-                                const unit = meta.unit || "EA";
-                                const conf = meta.confidence ? ` · ${meta.confidence}% conf.` : "";
+                                const countMeta = parseMeta(m.metadata);
+                                const qty = m.count ?? countMeta.quantity ?? 1;
+                                const unit = countMeta.unit || "EA";
+                                const conf = countMeta.confidence ? ` · ${countMeta.confidence}% conf.` : "";
                                 return `${qty} ${unit}${conf}`;
                               }
                               return "Count marker";
@@ -744,8 +1105,15 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             </Collapsible>
                           );
                         })()}
-                        {(m as any).costCodeId && <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>}
-                        {(m as any).unitCost && <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>}
+                        {(() => {
+                          const meta = parseMeta(m.metadata);
+                          return (
+                            <>
+                              {meta.costCodeId && <p className="text-xs text-blue-500 mt-1" data-testid={`text-costcode-${m.id}`}>Cost Code: {meta.costCodeId}</p>}
+                              {meta.unitCost && <p className="text-xs text-green-500" data-testid={`text-unitcost-${m.id}`}>Unit Cost: ${Number(meta.unitCost).toFixed(2)}</p>}
+                            </>
+                          );
+                        })()}
                       </div>
                     );
 
@@ -759,8 +1127,10 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         else if (m.type === "SEGMENT") { const v = Number(m.computedLengthFt); segment += Number.isFinite(v) ? v : 0; }
                       });
                       const totalCost = items.reduce((sum, m) => {
-                        const qty = Number((m as any).computedSurfaceAreaFt2 || m.computedLengthFt || m.computedAreaFt2 || (m.type === "COUNT" ? 1 : 0));
-                        return sum + (Number.isFinite(qty) ? qty : 0) * (Number((m as any).unitCost) || 0);
+                        const mMeta = parseMeta(m.metadata);
+                        const surfArea = Number(mMeta.computedSurfaceAreaFt2) || 0;
+                        const qty = Number(surfArea || m.computedLengthFt || m.computedAreaFt2 || (m.type === "COUNT" ? 1 : 0));
+                        return sum + (Number.isFinite(qty) ? qty : 0) * (Number(mMeta.unitCost) || 0);
                       }, 0);
                       return { linear, area, volume, count, segment, totalCost };
                     };
@@ -1802,6 +2172,36 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               data-testid="button-condition-save"
             >
               {editingCondition ? "Update" : "Save"} Condition
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkPasteOpen} onOpenChange={setBulkPasteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bulk Paste Items</DialogTitle>
+            <DialogDescription>
+              Paste items one per line. Format: Label, Quantity, Unit (tab or comma separated).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <textarea
+              className="w-full h-40 p-3 text-sm border rounded-md bg-background resize-none font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder={"Window, 12, EA\nDoor, 4, EA\nConcrete Slab, 250, SF"}
+              value={bulkPasteText}
+              onChange={(e) => setBulkPasteText(e.target.value)}
+              data-testid="textarea-bulk-paste"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              {bulkPasteText.trim() ? `${bulkPasteText.trim().split("\n").filter(l => l.trim()).length} item(s) detected` : "Paste or type items above"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setBulkPasteOpen(false); setBulkPasteText(""); }}>Cancel</Button>
+            <Button onClick={handleBulkPaste} disabled={bulkPastePending || !bulkPasteText.trim()} data-testid="button-bulk-paste-submit">
+              {bulkPastePending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              {bulkPastePending ? "Adding..." : "Add Items"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -44,6 +44,47 @@ import {
   type LaborEstimate 
 } from "./productionRateService";
 
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp: number[] = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = i - 1;
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      if (a[i - 1] === b[j - 1]) {
+        dp[j] = prev;
+      } else {
+        dp[j] = 1 + Math.min(prev, dp[j], dp[j - 1]);
+      }
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+function normalizedSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  return 1 - levenshteinDistance(a, b) / maxLen;
+}
+
+function tokenOverlapScore(a: string, b: string): number {
+  const tokensA = new Set(a.split(/[\s\-_\/,]+/).filter(t => t.length > 1));
+  const tokensB = new Set(b.split(/[\s\-_\/,]+/).filter(t => t.length > 1));
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+  let overlap = 0;
+  for (const t of tokensA) {
+    if (tokensB.has(t)) overlap++;
+  }
+  return overlap / Math.max(tokensA.size, tokensB.size);
+}
+
 async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId: string): Promise<void> {
   try {
     const catalogItems = await db
@@ -65,29 +106,46 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
     for (const li of lineItems) {
       const desc = (li.description || "").toLowerCase().trim();
       const liUnit = (li.unit || "").toLowerCase().trim();
-      let bestMatch: { id: string; confidence: string; unitPrice: number } | null = null;
+      const liCategory = (li.category || "").toLowerCase().trim();
+      let bestMatch: { id: string; confidence: string; unitPrice: number; score: number } | null = null;
 
       for (const cat of catalogItems) {
         const catName = (cat.itemName || "").toLowerCase().trim();
         const catCode = (cat.itemCode || "").toLowerCase().trim();
         const catUnit = (cat.unit || "").toLowerCase().trim();
+        const catCategory = (cat.category || "").toLowerCase().trim();
         const catPrice = Number(cat.unitPrice) || 0;
 
         if (catCode && desc === catCode) {
-          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice };
-          break;
-        }
-        if (desc === catName && liUnit === catUnit) {
-          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice };
+          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice, score: 1 };
           break;
         }
         if (desc === catName) {
-          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice };
+          const unitBonus = liUnit === catUnit ? 0.05 : 0;
+          bestMatch = { id: cat.id, confidence: "EXACT", unitPrice: catPrice, score: 1 + unitBonus };
           break;
         }
-        if (catName && (desc.includes(catName) || catName.includes(desc)) && liUnit === catUnit) {
-          if (!bestMatch || bestMatch.confidence !== "EXACT") {
-            bestMatch = { id: cat.id, confidence: "FUZZY", unitPrice: catPrice };
+
+        const stringSim = normalizedSimilarity(desc, catName);
+        const tokenSim = tokenOverlapScore(desc, catName);
+        let combinedScore = stringSim * 0.6 + tokenSim * 0.4;
+
+        if (liUnit && catUnit && liUnit === catUnit) combinedScore += 0.1;
+        if (liCategory && catCategory && (liCategory === catCategory || normalizedSimilarity(liCategory, catCategory) > 0.8)) {
+          combinedScore += 0.1;
+        }
+
+        if (combinedScore >= 0.85) {
+          if (!bestMatch || combinedScore > bestMatch.score) {
+            bestMatch = { id: cat.id, confidence: "HIGH", unitPrice: catPrice, score: combinedScore };
+          }
+        } else if (combinedScore >= 0.6) {
+          if (!bestMatch || (bestMatch.confidence !== "EXACT" && bestMatch.confidence !== "HIGH" && combinedScore > bestMatch.score)) {
+            bestMatch = { id: cat.id, confidence: "FUZZY", unitPrice: catPrice, score: combinedScore };
+          }
+        } else if (combinedScore >= 0.4) {
+          if (!bestMatch || (bestMatch.confidence === "NO_MATCH" || (bestMatch.confidence === "LOW" && combinedScore > bestMatch.score))) {
+            bestMatch = { id: cat.id, confidence: "LOW", unitPrice: catPrice, score: combinedScore };
           }
         }
       }
@@ -2968,6 +3026,115 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, async (re
   } catch (error) {
     logError("Assembly insertion error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to insert assembly into estimate" });
+  }
+});
+
+router.get("/api/estimates/:estimateId/match-review", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const lineItems = await db.select({
+      id: estimateLineItems.id,
+      description: estimateLineItems.description,
+      quantity: estimateLineItems.quantity,
+      unit: estimateLineItems.unit,
+      vendorPricingId: estimateLineItems.vendorPricingId,
+      vendorMatchConfidence: estimateLineItems.vendorMatchConfidence,
+      materialCost: estimateLineItems.materialCost,
+      totalCost: estimateLineItems.totalCost,
+    })
+    .from(estimateLineItems)
+    .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
+    .where(and(
+      eq(estimateLineItems.estimateId, req.params.estimateId),
+      eq(estimates.organizationId, organizationId),
+      sql`${estimateLineItems.vendorMatchConfidence} IN ('LOW', 'FUZZY', 'NO_MATCH')`
+    ))
+    .orderBy(estimateLineItems.vendorMatchConfidence);
+
+    const catalogItems = await db.select({
+      id: vendorPricingCatalogs.id,
+      itemName: vendorPricingCatalogs.itemName,
+      itemCode: vendorPricingCatalogs.itemCode,
+      category: vendorPricingCatalogs.category,
+      unit: vendorPricingCatalogs.unit,
+      unitPrice: vendorPricingCatalogs.unitPrice,
+    })
+    .from(vendorPricingCatalogs)
+    .where(eq(vendorPricingCatalogs.organizationId, organizationId));
+
+    const reviewItems = lineItems.map(li => {
+      const desc = (li.description || "").toLowerCase().trim();
+      const alternatives = catalogItems
+        .map(cat => {
+          const catName = (cat.itemName || "").toLowerCase().trim();
+          const stringSim = normalizedSimilarity(desc, catName);
+          const tokenSim = tokenOverlapScore(desc, catName);
+          const score = stringSim * 0.6 + tokenSim * 0.4;
+          return { ...cat, unitPrice: Number(cat.unitPrice), score: Math.round(score * 100) };
+        })
+        .filter(c => c.score >= 25)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+
+      return {
+        ...li,
+        alternatives,
+      };
+    });
+
+    res.json({ items: reviewItems });
+  } catch (error) {
+    logError("Match review queue error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to get match review queue" });
+  }
+});
+
+router.post("/api/estimates/:estimateId/match-review/:lineItemId/accept", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { vendorPricingId } = req.body;
+    if (!vendorPricingId) {
+      return res.status(400).json({ error: "vendorPricingId required" });
+    }
+
+    const [estimate] = await db.select().from(estimates)
+      .where(and(eq(estimates.id, req.params.estimateId), eq(estimates.organizationId, organizationId))).limit(1);
+    if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+    const [catalogItem] = await db.select().from(vendorPricingCatalogs).where(and(eq(vendorPricingCatalogs.id, vendorPricingId), eq(vendorPricingCatalogs.organizationId, organizationId))).limit(1);
+    if (!catalogItem) return res.status(404).json({ error: "Catalog item not found" });
+
+    const unitPrice = Number(catalogItem.unitPrice) || 0;
+
+    const [lineItem] = await db.select().from(estimateLineItems)
+      .where(and(eq(estimateLineItems.id, req.params.lineItemId), eq(estimateLineItems.estimateId, req.params.estimateId))).limit(1);
+    if (!lineItem) return res.status(404).json({ error: "Line item not found" });
+
+    const qty = Number(lineItem.quantity) || 0;
+    const materialCost = parseFloat((unitPrice * qty).toFixed(2));
+    const totalCost = parseFloat((materialCost + Number(lineItem.laborCost || 0) + Number(lineItem.equipmentCost || 0) + Number(lineItem.consumablesCost || 0) + Number(lineItem.subcontractCost || 0)).toFixed(2));
+
+    await db.update(estimateLineItems)
+      .set({
+        vendorPricingId,
+        vendorMatchConfidence: "HIGH",
+        materialCost: materialCost.toFixed(2),
+        totalCost: totalCost.toFixed(2),
+      })
+      .where(eq(estimateLineItems.id, req.params.lineItemId));
+
+    res.json({ success: true });
+  } catch (error) {
+    logError("Match review accept error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to accept match" });
   }
 });
 

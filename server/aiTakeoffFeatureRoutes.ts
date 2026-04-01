@@ -94,7 +94,92 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-// Helper function to process AI takeoff with OpenAI Vision
+interface RawDetectedItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  itemType: string;
+  confidence: number;
+  boundingBox?: { x: number; y: number; w: number; h: number };
+  suggestedSowItem?: { code: string; description: string };
+}
+
+function deduplicateDetectedItems(items: RawDetectedItem[]): RawDetectedItem[] {
+  if (items.length <= 1) return items;
+
+  const merged: RawDetectedItem[] = [];
+  const used = new Set<number>();
+
+  for (let i = 0; i < items.length; i++) {
+    if (used.has(i)) continue;
+
+    let current = { ...items[i] };
+
+    for (let j = i + 1; j < items.length; j++) {
+      if (used.has(j)) continue;
+
+      const other = items[j];
+      if (current.itemType !== other.itemType) continue;
+      if (current.unit !== other.unit) continue;
+
+      if (current.boundingBox && other.boundingBox) {
+        const overlap = computeBBoxOverlap(current.boundingBox, other.boundingBox);
+        if (overlap > 0.5) {
+          current.confidence = Math.max(current.confidence, other.confidence);
+          current.quantity = Math.max(current.quantity, other.quantity);
+          used.add(j);
+        }
+      } else {
+        const descA = (current.description || "").toLowerCase();
+        const descB = (other.description || "").toLowerCase();
+        if (descA === descB || (descA.length > 10 && descB.includes(descA.substring(0, 10)))) {
+          current.confidence = Math.max(current.confidence, other.confidence);
+          current.quantity = Math.max(current.quantity, other.quantity);
+          used.add(j);
+        }
+      }
+    }
+
+    merged.push(current);
+  }
+
+  return merged.map((item, index) => ({ ...item, id: `item-${index + 1}` }));
+}
+
+function computeBBoxOverlap(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): number {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w);
+  const y2 = Math.min(a.y + a.h, b.y + b.h);
+
+  if (x2 <= x1 || y2 <= y1) return 0;
+
+  const intersectionArea = (x2 - x1) * (y2 - y1);
+  const aArea = a.w * a.h;
+  const bArea = b.w * b.h;
+  const unionArea = aArea + bArea - intersectionArea;
+
+  return unionArea > 0 ? intersectionArea / unionArea : 0;
+}
+
+const TRADE_DETECTION_PROMPTS: Record<string, string> = {
+  ROOFING: "Focus on: roof planes (measure total area in SQ = 100 SF), ridges and hips (LF), valleys (LF), penetrations/boots (EA), drip edge (LF along eaves and rakes), gutters/downspouts (LF and EA), shingle/membrane areas, underlayment (SF), flashing at walls and chimneys (LF), ventilation (ridge vents LF, box vents EA). Look for slope indicators and calculate pitched area. Differentiate between main roof and lower roof sections.",
+  ELECTRICAL: "Focus on: main/sub panels (EA, note amperage), duplex/GFCI/special outlets (EA, note voltage), switches - single/3-way/dimmer (EA), light fixtures by type - recessed/surface/pendant (EA), conduit runs (LF, note size), wire pulls by gauge (LF), junction boxes (EA), dedicated circuits for HVAC/appliances. Count symbols on floor plans carefully, check schedules for fixture types.",
+  PLUMBING: "Focus on: fixtures by type - lavatories/water closets/urinals/sinks (EA), pipe runs by material and size - PVC/copper/PEX (LF), drain/waste/vent piping (LF, note diameter), water heaters (EA, note capacity), valves by type (EA), cleanouts (EA), floor drains (EA), hose bibs (EA). Reference fixture schedules. Count rough-in points separately from finish fixtures.",
+  HVAC: "Focus on: supply/return ductwork by size - rectangular and round (LF), supply registers/diffusers (EA, note CFM and size), return air grilles (EA), RTUs/AHUs/split systems (EA, note tonnage), thermostats (EA), exhaust fans (EA, note CFM), duct insulation (SF), refrigerant piping (LF). Check mechanical schedules for equipment specifications.",
+  CONCRETE: "Focus on: slabs on grade by thickness and strength (CY, note PSI), continuous/spread footings (CY, note dimensions), foundation walls (CY), columns/piers (CY), rebar by size and spacing (TON), welded wire mesh (SF), formwork - strip/wall/column (SF of contact area), control/expansion joints (LF), anchor bolts (EA). Calculate volumes from dimensions shown.",
+  CARPENTRY: "Focus on: wall framing - studs by size and spacing (LF), top/bottom plates (LF), headers (LF by size), sheathing - OSB/plywood (SF), roof trusses/rafters (EA or LF), floor joists (LF), blocking/fire stops (LF), exterior/interior doors with hardware (EA, note size), windows (EA, note size), base/crown trim (LF), subfloor (SF). Check framing plans and door/window schedules.",
+  MASONRY: "Focus on: CMU/brick walls by thickness (SF of face area), lintels - steel/precast (EA or LF), vertical/horizontal reinforcement (LF or TON), mortar joints (included in wall SF), control joints (LF), wall ties (EA), grout-filled cells (LF), stone veneer (SF), caps/coping (LF). Calculate block counts from wall areas.",
+  PAINTING: "Focus on: wall areas net of openings (SF, note coats), ceiling areas (SF, note type - flat/textured), door/frame painting (EA, both sides), window trim (EA or LF), base/crown painting (LF), accent walls (SF), primer application (SF), exterior surfaces separately (SF). Deduct window/door openings from wall areas.",
+  FLOORING: "Focus on: floor covering by type - tile/carpet/LVP/hardwood (SF), transitions/thresholds between materials (EA or LF), wall base - rubber/wood/tile (LF), underlayment/backer board (SF), floor prep/leveling (SF), stair treads/risers (EA), carpet pad (SY). Check finish schedules for material specifications.",
+  DRYWALL: "Focus on: wall/ceiling board by type and thickness - regular/Type X/moisture resistant (SF), metal studs by gauge and spacing (LF), corner bead - paper/metal (LF), joint compound/tape (included in SF), insulation by R-value (SF), acoustic treatment (SF), soffits/bulkheads (LF or SF), access panels (EA). Measure wall heights and lengths to compute areas.",
+  LANDSCAPING: "Focus on: sod/seed areas (SF), mulch beds by depth (CY or SF), trees by caliper (EA), shrubs (EA), irrigation zones - drip/spray (EA), hardscape - pavers/stone (SF), retaining walls (SF or LF), fencing (LF), drainage features (LF or EA). Check site plans and planting plans.",
+  DEMOLITION: "Focus on: interior selective demo by type (SF), concrete removal by thickness (SF or CY), hazmat abatement (SF), debris hauling (loads EA), sawcutting (LF), structural demo (LS or EA). Note any hazardous material indicators.",
+  STEEL_ERECTION: "Focus on: columns by section size (EA, note weight/LF), beams/girders (LF, note section), open web joists (EA, note series), metal deck by gauge (SF), connections/base plates (EA), stair stringers/treads (EA or flights). Reference structural steel schedules.",
+  GENERAL_CONTRACTOR: "Comprehensive analysis across all visible trades. Group detected items by trade type (structural, architectural, mechanical, electrical, plumbing, sitework). Measure using appropriate units for each trade. Identify the drawing type (plan, elevation, section, detail) and note any visible dimensions, scales, or specifications.",
+};
+
 async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[]) {
   const startTime = Date.now();
   
@@ -187,11 +272,13 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
       }
     }
 
-    let detectedItems: any[];
-    let metadata: any;
+    let detectedItems: RawDetectedItem[];
+    let metadata: Record<string, unknown>;
     let aiNotes: string;
 
     // Use OpenAI Vision if we have an image, otherwise fall back to mock data
+    const analysisMode = analysis?.analysisMode || "QUICK";
+
     if (imageUrl && openai) {
       try {
         const tradePrompt = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
@@ -208,28 +295,42 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
               messages: [
                 {
                   role: "system",
-                  content: `You are a construction takeoff specialist analyzing blueprints and construction drawings. 
+                  content: `You are a construction takeoff specialist analyzing blueprints and construction drawings.
 ${tradePrompt}
 ${focusAreaPrompt}
 Analyze the image and extract all measurable quantities for a construction estimate.
+
+IMPORTANT: For each detected item, provide a bounding box indicating where on the drawing it was found.
+The bounding box should be expressed as percentage coordinates relative to the full image dimensions:
+- x: left edge as percentage (0-100) of image width
+- y: top edge as percentage (0-100) of image height
+- w: width as percentage (0-100) of image width
+- h: height as percentage (0-100) of image height
+
+CONFIDENCE SCORING GUIDELINES:
+- 90-100: Item is clearly visible and unambiguous (labeled symbols, clear dimensions)
+- 75-89: Item is likely present based on standard drawing conventions
+- 60-74: Item is inferred from context or partially visible
+- Below 60: Uncertain detection, may need manual verification
 
 Return your analysis as JSON with this exact structure:
 {
   "detectedItems": [
     {
       "itemType": "string (e.g., roof_plane, outlet, slab)",
-      "description": "string (detailed description)",
+      "description": "string (detailed description including specifications if visible)",
       "quantity": number,
       "unit": "string (SQ, SF, LF, EA, CY, etc.)",
       "confidence": number (0-100),
-      "notes": "string (optional additional notes)"
+      "boundingBox": { "x": number, "y": number, "w": number, "h": number },
+      "notes": "string (optional additional notes, dimensions, or specifications)"
     }
   ],
   "metadata": {
-    "drawingScale": "string or null",
-    "pageSize": "string or null",
-    "titleBlock": "string or null",
-    "drawingType": "string (plan, elevation, section, detail)"
+    "drawingScale": "string or null (e.g., 1/4 inch = 1 foot)",
+    "pageSize": "string or null (e.g., 24x36, ARCH D)",
+    "titleBlock": "string or null (project name, drawing number)",
+    "drawingType": "string (plan, elevation, section, detail, schedule)"
   },
   "summary": "string (brief summary of what was detected)"
 }`
@@ -243,13 +344,13 @@ Return your analysis as JSON with this exact structure:
                     },
                     {
                       type: "text",
-                      text: `Analyze page ${sheetIndex + 1} of this construction document for ${tradeType} trade takeoff. Extract all measurable quantities.`
+                      text: `Analyze page ${sheetIndex + 1} of this construction document for ${tradeType} trade takeoff. Extract all measurable quantities with their locations on the drawing. Provide bounding box coordinates (as percentage of image dimensions) for each detected item.`
                     }
                   ]
                 }
               ],
-              max_tokens: 4096,
-              temperature: 0.3,
+              max_tokens: 8192,
+              temperature: 0.2,
               response_format: { type: "json_object" },
             });
             return { result: completion.choices[0]?.message?.content, completion };
@@ -266,14 +367,30 @@ Return your analysis as JSON with this exact structure:
         const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          detectedItems = (parsed.detectedItems || []).map((item: any, index: number) => ({
+          interface AiResponseItem {
+            itemType: string;
+            description: string;
+            quantity: number;
+            unit: string;
+            confidence?: number;
+            boundingBox?: { x: number; y: number; w: number; h: number };
+            notes?: string;
+            suggestedSowItem?: { code: string; description: string };
+          }
+          detectedItems = ((parsed.detectedItems || []) as AiResponseItem[]).map((item, index) => ({
             id: `item-${index + 1}`,
             itemType: item.itemType,
             description: item.description,
             quantity: item.quantity,
             unit: item.unit,
             confidence: item.confidence || 75,
-            notes: item.notes,
+            boundingBox: item.boundingBox ? {
+              x: Math.max(0, Math.min(100, Number(item.boundingBox.x) || 0)),
+              y: Math.max(0, Math.min(100, Number(item.boundingBox.y) || 0)),
+              w: Math.max(0, Math.min(100, Number(item.boundingBox.w) || 10)),
+              h: Math.max(0, Math.min(100, Number(item.boundingBox.h) || 10)),
+            } : undefined,
+            suggestedSowItem: item.suggestedSowItem,
           }));
           metadata = {
             drawingScale: parsed.metadata?.drawingScale,
@@ -281,9 +398,106 @@ Return your analysis as JSON with this exact structure:
             titleBlock: parsed.metadata?.titleBlock,
             drawingType: parsed.metadata?.drawingType,
             tradeType,
-            analysisMethod: "OpenAI Vision",
+            analysisMethod: analysisMode === "DETAILED" ? "OpenAI Vision (Multi-Pass)" : "OpenAI Vision",
             analysisSource: "openai_vision",
           };
+
+          if (analysisMode === "DETAILED" && detectedItems.length > 0) {
+            const verifyResult = await governedAiCall({
+              orgId: analysis.organizationId,
+              userId: analysis.createdByUserId,
+              actionType: "takeoff_analysis",
+              inputRefs: { projectId: analysis.projectId },
+              fn: async () => {
+                const verifyCompletion = await openai.chat.completions.create({
+                  model: AI_MODEL_GPT4O,
+                  messages: [
+                    {
+                      role: "system",
+                      content: `You are a construction takeoff quality reviewer. A first-pass AI analysis detected the following items. Your job is to:
+1. Verify quantities are reasonable for the drawing
+2. Identify any MISSED items that should have been detected
+3. Flag any DUPLICATE detections (overlapping items counted twice)
+4. Adjust confidence scores based on your review
+
+Return JSON with:
+{
+  "verifiedItems": [ same structure as input items, with adjusted quantities/confidence ],
+  "newItems": [ any additional items missed in first pass ],
+  "duplicateIds": [ ids of items that appear to be duplicates ],
+  "reviewNotes": "string summary of changes made"
+}`
+                    },
+                    {
+                      role: "user",
+                      content: [
+                        { type: "image_url", image_url: { url: imageUrl!, detail: "high" } },
+                        { type: "text", text: `Review these ${tradeType} trade detections from a first-pass analysis:\n${JSON.stringify(detectedItems, null, 2)}\n\nVerify quantities, find missed items, and flag duplicates.` }
+                      ]
+                    }
+                  ],
+                  max_tokens: 8192,
+                  temperature: 0.1,
+                  response_format: { type: "json_object" },
+                });
+                return { result: verifyCompletion.choices[0]?.message?.content, completion: verifyCompletion };
+              },
+            });
+
+            if (!verifyResult.blocked && verifyResult.result) {
+              try {
+                const verifyParsed = JSON.parse(verifyResult.result);
+                if (verifyParsed.verifiedItems?.length > 0) {
+                  detectedItems = (verifyParsed.verifiedItems as AiResponseItem[]).map((item, index) => ({
+                    id: `item-${index + 1}`,
+                    itemType: item.itemType,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    confidence: item.confidence || 75,
+                    boundingBox: item.boundingBox ? {
+                      x: Math.max(0, Math.min(100, Number(item.boundingBox.x) || 0)),
+                      y: Math.max(0, Math.min(100, Number(item.boundingBox.y) || 0)),
+                      w: Math.max(0, Math.min(100, Number(item.boundingBox.w) || 10)),
+                      h: Math.max(0, Math.min(100, Number(item.boundingBox.h) || 10)),
+                    } : undefined,
+                    suggestedSowItem: item.suggestedSowItem,
+                  }));
+                }
+                if (verifyParsed.newItems?.length > 0) {
+                  const startIdx = detectedItems.length;
+                  const newMapped = (verifyParsed.newItems as AiResponseItem[]).map((item, index) => ({
+                    id: `item-${startIdx + index + 1}`,
+                    itemType: item.itemType,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    confidence: item.confidence || 60,
+                    boundingBox: item.boundingBox ? {
+                      x: Math.max(0, Math.min(100, Number(item.boundingBox.x) || 0)),
+                      y: Math.max(0, Math.min(100, Number(item.boundingBox.y) || 0)),
+                      w: Math.max(0, Math.min(100, Number(item.boundingBox.w) || 10)),
+                      h: Math.max(0, Math.min(100, Number(item.boundingBox.h) || 10)),
+                    } : undefined,
+                    suggestedSowItem: item.suggestedSowItem,
+                  }));
+                  detectedItems = [...detectedItems, ...newMapped];
+                }
+                if (verifyParsed.duplicateIds?.length > 0) {
+                  const dupSet = new Set<string>(verifyParsed.duplicateIds);
+                  detectedItems = detectedItems.filter((item) => !dupSet.has(item.id));
+                }
+                if (verifyParsed.reviewNotes) {
+                  metadata.multiPassNotes = verifyParsed.reviewNotes;
+                }
+              } catch (verifyParseErr) {
+                console.warn("Failed to parse multi-pass verification result:", verifyParseErr);
+              }
+            }
+          }
+
+          detectedItems = deduplicateDetectedItems(detectedItems);
+
           aiNotes = parsed.summary || `AI Vision detected ${detectedItems.length} items for ${tradeType} trade.`;
         } else {
           throw new Error("Could not parse AI response");
@@ -298,13 +512,13 @@ Return your analysis as JSON with this exact structure:
           quantity: item.quantity,
           unit: item.unit,
           confidence: 70 + Math.floor(Math.random() * 25),
+          boundingBox: item.boundingBox,
           suggestedSowItem: item.sowItem,
         }));
         metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Fallback (mock)", analysisSource: "demo_fallback" };
         aiNotes = `Fallback: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
       }
     } else {
-      // No image available, use mock data
       const tradeItems = generateTradeSpecificItems(tradeType);
       detectedItems = tradeItems.map((item, index) => ({
         id: `item-${index + 1}`,
@@ -313,6 +527,7 @@ Return your analysis as JSON with this exact structure:
         quantity: item.quantity,
         unit: item.unit,
         confidence: 70 + Math.floor(Math.random() * 25),
+        boundingBox: item.boundingBox,
         suggestedSowItem: item.sowItem,
       }));
       metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Demo (no image)", analysisSource: "demo_no_image" };
@@ -329,12 +544,13 @@ Return your analysis as JSON with this exact structure:
         updatedAt: new Date(),
       })
       .where(eq(aiTakeoffAnalyses.id, analysisId));
-  } catch (error: any) {
-    logError("AI Takeoff processing error:", {}, error instanceof Error ? error : new Error(String(error)));
+  } catch (error: unknown) {
+    const errObj = error instanceof Error ? error : new Error(String(error));
+    logError("AI Takeoff processing error:", {}, errObj);
     await db.update(aiTakeoffAnalyses)
       .set({
         status: "FAILED",
-        errorMessage: error.message || "Processing failed",
+        errorMessage: errObj.message || "Processing failed",
         processingTimeMs: Date.now() - startTime,
         updatedAt: new Date(),
       })
@@ -343,24 +559,25 @@ Return your analysis as JSON with this exact structure:
 }
 
 function generateTradeSpecificItems(tradeType: string) {
-  const itemsByTrade: Record<string, Array<{type: string; description: string; quantity: number; unit: string; sowItem?: any}>> = {
+  interface MockSowItem { name: string; code: string }
+  const itemsByTrade: Record<string, Array<{type: string; description: string; quantity: number; unit: string; sowItem?: MockSowItem; boundingBox?: { x: number; y: number; w: number; h: number }}>> = {
     ROOFING: [
-      { type: "roof_plane", description: "Main Roof Plane - Architectural Shingles", quantity: 28.5, unit: "SQ", sowItem: { name: "Architectural Shingles", code: "ROOF-SHNG-01" } },
-      { type: "ridge", description: "Ridge Cap", quantity: 45, unit: "LF", sowItem: { name: "Ridge Cap", code: "ROOF-RDG-01" } },
-      { type: "drip_edge", description: "Drip Edge - Aluminum", quantity: 180, unit: "LF", sowItem: { name: "Drip Edge", code: "ROOF-DRP-01" } },
-      { type: "penetration", description: "Pipe Boots", quantity: 4, unit: "EA", sowItem: { name: "Pipe Boot Flashing", code: "ROOF-PEN-01" } },
+      { type: "roof_plane", description: "Main Roof Plane - Architectural Shingles", quantity: 28.5, unit: "SQ", sowItem: { name: "Architectural Shingles", code: "ROOF-SHNG-01" }, boundingBox: { x: 10, y: 15, w: 60, h: 50 } },
+      { type: "ridge", description: "Ridge Cap", quantity: 45, unit: "LF", sowItem: { name: "Ridge Cap", code: "ROOF-RDG-01" }, boundingBox: { x: 15, y: 25, w: 55, h: 5 } },
+      { type: "drip_edge", description: "Drip Edge - Aluminum", quantity: 180, unit: "LF", sowItem: { name: "Drip Edge", code: "ROOF-DRP-01" }, boundingBox: { x: 5, y: 10, w: 70, h: 65 } },
+      { type: "penetration", description: "Pipe Boots", quantity: 4, unit: "EA", sowItem: { name: "Pipe Boot Flashing", code: "ROOF-PEN-01" }, boundingBox: { x: 35, y: 30, w: 8, h: 8 } },
     ],
     ELECTRICAL: [
-      { type: "outlet", description: "Duplex Receptacles - 120V", quantity: 24, unit: "EA", sowItem: { name: "Duplex Receptacle", code: "ELEC-RCP-01" } },
-      { type: "switch", description: "Single Pole Switches", quantity: 12, unit: "EA", sowItem: { name: "Single Pole Switch", code: "ELEC-SW-01" } },
-      { type: "panel", description: "Main Panel - 200A", quantity: 1, unit: "EA", sowItem: { name: "Main Panel 200A", code: "ELEC-PNL-01" } },
-      { type: "wire_run", description: "12/2 Romex", quantity: 850, unit: "LF", sowItem: { name: "12/2 NM-B Wire", code: "ELEC-WR-01" } },
+      { type: "outlet", description: "Duplex Receptacles - 120V", quantity: 24, unit: "EA", sowItem: { name: "Duplex Receptacle", code: "ELEC-RCP-01" }, boundingBox: { x: 20, y: 20, w: 60, h: 60 } },
+      { type: "switch", description: "Single Pole Switches", quantity: 12, unit: "EA", sowItem: { name: "Single Pole Switch", code: "ELEC-SW-01" }, boundingBox: { x: 25, y: 25, w: 50, h: 50 } },
+      { type: "panel", description: "Main Panel - 200A", quantity: 1, unit: "EA", sowItem: { name: "Main Panel 200A", code: "ELEC-PNL-01" }, boundingBox: { x: 70, y: 40, w: 12, h: 18 } },
+      { type: "wire_run", description: "12/2 Romex", quantity: 850, unit: "LF", sowItem: { name: "12/2 NM-B Wire", code: "ELEC-WR-01" }, boundingBox: { x: 10, y: 10, w: 80, h: 80 } },
     ],
     CONCRETE: [
-      { type: "slab", description: "Slab on Grade - 4\" thick", quantity: 125, unit: "CY", sowItem: { name: "Concrete Slab", code: "CONC-SLB-01" } },
-      { type: "footing", description: "Continuous Footing", quantity: 18, unit: "CY", sowItem: { name: "Foundation Footing", code: "CONC-FTG-01" } },
-      { type: "rebar", description: "#4 Rebar Grid", quantity: 2.5, unit: "TON", sowItem: { name: "Rebar #4", code: "CONC-RBR-01" } },
-      { type: "formwork", description: "Foundation Forms", quantity: 320, unit: "SF", sowItem: { name: "Formwork", code: "CONC-FRM-01" } },
+      { type: "slab", description: "Slab on Grade - 4\" thick", quantity: 125, unit: "CY", sowItem: { name: "Concrete Slab", code: "CONC-SLB-01" }, boundingBox: { x: 10, y: 20, w: 65, h: 55 } },
+      { type: "footing", description: "Continuous Footing", quantity: 18, unit: "CY", sowItem: { name: "Foundation Footing", code: "CONC-FTG-01" }, boundingBox: { x: 5, y: 60, w: 70, h: 15 } },
+      { type: "rebar", description: "#4 Rebar Grid", quantity: 2.5, unit: "TON", sowItem: { name: "Rebar #4", code: "CONC-RBR-01" }, boundingBox: { x: 15, y: 25, w: 55, h: 45 } },
+      { type: "formwork", description: "Foundation Forms", quantity: 320, unit: "SF", sowItem: { name: "Formwork", code: "CONC-FRM-01" }, boundingBox: { x: 5, y: 55, w: 72, h: 20 } },
     ],
     PLUMBING: [
       { type: "fixture", description: "Lavatory Sink", quantity: 8, unit: "EA", sowItem: { name: "Lavatory Sink", code: "PLMB-FIX-01" } },
@@ -518,20 +735,29 @@ router.get("/ai-features/takeoff/results/:analysisId", requireAuth, async (req: 
   }
 });
 
-// GET /api/ai-features/takeoff/history/:projectId - Get analysis history for project
-router.get("/ai-features/takeoff/history/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
+router.get("/ai-features/takeoff/history/:contextId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    const contextId = req.params.contextId;
+    const contextType = req.query.type as string || "project";
+
+    const conditions = [
+      eq(aiTakeoffAnalyses.organizationId, organizationId),
+    ];
+
+    if (contextType === "bid") {
+      conditions.push(eq(aiTakeoffAnalyses.bidId, contextId));
+    } else {
+      conditions.push(eq(aiTakeoffAnalyses.projectId, contextId));
+    }
+
     const analyses = await db.select()
       .from(aiTakeoffAnalyses)
-      .where(and(
-        eq(aiTakeoffAnalyses.projectId, req.params.projectId),
-        eq(aiTakeoffAnalyses.organizationId, organizationId)
-      ))
+      .where(and(...conditions))
       .orderBy(desc(aiTakeoffAnalyses.createdAt))
       .limit(20);
 

@@ -111,6 +111,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [deleteSheetConfirmOpen, setDeleteSheetConfirmOpen] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [hideAiMeasurements, setHideAiMeasurements] = useState(false);
+  const [showAiOverlays, setShowAiOverlays] = useState(true);
+  const [highlightedAiItem, setHighlightedAiItem] = useState<DetectedItem | null>(null);
+  const [preImportDetectedItems, setPreImportDetectedItems] = useState<DetectedItem[]>([]);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Set<string>>(new Set());
   const [addendaOverlays, setAddendaOverlays] = useState<Record<string, { visible: boolean; opacity: number; imageUrl?: string }>>({});
@@ -1540,6 +1543,132 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   );
                 })}
 
+                {showAiOverlays && pdfImage && preImportDetectedItems.filter(item => item.boundingBox).map((item) => {
+                  const imgW = pdfImage.width;
+                  const imgH = pdfImage.height;
+                  const bbox = item.boundingBox!;
+                  const rx = (bbox.x / 100) * imgW;
+                  const ry = (bbox.y / 100) * imgH;
+                  const rw = (bbox.w / 100) * imgW;
+                  const rh = (bbox.h / 100) * imgH;
+                  const conf = item.confidence || 0;
+                  const fillColor = conf >= 85 ? "rgba(139,92,246,0.06)" : conf >= 70 ? "rgba(139,92,246,0.04)" : "rgba(139,92,246,0.03)";
+                  const strokeColor = conf >= 85 ? "#8b5cf6" : conf >= 70 ? "#a78bfa" : "#c4b5fd";
+                  const isHighlighted = highlightedAiItem?.id === item.id;
+                  return (
+                    <Fragment key={`ai-pre-${item.id}`}>
+                      <Rect
+                        x={rx}
+                        y={ry}
+                        width={rw}
+                        height={rh}
+                        fill={isHighlighted ? "rgba(139,92,246,0.18)" : fillColor}
+                        stroke={isHighlighted ? "#7c3aed" : strokeColor}
+                        strokeWidth={isHighlighted ? 2.5 : 1}
+                        dash={[4, 4]}
+                        cornerRadius={2}
+                        listening={true}
+                        onMouseEnter={(e) => {
+                          const container = e.target.getStage()?.container();
+                          if (container) container.style.cursor = "pointer";
+                          setHighlightedAiItem(item);
+                        }}
+                        onMouseLeave={(e) => {
+                          const container = e.target.getStage()?.container();
+                          if (container) container.style.cursor = "default";
+                          setHighlightedAiItem(null);
+                        }}
+                        onClick={() => setHighlightedAiItem(prev => prev?.id === item.id ? null : item)}
+                      />
+                      <Text
+                        x={rx}
+                        y={ry - 13}
+                        text={`${item.description} (${conf}%) · ${item.quantity} ${item.unit}`}
+                        fontSize={9}
+                        fill={isHighlighted ? "#7c3aed" : strokeColor}
+                        listening={false}
+                      />
+                      {isHighlighted && (
+                        <Text
+                          x={rx + 4}
+                          y={ry + 4}
+                          text={`${item.description}\n${item.quantity} ${item.unit} · ${conf}% confidence${item.suggestedSowItem ? `\nSOW: ${item.suggestedSowItem.code}` : ""}`}
+                          fontSize={11}
+                          fill="#fff"
+                          padding={6}
+                          listening={false}
+                        />
+                      )}
+                    </Fragment>
+                  );
+                })}
+
+                {showAiOverlays && pdfImage && measurements.filter(m => m.source === "AI").map((m) => {
+                  try {
+                    const meta = m.metadata ? (typeof m.metadata === "string" ? JSON.parse(m.metadata) : m.metadata) : null;
+                    const bbox = meta?.boundingBox;
+                    if (!bbox || !bbox.w || !bbox.h) return null;
+                    const imgW = pdfImage.width;
+                    const imgH = pdfImage.height;
+                    const rx = (bbox.x / 100) * imgW;
+                    const ry = (bbox.y / 100) * imgH;
+                    const rw = (bbox.w / 100) * imgW;
+                    const rh = (bbox.h / 100) * imgH;
+                    const conf = meta?.confidence || 0;
+                    const fillColor = conf >= 85 ? "rgba(34,197,94,0.08)" : conf >= 70 ? "rgba(234,179,8,0.08)" : "rgba(249,115,22,0.08)";
+                    const strokeColor = conf >= 85 ? "#22c55e" : conf >= 70 ? "#eab308" : "#f97316";
+                    const aiItemId = meta?.aiItemId || meta?.sourceItemId;
+                    const isHighlighted = highlightedAiItem && (
+                      (aiItemId && aiItemId === highlightedAiItem.id) ||
+                      (m.label && m.label === highlightedAiItem.description && bbox.x === highlightedAiItem.boundingBox?.x && bbox.y === highlightedAiItem.boundingBox?.y)
+                    );
+                    return (
+                      <Fragment key={`ai-overlay-${m.id}`}>
+                        <Rect
+                          x={rx}
+                          y={ry}
+                          width={rw}
+                          height={rh}
+                          fill={isHighlighted ? "rgba(139,92,246,0.15)" : fillColor}
+                          stroke={isHighlighted ? "#8b5cf6" : strokeColor}
+                          strokeWidth={isHighlighted ? 2.5 : 1.5}
+                          dash={[6, 3]}
+                          cornerRadius={3}
+                          listening={true}
+                          onMouseEnter={(e) => {
+                            const container = e.target.getStage()?.container();
+                            if (container) container.style.cursor = "pointer";
+                          }}
+                          onMouseLeave={(e) => {
+                            const container = e.target.getStage()?.container();
+                            if (container) container.style.cursor = "default";
+                          }}
+                          onClick={() => setSelectedMeasurementId(m.id)}
+                        />
+                        <Text
+                          x={rx}
+                          y={ry - 14}
+                          text={`${m.label || "AI"} · ${m.count || 1} ${meta?.unit || "EA"} (${conf}%)`}
+                          fontSize={10}
+                          fill={isHighlighted ? "#8b5cf6" : strokeColor}
+                          listening={false}
+                        />
+                        {selectedMeasurementId === m.id && (
+                          <Text
+                            x={rx + 4}
+                            y={ry + 4}
+                            text={`${m.label || "AI Item"}\nQty: ${m.count || 1} ${meta?.unit || "EA"}\nConfidence: ${conf}%`}
+                            fontSize={11}
+                            fill="#fff"
+                            padding={6}
+                            listening={false}
+                          />
+                        )}
+                      </Fragment>
+                    );
+                  } catch { return null; }
+                })}
+
                 {gridEnabled && currentSheet?.scalePxPerFoot && pdfImage && (() => {
                   const imgW = pdfImage.width;
                   const imgH = pdfImage.height;
@@ -2705,7 +2834,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             projectId={context?.type === "project" ? context.projectId : projectId || undefined}
             bidId={context?.type === "bid" ? context.bidId : undefined}
             sheetId={selectedSheet}
-            onClose={() => setAiPanelOpen(false)}
+            onClose={() => { setAiPanelOpen(false); setPreImportDetectedItems([]); }}
+            onHighlightItem={(item) => setHighlightedAiItem(item)}
+            onDetectedItemsChanged={(items) => setPreImportDetectedItems(items)}
+            showOverlays={showAiOverlays}
+            onToggleOverlays={setShowAiOverlays}
             onItemsImported={async (items: DetectedItem[]) => {
               let succeeded = 0;
               let failed = 0;
@@ -2722,7 +2855,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 try {
                   const catRes = await apiRequest("GET", `/api/bids/${ctxBidId}/takeoff/categories`);
                   existingCategories = await catRes.json();
-                } catch {}
+                } catch (catFetchErr) {
+                  console.warn("Failed to fetch takeoff categories:", catFetchErr);
+                }
               }
 
               const getOrCreateCategory = async (itemType: string): Promise<string | undefined> => {
@@ -2742,37 +2877,91 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     existingCategories.push({ id: created.id, name: categoryName });
                     return created.id;
                   }
-                } catch {}
+                } catch (catCreateErr) {
+                  console.warn(`Failed to create category '${categoryName}':`, catCreateErr);
+                }
                 return undefined;
               };
 
               const newMeasurementIds: string[] = [];
+              const imgH = pdfImage?.height || 1500;
+
+              const LINEAR_UNITS = new Set(["lf", "lm", "ft", "m", "in", "linear feet", "linear meters"]);
+              const AREA_UNITS = new Set(["sf", "sm", "sq ft", "sq m", "sqft", "sqm", "square feet", "square meters"]);
+              const LINEAR_TYPES = new Set(["wire_run", "ridge", "drip_edge", "pipe_run", "conduit", "framing", "rebar"]);
+              const AREA_TYPES = new Set(["roof_plane", "slab", "floor", "ceiling", "wall", "formwork"]);
+
+              const deriveMeasurementType = (item: DetectedItem): string => {
+                const unitLower = (item.unit || "").toLowerCase();
+                if (LINEAR_UNITS.has(unitLower) || LINEAR_TYPES.has(item.itemType)) return "LINEAR";
+                if (AREA_UNITS.has(unitLower) || AREA_TYPES.has(item.itemType)) return "AREA";
+                return "COUNT";
+              };
+
+              let fallbackCounter = 0;
+              const derivePoints = (item: DetectedItem, measType: string, imgW: number, imgH: number): Array<{ x: number; y: number }> => {
+                if (!item.boundingBox) {
+                  return [computeAiPosition(existingAiCount + fallbackCounter++, imgW)];
+                }
+                const bbox = item.boundingBox;
+                const x1 = (bbox.x / 100) * imgW;
+                const y1 = (bbox.y / 100) * imgH;
+                const x2 = x1 + (bbox.w / 100) * imgW;
+                const y2 = y1 + (bbox.h / 100) * imgH;
+
+                if (measType === "AREA") {
+                  return [
+                    { x: x1, y: y1 },
+                    { x: x2, y: y1 },
+                    { x: x2, y: y2 },
+                    { x: x1, y: y2 },
+                  ];
+                }
+                if (measType === "LINEAR") {
+                  const isWide = (x2 - x1) >= (y2 - y1);
+                  if (isWide) {
+                    const midY = (y1 + y2) / 2;
+                    return [{ x: x1, y: midY }, { x: x2, y: midY }];
+                  }
+                  const midX = (x1 + x2) / 2;
+                  return [{ x: midX, y: y1 }, { x: midX, y: y2 }];
+                }
+                return [{ x: (x1 + x2) / 2, y: (y1 + y2) / 2 }];
+              };
+
               for (let idx = 0; idx < items.length; idx++) {
                 const item = items[idx];
-                const pos = computeAiPosition(existingAiCount + idx, imgW);
+                const measType = deriveMeasurementType(item);
+                const points = derivePoints(item, measType, imgW, imgH);
+
                 try {
                   const categoryId = item.itemType ? await getOrCreateCategory(item.itemType) : undefined;
                   const res = await apiRequest("POST", "/api/takeoff/measurements", {
                     sheetId: selectedSheet,
-                    type: "COUNT",
-                    points: [pos],
+                    type: measType,
+                    points,
                     label: item.description,
-                    count: item.quantity,
+                    count: measType === "COUNT" ? item.quantity : undefined,
                     source: "AI",
                     categoryId: categoryId || undefined,
                     costCodeId: item.suggestedSowItem?.code || undefined,
                     metadata: JSON.stringify({
                       source: "ai_takeoff",
+                      aiItemId: item.id,
                       unit: item.unit,
                       itemType: item.itemType,
                       confidence: item.confidence,
+                      boundingBox: item.boundingBox || null,
                       suggestedSowItem: item.suggestedSowItem || null,
+                      costCodeId: item.suggestedSowItem?.code || null,
+                      derivedMeasurementType: measType,
                     }),
                   });
                   const created = await res.json();
                   if (created?.id) newMeasurementIds.push(created.id);
                   succeeded++;
-                } catch {
+                } catch (err) {
+                  console.error(`Failed to import AI item: ${item.description}`, err);
                   failed++;
                   failedItems.push(item.description);
                 }
