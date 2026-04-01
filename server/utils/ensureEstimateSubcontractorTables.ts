@@ -2,18 +2,15 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 
 export async function ensureEstimateSubcontractorTables(): Promise<void> {
-  const result = await db.execute(sql`
-    SELECT
-      EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'estimate_line_item_subcontractors') AS sub_table_exists,
-      EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'notifications' AND column_name = 'organization_id') AS notif_org_col_exists
-  `);
+  try {
+    const colCheck = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notifications' AND column_name = 'organization_id'
+      )::boolean AS col_exists
+    `);
+    const colAlreadyExists = colCheck.rows[0]?.col_exists === true;
 
-  const row = result.rows[0] as Record<string, boolean>;
-  if (row.sub_table_exists && row.notif_org_col_exists) {
-    return;
-  }
-
-  if (!row.notif_org_col_exists) {
     await db.execute(sql`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS organization_id VARCHAR REFERENCES organizations(id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS notifications_org_user_read_idx ON notifications (organization_id, user_id, is_read)`);
     await db.execute(sql`
@@ -24,10 +21,23 @@ export async function ensureEstimateSubcontractorTables(): Promise<void> {
         AND n.organization_id IS NULL
         AND u.organization_id IS NOT NULL
     `);
-    console.log("Applied migration: notifications.organization_id column and index created");
+    console.log(colAlreadyExists
+      ? "[migration] notifications.organization_id — already present, skipped"
+      : "[migration] notifications.organization_id — applied");
+  } catch (err) {
+    console.error("[migration] Failed to ensure notifications.organization_id:", err);
+    throw err;
   }
 
-  if (!row.sub_table_exists) {
+  try {
+    const tblCheck = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'estimate_line_item_subcontractors'
+      )::boolean AS tbl_exists
+    `);
+    const tblAlreadyExists = tblCheck.rows[0]?.tbl_exists === true;
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS estimate_line_item_subcontractors (
         id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -46,9 +56,14 @@ export async function ensureEstimateSubcontractorTables(): Promise<void> {
       DO $$ BEGIN
         ALTER TABLE estimate_line_item_subcontractors
           ADD CONSTRAINT eli_sub_unique_assignment UNIQUE(line_item_id, subcontractor_quote_id);
-      EXCEPTION WHEN duplicate_object THEN NULL;
+      EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
       END $$
     `);
-    console.log("Applied migration: estimate_line_item_subcontractors table created");
+    console.log(tblAlreadyExists
+      ? "[migration] estimate_line_item_subcontractors — already present, skipped"
+      : "[migration] estimate_line_item_subcontractors — applied");
+  } catch (err) {
+    console.error("[migration] Failed to ensure estimate_line_item_subcontractors:", err);
+    throw err;
   }
 }
