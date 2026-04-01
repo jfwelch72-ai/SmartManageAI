@@ -2986,42 +2986,10 @@ const messagingSetup = (async () => {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
         console.log(`[ICE Config] Using configured TURN server(s): ${turnUrls.join(", ")}`);
-      } else if (process.env.METERED_API_KEY) {
-        let meteredSuccess = false;
-        try {
-          const meteredDomain = process.env.METERED_DOMAIN || "helloworld.metered.live";
-          const meteredResp = await fetch(
-            `https://${meteredDomain}/api/v1/turn/credentials?apiKey=${process.env.METERED_API_KEY}`
-          );
-          if (meteredResp.ok) {
-            const meteredServers = await meteredResp.json();
-            if (Array.isArray(meteredServers) && meteredServers.length > 0) {
-              for (const server of meteredServers) {
-                iceServers.push({
-                  urls: server.urls,
-                  username: server.username,
-                  credential: server.credential,
-                });
-              }
-              console.log(`[ICE Config] Using Metered.ca TURN servers (${meteredServers.length} entries)`);
-              meteredSuccess = true;
-            } else {
-              console.warn("[ICE Config] Metered.ca returned empty TURN credentials. Falling back to free Open Relay TURN servers.");
-            }
-          } else {
-            console.warn(`[ICE Config] Metered.ca API returned ${meteredResp.status}. Falling back to free Open Relay TURN servers.`);
-          }
-        } catch (meteredErr) {
-          console.warn("[ICE Config] Failed to fetch Metered.ca TURN credentials:", meteredErr);
-        }
-        if (!meteredSuccess) {
-          iceServers.push(...freeOpenRelayTurnServers);
-          console.log("[ICE Config] Using free Open Relay Project TURN servers as fallback for failed Metered.ca fetch");
-        }
-      } else {
-        iceServers.push(...freeOpenRelayTurnServers);
-        console.log("[ICE Config] Using free Open Relay Project TURN servers as built-in fallback");
       }
+
+      iceServers.push(...freeOpenRelayTurnServers);
+      console.log("[ICE Config] Free Open Relay Project TURN servers included as fallback");
 
       const hasTurn = iceServers.some(s => {
         const urls = Array.isArray(s.urls) ? s.urls : [s.urls];

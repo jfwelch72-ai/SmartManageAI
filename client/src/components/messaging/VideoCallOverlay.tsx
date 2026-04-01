@@ -102,7 +102,7 @@ export function VideoCallOverlay({
   const retryCountRef = useRef<Record<string, number>>({});
   const iceConfigRef = useRef<RTCConfiguration>(FALLBACK_ICE_SERVERS);
   const signalHandlerRegisteredRef = useRef(false);
-  const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "unreachable">("pending");
+  const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "unreachable" | "no_turn_servers">("pending");
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -209,10 +209,10 @@ export function VideoCallOverlay({
             return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
           });
           const turnCount = turnServers.length;
-          console.log(`[WebRTC] Loaded ICE config: ${data.iceServers.length} servers (${turnCount} TURN)`);
+          console.log(`[WebRTC] Loaded ICE config: ${data.iceServers.length} servers (${turnCount} TURN, hasTurn: ${data.hasTurn})`);
           if (turnCount === 0) {
             console.warn("[WebRTC] No TURN servers in ICE config. Calls may fail behind restrictive NATs.");
-            setTurnPreCheckStatus("unreachable");
+            setTurnPreCheckStatus("no_turn_servers");
           } else {
             await runTurnPreCheck(turnServers);
           }
@@ -880,11 +880,19 @@ export function VideoCallOverlay({
         </Button>
       </div>
 
+      {turnPreCheckStatus === "no_turn_servers" && (
+        <div className="mx-4 mt-2 px-3 py-2 bg-amber-900/40 border border-amber-700/50 rounded-lg flex items-center gap-2" data-testid="banner-no-turn-servers">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          <p className="text-amber-300 text-xs">
+            No TURN relay servers are available. Calls may fail if a direct connection cannot be established. Contact your administrator to check the server configuration.
+          </p>
+        </div>
+      )}
       {turnPreCheckStatus === "unreachable" && (
         <div className="mx-4 mt-2 px-3 py-2 bg-amber-900/40 border border-amber-700/50 rounded-lg flex items-center gap-2" data-testid="banner-turn-unreachable">
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
           <p className="text-amber-300 text-xs">
-            TURN relay server is not responding. Calls may fail if a direct connection cannot be established. Contact your administrator to check the TURN server configuration.
+            TURN relay servers could not be reached. Calls may fail if a direct connection cannot be established. Your network may be blocking the connection — try switching networks or disabling any firewall/VPN.
           </p>
         </div>
       )}
