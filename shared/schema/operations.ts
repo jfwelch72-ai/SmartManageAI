@@ -2094,8 +2094,57 @@ export type InsertOvertimeRequest = z.infer<typeof insertOvertimeRequestSchema>;
 export type OvertimeRequest = typeof overtimeRequests.$inferSelect;
 export type TimeClockEvent = typeof timeClockEvents.$inferSelect;
 
-export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({ id: true, createdAt: true, updatedAt: true });
+const coerceDecimalString = z.union([z.string(), z.number()]).transform((val) => String(val));
+const coerceDecimalStringNullable = z.union([z.string(), z.number(), z.null()]).transform((val) => val === null ? null : String(val));
+
+export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  quantity: coerceDecimalString,
+  materialCost: coerceDecimalString,
+  laborHours: coerceDecimalString,
+  laborCost: coerceDecimalString,
+  equipmentHours: coerceDecimalString,
+  equipmentCost: coerceDecimalString,
+  consumablesCost: coerceDecimalString,
+  subcontractCost: coerceDecimalString,
+  overheadAllocation: coerceDecimalString,
+  profitAllocation: coerceDecimalString,
+  totalCost: coerceDecimalString,
+  computedQuantity: coerceDecimalStringNullable.optional(),
+  laborRateUsed: coerceDecimalStringNullable.optional(),
+  concreteDepthInches: coerceDecimalStringNullable.optional(),
+  dimensionWidthInches: coerceDecimalStringNullable.optional(),
+  dimensionHeightInches: coerceDecimalStringNullable.optional(),
+  concreteWasteFactor: coerceDecimalStringNullable.optional(),
+  calculatedConcreteYards: coerceDecimalStringNullable.optional(),
+  stoneDepthInches: coerceDecimalStringNullable.optional(),
+  stoneWasteFactor: coerceDecimalStringNullable.optional(),
+  calculatedStoneTons: coerceDecimalStringNullable.optional(),
+  excavationDepthInches: coerceDecimalStringNullable.optional(),
+  excavationWidthInches: coerceDecimalStringNullable.optional(),
+  excavationSwellFactor: coerceDecimalStringNullable.optional(),
+  calculatedExcavationYards: coerceDecimalStringNullable.optional(),
+  wireMeshCoverageSF: coerceDecimalStringNullable.optional(),
+  wireMeshWasteFactor: coerceDecimalStringNullable.optional(),
+  calculatedWireMeshRolls: coerceDecimalStringNullable.optional(),
+  rebarSpacingInches: coerceDecimalStringNullable.optional(),
+  rebarLengthFeet: coerceDecimalStringNullable.optional(),
+  rebarWasteFactor: coerceDecimalStringNullable.optional(),
+  calculatedRebarCount: coerceDecimalStringNullable.optional(),
+  calculatedRebarLinearFeet: coerceDecimalStringNullable.optional(),
+  dowelSpacingInches: coerceDecimalStringNullable.optional(),
+  dowelLengthInches: coerceDecimalStringNullable.optional(),
+  jointLengthFeet: coerceDecimalStringNullable.optional(),
+  calculatedDowelCount: coerceDecimalStringNullable.optional(),
+  sealerCoverageSFPerGallon: coerceDecimalStringNullable.optional(),
+  sealerWasteFactor: coerceDecimalStringNullable.optional(),
+  calculatedSealerGallons: coerceDecimalStringNullable.optional(),
+  underlaymentOverlapInches: coerceDecimalStringNullable.optional(),
+  underlaymentWasteFactor: coerceDecimalStringNullable.optional(),
+  calculatedUnderlaymentSF: coerceDecimalStringNullable.optional(),
+});
 export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
+export const updateEstimateLineItemSchema = insertEstimateLineItemSchema.partial();
+export type UpdateEstimateLineItem = z.infer<typeof updateEstimateLineItemSchema>;
 export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
 
 export const insertEstimateLineItemSubcontractorSchema = createInsertSchema(estimateLineItemSubcontractors).omit({ id: true, createdAt: true, updatedAt: true });

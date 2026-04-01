@@ -13,6 +13,7 @@ import {
   takeoffSheets,
   insertEstimateSchema,
   insertEstimateLineItemSchema,
+  updateEstimateLineItemSchema,
   organizations,
   procurementItems,
   scopeItems,
@@ -1482,57 +1483,25 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       // Normalize data to fix frontend/backend enum mismatches
       const normalizedLineItem = normalizeLineItemData(lineItem);
 
-      const decimalFields = [
-        'quantity', 'computedQuantity', 'materialCost', 'laborCost', 'laborHours',
-        'equipmentHours', 'equipmentCost', 'consumablesCost',
-        'subcontractCost', 'overheadAllocation', 'profitAllocation',
-        'laborRateUsed', 'equipmentRateUsed',
-        'concreteDepthInches', 'dimensionWidthInches', 'dimensionHeightInches',
-        'concreteWasteFactor', 'calculatedConcreteYards',
-        'stoneDepthInches', 'stoneWasteFactor', 'calculatedStoneTons',
-        'excavationDepthInches', 'excavationWidthInches', 'excavationSwellFactor', 'calculatedExcavationYards',
-        'wireMeshCoverageSF', 'wireMeshWasteFactor', 'calculatedWireMeshRolls',
-        'rebarSpacingInches', 'rebarLengthFeet', 'rebarWasteFactor', 'calculatedRebarCount', 'calculatedRebarLinearFeet',
-        'dowelSpacingInches', 'dowelLengthInches', 'jointLengthFeet', 'calculatedDowelCount',
-        'sealerCoverageSFPerGallon', 'sealerWasteFactor', 'calculatedSealerGallons',
-        'underlaymentOverlapInches', 'underlaymentWasteFactor', 'calculatedUnderlaymentSF',
-      ] as const;
-      for (const field of decimalFields) {
-        if (normalizedLineItem[field] !== undefined && normalizedLineItem[field] !== null) {
-          normalizedLineItem[field] = String(normalizedLineItem[field]);
-        }
-      }
-
-      if (DEBUG_LINE_ITEMS) {
-        const costFields = ['materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
-        const normalizedCosts: Record<string, any> = {};
-        for (const f of costFields) normalizedCosts[f] = { value: normalizedLineItem[f], type: typeof normalizedLineItem[f] };
-        console.log("[DEBUG:LineItem:POST] After normalization/coercion:", JSON.stringify(normalizedCosts));
-      }
-
       // Validate and create line item with calculated material quantities
+      // Schema handles number-to-string coercion for all decimal fields
       const parseInput: Record<string, any> = {
         ...normalizedLineItem,
         estimateId,
         source: "MANUAL",
-        totalCost: String(totalCost),
-        calculatedConcreteYards: materialResults.calculatedConcreteYards?.toString(),
-        calculatedStoneTons: materialResults.calculatedStoneTons?.toString(),
-        calculatedExcavationYards: materialResults.calculatedExcavationYards?.toString(),
-        calculatedWireMeshRolls: materialResults.calculatedWireMeshRolls?.toString(),
-        calculatedRebarCount: materialResults.calculatedRebarCount?.toString(),
-        calculatedRebarLinearFeet: materialResults.calculatedRebarLinearFeet?.toString(),
-        calculatedDowelCount: materialResults.calculatedDowelCount?.toString(),
-        calculatedSealerGallons: materialResults.calculatedSealerGallons?.toString(),
-        calculatedUnderlaymentSF: materialResults.calculatedUnderlaymentSF?.toString(),
+        totalCost: totalCost,
+        calculatedConcreteYards: materialResults.calculatedConcreteYards ?? null,
+        calculatedStoneTons: materialResults.calculatedStoneTons ?? null,
+        calculatedExcavationYards: materialResults.calculatedExcavationYards ?? null,
+        calculatedWireMeshRolls: materialResults.calculatedWireMeshRolls ?? null,
+        calculatedRebarCount: materialResults.calculatedRebarCount ?? null,
+        calculatedRebarLinearFeet: materialResults.calculatedRebarLinearFeet ?? null,
+        calculatedDowelCount: materialResults.calculatedDowelCount ?? null,
+        calculatedSealerGallons: materialResults.calculatedSealerGallons ?? null,
+        calculatedUnderlaymentSF: materialResults.calculatedUnderlaymentSF ?? null,
         materialRequirementsJson: generateMaterialRequirementsJson(materialResults),
         equipmentRequirementsJson: generateEquipmentRequirementsJson(materialResults),
       };
-      for (const field of decimalFields) {
-        if (parseInput[field] !== undefined && parseInput[field] !== null) {
-          parseInput[field] = String(parseInput[field]);
-        }
-      }
       const validatedData = insertEstimateLineItemSchema.parse(parseInput);
 
       if (DEBUG_LINE_ITEMS) {
@@ -1673,36 +1642,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       // Normalize data to fix frontend/backend enum mismatches
       const normalizedUpdates = normalizeLineItemData(updates);
 
-      const decimalFields = [
-        'quantity', 'computedQuantity', 'materialCost', 'laborCost', 'laborHours',
-        'equipmentHours', 'equipmentCost', 'consumablesCost',
-        'subcontractCost', 'overheadAllocation', 'profitAllocation',
-        'laborRateUsed', 'equipmentRateUsed',
-        'concreteDepthInches', 'dimensionWidthInches', 'dimensionHeightInches',
-        'concreteWasteFactor', 'calculatedConcreteYards',
-        'stoneDepthInches', 'stoneWasteFactor', 'calculatedStoneTons',
-        'excavationDepthInches', 'excavationWidthInches', 'excavationSwellFactor', 'calculatedExcavationYards',
-        'wireMeshCoverageSF', 'wireMeshWasteFactor', 'calculatedWireMeshRolls',
-        'rebarSpacingInches', 'rebarLengthFeet', 'rebarWasteFactor', 'calculatedRebarCount', 'calculatedRebarLinearFeet',
-        'dowelSpacingInches', 'dowelLengthInches', 'jointLengthFeet', 'calculatedDowelCount',
-        'sealerCoverageSFPerGallon', 'sealerWasteFactor', 'calculatedSealerGallons',
-        'underlaymentOverlapInches', 'underlaymentWasteFactor', 'calculatedUnderlaymentSF',
-      ] as const;
-      for (const field of decimalFields) {
-        if (normalizedUpdates[field] !== undefined && normalizedUpdates[field] !== null) {
-          normalizedUpdates[field] = String(normalizedUpdates[field]);
-        }
-      }
-
-      // Ensure decimal fields are strings in normalizedUpdates before DB update
-      const updateData: Record<string, any> = {
-        ...normalizedUpdates,
-      };
-      for (const field of decimalFields) {
-        if (updateData[field] !== undefined && updateData[field] !== null) {
-          updateData[field] = String(updateData[field]);
-        }
-      }
+      // Coerce decimal fields via schema (same coercion as POST route)
+      const updateData = updateEstimateLineItemSchema.parse(normalizedUpdates);
 
       // Update line item with recalculated total and material quantities
       let [updatedLineItem] = await db.update(estimateLineItems)
