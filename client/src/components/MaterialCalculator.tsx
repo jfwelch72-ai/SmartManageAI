@@ -602,11 +602,6 @@ export default function MaterialCalculator({
     toast({ title: "Preset loaded", description: `"${preset.name}" has been applied.` });
   };
 
-  // Auto-detect if this is a concrete item based on description
-  const isConcreteItem = useMemo(() => {
-    const concreteKeywords = ["sidewalk", "curb", "gutter", "slab", "foundation", "patio", "driveway", "flatwork", "wall", "footing", "concrete"];
-    return concreteKeywords.some(kw => description.toLowerCase().includes(kw));
-  }, [description]);
 
   // Calculate concrete yards
   const concreteYards = useMemo(() => {
@@ -748,9 +743,6 @@ export default function MaterialCalculator({
     });
   };
 
-  if (!isConcreteItem && !value.concreteDepthInches) {
-    return null;
-  }
 
   // Check if any materials are calculated
   const hasMaterials = concreteYards > 0 || stoneTons > 0 || excavationYards > 0 || 
