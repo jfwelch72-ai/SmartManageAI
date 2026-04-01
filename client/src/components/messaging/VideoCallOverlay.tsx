@@ -17,8 +17,20 @@ const FALLBACK_ICE_SERVERS: RTCConfiguration = {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
     { urls: "stun:stun4.l.google.com:19302" },
+    {
+      urls: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turns:openrelay.metered.ca:443",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
 };
+
+const ICE_RETRY_BACKOFF = [1000, 3000, 5000];
+const MAX_ICE_RETRIES = 3;
 
 interface SignalMessage {
   type: "offer" | "answer" | "ice-candidate" | "camera-state";
@@ -210,13 +222,14 @@ export function VideoCallOverlay({
           delete iceTimeoutRef.current[remoteUserId];
         }
         const retries = retryCountRef.current[remoteUserId] || 0;
-        if (retries < 1) {
+        if (retries < MAX_ICE_RETRIES) {
           retryCountRef.current[remoteUserId] = retries + 1;
-          console.log(`[WebRTC] Auto-retrying connection to ${remoteUserId} (attempt ${retries + 2})`);
+          const backoffMs = ICE_RETRY_BACKOFF[retries] || ICE_RETRY_BACKOFF[ICE_RETRY_BACKOFF.length - 1];
+          console.log(`[WebRTC] Auto-retrying connection to ${remoteUserId} (attempt ${retries + 2}/${MAX_ICE_RETRIES + 1}, backoff ${backoffMs}ms)`);
           setPeerStates(prev => ({ ...prev, [remoteUserId]: "retrying" }));
           setTimeout(() => {
             retryConnection(remoteUserId);
-          }, 1000);
+          }, backoffMs);
         } else {
           setRemoteStreams(prev => {
             const next = { ...prev };
@@ -248,7 +261,7 @@ export function VideoCallOverlay({
             pc.close();
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
           }
-        }, 20000);
+        }, 30000);
       }
     };
 
@@ -305,14 +318,17 @@ export function VideoCallOverlay({
         }
       );
 
+      const retryCount = retryCountRef.current[remoteUserId] || 0;
+      const useRelayOnly = retryCount === 1 && hasTurnServers;
+
       const retryConfig: RTCConfiguration = {
         ...currentConfig,
         iceCandidatePoolSize: 4,
         bundlePolicy: "max-bundle",
-        ...(hasTurnServers ? { iceTransportPolicy: "relay" } : {}),
+        ...(useRelayOnly ? { iceTransportPolicy: "relay" } : {}),
       };
 
-      console.log(`[WebRTC] Retrying connection to ${remoteUserId} (relay-only: ${hasTurnServers})`);
+      console.log(`[WebRTC] Retrying connection to ${remoteUserId} (attempt ${retryCount}, relay-only: ${useRelayOnly})`);
       setPeerStates(prev => ({ ...prev, [remoteUserId]: "retrying" }));
       const pc = createPeerConnection(remoteUserId, retryConfig);
       const offer = await pc.createOffer({ iceRestart: true });
@@ -642,13 +658,11 @@ export function VideoCallOverlay({
                   className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden"
                   data-testid={`video-feed-${p.userId}`}
                 >
-                  {remoteStream && !peerCameraOff && remoteStream.getVideoTracks().length > 0 ? (
-                    <RemoteVideo stream={remoteStream} participant={p} />
-                  ) : isFailed ? (
+                  {isFailed ? (
                     <div className="flex flex-col items-center gap-2 text-center px-4">
                       <WifiOff className="w-10 h-10 text-red-400" />
                       <p className="text-red-400 text-sm font-medium" data-testid="text-connection-failed">Connection failed</p>
-                      <p className="text-gray-500 text-xs">Unable to establish video connection</p>
+                      <p className="text-gray-500 text-xs">This may be due to network restrictions or firewall settings</p>
                       <Button
                         variant="secondary"
                         size="sm"
@@ -660,6 +674,8 @@ export function VideoCallOverlay({
                         Retry
                       </Button>
                     </div>
+                  ) : remoteStream && !peerCameraOff && remoteStream.getVideoTracks().length > 0 ? (
+                    <RemoteVideo stream={remoteStream} participant={p} />
                   ) : isRetrying ? (
                     <div className="flex flex-col items-center gap-2">
                       <RefreshCw className="w-10 h-10 text-amber-400 animate-spin" />

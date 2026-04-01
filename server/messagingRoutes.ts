@@ -2959,6 +2959,16 @@ const messagingSetup = (async () => {
         for (const url of turnUrls) {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
+      } else {
+        iceServers.push({
+          urls: [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turns:openrelay.metered.ca:443",
+          ],
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        });
       }
 
       res.json({ iceServers });
