@@ -1483,10 +1483,19 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const normalizedLineItem = normalizeLineItemData(lineItem);
 
       const decimalFields = [
-        'quantity', 'materialCost', 'laborCost', 'laborHours',
+        'quantity', 'computedQuantity', 'materialCost', 'laborCost', 'laborHours',
         'equipmentHours', 'equipmentCost', 'consumablesCost',
         'subcontractCost', 'overheadAllocation', 'profitAllocation',
         'laborRateUsed', 'equipmentRateUsed',
+        'concreteDepthInches', 'dimensionWidthInches', 'dimensionHeightInches',
+        'concreteWasteFactor', 'calculatedConcreteYards',
+        'stoneDepthInches', 'stoneWasteFactor', 'calculatedStoneTons',
+        'excavationDepthInches', 'excavationWidthInches', 'excavationSwellFactor', 'calculatedExcavationYards',
+        'wireMeshCoverageSF', 'wireMeshWasteFactor', 'calculatedWireMeshRolls',
+        'rebarSpacingInches', 'rebarLengthFeet', 'rebarWasteFactor', 'calculatedRebarCount', 'calculatedRebarLinearFeet',
+        'dowelSpacingInches', 'dowelLengthInches', 'jointLengthFeet', 'calculatedDowelCount',
+        'sealerCoverageSFPerGallon', 'sealerWasteFactor', 'calculatedSealerGallons',
+        'underlaymentOverlapInches', 'underlaymentWasteFactor', 'calculatedUnderlaymentSF',
       ] as const;
       for (const field of decimalFields) {
         if (normalizedLineItem[field] !== undefined && normalizedLineItem[field] !== null) {
@@ -1658,6 +1667,27 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       // Normalize data to fix frontend/backend enum mismatches
       const normalizedUpdates = normalizeLineItemData(updates);
+
+      const decimalFields = [
+        'quantity', 'computedQuantity', 'materialCost', 'laborCost', 'laborHours',
+        'equipmentHours', 'equipmentCost', 'consumablesCost',
+        'subcontractCost', 'overheadAllocation', 'profitAllocation',
+        'laborRateUsed', 'equipmentRateUsed',
+        'concreteDepthInches', 'dimensionWidthInches', 'dimensionHeightInches',
+        'concreteWasteFactor', 'calculatedConcreteYards',
+        'stoneDepthInches', 'stoneWasteFactor', 'calculatedStoneTons',
+        'excavationDepthInches', 'excavationWidthInches', 'excavationSwellFactor', 'calculatedExcavationYards',
+        'wireMeshCoverageSF', 'wireMeshWasteFactor', 'calculatedWireMeshRolls',
+        'rebarSpacingInches', 'rebarLengthFeet', 'rebarWasteFactor', 'calculatedRebarCount', 'calculatedRebarLinearFeet',
+        'dowelSpacingInches', 'dowelLengthInches', 'jointLengthFeet', 'calculatedDowelCount',
+        'sealerCoverageSFPerGallon', 'sealerWasteFactor', 'calculatedSealerGallons',
+        'underlaymentOverlapInches', 'underlaymentWasteFactor', 'calculatedUnderlaymentSF',
+      ] as const;
+      for (const field of decimalFields) {
+        if (normalizedUpdates[field] !== undefined && normalizedUpdates[field] !== null) {
+          normalizedUpdates[field] = String(normalizedUpdates[field]);
+        }
+      }
 
       // Update line item with recalculated total and material quantities
       let [updatedLineItem] = await db.update(estimateLineItems)
