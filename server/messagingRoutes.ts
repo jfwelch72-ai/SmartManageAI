@@ -2763,10 +2763,13 @@ const messagingSetup = (async () => {
 
       const orgId = await getConversationOrgId(call.conversationId);
       if (orgId) {
-        emitWebRTCSignal(orgId, targetUserId, { callId, fromUserId: userId, signal });
+        const delivered = emitWebRTCSignal(orgId, targetUserId, { callId, fromUserId: userId, signal });
+        if (!delivered) {
+          return res.json({ success: true, delivered: false, reason: "peer_unreachable" });
+        }
       }
 
-      res.json({ success: true });
+      res.json({ success: true, delivered: true });
     } catch (error) {
       logError("WebRTC signal error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });

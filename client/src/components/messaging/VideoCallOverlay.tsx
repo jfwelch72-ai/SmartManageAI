@@ -17,15 +17,6 @@ const FALLBACK_ICE_SERVERS: RTCConfiguration = {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
     { urls: "stun:stun4.l.google.com:19302" },
-    {
-      urls: [
-        "turn:openrelay.metered.ca:80",
-        "turn:openrelay.metered.ca:443",
-        "turns:openrelay.metered.ca:443",
-      ],
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
   ],
 };
 
@@ -67,7 +58,7 @@ export function VideoCallOverlay({
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
-  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying">>({});
+  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying" | "checking_slow" | "peer_unreachable">>({});
   const [iceConfig, setIceConfig] = useState<RTCConfiguration>(FALLBACK_ICE_SERVERS);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -82,6 +73,8 @@ export function VideoCallOverlay({
   const iceTimeoutRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const retryCountRef = useRef<Record<string, number>>({});
   const iceConfigRef = useRef<RTCConfiguration>(FALLBACK_ICE_SERVERS);
+  const signalHandlerRegisteredRef = useRef(false);
+  const [noTurnServers, setNoTurnServers] = useState(false);
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -142,20 +135,34 @@ export function VideoCallOverlay({
           console.log(`[WebRTC] Loaded ICE config: ${data.iceServers.length} servers (${turnCount} TURN)`);
           if (turnCount === 0) {
             console.warn("[WebRTC] No TURN servers configured. Calls may fail behind restrictive NATs. Set TURN_SERVER_URL, TURN_SERVER_USERNAME, TURN_SERVER_CREDENTIAL env vars to enable TURN relay.");
+            setNoTurnServers(true);
+          } else {
+            setNoTurnServers(false);
           }
+        } else {
+          setNoTurnServers(true);
         }
       })
       .catch(err => {
-        console.warn("[WebRTC] Failed to fetch ICE config, using fallback:", err);
+        console.warn("[WebRTC] Failed to fetch ICE config, using STUN-only fallback:", err);
+        setNoTurnServers(true);
       });
   }, []);
 
   const sendSignal = useCallback(async (targetUserId: string, signal: unknown) => {
     try {
-      await apiRequest("POST", `/api/calls/${call.id}/signal`, {
+      const res = await apiRequest("POST", `/api/calls/${call.id}/signal`, {
         targetUserId,
         signal,
       });
+      const data = await res.json();
+      if (data.delivered === false) {
+        console.warn(`[WebRTC] Signal not delivered to ${targetUserId}: ${data.reason}`);
+        const signalObj = signal as SignalMessage;
+        if (signalObj.type === "offer") {
+          setPeerStates(prev => ({ ...prev, [targetUserId]: "peer_unreachable" }));
+        }
+      }
     } catch (err) {
       console.error("Failed to send signal:", err);
     }
@@ -213,6 +220,10 @@ export function VideoCallOverlay({
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
           delete iceTimeoutRef.current[remoteUserId];
         }
+        if (iceTimeoutRef.current[`${remoteUserId}_slow`]) {
+          clearTimeout(iceTimeoutRef.current[`${remoteUserId}_slow`]);
+          delete iceTimeoutRef.current[`${remoteUserId}_slow`];
+        }
         retryCountRef.current[remoteUserId] = 0;
       }
 
@@ -255,13 +266,19 @@ export function VideoCallOverlay({
       }
 
       if (state === "checking") {
+        iceTimeoutRef.current[`${remoteUserId}_slow`] = setTimeout(() => {
+          if (pc.iceConnectionState === "checking") {
+            console.warn(`[WebRTC] ICE connection to ${remoteUserId} taking longer than expected`);
+            setPeerStates(prev => ({ ...prev, [remoteUserId]: "checking_slow" }));
+          }
+        }, 5000);
         iceTimeoutRef.current[remoteUserId] = setTimeout(() => {
           if (pc.iceConnectionState === "checking") {
             console.warn(`[WebRTC] ICE checking timeout for ${remoteUserId}`);
             pc.close();
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
           }
-        }, 30000);
+        }, 15000);
       }
     };
 
@@ -419,23 +436,14 @@ export function VideoCallOverlay({
   const handleSignalRef = useRef(handleSignal);
   useEffect(() => { handleSignalRef.current = handleSignal; }, [handleSignal]);
 
-  useEffect(() => {
-    if (!registerSignalHandler || !unregisterSignalHandler) return;
-    const handler = (fromUserId: string, signal: unknown) => {
-      handleSignalRef.current(fromUserId, signal as SignalMessage);
-    };
-    registerSignalHandler(handler);
-    return () => { unregisterSignalHandler(); };
-  }, [registerSignalHandler, unregisterSignalHandler]);
-
-  useEffect(() => {
-    if (!localStreamRef.current) return;
+  const processDeferredItems = useCallback(() => {
+    if (!localStreamRef.current || !signalHandlerRegisteredRef.current) return;
 
     const deferredOffers = { ...deferredOffersRef.current };
     deferredOffersRef.current = {};
     const deferredOfferUserIds = Object.keys(deferredOffers);
     if (deferredOfferUserIds.length > 0) {
-      console.log(`[WebRTC] Local stream ready, processing ${deferredOfferUserIds.length} deferred offer(s)`);
+      console.log(`[WebRTC] Processing ${deferredOfferUserIds.length} deferred offer(s)`);
       for (const userId of deferredOfferUserIds) {
         const sdp = deferredOffers[userId];
         const pc = createPeerConnection(userId);
@@ -451,12 +459,32 @@ export function VideoCallOverlay({
 
     const deferred = Array.from(deferredConnectionsRef.current);
     if (deferred.length > 0) {
-      console.log(`[WebRTC] Local stream ready, initiating ${deferred.length} deferred connection(s)`);
+      console.log(`[WebRTC] Processing ${deferred.length} deferred connection(s)`);
       deferredConnectionsRef.current.clear();
       for (const userId of deferred) {
         initiateConnection(userId);
       }
     }
+  }, [createPeerConnection, flushPendingCandidates, sendSignal, initiateConnection]);
+
+  useEffect(() => {
+    if (!registerSignalHandler || !unregisterSignalHandler) return;
+    const handler = (fromUserId: string, signal: unknown) => {
+      handleSignalRef.current(fromUserId, signal as SignalMessage);
+    };
+    registerSignalHandler(handler);
+    signalHandlerRegisteredRef.current = true;
+    processDeferredItems();
+    return () => {
+      unregisterSignalHandler();
+      signalHandlerRegisteredRef.current = false;
+    };
+  }, [registerSignalHandler, unregisterSignalHandler, processDeferredItems]);
+
+  useEffect(() => {
+    if (!localStreamRef.current) return;
+
+    processDeferredItems();
 
     const activeParticipants = call.participants.filter(p => !p.leftAt && p.userId !== currentUserId);
     for (const participant of activeParticipants) {
@@ -476,7 +504,7 @@ export function VideoCallOverlay({
         initiateConnection(participant.userId);
       }
     }
-  }, [call.participants, currentUserId, localStream, initiateConnection, sendSignal, createPeerConnection, flushPendingCandidates]);
+  }, [call.participants, currentUserId, localStream, initiateConnection, sendSignal, createPeerConnection, flushPendingCandidates, processDeferredItems]);
 
   useEffect(() => {
     return () => {
@@ -650,19 +678,41 @@ export function VideoCallOverlay({
               const peerCameraOff = remoteCameraOff[p.userId] ?? false;
               const iceState = peerStates[p.userId];
               const isRetrying = iceState === "retrying";
-              const isConnecting = iceState === "new" || iceState === "checking";
+              const isCheckingSlow = iceState === "checking_slow";
+              const isConnecting = iceState === "new" || iceState === "checking" || isCheckingSlow;
               const isFailed = iceState === "failed";
+              const isPeerUnreachable = iceState === "peer_unreachable";
               return (
                 <div
                   key={p.userId}
                   className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden"
                   data-testid={`video-feed-${p.userId}`}
                 >
-                  {isFailed ? (
+                  {isPeerUnreachable ? (
+                    <div className="flex flex-col items-center gap-2 text-center px-4">
+                      <WifiOff className="w-10 h-10 text-amber-400" />
+                      <p className="text-amber-400 text-sm font-medium" data-testid="text-peer-unreachable">Peer unreachable</p>
+                      <p className="text-gray-500 text-xs">The other participant may not be connected yet. Retrying automatically...</p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="mt-2 gap-1.5"
+                        onClick={() => handleRetryConnection(p.userId)}
+                        data-testid={`button-retry-unreachable-${p.userId}`}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Retry Now
+                      </Button>
+                    </div>
+                  ) : isFailed ? (
                     <div className="flex flex-col items-center gap-2 text-center px-4">
                       <WifiOff className="w-10 h-10 text-red-400" />
                       <p className="text-red-400 text-sm font-medium" data-testid="text-connection-failed">Connection failed</p>
-                      <p className="text-gray-500 text-xs">This may be due to network restrictions or firewall settings</p>
+                      <p className="text-gray-500 text-xs">
+                        {noTurnServers
+                          ? "A relay (TURN) server is needed but not configured. Direct connection could not be established."
+                          : "This may be due to network restrictions or firewall settings"}
+                      </p>
                       <Button
                         variant="secondary"
                         size="sm"
@@ -685,6 +735,9 @@ export function VideoCallOverlay({
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="w-10 h-10 text-blue-400 animate-spin" />
                       <p className="text-blue-400 text-sm" data-testid="text-connecting">Connecting...</p>
+                      {isCheckingSlow && (
+                        <p className="text-amber-400 text-xs" data-testid="text-slow-connection">Taking longer than expected...</p>
+                      )}
                     </div>
                   ) : (
                     <Avatar className="h-20 w-20">

@@ -85,18 +85,11 @@ interface CallEndedEvent {
   callId: string;
 }
 
-interface WebRTCSignalEvent {
-  callId: string;
-  fromUserId: string;
-  signal: unknown;
-}
-
 export type CallEventHandler = {
   onCallStarted?: (data: CallStartedEvent) => void;
   onCallJoined?: (data: CallJoinedEvent) => void;
   onCallLeft?: (data: CallLeftEvent) => void;
   onCallEnded?: (data: CallEndedEvent) => void;
-  onWebRTCSignal?: (data: WebRTCSignalEvent) => void;
 };
 
 export type OlderMessageUpdater = (messageId: string, updater: (m: Message) => Message) => void;
@@ -244,13 +237,6 @@ export function useMessagingEvents(
       } catch {}
     };
 
-    const handleWebRTCSignal = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as WebRTCSignalEvent;
-        callHandlerRef.current?.onWebRTCSignal?.(data);
-      } catch {}
-    };
-
     addListener("message_new", handleMessageNew);
     addListener("message_edited", handleMessageEdited);
     addListener("message_deleted", handleMessageDeleted);
@@ -260,7 +246,6 @@ export function useMessagingEvents(
     addListener("call_joined", handleCallJoined);
     addListener("call_left", handleCallLeft);
     addListener("call_ended", handleCallEnded);
-    addListener("webrtc_signal", handleWebRTCSignal);
 
     return () => {
       removeListener("message_new", handleMessageNew);
@@ -272,7 +257,6 @@ export function useMessagingEvents(
       removeListener("call_joined", handleCallJoined);
       removeListener("call_left", handleCallLeft);
       removeListener("call_ended", handleCallEnded);
-      removeListener("webrtc_signal", handleWebRTCSignal);
     };
   }, [isConnected, addListener, removeListener]);
 
