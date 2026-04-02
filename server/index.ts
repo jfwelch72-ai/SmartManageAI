@@ -16,6 +16,7 @@ import { startJobRunner } from "./jobs";
 import { backfillMissingFeatureFlags } from "./services/featureFlagService";
 import { ensureVideoCallTables } from "./utils/ensureVideoCallTables";
 import { ensureEstimateSubcontractorTables } from "./utils/ensureEstimateSubcontractorTables";
+import { ensureEquipmentColumns } from "./utils/ensureEquipmentColumns";
 
 const app = express();
 
@@ -165,6 +166,7 @@ app.use((req, res, next) => {
   // this fix was deployed.
   await ensureVideoCallTables();
   await ensureEstimateSubcontractorTables();
+  await ensureEquipmentColumns();
   await backfillMissingFeatureFlags();
 
   let portRetryCount = 0;

@@ -33,6 +33,12 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
     queryKey: ["/api/cfo/budget-alerts"],
   });
 
+  const { data: sCurveResponse } = useQuery<{ months: { month: string; planned: number; actual: number | null; forecast: number | null }[] }>({
+    queryKey: ["/api/cfo/scurve-data"],
+  });
+
+  const sCurveData = sCurveResponse?.months || [];
+
   if (isLoading) {
     return (
       <div className="space-y-4 mt-6">
@@ -46,12 +52,6 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
       </div>
     );
   }
-
-  const { data: sCurveResponse } = useQuery<{ months: { month: string; planned: number; actual: number | null; forecast: number | null }[] }>({
-    queryKey: ["/api/cfo/scurve-data"],
-  });
-
-  const sCurveData = sCurveResponse?.months || [];
 
   if (!forecasting) return null;
 

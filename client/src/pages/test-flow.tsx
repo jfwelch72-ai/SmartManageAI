@@ -761,18 +761,19 @@ const TEST_SECTIONS: TestSection[] = [
         id: "msg-create",
         title: "Create Conversation",
         steps: [
-          "Navigate to /messages",
+          "Navigate to /dashboard (messaging is a widget, /messages redirects here)",
+          "Open the messaging widget via the chat icon",
           "Click 'New Conversation' or start a new thread",
           "Select participants",
           "Name the conversation",
         ],
-        expected: "Conversation created and visible in message list",
+        expected: "Conversation created and visible in messaging widget",
       },
       {
         id: "msg-send",
         title: "Send Messages",
         steps: [
-          "Open a conversation",
+          "Open a conversation in the messaging widget",
           "Type a message and send",
           "Verify message appears in the thread",
           "Check timestamp and sender info",
@@ -806,7 +807,7 @@ const TEST_SECTIONS: TestSection[] = [
         id: "msg-archive",
         title: "Archive Conversation",
         steps: [
-          "Open a conversation",
+          "Open a conversation in the messaging widget",
           "Archive the conversation",
           "Verify it moves to archived list",
           "Unarchive and verify it returns",

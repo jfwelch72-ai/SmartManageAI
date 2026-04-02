@@ -142,7 +142,6 @@ router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res, next) 
       .sort((a, b) => a.variance - b.variance);
 
     const { budgetAlerts } = await import("@shared/schema");
-    const { eq } = await import("drizzle-orm");
     const activeAlerts = await db.select().from(budgetAlerts).where(eq(budgetAlerts.isDismissed, false)).limit(200);
 
     const projectIdMap = new Map<string, typeof profitabilityData[0]>();
@@ -213,7 +212,7 @@ router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res, next) 
     if (!orgId) return res.status(403).json({ error: "Organization required" });
 
     const { projects: projectsTable, timeEntries, receipts, subcontractorPayments, subcontractorContracts, budgetLineItems } = await import("@shared/schema");
-    const { eq, and: andOp, sql, inArray } = await import("drizzle-orm");
+    const { inArray } = await import("drizzle-orm");
 
     const orgProjects = await db.select({
       id: projectsTable.id,
@@ -221,7 +220,7 @@ router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res, next) 
       contractAmount: projectsTable.contractAmount,
       startDate: projectsTable.startDate,
       endDate: projectsTable.endDate,
-    }).from(projectsTable).where(andOp(
+    }).from(projectsTable).where(and(
       eq(projectsTable.gcOrganizationId, orgId),
       sql`${projectsTable.status} IN ('ACTIVE', 'PLANNING')`
     )).limit(100);
@@ -251,11 +250,10 @@ router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res, next) 
     const laborByMonth = await db.select({
       month: sql<string>`TO_CHAR(${timeEntries.date}, 'YYYY-MM')`.as("month"),
       total: sql<number>`COALESCE(SUM(
-        (COALESCE(${timeEntries.hoursRegular}, 0) + COALESCE(${timeEntries.hoursOvertime}, 0) * 1.5) * 
-        COALESCE(${timeEntries.payRate}, 45)
+        (COALESCE(${timeEntries.hoursRegular}, 0) + COALESCE(${timeEntries.hoursOvertime}, 0) * 1.5) * 45 /* TODO: replace hardcoded rate with org labor rate from cost_rates table */
       ), 0)`.as("total"),
     }).from(timeEntries)
-      .where(andOp(
+      .where(and(
         inArray(timeEntries.projectId, projectIds),
         eq(timeEntries.approvalStatus, "APPROVED")
       ))
@@ -338,7 +336,6 @@ router.get("/cfo/budget-alerts", requireAuth, async (req: AuthRequest, res, next
     if (!orgId) return res.status(403).json({ error: "Organization required" });
 
     const { budgetAlerts, projects: projectsTable } = await import("@shared/schema");
-    const { eq, and: andOp } = await import("drizzle-orm");
 
     const activeAlerts = await db.select({
       alert: budgetAlerts,
@@ -346,7 +343,7 @@ router.get("/cfo/budget-alerts", requireAuth, async (req: AuthRequest, res, next
       projectName: projectsTable.name,
     }).from(budgetAlerts)
       .innerJoin(projectsTable, eq(budgetAlerts.projectId, projectsTable.id))
-      .where(andOp(eq(budgetAlerts.isDismissed, false), eq(projectsTable.gcOrganizationId, orgId)))
+      .where(and(eq(budgetAlerts.isDismissed, false), eq(projectsTable.gcOrganizationId, orgId)))
       .limit(200);
 
     res.json(activeAlerts.map(r => ({
