@@ -203,6 +203,19 @@ export interface RiskStatusChangedEvent extends EventEnvelope {
   };
 }
 
+export interface TakeoffVersionSupersededEvent extends EventEnvelope {
+  type: "takeoff.version_superseded";
+  payload: {
+    oldSheetId: string;
+    newSheetId: string;
+    projectId: string;
+    organizationId: string;
+    oldSheetName: string | null;
+    newSheetName: string | null;
+    revisionLabel: string | null;
+  };
+}
+
 export type DomainEvent =
   | ProjectCreatedEvent
   | ProjectStatusChangedEvent
@@ -235,7 +248,8 @@ export type DomainEvent =
   | SubcontractorPaymentMadeEvent
   | EquipmentActualLoggedEvent
   | ReceiptCreatedEvent
-  | RiskStatusChangedEvent;
+  | RiskStatusChangedEvent
+  | TakeoffVersionSupersededEvent;
 
 export interface PoReceiptRecordedEvent extends EventEnvelope {
   type: "po.receipt_recorded";
@@ -406,4 +420,5 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "equipment.actual_logged",
   "receipt.created",
   "risk.status_changed",
+  "takeoff.version_superseded",
 ];

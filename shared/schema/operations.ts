@@ -852,6 +852,8 @@ export const changeOrders = pgTable("change_orders", {
   scopeQuantity: text("scope_quantity"),
   costCodeId: integer("cost_code_id").references(() => orgCostCodes.id, { onDelete: "set null" }),
   costBreakdownJson: text("cost_breakdown_json"),
+  source: text("source").default("MANUAL"),
+  takeoffDeltaJson: text("takeoff_delta_json"),
   overheadPercent: decimal("overhead_percent", { precision: 5, scale: 2 }).default("10"),
   profitPercent: decimal("profit_percent", { precision: 5, scale: 2 }).default("5"),
   subcontractorMarkupPercent: decimal("subcontractor_markup_percent", { precision: 5, scale: 2 }).default("5"),

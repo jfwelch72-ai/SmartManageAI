@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { type AuthRequest } from "./auth";
 import { insertNotifications } from "./services/notificationService";
 import { getOrgIdForFilter } from "./orgFilter";
+import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
   
 
 // Valid state transitions for change orders

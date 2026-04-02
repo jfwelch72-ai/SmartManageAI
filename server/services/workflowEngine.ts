@@ -5,7 +5,7 @@ import {
   type WorkflowTemplate, type WorkflowStage, type WorkflowApprovalStep,
   type WorkflowNotificationRule, type WorkflowInstance,
 } from "@shared/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, desc } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
 import { notifyUsers, getApproverUserIds } from "./approvalNotificationService";
 
@@ -30,20 +30,10 @@ export async function resolveTemplate(orgId: string, entityType: WorkflowEntityT
       eq(workflowTemplates.entityType, entityType),
       eq(workflowTemplates.status, "ACTIVE" satisfies TemplateStatus)
     ))
+    .orderBy(desc(workflowTemplates.isDefault))
     .limit(1);
 
-  if (template) return template;
-
-  const [defaultTemplate] = await db.select().from(workflowTemplates)
-    .where(and(
-      eq(workflowTemplates.organizationId, orgId),
-      eq(workflowTemplates.entityType, entityType),
-      eq(workflowTemplates.isDefault, true),
-      eq(workflowTemplates.status, "ACTIVE" satisfies TemplateStatus)
-    ))
-    .limit(1);
-
-  return defaultTemplate || null;
+  return template || null;
 }
 
 export async function getTemplateStages(templateId: string): Promise<WorkflowStage[]> {

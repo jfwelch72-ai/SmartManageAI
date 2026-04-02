@@ -496,6 +496,30 @@ router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("
       newValue: `Sheet superseded by ${newSheetId}`,
     }, req);
 
+    if (oldSheet?.projectId) {
+      try {
+        const { eventBus } = await import("./events");
+        await eventBus.emit({
+          type: "takeoff.version_superseded",
+          version: 1,
+          orgId: req.user!.organizationId || "",
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          payload: {
+            oldSheetId: sheetId,
+            newSheetId,
+            projectId: oldSheet.projectId,
+            organizationId: req.user!.organizationId || "",
+            oldSheetName: oldSheet.sheetName || null,
+            newSheetName: newSheet?.sheetName || null,
+            revisionLabel: revisionLabel || newSheet?.revisionLabel || null,
+          },
+        });
+      } catch (evtErr) {
+        logError("Failed to emit takeoff.version_superseded event", { error: String(evtErr) });
+      }
+    }
+
     res.json({ oldSheet, newSheet });
   } catch (error) {
   next(error);

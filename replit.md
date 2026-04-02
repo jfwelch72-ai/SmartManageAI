@@ -37,6 +37,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Integration Hub**: Provider-agnostic framework for centralized connection management.
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, history, and comparisons.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs.
+*   **Auto Change Orders from Takeoff Deltas**: When a takeoff sheet is superseded by a new revision, the system automatically compares old/new measurements, detects quantity/cost deltas, and creates a draft PCO change order with cost impact breakdown. Per-project settings control auto-CO generation (enabled/disabled) and a configurable cost threshold. Event-driven via `takeoff.version_superseded` domain event. UI shows a "Takeoff Delta" badge and measurement change details on auto-generated COs.
 *   **Internal Domain Event Bus**: Typed, in-process EventBus for decoupling business actions.
 *   **Notification Delivery Framework**: Multi-channel notification service (email, web push, SMS, Teams, Slack) with per-user preferences.
 *   **Background Jobs Framework**: node-cron based job runner with an outbox dispatcher.

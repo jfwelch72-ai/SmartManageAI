@@ -631,9 +631,15 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
         "REJECTED",
         rejectionReason
       );
-      if (delegation.delegated && !delegation.success) {
-        res.status(400).json({ error: delegation.error || "Workflow transition failed" });
-        return;
+      if (delegation.delegated) {
+        if (delegation.needsMoreApprovals) {
+          res.status(202).json({ message: delegation.error, needsMoreApprovals: true });
+          return;
+        }
+        if (!delegation.success) {
+          res.status(400).json({ error: delegation.error || "Workflow transition failed" });
+          return;
+        }
       }
     }
 

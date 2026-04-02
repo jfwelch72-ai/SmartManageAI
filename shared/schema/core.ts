@@ -358,6 +358,8 @@ export const projects = pgTable("projects", {
   budgetAlertThreshold: decimal("budget_alert_threshold", { precision: 5, scale: 2 }).default("80"),
   budgetCriticalThreshold: decimal("budget_critical_threshold", { precision: 5, scale: 2 }).default("95"),
   autoInvoice: boolean("auto_invoice").default(false),
+  autoChangeOrderEnabled: boolean("auto_change_order_enabled").notNull().default(true),
+  autoChangeOrderThreshold: decimal("auto_change_order_threshold", { precision: 12, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

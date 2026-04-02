@@ -67,6 +67,7 @@ import {
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -1039,6 +1040,7 @@ export default function ProjectDetailPage() {
               setActiveTab={handleSetActiveTab}
             />
             <GeofenceEnforcementCard project={project} projectCode={projectCode} />
+            <AutoChangeOrderSettingsCard project={project} projectCode={projectCode} />
             {hasManagementAccess(user?.role) && (
               <GeofenceComplianceSection projectId={project.id as string} />
             )}
@@ -1509,6 +1511,100 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
             <div className="text-xs text-muted-foreground mt-2" data-testid="text-geofence-site-coords">
               Site: {(project.siteLatitude as number).toFixed(6)}, {(project.siteLongitude as number).toFixed(6)}
               {project.geofenceRadius && ` · Radius: ${project.geofenceRadius}m`}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AutoChangeOrderSettingsCard({ project, projectCode }: { project: Record<string, unknown>; projectCode: string }) {
+  const canManage = hasManagementAccess(useAuth().user?.role);
+  const { toast } = useToast();
+  const [thresholdInput, setThresholdInput] = useState(String(project.autoChangeOrderThreshold || "0"));
+
+  const toggleMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      await apiRequest("PATCH", `/api/projects/${projectCode}`, { autoChangeOrderEnabled: enabled });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
+      toast({ title: "Auto change order setting updated" });
+    },
+    onError: () => { toast({ title: "Failed to update setting", variant: "destructive" }); },
+  });
+
+  const thresholdMutation = useMutation({
+    mutationFn: async (threshold: string) => {
+      await apiRequest("PATCH", `/api/projects/${projectCode}`, { autoChangeOrderThreshold: threshold });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
+      toast({ title: "Cost threshold updated" });
+    },
+    onError: () => { toast({ title: "Failed to update threshold", variant: "destructive" }); },
+  });
+
+  const isEnabled = project.autoChangeOrderEnabled !== false;
+
+  return (
+    <Card data-testid="card-auto-co-settings">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <FileCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <CardTitle className="text-base">Auto Change Orders from Plan Revisions</CardTitle>
+        </div>
+        <CardDescription>Automatically generate draft change orders when takeoff sheets are superseded with quantity/cost changes.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="auto-co-toggle" className="text-sm font-medium">Enable Auto-Generation</Label>
+            {canManage ? (
+              <Switch
+                id="auto-co-toggle"
+                checked={isEnabled}
+                onCheckedChange={(checked) => toggleMutation.mutate(checked)}
+                disabled={toggleMutation.isPending}
+                data-testid="switch-auto-co-enabled"
+              />
+            ) : (
+              <Badge variant={isEnabled ? "default" : "secondary"} data-testid="badge-auto-co-status">
+                {isEnabled ? "Enabled" : "Disabled"}
+              </Badge>
+            )}
+          </div>
+          {isEnabled && canManage && (
+            <div className="space-y-2">
+              <Label htmlFor="co-threshold" className="text-sm">Cost Threshold ($)</Label>
+              <p className="text-xs text-muted-foreground">Minimum absolute cost delta to trigger a change order. Set to 0 to always create.</p>
+              <div className="flex gap-2">
+                <Input
+                  id="co-threshold"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={thresholdInput}
+                  onChange={(e) => setThresholdInput(e.target.value)}
+                  className="w-40"
+                  data-testid="input-co-threshold"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => thresholdMutation.mutate(thresholdInput)}
+                  disabled={thresholdMutation.isPending}
+                  data-testid="button-save-co-threshold"
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+          )}
+          {isEnabled && !canManage && (
+            <div className="text-sm text-muted-foreground" data-testid="text-co-threshold-value">
+              Cost threshold: ${Number(project.autoChangeOrderThreshold || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           )}
         </div>

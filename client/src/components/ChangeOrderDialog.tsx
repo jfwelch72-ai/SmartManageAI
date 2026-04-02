@@ -20,6 +20,56 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { WorkflowTracker } from "@/components/workflow-tracker";
 import { hasManagementAccess } from "@/lib/rbac";
+import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
+
+interface ComparisonSheetInfo {
+  id: string;
+  sheetName: string;
+  revisionLabel?: string | null;
+  imageUrl?: string | null;
+}
+
+function TakeoffComparisonLink({ projectCode, oldSheetId, newSheetId }: { projectCode: string; oldSheetId: string; newSheetId: string }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { data: sheetsData } = useQuery<{ oldSheet: ComparisonSheetInfo | null; newSheet: ComparisonSheetInfo | null }>({
+    queryKey: ["/api/takeoff/sheets/info", oldSheetId, newSheetId],
+    queryFn: async () => {
+      const [oldRes, newRes] = await Promise.all([
+        fetch(`/api/takeoff/sheets/${oldSheetId}`, { credentials: "include" }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`/api/takeoff/sheets/${newSheetId}`, { credentials: "include" }).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+      return { oldSheet: oldRes, newSheet: newRes };
+    },
+    enabled: dialogOpen,
+  });
+
+  const oldSheet: ComparisonSheetInfo = sheetsData?.oldSheet || { id: oldSheetId, sheetName: "Previous Revision" };
+  const newSheet: ComparisonSheetInfo = sheetsData?.newSheet || { id: newSheetId, sheetName: "New Revision" };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="text-xs"
+        onClick={() => setDialogOpen(true)}
+        data-testid="button-view-takeoff-comparison"
+      >
+        <Ruler className="w-3 h-3 mr-1" />
+        View Takeoff Comparison
+      </Button>
+      {dialogOpen && (
+        <TakeoffSheetCompareDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          oldSheet={oldSheet}
+          newSheet={newSheet}
+          allSheets={[oldSheet, newSheet]}
+        />
+      )}
+    </>
+  );
+}
 
 interface ChangeOrder {
   id: string;
@@ -50,6 +100,8 @@ interface ChangeOrder {
   linkedRfiId?: string | null;
   contractId?: string | null;
   projectId?: string;
+  source?: string | null;
+  takeoffDeltaJson?: string | null;
 }
 
 interface ChangeOrderDialogProps {
@@ -420,7 +472,7 @@ export function ChangeOrderDialog({
     mutationFn: async () => {
       const reason = prompt("Please provide a reason for rejection:");
       if (!reason) throw new Error("Rejection reason required");
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/reject`, { reason });
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/reject`, { rejectionReason: reason });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
@@ -1063,6 +1115,91 @@ export function ChangeOrderDialog({
               </p>
             </div>
           )}
+
+          {changeOrder.source === "TAKEOFF_DELTA" && (() => {
+            interface TakeoffDeltaData {
+              oldSheetId: string;
+              newSheetId: string;
+              addedCount: number;
+              removedCount: number;
+              changedCount: number;
+              totalCostDelta: number;
+              items: Array<{
+                label: string;
+                type: string;
+                costDelta: number;
+                oldQuantity?: number;
+                newQuantity?: number;
+              }>;
+            }
+            let deltaData: TakeoffDeltaData | null = null;
+            try { deltaData = changeOrder.takeoffDeltaJson ? JSON.parse(changeOrder.takeoffDeltaJson) as TakeoffDeltaData : null; } catch { /* invalid json */ }
+            return (
+              <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md space-y-3" data-testid="panel-takeoff-delta">
+                <div className="flex items-center gap-2">
+                  <Ruler className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Auto-Generated from Takeoff Delta</span>
+                  <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900 dark:text-blue-300 text-xs ml-auto" data-testid="badge-takeoff-delta">
+                    Takeoff Delta
+                  </Badge>
+                </div>
+                {deltaData && (
+                  <div className="grid grid-cols-3 gap-3 text-sm" data-testid="panel-delta-summary">
+                    <div className="flex flex-col items-center p-2 rounded bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
+                      <span className="text-xs text-muted-foreground">Added</span>
+                      <span className="text-lg font-semibold text-green-600 dark:text-green-400" data-testid="text-delta-added">{deltaData.addedCount || 0}</span>
+                    </div>
+                    <div className="flex flex-col items-center p-2 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                      <span className="text-xs text-muted-foreground">Removed</span>
+                      <span className="text-lg font-semibold text-red-600 dark:text-red-400" data-testid="text-delta-removed">{deltaData.removedCount || 0}</span>
+                    </div>
+                    <div className="flex flex-col items-center p-2 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                      <span className="text-xs text-muted-foreground">Changed</span>
+                      <span className="text-lg font-semibold text-amber-600 dark:text-amber-400" data-testid="text-delta-changed">{deltaData.changedCount || 0}</span>
+                    </div>
+                  </div>
+                )}
+                {deltaData?.totalCostDelta !== undefined && (
+                  <div className="flex items-center justify-between text-sm" data-testid="text-delta-cost-impact">
+                    <span className="text-muted-foreground">Total Cost Impact</span>
+                    <span className={`font-semibold ${deltaData.totalCostDelta >= 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                      {deltaData.totalCostDelta >= 0 ? "+" : ""}${Number(deltaData.totalCostDelta).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                {deltaData?.oldSheetId && deltaData?.newSheetId && (
+                  <TakeoffComparisonLink
+                    projectCode={projectCode}
+                    oldSheetId={deltaData.oldSheetId}
+                    newSheetId={deltaData.newSheetId}
+                  />
+                )}
+                {deltaData?.items && deltaData.items.length > 0 && (
+                  <Collapsible>
+                    <CollapsibleTrigger className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline" data-testid="button-toggle-delta-details">
+                      <ChevronRight className="w-3 h-3" />
+                      View measurement changes ({deltaData.items.length})
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-2 space-y-1">
+                      {deltaData.items.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-muted/50" data-testid={`row-delta-item-${idx}`}>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={`text-[10px] px-1 ${item.type === "added" ? "text-green-600 border-green-300" : item.type === "removed" ? "text-red-600 border-red-300" : "text-amber-600 border-amber-300"}`}>
+                              {item.type}
+                            </Badge>
+                            <span>{item.label}</span>
+                          </div>
+                          <span className={`font-mono ${item.costDelta >= 0 ? "text-red-600" : "text-green-600"}`}>
+                            {item.costDelta >= 0 ? "+" : ""}${Number(item.costDelta).toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+              </div>
+            );
+          })()}
 
           {revisions && revisions.length > 0 && (
             <div className="p-3 bg-muted/20 rounded-md border" data-testid="panel-status-timeline">
