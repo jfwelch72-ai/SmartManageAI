@@ -444,7 +444,11 @@ export default function BidScopeStep({
                   <span className="text-lg font-bold font-mono" data-testid="text-estimate-total">
                     ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className="text-xs text-muted-foreground ml-2">({estimate.lineItems.length} items)</span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ({estimate.lineItems.length} items
+                    {estimate.lineItems.filter(i => i.source === "TAKEOFF").length > 0 && ` · ${estimate.lineItems.filter(i => i.source === "TAKEOFF").length} takeoff`}
+                    {estimate.lineItems.filter(i => i.source === "ASSEMBLY").length > 0 && ` · ${estimate.lineItems.filter(i => i.source === "ASSEMBLY").length} assembly`})
+                  </span>
                 </div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">

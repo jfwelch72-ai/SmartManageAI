@@ -11,6 +11,9 @@ import {
   quantityCategories,
   takeoffMeasurements,
   takeoffSheets,
+  takeoffAssemblies,
+  takeoffAssemblyItems,
+  takeoffMeasurementAssemblies,
   insertEstimateSchema,
   insertEstimateLineItemSchema,
   updateEstimateLineItemSchema,
@@ -23,6 +26,8 @@ import {
   type EstimateLineItem,
   type EstimateLineItemSubcontractor,
 } from "@shared/schema";
+import { computeAssemblyQuantity, type FormulaContext } from "@shared/utils/assemblyFormula";
+import { computeNetAreaInFt2 } from "@shared/utils/geometry";
 import { eq, and, desc, sql, or, isNull, inArray } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
@@ -593,7 +598,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         .from(estimateLineItems)
         .where(and(
           eq(estimateLineItems.estimateId, estimateId),
-          eq(estimateLineItems.source, "TAKEOFF"),
+          or(eq(estimateLineItems.source, "TAKEOFF"), eq(estimateLineItems.source, "ASSEMBLY")),
         ));
 
       const alreadyImportedMeasurementIds = new Set<string>();
@@ -665,8 +670,37 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
+            let deductionPolygons: Array<{x: number; y: number}[]> = [];
+            let rectDeductionSf = 0;
+            try {
+              if (measurement.deductions) {
+                const parsed = JSON.parse(measurement.deductions);
+                if (Array.isArray(parsed)) {
+                  for (const d of parsed) {
+                    if (d && typeof d.width === "number" && typeof d.height === "number") {
+                      rectDeductionSf += d.width * d.height;
+                    } else if (Array.isArray(d)) {
+                      deductionPolygons.push(d);
+                    }
+                  }
+                }
+              }
+            } catch {}
+
             if (measurement.computedAreaFt2) {
-              areaTotal += Number(measurement.computedAreaFt2);
+              let area = Number(measurement.computedAreaFt2);
+              if (deductionPolygons.length > 0 && measurement.points) {
+                try {
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                  if (sheet?.scalePxPerFoot) {
+                    const { netArea } = computeNetAreaInFt2(points, deductionPolygons, sheet.scalePxPerFoot);
+                    area = netArea;
+                  }
+                } catch {}
+              }
+              area = Math.max(0, area - rectDeductionSf);
+              areaTotal += area;
               areaMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
@@ -674,7 +708,14 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
                 const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
                 if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
-                  const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  let area: number;
+                  if (deductionPolygons.length > 0) {
+                    const result = computeNetAreaInFt2(points, deductionPolygons, sheet.scalePxPerFoot);
+                    area = result.netArea;
+                  } else {
+                    area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  }
+                  area = Math.max(0, area - rectDeductionSf);
                   areaTotal += area;
                   areaMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
@@ -721,31 +762,103 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           }
         }
 
-        const buildCatLineItem = (description: string, qty: number, unit: string, measurementIds: string[]) => ({
-          estimateId,
-          category: "GENERAL" as const,
-          description,
-          quantity: qty.toString(),
-          unit,
-          source: "TAKEOFF" as const,
-          sourceTakeoffCategoryId: category.id,
-          computedQuantity: qty.toString(),
-          materialCost: "0",
-          laborHours: "0",
-          laborCost: "0",
-          equipmentCost: "0",
-          consumablesCost: "0",
-          subcontractCost: "0",
-          overheadAllocation: "0",
-          profitAllocation: "0",
-          totalCost: "0",
-          metadata: JSON.stringify({ sourceMeasurementIds: measurementIds }),
-        });
+        const wasteMult = 1 + ((category.wasteFactor ?? 0) / 100);
+        const catUnitCost = category.unitCost ?? 0;
 
-        if (linearTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Linear`, linearTotal, "LF", linearMeasurementIds));
-        if (areaTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Area`, areaTotal, "SF", areaMeasurementIds));
-        if (volumeTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Volume`, volumeTotal, "CY", volumeMeasurementIds));
-        if (countTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Count`, countTotal, "EA", countMeasurementIds));
+        const allNewMeasurementIds = [...linearMeasurementIds, ...areaMeasurementIds, ...volumeMeasurementIds, ...countMeasurementIds];
+
+        const linkedAssemblies = allNewMeasurementIds.length > 0
+          ? await db.select({
+              measurementId: takeoffMeasurementAssemblies.measurementId,
+              assemblyId: takeoffMeasurementAssemblies.assemblyId,
+            }).from(takeoffMeasurementAssemblies)
+              .where(inArray(takeoffMeasurementAssemblies.measurementId, allNewMeasurementIds))
+          : [];
+
+        const assemblyIds = [...new Set(linkedAssemblies.map(la => la.assemblyId))];
+        let assembliesWithItems: Array<{ assembly: any; items: any[] }> = [];
+        if (assemblyIds.length > 0) {
+          const assemblies = await db.select().from(takeoffAssemblies).where(inArray(takeoffAssemblies.id, assemblyIds));
+          for (const assembly of assemblies) {
+            const items = await db.select().from(takeoffAssemblyItems)
+              .where(eq(takeoffAssemblyItems.assemblyId, assembly.id));
+            assembliesWithItems.push({ assembly, items });
+          }
+        }
+
+        const formulaCtx: FormulaContext = {
+          length: linearTotal,
+          area: areaTotal,
+          volume: volumeTotal,
+          count: countTotal,
+        };
+
+        if (assembliesWithItems.length > 0) {
+          for (const { assembly, items } of assembliesWithItems) {
+            for (const item of items) {
+              const computedQty = computeAssemblyQuantity(item.formula, formulaCtx, item.wasteFactor ?? 0);
+              if (computedQty <= 0) continue;
+              const itemUnitCost = Number(item.unitCost ?? 0);
+              const materialCost = computedQty * itemUnitCost;
+              lineItemsToCreate.push({
+                estimateId,
+                category: "GENERAL" as const,
+                description: `${category.name} — ${item.name}`,
+                quantity: computedQty.toFixed(2),
+                unit: item.unit,
+                source: "ASSEMBLY" as const,
+                sourceTakeoffCategoryId: category.id,
+                computedQuantity: computedQty.toFixed(2),
+                materialCost: materialCost.toFixed(2),
+                laborHours: "0", laborCost: "0",
+                equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
+                overheadAllocation: "0", profitAllocation: "0",
+                totalCost: materialCost.toFixed(2),
+                metadata: JSON.stringify({
+                  sourceMeasurementIds: allNewMeasurementIds,
+                  assemblyId: assembly.id,
+                  assemblyName: assembly.name,
+                  assemblyItemId: item.id,
+                  wasteFactor: item.wasteFactor,
+                }),
+              });
+            }
+          }
+        } else {
+          const buildCatLineItem = (description: string, rawQty: number, unit: string, measurementIds: string[]) => {
+            const qty = rawQty * wasteMult;
+            const perUnitCost = catUnitCost;
+            const avgMeasurementCost = measurements.reduce((sum, m) => sum + (m.unitCost ?? 0), 0) / (measurements.length || 1);
+            const effectiveUnitCost = avgMeasurementCost > 0 ? avgMeasurementCost : perUnitCost;
+            const materialCost = qty * effectiveUnitCost;
+            return {
+              estimateId,
+              category: "GENERAL" as const,
+              description,
+              quantity: qty.toFixed(2),
+              unit,
+              source: "TAKEOFF" as const,
+              sourceTakeoffCategoryId: category.id,
+              computedQuantity: rawQty.toFixed(2),
+              materialCost: materialCost.toFixed(2),
+              laborHours: "0", laborCost: "0",
+              equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
+              overheadAllocation: "0", profitAllocation: "0",
+              totalCost: materialCost.toFixed(2),
+              metadata: JSON.stringify({
+                sourceMeasurementIds: measurementIds,
+                wasteFactor: category.wasteFactor ?? 0,
+                wasteMultiplier: wasteMult,
+                rawQuantity: rawQty,
+              }),
+            };
+          };
+
+          if (linearTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Linear`, linearTotal, "LF", linearMeasurementIds));
+          if (areaTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Area`, areaTotal, "SF", areaMeasurementIds));
+          if (volumeTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Volume`, volumeTotal, "CY", volumeMeasurementIds));
+          if (countTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Count`, countTotal, "EA", countMeasurementIds));
+        }
       }
 
       const projectSheets = await db.query.takeoffSheets.findMany({
@@ -789,8 +902,21 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
+              let rectDeductionSf = 0;
+              try {
+                if (measurement.deductions) {
+                  const parsed = JSON.parse(measurement.deductions);
+                  if (Array.isArray(parsed)) {
+                    for (const d of parsed) {
+                      if (d && typeof d.width === "number" && typeof d.height === "number") {
+                        rectDeductionSf += d.width * d.height;
+                      }
+                    }
+                  }
+                }
+              } catch {}
               if (measurement.computedAreaFt2) {
-                uncatArea += Number(measurement.computedAreaFt2);
+                uncatArea += Math.max(0, Number(measurement.computedAreaFt2) - rectDeductionSf);
                 uncatAreaIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
@@ -798,7 +924,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
                   const sheet = projectSheets.find(s => s.id === measurement.sheetId);
                   if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
-                    const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                    const area = Math.max(0, computePolygonAreaInFt2(points, sheet.scalePxPerFoot) - rectDeductionSf);
                     uncatArea += area;
                     uncatAreaIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
@@ -931,7 +1057,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         .from(estimateLineItems)
         .where(and(
           eq(estimateLineItems.estimateId, estimateId),
-          eq(estimateLineItems.source, "TAKEOFF"),
+          or(eq(estimateLineItems.source, "TAKEOFF"), eq(estimateLineItems.source, "ASSEMBLY")),
         ));
 
       const alreadyImportedMeasurementIds = new Set<string>();
@@ -1103,8 +1229,37 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               } catch { logWarn("Non-critical operation failed"); }
             }
           } else if ((measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA")) {
+            let deductionPolygons: Array<{x: number; y: number}[]> = [];
+            let rectDeductionSf = 0;
+            try {
+              if (measurement.deductions) {
+                const parsed = JSON.parse(measurement.deductions);
+                if (Array.isArray(parsed)) {
+                  for (const d of parsed) {
+                    if (d && typeof d.width === "number" && typeof d.height === "number") {
+                      rectDeductionSf += d.width * d.height;
+                    } else if (Array.isArray(d)) {
+                      deductionPolygons.push(d);
+                    }
+                  }
+                }
+              }
+            } catch {}
+
             if (measurement.computedAreaFt2) {
-              areaTotal += Number(measurement.computedAreaFt2);
+              let area = Number(measurement.computedAreaFt2);
+              if (deductionPolygons.length > 0 && measurement.points) {
+                try {
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                  if (sheet?.scalePxPerFoot) {
+                    const { netArea } = computeNetAreaInFt2(points, deductionPolygons, sheet.scalePxPerFoot);
+                    area = netArea;
+                  }
+                } catch {}
+              }
+              area = Math.max(0, area - rectDeductionSf);
+              areaTotal += area;
               areaMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
@@ -1112,7 +1267,14 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
                 const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
                 if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
-                  const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  let area: number;
+                  if (deductionPolygons.length > 0) {
+                    const result = computeNetAreaInFt2(points, deductionPolygons, sheet.scalePxPerFoot);
+                    area = result.netArea;
+                  } else {
+                    area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  }
+                  area = Math.max(0, area - rectDeductionSf);
                   areaTotal += area;
                   areaMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
@@ -1159,57 +1321,134 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           }
         }
 
-        const buildLineItem = async (description: string, qty: number, unit: string, measurementIds: string[]) => {
-          const base = {
-            estimateId, category: "GENERAL" as const, description,
-            quantity: qty.toString(), unit, source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id, computedQuantity: qty.toString(),
-            materialCost: "0", equipmentCost: "0", consumablesCost: "0",
-            subcontractCost: "0", overheadAllocation: "0", profitAllocation: "0",
-            metadata: JSON.stringify({ sourceMeasurementIds: measurementIds }),
-          };
+        const wasteMult = 1 + ((category.wasteFactor ?? 0) / 100);
+        const catUnitCost = category.unitCost ?? 0;
+        const allNewMeasurementIds = [...linearMeasurementIds, ...areaMeasurementIds, ...volumeMeasurementIds, ...countMeasurementIds];
 
-          if (classificationRate !== null && classificationRate > 0 && orgId) {
-            let laborHours = 0;
-            try {
-              const laborEstimate = await estimateLaborHoursFromProductionRate(description, unit, qty, orgId);
-              if (laborEstimate.confidence !== "NONE") {
-                laborHours = laborEstimate.suggestedLaborHours;
-              }
-            } catch {
-              logWarn("Non-critical operation failed");
-            }
-            const laborCost = parseFloat((laborHours * classificationRate).toFixed(2));
-            const totalCost = laborCost;
-            return {
-              ...base,
-              laborHours: laborHours.toFixed(2),
-              laborCost: laborCost.toFixed(2),
-              totalCost: totalCost.toFixed(2),
-              jobClassificationId,
-              laborRateUsed: classificationRate.toFixed(2),
-            };
+        const linkedAssemblies = allNewMeasurementIds.length > 0
+          ? await db.select({
+              measurementId: takeoffMeasurementAssemblies.measurementId,
+              assemblyId: takeoffMeasurementAssemblies.assemblyId,
+            }).from(takeoffMeasurementAssemblies)
+              .where(inArray(takeoffMeasurementAssemblies.measurementId, allNewMeasurementIds))
+          : [];
+
+        const assemblyIds = [...new Set(linkedAssemblies.map(la => la.assemblyId))];
+        let assembliesWithItems: Array<{ assembly: any; items: any[] }> = [];
+        if (assemblyIds.length > 0) {
+          const assemblies = await db.select().from(takeoffAssemblies).where(inArray(takeoffAssemblies.id, assemblyIds));
+          for (const assembly of assemblies) {
+            const items = await db.select().from(takeoffAssemblyItems)
+              .where(eq(takeoffAssemblyItems.assemblyId, assembly.id));
+            assembliesWithItems.push({ assembly, items });
           }
+        }
 
-          return {
-            ...base,
-            laborHours: "0",
-            laborCost: "0",
-            totalCost: "0",
-          };
+        const formulaCtx: FormulaContext = {
+          length: linearTotal,
+          area: areaTotal,
+          volume: volumeTotal,
+          count: countTotal,
         };
 
-        if (linearTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Linear`, linearTotal, "LF", linearMeasurementIds));
-        }
-        if (areaTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Area`, areaTotal, "SF", areaMeasurementIds));
-        }
-        if (volumeTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Volume`, volumeTotal, "CY", volumeMeasurementIds));
-        }
-        if (countTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Count`, countTotal, "EA", countMeasurementIds));
+        if (assembliesWithItems.length > 0) {
+          for (const { assembly, items } of assembliesWithItems) {
+            for (const item of items) {
+              const computedQty = computeAssemblyQuantity(item.formula, formulaCtx, item.wasteFactor ?? 0);
+              if (computedQty <= 0) continue;
+              const itemUnitCost = Number(item.unitCost ?? 0);
+              const materialCost = computedQty * itemUnitCost;
+              let laborHours = 0;
+              let laborCost = 0;
+              if (classificationRate !== null && classificationRate > 0 && orgId) {
+                try {
+                  const laborEstimate = await estimateLaborHoursFromProductionRate(item.name, item.unit, computedQty, orgId);
+                  if (laborEstimate.confidence !== "NONE") {
+                    laborHours = laborEstimate.suggestedLaborHours;
+                  }
+                } catch { logWarn("Non-critical operation failed"); }
+                laborCost = parseFloat((laborHours * classificationRate).toFixed(2));
+              }
+              const totalCost = materialCost + laborCost;
+              lineItemsToCreate.push({
+                estimateId,
+                category: "GENERAL" as const,
+                description: `${category.name} — ${item.name}`,
+                quantity: computedQty.toFixed(2),
+                unit: item.unit,
+                source: "ASSEMBLY" as const,
+                sourceTakeoffCategoryId: category.id,
+                computedQuantity: computedQty.toFixed(2),
+                materialCost: materialCost.toFixed(2),
+                laborHours: laborHours.toFixed(2),
+                laborCost: laborCost.toFixed(2),
+                equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
+                overheadAllocation: "0", profitAllocation: "0",
+                totalCost: totalCost.toFixed(2),
+                ...(jobClassificationId ? { jobClassificationId, laborRateUsed: classificationRate?.toFixed(2) } : {}),
+                metadata: JSON.stringify({
+                  sourceMeasurementIds: allNewMeasurementIds,
+                  assemblyId: assembly.id,
+                  assemblyName: assembly.name,
+                  assemblyItemId: item.id,
+                  wasteFactor: item.wasteFactor,
+                }),
+              });
+            }
+          }
+        } else {
+          const buildLineItem = async (description: string, rawQty: number, unit: string, measurementIds: string[]) => {
+            const qty = rawQty * wasteMult;
+            const avgMeasurementCost = measurements.reduce((sum, m) => sum + (m.unitCost ?? 0), 0) / (measurements.length || 1);
+            const effectiveUnitCost = avgMeasurementCost > 0 ? avgMeasurementCost : catUnitCost;
+            const materialCost = qty * effectiveUnitCost;
+
+            const base = {
+              estimateId, category: "GENERAL" as const, description,
+              quantity: qty.toFixed(2), unit, source: "TAKEOFF" as const,
+              sourceTakeoffCategoryId: category.id, computedQuantity: rawQty.toFixed(2),
+              materialCost: materialCost.toFixed(2), equipmentCost: "0", consumablesCost: "0",
+              subcontractCost: "0", overheadAllocation: "0", profitAllocation: "0",
+              metadata: JSON.stringify({
+                sourceMeasurementIds: measurementIds,
+                wasteFactor: category.wasteFactor ?? 0,
+                wasteMultiplier: wasteMult,
+                rawQuantity: rawQty,
+              }),
+            };
+
+            if (classificationRate !== null && classificationRate > 0 && orgId) {
+              let laborHours = 0;
+              try {
+                const laborEstimate = await estimateLaborHoursFromProductionRate(description, unit, qty, orgId);
+                if (laborEstimate.confidence !== "NONE") {
+                  laborHours = laborEstimate.suggestedLaborHours;
+                }
+              } catch { logWarn("Non-critical operation failed"); }
+              const laborCost = parseFloat((laborHours * classificationRate).toFixed(2));
+              const totalCost = materialCost + laborCost;
+              return {
+                ...base,
+                laborHours: laborHours.toFixed(2),
+                laborCost: laborCost.toFixed(2),
+                totalCost: totalCost.toFixed(2),
+                jobClassificationId,
+                laborRateUsed: classificationRate.toFixed(2),
+              };
+            }
+
+            return {
+              ...base,
+              laborHours: "0",
+              laborCost: "0",
+              totalCost: materialCost.toFixed(2),
+            };
+          };
+
+          if (linearTotal > 0) lineItemsToCreate.push(await buildLineItem(`${category.name} - Linear`, linearTotal, "LF", linearMeasurementIds));
+          if (areaTotal > 0) lineItemsToCreate.push(await buildLineItem(`${category.name} - Area`, areaTotal, "SF", areaMeasurementIds));
+          if (volumeTotal > 0) lineItemsToCreate.push(await buildLineItem(`${category.name} - Volume`, volumeTotal, "CY", volumeMeasurementIds));
+          if (countTotal > 0) lineItemsToCreate.push(await buildLineItem(`${category.name} - Count`, countTotal, "EA", countMeasurementIds));
         }
       }
 
@@ -1254,8 +1493,21 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
+              let rectDeductionSf = 0;
+              try {
+                if (measurement.deductions) {
+                  const parsed = JSON.parse(measurement.deductions);
+                  if (Array.isArray(parsed)) {
+                    for (const d of parsed) {
+                      if (d && typeof d.width === "number" && typeof d.height === "number") {
+                        rectDeductionSf += d.width * d.height;
+                      }
+                    }
+                  }
+                }
+              } catch {}
               if (measurement.computedAreaFt2) {
-                uncatArea += Number(measurement.computedAreaFt2);
+                uncatArea += Math.max(0, Number(measurement.computedAreaFt2) - rectDeductionSf);
                 uncatAreaIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
@@ -1263,7 +1515,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
                   const sheet = bidSheets.find(s => s.id === measurement.sheetId);
                   if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
-                    const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                    const area = Math.max(0, computePolygonAreaInFt2(points, sheet.scalePxPerFoot) - rectDeductionSf);
                     uncatArea += area;
                     uncatAreaIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));

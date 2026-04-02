@@ -91,18 +91,17 @@ export default function ProjectEstimate() {
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
     estimate: Estimate & { lineItems: EstimateLineItem[], totals: any } | null
   }>({
-    queryKey: ["/api/projects", projectId, "/estimate"],
+    queryKey: ["/api/projects", projectId, "estimate"],
     enabled: !!projectId,
   });
 
-  // Fetch takeoff categories for import
-  const { data: categoriesData } = useQuery<{ categories: QuantityCategory[] }>({
-    queryKey: ["/api/projects", projectId, "/takeoff-categories"],
+  const { data: categoriesRaw } = useQuery<QuantityCategory[]>({
+    queryKey: ["/api/projects", projectId, "takeoff", "categories"],
     enabled: !!projectId,
   });
 
   const estimate = estimateData?.estimate || null;
-  const categories = categoriesData?.categories || [];
+  const categories = categoriesRaw || [];
   
   const totals = estimate?.totals || {
     materialCost: 0,
@@ -148,8 +147,8 @@ export default function ProjectEstimate() {
       return apiRequest("POST", `/api/projects/${projectId}/estimate`, {});
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
-      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "estimate"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "estimate"] });
       toast({ title: "Estimate created successfully" });
     },
     onError: (error) => {
@@ -165,7 +164,7 @@ export default function ProjectEstimate() {
       return res.json() as Promise<{ count: number; message?: string }>;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "estimate"] });
       setImportTakeoffOpen(false);
       setSelectedCategories([]);
       if (data.count > 0) {
@@ -186,7 +185,7 @@ export default function ProjectEstimate() {
     mutationFn: (data: LineItemFormValues & { estimateId: string }) => 
       apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "estimate"] });
       setAddLineItemOpen(false);
       form.reset();
       setMaterialCalcData(getDefaultMaterialCalculatorData());
@@ -202,8 +201,8 @@ export default function ProjectEstimate() {
     mutationFn: (estimateId: string) => 
       apiRequest("POST", `/api/estimates/${estimateId}/approve`, {}),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
-      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "estimate"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "estimate"] });
       toast({ title: "Estimate approved and synced to project budget" });
     },
     onError: () => {
@@ -216,7 +215,7 @@ export default function ProjectEstimate() {
     mutationFn: ({ estimateId, lineItemId }: { estimateId: string, lineItemId: string }) => 
       apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${lineItemId}`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "estimate"] });
       toast({ title: "Line item deleted successfully" });
     },
     onError: () => {
@@ -1141,6 +1140,7 @@ export default function ProjectEstimate() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Description</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Unit</TableHead>
@@ -1179,6 +1179,17 @@ export default function ProjectEstimate() {
                             </Badge>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {item.source === "ASSEMBLY" && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" data-testid="badge-source-assembly">Assembly</Badge>
+                        )}
+                        {item.source === "TAKEOFF" && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" data-testid="badge-source-takeoff">Takeoff</Badge>
+                        )}
+                        {item.source === "GENERATED" && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0" data-testid="badge-source-generated">Generated</Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">

@@ -368,6 +368,32 @@ export function computeLinearWithDropFt(horizontalFt: number, dropFt: number): n
 }
 
 /**
+ * Compute net polygon area after subtracting deduction polygons (openings/cutouts)
+ * 
+ * @param mainPoints - Points defining the main polygon
+ * @param deductionPolygons - Array of point arrays defining holes/openings to subtract
+ * @param scalePxPerFoot - Scale factor (pixels per foot)
+ * @returns Net area in square feet (main area minus all deductions)
+ */
+export function computeNetAreaInFt2(
+  mainPoints: Point[],
+  deductionPolygons: Point[][],
+  scalePxPerFoot: number
+): { grossArea: number; deductionArea: number; netArea: number } {
+  const grossArea = computePolygonAreaInFt2(mainPoints, scalePxPerFoot);
+  
+  let deductionArea = 0;
+  for (const deductionPoints of deductionPolygons) {
+    if (deductionPoints.length >= 3) {
+      deductionArea += computePolygonAreaInFt2(deductionPoints, scalePxPerFoot);
+    }
+  }
+  
+  const netArea = Math.max(0, grossArea - deductionArea);
+  return { grossArea, deductionArea, netArea };
+}
+
+/**
  * Format a measurement value for display
  * 
  * @param value - Numeric value

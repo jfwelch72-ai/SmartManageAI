@@ -105,6 +105,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [categoryColor, setCategoryColor] = useState("#3b82f6");
   const [categoryLineStyle, setCategoryLineStyle] = useState("solid");
   const [categoryLineWidth, setCategoryLineWidth] = useState(3);
+  const [categoryWasteFactor, setCategoryWasteFactor] = useState("0");
+  const [categoryUnitCost, setCategoryUnitCost] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -547,11 +549,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       setCategoryColor(editingCategory.color);
       setCategoryLineStyle(editingCategory.lineStyle || "solid");
       setCategoryLineWidth(editingCategory.lineWidth || 3);
+      setCategoryWasteFactor(String(editingCategory.wasteFactor ?? 0));
+      setCategoryUnitCost(editingCategory.unitCost ? String(editingCategory.unitCost) : "");
     } else {
       setCategoryName("");
       setCategoryColor("#3b82f6");
       setCategoryLineStyle("solid");
       setCategoryLineWidth(3);
+      setCategoryWasteFactor("0");
+      setCategoryUnitCost("");
     }
   }, [editingCategory]);
 
@@ -820,6 +826,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       color: categoryColor,
       lineStyle: categoryLineStyle,
       lineWidth: categoryLineWidth,
+      wasteFactor: parseFloat(categoryWasteFactor) || 0,
+      unitCost: categoryUnitCost ? parseFloat(categoryUnitCost) : null,
     });
   };
 
@@ -3108,6 +3116,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setCategoryLineStyle={setCategoryLineStyle}
         categoryLineWidth={categoryLineWidth}
         setCategoryLineWidth={setCategoryLineWidth}
+        categoryWasteFactor={categoryWasteFactor}
+        setCategoryWasteFactor={setCategoryWasteFactor}
+        categoryUnitCost={categoryUnitCost}
+        setCategoryUnitCost={setCategoryUnitCost}
         onSaveCategory={handleSaveCategory}
         saveCategoryPending={saveCategoryMutation.isPending}
         shortcutsDialogOpen={shortcutsDialogOpen}

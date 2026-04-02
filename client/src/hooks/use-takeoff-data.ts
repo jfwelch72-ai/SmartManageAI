@@ -262,24 +262,24 @@ export function useTakeoffData({
   });
 
   const saveCategoryMutation = useMutation({
-    mutationFn: async (data: { id?: string; name: string; color: string; lineStyle?: string; lineWidth?: number; displayOrder?: number }) => {
+    mutationFn: async (data: { id?: string; name: string; color: string; lineStyle?: string; lineWidth?: number; displayOrder?: number; wasteFactor?: number; unitCost?: number | null }) => {
       let response;
+      const payload: any = {
+        name: data.name,
+        color: data.color,
+        lineStyle: data.lineStyle || "solid",
+        lineWidth: data.lineWidth || 3,
+        wasteFactor: data.wasteFactor ?? 0,
+        unitCost: data.unitCost ?? null,
+      };
       if (data.id) {
-        response = await apiRequest("PATCH", `/api/quantity-categories/${data.id}`, {
-          name: data.name,
-          color: data.color,
-          lineStyle: data.lineStyle || "solid",
-          lineWidth: data.lineWidth || 3,
-        });
+        response = await apiRequest("PATCH", `/api/quantity-categories/${data.id}`, payload);
       } else {
         const url = isBid
           ? `/api/bids/${ctxId}/takeoff/categories`
           : `/api/projects/${ctxCode}/quantity-categories`;
         response = await apiRequest("POST", url, {
-          name: data.name,
-          color: data.color,
-          lineStyle: data.lineStyle || "solid",
-          lineWidth: data.lineWidth || 3,
+          ...payload,
           displayOrder: categories.length
         });
       }

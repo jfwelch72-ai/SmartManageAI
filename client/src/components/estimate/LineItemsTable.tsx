@@ -9,7 +9,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { FileText, Pencil, Trash2 } from "lucide-react";
+import { FileText, Pencil, Trash2, Layers, Ruler, Wrench } from "lucide-react";
 import type { EstimateLineItem } from "@shared/schema";
 
 interface LineItemsTableProps {
@@ -24,6 +24,31 @@ interface LineItemsTableProps {
 
 function fmt(val: number) {
   return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function SourceBadge({ source }: { source: string }) {
+  if (source === "ASSEMBLY") {
+    return (
+      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" data-testid="badge-source-assembly">
+        <Layers className="h-2.5 w-2.5" />Assembly
+      </Badge>
+    );
+  }
+  if (source === "TAKEOFF") {
+    return (
+      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" data-testid="badge-source-takeoff">
+        <Ruler className="h-2.5 w-2.5" />Takeoff
+      </Badge>
+    );
+  }
+  if (source === "GENERATED") {
+    return (
+      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-0.5" data-testid="badge-source-generated">
+        <Wrench className="h-2.5 w-2.5" />Generated
+      </Badge>
+    );
+  }
+  return null;
 }
 
 export function LineItemsTable({ 
@@ -74,9 +99,12 @@ export function LineItemsTable({
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm leading-snug">{item.description}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {item.quantity.toLocaleString()} {item.unit}
-                    </p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className="text-xs text-muted-foreground">
+                        {item.quantity.toLocaleString()} {item.unit}
+                      </p>
+                      <SourceBadge source={item.source} />
+                    </div>
                   </div>
                   <Badge variant="outline" className="text-xs shrink-0">{item.category}</Badge>
                 </div>
@@ -159,6 +187,7 @@ export function LineItemsTable({
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[180px]">Description</TableHead>
+                <TableHead className="whitespace-nowrap">Source</TableHead>
                 <TableHead className="whitespace-nowrap">Category</TableHead>
                 <TableHead className="text-right whitespace-nowrap">Qty</TableHead>
                 <TableHead className="whitespace-nowrap">Unit</TableHead>
@@ -185,6 +214,9 @@ export function LineItemsTable({
                   <TableRow key={item.id} data-testid={`row-line-item-${item.id}`}>
                     <TableCell className="font-medium max-w-[250px]">
                       <span className="line-clamp-3">{item.description}</span>
+                    </TableCell>
+                    <TableCell>
+                      <SourceBadge source={item.source} />
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs whitespace-nowrap">{item.category}</Badge>

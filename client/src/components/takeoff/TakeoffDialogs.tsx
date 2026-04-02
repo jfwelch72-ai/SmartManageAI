@@ -56,6 +56,10 @@ interface TakeoffDialogsProps {
   setCategoryLineStyle: (v: string) => void;
   categoryLineWidth: number;
   setCategoryLineWidth: (v: number) => void;
+  categoryWasteFactor: string;
+  setCategoryWasteFactor: (v: string) => void;
+  categoryUnitCost: string;
+  setCategoryUnitCost: (v: string) => void;
   onSaveCategory: () => void;
   saveCategoryPending: boolean;
   shortcutsDialogOpen: boolean;
@@ -82,6 +86,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
     categoryDialogOpen, setCategoryDialogOpen, editingCategory, setEditingCategory,
     categoryName, setCategoryName, categoryColor, setCategoryColor,
     categoryLineStyle, setCategoryLineStyle, categoryLineWidth, setCategoryLineWidth,
+    categoryWasteFactor, setCategoryWasteFactor, categoryUnitCost, setCategoryUnitCost,
     onSaveCategory, saveCategoryPending,
     shortcutsDialogOpen, setShortcutsDialogOpen,
     uploadDialogOpen, setUploadDialogOpen, planDocuments, documentsLoading, sheets, importPlanMutation,
@@ -358,6 +363,18 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="category-waste">Waste Factor (%)</Label>
+                  <Input id="category-waste" type="number" min="0" max="100" step="0.5" value={categoryWasteFactor} onChange={(e) => setCategoryWasteFactor(e.target.value)} placeholder="0" data-testid="input-category-waste" />
+                  <p className="text-xs text-muted-foreground">Added to quantity on import (e.g., 10% adds 10%)</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="category-unit-cost">Unit Cost ($)</Label>
+                  <Input id="category-unit-cost" type="number" min="0" step="0.01" value={categoryUnitCost} onChange={(e) => setCategoryUnitCost(e.target.value)} placeholder="0.00" data-testid="input-category-unit-cost" />
+                  <p className="text-xs text-muted-foreground">Default cost per unit for estimate import</p>
                 </div>
               </div>
             </div>

@@ -19,6 +19,7 @@ import { ensureEstimateSubcontractorTables } from "./utils/ensureEstimateSubcont
 import { ensureEquipmentColumns } from "./utils/ensureEquipmentColumns";
 import { ensureNotificationEnumValues } from "./utils/ensureNotificationEnumValues";
 import { ensureEstimateCategoryEnumValues } from "./utils/ensureEstimateCategoryEnumValues";
+import { ensureTakeoffEnhancements } from "./utils/ensureTakeoffEnhancements";
 
 const app = express();
 
@@ -171,6 +172,7 @@ app.use((req, res, next) => {
   await ensureEquipmentColumns();
   await ensureNotificationEnumValues();
   await ensureEstimateCategoryEnumValues();
+  await ensureTakeoffEnhancements();
   await backfillMissingFeatureFlags();
 
   let portRetryCount = 0;

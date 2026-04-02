@@ -1231,11 +1231,116 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       const pts = typeof selM.points === 'string' ? JSON.parse(selM.points) : selM.points;
                       return pts.length >= 2 ? <div className="flex justify-between"><span className="text-muted-foreground">Segments:</span><span>{pts.length - 1}</span></div> : null;
                     })()}
-                    {selM.computedAreaFt2 && <div className="flex justify-between"><span className="text-muted-foreground">Area:</span><span>{Number(selM.computedAreaFt2).toFixed(2)} SF</span></div>}
+                    {selM.computedAreaFt2 && (() => {
+                      const deductions: Array<{width: number; height: number; label?: string}> = (() => {
+                        try { return selM.deductions ? JSON.parse(selM.deductions as string) : []; } catch { return []; }
+                      })();
+                      const totalDeductionSf = deductions.reduce((sum, d) => sum + (d.width * d.height), 0);
+                      const grossArea = Number(selM.computedAreaFt2);
+                      const netArea = Math.max(0, grossArea - totalDeductionSf);
+                      return (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">{deductions.length > 0 ? "Gross Area:" : "Area:"}</span>
+                            <span>{grossArea.toFixed(2)} SF</span>
+                          </div>
+                          {deductions.length > 0 && (
+                            <div className="flex justify-between text-green-600 dark:text-green-400 font-medium">
+                              <span>Net Area:</span>
+                              <span>{netArea.toFixed(2)} SF</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                     {(selM as any).computedSurfaceAreaFt2 && <div className="flex justify-between"><span className="text-muted-foreground">Surface Area:</span><span>{Number((selM as any).computedSurfaceAreaFt2).toFixed(2)} SF</span></div>}
                     {selM.computedVolumeCy && <div className="flex justify-between"><span className="text-muted-foreground">Volume:</span><span>{Number(selM.computedVolumeCy).toFixed(2)} CY</span></div>}
                     {(selM as any).pitchRatio && <div className="flex justify-between"><span className="text-muted-foreground">Pitch:</span><span>{(selM as any).pitchRatio}</span></div>}
                   </div>
+                  {(selM.type === "AREA" || selM.type === "PITCHED_AREA" || selM.type === "SURFACE_AREA") && selM.computedAreaFt2 && (() => {
+                    const deductions: Array<{width: number; height: number; label?: string}> = (() => {
+                      try { return selM.deductions ? JSON.parse(selM.deductions as string) : []; } catch { return []; }
+                    })();
+                    return (
+                      <>
+                        <Separator />
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-semibold">Deductions / Openings</h4>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[10px] px-2"
+                              onClick={() => {
+                                const newDeduction = { width: 3, height: 3, label: `Opening ${deductions.length + 1}` };
+                                const updated = [...deductions, newDeduction];
+                                updateMeasurementMutation.mutate({ id: selM.id, deductions: JSON.stringify(updated) });
+                              }}
+                              data-testid="button-add-deduction"
+                            >
+                              <Plus className="w-3 h-3 mr-0.5" /> Add
+                            </Button>
+                          </div>
+                          {deductions.length === 0 && (
+                            <p className="text-[10px] text-muted-foreground">No deductions. Add openings (windows, doors) to subtract from the area.</p>
+                          )}
+                          {deductions.map((d, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 text-xs bg-muted/50 rounded p-1.5" data-testid={`deduction-item-${idx}`}>
+                              <Input
+                                className="h-6 w-16 text-[10px] px-1"
+                                defaultValue={d.label || `Opening ${idx + 1}`}
+                                onBlur={(e) => {
+                                  const updated = [...deductions];
+                                  updated[idx] = { ...updated[idx], label: e.target.value };
+                                  updateMeasurementMutation.mutate({ id: selM.id, deductions: JSON.stringify(updated) });
+                                }}
+                                data-testid={`input-deduction-label-${idx}`}
+                              />
+                              <Input
+                                type="number"
+                                className="h-6 w-12 text-[10px] px-1 text-right"
+                                defaultValue={d.width}
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  const updated = [...deductions];
+                                  updated[idx] = { ...updated[idx], width: val };
+                                  updateMeasurementMutation.mutate({ id: selM.id, deductions: JSON.stringify(updated) });
+                                }}
+                                data-testid={`input-deduction-width-${idx}`}
+                              />
+                              <span className="text-muted-foreground">×</span>
+                              <Input
+                                type="number"
+                                className="h-6 w-12 text-[10px] px-1 text-right"
+                                defaultValue={d.height}
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  const updated = [...deductions];
+                                  updated[idx] = { ...updated[idx], height: val };
+                                  updateMeasurementMutation.mutate({ id: selM.id, deductions: JSON.stringify(updated) });
+                                }}
+                                data-testid={`input-deduction-height-${idx}`}
+                              />
+                              <span className="text-muted-foreground text-[9px]">ft</span>
+                              <span className="text-[9px] text-muted-foreground ml-auto">{(d.width * d.height).toFixed(1)} SF</span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-5 w-5 text-destructive"
+                                onClick={() => {
+                                  const updated = deductions.filter((_, i) => i !== idx);
+                                  updateMeasurementMutation.mutate({ id: selM.id, deductions: JSON.stringify(updated) });
+                                }}
+                                data-testid={`button-delete-deduction-${idx}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
                   {selM.type === "SEGMENT" && selectedSegmentIndex !== null && (() => {
                     const pts = typeof selM.points === 'string' ? JSON.parse(selM.points) : selM.points;
                     let segProps: any[] = [];
