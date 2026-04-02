@@ -3003,7 +3003,29 @@ const messagingSetup = (async () => {
           iceServers.push(...meteredServers);
           console.log("[ICE Config] Metered TURN servers included");
         } else {
-          console.warn("[ICE Config] No TURN servers available");
+          iceServers.push(
+            {
+              urls: "turn:openrelay.metered.ca:80",
+              username: "openrelayproject",
+              credential: "openrelayproject",
+            },
+            {
+              urls: "turn:openrelay.metered.ca:443",
+              username: "openrelayproject",
+              credential: "openrelayproject",
+            },
+            {
+              urls: "turn:openrelay.metered.ca:443?transport=tcp",
+              username: "openrelayproject",
+              credential: "openrelayproject",
+            },
+            {
+              urls: "turns:openrelay.metered.ca:443",
+              username: "openrelayproject",
+              credential: "openrelayproject",
+            },
+          );
+          console.log("[ICE Config] Using free public TURN fallback (Open Relay Project)");
         }
       }
 
