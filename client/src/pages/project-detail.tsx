@@ -698,20 +698,21 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-full px-6 py-8">
-        <div className="mb-6">
+      <main className="mx-auto max-w-full px-3 py-4 sm:px-6 sm:py-8">
+        <div className="mb-4 sm:mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Button
               variant="ghost"
+              size="sm"
               onClick={() => setLocation(backPath)}
               data-testid="button-back"
             >
               ← {backLabel}
             </Button>
           </div>
-          <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
             <div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <Badge variant="outline" className="font-mono">
                   {project.code}
                 </Badge>
@@ -724,7 +725,7 @@ export default function ProjectDetailPage() {
                   />
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-foreground">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">
                 {project.name}
               </h1>
             </div>

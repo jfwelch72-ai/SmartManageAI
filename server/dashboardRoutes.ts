@@ -2139,11 +2139,12 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
             to_char(te."date", ${bucketFormat}) as bucket,
             ${groupSelect},
             COALESCE(SUM(
-              (CAST(te."hours_regular" AS numeric) * 45) +
-              (CAST(te."hours_overtime" AS numeric) * 67.5)
+              (CAST(te."hours_regular" AS numeric) * COALESCE(u."cost_rate_regular", 45)) +
+              (CAST(te."hours_overtime" AS numeric) * COALESCE(u."cost_rate_overtime", 67.5))
             ), 0) as value
           FROM "time_entries" te
           JOIN "projects" p ON te."project_id" = p."id"
+          LEFT JOIN "users" u ON te."user_id" = u."id"
           ${tradeJoin}
           WHERE te."date" >= ${start} AND te."date" <= ${end}
           ${orgFilter}
@@ -2281,11 +2282,12 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
           SELECT
             to_char(te."date", ${bucketFormat}) as bucket,
             COALESCE(SUM(
-              (CAST(te."hours_regular" AS numeric) * 45) +
-              (CAST(te."hours_overtime" AS numeric) * 67.5)
+              (CAST(te."hours_regular" AS numeric) * COALESCE(u."cost_rate_regular", 45)) +
+              (CAST(te."hours_overtime" AS numeric) * COALESCE(u."cost_rate_overtime", 67.5))
             ), 0) as value
           FROM "time_entries" te
           JOIN "projects" p ON te."project_id" = p."id"
+          LEFT JOIN "users" u ON te."user_id" = u."id"
           WHERE te."date" >= ${start} AND te."date" <= ${end}
           ${orgFilter}
           GROUP BY bucket
@@ -2489,7 +2491,7 @@ router.get("/api/dashboard/list", requireAuth, async (req: AuthRequest, res) => 
           SELECT sc."id", sc."contract_number", sc."status", sc."contract_amount",
                  sc."start_date", sc."created_at",
                  p."name" as project_name,
-                 co."company_name" as sub_name
+                 co."name" as sub_name
           FROM "subcontractor_contracts" sc
           JOIN "projects" p ON sc."project_id" = p."id"
           LEFT JOIN "crm_organisations" co ON sc."subcontractor_id" = co."id"
@@ -2767,7 +2769,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
       const latePayResult = await db.execute(sql`
         SELECT sp."id", sp."amount", sp."invoice_number",
                sc."contract_number",
-               co."company_name" as sub_name
+               co."name" as sub_name
         FROM "subcontractor_payments" sp
         JOIN "subcontractor_contracts" sc ON sp."contract_id" = sc."id"
         LEFT JOIN "crm_organisations" co ON sc."subcontractor_id" = co."id"
@@ -2793,7 +2795,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
       const lateBillingResult = await db.execute(sql`
         SELECT sbs."id", sbs."description", sbs."scheduled_amount", sbs."scheduled_date",
                sc."contract_number",
-               co."company_name" as sub_name
+               co."name" as sub_name
         FROM "subcontractor_billing_schedule" sbs
         JOIN "subcontractor_contracts" sc ON sbs."contract_id" = sc."id"
         JOIN "projects" p ON sc."project_id" = p."id"
