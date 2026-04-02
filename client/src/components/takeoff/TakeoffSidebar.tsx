@@ -524,7 +524,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   })();
 
   return (
-    <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
+    <div className={cn("hidden sm:flex w-80 sm:w-[340px] bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
       <div className="flex border-b shrink-0 bg-muted/30">
         <button
           className={cn("flex-1 py-2.5 text-xs font-medium transition-all relative", sidebarTab === "tools" ? "border-b-2 border-primary text-primary bg-card" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
