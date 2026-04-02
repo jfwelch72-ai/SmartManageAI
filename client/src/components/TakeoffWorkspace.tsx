@@ -50,7 +50,7 @@ import { onLibraryEvent } from "@/lib/libraryEvents";
 import { generateTakeoffExcel } from "@/utils/takeoff-export";
 import type { LibraryEvent } from "@/lib/libraryEvents";
 import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
-import { Users, Lock } from "lucide-react";
+import { Users, Lock, Sparkles } from "lucide-react";
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -1067,6 +1067,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         gridEnabled={gridEnabled}
         onToggleGrid={handleToggleGrid}
         isCalibrated={!!currentSheet?.scalePxPerFoot}
+        onFitToPage={() => {
+          if (pdfImage && containerRef.current) {
+            const cw = containerRef.current.clientWidth;
+            const ch = containerRef.current.clientHeight;
+            const isRotated = sheetRotation === 90 || sheetRotation === 270;
+            const pw = isRotated ? pdfImage.height : pdfImage.width;
+            const ph = isRotated ? pdfImage.width : pdfImage.height;
+            if (pw && ph) {
+              const scale = Math.min(cw / pw, ch / ph) * 0.95;
+              setStageScale(scale);
+              setStagePosition({ x: (cw - pw * scale) / 2, y: (ch - ph * scale) / 2 });
+            }
+          }
+        }}
       />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0 relative">
@@ -2752,15 +2766,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               </Layer>
             </Stage>
           ) : (
-            <div
-              className="flex items-center justify-center h-full cursor-pointer hover-elevate"
-              onClick={() => setUploadDialogOpen(true)}
-              data-testid="button-empty-upload-area"
-            >
-              <div className="text-center text-muted-foreground p-8 rounded-lg border-2 border-dashed border-muted-foreground/30">
-                <Upload className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p className="font-medium">Select or upload a plan sheet to begin takeoff</p>
-                <p className="text-sm mt-2">Click here to import a document</p>
+            <div className="flex items-center justify-center h-full" data-testid="takeoff-empty-state">
+              <div className="max-w-lg w-full mx-auto text-center px-8">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 flex items-center justify-center">
+                  <Upload className="w-10 h-10 text-primary/60" />
+                </div>
+                <h3 className="text-xl font-semibold text-foreground mb-2">Start Your Takeoff</h3>
+                <p className="text-muted-foreground mb-6">Upload construction plans to begin measuring quantities. Supports multi-page PDFs with auto-scale detection.</p>
+                <Button
+                  size="lg"
+                  onClick={() => setUploadDialogOpen(true)}
+                  className="gap-2 mb-8"
+                  data-testid="button-empty-upload-area"
+                >
+                  <Upload className="w-4 h-4" />
+                  Import Plan Sheets
+                </Button>
+                <div className="grid grid-cols-3 gap-4 text-left">
+                  <div className="p-3 rounded-lg bg-card border" data-testid="info-feature-measure">
+                    <div className="w-8 h-8 rounded-md bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-2">
+                      <Ruler className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <p className="text-sm font-medium">Precise Measurement</p>
+                    <p className="text-xs text-muted-foreground mt-1">Linear, area, volume, count, and pitched measurements</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-card border" data-testid="info-feature-ai">
+                    <div className="w-8 h-8 rounded-md bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mb-2">
+                      <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                    </div>
+                    <p className="text-sm font-medium">AI Auto-Takeoff</p>
+                    <p className="text-xs text-muted-foreground mt-1">Auto-detect symbols and quantities from blueprints</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-card border" data-testid="info-feature-collab">
+                    <div className="w-8 h-8 rounded-md bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-2">
+                      <Users className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    </div>
+                    <p className="text-sm font-medium">Live Collaboration</p>
+                    <p className="text-xs text-muted-foreground mt-1">Work together in real-time with your team</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -2921,6 +2965,38 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             );
           })()}
         </div>
+        {selectedSheet && measurements.length > 0 && (
+          <div className="hidden sm:flex h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar">
+            <div className="flex items-center gap-4">
+              <span className="font-medium text-foreground/80">{measurements.length} measurement{measurements.length !== 1 ? "s" : ""}</span>
+              {(() => {
+                const totals = { lf: 0, sf: 0, cy: 0, count: 0 };
+                measurements.forEach(m => {
+                  if (m.computedLengthFt) totals.lf += Number(m.computedLengthFt);
+                  if (m.computedAreaFt2) totals.sf += Number(m.computedAreaFt2);
+                  if (m.computedVolumeCy) totals.cy += Number(m.computedVolumeCy);
+                  if (m.type === "COUNT" && m.count) totals.count += Number(m.count);
+                });
+                return (
+                  <>
+                    {totals.lf > 0 && <span>LF: <strong className="text-foreground/80">{totals.lf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
+                    {totals.sf > 0 && <span>SF: <strong className="text-foreground/80">{totals.sf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
+                    {totals.cy > 0 && <span>CY: <strong className="text-foreground/80">{totals.cy.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>}
+                    {totals.count > 0 && <span>Count: <strong className="text-foreground/80">{totals.count.toLocaleString()}</strong></span>}
+                  </>
+                );
+              })()}
+            </div>
+            <div className="flex items-center gap-3">
+              <span>Zoom: {Math.round(stageScale * 100)}%</span>
+              {currentSheet?.scalePxPerFoot ? (
+                <span className="text-green-600 dark:text-green-400">Scale: {currentSheet.units || "ft"}</span>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">Not Calibrated</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedIssue && (

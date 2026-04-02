@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
   History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download,
-  FolderPlus, GripVertical, FolderOpen, Loader2, MapPin
+  FolderPlus, GripVertical, FolderOpen, Loader2, MapPin, Search, ArrowUpDown
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -280,6 +280,65 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
   const [bulkPasteText, setBulkPasteText] = useState("");
   const [bulkPastePending, setBulkPastePending] = useState(false);
+  const [measurementSearch, setMeasurementSearch] = useState("");
+  const [measurementSort, setMeasurementSort] = useState<"default" | "type" | "value">("default");
+
+  const typeBadgeStyles: Record<string, string> = {
+    LINEAR: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+    LINEAR_WITH_DROP: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+    PITCHED_LINEAR: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+    AREA: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
+    PITCHED_AREA: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
+    SURFACE_AREA: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
+    VOLUME: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800",
+    COUNT: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 border-violet-200 dark:border-violet-800",
+    SEGMENT: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800",
+    NOTE: "bg-gray-100 text-gray-600 dark:bg-gray-800/40 dark:text-gray-400 border-gray-200 dark:border-gray-700",
+  };
+
+  const typeLabels: Record<string, string> = {
+    LINEAR: "LIN", LINEAR_WITH_DROP: "DROP", PITCHED_LINEAR: "P-LIN",
+    AREA: "AREA", PITCHED_AREA: "P-AREA", SURFACE_AREA: "SURF",
+    VOLUME: "VOL", COUNT: "CNT", SEGMENT: "SEG", NOTE: "NOTE",
+  };
+
+  const getMeasurementValue = (m: TakeoffMeasurement): string => {
+    if ((m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" || m.type === "SEGMENT") && m.computedLengthFt)
+      return `${Number(m.computedLengthFt).toFixed(1)} LF`;
+    if ((m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2))
+      return `${Number((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2).toFixed(1)} SF`;
+    if (m.type === "VOLUME" && m.computedVolumeCy) return `${Number(m.computedVolumeCy).toFixed(2)} CY`;
+    if (m.type === "COUNT") {
+      const meta = parseMeta(m.metadata);
+      return `${m.count ?? meta.quantity ?? 1} ${meta.unit || "EA"}`;
+    }
+    return "";
+  };
+
+  const filterAndSortMeasurements = (items: TakeoffMeasurement[]): TakeoffMeasurement[] => {
+    let result = items;
+    if (measurementSearch.trim()) {
+      const q = measurementSearch.toLowerCase();
+      result = result.filter(m => {
+        const label = (m.label || "").toLowerCase();
+        const cat = categories.find(c => c.id === m.categoryId);
+        const catName = (cat?.name || "").toLowerCase();
+        return label.includes(q) || catName.includes(q) || m.type.toLowerCase().includes(q);
+      });
+    }
+    if (measurementSort === "type") {
+      result = [...result].sort((a, b) => a.type.localeCompare(b.type));
+    } else if (measurementSort === "value") {
+      result = [...result].sort((a, b) => {
+        const numVal = (m: TakeoffMeasurement) => {
+          const meta = parseMeta(m.metadata);
+          return Number((meta as any).computedSurfaceAreaFt2 || m.computedLengthFt || m.computedAreaFt2 || m.computedVolumeCy || m.count || 0);
+        };
+        return numVal(b) - numVal(a);
+      });
+    }
+    return result;
+  };
 
   const exportGroupCSV = (groupName: string, items: TakeoffMeasurement[]) => {
     const rows = [["Label", "Type", "Length (LF)", "Area (SF)", "Volume (CY)", "Category", "Line Style", "Line Width"]];
@@ -466,32 +525,35 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
   return (
     <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
-      <div className="flex border-b shrink-0">
+      <div className="flex border-b shrink-0 bg-muted/30">
         <button
-          className={cn("flex-1 py-2 text-xs font-medium transition-colors", sidebarTab === "tools" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
+          className={cn("flex-1 py-2.5 text-xs font-medium transition-all relative", sidebarTab === "tools" ? "border-b-2 border-primary text-primary bg-card" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
           onClick={() => setSidebarTab("tools")}
           data-testid="tab-tools"
         >
-          Tools
+          <Layers className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
+          Takeoff
         </button>
         <button
-          className={cn("flex-1 py-2 text-xs font-medium transition-colors relative", sidebarTab === "conditions" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
+          className={cn("flex-1 py-2.5 text-xs font-medium transition-all relative", sidebarTab === "conditions" ? "border-b-2 border-primary text-primary bg-card" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
           onClick={() => setSidebarTab("conditions")}
           data-testid="tab-conditions"
         >
+          <Zap className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
           Conditions
           {activeCondition && (
-            <span className="absolute -top-0.5 right-2 w-2 h-2 rounded-full" style={{ backgroundColor: activeCondition.color }} />
+            <span className="absolute top-1 right-2 w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: activeCondition.color }} />
           )}
         </button>
         <button
-          className={cn("flex-1 py-2 text-xs font-medium transition-colors relative", sidebarTab === "issues" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
+          className={cn("flex-1 py-2.5 text-xs font-medium transition-all relative", sidebarTab === "issues" ? "border-b-2 border-primary text-primary bg-card" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
           onClick={() => setSidebarTab("issues")}
           data-testid="tab-issues"
         >
+          <Flag className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
           Issues
           {openIssueCount > 0 && (
-            <span className="absolute -top-0.5 right-4 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full min-w-4 h-4 flex items-center justify-center px-1">
+            <span className="absolute top-1 right-3 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full min-w-4 h-4 flex items-center justify-center px-1">
               {openIssueCount}
             </span>
           )}
@@ -974,12 +1036,49 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 </div>
               )}
 
+              {measurements.length > 3 && (
+                <div className="flex items-center gap-1.5 mb-3" data-testid="measurement-search-bar">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Filter measurements..."
+                      value={measurementSearch}
+                      onChange={(e) => setMeasurementSearch(e.target.value)}
+                      className="h-7 text-xs pl-7 pr-6"
+                      data-testid="input-measurement-search"
+                    />
+                    {measurementSearch && (
+                      <button className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setMeasurementSearch("")}>
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className={cn("h-7 w-7 shrink-0", measurementSort !== "default" && "text-primary")} data-testid="button-measurement-sort">
+                        <ArrowUpDown className="w-3.5 h-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setMeasurementSort("default")} className={measurementSort === "default" ? "font-semibold" : ""}>Default Order</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setMeasurementSort("type")} className={measurementSort === "type" ? "font-semibold" : ""}>Sort by Type</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setMeasurementSort("value")} className={measurementSort === "value" ? "font-semibold" : ""}>Sort by Value</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
+
               {measurements.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No measurements yet</p>
+                <div className="text-center py-6 space-y-2">
+                  <Ruler className="w-8 h-8 mx-auto text-muted-foreground/50" />
+                  <p className="text-sm font-medium text-muted-foreground">No measurements yet</p>
+                  <p className="text-xs text-muted-foreground/70">Select a measurement tool from the toolbar and click on the plan to start measuring</p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   {(() => {
-                    const filteredMeasurements = hideAiMeasurements ? measurements.filter(m => m.source !== "AI") : measurements;
+                    const preFiltered = hideAiMeasurements ? measurements.filter(m => m.source !== "AI") : measurements;
+                    const filteredMeasurements = filterAndSortMeasurements(preFiltered);
                     const grouped: Record<string, TakeoffMeasurement[]> = {};
                     const ungrouped: TakeoffMeasurement[] = [];
                     filteredMeasurements.forEach((m) => {
@@ -991,10 +1090,21 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       }
                     });
 
-                    const renderMeasurementItem = (m: TakeoffMeasurement) => (
+                    const renderMeasurementItem = (m: TakeoffMeasurement) => {
+                      const category = categories.find(c => c.id === m.categoryId);
+                      const valueStr = getMeasurementValue(m);
+                      const meta = parseMeta(m.metadata);
+                      return (
                       <div
                         key={m.id}
-                        className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? "ring-2 ring-primary" : ""} ${bulkSelectMode && bulkSelectedIds.has(m.id) ? "ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-950/30" : ""}`}
+                        className={cn(
+                          "group/item p-2.5 rounded-lg border transition-all cursor-pointer",
+                          selectedMeasurementId === m.id
+                            ? "ring-2 ring-primary bg-primary/5 border-primary/30 shadow-sm"
+                            : "bg-card hover:bg-accent/50 border-border/60 hover:border-border",
+                          bulkSelectMode && bulkSelectedIds.has(m.id) && "ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-950/30"
+                        )}
+                        style={category ? { borderLeftWidth: 3, borderLeftColor: category.color } : undefined}
                         onClick={() => {
                           if (bulkSelectMode) {
                             setBulkSelectedIds(prev => {
@@ -1026,112 +1136,96 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         onDragStart={(e) => { e.dataTransfer.setData("measurement-id", m.id); e.dataTransfer.effectAllowed = "move"; }}
                         data-testid={`measurement-item-${m.id}`}
                       >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            {bulkSelectMode && (
-                              <input type="checkbox" checked={bulkSelectedIds.has(m.id)} readOnly className="w-3.5 h-3.5 rounded" />
-                            )}
-                            {inlineEditId === m.id ? (
-                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                <Input
-                                  value={inlineEditLabel}
-                                  onChange={(e) => setInlineEditLabel(e.target.value)}
-                                  onKeyDown={(e) => { if (e.key === "Enter") handleInlineEditSave(m.id); if (e.key === "Escape") setInlineEditId(null); }}
-                                  className="h-6 text-sm w-24"
-                                  autoFocus
-                                  placeholder="Label"
-                                  data-testid={`input-inline-edit-label-${m.id}`}
-                                />
-                                <Input
-                                  value={inlineEditQty}
-                                  onChange={(e) => setInlineEditQty(e.target.value)}
-                                  className="h-6 text-sm w-12"
-                                  placeholder="Qty"
-                                  type="number"
-                                  data-testid={`input-inline-edit-qty-${m.id}`}
-                                />
-                                <Input
-                                  value={inlineEditUnit}
-                                  onChange={(e) => setInlineEditUnit(e.target.value)}
-                                  className="h-6 text-sm w-12"
-                                  placeholder="Unit"
-                                  data-testid={`input-inline-edit-unit-${m.id}`}
-                                />
-                                <Input
-                                  value={inlineEditCost}
-                                  onChange={(e) => setInlineEditCost(e.target.value)}
-                                  className="h-6 text-sm w-14"
-                                  placeholder="Cost"
-                                  type="number"
-                                  step="0.01"
-                                  data-testid={`input-inline-edit-cost-${m.id}`}
-                                />
-                                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => handleInlineEditSave(m.id)} data-testid={`button-inline-save-${m.id}`}>
-                                  <Save className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <span className="font-medium text-sm" onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                setInlineEditId(m.id);
-                                setInlineEditLabel(m.label || "");
-                                setInlineEditQty(m.count ? String(m.count) : "");
-                                const editMeta = parseMeta(m.metadata);
-                                setInlineEditUnit(editMeta.unit ? String(editMeta.unit) : "");
-                                setInlineEditCost(editMeta.unitCost ? String(editMeta.unitCost) : "");
-                              }}>{m.label || "Untitled"}</span>
-                            )}
-                            <Badge variant="outline" className="text-xs">{m.type}</Badge>
-                            {m.source === "BIM" && (
-                              <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
-                            )}
-                            {m.source === "AI" && (
-                              <Badge variant="secondary" className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" data-testid={`badge-ai-source-${m.id}`}>
-                                <Zap className="w-2.5 h-2.5 mr-0.5" />AI
-                              </Badge>
-                            )}
-                            {measurementLinks?.hasPR.has(m.id) && (
-                              <Badge variant="secondary" className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" data-testid={`badge-pr-${m.id}`}>PR</Badge>
-                            )}
-                            {measurementLinks?.hasCO.has(m.id) && (
-                              <Badge variant="secondary" className="text-[10px] bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300" data-testid={`badge-co-${m.id}`}>CO</Badge>
-                            )}
-                            {measurementLinks?.hasSOV.has(m.id) && (
-                              <Badge variant="secondary" className="text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" data-testid={`badge-sov-${m.id}`}>SOV</Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-0.5">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); handleDuplicateMeasurement(m); }} data-testid={`button-duplicate-measurement-${m.id}`}>
-                                  <Copy className="w-3 h-3" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Duplicate</TooltipContent>
-                            </Tooltip>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
-                              <Trash2 className="w-3 h-3 text-destructive" />
+                        <div className="flex items-center gap-2 mb-1.5">
+                          {bulkSelectMode && (
+                            <input type="checkbox" checked={bulkSelectedIds.has(m.id)} readOnly className="w-3.5 h-3.5 rounded shrink-0" />
+                          )}
+                          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-5 font-semibold border shrink-0", typeBadgeStyles[m.type] || "")}>
+                            {typeLabels[m.type] || m.type}
+                          </Badge>
+                          {inlineEditId === m.id ? (
+                            <div className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                              <Input
+                                value={inlineEditLabel}
+                                onChange={(e) => setInlineEditLabel(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") handleInlineEditSave(m.id); if (e.key === "Escape") setInlineEditId(null); }}
+                                className="h-6 text-sm w-24"
+                                autoFocus
+                                placeholder="Label"
+                                data-testid={`input-inline-edit-label-${m.id}`}
+                              />
+                              <Input
+                                value={inlineEditQty}
+                                onChange={(e) => setInlineEditQty(e.target.value)}
+                                className="h-6 text-sm w-12"
+                                placeholder="Qty"
+                                type="number"
+                                data-testid={`input-inline-edit-qty-${m.id}`}
+                              />
+                              <Input
+                                value={inlineEditUnit}
+                                onChange={(e) => setInlineEditUnit(e.target.value)}
+                                className="h-6 text-sm w-12"
+                                placeholder="Unit"
+                                data-testid={`input-inline-edit-unit-${m.id}`}
+                              />
+                              <Input
+                                value={inlineEditCost}
+                                onChange={(e) => setInlineEditCost(e.target.value)}
+                                className="h-6 text-sm w-14"
+                                placeholder="Cost"
+                                type="number"
+                                step="0.01"
+                                data-testid={`input-inline-edit-cost-${m.id}`}
+                              />
+                              <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => handleInlineEditSave(m.id)} data-testid={`button-inline-save-${m.id}`}>
+                                <Save className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="font-medium text-sm truncate flex-1 min-w-0" onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setInlineEditId(m.id);
+                              setInlineEditLabel(m.label || "");
+                              setInlineEditQty(m.count ? String(m.count) : "");
+                              const editMeta = parseMeta(m.metadata);
+                              setInlineEditUnit(editMeta.unit ? String(editMeta.unit) : "");
+                              setInlineEditCost(editMeta.unitCost ? String(editMeta.unitCost) : "");
+                            }}>{m.label || "Untitled"}</span>
+                          )}
+                          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); handleDuplicateMeasurement(m); }} data-testid={`button-duplicate-measurement-${m.id}`}>
+                              <Copy className="w-3 h-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
+                              <Trash2 className="w-3 h-3" />
                             </Button>
                           </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
-                            ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
-                            : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
-                            ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
-                            : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
-                            : m.type === "SEGMENT" && m.computedLengthFt ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF total`
-                            : m.type === "COUNT" ? (() => {
-                              if (m.source === "AI") {
-                                const countMeta = parseMeta(m.metadata);
-                                const qty = m.count ?? countMeta.quantity ?? 1;
-                                const unit = countMeta.unit || "EA";
-                                const conf = countMeta.confidence ? ` · ${countMeta.confidence}% conf.` : "";
-                                return `${qty} ${unit}${conf}`;
-                              }
-                              return "Count marker";
-                            })() : m.type === "NOTE" ? "Note" : ""}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {valueStr && <span className="text-xs font-mono font-medium text-foreground/80">{valueStr}</span>}
+                          {(m as any).pitchRatio && <span className="text-[10px] text-muted-foreground">({(m as any).pitchRatio})</span>}
+                          {m.source === "AI" && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" data-testid={`badge-ai-source-${m.id}`}>
+                              <Zap className="w-2.5 h-2.5 mr-0.5" />AI
+                            </Badge>
+                          )}
+                          {m.source === "BIM" && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
+                          )}
+                          {measurementLinks?.hasPR.has(m.id) && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" data-testid={`badge-pr-${m.id}`}>PR</Badge>
+                          )}
+                          {measurementLinks?.hasCO.has(m.id) && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300" data-testid={`badge-co-${m.id}`}>CO</Badge>
+                          )}
+                          {measurementLinks?.hasSOV.has(m.id) && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" data-testid={`badge-sov-${m.id}`}>SOV</Badge>
+                          )}
+                          {category && <span className="text-[10px] text-muted-foreground flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />{category.name}</span>}
+                          {meta.unitCost && <span className="text-[10px] text-green-600 dark:text-green-400" data-testid={`text-unitcost-${m.id}`}>${Number(meta.unitCost).toFixed(2)}</span>}
+                          {meta.costCodeId && <span className="text-[10px] text-blue-500" data-testid={`text-costcode-${m.id}`}>{meta.costCodeId}</span>}
+                        </div>
                         {m.type === "SEGMENT" && (() => {
                           const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
                           let segProps: any[] = [];
@@ -1172,17 +1266,9 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             </Collapsible>
                           );
                         })()}
-                        {(() => {
-                          const meta = parseMeta(m.metadata);
-                          return (
-                            <>
-                              {meta.costCodeId && <p className="text-xs text-blue-500 mt-1" data-testid={`text-costcode-${m.id}`}>Cost Code: {meta.costCodeId}</p>}
-                              {meta.unitCost && <p className="text-xs text-green-500" data-testid={`text-unitcost-${m.id}`}>Unit Cost: ${Number(meta.unitCost).toFixed(2)}</p>}
-                            </>
-                          );
-                        })()}
                       </div>
                     );
+                    };
 
                     const computeGroupTotals = (items: TakeoffMeasurement[]) => {
                       let linear = 0, area = 0, volume = 0, count = 0, segment = 0;
@@ -1210,27 +1296,29 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           const totals = computeGroupTotals(groupItems);
                           const allVisible = groupItems.every(m => m.visible !== false);
                           return (
-                            <div key={group.id} className={`border rounded-md transition-colors ${dragOverGroupId === group.id ? 'bg-primary/10 border-primary' : ''}`} style={{ borderColor: dragOverGroupId === group.id ? undefined : group.color }} data-testid={`group-${group.id}`}
+                            <div key={group.id} className={cn("group rounded-lg border transition-colors overflow-hidden", dragOverGroupId === group.id ? "bg-primary/5 border-primary shadow-sm" : "border-border/70")} style={dragOverGroupId !== group.id ? { borderLeftWidth: 3, borderLeftColor: group.color } : undefined} data-testid={`group-${group.id}`}
                               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverGroupId(group.id); }}
                               onDragLeave={() => setDragOverGroupId(null)}
                               onDrop={(e) => { e.preventDefault(); setDragOverGroupId(null); const mId = e.dataTransfer.getData("measurement-id"); if (mId) updateMeasurementMutation.mutate({ id: mId, groupId: group.id }); }}>
                               <div
-                                className="flex items-center gap-1 p-2 cursor-pointer hover:bg-muted/50"
+                                className="flex items-center gap-1.5 px-2.5 py-2 cursor-pointer hover:bg-accent/40 transition-colors"
                                 onClick={() => setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}
                               >
-                                {isCollapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
-                                <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: group.color }} />
-                                <span className="font-medium text-sm flex-1 truncate">{group.name}</span>
-                                <Badge variant="outline" className="text-[10px]">{groupItems.length}</Badge>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); toggleGroupVisibilityMutation?.mutate({ groupId: group.id, visible: !allVisible }); }} data-testid={`button-toggle-group-visibility-${group.id}`}>
-                                  {allVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); exportGroupCSV(group.name, groupItems); }} data-testid={`button-export-group-${group.id}`} title="Export group as CSV">
-                                  <Download className="w-3 h-3" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setDeleteGroupConfirm(group.id); }} data-testid={`button-delete-group-${group.id}`}>
-                                  <Trash2 className="w-3 h-3 text-destructive" />
-                                </Button>
+                                {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />}
+                                <FolderOpen className="w-3.5 h-3.5 shrink-0" style={{ color: group.color }} />
+                                <span className="font-semibold text-sm flex-1 truncate">{group.name}</span>
+                                <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{groupItems.length}</Badge>
+                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); toggleGroupVisibilityMutation?.mutate({ groupId: group.id, visible: !allVisible }); }} data-testid={`button-toggle-group-visibility-${group.id}`}>
+                                    {allVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); exportGroupCSV(group.name, groupItems); }} data-testid={`button-export-group-${group.id}`} title="Export group as CSV">
+                                    <Download className="w-3 h-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); setDeleteGroupConfirm(group.id); }} data-testid={`button-delete-group-${group.id}`}>
+                                    <Trash2 className="w-3 h-3 text-destructive" />
+                                  </Button>
+                                </div>
                               </div>
 
                               {deleteGroupConfirm === group.id && (
@@ -1242,19 +1330,21 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               )}
 
                               {!isCollapsed && (
-                                <div className="px-2 pb-2 space-y-1">
-                                  {groupItems.length > 0 && (
-                                    <div className="text-[10px] text-muted-foreground flex flex-wrap gap-2 mb-1">
-                                      {totals.linear > 0 && <span>{totals.linear.toFixed(1)} LF</span>}
-                                      {totals.area > 0 && <span>{totals.area.toFixed(1)} SF</span>}
-                                      {totals.volume > 0 && <span>{totals.volume.toFixed(1)} CY</span>}
-                                      {totals.count > 0 && <span>{totals.count} ct</span>}
-                                      {totals.segment > 0 && <span>{totals.segment.toFixed(1)} LF (seg)</span>}
-                                      {totals.totalCost > 0 && <span className="text-green-500">${totals.totalCost.toFixed(2)}</span>}
+                                <div className="px-2.5 pb-2.5 space-y-1.5">
+                                  {groupItems.length > 0 && (totals.linear > 0 || totals.area > 0 || totals.volume > 0 || totals.count > 0 || totals.totalCost > 0) && (
+                                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-mono tabular-nums bg-muted/50 rounded-md px-2 py-1.5 mb-1">
+                                      {totals.linear > 0 && <span><strong className="text-blue-600 dark:text-blue-400">{totals.linear.toFixed(1)}</strong> LF</span>}
+                                      {totals.area > 0 && <span><strong className="text-emerald-600 dark:text-emerald-400">{totals.area.toFixed(1)}</strong> SF</span>}
+                                      {totals.volume > 0 && <span><strong className="text-amber-600 dark:text-amber-400">{totals.volume.toFixed(1)}</strong> CY</span>}
+                                      {totals.count > 0 && <span><strong className="text-violet-600 dark:text-violet-400">{totals.count}</strong> ct</span>}
+                                      {totals.segment > 0 && <span><strong className="text-cyan-600 dark:text-cyan-400">{totals.segment.toFixed(1)}</strong> LF seg</span>}
+                                      {totals.totalCost > 0 && <span className="text-green-600 dark:text-green-400 font-medium">${totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
                                     </div>
                                   )}
                                   {groupItems.map(renderMeasurementItem)}
-                                  {groupItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No measurements</p>}
+                                  {groupItems.length === 0 && (
+                                    <p className="text-xs text-muted-foreground text-center py-3 italic">Drag measurements here to organize</p>
+                                  )}
                                 </div>
                               )}
                             </div>
