@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
 import { sanitizeShortText } from "./sanitization";
 import { createArcSegment } from "@shared/utils/geometry";
-import { verifySheetAccess, safeParsePoints, verifyGroupAccess } from "./takeoffHelpers";
+import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
 
 const router = Router();
 
@@ -55,13 +55,37 @@ router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, asy
       return;
     }
 
-    const measurements = await db
-      .select()
-      .from(takeoffMeasurements)
-      .where(inArray(takeoffMeasurements.sheetId, sheetIds))
-      .orderBy(takeoffMeasurements.createdAt);
+    const versionedSheetIds: string[] = [];
+    const unversionedSheetIds: string[] = [];
+    const defaultVersionIds: string[] = [];
+    for (const s of projectSheets) {
+      const vId = await getDefaultVersionId(s.id);
+      if (vId) {
+        versionedSheetIds.push(s.id);
+        defaultVersionIds.push(vId);
+      } else {
+        unversionedSheetIds.push(s.id);
+      }
+    }
 
-    const parsedMeasurements = measurements.map(m => ({
+    let allMeasurements: (typeof takeoffMeasurements.$inferSelect)[] = [];
+    if (defaultVersionIds.length > 0) {
+      const versioned = await db.select().from(takeoffMeasurements)
+        .where(and(
+          inArray(takeoffMeasurements.sheetId, versionedSheetIds),
+          inArray(takeoffMeasurements.takeoffVersionId, defaultVersionIds)
+        ))
+        .orderBy(takeoffMeasurements.createdAt);
+      allMeasurements = allMeasurements.concat(versioned);
+    }
+    if (unversionedSheetIds.length > 0) {
+      const unversioned = await db.select().from(takeoffMeasurements)
+        .where(inArray(takeoffMeasurements.sheetId, unversionedSheetIds))
+        .orderBy(takeoffMeasurements.createdAt);
+      allMeasurements = allMeasurements.concat(unversioned);
+    }
+
+    const parsedMeasurements = allMeasurements.map(m => ({
       ...m,
       points: safeParsePoints(m.points) || [],
     }));
@@ -105,13 +129,37 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
       return;
     }
 
-    const measurements = await db
-      .select()
-      .from(takeoffMeasurements)
-      .where(inArray(takeoffMeasurements.sheetId, sheetIds))
-      .orderBy(takeoffMeasurements.createdAt);
+    const versionedSheetIds: string[] = [];
+    const unversionedSheetIds: string[] = [];
+    const defaultVersionIds: string[] = [];
+    for (const s of bidSheets) {
+      const vId = await getDefaultVersionId(s.id);
+      if (vId) {
+        versionedSheetIds.push(s.id);
+        defaultVersionIds.push(vId);
+      } else {
+        unversionedSheetIds.push(s.id);
+      }
+    }
 
-    const parsedMeasurements = measurements.map(m => ({
+    let allMeasurements: (typeof takeoffMeasurements.$inferSelect)[] = [];
+    if (defaultVersionIds.length > 0) {
+      const versioned = await db.select().from(takeoffMeasurements)
+        .where(and(
+          inArray(takeoffMeasurements.sheetId, versionedSheetIds),
+          inArray(takeoffMeasurements.takeoffVersionId, defaultVersionIds)
+        ))
+        .orderBy(takeoffMeasurements.createdAt);
+      allMeasurements = allMeasurements.concat(versioned);
+    }
+    if (unversionedSheetIds.length > 0) {
+      const unversioned = await db.select().from(takeoffMeasurements)
+        .where(inArray(takeoffMeasurements.sheetId, unversionedSheetIds))
+        .orderBy(takeoffMeasurements.createdAt);
+      allMeasurements = allMeasurements.concat(unversioned);
+    }
+
+    const parsedMeasurements = allMeasurements.map(m => ({
       ...m,
       points: safeParsePoints(m.points) || [],
     }));
@@ -126,6 +174,7 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
 router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
+    const { versionId } = req.query;
     const { takeoffMeasurements } = await import("@shared/schema");
 
     const access = await verifySheetAccess(sheetId, req.user!);
@@ -134,11 +183,27 @@ router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req:
       return;
     }
 
-    const measurements = await db
-      .select()
-      .from(takeoffMeasurements)
-      .where(eq(takeoffMeasurements.sheetId, sheetId))
-      .orderBy(takeoffMeasurements.createdAt);
+    let targetVersionId: string | null = null;
+    if (versionId) {
+      targetVersionId = versionId as string;
+    } else {
+      targetVersionId = await getDefaultVersionId(sheetId);
+    }
+
+    let measurements;
+    if (targetVersionId) {
+      measurements = await db
+        .select()
+        .from(takeoffMeasurements)
+        .where(and(eq(takeoffMeasurements.sheetId, sheetId), eq(takeoffMeasurements.takeoffVersionId, targetVersionId)))
+        .orderBy(takeoffMeasurements.createdAt);
+    } else {
+      measurements = await db
+        .select()
+        .from(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.sheetId, sheetId))
+        .orderBy(takeoffMeasurements.createdAt);
+    }
 
     const parsedMeasurements = measurements.map(m => ({
       ...m,
@@ -160,6 +225,12 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
     const access = await verifySheetAccess(sheetId, req.user!);
     if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
 
+    const draftVersionId = await getActiveDraftVersionId(sheetId);
+    if (!draftVersionId && await hasAnyVersions(sheetId)) {
+      res.status(403).json({ error: "Sheet is locked. Create a new version to add measurements." });
+      return;
+    }
+
     const sanitizedBody = {
       ...req.body,
       label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
@@ -168,6 +239,7 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
     const validated = insertTakeoffMeasurementSchema.parse({
       ...sanitizedBody,
       sheetId,
+      takeoffVersionId: draftVersionId || undefined,
     });
 
     const [measurement] = await db.insert(takeoffMeasurements).values(validated).returning();
@@ -195,6 +267,9 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       .where(eq(takeoffMeasurements.id, id))
       .limit(1);
     if (!existingMeasurement) { res.status(404).json({ error: "Measurement not found" }); return; }
+
+    const locked = await isMeasurementLocked(id);
+    if (locked) { res.status(403).json({ error: "Cannot edit a measurement in a locked version" }); return; }
 
     const access = await verifySheetAccess(existingMeasurement.sheetId, req.user!);
     if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
@@ -270,7 +345,15 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
       points: Array.isArray(sanitizedBody.points) ? JSON.stringify(sanitizedBody.points) : sanitizedBody.points,
     };
 
-    const validated = insertTakeoffMeasurementSchema.parse(bodyWithStringifiedPoints);
+    const draftVersionId = await getActiveDraftVersionId(bodyWithStringifiedPoints.sheetId);
+    if (!draftVersionId && await hasAnyVersions(bodyWithStringifiedPoints.sheetId)) {
+      res.status(403).json({ error: "Sheet is locked. Create a new version to add measurements." });
+      return;
+    }
+    const validated = insertTakeoffMeasurementSchema.parse({
+      ...bodyWithStringifiedPoints,
+      takeoffVersionId: draftVersionId || undefined,
+    });
 
     // Validate that the sheet exists (supports both project-based and bid-based sheets)
     const sheetWithProject = await db
@@ -406,6 +489,9 @@ router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequ
       .where(eq(takeoffMeasurements.id, id))
       .limit(1);
     if (!existing) { res.status(404).json({ error: "Measurement not found" }); return; }
+
+    const locked = await isMeasurementLocked(id);
+    if (locked) { res.status(403).json({ error: "Cannot delete a measurement in a locked version" }); return; }
 
     const access = await verifySheetAccess(existing.sheetId, req.user!);
     if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }

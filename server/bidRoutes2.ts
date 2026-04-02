@@ -1303,6 +1303,165 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       console.log(`[Bid Conversion] Transferred ${bidDocs.length} bid documents to project plan_documents`);
     }
 
+    // Duplicate takeoff sheets, measurements, categories, and groups into new project
+    const { takeoffSheets, takeoffMeasurements, quantityCategories, takeoffMeasurementGroups, takeoffVersions } = await import("@shared/schema");
+
+    const bidSheets = await db.select().from(takeoffSheets).where(eq(takeoffSheets.bidId, bid.id));
+    const bidCategories = await db.select().from(quantityCategories).where(eq(quantityCategories.bidId, bid.id));
+    const bidGroups = await db.select().from(takeoffMeasurementGroups).where(eq(takeoffMeasurementGroups.bidId, bid.id));
+
+    const categoryIdMap = new Map<string, string>();
+    for (const cat of bidCategories) {
+      const [newCat] = await db.insert(quantityCategories).values({
+        projectId: newProject.id,
+        name: cat.name,
+        color: cat.color,
+        lineStyle: cat.lineStyle,
+        lineWidth: cat.lineWidth,
+        wasteFactor: cat.wasteFactor,
+        unitCost: cat.unitCost,
+        displayOrder: cat.displayOrder,
+      }).returning();
+      categoryIdMap.set(cat.id, newCat.id);
+    }
+
+    const sheetIdMap = new Map<string, string>();
+    for (const sheet of bidSheets) {
+      const [newSheet] = await db.insert(takeoffSheets).values({
+        projectId: newProject.id,
+        imageUrl: sheet.imageUrl,
+        sheetIndex: sheet.sheetIndex,
+        sheetName: sheet.sheetName,
+        scalePxPerFoot: sheet.scalePxPerFoot,
+        units: sheet.units,
+        folderGroup: sheet.folderGroup,
+        revisionLabel: sheet.revisionLabel,
+        isActive: true,
+        rotation: sheet.rotation,
+      }).returning();
+      sheetIdMap.set(sheet.id, newSheet.id);
+    }
+
+    const groupIdMap = new Map<string, string>();
+    for (const group of bidGroups) {
+      const newSheetId = group.sheetId ? sheetIdMap.get(group.sheetId) || null : null;
+      const [newGroup] = await db.insert(takeoffMeasurementGroups).values({
+        name: group.name,
+        projectId: newProject.id,
+        sheetId: newSheetId,
+        sortOrder: group.sortOrder,
+        color: group.color,
+      }).returning();
+      groupIdMap.set(group.id, newGroup.id);
+    }
+
+    let measurementsCopied = 0;
+    for (const [oldSheetId, newSheetId] of sheetIdMap) {
+      const sheetVersions = await db.select().from(takeoffVersions)
+        .where(eq(takeoffVersions.sheetId, oldSheetId))
+        .orderBy(takeoffVersions.versionNumber);
+      const latestVersion = sheetVersions.length > 0 ? sheetVersions[sheetVersions.length - 1] : null;
+
+      if (latestVersion) {
+        const orphaned = await db.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
+          .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), sql`takeoff_measurements.takeoff_version_id IS NULL`));
+        for (const m of orphaned) {
+          await db.update(takeoffMeasurements)
+            .set({ takeoffVersionId: latestVersion.id })
+            .where(eq(takeoffMeasurements.id, m.id));
+        }
+      }
+
+      const bidMeasurements = latestVersion
+        ? await db.select().from(takeoffMeasurements)
+            .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), eq(takeoffMeasurements.takeoffVersionId, latestVersion.id)))
+        : await db.select().from(takeoffMeasurements)
+            .where(eq(takeoffMeasurements.sheetId, oldSheetId));
+
+      const [projectVersion] = await db.insert(takeoffVersions).values({
+        projectId: newProject.id,
+        sheetId: newSheetId,
+        versionNumber: 1,
+        status: "DRAFT",
+        createdById: req.user!.id,
+        label: "Project Takeoff v1",
+      }).returning();
+
+      if (bidMeasurements.length > 0) {
+        const clonedMeasurements = bidMeasurements.map(m => ({
+          sheetId: newSheetId,
+          categoryId: m.categoryId ? categoryIdMap.get(m.categoryId) || null : null,
+          groupId: m.groupId ? groupIdMap.get(m.groupId) || null : null,
+          takeoffVersionId: projectVersion.id,
+          originMeasurementId: m.originMeasurementId || m.id,
+          type: m.type,
+          label: m.label,
+          points: m.points,
+          arcData: m.arcData,
+          depthFeet: m.depthFeet,
+          count: m.count,
+          note: m.note,
+          color: m.color,
+          visible: m.visible,
+          source: m.source,
+          status: m.status,
+          pitchRatio: m.pitchRatio,
+          costCodeId: m.costCodeId,
+          unitCost: m.unitCost,
+          lineStyle: m.lineStyle,
+          lineWidth: m.lineWidth,
+          computedLengthFt: m.computedLengthFt,
+          computedAreaFt2: m.computedAreaFt2,
+          computedVolumeCy: m.computedVolumeCy,
+          computedSurfaceAreaFt2: m.computedSurfaceAreaFt2,
+          deductions: m.deductions,
+          metadata: m.metadata,
+          subcontractorId: m.subcontractorId,
+          supplierId: m.supplierId,
+          locationTag: m.locationTag,
+          installationStatus: m.installationStatus,
+        }));
+        await db.insert(takeoffMeasurements).values(clonedMeasurements);
+        measurementsCopied += clonedMeasurements.length;
+      }
+
+      // Lock bid takeoff versions and handle unversioned measurements
+      const bidVersions = await db.select().from(takeoffVersions)
+        .where(eq(takeoffVersions.sheetId, oldSheetId));
+      if (bidVersions.length > 0) {
+        const latestBidVersion = bidVersions[bidVersions.length - 1];
+        const orphanedMeasurements = await db.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
+          .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), sql`takeoff_measurements.takeoff_version_id IS NULL`));
+        for (const m of orphanedMeasurements) {
+          await db.update(takeoffMeasurements)
+            .set({ takeoffVersionId: latestBidVersion.id })
+            .where(eq(takeoffMeasurements.id, m.id));
+        }
+        for (const bv of bidVersions) {
+          await db.update(takeoffVersions)
+            .set({ status: "LOCKED" })
+            .where(eq(takeoffVersions.id, bv.id));
+        }
+      } else {
+        const [lockedBidVersion] = await db.insert(takeoffVersions).values({
+          bidId: bid.id,
+          sheetId: oldSheetId,
+          versionNumber: 1,
+          status: "LOCKED",
+          createdById: req.user!.id,
+          label: "Bid Takeoff (Locked)",
+        }).returning();
+        const unversioned = await db.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
+          .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), sql`takeoff_measurements.takeoff_version_id IS NULL`));
+        for (const m of unversioned) {
+          await db.update(takeoffMeasurements)
+            .set({ takeoffVersionId: lockedBidVersion.id })
+            .where(eq(takeoffMeasurements.id, m.id));
+        }
+      }
+    }
+    console.log(`[Bid Conversion] Duplicated ${bidSheets.length} takeoff sheets with ${measurementsCopied} measurements, ${bidCategories.length} categories, ${bidGroups.length} groups to project`);
+
     await db.update(bids)
       .set({
         status: "AWARDED",

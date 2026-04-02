@@ -17,6 +17,7 @@ interface UseTakeoffDataParams {
   projectCode: string;
   context?: TakeoffContext;
   selectedSheet: string | null;
+  selectedVersionId?: string | null;
   uploadDialogOpen: boolean;
   takeoffHistory: ReturnType<typeof useTakeoffHistory>;
   selectedCategoryId: string | null;
@@ -40,6 +41,7 @@ export function useTakeoffData({
   projectCode,
   context,
   selectedSheet,
+  selectedVersionId,
   uploadDialogOpen,
   takeoffHistory,
   selectedCategoryId,
@@ -115,8 +117,25 @@ export function useTakeoffData({
     enabled: !isBid,
   });
 
+  const { data: selectedVersionData } = useQuery<{ id: string; status: string }>({
+    queryKey: ["/api/takeoff/versions", selectedVersionId],
+    enabled: !!selectedVersionId,
+  });
+
+  const measurementsQueryKey = selectedVersionId
+    ? ["/api/takeoff/sheets", selectedSheet, "measurements", { versionId: selectedVersionId }]
+    : ["/api/takeoff/sheets", selectedSheet, "measurements"];
+
   const { data: measurements = [], isLoading: measurementsLoading } = useQuery<TakeoffMeasurement[]>({
-    queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"],
+    queryKey: measurementsQueryKey,
+    queryFn: async () => {
+      const url = selectedVersionId
+        ? `/api/takeoff/sheets/${selectedSheet}/measurements?versionId=${selectedVersionId}`
+        : `/api/takeoff/sheets/${selectedSheet}/measurements`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch measurements");
+      return res.json();
+    },
     enabled: !!selectedSheet,
   });
 
@@ -198,6 +217,9 @@ export function useTakeoffData({
       lineStyle?: string;
       lineWidth?: number;
     }) => {
+      if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
+        throw new Error("Cannot create measurements while viewing a locked version");
+      }
       const payload = { ...data };
       if (payload.categoryId && !payload.lineStyle && !payload.lineWidth) {
         const cat = categories.find(c => c.id === payload.categoryId);
@@ -224,10 +246,13 @@ export function useTakeoffData({
 
   const updateMeasurementMutation = useMutation({
     mutationFn: async ({ id, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number }) => {
+      if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
+        throw new Error("Cannot edit measurements while viewing a locked version");
+      }
       const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, data);
       return res.json();
     },
-    onSuccess: (_data: any, variables: { id: string }) => {
+    onSuccess: (_data: TakeoffMeasurement, variables: { id: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       if (selectedSheet) {
         onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables.id });
@@ -240,6 +265,9 @@ export function useTakeoffData({
 
   const deleteMeasurementMutation = useMutation({
     mutationFn: async (measurement: TakeoffMeasurement) => {
+      if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
+        throw new Error("Cannot delete measurements while viewing a locked version");
+      }
       await apiRequest("DELETE", `/api/takeoff/measurements/${measurement.id}`);
       return measurement;
     },
@@ -633,6 +661,8 @@ export function useTakeoffData({
     },
   });
 
+  const isViewingLockedVersion = !!selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED");
+
   return {
     sheets,
     sheetsLoading,
@@ -642,6 +672,7 @@ export function useTakeoffData({
     projectAddenda,
     measurements,
     measurementsLoading,
+    isViewingLockedVersion,
     markups,
     sheetLinks,
     categories,

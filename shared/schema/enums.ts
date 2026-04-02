@@ -639,3 +639,6 @@ export const riskCategoryEnum = pgEnum("risk_category", [
 export const riskStatusEnum = pgEnum("risk_status", [
   "IDENTIFIED", "ASSESSED", "MITIGATING", "RESOLVED", "ACCEPTED", "OCCURRED"
 ]);
+
+export const takeoffVersionStatusEnum = pgEnum("takeoff_version_status", ["DRAFT", "LOCKED"]);
+export const installationStatusEnum = pgEnum("installation_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "ON_HOLD"]);

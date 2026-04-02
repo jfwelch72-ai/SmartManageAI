@@ -8,11 +8,11 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
 import { verifyOrgAccess } from "./orgFilter";
-import { verifySheetAccess } from "./takeoffHelpers";
+import { verifySheetAccess, isMeasurementLocked } from "./takeoffHelpers";
 
 const router = Router();
 
-async function getBidWithAccess(req: AuthRequest, res: any): Promise<any | null> {
+async function getBidWithAccess(req: AuthRequest, res: import("express").Response): Promise<typeof bids.$inferSelect | null> {
   const { bidId } = req.params;
   const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
   if (!bid) { res.status(404).json({ error: "Bid not found" }); return null; }
@@ -1084,5 +1084,370 @@ router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthReque
   }
 });
 
+
+// =============================================
+// TAKEOFF VERSIONS ROUTES
+// =============================================
+
+router.get("/api/takeoff/versions", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { takeoffVersions, projects, bids } = await import("@shared/schema");
+    const { projectId, bidId, sheetId } = req.query;
+
+    if (sheetId) {
+      const access = await verifySheetAccess(sheetId as string, req.user!);
+      if (!access.allowed) {
+        res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+        return;
+      }
+    } else if (projectId) {
+      const [project] = await db.select({ id: projects.id }).from(projects)
+        .where(and(eq(projects.id, projectId as string), eq(projects.gcOrganizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!project) { res.status(403).json({ error: "Access denied" }); return; }
+    } else if (bidId) {
+      const [bid] = await db.select({ id: bids.id }).from(bids)
+        .where(and(eq(bids.id, bidId as string), eq(bids.gcOrganizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
+    } else {
+      res.status(400).json({ error: "Provide projectId, bidId, or sheetId" });
+      return;
+    }
+
+    const conditions: ReturnType<typeof eq>[] = [];
+    if (sheetId) conditions.push(eq(takeoffVersions.sheetId, sheetId as string));
+    if (projectId) conditions.push(eq(takeoffVersions.projectId, projectId as string));
+    if (bidId) conditions.push(eq(takeoffVersions.bidId, bidId as string));
+
+    const { users } = await import("@shared/schema");
+    const versions = await db.select().from(takeoffVersions)
+      .where(and(...conditions))
+      .orderBy(takeoffVersions.versionNumber);
+
+    const versionsWithAuthors = await Promise.all(versions.map(async (v) => {
+      let createdByName: string | null = null;
+      if (v.createdById) {
+        const [user] = await db.select({ firstName: users.firstName, lastName: users.lastName })
+          .from(users).where(eq(users.id, v.createdById)).limit(1);
+        if (user) createdByName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || null;
+      }
+      return { ...v, createdByName };
+    }));
+    res.json(versionsWithAuthors);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/takeoff/versions", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
+  try {
+    const { takeoffVersions, takeoffMeasurements } = await import("@shared/schema");
+    const { sheetId, projectId, bidId, label } = req.body;
+    const userId = req.user!.id;
+
+    if (!sheetId) {
+      res.status(400).json({ error: "sheetId is required" });
+      return;
+    }
+
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
+    const existingVersions = await db.select().from(takeoffVersions)
+      .where(eq(takeoffVersions.sheetId, sheetId))
+      .orderBy(takeoffVersions.versionNumber);
+
+    const nextVersionNumber = existingVersions.length > 0
+      ? Math.max(...existingVersions.map(v => v.versionNumber)) + 1
+      : 1;
+
+    if (existingVersions.length > 0) {
+      const currentDraft = existingVersions.find(v => v.status === "DRAFT");
+      if (currentDraft) {
+        await db.update(takeoffVersions)
+          .set({ status: "LOCKED" })
+          .where(eq(takeoffVersions.id, currentDraft.id));
+      }
+    }
+
+    const [newVersion] = await db.insert(takeoffVersions).values({
+      sheetId,
+      projectId: access.sheet?.projectId || null,
+      bidId: access.sheet?.bidId || null,
+      versionNumber: nextVersionNumber,
+      status: "DRAFT",
+      createdById: userId,
+      label: label ? sanitizeShortText(label) : `v${nextVersionNumber}`,
+    }).returning();
+
+    const currentMeasurements = await db.select().from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.sheetId, sheetId));
+
+    const previousVersion = existingVersions.find(v => v.status === "DRAFT") || existingVersions[existingVersions.length - 1];
+
+    if (previousVersion) {
+      const prevMeasurements = currentMeasurements.filter(
+        m => m.takeoffVersionId === previousVersion.id || !m.takeoffVersionId
+      );
+
+      if (prevMeasurements.length > 0) {
+        const clonedValues = prevMeasurements.map(m => ({
+          sheetId: m.sheetId,
+          categoryId: m.categoryId,
+          groupId: m.groupId,
+          takeoffVersionId: newVersion.id,
+          originMeasurementId: m.originMeasurementId || m.id,
+          type: m.type,
+          label: m.label,
+          points: m.points,
+          arcData: m.arcData,
+          depthFeet: m.depthFeet,
+          count: m.count,
+          note: m.note,
+          color: m.color,
+          visible: m.visible,
+          source: m.source,
+          status: m.status,
+          pitchRatio: m.pitchRatio,
+          costCodeId: m.costCodeId,
+          unitCost: m.unitCost,
+          lineStyle: m.lineStyle,
+          lineWidth: m.lineWidth,
+          computedLengthFt: m.computedLengthFt,
+          computedAreaFt2: m.computedAreaFt2,
+          computedVolumeCy: m.computedVolumeCy,
+          computedSurfaceAreaFt2: m.computedSurfaceAreaFt2,
+          deductions: m.deductions,
+          metadata: m.metadata,
+          subcontractorId: m.subcontractorId,
+          supplierId: m.supplierId,
+          locationTag: m.locationTag,
+          installationStatus: m.installationStatus,
+        }));
+
+        await db.insert(takeoffMeasurements).values(clonedValues);
+      }
+    } else {
+      if (currentMeasurements.length > 0) {
+        for (const m of currentMeasurements) {
+          if (!m.takeoffVersionId) {
+            await db.update(takeoffMeasurements)
+              .set({ takeoffVersionId: newVersion.id })
+              .where(eq(takeoffMeasurements.id, m.id));
+          }
+        }
+      }
+    }
+
+    res.status(201).json(newVersion);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/takeoff/versions/compare", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { takeoffVersions, takeoffMeasurements } = await import("@shared/schema");
+    const { versionAId, versionBId } = req.query;
+
+    if (!versionAId || !versionBId) {
+      res.status(400).json({ error: "versionAId and versionBId are required" });
+      return;
+    }
+
+    const [versionA] = await db.select().from(takeoffVersions)
+      .where(eq(takeoffVersions.id, versionAId as string)).limit(1);
+    const [versionB] = await db.select().from(takeoffVersions)
+      .where(eq(takeoffVersions.id, versionBId as string)).limit(1);
+
+    if (versionA?.sheetId) {
+      const access = await verifySheetAccess(versionA.sheetId, req.user!);
+      if (!access.allowed) { res.status(403).json({ error: "Access denied" }); return; }
+    }
+    if (versionB?.sheetId && versionB.sheetId !== versionA?.sheetId) {
+      const access = await verifySheetAccess(versionB.sheetId, req.user!);
+      if (!access.allowed) { res.status(403).json({ error: "Access denied" }); return; }
+    }
+
+    if (!versionA || !versionB) {
+      res.status(404).json({ error: "One or both versions not found" });
+      return;
+    }
+
+    const measurementsA = await db.select().from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.takeoffVersionId, versionAId as string));
+    const measurementsB = await db.select().from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.takeoffVersionId, versionBId as string));
+
+    type MeasurementRow = typeof measurementsA[number];
+    const getLineageKey = (m: MeasurementRow) => m.originMeasurementId || m.id;
+
+    const mapA = new Map(measurementsA.map(m => [getLineageKey(m), m]));
+    const mapB = new Map(measurementsB.map(m => [getLineageKey(m), m]));
+
+    const added: MeasurementRow[] = [];
+    const removed: MeasurementRow[] = [];
+    const changed: { older: MeasurementRow; newer: MeasurementRow; deltas: { lengthDelta: number; areaDelta: number; volumeDelta: number; costDelta: number } }[] = [];
+    const unchanged: MeasurementRow[] = [];
+
+    for (const [key, mB] of mapB) {
+      const mA = mapA.get(key);
+      if (!mA) {
+        added.push(mB);
+      } else {
+        const lengthDelta = (mB.computedLengthFt || 0) - (mA.computedLengthFt || 0);
+        const areaDelta = (mB.computedAreaFt2 || 0) - (mA.computedAreaFt2 || 0);
+        const volumeDelta = (mB.computedVolumeCy || 0) - (mA.computedVolumeCy || 0);
+        const costDelta = ((mB.unitCost || 0) * (mB.computedAreaFt2 || mB.computedLengthFt || mB.count || 0)) -
+          ((mA.unitCost || 0) * (mA.computedAreaFt2 || mA.computedLengthFt || mA.count || 0));
+
+        if (Math.abs(lengthDelta) > 0.01 || Math.abs(areaDelta) > 0.01 || Math.abs(volumeDelta) > 0.01 || Math.abs(costDelta) > 0.01) {
+          changed.push({
+            older: mA,
+            newer: mB,
+            deltas: { lengthDelta, areaDelta, volumeDelta, costDelta },
+          });
+        } else {
+          unchanged.push(mB);
+        }
+      }
+    }
+
+    for (const [key, mA] of mapA) {
+      if (!mapB.has(key)) {
+        removed.push(mA);
+      }
+    }
+
+    const totalCostA = measurementsA.reduce((sum, m) => {
+      const qty = m.computedAreaFt2 || m.computedLengthFt || m.count || 0;
+      return sum + (m.unitCost || 0) * qty;
+    }, 0);
+    const totalCostB = measurementsB.reduce((sum, m) => {
+      const qty = m.computedAreaFt2 || m.computedLengthFt || m.count || 0;
+      return sum + (m.unitCost || 0) * qty;
+    }, 0);
+
+    const totalLengthA = measurementsA.reduce((sum, m) => sum + (m.computedLengthFt || 0), 0);
+    const totalLengthB = measurementsB.reduce((sum, m) => sum + (m.computedLengthFt || 0), 0);
+    const totalAreaA = measurementsA.reduce((sum, m) => sum + (m.computedAreaFt2 || 0), 0);
+    const totalAreaB = measurementsB.reduce((sum, m) => sum + (m.computedAreaFt2 || 0), 0);
+
+    res.json({
+      versionA,
+      versionB,
+      summary: {
+        addedCount: added.length,
+        removedCount: removed.length,
+        changedCount: changed.length,
+        unchangedCount: unchanged.length,
+        totalCostDelta: totalCostB - totalCostA,
+        totalLengthDelta: totalLengthB - totalLengthA,
+        totalAreaDelta: totalAreaB - totalAreaA,
+      },
+      added,
+      removed,
+      changed,
+      unchanged,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/takeoff/versions/:versionId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { takeoffVersions, takeoffMeasurements, users } = await import("@shared/schema");
+    const { versionId } = req.params;
+
+    const [version] = await db.select().from(takeoffVersions)
+      .where(eq(takeoffVersions.id, versionId))
+      .limit(1);
+    if (!version) {
+      res.status(404).json({ error: "Version not found" });
+      return;
+    }
+
+    if (version.sheetId) {
+      const access = await verifySheetAccess(version.sheetId, req.user!);
+      if (!access.allowed) { res.status(403).json({ error: "Access denied" }); return; }
+    }
+
+    const measurements = await db.select().from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.takeoffVersionId, versionId));
+
+    let createdByName: string | null = null;
+    if (version.createdById) {
+      const [user] = await db.select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users).where(eq(users.id, version.createdById)).limit(1);
+      if (user) createdByName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+    }
+
+    res.json({ ...version, createdByName, measurements });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/api/takeoff/measurements/:id/properties", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { takeoffMeasurements } = await import("@shared/schema");
+    const { id } = req.params;
+    const propertiesSchema = z.object({
+      subcontractorId: z.string().nullable().optional(),
+      supplierId: z.string().nullable().optional(),
+      locationTag: z.string().nullable().optional(),
+      installationStatus: z.enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "ON_HOLD"]).optional(),
+      costCodeId: z.string().nullable().optional(),
+    });
+
+    const parsed = propertiesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid property data", details: parsed.error.errors });
+      return;
+    }
+
+    const { subcontractorId, supplierId, locationTag, installationStatus, costCodeId } = parsed.data;
+
+    const [existing] = await db.select().from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Measurement not found" });
+      return;
+    }
+
+    const locked = await isMeasurementLocked(id);
+    if (locked) {
+      res.status(403).json({ error: "Cannot edit properties of a measurement in a locked version" });
+      return;
+    }
+
+    const access = await verifySheetAccess(existing.sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const updates: Partial<typeof takeoffMeasurements.$inferInsert> = { updatedAt: new Date() };
+    if (subcontractorId !== undefined) updates.subcontractorId = subcontractorId;
+    if (supplierId !== undefined) updates.supplierId = supplierId;
+    if (locationTag !== undefined) updates.locationTag = locationTag ? sanitizeShortText(locationTag) : null;
+    if (installationStatus !== undefined) updates.installationStatus = installationStatus;
+    if (costCodeId !== undefined) updates.costCodeId = costCodeId;
+
+    const [updated] = await db.update(takeoffMeasurements)
+      .set(updates)
+      .where(eq(takeoffMeasurements.id, id))
+      .returning();
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;

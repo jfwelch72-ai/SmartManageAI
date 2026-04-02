@@ -16,7 +16,7 @@ import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
   Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
   CheckCircle2, AlertCircle, GalleryHorizontal, List,
-  Link2, ArrowLeft, Search, X
+  Link2, ArrowLeft, Search, X, Tag, History, PanelRight
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -33,6 +33,8 @@ import { PageThumbnailStrip } from "./takeoff/PageThumbnailStrip";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
+import { TakeoffPropertiesPanel } from "./takeoff/TakeoffPropertiesPanel";
+import { TakeoffVersionHistory } from "./takeoff/TakeoffVersionHistory";
 import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
 import AiTakeoffPanel, { type DetectedItem } from "@/components/AiTakeoffPanel";
 
@@ -73,6 +75,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       takeoffHistory.clear();
       setHiddenCategoryIds(new Set());
       setLocalRotation(null);
+      setSelectedVersionId(null);
     }
     prevSheetRef.current = selectedSheet;
   }, [selectedSheet, takeoffHistory]);
@@ -133,6 +136,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
   const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
   const [thumbnailStripOpen, setThumbnailStripOpen] = useState(false);
+  const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [linkNavigationHistory, setLinkNavigationHistory] = useState<string[]>([]);
   const [createLinkMode, setCreateLinkMode] = useState<{ step: "select-area" | "select-target"; startPoint?: { x: number; y: number }; endPoint?: { x: number; y: number } } | null>(null);
   const [createLinkTargetSheet, setCreateLinkTargetSheet] = useState<string | null>(null);
@@ -202,6 +208,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     projectCode,
     context,
     selectedSheet,
+    selectedVersionId,
     uploadDialogOpen,
     takeoffHistory,
     selectedCategoryId,
@@ -223,7 +230,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const {
     sheets, sheetsLoading, planDocuments, documentsLoading,
     projectAddenda, measurements, measurementsLoading,
-    markups, sheetLinks,
+    isViewingLockedVersion, markups, sheetLinks,
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
@@ -1042,7 +1049,54 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         isCalibrated={!!currentSheet?.scalePxPerFoot}
       />
 
-      <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
+      <div className="flex-1 flex flex-col bg-muted/30 min-h-0 relative">
+        <div className="absolute top-2 right-2 z-20 flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setVersionHistoryOpen(true)}
+                data-testid="button-version-history"
+              >
+                <History className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Version History</TooltipContent>
+          </Tooltip>
+          {selectedMeasurementId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={propertiesPanelOpen ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => setPropertiesPanelOpen(!propertiesPanelOpen)}
+                  data-testid="button-properties-panel"
+                >
+                  <PanelRight className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Properties Panel</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+        {isViewingLockedVersion && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200" data-testid="banner-viewing-historical">
+            <Lock className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>Viewing historical version (read-only)</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto h-7 px-3 text-xs"
+              onClick={() => setSelectedVersionId(null)}
+              data-testid="button-return-to-draft"
+            >
+              Return to current draft
+            </Button>
+          </div>
+        )}
         {detectedScale && !currentSheet?.scalePxPerFoot && (
           <div className="bg-blue-50 dark:bg-blue-950/30 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200" data-testid="banner-detected-scale">
             <Ruler className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
@@ -2806,6 +2860,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   <Pencil className="w-3.5 h-3.5" /> Edit Details
                 </button>
                 <button
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
+                  onClick={() => {
+                    setSelectedMeasurementId(ctxMeasurement.id);
+                    setPropertiesPanelOpen(true);
+                    setMeasurementContextMenu(null);
+                  }}
+                  data-testid="context-menu-properties"
+                >
+                  <Tag className="w-3.5 h-3.5" /> Properties
+                </button>
+                <button
                   className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent text-destructive flex items-center gap-2"
                   onClick={() => {
                     deleteMeasurementMutation.mutate(ctxMeasurement);
@@ -2995,6 +3060,29 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           />
         </div>
       )}
+
+      {propertiesPanelOpen && selectedMeasurementId && (() => {
+        const selectedMeasurement = measurements.find(m => m.id === selectedMeasurementId);
+        return selectedMeasurement ? (
+          <TakeoffPropertiesPanel
+            measurement={selectedMeasurement}
+            selectedSheet={selectedSheet}
+            onClose={() => setPropertiesPanelOpen(false)}
+          />
+        ) : null;
+      })()}
+
+      <TakeoffVersionHistory
+        open={versionHistoryOpen}
+        onOpenChange={setVersionHistoryOpen}
+        sheetId={selectedSheet}
+        projectId={context?.type === "project" ? context.projectId : projectId || undefined}
+        bidId={context?.type === "bid" ? context.bidId : undefined}
+        onVersionSwitch={(versionId) => {
+          setSelectedVersionId(versionId);
+          setVersionHistoryOpen(false);
+        }}
+      />
 
       <TakeoffSidebar
         selectedSheet={selectedSheet}

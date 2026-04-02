@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { logWarn } from "./utils/logger";
 import { takeoffSheets, projects, bids, takeoffMeasurementGroups } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 export function safeParsePoints(raw: any): any[] | null {
   if (Array.isArray(raw)) return raw;
@@ -76,4 +76,51 @@ export async function verifyGroupAccess(groupId: string, user: { id: string; org
   if (!group.sheetId) return { allowed: false, group, reason: "Group has no sheet" };
   const sheetAccess = await verifySheetAccess(group.sheetId, user);
   return { allowed: sheetAccess.allowed, group, reason: sheetAccess.reason };
+}
+
+export async function getActiveDraftVersionId(sheetId: string): Promise<string | null> {
+  const { takeoffVersions } = await import("@shared/schema");
+  const [draft] = await db.select({ id: takeoffVersions.id })
+    .from(takeoffVersions)
+    .where(and(eq(takeoffVersions.sheetId, sheetId), eq(takeoffVersions.status, "DRAFT")))
+    .limit(1);
+  return draft?.id || null;
+}
+
+export async function getDefaultVersionId(sheetId: string): Promise<string | null> {
+  const { takeoffVersions } = await import("@shared/schema");
+  const [draft] = await db.select({ id: takeoffVersions.id })
+    .from(takeoffVersions)
+    .where(and(eq(takeoffVersions.sheetId, sheetId), eq(takeoffVersions.status, "DRAFT")))
+    .limit(1);
+  if (draft) return draft.id;
+  const [latest] = await db.select({ id: takeoffVersions.id })
+    .from(takeoffVersions)
+    .where(eq(takeoffVersions.sheetId, sheetId))
+    .orderBy(desc(takeoffVersions.versionNumber))
+    .limit(1);
+  return latest?.id || null;
+}
+
+export async function hasAnyVersions(sheetId: string): Promise<boolean> {
+  const { takeoffVersions } = await import("@shared/schema");
+  const [v] = await db.select({ id: takeoffVersions.id })
+    .from(takeoffVersions)
+    .where(eq(takeoffVersions.sheetId, sheetId))
+    .limit(1);
+  return !!v;
+}
+
+export async function isMeasurementLocked(measurementId: string): Promise<boolean> {
+  const { takeoffMeasurements, takeoffVersions } = await import("@shared/schema");
+  const [m] = await db.select({ takeoffVersionId: takeoffMeasurements.takeoffVersionId })
+    .from(takeoffMeasurements)
+    .where(eq(takeoffMeasurements.id, measurementId))
+    .limit(1);
+  if (!m?.takeoffVersionId) return false;
+  const [v] = await db.select({ status: takeoffVersions.status })
+    .from(takeoffVersions)
+    .where(eq(takeoffVersions.id, m.takeoffVersionId))
+    .limit(1);
+  return v?.status === "LOCKED";
 }
