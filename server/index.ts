@@ -17,6 +17,8 @@ import { backfillMissingFeatureFlags } from "./services/featureFlagService";
 import { ensureVideoCallTables } from "./utils/ensureVideoCallTables";
 import { ensureEstimateSubcontractorTables } from "./utils/ensureEstimateSubcontractorTables";
 import { ensureEquipmentColumns } from "./utils/ensureEquipmentColumns";
+import { ensureNotificationEnumValues } from "./utils/ensureNotificationEnumValues";
+import { ensureEstimateCategoryEnumValues } from "./utils/ensureEstimateCategoryEnumValues";
 
 const app = express();
 
@@ -167,6 +169,8 @@ app.use((req, res, next) => {
   await ensureVideoCallTables();
   await ensureEstimateSubcontractorTables();
   await ensureEquipmentColumns();
+  await ensureNotificationEnumValues();
+  await ensureEstimateCategoryEnumValues();
   await backfillMissingFeatureFlags();
 
   let portRetryCount = 0;

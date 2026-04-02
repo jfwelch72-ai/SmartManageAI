@@ -569,6 +569,7 @@ export default function BidDetailPage() {
           : "Bid marked as submitted. Email delivery may have failed — check logs.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
       setShowSubmitDialog(false);
     },
     onError: (error: any) => {
@@ -857,6 +858,12 @@ export default function BidDetailPage() {
                       Active
                     </SelectItem>
                     <SelectItem
+                      value="SUBMITTED"
+                      data-testid="select-bid-status-submitted"
+                    >
+                      Submitted
+                    </SelectItem>
+                    <SelectItem
                       value="AWARDED"
                       data-testid="select-bid-status-awarded"
                       disabled={bid.status === "AWARDED"}
@@ -886,9 +893,11 @@ export default function BidDetailPage() {
                         ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
                         : bid.status === "CANCELLED"
                           ? "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300"
-                          : bid.status === "ACTIVE"
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                            : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                          : bid.status === "SUBMITTED"
+                            ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+                            : bid.status === "ACTIVE"
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                              : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
                   }
                 >
                   {bid.status}

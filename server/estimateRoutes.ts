@@ -164,19 +164,23 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
       });
     }
 
-    await Promise.all(updates.map(u => {
-      const materialCost = (u.vendorPricingId !== null && u.unitPrice !== null && u.unitPrice > 0)
-        ? parseFloat((u.unitPrice * u.quantity).toFixed(2))
-        : 0;
-      const totalCost = parseFloat((materialCost + u.laborCost + u.equipmentCost + u.consumablesCost + u.subcontractCost).toFixed(2));
+    await Promise.all(updates.map(async u => {
+      const hasVendorPrice = u.vendorPricingId !== null && u.unitPrice !== null && u.unitPrice > 0;
+
+      const setFields: Record<string, any> = {
+        vendorPricingId: u.vendorPricingId,
+        vendorMatchConfidence: u.vendorMatchConfidence,
+      };
+
+      if (hasVendorPrice) {
+        const materialCost = parseFloat((u.unitPrice! * u.quantity).toFixed(2));
+        const totalCost = parseFloat((materialCost + u.laborCost + u.equipmentCost + u.consumablesCost + u.subcontractCost).toFixed(2));
+        setFields.materialCost = materialCost.toFixed(2);
+        setFields.totalCost = totalCost.toFixed(2);
+      }
 
       return db.update(estimateLineItems)
-        .set({
-          vendorPricingId: u.vendorPricingId,
-          vendorMatchConfidence: u.vendorMatchConfidence,
-          materialCost: materialCost.toFixed(2),
-          totalCost: totalCost.toFixed(2),
-        })
+        .set(setFields)
         .where(eq(estimateLineItems.id, u.id));
     }));
   } catch (err) {
@@ -223,7 +227,14 @@ async function createEstimateSnapshot(estimateId: string, savedByUserId: string)
 }
 
 // Valid database enum values
-const VALID_CATEGORIES = ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"];
+const VALID_CATEGORIES = [
+  "CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL",
+  "PLUMBING", "HVAC", "ROOFING", "STRUCTURAL_STEEL", "MASONRY", "DRYWALL", "PAINTING",
+  "FLOORING", "FIRE_PROTECTION", "DEMOLITION", "CARPENTRY", "INSULATION", "WINDOWS_DOORS",
+  "ELEVATOR", "GRADING", "PAVING", "SITEWORK", "WATERPROOFING", "MECHANICAL", "FRAMING",
+  "STRIPING", "SIGNAGE", "LANDSCAPING", "ELECTRICAL", "OTHER",
+  "METALS", "FINISHES",
+];
 const VALID_WIRE_MESH_TYPES = ["6X6_W1.4_W1.4", "6X6_W2.9_W2.9", "4X4_W1.4_W1.4", "4X4_W2.9_W2.9"];
 const VALID_SEALER_TYPES = ["CURE_AND_SEAL", "PENETRATING", "ACRYLIC", "EPOXY"];
 

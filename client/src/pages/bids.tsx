@@ -984,6 +984,7 @@ export default function BidsPage() {
                   bid.status as
                     | "DRAFT"
                     | "ACTIVE"
+                    | "SUBMITTED"
                     | "AWARDED"
                     | "LOST"
                     | "CANCELLED"
