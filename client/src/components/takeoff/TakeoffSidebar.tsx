@@ -14,8 +14,9 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
   History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download,
-  FolderPlus, GripVertical, FolderOpen, Loader2
+  FolderPlus, GripVertical, FolderOpen, Loader2, MapPin
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -51,6 +52,61 @@ function CostCodeField({ measurementId, currentValue, onCommit }: { measurementI
     <div className="space-y-2" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { commit(localValue); } }}>
       <Label className="text-xs">Cost Code</Label>
       <CostCodeCombobox value={localValue} onChange={(val) => { setLocalValue(val); if (val.includes(" - ")) { commit(val); } }} data-testid="input-cost-code" />
+    </div>
+  );
+}
+
+interface LocationOption {
+  id: string;
+  name: string;
+  level: string;
+  parentId: string | null;
+}
+
+function LocationPickerField({ projectId, currentValue, onCommit, workspaceRef }: {
+  projectId: string;
+  currentValue: string | null;
+  onCommit: (val: string | null) => void;
+  workspaceRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const { data: locations = [] } = useQuery<LocationOption[]>({
+    queryKey: ["/api/projects", projectId, "locations"],
+    enabled: !!projectId,
+  });
+
+  if (locations.length === 0) return null;
+
+  const buildLabel = (loc: LocationOption): string => {
+    const parent = loc.parentId ? locations.find(l => l.id === loc.parentId) : null;
+    return parent ? `${parent.name} > ${loc.name}` : loc.name;
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs flex items-center gap-1">
+        <MapPin className="h-3 w-3" />
+        Location
+      </Label>
+      <Select
+        value={currentValue || "__none__"}
+        onValueChange={(val) => onCommit(val === "__none__" ? null : val)}
+        data-testid="select-measurement-location"
+      >
+        <SelectTrigger className="h-8 text-sm" data-testid="select-trigger-measurement-location">
+          <SelectValue placeholder="No Location" />
+        </SelectTrigger>
+        <SelectContent container={workspaceRef.current}>
+          <SelectItem value="__none__">No Location</SelectItem>
+          {locations.map(l => (
+            <SelectItem key={l.id} value={l.id}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{l.level}</span>
+                <span>{buildLabel(l)}</span>
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -1605,6 +1661,12 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       </Select>
                     </div>
                   )}
+                  <LocationPickerField
+                    projectId={projectId}
+                    currentValue={(selM as any).locationId || null}
+                    onCommit={(val) => updateMeasurementMutation.mutate({ id: selM.id, locationId: val || null })}
+                    workspaceRef={workspaceRef}
+                  />
                   <Separator />
                   <CostCodeField measurementId={selM.id} currentValue={(selM as any).costCodeId || ""} onCommit={(val) => { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); }} />
                   <div className="space-y-2">

@@ -60,6 +60,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Warranty / Post-Construction Module**: Tracking defects, warranty claims, callbacks, and recalls with task and cost management.
 *   **Asset & Property Management**: Post-completion lifecycle with Asset Handover, Warranty Tracking, and Maintenance Logs.
 *   **Risk Management Module**: Full risk register per project with category/probability/impact scoring, risk matrix heat map visualization, lifecycle tracking, cost/schedule impact linking, auto change order generation on occurrence, and AI-powered risk suggestions.
+*   **Location-Based Takeoff & Field Integration**: Hierarchical location system (Building > Floor > Room > Zone) for organizing takeoff measurements by physical location. Field Takeoff tab with mobile-friendly view for marking installed quantities, progress tracking, photo attachments, and cost overrun alerts with notifications. Location picker in takeoff measurement properties sidebar. Location cost breakdown integrated into Cost Ledger and Budget tabs.
 *   **BIM Viewer**: IFC file upload and 3D viewer with orbit/pan/zoom, element tree, properties, measurement tools, and split-view.
 *   **Contractor Marketplace Directory**: Searchable public directory of organizations.
 *   **Leave Management Module**: Employee self-service and manager/HR views for leave management.

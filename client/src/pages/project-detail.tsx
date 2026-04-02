@@ -109,6 +109,8 @@ import FinancialsTab from "@/components/project-tabs/FinancialsTab";
 import SafetyTrainingTab from "@/components/project-tabs/SafetyTrainingTab";
 import ProjectVaultTab from "@/components/project-tabs/ProjectVaultTab";
 import RisksTab from "@/components/project-tabs/RisksTab";
+import LocationManagerTab from "@/components/project-tabs/LocationManagerTab";
+import FieldTakeoffTab from "@/components/project-tabs/FieldTakeoffTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
 import type { LucideIcon } from "lucide-react";
@@ -275,6 +277,20 @@ function buildTabConfigs(
       icon: Wrench,
       visible: showAssetMgmt,
       group: "Asset Management",
+    },
+    {
+      value: "field-takeoff",
+      label: "Field Takeoff",
+      icon: ClipboardCheck,
+      visible: true,
+      group: "Field Operations",
+    },
+    {
+      value: "locations",
+      label: "Locations",
+      icon: MapPin,
+      visible: hasManagementAccess(userRole),
+      group: "Field Operations",
     },
     {
       value: "risks",
@@ -890,6 +906,21 @@ export default function ProjectDetailPage() {
               projectId={project.id}
               projectCode={projectCode}
               scopeItems={scopeItems}
+            />
+          </TabsContent>
+
+          <TabsContent value="field-takeoff">
+            <FieldTakeoffTab
+              projectId={project.id}
+              projectCode={projectCode}
+            />
+          </TabsContent>
+
+          <TabsContent value="locations">
+            <LocationManagerTab
+              projectId={project.id}
+              projectCode={projectCode}
+              userRole={user?.role || ""}
             />
           </TabsContent>
 

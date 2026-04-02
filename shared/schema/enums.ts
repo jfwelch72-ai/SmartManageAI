@@ -632,6 +632,8 @@ export const workflowNotificationChannelEnum = pgEnum("workflow_notification_cha
 export const costSourceCategoryEnum = pgEnum("cost_source_category", ["LABOR", "MATERIAL", "EQUIPMENT", "SUBCONTRACTOR", "OTHER"]);
 export const costOriginModuleEnum = pgEnum("cost_origin_module", ["ESTIMATE", "PO", "PAYROLL", "TM", "RECEIPT", "CHANGE_ORDER", "EQUIPMENT", "SUBCONTRACTOR"]);
 export const costTransactionStatusEnum = pgEnum("cost_transaction_status", ["ACTIVE", "VOIDED"]);
+export const locationLevelEnum = pgEnum("location_level", ["BUILDING", "FLOOR", "ROOM", "ZONE"]);
+
 export const riskCategoryEnum = pgEnum("risk_category", [
   "FINANCIAL", "SCHEDULE", "SAFETY", "ENVIRONMENTAL", "REGULATORY",
   "SUBCONTRACTOR", "SUPPLY_CHAIN", "WEATHER", "DESIGN", "OTHER"

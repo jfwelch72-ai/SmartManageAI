@@ -136,13 +136,14 @@ export default function FinancialsTab({
       <TabsContent value="budget">
         <BudgetTab
           projectCode={projectCode}
+          projectId={project.id}
           userRole={userRole}
           projectBudget={Number(project.budget || project.contractAmount || 0)}
         />
       </TabsContent>
 
       <TabsContent value="cost-ledger">
-        <CostLedgerTab projectCode={projectCode} />
+        <CostLedgerTab projectCode={projectCode} projectId={project.id} />
       </TabsContent>
 
       <TabsContent value="cost-explorer">

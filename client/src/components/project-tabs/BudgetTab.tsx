@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Plus, Trash2, Save, DollarSign, AlertTriangle, Check, Info, ArrowLeftRight, PlusCircle, X } from "lucide-react";
+import { Plus, Trash2, Save, DollarSign, AlertTriangle, Check, Info, ArrowLeftRight, PlusCircle, X, MapPin } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -447,11 +448,27 @@ function RemapDialog({ open, onClose, seededLines, nonSeededLines, projectCode, 
   );
 }
 
-export default function BudgetTab({ projectCode, userRole, projectBudget }: { projectCode: string; userRole: string; projectBudget?: number }) {
+export default function BudgetTab({ projectCode, projectId, userRole, projectBudget }: { projectCode: string; projectId?: string; userRole: string; projectBudget?: number }) {
   const { toast } = useToast();
   const [lines, setLines] = useState<LocalLine[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [remapDialogOpen, setRemapDialogOpen] = useState(false);
+  const [showLocationCosts, setShowLocationCosts] = useState(false);
+
+  const { data: locationBreakdown } = useQuery<{
+    breakdown: Array<{
+      locationId: string | null;
+      locationName: string;
+      locationLevel: string | null;
+      totalItems: number;
+      totalCost: number;
+      plannedQuantity: number;
+      installedQuantity: number;
+    }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "location-breakdown"],
+    enabled: !!projectId && showLocationCosts,
+  });
 
   const canEdit = userRole === "ADMIN" || userRole === "MANAGER";
 
@@ -801,6 +818,65 @@ export default function BudgetTab({ projectCode, userRole, projectBudget }: { pr
         projectCode={projectCode}
         onSuccess={handleRemapSuccess}
       />
+
+      {projectId && (
+        <Card className="mt-4" data-testid="card-budget-location-costs">
+          <CardHeader className="py-3 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Takeoff Cost by Location
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLocationCosts(!showLocationCosts)}
+                data-testid="button-toggle-budget-location-costs"
+              >
+                {showLocationCosts ? "Hide" : "Show"}
+              </Button>
+            </div>
+          </CardHeader>
+          {showLocationCosts && (
+            <CardContent className="pt-0">
+              {locationBreakdown && locationBreakdown.breakdown.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Level</TableHead>
+                      <TableHead className="text-right">Items</TableHead>
+                      <TableHead className="text-right">Takeoff Cost</TableHead>
+                      <TableHead>Install Progress</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {locationBreakdown.breakdown.map((entry, idx) => {
+                      const pct = entry.plannedQuantity > 0 ? (entry.installedQuantity / entry.plannedQuantity) * 100 : 0;
+                      return (
+                        <TableRow key={entry.locationId || `unassigned-${idx}`} data-testid={`row-budget-location-${entry.locationId || "unassigned"}`}>
+                          <TableCell className="font-medium">{entry.locationName}</TableCell>
+                          <TableCell><Badge variant="outline" className="text-xs">{entry.locationLevel || "—"}</Badge></TableCell>
+                          <TableCell className="text-right">{entry.totalItems}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtCurrency(entry.totalCost)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 w-28">
+                              <Progress value={Math.min(pct, 100)} className="h-2 flex-1" />
+                              <span className="text-xs font-medium w-8 text-right">{pct.toFixed(0)}%</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No location data available. Assign locations to takeoff measurements to see costs grouped by zone.</p>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

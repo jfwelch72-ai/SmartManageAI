@@ -153,6 +153,7 @@ import projectCrudRoutes from "./projectCrudRoutes";
 import projectContentRoutes from "./projectContentRoutes";
 import projectFinancialRoutes from "./projectFinancialRoutes";
 import scopeRoutes from "./scopeRoutes";
+import locationRoutes from "./locationRoutes";
 import materialTrackingRoutes from "./materialTrackingRoutes";
 import productionRateRoutes from "./productionRateRoutes";
 import crmRoutes from "./crmRoutes";
@@ -516,6 +517,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // CRM Routes (consolidated: vendor, contact, pipeline, enrollment, pricing)
   app.use(crmRoutes);
+
+  // Location Routes (project locations + field takeoff)
+  app.use(locationRoutes);
 
   // Scope Routes (consolidated: scope items + scope config)
   app.use(scopeRoutes);

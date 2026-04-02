@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { BarChart3, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, CheckCircle, Edit2, X, Save, TrendingDown, TrendingUp, Target } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, CheckCircle, Edit2, X, Save, TrendingDown, TrendingUp, Target, MapPin } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -183,14 +183,31 @@ function ForecastAdjustmentPopover({ projectCode, costCode, currentValue, curren
   );
 }
 
-export default function CostLedgerTab({ projectCode }: { projectCode: string }) {
+export default function CostLedgerTab({ projectCode, projectId }: { projectCode: string; projectId?: string }) {
   const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
+  const [showLocationBreakdown, setShowLocationBreakdown] = useState(false);
   const { toast } = useToast();
 
   const { data: ledger, isLoading, refetch, isFetching } = useQuery<CostLedgerSummary>({
     queryKey: ["/api/projects", projectCode, "cost-ledger"],
     enabled: !!projectCode,
     refetchInterval: 5 * 60 * 1000,
+  });
+
+  const { data: locationBreakdown } = useQuery<{
+    locations: Array<{ id: string; name: string; level: string }>;
+    breakdown: Array<{
+      locationId: string | null;
+      locationName: string;
+      locationLevel: string | null;
+      totalItems: number;
+      totalCost: number;
+      plannedQuantity: number;
+      installedQuantity: number;
+    }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "location-breakdown"],
+    enabled: !!projectId && showLocationBreakdown,
   });
 
   const toggleDivision = (div: string) => {
@@ -440,6 +457,67 @@ export default function CostLedgerTab({ projectCode }: { projectCode: string }) 
           </div>
         </CardContent>
       </Card>
+
+      {projectId && (
+        <Card data-testid="card-location-cost-breakdown">
+          <CardHeader className="py-3 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Cost by Location
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLocationBreakdown(!showLocationBreakdown)}
+                data-testid="button-toggle-location-breakdown"
+              >
+                {showLocationBreakdown ? "Hide" : "Show Breakdown"}
+              </Button>
+            </div>
+          </CardHeader>
+          {showLocationBreakdown && (
+            <CardContent className="pt-0">
+              {locationBreakdown && locationBreakdown.breakdown.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Level</TableHead>
+                      <TableHead className="text-right">Items</TableHead>
+                      <TableHead className="text-right">Total Cost</TableHead>
+                      <TableHead className="text-right">Installed</TableHead>
+                      <TableHead>Progress</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {locationBreakdown.breakdown.map((entry, idx) => {
+                      const pct = entry.plannedQuantity > 0 ? (entry.installedQuantity / entry.plannedQuantity) * 100 : 0;
+                      return (
+                        <TableRow key={entry.locationId || `unassigned-${idx}`} data-testid={`row-location-cost-${entry.locationId || "unassigned"}`}>
+                          <TableCell className="font-medium">{entry.locationName}</TableCell>
+                          <TableCell><Badge variant="outline" className="text-xs">{entry.locationLevel || "—"}</Badge></TableCell>
+                          <TableCell className="text-right">{entry.totalItems}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtCurrency(entry.totalCost)}</TableCell>
+                          <TableCell className="text-right font-mono">{entry.installedQuantity.toFixed(1)} / {entry.plannedQuantity.toFixed(1)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 w-24">
+                              <Progress value={Math.min(pct, 100)} className="h-2 flex-1" />
+                              <span className="text-xs font-medium w-8 text-right">{pct.toFixed(0)}%</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No location breakdown data available. Assign locations to takeoff measurements to see cost by zone.</p>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
