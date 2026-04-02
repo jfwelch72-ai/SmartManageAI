@@ -185,6 +185,7 @@ import clauseLibraryRoutes from "./clauseLibraryRoutes";
 import assetManagementRoutes from "./assetManagementRoutes";
 import revenueRecognitionRoutes from "./revenueRecognitionRoutes";
 import riskRoutes from "./riskRoutes";
+import userSettingsRoutes from "./userSettingsRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -373,6 +374,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", assetManagementRoutes);
 
   app.use("/api", riskRoutes);
+
+  app.use(userSettingsRoutes);
 
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);

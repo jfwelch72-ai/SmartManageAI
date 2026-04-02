@@ -446,7 +446,7 @@ import {
   skillVerificationRequests, userCertifications, notifications,
   employeePerformanceProfiles, attendanceLogs, safetyIncidents,
   qualityIssues, performanceReviews, supervisorNotes,
-  ssoConfigurations
+  ssoConfigurations, userSessions, activityLog
 } from "@shared/schema";
 import {
   requireAuth, hashPassword, verifyPassword, generateToken,
@@ -648,6 +648,27 @@ const upload = multer({
       const token = generateToken(user.id, user.tokenVersion);
       setAuthCookie(res, token);
 
+      const loginIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null;
+      const loginUa = req.headers["user-agent"] || null;
+
+      try {
+        await db.insert(userSessions).values({
+          userId: user.id,
+          userAgent: loginUa,
+          ipAddress: loginIp,
+        });
+        await db.insert(activityLog).values({
+          userId: user.id,
+          organizationId: user.organizationId || undefined,
+          action: "LOGIN",
+          details: "User logged in",
+          ipAddress: loginIp,
+          userAgent: loginUa,
+        });
+      } catch (err) {
+        logWarn("Failed to log login session/activity", { userId: user.id, error: err instanceof Error ? err.message : String(err) });
+      }
+
       const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });
     } catch (error) {
@@ -656,8 +677,32 @@ const upload = multer({
     }
   });
 
-  // Logout
-  router.post("/api/auth/logout", (req: AuthRequest, res) => {
+  router.post("/api/auth/logout", requireAuth, (req: AuthRequest, res) => {
+    const userId = req.user?.id;
+    const logoutIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null;
+    const logoutUa = req.headers["user-agent"] || null;
+
+    if (userId) {
+      db.insert(activityLog).values({
+        userId,
+        organizationId: req.user?.organizationId || undefined,
+        action: "LOGOUT",
+        details: "User logged out",
+        ipAddress: logoutIp,
+        userAgent: logoutUa,
+      }).catch((err) => logWarn("Failed to log logout activity", { userId, error: err instanceof Error ? err.message : String(err) }));
+
+      db.update(userSessions)
+        .set({ revokedAt: new Date() })
+        .where(and(
+          eq(userSessions.userId, userId),
+          isNull(userSessions.revokedAt),
+          eq(userSessions.ipAddress, logoutIp || ""),
+          eq(userSessions.userAgent, logoutUa || ""),
+        ))
+        .catch((err) => logWarn("Failed to revoke session on logout", { userId, error: err instanceof Error ? err.message : String(err) }));
+    }
+
     clearAuthCookie(res);
     res.json({ success: true });
   });
@@ -795,9 +840,24 @@ const upload = multer({
         console.log(`[DEV] Created test user: ${testEmail} (${role})`);
       }
 
-      // Generate token and set cookie
       const token = generateToken(testUser.id, testUser.tokenVersion);
       setAuthCookie(res, token);
+
+      const devIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null;
+      const devUa = req.headers["user-agent"] || null;
+      try {
+        await db.insert(userSessions).values({ userId: testUser.id, userAgent: devUa, ipAddress: devIp });
+        await db.insert(activityLog).values({
+          userId: testUser.id,
+          organizationId: testUser.organizationId || undefined,
+          action: "LOGIN",
+          details: "Dev quick login",
+          ipAddress: devIp,
+          userAgent: devUa,
+        });
+      } catch (err) {
+        logWarn("Failed to log dev login session/activity", { userId: testUser.id, error: err instanceof Error ? err.message : String(err) });
+      }
 
       const { passwordHash: _, tokenVersion: __, ...userWithoutPassword } = testUser;
       res.json({ 
@@ -973,6 +1033,19 @@ const upload = multer({
       setAuthCookie(res, token);
 
       await logAudit({ userId, action: "password_change", entityType: "users", entityId: userId, oldValue: null, newValue: null }, req as any);
+
+      try {
+        await db.insert(activityLog).values({
+          userId,
+          organizationId: req.user?.organizationId || undefined,
+          action: "PASSWORD_CHANGE",
+          details: "Password changed successfully",
+          ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
+          userAgent: req.headers["user-agent"] || null,
+        });
+      } catch (err) {
+        logWarn("Failed to log password change activity", { userId, error: err instanceof Error ? err.message : String(err) });
+      }
 
       res.json({ message: "Password changed successfully" });
     } catch (error) {

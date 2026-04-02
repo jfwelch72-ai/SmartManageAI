@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot } from "lucide-react";
+import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot, Settings } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
@@ -240,10 +240,10 @@ export default function TopHeader() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <Link href="/profile">
-                <DropdownMenuItem data-testid="menu-profile">
+              <Link href="/settings">
+                <DropdownMenuItem data-testid="menu-settings">
                   <User className="mr-2 h-4 w-4" />
-                  Profile
+                  Profile & Settings
                 </DropdownMenuItem>
               </Link>
               <DropdownMenuItem onClick={handleToggleAIAssistant} data-testid="menu-toggle-ai">

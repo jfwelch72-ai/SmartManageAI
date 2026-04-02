@@ -97,7 +97,20 @@ export default function LoginPage() {
       if (redirect && loggedInUser?.organizationId) {
         setLocation(redirect);
       } else {
-        setLocation(getRedirectPath(loggedInUser || {}));
+        const defaultPath = getRedirectPath(loggedInUser || {});
+        if (loggedInUser?.organizationId) {
+          try {
+            const settingsRes = await fetch('/api/user-settings', { credentials: 'include' });
+            if (settingsRes.ok) {
+              const settings = await settingsRes.json();
+              if (settings.defaultLandingPage) {
+                setLocation(settings.defaultLandingPage);
+                return;
+              }
+            }
+          } catch {}
+        }
+        setLocation(defaultPath);
       }
     } catch (error: any) {
       toast({

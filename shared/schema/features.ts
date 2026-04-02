@@ -7824,6 +7824,92 @@ export const insertGlobalWorkflowTemplateSchema = createInsertSchema(globalWorkf
 export type InsertGlobalWorkflowTemplate = z.infer<typeof insertGlobalWorkflowTemplateSchema>;
 export type GlobalWorkflowTemplate = typeof globalWorkflowTemplates.$inferSelect;
 
+export const userSettings = pgTable("user_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  themePreference: text("theme_preference").notNull().default("system"),
+  defaultLandingPage: text("default_landing_page").notNull().default("/dashboard"),
+  dateFormat: text("date_format").notNull().default("MM/DD/YYYY"),
+  timeFormat: text("time_format").notNull().default("12h"),
+  timezone: text("timezone"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("user_settings_user_idx").on(table.userId),
+}));
+
+export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
+export type UserSettings = typeof userSettings.$inferSelect;
+
+export const activityLog = pgTable("activity_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  details: text("details"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("activity_log_user_idx").on(table.userId),
+  createdIdx: index("activity_log_created_idx").on(table.createdAt),
+}));
+
+export const insertActivityLogSchema = createInsertSchema(activityLog).omit({ id: true, createdAt: true });
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ActivityLog = typeof activityLog.$inferSelect;
+
+export const userApiKeys = pgTable("user_api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyPrefix: varchar("key_prefix", { length: 12 }).notNull(),
+  keySuffix: varchar("key_suffix", { length: 4 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at"),
+}, (table) => ({
+  userIdx: index("user_api_keys_user_idx").on(table.userId),
+}));
+
+export const insertUserApiKeySchema = createInsertSchema(userApiKeys).omit({ id: true, createdAt: true, lastUsedAt: true });
+export type InsertUserApiKey = z.infer<typeof insertUserApiKeySchema>;
+export type UserApiKey = typeof userApiKeys.$inferSelect;
+
+export const userTotpSecrets = pgTable("user_totp_secrets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  secretHash: text("secret_hash").notNull(),
+  backupCodesHash: text("backup_codes_hash").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  verifiedAt: timestamp("verified_at"),
+}, (table) => ({
+  userIdx: index("user_totp_secrets_user_idx").on(table.userId),
+}));
+
+export const insertUserTotpSecretSchema = createInsertSchema(userTotpSecrets).omit({ id: true, createdAt: true, verifiedAt: true });
+export type InsertUserTotpSecret = z.infer<typeof insertUserTotpSecretSchema>;
+export type UserTotpSecret = typeof userTotpSecrets.$inferSelect;
+
+export const userSessions = pgTable("user_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastActiveAt: timestamp("last_active_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+}, (table) => ({
+  userIdx: index("user_sessions_user_idx").on(table.userId),
+}));
+
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({ id: true, createdAt: true, lastActiveAt: true, revokedAt: true });
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+export type UserSession = typeof userSessions.$inferSelect;
+
 export const announcementDismissals = pgTable("announcement_dismissals", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   announcementId: text("announcement_id").notNull().references(() => platformAnnouncements.id, { onDelete: "cascade" }),

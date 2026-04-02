@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { useTheme } from "@/hooks/use-theme";
 import { DashboardCustomizationProvider, useDashboardCustomization, type FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
 import { RoutePermissions, hasManagementAccess, hasCrmAccess } from "@/lib/rbac";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -151,6 +152,7 @@ const ClauseLibraryPage = lazy(() => import("@/pages/clause-library"));
 const ProgressBillingPage = lazy(() => import("@/pages/progress-billing"));
 const WipReportPage = lazy(() => import("@/pages/wip-report"));
 const TestFlowPage = lazy(() => import("@/pages/test-flow"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -245,6 +247,8 @@ function Router() {
       {/* Routes accessible to all authenticated users */}
       <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
       <Route path="/profile" component={() => <ProtectedRoute component={ProfilePage} />} />
+      <Route path="/settings/:section" component={() => <ProtectedRoute component={SettingsPage} />} />
+      <Route path="/settings" component={() => <ProtectedRoute component={SettingsPage} />} />
       <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
       <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
       <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />
@@ -431,6 +435,11 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ThemeInitializer() {
+  useTheme();
+  return null;
+}
+
 function AppContent() {
   const [location] = useLocation();
   const { user, isLoading } = useAuth();
@@ -560,6 +569,7 @@ function App() {
               <DashboardCustomizationProvider>
                 <TooltipProvider>
                   <Toaster />
+                  <ThemeInitializer />
                   <AppContent />
                   <FirstTimeWelcomeModal />
                   <AuthGatedWidget />
