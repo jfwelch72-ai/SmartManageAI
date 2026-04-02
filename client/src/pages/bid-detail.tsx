@@ -13,6 +13,8 @@ import {
   Send,
   ExternalLink,
   Brain,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Select,
@@ -657,6 +659,13 @@ export default function BidDetailPage() {
     "No location specified";
   const canEdit = canEditBids(user?.role);
 
+  const dueDate = bid.dueDate ? new Date(bid.dueDate) : null;
+  const now = new Date();
+  const daysUntilDue = dueDate ? Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
+  const isOverdue = daysUntilDue !== null && daysUntilDue < 0;
+  const isUrgent = daysUntilDue !== null && daysUntilDue >= 0 && daysUntilDue <= 3;
+  const isApproaching = daysUntilDue !== null && daysUntilDue > 3 && daysUntilDue <= 7;
+
   const estimateTotals = estimate?.totals || {
     laborCost: 0,
     materialCost: 0,
@@ -791,6 +800,23 @@ export default function BidDetailPage() {
         subcontractCost: Number(item.subcontractCost),
         needsSubSelection: !hasSubQuotes,
       })) || [];
+
+  const selectedMaterialCount = materialQuotes.filter((q: any) => q.isSelected).length;
+  const selectedSubCount = quotes.filter((q: any) => q.isSelected).length;
+  const stepProgress: Record<number, { current: number; total: number; label: string }> = {};
+  stepProgress[1] = { current: bidDocuments.length, total: Math.max(bidDocuments.length, 1), label: "docs" };
+  if ((estimate?.lineItems?.length || 0) > 0) {
+    stepProgress[2] = { current: estimate!.lineItems!.length, total: estimate!.lineItems!.length, label: "items" };
+  }
+  if (derivedMaterialRequirements.length > 0 || materialQuotes.length > 0) {
+    stepProgress[3] = { current: selectedMaterialCount, total: Math.max(materialQuotes.length, derivedMaterialRequirements.length, 1), label: "quotes" };
+  }
+  if (derivedEquipmentRequirements.length > 0 || equipmentSelections.length > 0) {
+    stepProgress[4] = { current: equipmentSelections.length, total: Math.max(equipmentSelections.length, derivedEquipmentRequirements.length, 1), label: "items" };
+  }
+  if (derivedSubRequirements.length > 0 || quotes.length > 0) {
+    stepProgress[5] = { current: selectedSubCount, total: Math.max(quotes.length, derivedSubRequirements.length, 1), label: "quotes" };
+  }
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
@@ -927,6 +953,34 @@ export default function BidDetailPage() {
                   Win Prob: {bid.aiWinProbability}%
                 </Badge>
               )}
+              {dueDate && bid.status !== "AWARDED" && bid.status !== "LOST" && bid.status !== "CANCELLED" && (
+                <Badge
+                  variant={isOverdue ? "destructive" : "outline"}
+                  className={`text-xs gap-1 ${
+                    isOverdue
+                      ? ""
+                      : isUrgent
+                        ? "border-red-300 text-red-700 bg-red-50 dark:border-red-700 dark:text-red-400 dark:bg-red-950/30 animate-pulse"
+                        : isApproaching
+                          ? "border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:bg-amber-950/30"
+                          : "border-border text-muted-foreground"
+                  }`}
+                  data-testid="badge-bid-due-date"
+                >
+                  {isOverdue ? (
+                    <AlertTriangle className="w-3 h-3" />
+                  ) : (
+                    <Clock className="w-3 h-3" />
+                  )}
+                  {isOverdue
+                    ? `Overdue by ${Math.abs(daysUntilDue!)} day${Math.abs(daysUntilDue!) !== 1 ? "s" : ""}`
+                    : daysUntilDue === 0
+                      ? "Due today"
+                      : daysUntilDue === 1
+                        ? "Due tomorrow"
+                        : `${daysUntilDue} days left`}
+                </Badge>
+              )}
             </div>
           </div>
           {canEdit && (
@@ -972,6 +1026,7 @@ export default function BidDetailPage() {
             onStepChange={setCurrentStep}
             steps={steps}
             stepStatus={stepStatus}
+            stepProgress={stepProgress}
             directCost={directCost}
             overheadPercent={overheadPercent}
             overheadAmount={overheadAmount}

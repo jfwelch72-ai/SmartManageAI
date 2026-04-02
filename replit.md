@@ -68,6 +68,10 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **AIA Progress Billing Engine**: Full AIA G702/G703 progress billing system based on SOV module.
 *   **Revenue Recognition & WIP Reporting**: Cost-to-cost method revenue recognition engine with per-project WIP analysis, standalone WIP Schedule Report page, monthly snapshots, historical comparison, and CSV export.
 
+*   **Bid Flow UX Enhancements**: Step progress indicators (X/Y docs, X/Y quotes) with mini progress bars in Cost Builder sidebar, due date countdown badge with urgency warnings (overdue/urgent/approaching), and visual step completion tracking.
+*   **Project Tab Navigation**: Pinnable/favorite tabs (persisted per user in localStorage with role-based defaults), quick-search popover for jumping to any tab by name, inline pin/unpin star icons on tab triggers, and dedicated pinned tabs row at the top of the navigation.
+*   **Takeoff Measurement Summary Report**: Printable dialog grouped by category with measurement tables (label, type, qty, unit, unit cost, total), subtotals per category, and grand total. Accessible via book icon in the Measurements header.
+
 **API Documentation**:
 *   **Swagger UI** served at `/api-docs` with OpenAPI 3.0 spec.
 

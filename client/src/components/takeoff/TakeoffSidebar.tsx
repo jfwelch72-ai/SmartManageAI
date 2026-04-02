@@ -267,6 +267,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const [quickAddLabel, setQuickAddLabel] = useState("");
   const [quickAddType, setQuickAddType] = useState<string>("COUNT");
   const [quickAddQty, setQuickAddQty] = useState("1");
+  const [showSummaryReport, setShowSummaryReport] = useState(false);
   const [quickAddUnit, setQuickAddUnit] = useState("EA");
   const [quickAddCategory, setQuickAddCategory] = useState<string>("");
   const [quickAddPending, setQuickAddPending] = useState(false);
@@ -834,6 +835,14 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               <div className="flex items-center justify-between mb-3 gap-2">
                 <h3 className="font-semibold text-sm shrink-0">Measurements</h3>
                 <div className="flex items-center gap-0.5 flex-wrap justify-end">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowSummaryReport(true)} data-testid="button-measurement-summary">
+                        <BookOpen className="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Measurement Summary Report</TooltipContent>
+                  </Tooltip>
                   {(onExportCurrentSheet || onExportAllSheets) && (
                     <DropdownMenu>
                       <Tooltip>
@@ -2470,6 +2479,126 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
             <Button onClick={handleBulkPaste} disabled={bulkPastePending || !bulkPasteText.trim()} data-testid="button-bulk-paste-submit">
               {bulkPastePending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
               {bulkPastePending ? "Adding..." : "Add Items"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSummaryReport} onOpenChange={setShowSummaryReport}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto print:max-w-none print:max-h-none print:overflow-visible print:shadow-none" data-testid="measurement-summary-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              Measurement Summary Report
+            </DialogTitle>
+            <DialogDescription>
+              {currentSheet?.name ? `Sheet: ${currentSheet.name}` : "All measurements"} · {measurements.length} measurement{measurements.length !== 1 ? "s" : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 print:space-y-2" id="measurement-summary-content">
+            {(() => {
+              const byCat: Record<string, { name: string; color: string; measurements: typeof measurements }> = {};
+              const uncategorized: typeof measurements = [];
+              measurements.forEach(m => {
+                const cat = categories.find(c => c.id === m.categoryId);
+                if (cat) {
+                  if (!byCat[cat.id]) byCat[cat.id] = { name: cat.name, color: cat.color, measurements: [] };
+                  byCat[cat.id].measurements.push(m);
+                } else {
+                  uncategorized.push(m);
+                }
+              });
+              const catEntries = Object.values(byCat);
+              const formatVal = (v: number | string | null | undefined) => {
+                const n = Number(v);
+                return isNaN(n) ? "0" : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              };
+              const getUnit = (m: typeof measurements[0]) => {
+                if (m.measurementType === "COUNT") return "ea";
+                if (m.measurementType === "AREA" || m.measurementType === "PITCHED_AREA" || m.measurementType === "SURFACE_AREA") return "sf";
+                if (m.measurementType === "VOLUME") return "cf";
+                return m.units || "lf";
+              };
+              const renderGroup = (title: string, color: string | null, items: typeof measurements) => (
+                <div key={title} className="border rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
+                    {color && <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />}
+                    <span className="text-sm font-semibold">{title}</span>
+                    <Badge variant="secondary" className="text-xs ml-auto">{items.length}</Badge>
+                  </div>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="text-left p-2 font-medium">Label</th>
+                        <th className="text-left p-2 font-medium">Type</th>
+                        <th className="text-right p-2 font-medium">Qty</th>
+                        <th className="text-right p-2 font-medium">Unit</th>
+                        <th className="text-right p-2 font-medium">Unit Cost</th>
+                        <th className="text-right p-2 font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map(m => {
+                        const qty = Number(m.quantity || 0);
+                        const unitCost = Number(m.unitCost || 0);
+                        const total = qty * unitCost;
+                        return (
+                          <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                            <td className="p-2 font-medium">{m.label || m.measurementType}</td>
+                            <td className="p-2 text-muted-foreground capitalize">{m.measurementType?.toLowerCase().replace(/_/g, " ")}</td>
+                            <td className="p-2 text-right font-mono">{formatVal(qty)}</td>
+                            <td className="p-2 text-right text-muted-foreground">{getUnit(m)}</td>
+                            <td className="p-2 text-right font-mono">{unitCost > 0 ? `$${formatVal(unitCost)}` : "—"}</td>
+                            <td className="p-2 text-right font-mono font-medium">{total > 0 ? `$${formatVal(total)}` : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/30">
+                        <td colSpan={2} className="p-2 font-semibold">Subtotal</td>
+                        <td className="p-2 text-right font-mono font-semibold">{formatVal(items.reduce((s, m) => s + Number(m.quantity || 0), 0))}</td>
+                        <td className="p-2" />
+                        <td className="p-2" />
+                        <td className="p-2 text-right font-mono font-semibold">
+                          {(() => { const t = items.reduce((s, m) => s + Number(m.quantity || 0) * Number(m.unitCost || 0), 0); return t > 0 ? `$${formatVal(t)}` : "—"; })()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              );
+              return (
+                <>
+                  {catEntries.map(e => renderGroup(e.name, e.color, e.measurements))}
+                  {uncategorized.length > 0 && renderGroup("Uncategorized", null, uncategorized)}
+                  <div className="border rounded-lg p-3 bg-primary/5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold">Grand Total</span>
+                      <div className="text-right">
+                        <span className="text-sm font-mono font-bold">
+                          {(() => {
+                            const t = measurements.reduce((s, m) => s + Number(m.quantity || 0) * Number(m.unitCost || 0), 0);
+                            return t > 0 ? `$${formatVal(t)}` : "—";
+                          })()}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          ({measurements.length} measurement{measurements.length !== 1 ? "s" : ""})
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+          <DialogFooter className="print:hidden">
+            <Button variant="outline" onClick={() => setShowSummaryReport(false)} data-testid="button-close-summary">
+              Close
+            </Button>
+            <Button onClick={() => window.print()} data-testid="button-print-summary">
+              <Download className="w-4 h-4 mr-2" />
+              Print / Export
             </Button>
           </DialogFooter>
         </DialogContent>

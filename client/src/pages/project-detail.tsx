@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
@@ -18,6 +18,9 @@ import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertTriangle,
   Package,
@@ -58,6 +61,9 @@ import {
   ShieldOff,
   MapPin,
   Loader2,
+  Search,
+  Pin,
+  Star,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -447,6 +453,31 @@ function buildTabConfigs(
   ];
 }
 
+const ROLE_DEFAULT_TABS: Record<string, string[]> = {
+  SUPER_ADMIN: ["overview", "project-financials", "schedule", "risks"],
+  ADMIN: ["overview", "project-financials", "schedule", "procurement"],
+  MANAGER: ["overview", "project-financials", "schedule", "daily-notes"],
+  PROJECT_MANAGER: ["overview", "schedule", "daily-notes", "project-financials"],
+  SUPERINTENDENT: ["overview", "daily-notes", "inspections", "time", "field-takeoff"],
+  PROJECT_ENGINEER: ["overview", "rfis", "submittals", "plans", "schedule"],
+  ESTIMATOR: ["overview", "estimate", "plans", "project-financials"],
+  FOREMAN: ["overview", "daily-notes", "time", "field-takeoff"],
+  OFFICE_MANAGER: ["overview", "project-financials", "payroll", "procurement"],
+};
+
+function getPinnedTabs(userId: string): string[] {
+  try {
+    const stored = localStorage.getItem(`pinned-tabs-${userId}`);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setPinnedTabs(userId: string, tabs: string[]) {
+  localStorage.setItem(`pinned-tabs-${userId}`, JSON.stringify(tabs));
+}
+
 function groupTabs(tabs: TabConfig[]): TabGroupEntry[] {
   const grouped: TabGroupEntry[] = [];
   for (const groupName of TAB_GROUP_ORDER) {
@@ -470,6 +501,24 @@ export default function ProjectDetailPage() {
   const { toast } = useToast();
   const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
   const canAccessFinancialsPerms = useFeaturePermission("canAccessFinancials");
+  const [pinnedTabValues, setPinnedTabValuesState] = useState<string[]>(() => {
+    const stored = getPinnedTabs(user?.id || "default");
+    if (stored.length > 0) return stored;
+    return ROLE_DEFAULT_TABS[user?.role || ""] || [];
+  });
+  const [tabSearchOpen, setTabSearchOpen] = useState(false);
+  const [tabSearchQuery, setTabSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const togglePinnedTab = useCallback((tabValue: string) => {
+    setPinnedTabValuesState(prev => {
+      const next = prev.includes(tabValue)
+        ? prev.filter(v => v !== tabValue)
+        : [...prev, tabValue];
+      setPinnedTabs(user?.id || "default", next);
+      return next;
+    });
+  }, [user?.id]);
 
   const fromCFO = searchParams.get("from") === "cfo";
   const backPath = fromCFO ? "/cfo" : "/projects";
@@ -823,7 +872,37 @@ export default function ProjectDetailPage() {
           </div>
 
           <div className="hidden lg:flex flex-col gap-0 w-full">
-            <div className="flex items-center gap-1 rounded-t-md bg-muted p-1 border-b border-border" data-testid="category-tabs-row">
+            {pinnedTabValues.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-1.5 bg-primary/5 border border-border rounded-t-md" data-testid="pinned-tabs-row">
+                <Star className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mr-1">Pinned</span>
+                {pinnedTabValues.map(pv => {
+                  const tab = visibleTabs.find(t => t.value === pv);
+                  if (!tab) return null;
+                  const IconComp = tab.icon;
+                  return (
+                    <button
+                      key={pv}
+                      type="button"
+                      onClick={() => {
+                        handleSetActiveTab(pv);
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-sm transition-all select-none ${
+                        activeTab === pv
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-background text-foreground hover:bg-muted shadow-sm border border-border/50"
+                      }`}
+                      data-testid={`pinned-tab-${pv}`}
+                    >
+                      <IconComp className="h-3.5 w-3.5" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className={`flex items-center gap-1 bg-muted p-1 border-b border-border ${pinnedTabValues.length > 0 ? "rounded-none" : "rounded-t-md"}`} data-testid="category-tabs-row">
               {groupedTabs.map((entry) => (
                 <button
                   key={entry.group}
@@ -839,6 +918,71 @@ export default function ProjectDetailPage() {
                   {entry.group}
                 </button>
               ))}
+              <div className="ml-auto">
+                <Popover open={tabSearchOpen} onOpenChange={(open) => {
+                  setTabSearchOpen(open);
+                  if (open) setTimeout(() => searchInputRef.current?.focus(), 100);
+                  else setTabSearchQuery("");
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" data-testid="button-tab-search">
+                      <Search className="h-3.5 w-3.5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-2" align="end" data-testid="tab-search-popover">
+                    <Input
+                      ref={searchInputRef}
+                      placeholder="Search tabs..."
+                      value={tabSearchQuery}
+                      onChange={(e) => setTabSearchQuery(e.target.value)}
+                      className="h-8 text-sm mb-2"
+                      data-testid="input-tab-search"
+                    />
+                    <ScrollArea className="max-h-64">
+                      <div className="space-y-0.5">
+                        {visibleTabs
+                          .filter(t => t.label.toLowerCase().includes(tabSearchQuery.toLowerCase()) || t.group.toLowerCase().includes(tabSearchQuery.toLowerCase()))
+                          .map(tab => {
+                            const IconComp = tab.icon;
+                            const isPinned = pinnedTabValues.includes(tab.value);
+                            return (
+                              <div key={tab.value} className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleSetActiveTab(tab.value);
+                                    setTabSearchOpen(false);
+                                    setTabSearchQuery("");
+                                  }}
+                                  className={`flex-1 flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-muted transition-colors text-left ${
+                                    activeTab === tab.value ? "bg-muted font-medium" : ""
+                                  }`}
+                                  data-testid={`search-result-${tab.value}`}
+                                >
+                                  <IconComp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <span>{tab.label}</span>
+                                  <span className="text-[10px] text-muted-foreground ml-auto">{tab.group}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => togglePinnedTab(tab.value)}
+                                  className={`p-1 rounded-sm hover:bg-muted transition-colors ${isPinned ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+                                  data-testid={`pin-tab-${tab.value}`}
+                                  title={isPinned ? "Unpin tab" : "Pin tab"}
+                                >
+                                  <Star className={`h-3 w-3 ${isPinned ? "fill-amber-500" : ""}`} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        {visibleTabs.filter(t => t.label.toLowerCase().includes(tabSearchQuery.toLowerCase()) || t.group.toLowerCase().includes(tabSearchQuery.toLowerCase())).length === 0 && (
+                          <p className="text-xs text-muted-foreground text-center py-3">No tabs found</p>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
 
             {groupedTabs
@@ -851,10 +995,12 @@ export default function ProjectDetailPage() {
                 >
                   {entry.tabs.map((tab) => {
                     const IconComp = tab.icon;
+                    const isPinned = pinnedTabValues.includes(tab.value);
                     return (
                       <TabsTrigger
                         key={tab.value}
                         value={tab.value}
+                        className="group relative"
                         data-testid={`tab-${tab.value}`}
                       >
                         <IconComp className="h-4 w-4 mr-1" />
@@ -864,6 +1010,18 @@ export default function ProjectDetailPage() {
                             {tab.badge}
                           </Badge>
                         )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePinnedTab(tab.value);
+                          }}
+                          className={`ml-1 opacity-0 group-hover:opacity-100 transition-opacity ${isPinned ? "opacity-100 text-amber-500" : "text-muted-foreground/50"}`}
+                          data-testid={`pin-inline-${tab.value}`}
+                          title={isPinned ? "Unpin" : "Pin to top"}
+                        >
+                          <Star className={`h-3 w-3 ${isPinned ? "fill-amber-500" : ""}`} />
+                        </button>
                       </TabsTrigger>
                     );
                   })}

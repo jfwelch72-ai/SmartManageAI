@@ -11,11 +11,18 @@ interface StepDef {
   cost: number;
 }
 
+interface StepProgress {
+  current: number;
+  total: number;
+  label: string;
+}
+
 interface CostBuilderSidebarProps {
   currentStep: CostBuilderStep;
   onStepChange: (step: CostBuilderStep) => void;
   steps: StepDef[];
   stepStatus: Record<number, boolean>;
+  stepProgress?: Record<number, StepProgress>;
   directCost: number;
   overheadPercent: number;
   overheadAmount: number;
@@ -29,6 +36,7 @@ export default function CostBuilderSidebar({
   onStepChange,
   steps,
   stepStatus,
+  stepProgress,
   directCost,
   overheadPercent,
   overheadAmount,
@@ -135,11 +143,23 @@ export default function CostBuilderSidebar({
                     <p className={`text-xs font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
                       {step.name}
                     </p>
-                    {step.cost > 0 && (
+                    {stepProgress?.[step.id] ? (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden min-w-[30px] max-w-[50px]">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all"
+                            style={{ width: `${stepProgress[step.id].total > 0 ? Math.min(100, (stepProgress[step.id].current / stepProgress[step.id].total) * 100) : 0}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          {stepProgress[step.id].current}/{stepProgress[step.id].total} {stepProgress[step.id].label}
+                        </span>
+                      </div>
+                    ) : step.cost > 0 ? (
                       <p className="text-[10px] font-mono text-muted-foreground">
                         ${step.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                 </button>
               );
