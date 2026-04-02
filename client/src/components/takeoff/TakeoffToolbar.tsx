@@ -1,14 +1,13 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle,
-  RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronRight
+  RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronDown, MousePointer2, Hand, Ruler
 } from "lucide-react";
 import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
 import type { TakeoffMeasurement } from "@shared/schema";
@@ -72,253 +71,217 @@ export function TakeoffToolbar({
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
   const zoomPercent = Math.round(stageScale * 100);
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [measureOpen, setMeasureOpen] = useState(false);
+  const [markupOpen, setMarkupOpen] = useState(false);
 
   const navTools = TOOL_CONFIG.filter(t => t.group === "nav");
   const measureTools = TOOL_CONFIG.filter(t => t.group === "measure");
   const markupTools = TOOL_CONFIG.filter(t => t.group === "markup");
   const issueTools = TOOL_CONFIG.filter(t => t.group === "issues");
 
-  const primaryMeasureIds = ["linear", "area", "count", "volume"];
-  const secondaryMeasureTools = measureTools.filter(t => !primaryMeasureIds.includes(t.id));
-  const primaryMeasureTools = measureTools.filter(t => primaryMeasureIds.includes(t.id));
+  const activeMeasureTool = measureTools.find(t => t.id === activeTool);
+  const activeMarkupTool = markupTools.find(t => t.id === activeTool);
 
-  const primaryMarkupIds = ["markup_arrow", "markup_freehand", "markup_text"];
-  const secondaryMarkupTools = markupTools.filter(t => !primaryMarkupIds.includes(t.id));
-  const primaryMarkupTools = markupTools.filter(t => primaryMarkupIds.includes(t.id));
-
-  const ToolButton = ({ tool, isMarkup = false, compact = false }: { tool: typeof TOOL_CONFIG[number]; isMarkup?: boolean; compact?: boolean }) => {
+  const SmallToolBtn = ({ tool, isMarkup = false, onClick }: { tool: typeof TOOL_CONFIG[number]; isMarkup?: boolean; onClick?: () => void }) => {
     const Icon = tool.icon;
     const isActive = activeTool === tool.id;
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
-            variant={isActive ? (isMarkup ? "secondary" : tool.color as any) : "ghost"}
-            size="icon"
+          <button
             onClick={() => {
               onToolSelect(tool.id as Tool);
-              setExpandedGroup(null);
+              onClick?.();
             }}
             data-testid={`button-tool-${tool.id}`}
             className={cn(
-              "toggle-elevate relative",
-              compact ? "h-7 w-7" : "h-8 w-8",
-              isActive && !isMarkup && "ring-2 ring-primary/30 shadow-sm",
-              isActive && isMarkup && "ring-2 shadow-sm",
+              "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-all w-full text-left",
+              isActive
+                ? isMarkup
+                  ? "bg-accent font-medium ring-1"
+                  : "bg-primary/10 text-primary font-medium"
+                : "hover:bg-accent/60 text-foreground/80 hover:text-foreground"
             )}
-            style={isActive && isMarkup ? { borderColor: markupColor, ringColor: markupColor, outline: `2px solid ${markupColor}` } : undefined}
+            style={isActive && isMarkup ? { borderColor: markupColor, outlineColor: markupColor } : undefined}
           >
-            <Icon className="w-4 h-4" />
-            {isMarkup && isActive && (
-              <span className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-card" style={{ backgroundColor: markupColor }} />
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          <div className="flex items-center gap-2">
-            <span>{tool.label}</span>
+            <Icon className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 truncate">{tool.label}</span>
             {tool.shortcut && (
-              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">{tool.shortcut}</kbd>
+              <kbd className="px-1 py-0.5 text-[9px] font-mono bg-muted/60 rounded border ml-auto opacity-60">{tool.shortcut}</kbd>
             )}
-          </div>
-        </TooltipContent>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right"><span>{tool.label}</span></TooltipContent>
       </Tooltip>
     );
   };
 
-  const GroupLabel = ({ label }: { label: string }) => (
-    <span className="text-[9px] text-muted-foreground/70 font-semibold uppercase tracking-wider select-none mt-0.5">{label}</span>
+  const TinyBtn = ({ icon: Icon, label, active, onClick, disabled, testId, className: extraClass }: {
+    icon: any; label: string; active?: boolean; onClick: () => void; disabled?: boolean; testId: string; className?: string;
+  }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={active ? "secondary" : "ghost"}
+          size="icon"
+          onClick={onClick}
+          disabled={disabled}
+          data-testid={testId}
+          className={cn("h-7 w-7", extraClass)}
+        >
+          <Icon className="w-3.5 h-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right"><span>{label}</span></TooltipContent>
+    </Tooltip>
   );
-
-  const ExpandableGroup = ({ label, primaryTools, secondaryTools, groupKey, isMarkup = false }: {
-    label: string;
-    primaryTools: typeof TOOL_CONFIG;
-    secondaryTools: typeof TOOL_CONFIG;
-    groupKey: string;
-    isMarkup?: boolean;
-  }) => {
-    const isExpanded = expandedGroup === groupKey;
-    const hasActiveSecondary = secondaryTools.some(t => activeTool === t.id);
-
-    return (
-      <>
-        <GroupLabel label={label} />
-        {primaryTools.map(tool => (
-          <ToolButton key={tool.id} tool={tool} isMarkup={isMarkup} />
-        ))}
-        {secondaryTools.length > 0 && (
-          <div className="relative">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={hasActiveSecondary ? "secondary" : "ghost"}
-                  size="icon"
-                  className={cn("toggle-elevate h-7 w-9 relative", hasActiveSecondary && "ring-1 ring-primary/20")}
-                  onClick={() => setExpandedGroup(isExpanded ? null : groupKey)}
-                  data-testid={`button-expand-${groupKey}`}
-                >
-                  <ChevronRight className={cn("w-3.5 h-3.5 transition-transform", isExpanded && "rotate-90")} />
-                  {hasActiveSecondary && (
-                    <span className="absolute top-0 right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <span>{isExpanded ? "Collapse" : `More ${label} tools (${secondaryTools.length})`}</span>
-              </TooltipContent>
-            </Tooltip>
-            {isExpanded && (
-              <div className="absolute left-full top-0 ml-1 bg-card border rounded-lg shadow-lg p-1.5 z-[60] flex flex-col gap-1 min-w-[180px]" data-testid={`flyout-${groupKey}`}>
-                <span className="text-[10px] font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wider">More {label}</span>
-                {secondaryTools.map(tool => {
-                  const Icon = tool.icon;
-                  const isActive = activeTool === tool.id;
-                  return (
-                    <button
-                      key={tool.id}
-                      className={cn(
-                        "flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors w-full text-left",
-                        isActive
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "hover:bg-accent text-foreground"
-                      )}
-                      onClick={() => {
-                        onToolSelect(tool.id as Tool);
-                        setExpandedGroup(null);
-                      }}
-                      data-testid={`button-tool-${tool.id}`}
-                    >
-                      <Icon className="w-4 h-4 shrink-0" />
-                      <span className="flex-1">{tool.label}</span>
-                      {tool.shortcut && (
-                        <kbd className="px-1 py-0.5 text-[10px] font-mono bg-muted rounded border ml-auto">{tool.shortcut}</kbd>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </>
-    );
-  };
 
   return (
     <div className="relative z-30 h-full">
-      {expandedGroup && (
-        <div className="fixed inset-0 z-40" onClick={() => setExpandedGroup(null)} />
-      )}
-      <div className="hidden sm:flex w-[72px] h-full bg-card/95 backdrop-blur-sm border-r flex-col items-center py-1.5 gap-px overflow-y-auto shrink-0" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(128,128,128,0.3) transparent' }}>
-        <GroupLabel label="Navigate" />
-        {navTools.map(tool => (
-          <ToolButton key={tool.id} tool={tool} />
-        ))}
+      <div className="hidden sm:flex w-[52px] h-full bg-card/95 backdrop-blur-sm border-r flex-col items-center py-1 gap-px shrink-0">
 
-        <div className="flex flex-col items-center gap-0.5 mt-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => setStageScale((prev: number) => Math.min(prev * 1.2, 10))} data-testid="button-zoom-in" className="toggle-elevate h-8 w-8">
-                <ZoomIn className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <div className="flex items-center gap-2"><span>Zoom In</span><kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">+</kbd></div>
-            </TooltipContent>
-          </Tooltip>
-          <button
-            onClick={() => setStageScale(1)}
-            className="text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer tabular-nums w-full text-center py-0.5"
-            data-testid="button-zoom-reset"
-          >
-            {zoomPercent}%
-          </button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => setStageScale((prev: number) => Math.max(prev / 1.2, 0.1))} data-testid="button-zoom-out" className="toggle-elevate h-8 w-8">
-                <ZoomOut className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <div className="flex items-center gap-2"><span>Zoom Out</span><kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">-</kbd></div>
-            </TooltipContent>
-          </Tooltip>
-          {onFitToPage && (
-            <Tooltip>
+        {navTools.map(tool => {
+          const Icon = tool.icon;
+          const isActive = activeTool === tool.id;
+          return (
+            <Tooltip key={tool.id}>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={onFitToPage} data-testid="button-fit-to-page" className="toggle-elevate h-8 w-8">
-                  <Maximize2 className="w-4 h-4" />
+                <Button
+                  variant={isActive ? (tool.color as any) : "ghost"}
+                  size="icon"
+                  onClick={() => onToolSelect(tool.id as Tool)}
+                  data-testid={`button-tool-${tool.id}`}
+                  className={cn("h-7 w-7", isActive && "ring-1 ring-primary/30")}
+                >
+                  <Icon className="w-3.5 h-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right"><p>Fit to Page</p></TooltipContent>
+              <TooltipContent side="right">
+                <div className="flex items-center gap-2">
+                  <span>{tool.label}</span>
+                  {tool.shortcut && <kbd className="px-1 py-0.5 text-[10px] font-mono bg-muted rounded border">{tool.shortcut}</kbd>}
+                </div>
+              </TooltipContent>
             </Tooltip>
-          )}
+          );
+        })}
+
+        <div className="flex items-center gap-px">
+          <TinyBtn icon={ZoomIn} label="Zoom In" onClick={() => setStageScale((p: number) => Math.min(p * 1.2, 10))} testId="button-zoom-in" />
+          <TinyBtn icon={ZoomOut} label="Zoom Out" onClick={() => setStageScale((p: number) => Math.max(p / 1.2, 0.1))} testId="button-zoom-out" />
         </div>
+        <button
+          onClick={() => setStageScale(1)}
+          className="text-[9px] font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer tabular-nums py-px"
+          data-testid="button-zoom-reset"
+        >
+          {zoomPercent}%
+        </button>
+        {onFitToPage && (
+          <TinyBtn icon={Maximize2} label="Fit to Page" onClick={onFitToPage} testId="button-fit-to-page" />
+        )}
 
-        <Separator className="my-0.5 w-10" />
-        <ExpandableGroup
-          label="Measure"
-          primaryTools={primaryMeasureTools as unknown as typeof TOOL_CONFIG}
-          secondaryTools={secondaryMeasureTools as unknown as typeof TOOL_CONFIG}
-          groupKey="measure"
-        />
+        <Separator className="my-px w-8" />
 
-        <Separator className="my-0.5 w-10" />
-        <ExpandableGroup
-          label="Markup"
-          primaryTools={primaryMarkupTools as unknown as typeof TOOL_CONFIG}
-          secondaryTools={secondaryMarkupTools as unknown as typeof TOOL_CONFIG}
-          groupKey="markup"
-          isMarkup
-        />
-        {isMarkupTool && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="toggle-elevate relative h-8 w-8" data-testid="button-markup-color">
-                <Pen className="w-3.5 h-3.5" />
-                <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 rounded-full border border-card" style={{ backgroundColor: markupColor }} />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent side="right" className="w-52 p-3">
-              <div className="space-y-3">
-                <Label className="text-xs font-medium">Color</Label>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {MARKUP_COLORS.map(c => (
-                    <button
-                      key={c}
-                      className={cn("w-8 h-8 rounded-md border-2 transition-all", markupColor === c ? "border-foreground scale-110" : "border-transparent hover:border-muted-foreground")}
-                      style={{ backgroundColor: c }}
-                      onClick={() => setMarkupColor(c)}
-                      data-testid={`button-markup-color-${c.replace('#','')}`}
-                    />
-                  ))}
-                </div>
+        <Popover open={measureOpen} onOpenChange={setMeasureOpen}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={activeMeasureTool ? "default" : "ghost"}
+                  size="icon"
+                  data-testid="button-measure-group"
+                  className={cn("h-8 w-8 relative", activeMeasureTool && "ring-1 ring-primary/30")}
+                >
+                  {activeMeasureTool ? (() => { const AI = activeMeasureTool.icon; return <AI className="w-4 h-4" />; })() : <Ruler className="w-4 h-4" />}
+                  <ChevronDown className="w-2 h-2 absolute bottom-0 right-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="right"><span>{activeMeasureTool ? activeMeasureTool.label : "Measure Tools"}</span></TooltipContent>
+          </Tooltip>
+          <PopoverContent side="right" align="start" className="w-[200px] p-1.5 z-[100]" sideOffset={4}>
+            <div className="flex flex-col gap-px">
+              <span className="text-[9px] font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wider">Measure</span>
+              {measureTools.map(tool => (
+                <SmallToolBtn key={tool.id} tool={tool} onClick={() => setMeasureOpen(false)} />
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <Popover open={markupOpen} onOpenChange={setMarkupOpen}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={activeMarkupTool ? "secondary" : "ghost"}
+                  size="icon"
+                  data-testid="button-markup-group"
+                  className={cn("h-8 w-8 relative", activeMarkupTool && "ring-1")}
+                  style={activeMarkupTool ? { outlineColor: markupColor } : undefined}
+                >
+                  {activeMarkupTool ? (() => { const AI = activeMarkupTool.icon; return <AI className="w-4 h-4" />; })() : <Pen className="w-4 h-4" />}
+                  <ChevronDown className="w-2 h-2 absolute bottom-0 right-0 opacity-50" />
+                  {isMarkupTool && (
+                    <span className="absolute top-0 right-0 w-2 h-2 rounded-full border border-card" style={{ backgroundColor: markupColor }} />
+                  )}
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="right"><span>{activeMarkupTool ? activeMarkupTool.label : "Markup Tools"}</span></TooltipContent>
+          </Tooltip>
+          <PopoverContent side="right" align="start" className="w-[220px] p-1.5 z-[100]" sideOffset={4}>
+            <div className="flex flex-col gap-px">
+              <span className="text-[9px] font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wider">Markup</span>
+              {markupTools.map(tool => (
+                <SmallToolBtn key={tool.id} tool={tool} isMarkup onClick={() => setMarkupOpen(false)} />
+              ))}
+              <Separator className="my-1" />
+              <div className="px-2 py-1 space-y-2">
                 <div>
-                  <Label className="text-xs">Custom Color</Label>
-                  <input type="color" value={markupColor} onChange={e => setMarkupColor(e.target.value)} className="mt-1 w-full h-8 cursor-pointer rounded border" data-testid="input-markup-color-custom" />
+                  <Label className="text-[10px] font-medium">Color</Label>
+                  <div className="grid grid-cols-8 gap-1 mt-1">
+                    {MARKUP_COLORS.map(c => (
+                      <button
+                        key={c}
+                        className={cn("w-5 h-5 rounded border transition-all", markupColor === c ? "border-foreground scale-110 ring-1 ring-foreground" : "border-transparent hover:border-muted-foreground")}
+                        style={{ backgroundColor: c }}
+                        onClick={() => setMarkupColor(c)}
+                        data-testid={`button-markup-color-${c.replace('#','')}`}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs">Thickness: {markupThickness}px</Label>
-                  <input type="range" min={1} max={10} value={markupThickness} onChange={e => setMarkupThickness(Number(e.target.value))} className="mt-1 w-full" data-testid="input-markup-thickness" />
+                <div className="flex items-center gap-2">
+                  <input type="color" value={markupColor} onChange={e => setMarkupColor(e.target.value)} className="w-5 h-5 cursor-pointer rounded border p-0" data-testid="input-markup-color-custom" />
+                  <div className="flex-1">
+                    <Label className="text-[9px]">Size: {markupThickness}px</Label>
+                    <input type="range" min={1} max={10} value={markupThickness} onChange={e => setMarkupThickness(Number(e.target.value))} className="w-full h-3" data-testid="input-markup-thickness" />
+                  </div>
                 </div>
               </div>
-            </PopoverContent>
-          </Popover>
-        )}
+            </div>
+          </PopoverContent>
+        </Popover>
 
-        {issueTools.length > 0 && (
-          <>
-            <Separator className="my-0.5 w-10" />
-            <GroupLabel label="Issues" />
-            {issueTools.map(tool => (
-              <ToolButton key={tool.id} tool={tool} />
-            ))}
-          </>
-        )}
+        {issueTools.map(tool => {
+          const Icon = tool.icon;
+          const isActive = activeTool === tool.id;
+          return (
+            <Tooltip key={tool.id}>
+              <TooltipTrigger asChild>
+                <Button variant={isActive ? (tool.color as any) : "ghost"} size="icon" onClick={() => onToolSelect(tool.id as Tool)} data-testid={`button-tool-${tool.id}`} className={cn("h-7 w-7", isActive && "ring-1")}>
+                  <Icon className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right"><span>{tool.label}</span></TooltipContent>
+            </Tooltip>
+          );
+        })}
 
-        <Separator className="my-0.5 w-10" />
-        <GroupLabel label="Edit" />
+        <Separator className="my-px w-8" />
+
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -327,123 +290,61 @@ export function TakeoffToolbar({
               onClick={() => { const m = measurements.find(m => m.id === selectedMeasurementId); if (m) onDeleteMeasurement(m); }}
               disabled={!selectedMeasurementId || deletePending}
               data-testid="button-clear-selected"
-              className="toggle-elevate h-8 w-8"
+              className="h-7 w-7"
             >
-              <Eraser className="w-4 h-4" />
+              <Eraser className="w-3.5 h-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right"><p>{selectedMeasurementId ? "Delete Selected" : "Select to delete"}</p></TooltipContent>
+          <TooltipContent side="right"><span>{selectedMeasurementId ? "Delete Selected" : "Select to delete"}</span></TooltipContent>
         </Tooltip>
-        <div className="flex gap-0.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => takeoffHistory.undo()} disabled={!takeoffHistory.canUndo || takeoffHistory.isPending} data-testid="button-undo" className="toggle-elevate h-8 w-8">
-                <Undo2 className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><div className="flex items-center gap-2"><span>Undo</span><kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+Z</kbd></div></TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => takeoffHistory.redo()} disabled={!takeoffHistory.canRedo || takeoffHistory.isPending} data-testid="button-redo" className="toggle-elevate h-8 w-8">
-                <Redo2 className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><div className="flex items-center gap-2"><span>Redo</span><kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+Y</kbd></div></TooltipContent>
-          </Tooltip>
+        <div className="flex items-center gap-px">
+          <TinyBtn icon={Undo2} label="Undo (Ctrl+Z)" onClick={() => takeoffHistory.undo()} disabled={!takeoffHistory.canUndo || takeoffHistory.isPending} testId="button-undo" />
+          <TinyBtn icon={Redo2} label="Redo (Ctrl+Y)" onClick={() => takeoffHistory.redo()} disabled={!takeoffHistory.canRedo || takeoffHistory.isPending} testId="button-redo" />
         </div>
 
-        <Separator className="my-0.5 w-10" />
-        <GroupLabel label="Assist" />
-        <div className="flex gap-0.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant={snapEnabled ? "secondary" : "ghost"} size="icon" onClick={() => setSnapEnabled(!snapEnabled)} data-testid="button-toggle-snap" className="toggle-elevate h-8 w-8">
-                <Magnet className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><p>{snapEnabled ? "Snap: ON" : "Snap: OFF"}</p></TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant={orthoLock ? "secondary" : "ghost"} size="icon" onClick={() => setOrthoLock(!orthoLock)} data-testid="button-toggle-ortho" className="toggle-elevate h-8 w-8">
-                <CornerDownRight className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><p>{orthoLock ? "Ortho: ON (90°)" : "Ortho: OFF"}</p></TooltipContent>
-          </Tooltip>
-        </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant={aiPanelOpen ? "secondary" : "ghost"} size="icon" onClick={() => setAiPanelOpen(!aiPanelOpen)} data-testid="button-ai-takeoff" className={cn("toggle-elevate h-8 w-8", aiPanelOpen && "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300")}>
-              <Sparkles className="w-4 h-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right"><p>AI Auto-Takeoff</p></TooltipContent>
-        </Tooltip>
+        <Separator className="my-px w-8" />
 
-        <Separator className="my-0.5 w-10" />
-        <GroupLabel label="View" />
-        <div className="flex gap-0.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={onRotateCW} data-testid="button-rotate-cw" className="toggle-elevate h-8 w-8">
-                <RotateCw className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><div className="flex items-center gap-2"><span>Rotate CW</span><kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+R</kbd></div></TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={onRotateCCW} data-testid="button-rotate-ccw" className="toggle-elevate h-8 w-8">
-                <RotateCcw className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><div className="flex items-center gap-2"><span>Rotate CCW</span><kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+Shift+R</kbd></div></TooltipContent>
-          </Tooltip>
+        <div className="flex items-center gap-px">
+          <TinyBtn icon={Magnet} label={snapEnabled ? "Snap: ON" : "Snap: OFF"} active={snapEnabled} onClick={() => setSnapEnabled(!snapEnabled)} testId="button-toggle-snap" />
+          <TinyBtn icon={CornerDownRight} label={orthoLock ? "Ortho: ON" : "Ortho: OFF"} active={orthoLock} onClick={() => setOrthoLock(!orthoLock)} testId="button-toggle-ortho" />
         </div>
-        <div className="flex gap-0.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={onRotate180} data-testid="button-rotate-180" className="toggle-elevate h-7 w-7">
-                <FlipVertical2 className="w-3.5 h-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><p>Rotate 180°</p></TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant={gridEnabled ? "secondary" : "ghost"} size="icon" onClick={() => onToggleGrid(!gridEnabled)} disabled={!isCalibrated} data-testid="button-toggle-grid" className="toggle-elevate h-7 w-7">
-                <Grid3X3 className="w-3.5 h-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><p>{!isCalibrated ? "Calibrate to enable grid" : gridEnabled ? "Grid: ON" : "Grid: OFF"}</p></TooltipContent>
-          </Tooltip>
+
+        <TinyBtn
+          icon={Sparkles}
+          label="AI Auto-Takeoff"
+          active={aiPanelOpen}
+          onClick={() => setAiPanelOpen(!aiPanelOpen)}
+          testId="button-ai-takeoff"
+          className={cn(aiPanelOpen && "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300")}
+        />
+
+        <Separator className="my-px w-8" />
+
+        <div className="flex items-center gap-px">
+          <TinyBtn icon={RotateCw} label="Rotate CW" onClick={onRotateCW} testId="button-rotate-cw" />
+          <TinyBtn icon={RotateCcw} label="Rotate CCW" onClick={onRotateCCW} testId="button-rotate-ccw" />
         </div>
-        <div className="flex gap-0.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={onUpload} data-testid="button-upload-plan" className="toggle-elevate h-7 w-7">
-                <Upload className="w-3.5 h-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><p>Import Plan Sheet</p></TooltipContent>
-          </Tooltip>
+        <div className="flex items-center gap-px">
+          <TinyBtn icon={FlipVertical2} label="Rotate 180°" onClick={onRotate180} testId="button-rotate-180" />
+          <TinyBtn icon={Grid3X3} label={!isCalibrated ? "Calibrate first" : gridEnabled ? "Grid: ON" : "Grid: OFF"} active={gridEnabled} onClick={() => onToggleGrid(!gridEnabled)} disabled={!isCalibrated} testId="button-toggle-grid" />
+        </div>
+        <div className="flex items-center gap-px">
+          <TinyBtn icon={Upload} label="Import Plan" onClick={onUpload} testId="button-upload-plan" />
           {(onExportCurrentSheet || onExportAllSheets) && (
             <DropdownMenu>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" data-testid="button-export-excel" className="toggle-elevate h-7 w-7">
+                    <Button variant="ghost" size="icon" data-testid="button-export-excel" className="h-7 w-7">
                       <Download className="w-3.5 h-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
-                <TooltipContent side="right"><p>Export to Excel</p></TooltipContent>
+                <TooltipContent side="right"><span>Export</span></TooltipContent>
               </Tooltip>
-              <DropdownMenuContent side="right">
+              <DropdownMenuContent side="right" className="z-[100]">
                 {onExportCurrentSheet && (
-                  <DropdownMenuItem onClick={onExportCurrentSheet} disabled={measurements.length === 0} data-testid="button-export-current-sheet">Current Sheet Only</DropdownMenuItem>
+                  <DropdownMenuItem onClick={onExportCurrentSheet} disabled={measurements.length === 0} data-testid="button-export-current-sheet">Current Sheet</DropdownMenuItem>
                 )}
                 {onExportAllSheets && (
                   <DropdownMenuItem onClick={onExportAllSheets} data-testid="button-export-all-sheets">All Sheets</DropdownMenuItem>
@@ -453,15 +354,8 @@ export function TakeoffToolbar({
           )}
         </div>
 
-        <div className="mt-auto pt-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => onShowShortcuts?.()} data-testid="button-shortcuts" className="toggle-elevate h-8 w-8">
-                <HelpCircle className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right"><div className="flex items-center gap-2"><span>Shortcuts</span><kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">?</kbd></div></TooltipContent>
-          </Tooltip>
+        <div className="mt-auto pt-1">
+          <TinyBtn icon={HelpCircle} label="Shortcuts (?)" onClick={() => onShowShortcuts?.()} testId="button-shortcuts" />
         </div>
       </div>
 
