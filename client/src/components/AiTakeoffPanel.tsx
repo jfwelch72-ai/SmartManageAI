@@ -33,7 +33,8 @@ import {
   BarChart3,
   Clock,
   Layers,
-  SlidersHorizontal
+  SlidersHorizontal,
+  ScanSearch
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -111,6 +112,33 @@ const ITEM_TYPE_ICONS: Record<string, any> = {
   default: FileText,
 };
 
+const TRADE_TYPE_OPTIONS = [
+  { value: "AUTO_DETECT", label: "Auto-detect from drawing" },
+  { value: "GENERAL_CONTRACTOR", label: "General Contractor" },
+  { value: "ELECTRICAL", label: "Electrical" },
+  { value: "PLUMBING", label: "Plumbing" },
+  { value: "HVAC", label: "HVAC" },
+  { value: "ROOFING", label: "Roofing" },
+  { value: "CONCRETE", label: "Concrete" },
+  { value: "CARPENTRY", label: "Carpentry" },
+  { value: "MASONRY", label: "Masonry" },
+  { value: "DRYWALL", label: "Drywall" },
+  { value: "PAINTING", label: "Painting" },
+  { value: "FLOORING", label: "Flooring" },
+  { value: "LANDSCAPING", label: "Landscaping" },
+  { value: "DEMOLITION", label: "Demolition" },
+  { value: "STEEL_ERECTION", label: "Steel Erection" },
+  { value: "GLAZING", label: "Glazing" },
+  { value: "INSULATION", label: "Insulation" },
+  { value: "FIRE_PROTECTION", label: "Fire Protection" },
+  { value: "LOW_VOLTAGE", label: "Low Voltage" },
+  { value: "SOLAR", label: "Solar" },
+  { value: "WATERPROOFING", label: "Waterproofing" },
+  { value: "EARTHWORK", label: "Earthwork" },
+  { value: "ASPHALT_PAVING", label: "Asphalt Paving" },
+  { value: "OTHER", label: "Other" },
+];
+
 export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
@@ -120,6 +148,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
   const [isImporting, setIsImporting] = useState(false);
   const [confidenceThreshold, setConfidenceThreshold] = useState(0);
   const [analysisMode, setAnalysisMode] = useState<"QUICK" | "DETAILED">("QUICK");
+  const [selectedTradeType, setSelectedTradeType] = useState("AUTO_DETECT");
   const [compareRunId, setCompareRunId] = useState<string | null>(null);
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   
@@ -170,12 +199,16 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/ai-features/takeoff/analyze", {
+      const body: Record<string, unknown> = {
         ...(projectId ? { projectId } : {}),
         ...(bidId ? { bidId } : {}),
         takeoffSheetId: sheetId,
         analysisMode,
-      });
+      };
+      if (selectedTradeType !== "AUTO_DETECT") {
+        body.tradeType = selectedTradeType;
+      }
+      const response = await apiRequest("POST", "/api/ai-features/takeoff/analyze", body);
       return response.json();
     },
     onSuccess: (data: { analysisId: string; estimatedTime: number }) => {
@@ -357,6 +390,22 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
         {!isAnalyzing && !isComplete && (
           <div className="space-y-3">
             <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Trade Type</label>
+              <Select value={selectedTradeType} onValueChange={setSelectedTradeType}>
+                <SelectTrigger className="h-9" data-testid="select-trade-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRADE_TYPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.value === "AUTO_DETECT" && <ScanSearch className="w-3.5 h-3.5 inline mr-1.5" />}
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Analysis Mode</label>
               <Select value={analysisMode} onValueChange={(v: "QUICK" | "DETAILED") => setAnalysisMode(v)}>
                 <SelectTrigger className="h-9" data-testid="select-analysis-mode">
@@ -432,6 +481,30 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                   Avg {avgConfidence}%
                 </span>
               </div>
+              {analysisResults.tradeType && (
+                <div className="flex items-center gap-1.5">
+                  {analysisResults.metadata.tradeAutoDetected ? (
+                    <>
+                      <ScanSearch className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                      <span className="text-[11px] text-blue-700 dark:text-blue-400 font-medium" data-testid="text-auto-detected-trade">
+                        Auto-detected: {analysisResults.tradeType.replace(/_/g, " ")}
+                      </span>
+                      {analysisResults.metadata.tradeDetectionConfidence && (
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 text-blue-600 border-blue-300">
+                          {analysisResults.metadata.tradeDetectionConfidence}%
+                        </Badge>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Layers className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="text-[11px] text-muted-foreground font-medium" data-testid="text-selected-trade">
+                        Trade: {analysisResults.tradeType.replace(/_/g, " ")}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
               {analysisResults.metadata.analysisSource === "openai_vision" && (
                 <div className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />

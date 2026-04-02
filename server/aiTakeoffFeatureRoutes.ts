@@ -45,17 +45,11 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       return res.status(400).json({ error: "Either projectId or bidId is required" });
     }
 
-    // Get organization trade type if not provided
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
-    // Valid trade types from the enum - "MANUAL" and other custom types should fall back to GENERAL_CONTRACTOR
-    const validTradeTypes = [
-      "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
-      "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
-      "DEMOLITION", "STEEL_ERECTION", "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE",
-      "SOLAR", "WATERPROOFING", "OTHER"
-    ];
     const orgTradeType = org?.tradeType;
-    const effectiveTradeType = tradeType || (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
+    const validatedTradeType = tradeType && isValidTradeType(tradeType) ? tradeType : undefined;
+    const needsAutoDetection = !validatedTradeType && !isValidTradeType(orgTradeType);
+    const effectiveTradeType = validatedTradeType || (isValidTradeType(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
 
     // Create analysis record
     const [analysis] = await db.insert(aiTakeoffAnalyses).values({
@@ -69,11 +63,9 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       createdByUserId: userId,
     }).returning();
 
-    // In a production environment, this would queue a background job
-    // For now, we'll process synchronously with a mock response
     setTimeout(async () => {
       try {
-        await processAiTakeoff(analysis.id, effectiveTradeType, focusAreas);
+        await processAiTakeoff(analysis.id, effectiveTradeType, focusAreas, needsAutoDetection, userId);
       } catch (error) {
         logError("AI Takeoff processing error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db.update(aiTakeoffAnalyses)
@@ -163,6 +155,104 @@ function computeBBoxOverlap(a: { x: number; y: number; w: number; h: number }, b
   return unionArea > 0 ? intersectionArea / unionArea : 0;
 }
 
+const VALID_TRADE_TYPES = [
+  "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
+  "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
+  "DEMOLITION", "STEEL_ERECTION", "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE",
+  "SOLAR", "WATERPROOFING", "OTHER"
+] as const;
+
+type ValidTradeType = typeof VALID_TRADE_TYPES[number];
+const VALID_TRADE_TYPE_SET: Set<string> = new Set(VALID_TRADE_TYPES);
+
+function isValidTradeType(value: string | null | undefined): value is ValidTradeType {
+  return typeof value === "string" && VALID_TRADE_TYPE_SET.has(value);
+}
+
+async function classifyTradeType(imageUrl: string, orgId: string, userId: string | null | undefined): Promise<{ trade: string; confidence: number }> {
+  if (!openai) {
+    return { trade: "GENERAL_CONTRACTOR", confidence: 0 };
+  }
+
+  try {
+    const govResult = await governedAiCall({
+      orgId,
+      userId,
+      actionType: "takeoff_analysis",
+      inputRefs: {},
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: [
+            {
+              role: "system",
+              content: `You are a construction drawing classifier. Given a blueprint or construction drawing image, identify the PRIMARY trade type it belongs to.
+
+Choose exactly ONE from this list:
+${VALID_TRADE_TYPES.join(", ")}
+
+Guidelines:
+- ELECTRICAL: drawings with circuit symbols, panel schedules, outlet/switch symbols, conduit runs
+- PLUMBING: drawings with pipe runs, fixture schedules, drain/waste/vent symbols
+- HVAC: drawings with ductwork, diffusers, mechanical equipment schedules, refrigerant lines
+- ROOFING: roof plans with slope indicators, ridge/valley lines, penetration details
+- CONCRETE: foundation plans, slab details, footing schedules, rebar callouts
+- CARPENTRY: framing plans, door/window schedules, wood member callouts
+- MASONRY: CMU wall layouts, brick veneer details, lintel schedules
+- DRYWALL: partition plans with wall type callouts, ceiling plans
+- PAINTING: finish schedules, color-coded floor plans
+- FLOORING: floor finish plans, tile layout drawings
+- LANDSCAPING: site plans with planting areas, irrigation layouts
+- DEMOLITION: demo plans with removal hatching/symbols
+- STEEL_ERECTION: structural steel plans, connection details, steel schedules
+- GLAZING: curtain wall details, storefront elevations
+- INSULATION: insulation details, thermal envelope drawings
+- FIRE_PROTECTION: sprinkler layouts, fire alarm riser diagrams
+- LOW_VOLTAGE: data/comm layouts, security system plans
+- SOLAR: PV array layouts, inverter schedules
+- WATERPROOFING: below-grade waterproofing details, membrane specifications
+- EARTHWORK: grading plans, cut/fill diagrams, excavation details
+- ASPHALT_PAVING: paving plans, striping layouts
+- GENERAL_CONTRACTOR: mixed-trade or unclear drawings
+- OTHER: non-construction or unrecognizable drawings
+
+Return JSON: { "trade": "TRADE_TYPE", "confidence": number (0-100), "reasoning": "brief explanation" }`
+            },
+            {
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
+                { type: "text", text: "Classify this construction drawing. What trade type does it primarily represent?" }
+              ]
+            }
+          ],
+          max_tokens: 256,
+          temperature: 0.1,
+          response_format: { type: "json_object" },
+        });
+        return { result: completion.choices[0]?.message?.content, completion };
+      },
+    });
+
+    if (govResult.blocked || !govResult.result) {
+      return { trade: "GENERAL_CONTRACTOR", confidence: 0 };
+    }
+
+    const parsed = JSON.parse(govResult.result);
+    const detectedTrade = parsed.trade?.toUpperCase();
+    const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0;
+
+    if (isValidTradeType(detectedTrade) && confidence >= 40) {
+      return { trade: detectedTrade, confidence };
+    }
+
+    return { trade: "GENERAL_CONTRACTOR", confidence: 0 };
+  } catch (error) {
+    logError("Trade classification error:", {}, error instanceof Error ? error : new Error(String(error)));
+    return { trade: "GENERAL_CONTRACTOR", confidence: 0 };
+  }
+}
+
 const TRADE_DETECTION_PROMPTS: Record<string, string> = {
   ROOFING: "Focus on: roof planes (measure total area in SQ = 100 SF), ridges and hips (LF), valleys (LF), penetrations/boots (EA), drip edge (LF along eaves and rakes), gutters/downspouts (LF and EA), shingle/membrane areas, underlayment (SF), flashing at walls and chimneys (LF), ventilation (ridge vents LF, box vents EA). Look for slope indicators and calculate pitched area. Differentiate between main roof and lower roof sections.",
   ELECTRICAL: "Focus on: main/sub panels (EA, note amperage), duplex/GFCI/special outlets (EA, note voltage), switches - single/3-way/dimmer (EA), light fixtures by type - recessed/surface/pendant (EA), conduit runs (LF, note size), wire pulls by gauge (LF), junction boxes (EA), dedicated circuits for HVAC/appliances. Count symbols on floor plans carefully, check schedules for fixture types.",
@@ -180,7 +270,7 @@ const TRADE_DETECTION_PROMPTS: Record<string, string> = {
   GENERAL_CONTRACTOR: "Comprehensive analysis across all visible trades. Group detected items by trade type (structural, architectural, mechanical, electrical, plumbing, sitework). Measure using appropriate units for each trade. Identify the drawing type (plan, elevation, section, detail) and note any visible dimensions, scales, or specifications.",
 };
 
-async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[]) {
+async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[], needsAutoDetection?: boolean, userId?: string | null) {
   const startTime = Date.now();
   
   await db.update(aiTakeoffAnalyses)
@@ -275,8 +365,22 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
     let detectedItems: RawDetectedItem[];
     let metadata: Record<string, unknown>;
     let aiNotes: string;
+    let tradeAutoDetected = false;
+    let tradeDetectionConfidence = 0;
 
-    // Use OpenAI Vision if we have an image, otherwise fall back to mock data
+    if (needsAutoDetection && imageUrl) {
+      const classification = await classifyTradeType(imageUrl, analysis.organizationId, userId);
+      if (classification.confidence >= 40) {
+        tradeType = classification.trade;
+        tradeAutoDetected = true;
+        tradeDetectionConfidence = classification.confidence;
+
+        await db.update(aiTakeoffAnalyses)
+          .set({ tradeType: tradeType as ValidTradeType })
+          .where(eq(aiTakeoffAnalyses.id, analysisId));
+      }
+    }
+
     const analysisMode = analysis?.analysisMode || "QUICK";
 
     if (imageUrl && openai) {
@@ -398,6 +502,8 @@ Return your analysis as JSON with this exact structure:
             titleBlock: parsed.metadata?.titleBlock,
             drawingType: parsed.metadata?.drawingType,
             tradeType,
+            tradeAutoDetected,
+            tradeDetectionConfidence: tradeAutoDetected ? tradeDetectionConfidence : undefined,
             analysisMethod: analysisMode === "DETAILED" ? "OpenAI Vision (Multi-Pass)" : "OpenAI Vision",
             analysisSource: "openai_vision",
           };
@@ -515,7 +621,7 @@ Return JSON with:
           boundingBox: item.boundingBox,
           suggestedSowItem: item.sowItem,
         }));
-        metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Fallback (mock)", analysisSource: "demo_fallback" };
+        metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, tradeAutoDetected, tradeDetectionConfidence: tradeAutoDetected ? tradeDetectionConfidence : undefined, analysisMethod: "Fallback (mock)", analysisSource: "demo_fallback" };
         aiNotes = `Fallback: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
       }
     } else {
@@ -530,7 +636,7 @@ Return JSON with:
         boundingBox: item.boundingBox,
         suggestedSowItem: item.sowItem,
       }));
-      metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Demo (no image)", analysisSource: "demo_no_image" };
+      metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, tradeAutoDetected: false, analysisMethod: "Demo (no image)", analysisSource: "demo_no_image" };
       aiNotes = `Demo mode: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
     }
 
