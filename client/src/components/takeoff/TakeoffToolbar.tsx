@@ -103,13 +103,13 @@ export function TakeoffToolbar({
             data-testid={`button-tool-${tool.id}`}
             className={cn(
               "toggle-elevate relative",
-              compact ? "h-8 w-8" : "h-9 w-9",
+              compact ? "h-7 w-7" : "h-8 w-8",
               isActive && !isMarkup && "ring-2 ring-primary/30 shadow-sm",
               isActive && isMarkup && "ring-2 shadow-sm",
             )}
             style={isActive && isMarkup ? { borderColor: markupColor, ringColor: markupColor, outline: `2px solid ${markupColor}` } : undefined}
           >
-            <Icon className={compact ? "w-4 h-4" : "w-[18px] h-[18px]"} />
+            <Icon className="w-4 h-4" />
             {isMarkup && isActive && (
               <span className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-card" style={{ backgroundColor: markupColor }} />
             )}
@@ -128,7 +128,7 @@ export function TakeoffToolbar({
   };
 
   const GroupLabel = ({ label }: { label: string }) => (
-    <span className="text-[9px] text-muted-foreground/70 font-semibold uppercase tracking-wider select-none mt-1 mb-0.5">{label}</span>
+    <span className="text-[9px] text-muted-foreground/70 font-semibold uppercase tracking-wider select-none mt-0.5">{label}</span>
   );
 
   const ExpandableGroup = ({ label, primaryTools, secondaryTools, groupKey, isMarkup = false }: {
@@ -169,7 +169,7 @@ export function TakeoffToolbar({
               </TooltipContent>
             </Tooltip>
             {isExpanded && (
-              <div className="absolute left-full top-0 ml-1 bg-card border rounded-lg shadow-lg p-1.5 z-50 flex flex-col gap-1 min-w-[180px]" data-testid={`flyout-${groupKey}`}>
+              <div className="absolute left-full top-0 ml-1 bg-card border rounded-lg shadow-lg p-1.5 z-[60] flex flex-col gap-1 min-w-[180px]" data-testid={`flyout-${groupKey}`}>
                 <span className="text-[10px] font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wider">More {label}</span>
                 {secondaryTools.map(tool => {
                   const Icon = tool.icon;
@@ -206,11 +206,11 @@ export function TakeoffToolbar({
   };
 
   return (
-    <div className="relative z-30">
+    <div className="relative z-30 h-full">
       {expandedGroup && (
-        <div className="fixed inset-0 z-20" onClick={() => setExpandedGroup(null)} />
+        <div className="fixed inset-0 z-40" onClick={() => setExpandedGroup(null)} />
       )}
-      <div className="hidden sm:flex w-[72px] bg-card/95 backdrop-blur-sm border-r flex-col items-center py-2 gap-0.5 overflow-y-auto scrollbar-hide shrink-0">
+      <div className="hidden sm:flex w-[72px] h-full bg-card/95 backdrop-blur-sm border-r flex-col items-center py-1.5 gap-px overflow-y-auto shrink-0" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(128,128,128,0.3) transparent' }}>
         <GroupLabel label="Navigate" />
         {navTools.map(tool => (
           <ToolButton key={tool.id} tool={tool} />
@@ -256,7 +256,7 @@ export function TakeoffToolbar({
           )}
         </div>
 
-        <Separator className="my-1 w-10" />
+        <Separator className="my-0.5 w-10" />
         <ExpandableGroup
           label="Measure"
           primaryTools={primaryMeasureTools as unknown as typeof TOOL_CONFIG}
@@ -264,7 +264,7 @@ export function TakeoffToolbar({
           groupKey="measure"
         />
 
-        <Separator className="my-1 w-10" />
+        <Separator className="my-0.5 w-10" />
         <ExpandableGroup
           label="Markup"
           primaryTools={primaryMarkupTools as unknown as typeof TOOL_CONFIG}
@@ -309,7 +309,7 @@ export function TakeoffToolbar({
 
         {issueTools.length > 0 && (
           <>
-            <Separator className="my-1 w-10" />
+            <Separator className="my-0.5 w-10" />
             <GroupLabel label="Issues" />
             {issueTools.map(tool => (
               <ToolButton key={tool.id} tool={tool} />
@@ -317,7 +317,7 @@ export function TakeoffToolbar({
           </>
         )}
 
-        <Separator className="my-1 w-10" />
+        <Separator className="my-0.5 w-10" />
         <GroupLabel label="Edit" />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -327,9 +327,9 @@ export function TakeoffToolbar({
               onClick={() => { const m = measurements.find(m => m.id === selectedMeasurementId); if (m) onDeleteMeasurement(m); }}
               disabled={!selectedMeasurementId || deletePending}
               data-testid="button-clear-selected"
-              className="toggle-elevate h-9 w-9"
+              className="toggle-elevate h-8 w-8"
             >
-              <Eraser className="w-[18px] h-[18px]" />
+              <Eraser className="w-4 h-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="right"><p>{selectedMeasurementId ? "Delete Selected" : "Select to delete"}</p></TooltipContent>
@@ -353,7 +353,7 @@ export function TakeoffToolbar({
           </Tooltip>
         </div>
 
-        <Separator className="my-1 w-10" />
+        <Separator className="my-0.5 w-10" />
         <GroupLabel label="Assist" />
         <div className="flex gap-0.5">
           <Tooltip>
@@ -375,14 +375,14 @@ export function TakeoffToolbar({
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant={aiPanelOpen ? "secondary" : "ghost"} size="icon" onClick={() => setAiPanelOpen(!aiPanelOpen)} data-testid="button-ai-takeoff" className={cn("toggle-elevate h-9 w-9", aiPanelOpen && "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300")}>
-              <Sparkles className="w-[18px] h-[18px]" />
+            <Button variant={aiPanelOpen ? "secondary" : "ghost"} size="icon" onClick={() => setAiPanelOpen(!aiPanelOpen)} data-testid="button-ai-takeoff" className={cn("toggle-elevate h-8 w-8", aiPanelOpen && "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300")}>
+              <Sparkles className="w-4 h-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="right"><p>AI Auto-Takeoff</p></TooltipContent>
         </Tooltip>
 
-        <Separator className="my-1 w-10" />
+        <Separator className="my-0.5 w-10" />
         <GroupLabel label="View" />
         <div className="flex gap-0.5">
           <Tooltip>
