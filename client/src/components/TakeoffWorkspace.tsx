@@ -16,7 +16,7 @@ import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
   Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
   CheckCircle2, AlertCircle, GalleryHorizontal, List,
-  Link2, ArrowLeft, Search, X, Tag, History, PanelRight
+  Link2, ArrowLeft, Search, X, Tag, History, PanelRight, ArrowRight
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -29,6 +29,7 @@ import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
+import TakeoffCrossModulePanel from "./takeoff/TakeoffCrossModulePanel";
 import { PageThumbnailStrip } from "./takeoff/PageThumbnailStrip";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
@@ -150,6 +151,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [gridEnabled, setGridEnabled] = useState(() => {
     try { return localStorage.getItem("takeoff-grid-enabled") === "true"; } catch { return false; }
   });
+  const [crossModulePanelOpen, setCrossModulePanelOpen] = useState(false);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -272,6 +274,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     staleTime: 30000,
   });
   const allIssues: any[] = (allSheetsIssues.data || []) as any[];
+
+  const { data: measurementLinksData } = useQuery<any>({
+    queryKey: ["/api/takeoff/projects", projectId, "measurement-links"],
+    queryFn: async () => {
+      const res = await fetch(`/api/takeoff/projects/${projectId}/measurement-links`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectId && context?.type !== "bid",
+    staleTime: 30000,
+  });
+  const measurementLinks = measurementLinksData?.linkedMeasurementIds
+    ? {
+        hasPR: new Set<string>(measurementLinksData.linkedMeasurementIds.pr || []),
+        hasCO: new Set<string>(measurementLinksData.linkedMeasurementIds.co || []),
+        hasSOV: new Set<string>(measurementLinksData.linkedMeasurementIds.sov || []),
+      }
+    : undefined;
 
   const { data: orgUsersData = [] } = useQuery({ queryKey: ["/api/messaging/users"] });
   const orgUsers: any[] = (orgUsersData as any[]).map((u: any) => ({
@@ -1421,6 +1441,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 </div>
               </TooltipContent>
             </Tooltip>
+            {context?.type !== "bid" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={crossModulePanelOpen ? "secondary" : "ghost"}
+                    size="icon"
+                    onClick={() => setCrossModulePanelOpen((v) => !v)}
+                    data-testid="button-toggle-cross-module"
+                  >
+                    <ArrowRight className="w-5 h-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{crossModulePanelOpen ? "Hide Cross-Module Panel" : "Cross-Module Actions"}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -3161,7 +3198,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onZoomToFitMeasurement={handleZoomToFitMeasurement}
         hideAiMeasurements={hideAiMeasurements}
         setHideAiMeasurements={setHideAiMeasurements}
+        measurementLinks={measurementLinks}
       />
+
+      {crossModulePanelOpen && context?.type !== "bid" && (
+        <div className="w-[340px] shrink-0 overflow-y-auto border-l bg-background">
+          <TakeoffCrossModulePanel
+            projectId={projectId}
+            selectedSheet={selectedSheet}
+            measurements={measurements}
+            categories={categories}
+            onClose={() => setCrossModulePanelOpen(false)}
+          />
+        </div>
+      )}
 
       <TakeoffDialogs
         mobileMeasurementsOpen={mobileMeasurementsOpen}

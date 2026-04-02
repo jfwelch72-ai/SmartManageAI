@@ -135,6 +135,7 @@ interface TakeoffSidebarProps {
   saveConditionPending?: boolean;
   hideAiMeasurements?: boolean;
   setHideAiMeasurements?: (v: boolean) => void;
+  measurementLinks?: { hasPR: Set<string>; hasCO: Set<string>; hasSOV: Set<string> };
 }
 
 interface MeasurementMeta {
@@ -189,6 +190,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     conditions = [], activeCondition = null, onActivateCondition, onClearCondition,
     onSaveCondition, onUpdateCondition, onDeleteCondition, saveConditionPending = false,
     hideAiMeasurements = false, setHideAiMeasurements,
+    measurementLinks,
   } = props;
 
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1031,6 +1033,15 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               <Badge variant="secondary" className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" data-testid={`badge-ai-source-${m.id}`}>
                                 <Zap className="w-2.5 h-2.5 mr-0.5" />AI
                               </Badge>
+                            )}
+                            {measurementLinks?.hasPR.has(m.id) && (
+                              <Badge variant="secondary" className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" data-testid={`badge-pr-${m.id}`}>PR</Badge>
+                            )}
+                            {measurementLinks?.hasCO.has(m.id) && (
+                              <Badge variant="secondary" className="text-[10px] bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300" data-testid={`badge-co-${m.id}`}>CO</Badge>
+                            )}
+                            {measurementLinks?.hasSOV.has(m.id) && (
+                              <Badge variant="secondary" className="text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" data-testid={`badge-sov-${m.id}`}>SOV</Badge>
                             )}
                           </div>
                           <div className="flex items-center gap-0.5">
