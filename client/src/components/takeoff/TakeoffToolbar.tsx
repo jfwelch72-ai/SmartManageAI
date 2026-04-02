@@ -119,7 +119,7 @@ export function TakeoffToolbar({
   const issueTools = TOOL_CONFIG.filter(t => t.group === "issues");
 
   return (
-    <div>
+    <div className="relative z-30">
       <div className="hidden sm:flex w-[72px] bg-card/95 backdrop-blur-sm border-r flex-col items-center py-2 gap-0.5 overflow-y-auto scrollbar-hide shrink-0">
         <GroupLabel label="Navigate" />
         {navTools.map(tool => (
