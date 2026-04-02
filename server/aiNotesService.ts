@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { openai } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 import { db } from "./db";
 import { 
@@ -177,7 +177,7 @@ Return format: { "insights": [ ... ] }`;
         inputRefs: { noteCount: notes.length },
         fn: async () => {
           const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: AI_MODEL_GPT5,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt }

@@ -8,7 +8,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { eventBus } from "./events";
-import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 
 const router = Router();
 
@@ -393,7 +393,7 @@ Already identified risks: ${existingRisks.length > 0 ? existingRisks.map(r => `$
 Suggest relevant construction project risks that haven't been identified yet.`;
 
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

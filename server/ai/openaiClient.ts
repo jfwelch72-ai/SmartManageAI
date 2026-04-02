@@ -30,8 +30,9 @@ export const openai = new Proxy({} as OpenAI, {
   }
 });
 
+export const AI_MODEL_GPT5 = 'gpt-5';
 export const AI_MODEL_GPT4O = 'gpt-4o';
-export const AI_MODEL_GPT4_TURBO = 'gpt-4-turbo-preview';
+export const AI_MODEL_FALLBACK = AI_MODEL_GPT4O;
 
 export interface AIAnalysisResponse {
   analysis_summary: string;
@@ -121,7 +122,7 @@ export interface AIAnalysisResponse {
 export async function callOpenAIForAnalysis(
   systemPrompt: string,
   userPrompt: string,
-  modelName: string = AI_MODEL_GPT4O
+  modelName: string = AI_MODEL_GPT5
 ): Promise<AIAnalysisResponse> {
   const completion = await openai.chat.completions.create({
     model: modelName,
@@ -252,7 +253,7 @@ If this is a very specialized or niche trade, do your best to provide relevant i
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: TRADE_RESEARCH_PROMPT },
         { role: 'user', content: userPrompt },

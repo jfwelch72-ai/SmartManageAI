@@ -9,7 +9,7 @@ import crypto from "crypto";
 import multer from "multer";
 import { publishToPlatform, validateToken, refreshToken } from "./social/publishService";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
-import { openai } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
 
 const router = Router();
@@ -991,7 +991,7 @@ Return a JSON object with:
       inputRefs: { platform, topic, tone },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: "You are a social media marketing expert for the construction industry." },
             { role: "user", content: prompt },

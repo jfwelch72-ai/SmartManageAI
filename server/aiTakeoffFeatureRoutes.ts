@@ -5,7 +5,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logError } from "./utils/logger";
-import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { objectStorageClient, ObjectStorageService } from "./objectStorage";
 import { governedAiCall } from "./services/aiGovernance";
 
@@ -291,7 +291,7 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
           inputRefs: { projectId: analysis.projectId },
           fn: async () => {
             const completion = await openai.chat.completions.create({
-              model: AI_MODEL_GPT4O,
+              model: AI_MODEL_GPT5,
               messages: [
                 {
                   role: "system",
@@ -410,7 +410,7 @@ Return your analysis as JSON with this exact structure:
               inputRefs: { projectId: analysis.projectId },
               fn: async () => {
                 const verifyCompletion = await openai.chat.completions.create({
-                  model: AI_MODEL_GPT4O,
+                  model: AI_MODEL_GPT5,
                   messages: [
                     {
                       role: "system",

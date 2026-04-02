@@ -4,7 +4,7 @@ import { db } from "./db";
 import { voiceLogs, issueCaptures, offlineSyncQueue, media, projects, insertVoiceLogSchema, insertIssueCaptureSchema, insertOfflineSyncQueueSchema } from "@shared/schema";
 import { eq, and, desc, sql, inArray, ilike, or } from "drizzle-orm";
 import { z } from "zod";
-import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { ObjectStorageService } from "./objectStorage";
 
 const router = Router();
@@ -676,7 +676,7 @@ Respond with valid JSON only.`
 Respond with valid JSON only.`;
 
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: transcription },
@@ -760,7 +760,7 @@ router.post("/photo-auto-tag", requireAuth, async (req: AuthenticatedRequest, re
 Respond with valid JSON only: { "tags": [...], "description": "..." }`;
 
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: "system", content: systemPrompt },
         {

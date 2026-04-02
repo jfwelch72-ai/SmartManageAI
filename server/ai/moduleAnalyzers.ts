@@ -18,7 +18,7 @@ import {
   aiVendorComparisons,
 } from "@shared/schema";
 import { eq, desc, sql, and, gte, lte, isNull } from "drizzle-orm";
-import { openai, AI_MODEL_GPT4O } from "./openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./openaiClient";
 
 export interface ModuleAnalysisResult {
   insights: {
@@ -164,7 +164,7 @@ Respond with JSON in this format:
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -289,7 +289,7 @@ Respond with JSON in this format:
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -433,7 +433,7 @@ Respond with JSON in this format:
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -563,7 +563,7 @@ Respond with JSON in this format:
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -696,7 +696,7 @@ Respond with JSON in this format:
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -827,7 +827,7 @@ Respond with JSON in this format:
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },

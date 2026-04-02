@@ -42,7 +42,7 @@ export const aiSettings = pgTable("ai_settings", {
   crewSchedulingEnabled: boolean("crew_scheduling_enabled").notNull().default(true),
   bidRemindersEnabled: boolean("bid_reminders_enabled").notNull().default(true),
   materialOrderingEnabled: boolean("material_ordering_enabled").notNull().default(true),
-  modelName: text("model_name").notNull().default("gpt-4o"),
+  modelName: text("model_name").notNull().default("gpt-5"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

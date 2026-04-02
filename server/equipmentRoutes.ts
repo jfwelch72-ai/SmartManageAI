@@ -3245,7 +3245,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         .orderBy(desc(equipmentMaintenanceHistory.performedAt))
         .limit(10);
       
-      const { openai } = await import('./ai/openaiClient');
+      const { openai, AI_MODEL_GPT5 } = await import('./ai/openaiClient');
       
       const equipOrgId = equipmentItem.organizationId || req.user?.organizationId || "system";
 
@@ -3303,7 +3303,7 @@ Please provide:
         inputRefs: { equipmentId, problemDescription: problemDescription?.substring(0, 200) },
         fn: async () => {
           const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: AI_MODEL_GPT5,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },

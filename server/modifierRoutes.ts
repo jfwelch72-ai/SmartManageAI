@@ -15,7 +15,7 @@ import { bids } from "../shared/schema/core";
 import { estimates, estimateLineItems } from "../shared/schema/operations";
 import { requireAuth, type AuthRequest } from "./auth";
 import { governedAiCall } from "./services/aiGovernance";
-import { openai } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { MODIFIER_AI_SYSTEM_PROMPT, buildModifierUserPrompt } from "./ai/modifierPrompt";
 import { requireFeature } from "./middleware/requireFeature";
 
@@ -659,7 +659,7 @@ router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_A
       inputRefs: { trade_name, scope_name, uom, material_families },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: MODIFIER_AI_SYSTEM_PROMPT },
             { role: "user", content: userPrompt },

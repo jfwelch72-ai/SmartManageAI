@@ -10,7 +10,7 @@ import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
 import { logError } from "./utils/logger";
 import { runAIAnalysis, getLatestAIRun, getAIRunById, getTasksForRole, updateTaskStatus } from "./ai/orchestrator";
-import { openai } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { getTotalStepsForRole, generateWalkthroughPrompt } from "./ai/walkthroughContent";
 import { analyzeSchedulingModule, analyzeDelaysModule, analyzeCostsModule, analyzeEquipmentModule, analyzeVendorPricingModule, analyzeProjectHealthModule, runComprehensiveAnalysis, saveAnalysisResults } from "./ai/moduleAnalyzers";
@@ -107,7 +107,7 @@ router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest
           organizationId: orgId,
           actorUserId: req.user!.id,
           actionType: "ai_pm_analysis",
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           tokensIn: 0,
           tokensOut: 0,
           costEstimate: "0",

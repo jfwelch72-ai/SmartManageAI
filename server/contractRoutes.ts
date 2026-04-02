@@ -1167,7 +1167,7 @@ router.post("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONT
 
     const { contractRiskAnalyses } = await import("@shared/schema");
     const { governedAiCall } = await import("./services/aiGovernance");
-    const { openai, AI_MODEL_GPT4O } = await import("./ai/openaiClient");
+    const { openai, AI_MODEL_GPT5 } = await import("./ai/openaiClient");
 
     const [project] = await db.select({ name: projects.name, code: projects.code })
       .from(projects).where(eq(projects.id, contract.projectId)).limit(1);
@@ -1251,7 +1251,7 @@ Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope
       inputRefs: { contractId: contract.id, contractNumber: contract.contractNumber },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT4O,
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: `Analyze this construction contract for risks:\n\n${contractContext}` },

@@ -17,7 +17,7 @@ import {
 } from "@shared/schema";
 import { eq, and, sql, desc, count } from "drizzle-orm";
 import {logInfo, logError, logWarn } from "../utils/logger";
-import { openai, AI_MODEL_GPT4O } from "../ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
 
 export interface HealthScoreBreakdown {
   scheduleScore: number;
@@ -328,7 +328,7 @@ ${previousScore !== null && previousScore !== currentScore ? `Score changed from
 Provide a concise explanation focusing on what's driving the score ${previousScore !== null && currentScore < previousScore ? 'down' : previousScore !== null && currentScore > previousScore ? 'up' : ''}.`;
 
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: "system", content: "You are a construction project health analyst. Be concise and specific." },
         { role: "user", content: prompt },

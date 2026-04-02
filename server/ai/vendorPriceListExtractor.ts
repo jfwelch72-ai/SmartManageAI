@@ -1,4 +1,4 @@
-import { openai } from "./openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./openaiClient";
 import { governedAiCall, estimateCost } from "../services/aiGovernance";
 import { logInfo, logError } from "../utils/logger";
 
@@ -59,7 +59,7 @@ export async function extractPricingFromPDF(
       
       const visionFn = async () => {
         const visionResponse = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             {
               role: "system",
@@ -151,7 +151,7 @@ async function extractWithTextFallback(
   
   const fallbackFn = async () => {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: AI_MODEL_GPT5,
       messages: [
         {
           role: "system",

@@ -1,4 +1,5 @@
 import { logError } from "./utils/logger";
+import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -84,7 +85,7 @@ Be helpful, professional, and focused on helping contractors present themselves 
       inputRefs: { messageLength: message?.length },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: message },
@@ -155,7 +156,7 @@ Include: Contact form, phone/email, business hours, service area map, FAQ.`,
       inputRefs: { pageType },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { 
               role: "system", 
@@ -248,7 +249,7 @@ Consider:
       inputRefs: { tradeType, style },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: "You are a professional brand designer specializing in construction company branding." },
             { role: "user", content: prompt },
@@ -414,7 +415,7 @@ Generate optimized SEO content. Return JSON:
       inputRefs: { pageId },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: "You are an SEO expert specializing in local business and construction company websites." },
             { role: "user", content: prompt },
@@ -764,7 +765,7 @@ ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
       inputRefs: { companyName, industry },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },

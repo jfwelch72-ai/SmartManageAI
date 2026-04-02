@@ -11,7 +11,7 @@ import { isFeatureEnabled } from "./services/featureFlagService";
 import { eventBus } from "./events";
 import {logError, logInfo, logWarn } from "./utils/logger";
 import { governedAiCall } from "./services/aiGovernance";
-import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import {
   hiringJobs,
   hiringJobTemplates,
@@ -1715,7 +1715,7 @@ router.post(
         inputRefs: { candidateId: candidate.id, jobId: candidate.jobId },
         fn: async () => {
           const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT4O,
+            model: AI_MODEL_GPT5,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt },
@@ -1771,7 +1771,7 @@ router.post(
         .values({
           organizationId: orgId(req),
           candidateId: candidate.id,
-          modelName: AI_MODEL_GPT4O,
+          modelName: AI_MODEL_GPT5,
           score,
           tradeFitScore,
           roleFitScore,
@@ -1794,7 +1794,7 @@ router.post(
         .set({ aiScore: score, aiRecommendation: r.summary ?? recommendation, updatedAt: new Date() })
         .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))));
 
-      void logActivity(orgId(req), userId(req), userName(req), "AI_REVIEW_COMPLETED", "candidate", candidate.id, candidate.fullName, { score, model: AI_MODEL_GPT4O, promptVersion: AI_REVIEW_PROMPT_VERSION });
+      void logActivity(orgId(req), userId(req), userName(req), "AI_REVIEW_COMPLETED", "candidate", candidate.id, candidate.fullName, { score, model: AI_MODEL_GPT5, promptVersion: AI_REVIEW_PROMPT_VERSION });
 
       res.json({
         score,

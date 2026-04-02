@@ -2,7 +2,7 @@ import { logError } from "../utils/logger";
 import { db } from "../db";
 import { crmOpportunities, crmOpportunityActivities, bids, type CrmOpportunity } from "@shared/schema";
 import { eq, and, sql, count } from "drizzle-orm";
-import { openai, AI_MODEL_GPT4O } from "./openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./openaiClient";
 
 interface WinProbabilityResult {
   score: number;
@@ -84,7 +84,7 @@ export async function scoreWinProbability(opportunityId: string): Promise<WinPro
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         {
           role: "system",

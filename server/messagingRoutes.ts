@@ -2863,10 +2863,10 @@ const messagingSetup = (async () => {
         .map(n => `${n.firstName} ${n.lastName}'s notes:\n${n.content}`)
         .join("\n\n---\n\n");
 
-      const { openai: openaiClient, AI_MODEL_GPT4O } = await import("./ai/openaiClient");
+      const { openai: openaiClient, AI_MODEL_GPT5 } = await import("./ai/openaiClient");
 
       const completion = await openaiClient.chat.completions.create({
-        model: AI_MODEL_GPT4O,
+        model: AI_MODEL_GPT5,
         messages: [
           {
             role: "system",

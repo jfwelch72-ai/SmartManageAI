@@ -30,7 +30,7 @@ export default function AISettingsPage() {
     crewSchedulingEnabled: true,
     bidRemindersEnabled: true,
     materialOrderingEnabled: true,
-    modelName: "gpt-4o",
+    modelName: "gpt-5",
   });
 
   useEffect(() => {
@@ -273,11 +273,11 @@ export default function AISettingsPage() {
                   id="model"
                   value={formData.modelName}
                   onChange={(e) => setFormData({ ...formData, modelName: e.target.value })}
-                  placeholder="gpt-4o"
+                  placeholder="gpt-5"
                   data-testid="input-model-name"
                 />
                 <p className="text-sm text-muted-foreground">
-                  Recommended: gpt-4o (latest) or gpt-4-turbo-preview
+                  Recommended: gpt-5 (latest) or gpt-4o
                 </p>
               </div>
             </CardContent>

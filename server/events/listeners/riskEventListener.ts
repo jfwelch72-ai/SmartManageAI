@@ -5,7 +5,7 @@ import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {logError, logInfo, logWarn } from "../../utils/logger";
 import { deliverNotifications } from "../../services/notificationDelivery";
 import type { RiskStatusChangedEvent, ProjectCreatedEvent } from "../eventTypes";
-import { openai, AI_MODEL_GPT4O } from "../../ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "../../ai/openaiClient";
 import { sanitizeShortText, sanitizeText } from "../../sanitization";
 
 const ADMIN_ROLES = ["ADMIN", "MANAGER", "OFFICE_MANAGER"] as const;
@@ -226,7 +226,7 @@ ${project.description ? `Description: ${project.description}` : ""}
 ${project.locationAddress ? `Location: ${project.locationAddress}` : ""}${historicalContext}`;
 
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

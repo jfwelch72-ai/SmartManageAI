@@ -5,7 +5,7 @@ import { eq, desc, and, sql, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logError, logWarn } from "./utils/logger";
-import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
@@ -316,7 +316,7 @@ async function processJobsiteBatch(batchId: string, user: { id?: string; organiz
         inputRefs: { projectId: batch.projectId },
         fn: async () => {
           const completion = await openai!.chat.completions.create({
-            model: AI_MODEL_GPT4O,
+            model: AI_MODEL_GPT5,
             messages: [
               {
                 role: "system",

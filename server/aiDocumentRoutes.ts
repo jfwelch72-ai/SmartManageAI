@@ -23,7 +23,7 @@ import { z } from "zod";
 import OpenAI from "openai";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
-import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { extractDocumentContent } from "./ai/documentExtractor";
 import { governedAiCall } from "./services/aiGovernance";
 import { ObjectStorageService } from "./objectStorage";
@@ -177,7 +177,7 @@ Respond with JSON in this format:
         inputRefs: { documentName, documentUrl },
         fn: async () => {
           const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT4O,
+            model: AI_MODEL_GPT5,
             messages,
             response_format: { type: 'json_object' },
             temperature: 0.3,
@@ -195,7 +195,7 @@ Respond with JSON in this format:
     }
 
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages,
       response_format: { type: 'json_object' },
       temperature: 0.3,
@@ -1158,7 +1158,7 @@ Be thorough in extracting scope items. Include quantities and units when availab
         inputRefs: { documentCount: documents.length, documentNames: documents.map((d: any) => d.name) },
         fn: async () => {
           const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT4O,
+            model: AI_MODEL_GPT5,
             messages,
             temperature: 0.3,
             max_tokens: 4096,
@@ -1303,7 +1303,7 @@ Be thorough in suggesting scope items based on the project type described. Inclu
         inputRefs: { descriptionLength: description.length },
         fn: async () => {
           const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT4O,
+            model: AI_MODEL_GPT5,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -1360,8 +1360,6 @@ Be thorough in suggesting scope items based on the project type described. Inclu
 // ========================================
 // Routes from aiContractDocumentRoutes.ts
 // ========================================
-
-const AI_MODEL_GPT4O = "gpt-4o";
 
 interface ContractDocumentAnalysisResult {
   contractType: string | null;
@@ -1546,7 +1544,7 @@ Analyze the document and return the structured JSON with all contract details.`;
         actionType: "contract_document_analysis",
         fn: async () => {
           const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT4O,
+            model: AI_MODEL_GPT5,
             messages,
             response_format: { type: 'json_object' },
             temperature: 0.3,
@@ -1572,7 +1570,7 @@ Analyze the document and return the structured JSON with all contract details.`;
     }
 
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages,
       response_format: { type: 'json_object' },
       temperature: 0.3,
@@ -3213,7 +3211,7 @@ Generate a realistic schedule that:
       actionType: "schedule_generation",
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -3887,7 +3885,7 @@ Analyze and suggest the properly formatted SOW item.`;
       inputRefs: { userInput, tradeType },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT4O,
+          model: AI_MODEL_GPT5,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
@@ -4082,7 +4080,7 @@ Analyze and suggest the properly formatted UOM, or explain if a similar one alre
       inputRefs: { userInput },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT4O,
+          model: AI_MODEL_GPT5,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },

@@ -2,6 +2,7 @@ import { db } from "../db";
 import { aiActionAudit, organizations, users } from "@shared/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { logInfo, logWarn, logError } from "../utils/logger";
+import { AI_MODEL_GPT5 } from "../ai/openaiClient";
 
 export interface AiActionResult {
   success: boolean;
@@ -185,7 +186,7 @@ export async function governedAiCall<T>(opts: {
 
   const tokensIn = completion.usage?.prompt_tokens || 0;
   const tokensOut = completion.usage?.completion_tokens || 0;
-  const model = completion.model || "gpt-4o";
+  const model = completion.model || AI_MODEL_GPT5;
   const cost = estimateCost(model, tokensIn, tokensOut);
 
   try {

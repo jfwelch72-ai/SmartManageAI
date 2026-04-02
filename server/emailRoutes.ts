@@ -20,6 +20,7 @@ import {
   type EmailAnalysisResult,
 } from "./ai/emailAi";
 import { governedAiCall } from "./services/aiGovernance";
+import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { testFullConnection, fetchImapMessages, sendSmtpEmail } from "./services/imapService";
 
 const router = Router();
@@ -2369,7 +2370,7 @@ router.post("/messages/:id/analyze", requireAuth, async (req: AuthRequest, res) 
           message.fromAddress,
           orgId
         );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: AI_MODEL_GPT5 } };
       },
     });
 
@@ -2497,7 +2498,7 @@ router.post("/messages/:id/suggest-reply", requireAuth, async (req: AuthRequest,
           },
           tones as Array<'professional' | 'casual' | 'firm'>
         );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: AI_MODEL_GPT5 } };
       },
     });
 
@@ -2726,7 +2727,7 @@ router.post("/threads/:id/summarize", requireAuth, async (req: AuthRequest, res)
             receivedAt: m.receivedAt,
           }))
         );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: AI_MODEL_GPT5 } };
       },
     });
 
@@ -2814,7 +2815,7 @@ router.post("/summary/daily", requireAuth, async (req: AuthRequest, res) => {
           })),
           'DAILY'
         );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: AI_MODEL_GPT5 } };
       },
     });
 
@@ -2905,7 +2906,7 @@ router.post("/summary/weekly", requireAuth, async (req: AuthRequest, res) => {
           })),
           'WEEKLY'
         );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: AI_MODEL_GPT5 } };
       },
     });
 

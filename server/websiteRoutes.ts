@@ -8,7 +8,7 @@ import { requireAuth, AuthRequest, requireFeaturePermission } from "./auth";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageClient } from "./objectStorage";
 import multer from "multer";
-import { openai } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { sendEmail } from "./email";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
 import { insertNotification } from "./services/notificationService";
@@ -1619,7 +1619,7 @@ Return a JSON object with:
       inputRefs: { title, serviceType, projectType },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: "You are a professional construction project portfolio writer." },
             { role: "user", content: prompt },
@@ -1760,7 +1760,7 @@ Return a JSON object with:
       inputRefs: { platform, topic, tone, sourceType },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { 
               role: "system", 
@@ -3210,7 +3210,7 @@ Return a JSON object with:
       inputRefs: { topic, tone, length },
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL_GPT5,
           messages: [
             { 
               role: "system", 

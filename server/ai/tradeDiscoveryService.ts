@@ -1,5 +1,5 @@
 import { logError } from "../utils/logger";
-import { openai, AI_MODEL_GPT4O } from './openaiClient';
+import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
 import { masterSowItems, masterModifierCategories, masterModifiers, tradeTypeEnum } from '@shared/schema';
@@ -151,7 +151,7 @@ Identify the primary trade and all related trades that would be involved in this
   try {
     const aiCallFn = async () => {
       const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT4O,
+        model: AI_MODEL_GPT5,
         messages: [
           { role: 'system', content: TRADE_DISCOVERY_PROMPT },
           { role: 'user', content: userPrompt },

@@ -1,5 +1,5 @@
 import { logError } from "../utils/logger";
-import { openai, AI_MODEL_GPT4O } from './openaiClient';
+import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
 import { masterSowItems, masterModifiers, masterModifierCategories, organizationSowItems } from '@shared/schema';
@@ -195,7 +195,7 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
   try {
     const aiCallFn = async () => {
       const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT4O,
+        model: AI_MODEL_GPT5,
         messages: [
           { role: 'system', content: SCOPE_PREDICTION_PROMPT },
           { role: 'user', content: userPrompt },

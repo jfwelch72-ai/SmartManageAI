@@ -1,5 +1,5 @@
 import {logError, logWarn } from "../utils/logger";
-import { openai, AI_MODEL_GPT4O } from './openaiClient';
+import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { db } from '../db';
 import { 
   emailMessages, 
@@ -176,7 +176,7 @@ Return JSON with:
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: EMAIL_CLASSIFICATION_PROMPT },
         { role: 'user', content: userPrompt }
@@ -230,7 +230,7 @@ ${m.bodyText?.substring(0, 1500) || '(No content)'}
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: THREAD_SUMMARY_PROMPT },
         { role: 'user', content: `Summarize this email thread:\n\n${threadContent.substring(0, 8000)}` }
@@ -272,7 +272,7 @@ export async function suggestReplies(
       const prompt = REPLY_SUGGESTION_PROMPT.replace('{tone}', tone);
       
       const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT4O,
+        model: AI_MODEL_GPT5,
         messages: [
           { role: 'system', content: prompt },
           { role: 'user', content: `Generate a ${tone} reply to this email:
@@ -339,7 +339,7 @@ Date: ${e.receivedAt.toISOString()}`)
 
   try {
     const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
+      model: AI_MODEL_GPT5,
       messages: [
         { role: 'system', content: DAILY_SUMMARY_PROMPT },
         { role: 'user', content: `Create a ${periodType.toLowerCase()} email summary for these ${emails.length} emails:
