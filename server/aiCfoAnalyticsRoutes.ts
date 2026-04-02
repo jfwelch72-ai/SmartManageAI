@@ -597,7 +597,7 @@ router.get("/ai-features/change-orders/drafts/:projectId", requireAuth, async (r
       .where(and(
         eq(aiCoDrafts.projectId, req.params.projectId),
         eq(aiCoDrafts.organizationId, organizationId),
-        sql`${aiCoDrafts.status} IN ('DRAFT', 'REVIEWED')`
+        sql`${aiCoDrafts.status} IN ('DRAFT')`
       ))
       .orderBy(desc(aiCoDrafts.createdAt));
 
@@ -608,14 +608,17 @@ router.get("/ai-features/change-orders/drafts/:projectId", requireAuth, async (r
   }
 });
 
-// PATCH /api/ai-features/change-orders/drafts/:draftId - Update draft status (e.g. REJECTED, REVIEWED)
+// PATCH /api/ai-features/change-orders/drafts/:draftId - Update draft status
 router.patch("/ai-features/change-orders/drafts/:draftId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
 
     const { status } = req.body;
-    if (!status) return res.status(400).json({ error: "status is required" });
+    const validStatuses = ["DRAFT", "CONVERTED", "DISCARDED"];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+    }
 
     const [draft] = await db.select().from(aiCoDrafts).where(
       and(eq(aiCoDrafts.id, req.params.draftId), eq(aiCoDrafts.organizationId, organizationId))

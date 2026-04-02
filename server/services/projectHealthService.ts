@@ -473,7 +473,7 @@ export async function getOrgHealthOverview(orgId: string) {
     FROM project_health_snapshots ph
     JOIN projects p ON p.id = ph.project_id
     WHERE ph.organization_id = ${orgId}
-      AND p.status NOT IN ('COMPLETED', 'CANCELLED', 'ARCHIVED')
+      AND p.status NOT IN ('COMPLETE', 'CLOSED')
     ORDER BY ph.project_id, ph.created_at DESC
   `);
   return result.rows || [];

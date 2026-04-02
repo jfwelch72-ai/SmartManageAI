@@ -90,7 +90,7 @@ async function createDraftsFromDelays(snapshot: any, organizationId?: string): P
           eq(aiCoDrafts.projectId, proj.id),
           eq(aiCoDrafts.organizationId, proj.orgId),
           sql`${aiCoDrafts.linkedItemsJson}::text LIKE ${'%' + dedupeKey + '%'}`,
-          sql`${aiCoDrafts.status} IN ('DRAFT', 'REVIEWED')`
+          sql`${aiCoDrafts.status} IN ('DRAFT')`
         )
       )
       .limit(1);
@@ -186,7 +186,7 @@ async function createDraftsFromInspections(snapshot: any, organizationId?: strin
           eq(aiCoDrafts.projectId, proj.id),
           eq(aiCoDrafts.organizationId, proj.orgId),
           sql`${aiCoDrafts.linkedItemsJson}::text LIKE ${'%' + dedupeKey + '%'}`,
-          sql`${aiCoDrafts.status} IN ('DRAFT', 'REVIEWED')`
+          sql`${aiCoDrafts.status} IN ('DRAFT')`
         )
       )
       .limit(1);
@@ -266,7 +266,7 @@ async function createDraftsFromAISuggestions(suggestions: ChangeOrderSuggestion[
           eq(aiCoDrafts.projectId, proj.id),
           eq(aiCoDrafts.organizationId, proj.orgId),
           sql`${aiCoDrafts.linkedItemsJson}::text LIKE ${'%' + dedupeKey + '%'}`,
-          sql`${aiCoDrafts.status} IN ('DRAFT', 'REVIEWED')`
+          sql`${aiCoDrafts.status} IN ('DRAFT')`
         )
       )
       .limit(1);
