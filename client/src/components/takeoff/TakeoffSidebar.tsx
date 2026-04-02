@@ -524,7 +524,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   })();
 
   return (
-    <div className={cn("hidden sm:flex w-80 sm:w-[340px] bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
+    <div className={cn("hidden sm:flex w-[280px] md:w-[320px] lg:w-[360px] bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
       <div className="flex border-b shrink-0 bg-muted/30">
         <button
           className={cn("flex-1 py-2.5 text-xs font-medium transition-all relative", sidebarTab === "tools" ? "border-b-2 border-primary text-primary bg-card" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
@@ -830,17 +830,17 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
           )}
 
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold">Measurements</h3>
-                <div className="flex items-center gap-1">
+            <CardContent className="pt-4 px-3">
+              <div className="flex items-center justify-between mb-3 gap-2">
+                <h3 className="font-semibold text-sm shrink-0">Measurements</h3>
+                <div className="flex items-center gap-0.5 flex-wrap justify-end">
                   {(onExportCurrentSheet || onExportAllSheets) && (
                     <DropdownMenu>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-export-excel-sidebar">
-                              <Download className="w-4 h-4" />
+                            <Button variant="ghost" size="icon" className="h-6 w-6" data-testid="button-export-excel-sidebar">
+                              <Download className="w-3.5 h-3.5" />
                             </Button>
                           </DropdownMenuTrigger>
                         </TooltipTrigger>
@@ -867,7 +867,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         <Button
                           variant={hideAiMeasurements ? "outline" : "ghost"}
                           size="icon"
-                          className={cn("h-7 w-7", hideAiMeasurements && "text-purple-500 border-purple-300")}
+                          className={cn("h-6 w-6", hideAiMeasurements && "text-purple-500 border-purple-300")}
                           onClick={() => setHideAiMeasurements(!hideAiMeasurements)}
                           data-testid="button-toggle-ai-measurements"
                         >
@@ -877,15 +877,15 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       <TooltipContent>{hideAiMeasurements ? "Show AI measurements" : "Hide AI measurements"}</TooltipContent>
                     </Tooltip>
                   )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowNewGroupInput(true)} title="Create group" data-testid="button-create-group">
-                    <FolderPlus className="w-4 h-4" />
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowNewGroupInput(true)} title="Create group" data-testid="button-create-group">
+                    <FolderPlus className="w-3.5 h-3.5" />
                   </Button>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant={quickAddOpen ? "secondary" : "ghost"}
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-6 w-6"
                         onClick={() => setQuickAddOpen(!quickAddOpen)}
                         data-testid="button-quick-add-toggle"
                       >
@@ -899,7 +899,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-6 w-6"
                         onClick={() => setBulkPasteOpen(true)}
                         data-testid="button-bulk-paste-toggle"
                       >
@@ -913,7 +913,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       <Button
                         variant={bulkSelectMode ? "secondary" : "ghost"}
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-6 w-6"
                         onClick={() => { setBulkSelectMode(!bulkSelectMode); setBulkSelectedIds(new Set()); }}
                         data-testid="button-bulk-select-toggle"
                       >
