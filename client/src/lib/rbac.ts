@@ -616,7 +616,7 @@ export const NavigationConfig = {
       href: "/cfo",
       label: "CFO Dashboard",
       testId: "nav-cfo",
-      visible: (role?: string, perms?: FeaturePerms) => isAdminOrManager(role) || perms?.canAccessFinancials === true,
+      visible: (role?: string) => isAdminOrManager(role),
     },
     {
       href: "/cost-rates",
