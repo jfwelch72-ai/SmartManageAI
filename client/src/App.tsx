@@ -62,8 +62,6 @@ const CalendarPage = lazy(() => import("@/pages/calendar"));
 const LeaveManagementPage = lazy(() => import("@/pages/leave-management"));
 const TimeClockPage = lazy(() => import("@/pages/time-clock"));
 const TimeClockManagerPage = lazy(() => import("@/pages/time-clock-manager"));
-const AIPMDashboard = lazy(() => import("@/pages/ai-pm-dashboard"));
-const CFODashboard = lazy(() => import("@/pages/cfo-dashboard"));
 const AISettingsPage = lazy(() => import("@/pages/ai-settings"));
 const CrewsPage = lazy(() => import("@/pages/crews"));
 const CostRatesPage = lazy(() => import("@/pages/cost-rates"));
@@ -88,9 +86,6 @@ const VendorClients = lazy(() => import("@/pages/vendor/clients"));
 const VendorMessages = lazy(() => import("@/pages/vendor/messages"));
 const VendorDocuments = lazy(() => import("@/pages/vendor/documents"));
 const ViewAsOrganization = lazy(() => import("@/pages/view-as-organization"));
-const AIBidAnalysisPage = lazy(() => import("@/pages/ai-bid-analysis"));
-const AIContractAnalysisPage = lazy(() => import("@/pages/ai-contract-analysis"));
-const AIDocumentAnalysisPage = lazy(() => import("@/pages/ai-document-analysis"));
 const SubcontractsPage = lazy(() => import("@/pages/subcontracts"));
 const SocialMediaPage = lazy(() => import("@/pages/social-media"));
 const BidWizardPage = lazy(() => import("@/pages/bid-wizard"));
@@ -106,7 +101,6 @@ const MarketplacePage = lazy(() => import("@/pages/marketplace").then(m => ({ de
 const ContractorProfilePage = lazy(() => import("@/pages/marketplace").then(m => ({ default: m.ContractorProfilePage })));
 const BillingPage = lazy(() => import("@/pages/billing"));
 const DailyReportLocksPage = lazy(() => import("@/pages/daily-report-locks"));
-const VoiceLogsPage = lazy(() => import("@/pages/voice-logs"));
 const IssueCapturesPage = lazy(() => import("@/pages/issue-captures"));
 const OfflineSyncPage = lazy(() => import("@/pages/offline-sync"));
 const PublicWebsite = lazy(() => import("@/pages/public-website"));
@@ -313,8 +307,8 @@ function Router() {
       <Route path="/progress-billing" component={() => <ProtectedRoute component={ProgressBillingPage} permission={RoutePermissions.PROGRESS_BILLING} featurePerm="canAccessFinancials" />} />
       <Route path="/wip-report" component={() => <ProtectedRoute component={WipReportPage} permission={RoutePermissions.CFO} />} />
       <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} permission={RoutePermissions.TIME_CLOCK_MANAGER} featurePerm="canManagePayroll" />} />
-      <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} permission={RoutePermissions.AI_PM} featurePerm="canUseAiFeatures" />} />
-      <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} />} />
+      <Route path="/ai-pm" component={() => <ProtectedRoute component={() => <Redirect to="/dashboard" />} permission={RoutePermissions.AI_PM} featurePerm="canUseAiFeatures" />} />
+      <Route path="/cfo" component={() => <ProtectedRoute component={() => <Redirect to="/dashboard" />} permission={RoutePermissions.CFO} />} />
       <Route path="/production-rates" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=production-rates" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
       <Route path="/scope-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=scope-settings" />} permission={RoutePermissions.SCOPE_SETTINGS} />} />
@@ -324,16 +318,19 @@ function Router() {
       <Route path="/vendor-pricing" component={() => <ProtectedRoute component={VendorPricingPage} permission={RoutePermissions.CRM} featurePerm="canManageProcurement" />} />
       <Route path="/mobile-sync" component={() => <ProtectedRoute component={MobileSyncPage} />} />
       
-      {/* AI Analysis routes */}
-      <Route path="/ai-document-analysis" component={() => <ProtectedRoute component={AIDocumentAnalysisPage} permission={(role?: string) => RoutePermissions.AI_BID_ANALYSIS(role) || RoutePermissions.AI_CONTRACT_ANALYSIS(role)} featurePerm="canUseAiFeatures" />} />
-      <Route path="/ai-bid-analysis" component={() => <ProtectedRoute component={() => <Redirect to="/ai-document-analysis?mode=bid" />} permission={RoutePermissions.AI_BID_ANALYSIS} featurePerm="canUseAiFeatures" />} />
-      <Route path="/ai-contract-analysis" component={() => <ProtectedRoute component={() => <Redirect to="/ai-document-analysis?mode=contract" />} permission={RoutePermissions.AI_CONTRACT_ANALYSIS} featurePerm="canUseAiFeatures" />} />
+      {/* AI Analysis routes - consolidated into parent pages */}
+      <Route path="/ai-document-analysis" component={() => <ProtectedRoute component={() => {
+        const params = new URLSearchParams(window.location.search);
+        return <Redirect to={params.get("mode") === "contract" ? "/contracts" : "/bids"} />;
+      }} permission={(role?: string) => RoutePermissions.AI_BID_ANALYSIS(role) || RoutePermissions.AI_CONTRACT_ANALYSIS(role)} featurePerm="canUseAiFeatures" />} />
+      <Route path="/ai-bid-analysis" component={() => <ProtectedRoute component={() => <Redirect to="/bids" />} permission={RoutePermissions.AI_BID_ANALYSIS} featurePerm="canUseAiFeatures" />} />
+      <Route path="/ai-contract-analysis" component={() => <ProtectedRoute component={() => <Redirect to="/contracts" />} permission={RoutePermissions.AI_CONTRACT_ANALYSIS} featurePerm="canUseAiFeatures" />} />
       
       {/* Delay Claims routes */}
       <Route path="/daily-report-locks" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=report-locks" />} permission={RoutePermissions.DAILY_REPORT_LOCKS} />} />
       
-      {/* Field Productivity routes */}
-      <Route path="/voice-logs" component={() => <ProtectedRoute component={VoiceLogsPage} />} />
+      {/* Field Productivity routes - voice logs consolidated into daily logs */}
+      <Route path="/voice-logs" component={() => <ProtectedRoute component={() => <Redirect to="/dashboard" />} />} />
       <Route path="/issue-captures" component={() => <ProtectedRoute component={IssueCapturesPage} />} />
       <Route path="/offline-sync" component={() => <ProtectedRoute component={OfflineSyncPage} />} />
       

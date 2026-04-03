@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface AIAnalysisButtonProps {
+interface AIAnalysisButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'size'> {
   projectId?: string;
   module?: string;
   variant?: "default" | "outline" | "ghost";
@@ -47,6 +47,7 @@ export function AIAnalysisButton({
   size = "sm",
   showDropdown = false,
   className = "",
+  ...htmlProps
 }: AIAnalysisButtonProps) {
   const { toast } = useToast();
 
@@ -88,6 +89,7 @@ export function AIAnalysisButton({
             className={className}
             disabled={runAnalysisMutation.isPending}
             data-testid="ai-analysis-dropdown-trigger"
+            {...htmlProps}
           >
             {runAnalysisMutation.isPending ? (
               <RefreshCw className="h-4 w-4 animate-spin mr-2" />
@@ -127,6 +129,7 @@ export function AIAnalysisButton({
       onClick={() => runAnalysisMutation.mutate(module || 'ALL')}
       disabled={runAnalysisMutation.isPending}
       data-testid="ai-analysis-button"
+      {...htmlProps}
     >
       {runAnalysisMutation.isPending ? (
         <RefreshCw className="h-4 w-4 animate-spin mr-2" />

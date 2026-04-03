@@ -2,6 +2,8 @@ import { useState, useMemo, lazy, Suspense } from "react";
 import BidCard from "@/components/BidCard";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
+import { AIBidAnalysisPanel } from "@/components/AIBidAnalysisPanel";
+import { AIFeatureTrigger } from "@/components/AIFeatureDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -751,6 +753,7 @@ export default function BidsPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <AIAnalysisButton module="BIDS" />
+            <AIFeatureTrigger feature="document-analysis" variant="outline" size="sm" label="AI Doc Analysis" data-testid="button-open-bid-doc-analysis" />
             {canEditBids(user?.role) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -811,6 +814,7 @@ export default function BidsPage() {
           </Suspense>
         ) : (
         <>
+        <AIBidAnalysisPanel className="mb-4" />
         <div className="mb-6 space-y-4">
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
             <div className="relative flex-1 min-w-0 sm:min-w-[200px]">

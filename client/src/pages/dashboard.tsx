@@ -3,6 +3,9 @@ import { ThemePicker } from "@/components/ThemePicker";
 import { DashboardGrid } from "@/components/DashboardGrid";
 import { WidgetLibrary } from "@/components/WidgetLibrary";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
+import { AIAnalysisButton } from "@/components/AIAnalysisButton";
+import { AIDashboardPanel } from "@/components/AIDashboardPanel";
+import { AIFeatureTrigger } from "@/components/AIFeatureDialog";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Plus, Sun, Moon, Sunset } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -81,6 +84,10 @@ export default function DashboardPage() {
             
             <div className="flex items-center gap-2 flex-wrap">
               <ThemePicker />
+              <AIAnalysisButton module="ALL" showDropdown={true} variant="outline" size="sm" data-testid="button-ai-analysis" />
+              <AIFeatureTrigger feature="ai-pm" variant="outline" size="sm" label="AI Tasks" data-testid="button-open-ai-pm" />
+              <AIFeatureTrigger feature="cfo" variant="outline" size="sm" label="Financials" data-testid="button-open-cfo" />
+              <AIFeatureTrigger feature="voice-logs" variant="outline" size="sm" label="Voice Logs" data-testid="button-open-voice-logs" />
               <DashboardEditMode 
                 onToggleWidgetLibrary={() => { setWidgetLibraryTargetSection(undefined); setWidgetLibraryOpen(!widgetLibraryOpen); }}
                 widgetLibraryOpen={widgetLibraryOpen}
@@ -97,6 +104,10 @@ export default function DashboardPage() {
         
         <AnnouncementBanner />
         <EditModeIndicator />
+
+        {hasManagementAccess(user?.role) && (
+          <AIDashboardPanel className="mb-6" />
+        )}
 
         {isLoadingLayout ? (
           <div className="text-center py-12 text-muted-foreground">Loading your dashboard...</div>

@@ -613,12 +613,6 @@ export const NavigationConfig = {
 
   financialsMenu: [
     {
-      href: "/cfo",
-      label: "CFO Dashboard",
-      testId: "nav-cfo",
-      visible: (role?: string) => isAdminOrManager(role),
-    },
-    {
       href: "/cost-rates",
       label: "Cost Rates",
       testId: "nav-cost-rates",
@@ -686,18 +680,6 @@ export const NavigationConfig = {
       label: "Social Media",
       testId: "nav-social-media",
       visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "MARKETING" || perms?.canPostSocialMedia === true,
-    },
-    {
-      href: "/ai-document-analysis",
-      label: "AI Document Analysis",
-      testId: "nav-ai-document-analysis",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || perms?.canUseAiFeatures === true,
-    },
-    {
-      href: "/ai-pm",
-      label: "AI Project Manager",
-      testId: "nav-ai-pm",
-      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canUseAiFeatures === true,
     },
     {
       href: "/executive-digest",

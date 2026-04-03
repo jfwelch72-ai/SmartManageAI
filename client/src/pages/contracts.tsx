@@ -10,6 +10,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { FileText, Search, Filter, Eye, Plus, ArrowRight } from "lucide-react";
+import { AIContractAnalysisPanel } from "@/components/AIContractAnalysisPanel";
+import { AIFeatureTrigger } from "@/components/AIFeatureDialog";
 
 interface Contract {
   id: string;
@@ -116,7 +118,10 @@ export default function ContractsPage() {
               Manage contracts across all projects
             </p>
           </div>
+          <AIFeatureTrigger feature="document-analysis" variant="outline" size="sm" label="AI Document Analysis" data-testid="button-open-document-analysis" />
         </div>
+
+        <AIContractAnalysisPanel className="mb-6" />
 
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
           {["DRAFT", "IN_REVIEW", "REDLINED", "PENDING_APPROVAL", "APPROVED", "EXECUTED", "AMENDED"].map(status => (

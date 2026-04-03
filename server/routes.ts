@@ -79,11 +79,7 @@ import inspectionRoutes from "./inspectionRoutes";
 import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
 import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
-import aiCfoAnalyticsRoutes from "./aiCfoAnalyticsRoutes";
-import aiTakeoffFeatureRoutes from "./aiTakeoffFeatureRoutes";
-import aiSchedulingRoutes from "./aiSchedulingRoutes";
 import aiOnboardingRoutes from "./aiOnboardingRoutes";
-import aiDocumentRoutes from "./aiDocumentRoutes";
 import scheduleRoutes from "./scheduleRoutes";
 import notesRoutes from "./notesRoutes";
 import taskRoutes from "./taskRoutes";
@@ -246,15 +242,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", punchListRoutes);
   app.use("/api", warrantyRoutes);
 
-  // Register AI core routes (analysis, features, governance, onboarding)
+  // Register AI routes through single orchestration layer (consolidates document, scheduling, takeoff, CFO analytics routes)
   app.use("/api", aiOrchestrationRoutes);
-  app.use("/api", aiCfoAnalyticsRoutes);
-  app.use("/api", aiTakeoffFeatureRoutes);
-  app.use("/api", aiSchedulingRoutes);
   app.use("/api", aiOnboardingRoutes);
-
-  // Register AI document routes (bids, contracts, notes, scope, insights, schedule, assistant)
-  app.use("/api", aiDocumentRoutes);
 
   // Register schedule management routes (CPM engine, baseline, resource loading, forecasting)
   app.use("/api", scheduleRoutes);

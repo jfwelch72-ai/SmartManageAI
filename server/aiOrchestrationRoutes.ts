@@ -16,7 +16,17 @@ import { getTotalStepsForRole, generateWalkthroughPrompt } from "./ai/walkthroug
 import { analyzeSchedulingModule, analyzeDelaysModule, analyzeCostsModule, analyzeEquipmentModule, analyzeVendorPricingModule, analyzeProjectHealthModule, runComprehensiveAnalysis, saveAnalysisResults } from "./ai/moduleAnalyzers";
 import { governedAiCall } from "./services/aiGovernance";
 
+import aiDocumentRoutes from "./aiDocumentRoutes";
+import aiSchedulingRoutes from "./aiSchedulingRoutes";
+import aiTakeoffFeatureRoutes from "./aiTakeoffFeatureRoutes";
+import aiCfoAnalyticsRoutes from "./aiCfoAnalyticsRoutes";
+
 const router = Router();
+
+router.use(aiDocumentRoutes);
+router.use(aiSchedulingRoutes);
+router.use(aiTakeoffFeatureRoutes);
+router.use(aiCfoAnalyticsRoutes);
 
 // ========================================
 // Routes from aiRoutes.ts
