@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, X, Send, Loader2, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin, EyeOff } from "lucide-react";
+import { Bot, X, Send, Loader2, Minimize, Maximize, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -50,6 +50,7 @@ export function AIAssistantWidget() {
   const queryClient = useQueryClient();
   const [location, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(() => {
     const stored = localStorage.getItem(MINIMIZED_KEY);
     return stored === "true";
@@ -408,10 +409,14 @@ export function AIAssistantWidget() {
 
       {isOpen && (
         <div 
-          className={`bg-card border rounded-lg shadow-2xl transition-all ${
-            isMinimized ? "w-64" : "w-80 sm:w-96"
+          className={`bg-card border shadow-2xl transition-all duration-300 ease-in-out ${
+            isFullscreen 
+              ? "fixed inset-0 w-full h-full rounded-none flex flex-col" 
+              : `rounded-lg ${isMinimized ? "w-64" : "w-80 sm:w-96"}`
           }`}
-          style={{ 
+          style={isFullscreen ? { 
+            zIndex: 9999,
+          } : { 
             position: 'fixed', 
             bottom: '24px', 
             right: messagingWidgetOpen ? '590px' : '24px', 
@@ -421,7 +426,7 @@ export function AIAssistantWidget() {
           }}
           data-testid="ai-assistant-panel"
         >
-          <div className={`flex items-center justify-between p-3 border-b rounded-t-lg ${
+          <div className={`flex items-center justify-between p-3 border-b ${isFullscreen ? "" : "rounded-t-lg"} ${
             isInWalkthrough ? "bg-gradient-to-r from-primary/10 to-purple-500/10" : "bg-muted/50"
           }`}>
             <div className="flex items-center gap-2">
@@ -443,21 +448,39 @@ export function AIAssistantWidget() {
               {!isInWalkthrough && <Badge variant="secondary" className="text-xs">AI</Badge>}
             </div>
             <div className="flex items-center gap-1">
+              {!isFullscreen && (
+                <Button 
+                  size="icon" 
+                  variant="ghost" 
+                  className="h-7 w-7"
+                  onClick={() => setIsMinimized(!isMinimized)}
+                  title={isMinimized ? "Expand" : "Minimize"}
+                  data-testid="button-ai-assistant-minimize"
+                >
+                  {isMinimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
+                </Button>
+              )}
               <Button 
                 size="icon" 
                 variant="ghost" 
                 className="h-7 w-7"
-                onClick={() => setIsMinimized(!isMinimized)}
-                title={isMinimized ? "Expand" : "Minimize"}
-                data-testid="button-ai-assistant-minimize"
+                onClick={() => {
+                  if (!isFullscreen) setIsMinimized(false);
+                  setIsFullscreen(!isFullscreen);
+                }}
+                title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+                data-testid="button-ai-assistant-fullscreen"
               >
-                {isMinimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
+                {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
               </Button>
               <Button 
                 size="icon" 
                 variant="ghost" 
                 className="h-7 w-7"
-                onClick={() => setIsOpen(false)}
+                onClick={() => {
+                  setIsFullscreen(false);
+                  setIsOpen(false);
+                }}
                 title="Close"
                 data-testid="button-ai-assistant-close"
               >
@@ -469,6 +492,7 @@ export function AIAssistantWidget() {
                 className="h-7 w-7 text-muted-foreground hover:text-destructive"
                 onClick={() => {
                   setIsEnabled(false);
+                  setIsFullscreen(false);
                   setIsOpen(false);
                 }}
                 title="Hide AI Assistant completely (re-enable in Settings)"
@@ -480,14 +504,14 @@ export function AIAssistantWidget() {
           </div>
 
           {!isMinimized && (
-            <>
+            <div className={isFullscreen ? "flex flex-col flex-1 min-h-0" : ""}>
               {isInWalkthrough && walkthroughStatus && (
                 <div className="px-3 pt-2">
                   <Progress value={progress} className="h-1.5" />
                 </div>
               )}
 
-              <ScrollArea className="h-80 p-3" ref={scrollRef}>
+              <ScrollArea className={`${isFullscreen ? "flex-1" : "h-80"} p-3 ${isFullscreen ? "px-6" : ""}`} ref={scrollRef}>
                 {shouldShowWelcomeInWidget && walkthroughStatus?.walkthrough ? (
                   <div className="flex flex-col items-center justify-center h-full text-center px-4">
                     <div className="p-4 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 mb-4">
@@ -665,7 +689,7 @@ export function AIAssistantWidget() {
                 )}
               </ScrollArea>
 
-              <div className="p-3 border-t">
+              <div className={`p-3 border-t ${isFullscreen ? "px-6" : ""}`}>
                 {isInWalkthrough ? (
                   <div className="space-y-2">
                     <div className="flex gap-2">
@@ -765,7 +789,7 @@ export function AIAssistantWidget() {
                   </>
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {isMinimized && (
