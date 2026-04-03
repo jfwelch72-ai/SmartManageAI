@@ -17,46 +17,6 @@ const FALLBACK_ICE_SERVERS: RTCConfiguration = {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
     { urls: "stun:stun4.l.google.com:19302" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turns:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:relay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:relay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:relay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turns:relay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
   ],
 };
 
@@ -293,29 +253,23 @@ export function VideoCallOverlay({
             await runTurnPreCheck(turnServers, stunServers);
           }
         } else {
-          console.warn("[WebRTC] Backend returned no ICE config, using built-in fallback");
-          const fallbackTurn = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
-            const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
-            return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
-          });
+          console.warn("[WebRTC] Backend returned no ICE config, using STUN-only fallback");
           const fallbackStun = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
             const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
             return urls.some((u: string) => u.startsWith("stun:"));
           });
-          await runTurnPreCheck(fallbackTurn, fallbackStun);
+          const stunWorks = await checkStunConnectivity(fallbackStun);
+          setTurnPreCheckStatus(stunWorks ? "stun_only" : "no_connectivity");
         }
       })
       .catch(async (err) => {
-        console.warn("[WebRTC] Failed to fetch ICE config, using built-in fallback:", err);
-        const fallbackTurn = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
-          const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
-          return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
-        });
+        console.warn("[WebRTC] Failed to fetch ICE config, using STUN-only fallback:", err);
         const fallbackStun = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
           const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
           return urls.some((u: string) => u.startsWith("stun:"));
         });
-        await runTurnPreCheck(fallbackTurn, fallbackStun);
+        const stunWorks = await checkStunConnectivity(fallbackStun);
+        setTurnPreCheckStatus(stunWorks ? "stun_only" : "no_connectivity");
       });
   }, []);
 
@@ -1055,7 +1009,7 @@ export function VideoCallOverlay({
         <div className="mx-4 mt-2 px-3 py-2 bg-blue-900/30 border border-blue-700/40 rounded-lg flex items-center gap-2" data-testid="banner-stun-only">
           <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0" />
           <p className="text-blue-300 text-xs">
-            Direct connection available — relay servers could not be reached, but most calls will work fine on your current network.
+            Direct connection mode — relay servers not needed. Most calls will work fine on your current network.
           </p>
         </div>
       )}
@@ -1063,7 +1017,7 @@ export function VideoCallOverlay({
         <div className="mx-4 mt-2 px-3 py-2 bg-red-900/30 border border-red-700/40 rounded-lg flex items-center gap-2" data-testid="banner-no-connectivity">
           <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
           <p className="text-red-300 text-xs">
-            Unable to reach any connection servers. Calls are unlikely to connect. Check your network connection or try switching to a different network.
+            No network connectivity detected. Calls are unlikely to connect. Check your network connection or try switching to a different network.
           </p>
         </div>
       )}

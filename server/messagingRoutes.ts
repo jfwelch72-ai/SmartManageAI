@@ -2943,6 +2943,8 @@ const messagingSetup = (async () => {
     }
   });
 
+  console.log(`[ICE Config] Startup: METERED_API_KEY is ${process.env.METERED_API_KEY ? "configured" : "NOT configured"}`);
+
   let meteredCredentialsCache: {
     credentials: Array<{ urls: string | string[]; username?: string; credential?: string }>;
     fetchedAt: number;
@@ -3017,23 +3019,9 @@ const messagingSetup = (async () => {
       const turnUser = process.env.TURN_SERVER_USERNAME;
       const turnCred = process.env.TURN_SERVER_CREDENTIAL;
 
-      let turnTier: "custom" | "metered" | "metered_stale" | "open_relay" | "none" = "none";
+      let turnTier: "custom" | "metered" | "metered_stale" | "none" = "none";
 
-      const openRelayServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [];
-
-      openRelayServers.push(
-        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turns:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-      );
-
-      openRelayServers.push(
-        { urls: "turn:relay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:relay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turn:relay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-        { urls: "turns:relay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-      );
+      const envTurnServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [];
 
       const secondaryRelayUrl = process.env.SECONDARY_TURN_SERVER_URL;
       const secondaryRelayUser = process.env.SECONDARY_TURN_SERVER_USERNAME;
@@ -3041,7 +3029,7 @@ const messagingSetup = (async () => {
       if (secondaryRelayUrl && secondaryRelayUser && secondaryRelayCred) {
         const secondaryUrls = secondaryRelayUrl.split(",").map(u => u.trim()).filter(Boolean);
         for (const url of secondaryUrls) {
-          openRelayServers.push({ urls: url, username: secondaryRelayUser, credential: secondaryRelayCred });
+          envTurnServers.push({ urls: url, username: secondaryRelayUser, credential: secondaryRelayCred });
         }
         console.log(`[ICE Config] Added ${secondaryUrls.length} secondary TURN server(s) from env`);
       }
@@ -3052,12 +3040,10 @@ const messagingSetup = (async () => {
       if (tertiaryRelayUrl && tertiaryRelayUser && tertiaryRelayCred) {
         const tertiaryUrls = tertiaryRelayUrl.split(",").map(u => u.trim()).filter(Boolean);
         for (const url of tertiaryUrls) {
-          openRelayServers.push({ urls: url, username: tertiaryRelayUser, credential: tertiaryRelayCred });
+          envTurnServers.push({ urls: url, username: tertiaryRelayUser, credential: tertiaryRelayCred });
         }
         console.log(`[ICE Config] Added ${tertiaryUrls.length} tertiary TURN server(s) from env`);
       }
-
-      console.log(`[ICE Config] Total fallback TURN servers: ${openRelayServers.length} (${openRelayServers.length > 4 ? "multi-provider" : "single-provider"})`);
 
       const { credentials: meteredServers, stale } = await fetchMeteredCredentialsWithRetry();
       if (meteredServers.length > 0 && !stale) {
@@ -3075,10 +3061,13 @@ const messagingSetup = (async () => {
         }
         turnTier = "custom";
         console.log(`[ICE Config] Tier: custom | Metered unavailable, using configured TURN server(s): ${turnUrls.join(", ")}`);
+      } else if (envTurnServers.length > 0) {
+        iceServers.push(...envTurnServers);
+        turnTier = "custom";
+        console.log(`[ICE Config] Tier: custom | Metered unavailable, using ${envTurnServers.length} env-configured TURN server(s)`);
       } else {
-        iceServers.push(...openRelayServers);
-        turnTier = "open_relay";
-        console.log("[ICE Config] Tier: open_relay | Metered unavailable, using free public TURN fallback (Open Relay Project)");
+        turnTier = "none";
+        console.log("[ICE Config] Tier: none | No TURN servers available, returning STUN-only config");
       }
 
       const hasTurn = iceServers.some(s => {
