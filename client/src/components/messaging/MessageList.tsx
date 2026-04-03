@@ -7,6 +7,21 @@ import { MessageBubble } from "./MessageBubble";
 import { MessageComposer } from "./MessageComposer";
 import { type Message, type MessageReaction, type TaskMention, type Conversation, type EntitySearchResult, type EntityLink } from "./types";
 import { cn } from "@/lib/utils";
+import { format, isToday, isYesterday, isSameDay } from "date-fns";
+
+const GROUP_TIME_WINDOW_MS = 5 * 60 * 1000;
+
+function shouldGroup(prev: Message, curr: Message): boolean {
+  if (prev.senderId !== curr.senderId) return false;
+  const timeDiff = new Date(curr.createdAt).getTime() - new Date(prev.createdAt).getTime();
+  return timeDiff >= 0 && timeDiff <= GROUP_TIME_WINDOW_MS;
+}
+
+function formatDateSeparator(date: Date): string {
+  if (isToday(date)) return "Today";
+  if (isYesterday(date)) return "Yesterday";
+  return format(date, "MMMM d, yyyy");
+}
 
 interface MessageListProps {
   conversation: Conversation;
@@ -198,7 +213,7 @@ export function MessageList({
             <p className="text-xs text-muted-foreground mt-1">{getConvDescription()}</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div>
             {/* Load-earlier sentinel */}
             {hasMore && (
               <div
@@ -219,32 +234,57 @@ export function MessageList({
               </div>
             )}
 
-            {messages.map((message) => {
+            {messages.map((message, index) => {
               const isOwn = message.senderId === currentUserId;
               const currentParticipant = conversation?.participants.find(p => p.userId === currentUserId);
               const isAdmin = currentParticipant?.isAdmin === true;
 
+              const prevMessage = index > 0 ? messages[index - 1] : null;
+              const currentDate = new Date(message.createdAt);
+
+              const sameDayAsPrev = prevMessage ? isSameDay(new Date(prevMessage.createdAt), currentDate) : false;
+              const groupedWithPrev = sameDayAsPrev && prevMessage ? shouldGroup(prevMessage, message) : false;
+              const isFirstInGroup = !groupedWithPrev;
+
+              const showDateSeparator = !prevMessage || !isSameDay(new Date(prevMessage.createdAt), currentDate);
+
               return (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  isOwn={isOwn}
-                  isAdmin={isAdmin}
-                  currentUserId={currentUserId}
-                  editingMessageId={editingMessageId}
-                  editContent={editContent}
-                  popoverMsgId={popoverMsgId}
-                  editPending={editPending}
-                  onEditStart={onEditStart}
-                  onEditCancel={onEditCancel}
-                  onEditSave={onEditSave}
-                  onEditContentChange={onEditContentChange}
-                  onDelete={onDelete}
-                  onPickerToggle={onPickerToggle}
-                  onReact={onReact}
-                  onEntityClick={handleEntityClick}
-                  renderContent={renderContent}
-                />
+                <Fragment key={message.id}>
+                  {showDateSeparator && (
+                    <div className="flex items-center gap-3 py-3" data-testid={`date-separator-${message.id}`}>
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-[11px] font-medium text-muted-foreground px-2">
+                        {formatDateSeparator(currentDate)}
+                      </span>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+                  )}
+                  <div className={cn(
+                    isFirstInGroup && !showDateSeparator ? "mt-4" : "",
+                    !isFirstInGroup ? "mt-0.5" : ""
+                  )}>
+                    <MessageBubble
+                      message={message}
+                      isOwn={isOwn}
+                      isAdmin={isAdmin}
+                      currentUserId={currentUserId}
+                      editingMessageId={editingMessageId}
+                      editContent={editContent}
+                      popoverMsgId={popoverMsgId}
+                      editPending={editPending}
+                      isFirstInGroup={isFirstInGroup}
+                      onEditStart={onEditStart}
+                      onEditCancel={onEditCancel}
+                      onEditSave={onEditSave}
+                      onEditContentChange={onEditContentChange}
+                      onDelete={onDelete}
+                      onPickerToggle={onPickerToggle}
+                      onReact={onReact}
+                      onEntityClick={handleEntityClick}
+                      renderContent={renderContent}
+                    />
+                  </div>
+                </Fragment>
               );
             })}
             <div ref={messagesEndRef} />

@@ -27,6 +27,7 @@ interface MessageBubbleProps {
   editContent: string;
   popoverMsgId: string | null;
   editPending: boolean;
+  isFirstInGroup?: boolean;
   onEditStart: (id: string, content: string) => void;
   onEditCancel: () => void;
   onEditSave: (id: string, content: string) => void;
@@ -47,6 +48,7 @@ export function MessageBubble({
   editContent,
   popoverMsgId,
   editPending,
+  isFirstInGroup = true,
   onEditStart,
   onEditCancel,
   onEditSave,
@@ -63,27 +65,35 @@ export function MessageBubble({
   const canEdit = isOwn && !message.isDeleted && !message.voiceUrl && !isFieldNote;
   const canDelete = (isOwn || isAdmin) && !message.isDeleted && !isFieldNote;
 
+  const showHeader = isFirstInGroup;
+
   return (
     <div
       key={message.id}
       className={cn("flex gap-2.5 group relative", isOwn && "flex-row-reverse")}
       data-testid={`message-${message.id}`}
     >
-      <Avatar className="h-7 w-7 shrink-0 mt-0.5">
-        <AvatarFallback className="text-[10px]">
-          {getInitials(message.sender.firstName, message.sender.lastName)}
-        </AvatarFallback>
-      </Avatar>
+      {showHeader ? (
+        <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+          <AvatarFallback className="text-[10px]">
+            {getInitials(message.sender.firstName, message.sender.lastName)}
+          </AvatarFallback>
+        </Avatar>
+      ) : (
+        <div className="w-7 shrink-0" />
+      )}
 
       <div className={cn("max-w-[72%]", isOwn && "text-right")}>
-        <div className={cn("flex items-center gap-1.5 mb-0.5", isOwn && "flex-row-reverse")}>
-          <span className="text-xs font-semibold">
-            {isOwn ? "You" : `${message.sender.firstName} ${message.sender.lastName}`}
-          </span>
-          <span className="text-[10px] text-muted-foreground">
-            {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
-          </span>
-        </div>
+        {showHeader && (
+          <div className={cn("flex items-center gap-1.5 mb-0.5", isOwn && "flex-row-reverse")}>
+            <span className="text-xs font-semibold">
+              {isOwn ? "You" : `${message.sender.firstName} ${message.sender.lastName}`}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
+            </span>
+          </div>
+        )}
 
         {/* Deleted placeholder */}
         {message.isDeleted ? (
