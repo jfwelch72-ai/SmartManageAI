@@ -102,7 +102,7 @@ export function VideoCallOverlay({
   const retryCountRef = useRef<Record<string, number>>({});
   const iceConfigRef = useRef<RTCConfiguration>(FALLBACK_ICE_SERVERS);
   const signalHandlerRegisteredRef = useRef(false);
-  const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "unreachable" | "no_turn_servers">("pending");
+  const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "stun_only" | "no_connectivity">("pending");
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -149,7 +149,47 @@ export function VideoCallOverlay({
   }, [localStream]);
 
   useEffect(() => {
-    const runTurnPreCheck = async (turnServers: Array<{ urls: string | string[]; username?: string; credential?: string }>) => {
+    const checkStunConnectivity = async (stunServers: Array<{ urls: string | string[] }>): Promise<boolean> => {
+      try {
+        const testConfig: RTCConfiguration = { iceServers: stunServers };
+        const testPc = new RTCPeerConnection(testConfig);
+        let foundSrflx = false;
+        const stunPromise = new Promise<boolean>((resolve) => {
+          const timeout = setTimeout(() => {
+            testPc.close();
+            resolve(false);
+          }, 5000);
+          testPc.onicecandidate = (e) => {
+            if (e.candidate) {
+              const isSrflx = e.candidate.type === "srflx" ||
+                (e.candidate.candidate && e.candidate.candidate.includes(" typ srflx"));
+              if (isSrflx) {
+                foundSrflx = true;
+                clearTimeout(timeout);
+                testPc.close();
+                resolve(true);
+              }
+            }
+            if (!e.candidate && !foundSrflx) {
+              clearTimeout(timeout);
+              testPc.close();
+              resolve(false);
+            }
+          };
+        });
+        testPc.createDataChannel("stun-test");
+        const offer = await testPc.createOffer();
+        await testPc.setLocalDescription(offer);
+        return await stunPromise;
+      } catch {
+        return false;
+      }
+    };
+
+    const runTurnPreCheck = async (
+      turnServers: Array<{ urls: string | string[]; username?: string; credential?: string }>,
+      stunServers: Array<{ urls: string | string[] }>
+    ) => {
       try {
         const testConfig: RTCConfiguration = {
           iceServers: turnServers,
@@ -188,12 +228,20 @@ export function VideoCallOverlay({
           console.log("[WebRTC] TURN server connectivity pre-check: OK");
           setTurnPreCheckStatus("ok");
         } else {
-          console.warn("[WebRTC] TURN server connectivity pre-check: UNREACHABLE — relay candidates could not be gathered");
-          setTurnPreCheckStatus("unreachable");
+          console.warn("[WebRTC] TURN server connectivity pre-check: UNREACHABLE — checking STUN fallback");
+          const stunWorks = await checkStunConnectivity(stunServers);
+          if (stunWorks) {
+            console.log("[WebRTC] STUN connectivity OK — calls can still work via direct connection");
+            setTurnPreCheckStatus("stun_only");
+          } else {
+            console.error("[WebRTC] Neither TURN nor STUN connectivity available");
+            setTurnPreCheckStatus("no_connectivity");
+          }
         }
       } catch (err) {
         console.warn("[WebRTC] TURN server connectivity pre-check failed:", err);
-        setTurnPreCheckStatus("unreachable");
+        const stunWorks = await checkStunConnectivity(stunServers);
+        setTurnPreCheckStatus(stunWorks ? "stun_only" : "no_connectivity");
       }
     };
 
@@ -208,13 +256,18 @@ export function VideoCallOverlay({
             const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
             return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
           });
+          const stunServers = data.iceServers.filter((s: { urls: string | string[] }) => {
+            const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+            return urls.some((u: string) => u.startsWith("stun:"));
+          });
           const turnCount = turnServers.length;
-          console.log(`[WebRTC] Loaded ICE config: ${data.iceServers.length} servers (${turnCount} TURN, hasTurn: ${data.hasTurn})`);
+          console.log(`[WebRTC] Loaded ICE config: ${data.iceServers.length} servers (${turnCount} TURN, hasTurn: ${data.hasTurn}, tier: ${data.turnTier})`);
           if (turnCount === 0) {
-            console.warn("[WebRTC] No TURN servers in ICE config. Calls may fail behind restrictive NATs.");
-            setTurnPreCheckStatus("no_turn_servers");
+            console.warn("[WebRTC] No TURN servers in ICE config — checking STUN connectivity");
+            const stunWorks = await checkStunConnectivity(stunServers);
+            setTurnPreCheckStatus(stunWorks ? "stun_only" : "no_connectivity");
           } else {
-            await runTurnPreCheck(turnServers);
+            await runTurnPreCheck(turnServers, stunServers);
           }
         } else {
           console.warn("[WebRTC] Backend returned no ICE config, using built-in fallback");
@@ -222,7 +275,11 @@ export function VideoCallOverlay({
             const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
             return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
           });
-          await runTurnPreCheck(fallbackTurn);
+          const fallbackStun = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
+            const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+            return urls.some((u: string) => u.startsWith("stun:"));
+          });
+          await runTurnPreCheck(fallbackTurn, fallbackStun);
         }
       })
       .catch(async (err) => {
@@ -231,7 +288,11 @@ export function VideoCallOverlay({
           const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
           return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
         });
-        await runTurnPreCheck(fallbackTurn);
+        const fallbackStun = FALLBACK_ICE_SERVERS.iceServers!.filter(s => {
+          const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+          return urls.some((u: string) => u.startsWith("stun:"));
+        });
+        await runTurnPreCheck(fallbackTurn, fallbackStun);
       });
   }, []);
 
@@ -880,19 +941,19 @@ export function VideoCallOverlay({
         </Button>
       </div>
 
-      {turnPreCheckStatus === "no_turn_servers" && (
-        <div className="mx-4 mt-2 px-3 py-2 bg-amber-900/40 border border-amber-700/50 rounded-lg flex items-center gap-2" data-testid="banner-no-turn-servers">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-          <p className="text-amber-300 text-xs">
-            No TURN relay servers are available. Calls may fail if a direct connection cannot be established. Contact your administrator to check the server configuration.
+      {turnPreCheckStatus === "stun_only" && (
+        <div className="mx-4 mt-2 px-3 py-2 bg-blue-900/30 border border-blue-700/40 rounded-lg flex items-center gap-2" data-testid="banner-stun-only">
+          <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0" />
+          <p className="text-blue-300 text-xs">
+            Direct connection available — relay servers could not be reached, but most calls will work fine on your current network.
           </p>
         </div>
       )}
-      {turnPreCheckStatus === "unreachable" && (
-        <div className="mx-4 mt-2 px-3 py-2 bg-amber-900/40 border border-amber-700/50 rounded-lg flex items-center gap-2" data-testid="banner-turn-unreachable">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-          <p className="text-amber-300 text-xs">
-            TURN relay servers could not be reached. Calls may fail if a direct connection cannot be established. Your network may be blocking the connection — try switching networks or disabling any firewall/VPN.
+      {turnPreCheckStatus === "no_connectivity" && (
+        <div className="mx-4 mt-2 px-3 py-2 bg-red-900/30 border border-red-700/40 rounded-lg flex items-center gap-2" data-testid="banner-no-connectivity">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+          <p className="text-red-300 text-xs">
+            Unable to reach any connection servers. Calls are unlikely to connect. Check your network connection or try switching to a different network.
           </p>
         </div>
       )}
@@ -955,13 +1016,9 @@ export function VideoCallOverlay({
                         if (reason === "turn_unreachable") {
                           return (
                             <div className="flex flex-col items-center gap-1">
-                              <p className="text-red-400 text-sm font-medium" data-testid="text-connection-failed">Unable to connect — relay server unreachable</p>
-                              <div className="flex items-center gap-1 text-amber-400">
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                <p className="text-xs font-medium">TURN server not responding</p>
-                              </div>
+                              <p className="text-amber-400 text-sm font-medium" data-testid="text-connection-failed">Connection couldn't be established</p>
                               <p className="text-gray-500 text-xs">
-                                A TURN relay server is configured but it could not be reached. Please verify the TURN server is running and that your network allows connections to it. Try again or contact your administrator.
+                                The relay server wasn't reachable, and a direct connection couldn't be made either. Try again — if the problem persists, switching networks may help.
                               </p>
                             </div>
                           );

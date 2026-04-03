@@ -2947,34 +2947,60 @@ const messagingSetup = (async () => {
     credentials: Array<{ urls: string | string[]; username?: string; credential?: string }>;
     fetchedAt: number;
   } | null = null;
-  const METERED_CACHE_TTL_MS = 5 * 60 * 1000;
+  const METERED_CACHE_TTL_MS = 10 * 60 * 1000;
+  const METERED_STALE_TTL_MS = 60 * 60 * 1000;
+  const METERED_RETRY_DELAYS = [500, 1500, 3000];
 
-  async function fetchMeteredCredentials(): Promise<Array<{ urls: string | string[]; username?: string; credential?: string }>> {
+  async function fetchMeteredCredentialsWithRetry(): Promise<{ credentials: Array<{ urls: string | string[]; username?: string; credential?: string }>; stale: boolean }> {
     if (meteredCredentialsCache && Date.now() - meteredCredentialsCache.fetchedAt < METERED_CACHE_TTL_MS) {
-      return meteredCredentialsCache.credentials;
+      return { credentials: meteredCredentialsCache.credentials, stale: false };
     }
 
     const apiKey = process.env.METERED_API_KEY;
     if (!apiKey) {
       console.warn("[ICE Config] METERED_API_KEY not set, cannot fetch Metered TURN credentials");
-      return [];
+      return { credentials: [], stale: false };
     }
 
-    try {
-      const response = await fetch(`https://smartmanageai.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`);
-      if (!response.ok) {
-        console.error(`[ICE Config] Metered API returned status ${response.status}`);
-        return meteredCredentialsCache?.credentials ?? [];
+    for (let attempt = 0; attempt <= METERED_RETRY_DELAYS.length; attempt++) {
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      try {
+        if (attempt > 0) {
+          const delay = METERED_RETRY_DELAYS[attempt - 1];
+          console.log(`[ICE Config] Retrying Metered credential fetch (attempt ${attempt + 1}) after ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        const controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(
+          `https://smartmanageai.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`,
+          { signal: controller.signal }
+        );
+
+        if (!response.ok) {
+          console.error(`[ICE Config] Metered API returned status ${response.status} (attempt ${attempt + 1})`);
+          continue;
+        }
+
+        const credentials = await response.json() as Array<{ urls: string | string[]; username?: string; credential?: string }>;
+        meteredCredentialsCache = { credentials, fetchedAt: Date.now() };
+        console.log(`[ICE Config] Fetched ${credentials.length} Metered TURN credential(s) on attempt ${attempt + 1}`);
+        return { credentials, stale: false };
+      } catch (err) {
+        console.error(`[ICE Config] Metered credential fetch failed (attempt ${attempt + 1}):`, err instanceof Error ? err.message : err);
+      } finally {
+        if (timeout) clearTimeout(timeout);
       }
-
-      const credentials = await response.json() as Array<{ urls: string | string[]; username?: string; credential?: string }>;
-      meteredCredentialsCache = { credentials, fetchedAt: Date.now() };
-      console.log(`[ICE Config] Fetched ${credentials.length} Metered TURN credential(s)`);
-      return credentials;
-    } catch (err) {
-      console.error("[ICE Config] Failed to fetch Metered TURN credentials:", err);
-      return meteredCredentialsCache?.credentials ?? [];
     }
+
+    if (meteredCredentialsCache && Date.now() - meteredCredentialsCache.fetchedAt < METERED_STALE_TTL_MS) {
+      console.warn("[ICE Config] All Metered fetch attempts failed, using stale cached credentials");
+      return { credentials: meteredCredentialsCache.credentials, stale: true };
+    }
+
+    console.error("[ICE Config] All Metered fetch attempts failed and no usable cache available");
+    return { credentials: [], stale: false };
   }
 
   router.get("/api/calls/ice-config", requireAuth, async (_req: AuthRequest, res) => {
@@ -2991,41 +3017,36 @@ const messagingSetup = (async () => {
       const turnUser = process.env.TURN_SERVER_USERNAME;
       const turnCred = process.env.TURN_SERVER_CREDENTIAL;
 
+      let turnTier: "custom" | "metered" | "metered_stale" | "open_relay" | "none" = "none";
+
+      const openRelayServers = [
+        { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turns:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+      ];
+
       if (turnUrl && turnUser && turnCred) {
         const turnUrls = turnUrl.split(",").map(u => u.trim()).filter(Boolean);
         for (const url of turnUrls) {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
-        console.log(`[ICE Config] Using configured TURN server(s): ${turnUrls.join(", ")}`);
+        turnTier = "custom";
+        console.log(`[ICE Config] Tier: custom | Using configured TURN server(s): ${turnUrls.join(", ")}`);
       } else {
-        const meteredServers = await fetchMeteredCredentials();
-        if (meteredServers.length > 0) {
+        const { credentials: meteredServers, stale } = await fetchMeteredCredentialsWithRetry();
+        if (meteredServers.length > 0 && !stale) {
           iceServers.push(...meteredServers);
-          console.log("[ICE Config] Metered TURN servers included");
+          turnTier = "metered";
+          console.log(`[ICE Config] Tier: metered | ${meteredServers.length} Metered TURN server(s) included`);
+        } else if (meteredServers.length > 0 && stale) {
+          iceServers.push(...meteredServers);
+          turnTier = "metered_stale";
+          console.log(`[ICE Config] Tier: metered_stale | ${meteredServers.length} stale Metered TURN server(s) (fresh fetch failed)`);
         } else {
-          iceServers.push(
-            {
-              urls: "turn:openrelay.metered.ca:80",
-              username: "openrelayproject",
-              credential: "openrelayproject",
-            },
-            {
-              urls: "turn:openrelay.metered.ca:443",
-              username: "openrelayproject",
-              credential: "openrelayproject",
-            },
-            {
-              urls: "turn:openrelay.metered.ca:443?transport=tcp",
-              username: "openrelayproject",
-              credential: "openrelayproject",
-            },
-            {
-              urls: "turns:openrelay.metered.ca:443",
-              username: "openrelayproject",
-              credential: "openrelayproject",
-            },
-          );
-          console.log("[ICE Config] Using free public TURN fallback (Open Relay Project)");
+          iceServers.push(...openRelayServers);
+          turnTier = "open_relay";
+          console.log("[ICE Config] Tier: open_relay | Using free public TURN fallback (Open Relay Project)");
         }
       }
 
@@ -3034,7 +3055,7 @@ const messagingSetup = (async () => {
         return urls.some(u => u.startsWith("turn:") || u.startsWith("turns:"));
       });
 
-      res.json({ iceServers, hasTurn });
+      res.json({ iceServers, hasTurn, turnTier });
     } catch (error) {
       logError("ICE config error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
