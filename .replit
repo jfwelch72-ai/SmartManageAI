@@ -66,6 +66,7 @@ VAPID_PUBLIC_KEY = "BLJs3577Xkj-3P1MSobc2rGE0I-2b5X3-I2J1Ro5KnitjzKAkywAWxRVnIwP
 VAPID_PRIVATE_KEY = "usfKptLqYeGUBgy5sr9k_FDIbrxUcKMTlJAsAPsx8CU"
 VAPID_SUBJECT = "mailto:support@smartmanageai.com"
 VITE_VAPID_PUBLIC_KEY = "BLJs3577Xkj-3P1MSobc2rGE0I-2b5X3-I2J1Ro5KnitjzKAkywAWxRVnIwP7-UGiVIbdqpcPfQY0u3TBP6mw1k"
+METERED_API_KEY = "9531b6f9c696376f33e386c16e1e4c3847ec"
 
 [postMerge]
 path = "scripts/post-merge.sh"
