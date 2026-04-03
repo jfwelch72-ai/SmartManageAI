@@ -1004,7 +1004,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
             {showMessages && selectedConversation && !showCallNotes && !showNewDm && (
               <div className={cn("flex flex-col flex-1 min-w-0 min-h-0", isMobileView ? "w-full" : "")}>
                 {/* Header */}
-                <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0">
+                <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0">
                   {isMobileView && (
                     <Button
                       variant="ghost"
@@ -1213,7 +1213,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                       <span className="truncate">{selectedConversation.topic}</span>
                     </div>
                   )}
-                  <div className={cn("flex items-center gap-1", !selectedConversation.topic && "ml-auto")}>
+                  <div className={cn("flex items-center gap-1 shrink-0", !selectedConversation.topic && "ml-auto")}>
                     <CallHistory conversationId={selectedConversationId!} />
                     <Tooltip>
                       <TooltipTrigger asChild>
