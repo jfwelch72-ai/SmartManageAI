@@ -63,7 +63,7 @@ export function VideoCallOverlay({
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
-  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying" | "checking_slow" | "peer_unreachable" | "connected_no_video">>({});
+  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying" | "checking_slow" | "peer_unreachable" | "connected_no_video" | "connected_no_audio">>({});
   const [iceFailureReasons, setIceFailureReasons] = useState<Record<string, "turn_unreachable" | "network_blocked">>({});
   const iceFailureReasonsRef = useRef<Record<string, "turn_unreachable" | "network_blocked">>({});
   const [iceConfig, setIceConfig] = useState<RTCConfiguration>(FALLBACK_ICE_SERVERS);
@@ -83,7 +83,16 @@ export function VideoCallOverlay({
   const signalHandlerRegisteredRef = useRef(false);
   const connectedNoTracksRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const retryConnectionRef = useRef<(remoteUserId: string) => void>(() => {});
+  const initiateConnectionRef = useRef<(remoteUserId: string) => void>(() => {});
+  const processDeferredItemsRef = useRef<() => void>(() => {});
+  const sendSignalRef = useRef<(targetUserId: string, signal: unknown, retryAttempt?: number) => Promise<void>>(async () => {});
+  const connectedNoAudioRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "stun_only" | "no_connectivity">("pending");
+  const turnPreCheckStatusRef = useRef<"pending" | "ok" | "stun_only" | "no_connectivity">("pending");
+
+  useEffect(() => {
+    turnPreCheckStatusRef.current = turnPreCheckStatus;
+  }, [turnPreCheckStatus]);
 
   useEffect(() => {
     const startTime = new Date(call.startedAt).getTime();
@@ -321,8 +330,9 @@ export function VideoCallOverlay({
       if (data.delivered === false) {
         console.warn(`[WebRTC] Signal not delivered to ${targetUserId}: ${data.reason} (attempt ${retryAttempt + 1})`);
         const signalObj = signal as SignalMessage;
+        const isRetryable = data.reason === "peer_unreachable";
         const maxRetries = 3;
-        if (retryAttempt < maxRetries) {
+        if (isRetryable && retryAttempt < maxRetries) {
           const retryKey = `${targetUserId}_${signalObj.type}_${retryAttempt}`;
           const delay = [1000, 2000, 3000][retryAttempt] || 3000;
           console.log(`[WebRTC] Scheduling signal retry for ${targetUserId} (${signalObj.type}) in ${delay}ms`);
@@ -331,7 +341,11 @@ export function VideoCallOverlay({
             sendSignal(targetUserId, signal, retryAttempt + 1);
           }, delay);
         } else {
-          console.warn(`[WebRTC] Signal delivery to ${targetUserId} failed after ${maxRetries + 1} attempts`);
+          if (isRetryable) {
+            console.warn(`[WebRTC] Signal delivery to ${targetUserId} failed after ${maxRetries + 1} attempts`);
+          } else {
+            console.error(`[WebRTC] Signal delivery to ${targetUserId} failed: ${data.reason} (non-retryable)`);
+          }
           if (signalObj.type === "offer" || signalObj.type === "answer") {
             setPeerStates(prev => ({ ...prev, [targetUserId]: "peer_unreachable" }));
           }
@@ -350,9 +364,13 @@ export function VideoCallOverlay({
       clearTimeout(connectedNoTracksRef.current[remoteUserId]);
       delete connectedNoTracksRef.current[remoteUserId];
     }
+    if (connectedNoAudioRef.current[remoteUserId]) {
+      clearTimeout(connectedNoAudioRef.current[remoteUserId]);
+      delete connectedNoAudioRef.current[remoteUserId];
+    }
 
     let config = overrideConfig || iceConfigRef.current;
-    if (turnPreCheckStatus === "stun_only" && !overrideConfig) {
+    if (turnPreCheckStatusRef.current === "stun_only" && !overrideConfig) {
       config = {
         ...config,
         iceCandidatePoolSize: 6,
@@ -412,6 +430,18 @@ export function VideoCallOverlay({
         clearTimeout(connectedNoTracksRef.current[remoteUserId]);
         delete connectedNoTracksRef.current[remoteUserId];
         console.log(`[WebRTC] Live video track received from ${remoteUserId}, clearing connected_no_video timer`);
+      }
+
+      if (event.track.kind === "audio" && event.track.readyState === "live" && connectedNoAudioRef.current[remoteUserId]) {
+        clearTimeout(connectedNoAudioRef.current[remoteUserId]);
+        delete connectedNoAudioRef.current[remoteUserId];
+        console.log(`[WebRTC] Live audio track received from ${remoteUserId}, clearing connected_no_audio timer`);
+        setPeerStates(prev => {
+          if (prev[remoteUserId] === "connected_no_audio") {
+            return { ...prev, [remoteUserId]: "connected" };
+          }
+          return prev;
+        });
       }
 
       setRemoteStreams(prev => {
@@ -474,12 +504,37 @@ export function VideoCallOverlay({
           });
           delete connectedNoTracksRef.current[remoteUserId];
         }, CONNECTED_NO_TRACKS_TIMEOUT_MS);
+
+        if (connectedNoAudioRef.current[remoteUserId]) {
+          clearTimeout(connectedNoAudioRef.current[remoteUserId]);
+        }
+        connectedNoAudioRef.current[remoteUserId] = setTimeout(() => {
+          setRemoteStreams(currentStreams => {
+            const stream = currentStreams[remoteUserId];
+            const hasAudioTracks = stream && stream.getAudioTracks().length > 0;
+            if (!hasAudioTracks) {
+              console.warn(`[WebRTC] Connected to ${remoteUserId} but no audio tracks received after ${CONNECTED_NO_TRACKS_TIMEOUT_MS / 1000}s`);
+              setPeerStates(prev => {
+                if (prev[remoteUserId] === "connected" || prev[remoteUserId] === "completed") {
+                  return { ...prev, [remoteUserId]: "connected_no_audio" };
+                }
+                return prev;
+              });
+            }
+            return currentStreams;
+          });
+          delete connectedNoAudioRef.current[remoteUserId];
+        }, CONNECTED_NO_TRACKS_TIMEOUT_MS);
       }
 
       if (state === "failed") {
         if (connectedNoTracksRef.current[remoteUserId]) {
           clearTimeout(connectedNoTracksRef.current[remoteUserId]);
           delete connectedNoTracksRef.current[remoteUserId];
+        }
+        if (connectedNoAudioRef.current[remoteUserId]) {
+          clearTimeout(connectedNoAudioRef.current[remoteUserId]);
+          delete connectedNoAudioRef.current[remoteUserId];
         }
         if (iceTimeoutRef.current[remoteUserId]) {
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
@@ -492,11 +547,23 @@ export function VideoCallOverlay({
           });
           pc.getStats().then(stats => {
             let hasRelay = false;
+            const candidateTypes: string[] = [];
+            const pairDetails: string[] = [];
             stats.forEach(report => {
-              if (report.type === "local-candidate" && report.candidateType === "relay") {
-                hasRelay = true;
+              if (report.type === "local-candidate") {
+                candidateTypes.push(`local: ${report.candidateType} (${report.protocol || "unknown"})`);
+                if (report.candidateType === "relay") {
+                  hasRelay = true;
+                }
+              }
+              if (report.type === "remote-candidate") {
+                candidateTypes.push(`remote: ${report.candidateType} (${report.protocol || "unknown"})`);
+              }
+              if (report.type === "candidate-pair") {
+                pairDetails.push(`pair: state=${report.state}, local=${report.localCandidateId}, remote=${report.remoteCandidateId}, nominated=${report.nominated}, bytesReceived=${report.bytesReceived || 0}`);
               }
             });
+            console.error(`[WebRTC] ICE failed for ${remoteUserId} — candidate types: [${candidateTypes.join(", ")}], pairs: [${pairDetails.join("; ")}]`);
             let reason: "turn_unreachable" | "network_blocked";
             if (!hasTurn || !hasRelay) {
               reason = "turn_unreachable";
@@ -527,6 +594,10 @@ export function VideoCallOverlay({
         if (connectedNoTracksRef.current[remoteUserId]) {
           clearTimeout(connectedNoTracksRef.current[remoteUserId]);
           delete connectedNoTracksRef.current[remoteUserId];
+        }
+        if (connectedNoAudioRef.current[remoteUserId]) {
+          clearTimeout(connectedNoAudioRef.current[remoteUserId]);
+          delete connectedNoAudioRef.current[remoteUserId];
         }
         if (iceTimeoutRef.current[remoteUserId]) {
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
@@ -566,22 +637,35 @@ export function VideoCallOverlay({
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "checking_slow" }));
           }
         }, ICE_SLOW_CHECK_MS);
-        const hasTurnConfig = turnPreCheckStatus === "ok" || (turnPreCheckStatus !== "stun_only" && iceConfigRef.current.iceServers?.some(s => {
+        const currentTurnStatus = turnPreCheckStatusRef.current;
+        const hasTurnConfig = currentTurnStatus === "ok" || (currentTurnStatus !== "stun_only" && iceConfigRef.current.iceServers?.some(s => {
           const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
           return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
         }));
-        const iceTimeoutMs = (hasTurnConfig && turnPreCheckStatus !== "stun_only") ? ICE_TIMEOUT_WITH_TURN_MS : ICE_TIMEOUT_STUN_ONLY_MS;
+        const iceTimeoutMs = (hasTurnConfig && currentTurnStatus !== "stun_only") ? ICE_TIMEOUT_WITH_TURN_MS : ICE_TIMEOUT_STUN_ONLY_MS;
         iceTimeoutRef.current[remoteUserId] = setTimeout(async () => {
           if (pc.iceConnectionState === "checking") {
             let hasRelayCandidates = false;
+            const candidateTypes: string[] = [];
+            const pairStats: string[] = [];
             try {
               const stats = await pc.getStats();
               stats.forEach(report => {
-                if (report.type === "local-candidate" && report.candidateType === "relay") {
-                  hasRelayCandidates = true;
+                if (report.type === "local-candidate") {
+                  candidateTypes.push(`local: ${report.candidateType} (${report.protocol || "unknown"})`);
+                  if (report.candidateType === "relay") {
+                    hasRelayCandidates = true;
+                  }
+                }
+                if (report.type === "remote-candidate") {
+                  candidateTypes.push(`remote: ${report.candidateType} (${report.protocol || "unknown"})`);
+                }
+                if (report.type === "candidate-pair") {
+                  pairStats.push(`pair: state=${report.state}, local=${report.localCandidateId}, remote=${report.remoteCandidateId}, nominated=${report.nominated}`);
                 }
               });
             } catch {}
+            console.error(`[WebRTC] ICE timeout for ${remoteUserId} — candidates: [${candidateTypes.join(", ")}], pairs: [${pairStats.join("; ")}]`);
             if (!hasTurnConfig) {
               console.error(`[WebRTC] ICE checking timeout for ${remoteUserId}: TURN relay not reachable — direct connection failed`);
               iceFailureReasonsRef.current[remoteUserId] = "turn_unreachable";
@@ -603,7 +687,7 @@ export function VideoCallOverlay({
     };
 
     return pc;
-  }, [sendSignal, turnPreCheckStatus]);
+  }, [sendSignal]);
 
   const flushPendingCandidates = useCallback(async (remoteUserId: string) => {
     const pc = peerConnectionsRef.current[remoteUserId];
@@ -679,6 +763,8 @@ export function VideoCallOverlay({
   }, [createPeerConnection, sendSignal]);
 
   retryConnectionRef.current = retryConnection;
+  initiateConnectionRef.current = initiateConnection;
+  sendSignalRef.current = sendSignal;
 
   const handleRetryConnection = useCallback((remoteUserId: string) => {
     retryCountRef.current[remoteUserId] = 0;
@@ -812,6 +898,8 @@ export function VideoCallOverlay({
     }
   }, [createPeerConnection, flushPendingCandidates, sendSignal, initiateConnection]);
 
+  processDeferredItemsRef.current = processDeferredItems;
+
   useEffect(() => {
     if (!registerSignalHandler || !unregisterSignalHandler) return;
     const handler = (fromUserId: string, signal: unknown) => {
@@ -829,27 +917,33 @@ export function VideoCallOverlay({
   useEffect(() => {
     if (!localStreamRef.current) return;
 
-    processDeferredItems();
+    processDeferredItemsRef.current();
 
     const activeParticipants = call.participants.filter(p => !p.leftAt && p.userId !== currentUserId);
     for (const participant of activeParticipants) {
       const existingPc = peerConnectionsRef.current[participant.userId];
       if (existingPc) {
-        const hasSenders = existingPc.getSenders().some(s => s.track !== null);
-        if (!hasSenders) {
-          localStreamRef.current.getTracks().forEach(track => {
-            existingPc.addTrack(track, localStreamRef.current!);
-          });
-          existingPc.createOffer()
-            .then(offer => existingPc.setLocalDescription(offer))
-            .then(() => sendSignal(participant.userId, { type: "offer", sdp: existingPc.localDescription }))
-            .catch(err => console.error("[WebRTC] Renegotiation failed:", err));
+        const pcState = existingPc.iceConnectionState;
+        const isActiveNegotiation = pcState === "new" || pcState === "checking" || pcState === "connected" || pcState === "completed";
+        if (isActiveNegotiation) {
+          const hasSenders = existingPc.getSenders().some(s => s.track !== null);
+          if (!hasSenders && localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => {
+              existingPc.addTrack(track, localStreamRef.current!);
+            });
+            existingPc.createOffer()
+              .then(offer => existingPc.setLocalDescription(offer))
+              .then(() => sendSignalRef.current(participant.userId, { type: "offer", sdp: existingPc.localDescription }))
+              .catch(err => console.error("[WebRTC] Renegotiation failed:", err));
+          }
+        } else {
+          initiateConnectionRef.current(participant.userId);
         }
       } else {
-        initiateConnection(participant.userId);
+        initiateConnectionRef.current(participant.userId);
       }
     }
-  }, [call.participants, currentUserId, localStream, initiateConnection, sendSignal, createPeerConnection, flushPendingCandidates, processDeferredItems]);
+  }, [call.participants, currentUserId, localStream]);
 
   useEffect(() => {
     return () => {
@@ -861,6 +955,8 @@ export function VideoCallOverlay({
       signalRetryTimerRef.current = {};
       Object.values(connectedNoTracksRef.current).forEach(t => clearTimeout(t));
       connectedNoTracksRef.current = {};
+      Object.values(connectedNoAudioRef.current).forEach(t => clearTimeout(t));
+      connectedNoAudioRef.current = {};
     };
   }, []);
 
@@ -1049,6 +1145,7 @@ export function VideoCallOverlay({
               const isFailed = iceState === "failed";
               const isPeerUnreachable = iceState === "peer_unreachable";
               const isConnectedNoVideo = iceState === "connected_no_video";
+              const isConnectedNoAudio = iceState === "connected_no_audio";
               return (
                 <div
                   key={p.userId}
@@ -1143,6 +1240,12 @@ export function VideoCallOverlay({
                         {getInitials(p.user?.firstName ?? "", p.user?.lastName ?? "")}
                       </AvatarFallback>
                     </Avatar>
+                  )}
+                  {isConnectedNoAudio && (
+                    <div className="absolute top-2 right-2 bg-amber-500/90 rounded-lg px-2 py-1 flex items-center gap-1.5" data-testid={`warning-no-audio-${p.userId}`}>
+                      <MicOff className="w-3.5 h-3.5 text-white" />
+                      <span className="text-white text-xs font-medium">No audio</span>
+                    </div>
                   )}
                   <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
                     {p.user?.firstName ?? ""} {p.user?.lastName ?? ""}

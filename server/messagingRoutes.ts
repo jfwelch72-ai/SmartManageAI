@@ -2762,11 +2762,13 @@ const messagingSetup = (async () => {
       if (!isTargetParticipant) return res.status(403).json({ error: "Target user not a participant" });
 
       const orgId = await getConversationOrgId(call.conversationId);
-      if (orgId) {
-        const delivered = emitWebRTCSignal(orgId, targetUserId, { callId, fromUserId: userId, signal });
-        if (!delivered) {
-          return res.json({ success: true, delivered: false, reason: "peer_unreachable" });
-        }
+      if (!orgId) {
+        return res.json({ success: true, delivered: false, reason: "org_not_found" });
+      }
+
+      const delivered = emitWebRTCSignal(orgId, targetUserId, { callId, fromUserId: userId, signal });
+      if (!delivered) {
+        return res.json({ success: true, delivered: false, reason: "peer_unreachable" });
       }
 
       res.json({ success: true, delivered: true });
