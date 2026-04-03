@@ -936,8 +936,10 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                   if (callData) handleJoinOngoingCall(callData);
                 }}
                 compact={compact}
-                showCallNotes={showCallNotes}
-                onToggleCallNotes={() => { setShowCallNotes(!showCallNotes); if (!showCallNotes) { setSelectedConversationId(null); setShowNewDm(false); } }}
+                {...(!compact && {
+                  showCallNotes,
+                  onToggleCallNotes: () => { setShowCallNotes(!showCallNotes); if (!showCallNotes) { setSelectedConversationId(null); setShowNewDm(false); } },
+                })}
                 onNewDm={() => { setPreviousConversationId(selectedConversationId); setShowNewDm(true); setSelectedConversationId(null); setShowCallNotes(false); }}
                 onRemoveDm={(id) => removeDmMutation.mutate(id)}
               />
@@ -958,15 +960,17 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                   if (callData) handleJoinOngoingCall(callData);
                 }}
                 compact={compact}
-                showCallNotes={showCallNotes}
-                onToggleCallNotes={() => setShowCallNotes(true)}
+                {...(!compact && {
+                  showCallNotes,
+                  onToggleCallNotes: () => setShowCallNotes(true),
+                })}
                 onNewDm={() => { setPreviousConversationId(selectedConversationId); setShowNewDm(true); setSelectedConversationId(null); setShowCallNotes(false); }}
                 onRemoveDm={(id) => removeDmMutation.mutate(id)}
               />
             )}
 
             {/* ── CALL NOTES VIEW ── */}
-            {showCallNotes && (
+            {showCallNotes && !compact && (
               <AllCallNotes
                 onBack={() => setShowCallNotes(false)}
                 onNavigateToConversation={(convId) => {
