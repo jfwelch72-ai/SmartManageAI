@@ -1881,6 +1881,7 @@ export const messages = pgTable("messages", {
   isEdited: boolean("is_edited").notNull().default(false),
   editedAt: timestamp("edited_at"),
   isDeleted: boolean("is_deleted").notNull().default(false),
+  isFieldNote: boolean("is_field_note").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   conversationIdx: index("messages_conversation_idx").on(table.conversationId),

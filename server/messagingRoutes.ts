@@ -1848,6 +1848,7 @@ const messagingSetup = (async () => {
       if (!msg) return res.status(404).json({ error: "Message not found" });
       if (msg.isDeleted) return res.status(400).json({ error: "Cannot edit a deleted message" });
       if (msg.voiceUrl) return res.status(400).json({ error: "Voice messages cannot be edited" });
+      if (msg.isFieldNote) return res.status(400).json({ error: "Field note messages cannot be edited" });
 
       // Verify caller is a participant of this conversation (always required)
       const isMember = await ensureParticipant(msg.conversationId, userId);
@@ -1903,6 +1904,7 @@ const messagingSetup = (async () => {
       const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
       if (!msg) return res.status(404).json({ error: "Message not found" });
       if (msg.isDeleted) return res.status(400).json({ error: "Message already deleted" });
+      if (msg.isFieldNote) return res.status(400).json({ error: "Field note messages cannot be deleted" });
 
       // Verify caller is a participant of this conversation (always required)
       const isMember = await ensureParticipant(msg.conversationId, userId);

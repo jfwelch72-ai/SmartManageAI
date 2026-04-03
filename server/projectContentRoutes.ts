@@ -1,11 +1,12 @@
 import { Router, NextFunction } from "express";
 import { db } from "./db";
-import { projects, users, media, projectNotes, insertProjectNoteSchema, insertMediaSchema, filePermissions, organizations, orgCostCodes, insertOrgCostCodeSchema, projectCostCodes } from "@shared/schema";
+import { projects, users, media, projectNotes, insertProjectNoteSchema, insertMediaSchema, filePermissions, organizations, orgCostCodes, insertOrgCostCodeSchema, projectCostCodes, conversations, conversationParticipants, messages } from "@shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
 import { sanitizeText } from "./sanitization";
+import { emitMessageNew } from "./messagingEvents";
 
 const router = Router();
 
@@ -92,6 +93,93 @@ router.post("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, r
 
     const insertData = { ...validationResult.data, projectId: project.id, authorId: req.user!.id };
     const [newNote] = await db.insert(projectNotes).values([insertData]).returning();
+
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+
+    if (orgId) {
+      let [projectConversation] = await db
+        .select()
+        .from(conversations)
+        .where(and(
+          eq(conversations.projectId, project.id),
+          eq(conversations.type, "GROUP"),
+          eq(conversations.isArchived, false),
+        ))
+        .limit(1);
+
+      if (!projectConversation) {
+        [projectConversation] = await db
+          .insert(conversations)
+          .values({
+            type: "GROUP",
+            name: project.name || project.code,
+            projectId: project.id,
+            organizationId: orgId,
+            createdById: userId,
+          })
+          .returning();
+
+        await db.insert(conversationParticipants).values({
+          conversationId: projectConversation.id,
+          userId,
+          isAdmin: true,
+        });
+      }
+
+      const existingParticipant = await db
+        .select()
+        .from(conversationParticipants)
+        .where(and(
+          eq(conversationParticipants.conversationId, projectConversation.id),
+          eq(conversationParticipants.userId, userId),
+        ))
+        .limit(1);
+
+      if (existingParticipant.length === 0) {
+        await db.insert(conversationParticipants).values({
+          conversationId: projectConversation.id,
+          userId,
+          isAdmin: false,
+        }).onConflictDoNothing();
+      }
+
+      const [fieldNoteMsg] = await db
+        .insert(messages)
+        .values({
+          conversationId: projectConversation.id,
+          senderId: userId,
+          content: sanitizeText(newNote.text),
+          isFieldNote: true,
+        })
+        .returning();
+
+      await db
+        .update(conversations)
+        .set({ updatedAt: new Date() })
+        .where(eq(conversations.id, projectConversation.id));
+
+      const [sender] = await db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          role: users.role,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      const fullMessage = { ...fieldNoteMsg, sender, reactions: [], entityLinks: [] };
+
+      const participants = await db
+        .select({ userId: conversationParticipants.userId })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.conversationId, projectConversation.id));
+      const participantUserIds = new Set(participants.map(p => p.userId));
+      emitMessageNew(orgId, projectConversation.id, participantUserIds, fullMessage);
+    }
+
     res.status(201).json(newNote);
   } catch (error) {
   next(error);

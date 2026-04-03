@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { Loader2, Edit2, Trash2, Smile, Check, FileQuestion, ArrowRightLeft, CheckSquare } from "lucide-react";
+import { Loader2, Edit2, Trash2, Smile, Check, FileQuestion, ArrowRightLeft, CheckSquare, ClipboardList } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,8 +59,9 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const isEditing = editingMessageId === message.id;
   const isPickerOpen = popoverMsgId === message.id;
-  const canEdit = isOwn && !message.isDeleted && !message.voiceUrl;
-  const canDelete = (isOwn || isAdmin) && !message.isDeleted;
+  const isFieldNote = message.isFieldNote === true;
+  const canEdit = isOwn && !message.isDeleted && !message.voiceUrl && !isFieldNote;
+  const canDelete = (isOwn || isAdmin) && !message.isDeleted && !isFieldNote;
 
   return (
     <div
@@ -124,6 +125,14 @@ export function MessageBubble({
         ) : (
           /* ── Normal bubble ── */
           <>
+            {isFieldNote && (
+              <div className={cn("flex items-center gap-1 mb-1", isOwn && "justify-end")} data-testid={`field-note-badge-${message.id}`}>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                  <ClipboardList className="w-3 h-3" />
+                  Field Note
+                </span>
+              </div>
+            )}
             {message.voiceUrl ? (
               <div className={cn(isOwn && "flex justify-end")}>
                 <VoicePlayer url={message.voiceUrl} durationSeconds={message.voiceDurationSeconds} />
@@ -131,7 +140,9 @@ export function MessageBubble({
             ) : (
               <div className={cn(
                 "rounded-2xl px-3 py-2 text-sm inline-block text-left",
-                isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
+                isFieldNote
+                  ? "bg-amber-50 text-amber-950 border border-amber-200 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-800"
+                  : isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
               )}>
                 {renderContent(message.content)}
                 {message.attachmentUrl && (

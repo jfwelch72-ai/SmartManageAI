@@ -87,6 +87,7 @@ export interface Message {
   isEdited: boolean;
   editedAt: string | null;
   isDeleted: boolean;
+  isFieldNote: boolean;
   reactions: MessageReaction[];
   entityLinks: EntityLink[];
   createdAt: string;
