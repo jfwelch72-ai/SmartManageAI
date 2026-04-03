@@ -2677,6 +2677,33 @@ const messagingSetup = (async () => {
             emitMessageNew(orgId, call.conversationId, participantIds, { ...systemMsg, reactions: [], entityLinks: [], sender: senderInfo[0] });
           }
         }
+
+        const leaveCallNotes = await db
+          .select({ content: videoCallNotes.content, firstName: users.firstName, lastName: users.lastName })
+          .from(videoCallNotes)
+          .innerJoin(users, eq(videoCallNotes.authorId, users.id))
+          .where(eq(videoCallNotes.callId, callId));
+
+        if (leaveCallNotes.length > 0) {
+          const notesContent = leaveCallNotes
+            .filter(n => n.content && n.content.trim())
+            .map(n => `**${n.firstName} ${n.lastName}:** ${n.content}`)
+            .join("\n\n");
+
+          if (notesContent) {
+            const [notesMsg] = await db.insert(messages).values({
+              conversationId: call.conversationId,
+              senderId: call.initiatorId,
+              content: `📝 **Call Notes**\n\n${notesContent}`,
+            }).returning();
+
+            if (orgId && notesMsg) {
+              const senderInfo = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+                .from(users).where(eq(users.id, call.initiatorId)).limit(1);
+              emitMessageNew(orgId, call.conversationId, participantIds, { ...notesMsg, reactions: [], entityLinks: [], sender: senderInfo[0] });
+            }
+          }
+        }
       } else if (orgId) {
         emitCallLeft(orgId, call.conversationId, participantIds, callId, userId);
       }
@@ -2716,13 +2743,10 @@ const messagingSetup = (async () => {
       const participantNames = callParticipants.map(p => `${p.firstName} ${p.lastName}`).join(", ");
       const durationFormatted = duration >= 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
 
-      const callNotes = await db.select().from(videoCallNotes).where(eq(videoCallNotes.callId, callId));
-      const notesSuffix = callNotes.length > 0 ? ` • ${callNotes.length} note(s) taken` : "";
-
       await db.insert(messages).values({
         conversationId: call.conversationId,
         senderId: call.initiatorId,
-        content: `📹 Video call ended • ${durationFormatted} • ${participantNames}${notesSuffix}`,
+        content: `📹 Video call ended • ${durationFormatted} • ${participantNames}`,
       });
 
       const participantIds = await getConversationParticipantIds(call.conversationId);
@@ -2736,6 +2760,33 @@ const messagingSetup = (async () => {
           const senderInfo = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
             .from(users).where(eq(users.id, call.initiatorId)).limit(1);
           emitMessageNew(orgId, call.conversationId, participantIds, { ...systemMsg, reactions: [], entityLinks: [], sender: senderInfo[0] });
+        }
+      }
+
+      const endCallNotes = await db
+        .select({ content: videoCallNotes.content, firstName: users.firstName, lastName: users.lastName })
+        .from(videoCallNotes)
+        .innerJoin(users, eq(videoCallNotes.authorId, users.id))
+        .where(eq(videoCallNotes.callId, callId));
+
+      if (endCallNotes.length > 0) {
+        const notesContent = endCallNotes
+          .filter(n => n.content && n.content.trim())
+          .map(n => `**${n.firstName} ${n.lastName}:** ${n.content}`)
+          .join("\n\n");
+
+        if (notesContent) {
+          const [notesMsg] = await db.insert(messages).values({
+            conversationId: call.conversationId,
+            senderId: call.initiatorId,
+            content: `📝 **Call Notes**\n\n${notesContent}`,
+          }).returning();
+
+          if (orgId && notesMsg) {
+            const senderInfo = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+              .from(users).where(eq(users.id, call.initiatorId)).limit(1);
+            emitMessageNew(orgId, call.conversationId, participantIds, { ...notesMsg, reactions: [], entityLinks: [], sender: senderInfo[0] });
+          }
         }
       }
 

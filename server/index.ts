@@ -17,6 +17,7 @@ import { backfillMissingFeatureFlags } from "./services/featureFlagService";
 import { ensureVideoCallTables } from "./utils/ensureVideoCallTables";
 import { ensureEstimateSubcontractorTables } from "./utils/ensureEstimateSubcontractorTables";
 import { ensureEquipmentColumns } from "./utils/ensureEquipmentColumns";
+import { ensureMessageColumns } from "./utils/ensureMessageColumns";
 import { ensureNotificationEnumValues } from "./utils/ensureNotificationEnumValues";
 import { ensureEstimateCategoryEnumValues } from "./utils/ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./utils/ensureTakeoffEnhancements";
@@ -179,6 +180,7 @@ app.use((req, res, next) => {
   await ensureVideoCallTables();
   await ensureEstimateSubcontractorTables();
   await ensureEquipmentColumns();
+  await ensureMessageColumns();
   await ensureNotificationEnumValues();
   await ensureEstimateCategoryEnumValues();
   await ensureTakeoffEnhancements();
