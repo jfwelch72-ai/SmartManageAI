@@ -82,6 +82,7 @@ export function CallNotesPanel({ callId, onClose }: CallNotesPanelProps) {
       setLastSaved(new Date());
     } catch (err) {
       console.error("Failed to save notes:", err);
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -89,7 +90,7 @@ export function CallNotesPanel({ callId, onClose }: CallNotesPanelProps) {
 
   const scheduleSave = useCallback((text: string) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => saveNotes(text), 1500);
+    saveTimerRef.current = setTimeout(() => saveNotes(text).catch(() => {}), 1500);
   }, [saveNotes]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -184,7 +185,7 @@ export function CallNotesPanel({ callId, onClose }: CallNotesPanelProps) {
       recognitionRef.current = null;
     }
     setInterimText("");
-    saveNotes(contentRef.current);
+    saveNotes(contentRef.current).catch(() => {});
   }, [saveNotes]);
 
   const toggleTranscription = useCallback(() => {
@@ -219,7 +220,13 @@ export function CallNotesPanel({ callId, onClose }: CallNotesPanelProps) {
 
   const handleSummarize = async () => {
     if (content.trim()) {
-      await saveNotes(content);
+      try {
+        await saveNotes(content);
+      } catch (err) {
+        console.error("Failed to save notes before summarizing:", err);
+        setSummary("Failed to save notes before summarizing. Please try again.");
+        return;
+      }
     }
     setSummarizing(true);
     try {
@@ -227,9 +234,20 @@ export function CallNotesPanel({ callId, onClose }: CallNotesPanelProps) {
       const data = await res.json();
       setSummary(data.summary);
       setSummarySaved(false);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Failed to summarize notes:", err);
-      setSummary("Failed to generate summary. Make sure there are notes to summarize.");
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.toLowerCase().includes("no notes")) {
+        setSummary("No notes to summarize. Please add some notes first.");
+      } else if (message.toLowerCase().includes("ai service") || message.toLowerCase().includes("openai") || message.toLowerCase().includes("unavailable")) {
+        setSummary("AI summary service is temporarily unavailable. Please try again later.");
+      } else if (message.toLowerCase().includes("not found")) {
+        setSummary("Call not found. It may have been deleted.");
+      } else if (message.toLowerCase().includes("not a participant")) {
+        setSummary("You don't have access to summarize notes for this call.");
+      } else {
+        setSummary("Failed to generate summary. Please try again later.");
+      }
     } finally {
       setSummarizing(false);
     }
@@ -240,8 +258,12 @@ export function CallNotesPanel({ callId, onClose }: CallNotesPanelProps) {
     const separator = content.trim() ? "\n\n--- AI Summary ---\n" : "--- AI Summary ---\n";
     const updatedContent = content.trim() + separator + summary;
     setContent(updatedContent);
-    await saveNotes(updatedContent);
-    setSummarySaved(true);
+    try {
+      await saveNotes(updatedContent);
+      setSummarySaved(true);
+    } catch (err) {
+      console.error("Failed to save summary to notes:", err);
+    }
   };
 
 
@@ -335,7 +357,7 @@ export function CallNotesPanel({ callId, onClose }: CallNotesPanelProps) {
               variant="ghost"
               size="sm"
               className="h-6 text-xs"
-              onClick={() => saveNotes(content)}
+              onClick={() => saveNotes(content).catch(() => {})}
               disabled={saving}
               data-testid="button-save-notes"
             >
