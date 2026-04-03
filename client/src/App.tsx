@@ -118,6 +118,7 @@ const EquipmentRentalMarketplacePage = lazy(() => import("@/pages/equipment-rent
 const PricebookImportPage = lazy(() => import("@/pages/pricebook-import"));
 const ClientPortalPublic = lazy(() => import("@/pages/client-portal-public"));
 const SubPortalPage = lazy(() => import("@/pages/sub-portal"));
+const UnifiedPortal = lazy(() => import("@/pages/unified-portal"));
 const RfqResponsePage = lazy(() => import("@/pages/rfq-response"));
 const CompanyHealthPage = lazy(() => import("@/pages/company-health"));
 const ExecutiveDigestPage = lazy(() => import("@/pages/executive-digest"));
@@ -252,8 +253,22 @@ function Router() {
       <Route path="/site/:subdomain/staging" component={() => <PublicWebsite isStaging={true} />} />
       <Route path="/site/:subdomain" component={PublicWebsite} />
       <Route path="/shared-preview/:token" component={SharedPreviewPage} />
-      <Route path="/portal/:projectId" component={ClientPortalPublic} />
-      <Route path="/sub-portal" component={SubPortalPage} />
+      <Route path="/portal/:projectId" component={() => {
+        const match = (window.location.pathname.match(/\/portal\/(.+)/) || [])[1];
+        if (match) {
+          const existingSearch = window.location.search;
+          const separator = existingSearch ? `${existingSearch}&` : '?';
+          window.location.replace(`/portal${separator}projectId=${encodeURIComponent(match)}`);
+          return null;
+        }
+        return <Redirect to="/portal" />;
+      }} />
+      <Route path="/sub-portal" component={() => {
+        const search = window.location.search;
+        window.location.replace(`/portal${search}`);
+        return null;
+      }} />
+      <Route path="/portal" component={UnifiedPortal} />
       <Route path="/rfq-response/:token" component={RfqResponsePage} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       
@@ -377,12 +392,12 @@ function Router() {
       {/* Overhead & Fixed Costs Manager */}
       <Route path="/overhead-costs" component={() => <Redirect to="/company-settings?tab=overhead-costs" />} />
       
-      {/* Vendor Portal routes (VENDOR only) */}
-      <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />
-      <Route path="/vendor/clients" component={() => <ProtectedRoute component={VendorClients} permission={VendorRoutePermissions.VENDOR_CLIENTS} skipOnboardingCheck />} />
-      <Route path="/vendor/messages" component={() => <ProtectedRoute component={VendorMessages} permission={VendorRoutePermissions.VENDOR_MESSAGES} skipOnboardingCheck />} />
-      <Route path="/vendor/documents" component={() => <ProtectedRoute component={VendorDocuments} permission={VendorRoutePermissions.VENDOR_DOCUMENTS} skipOnboardingCheck />} />
-      <Route path="/vendor" component={() => <ProtectedRoute component={VendorDashboard} permission={VendorRoutePermissions.VENDOR_DASHBOARD} skipOnboardingCheck />} />
+      {/* Vendor Portal routes redirect to unified portal */}
+      <Route path="/vendor/pricing" component={() => <Redirect to="/portal?tab=pricing" />} />
+      <Route path="/vendor/clients" component={() => <Redirect to="/portal?tab=clients" />} />
+      <Route path="/vendor/messages" component={() => <Redirect to="/portal?tab=messages" />} />
+      <Route path="/vendor/documents" component={() => <Redirect to="/portal?tab=documents" />} />
+      <Route path="/vendor" component={() => <Redirect to="/portal" />} />
       
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
@@ -456,7 +471,7 @@ function AppContent() {
   const [location] = useLocation();
   const { user, isLoading } = useAuth();
   
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/');
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/');
 
   const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/hustler/accept-invite'].some(
     route => location === route || (route !== '/' && location.startsWith(route))
@@ -484,7 +499,7 @@ function AuthGatedWidget() {
   const { user } = useAuth();
   const [messagingOpen, setMessagingOpen] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/');
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/');
 
   React.useEffect(() => {
     const handleMessaging = (e: Event) => {

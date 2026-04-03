@@ -123,9 +123,9 @@ const ACCESS_TYPE_LABELS: Record<string, string> = {
   VIEWER: "Viewer",
 };
 
-export default function ClientPortalPublic() {
+export default function ClientPortalPublic({ projectIdOverride }: { projectIdOverride?: string }) {
   const params = useParams<{ projectId: string }>();
-  const projectId = params.projectId;
+  const projectId = projectIdOverride || params.projectId;
 
   const [email, setEmail] = useState("");
   const [verifying, setVerifying] = useState(false);
