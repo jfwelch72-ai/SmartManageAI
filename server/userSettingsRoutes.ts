@@ -152,12 +152,16 @@ router.get("/api/account/export", requireAuth, async (req: AuthRequest, res) => 
     let timeEntryData: TimeEntry[] = [];
     try {
       timeEntryData = await db.select().from(timeEntries).where(eq(timeEntries.userId, userId)).orderBy(desc(timeEntries.date)).limit(1000);
-    } catch {}
+    } catch (err) {
+      logWarn("Failed to fetch time entries for user data export", { userId });
+    }
 
     let certificationData: UserCertification[] = [];
     try {
       certificationData = await db.select().from(userCertifications).where(eq(userCertifications.userId, userId));
-    } catch {}
+    } catch (err) {
+      logWarn("Failed to fetch certifications for user data export", { userId });
+    }
 
     const profileJson = JSON.stringify({ exportDate: new Date().toISOString(), profile: user, settings: settings[0] || null }, null, 2);
     const activityJson = JSON.stringify(logs, null, 2);

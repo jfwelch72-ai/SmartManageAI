@@ -38,7 +38,7 @@ export default function AIPMDashboard() {
   >({
     queryKey: ["/api/ai-pm/tasks"],
     enabled: !!user,
-    refetchInterval: 5000, // Auto-refresh every 5 seconds to show new tasks
+    refetchInterval: 15000,
   });
 
   const { data: latestRun, isLoading: runLoading } = useQuery<
@@ -46,7 +46,7 @@ export default function AIPMDashboard() {
   >({
     queryKey: ["/api/ai-pm/latest-run"],
     enabled: !!user,
-    refetchInterval: 5000, // Auto-refresh every 5 seconds to show latest analysis
+    refetchInterval: 15000,
   });
 
   const triggerRunMutation = useMutation({

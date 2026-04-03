@@ -2023,7 +2023,9 @@ export async function syncImapAccount(
         .update(emailAccounts)
         .set({ lastSyncError: "IMAP configuration incomplete: missing host, port, or password", updatedAt: new Date() })
         .where(eq(emailAccounts.id, account.id));
-    } catch (_) {}
+    } catch (err) {
+      logError("Failed to update email account sync error status:", { accountId: account.id }, err instanceof Error ? err : new Error(String(err)));
+    }
     return result;
   }
 
@@ -2234,7 +2236,9 @@ export async function syncImapAccount(
         .update(emailAccounts)
         .set({ lastSyncError: errorMsg.substring(0, 500), updatedAt: new Date() })
         .where(eq(emailAccounts.id, account.id));
-    } catch (_) {}
+    } catch (updateErr) {
+      logError("Failed to persist IMAP sync error status:", { accountId: account.id }, updateErr instanceof Error ? updateErr : new Error(String(updateErr)));
+    }
   }
 
   return result;

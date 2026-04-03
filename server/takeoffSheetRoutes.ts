@@ -802,9 +802,6 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
       fileName,
     }).returning();
 
-    // TODO: In a production system, you would use a PDF processing service here
-    // For now, we'll create a single sheet placeholder
-    // The frontend will handle PDF rendering with pdf.js
     let sheet;
     try {
       [sheet] = await db.insert(takeoffSheets).values({
@@ -829,7 +826,11 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
       newValue: `Uploaded plan: ${fileName}`,
     }, req);
 
-    res.status(201).json({ plan, sheets: [sheet] });
+    res.status(201).json({
+      plan,
+      sheets: [sheet],
+      notice: "Multi-page PDF sheet splitting is coming soon. Currently, each uploaded PDF is treated as a single sheet. For multi-page plans, please upload each page as a separate file.",
+    });
   } catch (error) {
   next(error);
   }

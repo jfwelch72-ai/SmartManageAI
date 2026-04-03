@@ -34,9 +34,18 @@ app.use(helmet({
   frameguard: false,
 }));
 
-// CORS Configuration - Fixed default to localhost:5173
+const allowedOrigins: string[] = [];
+if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL);
+if (process.env.REPLIT_DEV_DOMAIN) allowedOrigins.push(`https://${process.env.REPLIT_DEV_DOMAIN.trim()}`);
+if (process.env.REPLIT_DOMAINS) {
+  for (const d of process.env.REPLIT_DOMAINS.split(",")) {
+    const trimmed = d.trim();
+    if (trimmed) allowedOrigins.push(`https://${trimmed}`);
+  }
+}
+if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:5173");
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
   credentials: true,
 }));
 

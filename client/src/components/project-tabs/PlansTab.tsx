@@ -895,7 +895,10 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                     </Button>
                   </ObjectUploader>
                   {documentType === "PLANS" && (
-                    <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
+                    <>
+                      <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400" data-testid="hint-pdf-single-sheet">Note: Multi-page PDF splitting is coming soon. Each upload currently creates one sheet.</p>
+                    </>
                   )}
                   {documentType === "BIM" && (
                     <p className="text-[10px] text-muted-foreground" data-testid="hint-ifc-only">IFC files only for BIM models</p>

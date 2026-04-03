@@ -63,7 +63,7 @@ export default function VendorMessagesPage() {
       return res.json();
     },
     enabled: !!selectedConversation,
-    refetchInterval: 5000,
+    refetchInterval: 15000,
   });
 
   const sendMutation = useMutation({

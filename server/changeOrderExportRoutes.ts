@@ -93,6 +93,7 @@ import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprova
 import { eq, and, desc, sql } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logAudit } from "./auditLogger";
+import { logError } from "./utils/logger";
 import { verifyOrgAccess } from "./orgFilter";
 import { isValidTransition, getChangeOrderById, checkOrgAccess, notifyStatusChange, createRevision } from "./changeOrderHelpers";
 
@@ -300,7 +301,9 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
       if (order.costBreakdownJson) {
         costBreakdownData = typeof order.costBreakdownJson === 'string' ? JSON.parse(order.costBreakdownJson) : order.costBreakdownJson;
       }
-    } catch (e) {}
+    } catch (e) {
+      logError("Failed to parse costBreakdownJson:", {}, e instanceof Error ? e : new Error(String(e)));
+    }
 
     let contractNumber: string | null = null;
     if (order.contractId) {

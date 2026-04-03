@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 
 type Theme = "light" | "dark" | "system";
 
@@ -18,9 +19,12 @@ export function useTheme() {
     return stored || "system";
   });
 
+  const { user: authUser } = useAuth();
+
   const { data: settings } = useQuery<{ themePreference?: string }>({
     queryKey: ["/api/user-settings"],
     staleTime: 60000,
+    enabled: !!authUser,
   });
 
   useEffect(() => {

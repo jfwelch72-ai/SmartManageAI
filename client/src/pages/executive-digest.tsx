@@ -128,83 +128,6 @@ export default function ExecutiveDigestPage() {
     );
   }
 
-  const mockDigest: ExecutiveDigest = {
-    id: 1,
-    generatedAt: new Date().toISOString(),
-    period: selectedPeriod,
-    executiveSummary: "Overall business performance remains strong with 8 active projects on track. Revenue is trending 12% above forecast for the quarter. Key focus areas include addressing two projects showing minor budget variances and capitalizing on three new bid opportunities in the pipeline.",
-    keyHighlights: [
-      "Q4 revenue on track to exceed $2.4M target by 8%",
-      "Safety record: 45 consecutive days without incidents",
-      "Won $450K contract for Downtown Plaza renovation",
-      "Labor efficiency improved 6% month-over-month"
-    ],
-    sections: [
-      {
-        title: "Financial Performance",
-        icon: "financial",
-        summary: "Strong financial position with healthy cash flow and improved margins.",
-        bullets: [
-          "Monthly revenue: $892K (+15% vs prior month)",
-          "Gross margin: 18.2% (target: 17%)",
-          "Outstanding receivables: $180K (all current)",
-          "Cash reserves: 2.8 months operating expenses"
-        ],
-        sentiment: "positive"
-      },
-      {
-        title: "Operations Update",
-        icon: "operational",
-        summary: "Projects progressing well with minor scheduling adjustments needed.",
-        bullets: [
-          "8 active projects, 6 on schedule",
-          "Resource utilization at 82% capacity",
-          "2 projects require attention due to weather delays",
-          "Equipment fleet at 94% availability"
-        ],
-        sentiment: "neutral"
-      },
-      {
-        title: "Risk Alerts",
-        icon: "risk",
-        summary: "Two items requiring management attention this week.",
-        bullets: [
-          "Riverside project: 3-day weather delay may impact milestone",
-          "Supply chain: Rebar delivery delayed 1 week",
-          "Subcontractor capacity concerns for Q1"
-        ],
-        sentiment: "negative"
-      },
-      {
-        title: "Growth Opportunities",
-        icon: "opportunity",
-        summary: "Strong pipeline with promising near-term opportunities.",
-        bullets: [
-          "3 new RFPs received totaling $1.8M",
-          "Repeat client referral for $320K project",
-          "Government contract pre-qualification approved"
-        ],
-        sentiment: "positive"
-      }
-    ],
-    actionItems: [
-      { priority: 'high', description: 'Review Riverside project recovery plan', dueBy: 'Today' },
-      { priority: 'high', description: 'Approve Q1 subcontractor agreements', dueBy: 'This week' },
-      { priority: 'medium', description: 'Schedule client meeting for Plaza project kickoff', dueBy: 'Next week' },
-      { priority: 'low', description: 'Review equipment replacement recommendations', dueBy: 'This month' }
-    ],
-    kpiSnapshot: [
-      { name: 'Revenue MTD', current: 892000, previous: 775000, unit: '$', trend: 'up' },
-      { name: 'Active Projects', current: 8, previous: 7, unit: '', trend: 'up' },
-      { name: 'On-Time %', current: 87, previous: 92, unit: '%', trend: 'down' },
-      { name: 'Safety Days', current: 45, previous: 38, unit: '', trend: 'up' },
-      { name: 'Bid Win Rate', current: 34, previous: 28, unit: '%', trend: 'up' },
-      { name: 'Labor Efficiency', current: 91, previous: 86, unit: '%', trend: 'up' }
-    ]
-  };
-
-  const displayDigest = digest || mockDigest;
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -244,6 +167,25 @@ export default function ExecutiveDigestPage() {
             <Skeleton className="h-48" />
           </div>
         </div>
+      ) : !digest ? (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
+            <h3 className="text-lg font-semibold mb-2" data-testid="text-no-digest">No digest available for this period</h3>
+            <p className="text-sm text-muted-foreground max-w-md mb-4">
+              Click "Generate New" to create an AI-powered executive digest for the selected {selectedPeriod} period.
+            </p>
+            <Button 
+              variant="default" 
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+              data-testid="button-generate-first-digest"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${generateMutation.isPending ? 'animate-spin' : ''}`} />
+              Generate Digest
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <>
           <Card className="bg-gradient-to-r from-primary/10 to-primary/5">
@@ -252,14 +194,14 @@ export default function ExecutiveDigestPage() {
                 <CardTitle className="text-lg">Executive Summary</CardTitle>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
-                  {new Date(displayDigest.generatedAt).toLocaleString()}
+                  {new Date(digest.generatedAt).toLocaleString()}
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm leading-relaxed">{displayDigest.executiveSummary}</p>
+              <p className="text-sm leading-relaxed">{digest.executiveSummary}</p>
               <div className="flex flex-wrap gap-2">
-                {displayDigest.keyHighlights.map((highlight, i) => (
+                {digest.keyHighlights.map((highlight, i) => (
                   <Badge key={i} variant="secondary" className="text-xs">
                     <CheckCircle className="h-3 w-3 mr-1" />
                     {highlight}
@@ -270,7 +212,7 @@ export default function ExecutiveDigestPage() {
           </Card>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {displayDigest.kpiSnapshot.map((kpi, i) => (
+            {digest.kpiSnapshot.map((kpi, i) => (
               <Card key={i}>
                 <CardContent className="pt-4 text-center">
                   <p className="text-xs text-muted-foreground mb-1">{kpi.name}</p>
@@ -292,7 +234,7 @@ export default function ExecutiveDigestPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
               <h2 className="text-lg font-semibold">Detailed Analysis</h2>
-              {displayDigest.sections.map((section, i) => (
+              {digest.sections.map((section, i) => (
                 <DigestSectionCard key={i} section={section} />
               ))}
             </div>
@@ -309,7 +251,7 @@ export default function ExecutiveDigestPage() {
                 <CardContent>
                   <ScrollArea className="h-[400px]">
                     <div className="space-y-3">
-                      {displayDigest.actionItems.map((item, i) => (
+                      {digest.actionItems.map((item, i) => (
                         <div 
                           key={i} 
                           className="p-3 rounded-lg border bg-card"

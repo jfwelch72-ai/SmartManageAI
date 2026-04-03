@@ -57,6 +57,15 @@ function getRpConfig() {
     };
   }
 
+  if (process.env.REPLIT_DOMAINS) {
+    const primaryDomain = process.env.REPLIT_DOMAINS.split(",")[0].trim();
+    return {
+      rpName: "SmartManageAI",
+      rpID: primaryDomain,
+      origin: `https://${primaryDomain}`,
+    };
+  }
+
   return {
     rpName: "SmartManageAI",
     rpID: "localhost",

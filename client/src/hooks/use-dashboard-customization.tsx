@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { getWidgetDefinition } from "@/components/dashboard-widgets/WidgetRegistry";
 
 export interface DashboardWidget {
@@ -141,24 +142,31 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
   const [isEditMode, setIsEditMode] = useState(false);
   const [localLayout, setLocalLayout] = useState<DashboardLayoutConfig | null>(null);
 
+  const { user: authUser } = useAuth();
+
   const { data: permissions = { canAccessFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false, canManageContracts: false, canManageHiring: false, canManageSafety: false, canManageScheduling: false, canAccessBidNetwork: false, canManageLeave: false, canAccessTimeMaterial: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
     queryKey: ["/api/dashboard/my-permissions"],
+    enabled: !!authUser,
   });
 
   const { data: layoutData, isLoading: isLoadingLayout } = useQuery<{ layout: DashboardLayoutConfig; isCustom: boolean }>({
     queryKey: ["/api/dashboard/layout"],
+    enabled: !!authUser,
   });
 
   const { data: paletteData, isLoading: isLoadingPalette } = useQuery<{ palette: ColorPalette | null; orgPalette: ColorPalette | null; isActive: boolean }>({
     queryKey: ["/api/dashboard/palette"],
+    enabled: !!authUser,
   });
 
   const { data: savedPalettes = [] } = useQuery<ColorPalette[]>({
     queryKey: ["/api/dashboard/palettes"],
+    enabled: !!authUser,
   });
 
   const { data: presetPalettes = {} } = useQuery<Record<string, any>>({
     queryKey: ["/api/dashboard/palettes/presets"],
+    enabled: !!authUser,
   });
 
   useEffect(() => {

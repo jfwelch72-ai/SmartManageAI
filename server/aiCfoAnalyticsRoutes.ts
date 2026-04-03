@@ -247,18 +247,35 @@ router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res, next) 
     if (!earliestStart) earliestStart = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
     if (!latestEnd) latestEnd = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
 
-    const laborByMonth = await db.select({
-      month: sql<string>`TO_CHAR(${timeEntries.date}, 'YYYY-MM')`.as("month"),
-      total: sql<number>`COALESCE(SUM(
-        (COALESCE(${timeEntries.hoursRegular}, 0) + COALESCE(${timeEntries.hoursOvertime}, 0) * 1.5) * 45 /* TODO: replace hardcoded rate with org labor rate from cost_rates table */
-      ), 0)`.as("total"),
-    }).from(timeEntries)
-      .where(and(
-        inArray(timeEntries.projectId, projectIds),
-        eq(timeEntries.approvalStatus, "APPROVED")
-      ))
-      .groupBy(sql`TO_CHAR(${timeEntries.date}, 'YYYY-MM')`)
-      .orderBy(sql`TO_CHAR(${timeEntries.date}, 'YYYY-MM')`);
+    const orgDefaultRateResult = await db.execute(sql`
+      SELECT COALESCE(AVG(NULLIF(jc.default_regular_rate, 0)), 0) as avg_regular,
+             COALESCE(AVG(NULLIF(jc.default_overtime_rate, 0)), 0) as avg_overtime
+      FROM job_classifications jc
+      WHERE jc.organization_id = ${orgId} AND jc.is_active = true
+    `);
+    const orgDefaultRows = (orgDefaultRateResult.rows || orgDefaultRateResult) as { avg_regular: number; avg_overtime: number }[];
+    const orgDefaultRegularRate = Number(orgDefaultRows[0]?.avg_regular) || 0;
+    const orgDefaultOvertimeRate = Number(orgDefaultRows[0]?.avg_overtime) || 0;
+    const fallbackRegularRate = orgDefaultRegularRate > 0 ? orgDefaultRegularRate : 45;
+    const fallbackOvertimeRate = orgDefaultOvertimeRate > 0 ? orgDefaultOvertimeRate : (fallbackRegularRate * 1.5);
+
+    const laborResult = await db.execute(sql`
+      SELECT TO_CHAR(te.date, 'YYYY-MM') as month,
+        COALESCE(SUM(
+          COALESCE(te.hours_regular, 0) * COALESCE(ec.regular_rate, jc.default_regular_rate, ${fallbackRegularRate})
+          + COALESCE(te.hours_overtime, 0) * COALESCE(ec.overtime_rate, jc.default_overtime_rate, ${fallbackOvertimeRate})
+        ), 0) as total
+      FROM time_entries te
+      LEFT JOIN employee_classifications ec
+        ON ec.user_id = te.user_id AND ec.organization_id = ${orgId} AND ec.is_primary = true AND (ec.end_date IS NULL OR ec.end_date >= NOW())
+      LEFT JOIN job_classifications jc
+        ON jc.id = ec.classification_id AND jc.organization_id = ${orgId}
+      WHERE te.project_id IN (${sql.join(projectIds.map(id => sql`${id}`), sql`, `)})
+        AND te.approval_status = 'APPROVED'
+      GROUP BY TO_CHAR(te.date, 'YYYY-MM')
+      ORDER BY TO_CHAR(te.date, 'YYYY-MM')
+    `);
+    const laborByMonth = (laborResult.rows || laborResult) as { month: string; total: number }[];
 
     const receiptsByMonth = await db.select({
       month: sql<string>`TO_CHAR(${receipts.date}, 'YYYY-MM')`.as("month"),
@@ -512,7 +529,7 @@ router.post("/ai-features/change-orders/generate", requireAuth, requireRole("ADM
       : (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
 
     // Generate AI draft content
-    const draftContent = await generateCoDraft(effectiveTradeType, linkedItems);
+    const draftContent = await generateCoDraft(effectiveTradeType, linkedItems, organizationId);
 
     const [draft] = await db.insert(aiCoDrafts).values({
       organizationId,
@@ -540,7 +557,7 @@ router.post("/ai-features/change-orders/generate", requireAuth, requireRole("ADM
   }
 });
 
-async function generateCoDraft(tradeType: string, linkedItems: any) {
+async function generateCoDraft(tradeType: string, linkedItems: any, organizationId?: string) {
   const tradeTerms: Record<string, string> = {
     ROOFING: "hidden deck damage discovered during tear-off operations",
     ELECTRICAL: "additional circuits required per updated code requirements",
@@ -549,7 +566,42 @@ async function generateCoDraft(tradeType: string, linkedItems: any) {
   };
 
   const reason = tradeTerms[tradeType] || tradeTerms.GENERAL_CONTRACTOR;
-  
+
+  let skilledRate = 75;
+  let generalRate = 45;
+
+  if (organizationId) {
+    try {
+      const { jobClassifications } = await import("@shared/schema");
+      const classifications = await db.select({
+        name: jobClassifications.name,
+        rate: jobClassifications.defaultRegularRate,
+      }).from(jobClassifications)
+        .where(and(eq(jobClassifications.organizationId, organizationId), eq(jobClassifications.isActive, true)))
+        .orderBy(desc(jobClassifications.defaultRegularRate));
+
+      const ratesWithValues = classifications.filter(c => c.rate && Number(c.rate) > 0);
+
+      if (ratesWithValues.length > 0) {
+        skilledRate = Number(ratesWithValues[0].rate);
+        generalRate = ratesWithValues.length > 1
+          ? Number(ratesWithValues[ratesWithValues.length - 1].rate)
+          : skilledRate;
+      }
+    } catch (err) {
+      logError("Failed to fetch org classification rates for CO draft:", { organizationId }, err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  const skilledAmount = 16 * skilledRate;
+  const generalAmount = 8 * generalRate;
+  const laborTotal = skilledAmount + generalAmount;
+  const materialsTotal = 850;
+  const equipmentTotal = 150;
+  const subtotal = laborTotal + materialsTotal + equipmentTotal;
+  const overhead = Math.round(subtotal * 0.1);
+  const profit = Math.round(subtotal * 0.1);
+
   return {
     title: `Change Order - ${new Date().toLocaleDateString()}`,
     description: `This change order addresses ${reason}. Work includes additional labor and materials as detailed below.`,
@@ -559,8 +611,8 @@ async function generateCoDraft(tradeType: string, linkedItems: any) {
     terms: "Payment due upon completion and acceptance. Work to commence within 5 business days of approval.",
     lineItems: {
       labor: [
-        { description: "Skilled Labor", hours: 16, rate: 75, amount: 1200 },
-        { description: "General Labor", hours: 8, rate: 45, amount: 360 },
+        { description: "Skilled Labor", hours: 16, rate: skilledRate, amount: skilledAmount },
+        { description: "General Labor", hours: 8, rate: generalRate, amount: generalAmount },
       ],
       materials: [
         { description: "Additional Materials", quantity: 1, unit: "LS", unitPrice: 850, amount: 850 },
@@ -570,13 +622,13 @@ async function generateCoDraft(tradeType: string, linkedItems: any) {
       ],
     },
     subtotals: {
-      labor: 1560,
-      materials: 850,
-      equipment: 150,
-      subtotal: 2560,
-      overhead: 256,
-      profit: 256,
-      total: 3072,
+      labor: laborTotal,
+      materials: materialsTotal,
+      equipment: equipmentTotal,
+      subtotal,
+      overhead,
+      profit,
+      total: subtotal + overhead + profit,
     },
   };
 }

@@ -118,7 +118,9 @@ router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest
           approvalStatus: null,
           durationMs: 0,
         });
-      } catch (_) {}
+      } catch (err) {
+        logError("Failed to record AI decision log:", {}, err instanceof Error ? err : new Error(String(err)));
+      }
     }
 
     await logCreate(

@@ -157,47 +157,6 @@ export default function CompanyHealthPage() {
     );
   }
 
-  const mockHealthData: CompanyHealthData = {
-    overallScore: 78,
-    overallStatus: 'healthy',
-    financialHealth: {
-      cashFlow: 245000,
-      receivables: 180000,
-      payables: 95000,
-      profitMargin: 12.5,
-      trend: 'up'
-    },
-    operationalHealth: {
-      activeProjects: 8,
-      onTimeDelivery: 87,
-      resourceUtilization: 82,
-      safetyIncidents: 0
-    },
-    customerHealth: {
-      satisfactionScore: 4.6,
-      repeatClientRate: 68,
-      openBids: 12,
-      winRate: 34
-    },
-    workforceHealth: {
-      totalEmployees: 45,
-      averageProductivity: 91,
-      laborCostRatio: 42,
-      overtimeHours: 156
-    },
-    metrics: [
-      { name: 'Cash Flow', value: 245, target: 200, unit: 'K', trend: 'up', status: 'healthy' },
-      { name: 'Profit Margin', value: 12.5, target: 15, unit: '%', trend: 'up', status: 'warning' },
-      { name: 'On-Time Delivery', value: 87, target: 90, unit: '%', trend: 'stable', status: 'warning' },
-      { name: 'Resource Utilization', value: 82, target: 85, unit: '%', trend: 'up', status: 'healthy' },
-      { name: 'Customer Satisfaction', value: 4.6, target: 4.5, unit: '/5', trend: 'up', status: 'healthy' },
-      { name: 'Bid Win Rate', value: 34, target: 30, unit: '%', trend: 'up', status: 'healthy' },
-    ],
-    lastUpdated: new Date().toISOString()
-  };
-
-  const displayData = healthData || mockHealthData;
-
   if (isLoading) {
     return (
       <div className="p-6 space-y-6">
@@ -207,6 +166,29 @@ export default function CompanyHealthPage() {
             <Skeleton key={i} className="h-40" />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (!healthData) {
+    return (
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
+            <Activity className="h-6 w-6" />
+            Company Health Dashboard
+          </h1>
+          <p className="text-muted-foreground">Real-time business health metrics and KPIs</p>
+        </div>
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <Activity className="h-12 w-12 text-muted-foreground/50 mb-4" />
+            <h3 className="text-lg font-semibold mb-2" data-testid="text-no-health-data">No health data available</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Company health metrics will appear here once there is enough project and financial data to generate a health score.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -222,7 +204,7 @@ export default function CompanyHealthPage() {
           <p className="text-muted-foreground">Real-time business health metrics and KPIs</p>
         </div>
         <Badge variant="outline" className="text-xs">
-          Updated: {new Date(displayData.lastUpdated).toLocaleString()}
+          Updated: {new Date(healthData.lastUpdated).toLocaleString()}
         </Badge>
       </div>
 
@@ -233,7 +215,7 @@ export default function CompanyHealthPage() {
             <CardDescription>Combined business health indicator</CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center">
-            <HealthScoreRing score={displayData.overallScore} status={displayData.overallStatus} />
+            <HealthScoreRing score={healthData.overallScore} status={healthData.overallStatus} />
           </CardContent>
         </Card>
 
@@ -244,7 +226,7 @@ export default function CompanyHealthPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {displayData.metrics.map((metric, index) => (
+              {healthData.metrics.map((metric, index) => (
                 <MetricCard key={index} metric={metric} />
               ))}
             </div>
@@ -263,22 +245,22 @@ export default function CompanyHealthPage() {
           <CardContent className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Cash Flow</span>
-              <span className="font-semibold">${displayData.financialHealth.cashFlow.toLocaleString()}</span>
+              <span className="font-semibold">${healthData.financialHealth.cashFlow.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Receivables</span>
-              <span className="font-semibold">${displayData.financialHealth.receivables.toLocaleString()}</span>
+              <span className="font-semibold">${healthData.financialHealth.receivables.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Payables</span>
-              <span className="font-semibold">${displayData.financialHealth.payables.toLocaleString()}</span>
+              <span className="font-semibold">${healthData.financialHealth.payables.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Profit Margin</span>
               <span className="font-semibold flex items-center gap-1">
-                {displayData.financialHealth.profitMargin}%
-                {displayData.financialHealth.trend === 'up' && <TrendingUp className="h-3 w-3 text-green-500" />}
-                {displayData.financialHealth.trend === 'down' && <TrendingDown className="h-3 w-3 text-red-500" />}
+                {healthData.financialHealth.profitMargin}%
+                {healthData.financialHealth.trend === 'up' && <TrendingUp className="h-3 w-3 text-green-500" />}
+                {healthData.financialHealth.trend === 'down' && <TrendingDown className="h-3 w-3 text-red-500" />}
               </span>
             </div>
           </CardContent>
@@ -294,21 +276,21 @@ export default function CompanyHealthPage() {
           <CardContent className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Active Projects</span>
-              <span className="font-semibold">{displayData.operationalHealth.activeProjects}</span>
+              <span className="font-semibold">{healthData.operationalHealth.activeProjects}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">On-Time Delivery</span>
-              <span className="font-semibold">{displayData.operationalHealth.onTimeDelivery}%</span>
+              <span className="font-semibold">{healthData.operationalHealth.onTimeDelivery}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Resource Utilization</span>
-              <span className="font-semibold">{displayData.operationalHealth.resourceUtilization}%</span>
+              <span className="font-semibold">{healthData.operationalHealth.resourceUtilization}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Safety Incidents</span>
               <span className="font-semibold flex items-center gap-1">
-                {displayData.operationalHealth.safetyIncidents}
-                {displayData.operationalHealth.safetyIncidents === 0 && <CheckCircle className="h-3 w-3 text-green-500" />}
+                {healthData.operationalHealth.safetyIncidents}
+                {healthData.operationalHealth.safetyIncidents === 0 && <CheckCircle className="h-3 w-3 text-green-500" />}
               </span>
             </div>
           </CardContent>
@@ -324,19 +306,19 @@ export default function CompanyHealthPage() {
           <CardContent className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Satisfaction</span>
-              <span className="font-semibold">{displayData.customerHealth.satisfactionScore}/5</span>
+              <span className="font-semibold">{healthData.customerHealth.satisfactionScore}/5</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Repeat Clients</span>
-              <span className="font-semibold">{displayData.customerHealth.repeatClientRate}%</span>
+              <span className="font-semibold">{healthData.customerHealth.repeatClientRate}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Open Bids</span>
-              <span className="font-semibold">{displayData.customerHealth.openBids}</span>
+              <span className="font-semibold">{healthData.customerHealth.openBids}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Win Rate</span>
-              <span className="font-semibold">{displayData.customerHealth.winRate}%</span>
+              <span className="font-semibold">{healthData.customerHealth.winRate}%</span>
             </div>
           </CardContent>
         </Card>
@@ -351,21 +333,21 @@ export default function CompanyHealthPage() {
           <CardContent className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Total Employees</span>
-              <span className="font-semibold">{displayData.workforceHealth.totalEmployees}</span>
+              <span className="font-semibold">{healthData.workforceHealth.totalEmployees}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Avg Productivity</span>
-              <span className="font-semibold">{displayData.workforceHealth.averageProductivity}%</span>
+              <span className="font-semibold">{healthData.workforceHealth.averageProductivity}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Labor Cost Ratio</span>
-              <span className="font-semibold">{displayData.workforceHealth.laborCostRatio}%</span>
+              <span className="font-semibold">{healthData.workforceHealth.laborCostRatio}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">OT Hours (MTD)</span>
               <span className="font-semibold flex items-center gap-1">
-                {displayData.workforceHealth.overtimeHours}
-                {displayData.workforceHealth.overtimeHours > 100 && <AlertTriangle className="h-3 w-3 text-yellow-500" />}
+                {healthData.workforceHealth.overtimeHours}
+                {healthData.workforceHealth.overtimeHours > 100 && <AlertTriangle className="h-3 w-3 text-yellow-500" />}
               </span>
             </div>
           </CardContent>

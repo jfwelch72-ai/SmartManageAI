@@ -6,7 +6,7 @@ import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
 import type { VideoCallData, Conversation } from "@/components/messaging/types";
 
 const INCOMING_CALL_TIMEOUT_MS = 30000;
-const ACTIVE_CALLS_POLL_INTERVAL_MS = 8000;
+const ACTIVE_CALLS_POLL_INTERVAL_MS = 15000;
 
 interface GlobalCallState {
   incomingCall: VideoCallData | null;

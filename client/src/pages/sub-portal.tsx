@@ -78,7 +78,7 @@ export default function SubPortalPage() {
       return res.json();
     },
     enabled: !!token && !!portalInfo,
-    refetchInterval: 10000,
+    refetchInterval: 20000,
   });
 
   if (!token) {

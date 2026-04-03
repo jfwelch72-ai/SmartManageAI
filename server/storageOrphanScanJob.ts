@@ -21,7 +21,7 @@ async function getKnownObjectKeys(): Promise<Set<string>> {
     db.select({ objectKey: receipts.objectKey }).from(receipts),
     db.select({ objectKey: bidDocuments.objectKey }).from(bidDocuments),
     db.select({ objectKey: userPhotos.objectKey }).from(userPhotos),
-    db.select({ attachmentsJson: changeOrders.attachmentsJson }).from(changeOrders),
+    db.select({ id: changeOrders.id, attachmentsJson: changeOrders.attachmentsJson }).from(changeOrders),
     db.select({ fileObjectKey: userCertifications.fileObjectKey }).from(userCertifications),
   ]);
 
@@ -54,7 +54,9 @@ async function getKnownObjectKeys(): Promise<Set<string>> {
     let attachments: any[] = [];
     try {
       attachments = JSON.parse(row.attachmentsJson);
-    } catch (_) {}
+    } catch (err) {
+      logError("Failed to parse attachmentsJson during orphan scan:", { changeOrderId: row.id }, err instanceof Error ? err : new Error(String(err)));
+    }
     for (const att of attachments) {
       if (att.objectKey) {
         knownKeys.add(att.objectKey);

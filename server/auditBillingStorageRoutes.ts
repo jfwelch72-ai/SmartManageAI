@@ -427,7 +427,9 @@ router.delete("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthR
     const objectStorageService = new ObjectStorageService();
     try {
       await objectStorageService.deleteObjectByKey(intent.objectKey);
-    } catch (_) {}
+    } catch (err) {
+      logError("Failed to delete orphaned object during upload abort:", { objectKey: intent.objectKey }, err instanceof Error ? err : new Error(String(err)));
+    }
 
     await db.delete(uploadIntents).where(eq(uploadIntents.id, uploadId));
     uploadPartQueues.delete(uploadId);
