@@ -52,7 +52,7 @@ function StatusIcon({ status }: { status: string }) {
   return <Clock className="h-3.5 w-3.5 text-blue-600" />;
 }
 
-export function PortalChatContent() {
+export function PortalChatContent({ compact = false }: { compact?: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -163,122 +163,145 @@ export function PortalChatContent() {
   });
 
   if (selectedThread) {
+    const headerBlock = (
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <Button variant="ghost" size="icon" onClick={() => setSelectedThread(null)} data-testid="button-back-threads">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <h2 className={`font-semibold flex-1 min-w-0 truncate ${compact ? "text-sm" : "text-lg"}`} data-testid="text-thread-title">{selectedThread.subject}</h2>
+      </div>
+    );
+
+    const infoBlock = (
+      <Card data-testid="card-thread-info" className="shrink-0">
+        <CardContent className={compact ? "p-2" : "p-4"}>
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="outline" className="text-xs" data-testid="badge-thread-portal-type">
+              {selectedThread.portalType === "CLIENT" ? "Client" : "Subcontractor"}
+            </Badge>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">From:</span>
+              <span className="text-sm font-medium" data-testid="text-contact-name">{selectedThread.contactName}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Email:</span>
+              <span className="text-sm" data-testid="text-contact-email">{selectedThread.contactEmail}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Status:</span>
+              <Select value={selectedThread.status} onValueChange={(v) => updateStatusMutation.mutate({ threadId: selectedThread.id, status: v })}>
+                <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="OPEN">Open</SelectItem>
+                  <SelectItem value="CLOSED">Closed</SelectItem>
+                  <SelectItem value="ARCHIVED">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Priority:</span>
+              <Select value={selectedThread.priority || "NORMAL"} onValueChange={(v) => updatePriorityMutation.mutate({ threadId: selectedThread.id, priority: v })}>
+                <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NORMAL">Normal</SelectItem>
+                  <SelectItem value="URGENT">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+
+    const messagesBlock = (
+      <div className={`space-y-3 ${compact ? "flex-1 min-h-0 overflow-y-auto" : "max-h-[500px] overflow-y-auto mb-4"} pr-1`} data-testid="messages-list">
+        {messagesLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : threadMessages.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No messages yet.</p>
+        ) : (
+          threadMessages.map((msg: any) => (
+            <div
+              key={msg.id}
+              className={`rounded-md p-3 text-sm ${msg.isInternal ? "bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 mr-8" : (msg.senderType === "portal" || msg.senderType === "client_portal") ? "bg-muted mr-8" : "bg-primary/10 ml-8"}`}
+              data-testid={`message-${msg.id}`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                <span className="font-medium text-xs flex items-center gap-1" data-testid={`text-msg-sender-${msg.id}`}>
+                  {msg.isInternal && <EyeOff className="h-3 w-3" />}
+                  {msg.senderName || ((msg.senderType === "portal" || msg.senderType === "client_portal") ? selectedThread.contactName : "Team")}
+                  {msg.isInternal && <span className="text-yellow-600 dark:text-yellow-400">(Internal Note)</span>}
+                </span>
+                <span className="text-xs text-muted-foreground">{formatDate(msg.createdAt)}</span>
+              </div>
+              <p className="whitespace-pre-wrap" data-testid={`text-msg-content-${msg.id}`}>{msg.content}</p>
+            </div>
+          ))
+        )}
+      </div>
+    );
+
+    const composerBlock = selectedThread.status !== "CLOSED" ? (
+      <div className="space-y-2 shrink-0 border-t pt-3">
+        <div className="flex items-center gap-2">
+          <Button
+            variant={isInternalNote ? "default" : "outline"}
+            size="sm"
+            onClick={() => setIsInternalNote(!isInternalNote)}
+            data-testid="button-toggle-internal"
+          >
+            {isInternalNote ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+            {isInternalNote ? "Internal Note" : "Reply to Client"}
+          </Button>
+          {isInternalNote && (
+            <span className="text-xs text-yellow-600 dark:text-yellow-400">This note is only visible to your team</span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Textarea
+            placeholder={isInternalNote ? "Add an internal note..." : "Type your reply..."}
+            value={chatMessage}
+            onChange={(e) => setChatMessage(e.target.value)}
+            className="flex-1"
+            data-testid="input-team-reply"
+          />
+          <Button
+            size="icon"
+            onClick={() => sendMessageMutation.mutate({ threadId: selectedThread.id, content: chatMessage, isInternal: isInternalNote })}
+            disabled={!chatMessage.trim() || sendMessageMutation.isPending}
+            data-testid="button-send-team-reply"
+          >
+            {sendMessageMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
+        </div>
+      </div>
+    ) : null;
+
+    if (compact) {
+      return (
+        <div className="h-full flex flex-col" data-testid="portal-chat-detail">
+          {headerBlock}
+          {infoBlock}
+          {messagesBlock}
+          {composerBlock}
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-4" data-testid="portal-chat-detail">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setSelectedThread(null)} data-testid="button-back-threads">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h2 className="text-lg font-semibold flex-1 min-w-0 truncate" data-testid="text-thread-title">{selectedThread.subject}</h2>
-        </div>
-
-        <Card data-testid="card-thread-info">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Badge variant="outline" className="text-xs" data-testid="badge-thread-portal-type">
-                {selectedThread.portalType === "CLIENT" ? "Client" : "Subcontractor"}
-              </Badge>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">From:</span>
-                <span className="text-sm font-medium" data-testid="text-contact-name">{selectedThread.contactName}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">Email:</span>
-                <span className="text-sm" data-testid="text-contact-email">{selectedThread.contactEmail}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">Status:</span>
-                <Select value={selectedThread.status} onValueChange={(v) => updateStatusMutation.mutate({ threadId: selectedThread.id, status: v })}>
-                  <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="OPEN">Open</SelectItem>
-                    <SelectItem value="CLOSED">Closed</SelectItem>
-                    <SelectItem value="ARCHIVED">Archived</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">Priority:</span>
-                <Select value={selectedThread.priority || "NORMAL"} onValueChange={(v) => updatePriorityMutation.mutate({ threadId: selectedThread.id, priority: v })}>
-                  <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NORMAL">Normal</SelectItem>
-                    <SelectItem value="URGENT">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
+        {headerBlock}
+        {infoBlock}
         <Card data-testid="card-messages">
           <CardContent className="p-4">
-            <div className="space-y-3 max-h-[500px] overflow-y-auto mb-4 pr-1" data-testid="messages-list">
-              {messagesLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : threadMessages.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No messages yet.</p>
-              ) : (
-                threadMessages.map((msg: any) => (
-                  <div
-                    key={msg.id}
-                    className={`rounded-md p-3 text-sm ${msg.isInternal ? "bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 mr-8" : (msg.senderType === "portal" || msg.senderType === "client_portal") ? "bg-muted mr-8" : "bg-primary/10 ml-8"}`}
-                    data-testid={`message-${msg.id}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
-                      <span className="font-medium text-xs flex items-center gap-1" data-testid={`text-msg-sender-${msg.id}`}>
-                        {msg.isInternal && <EyeOff className="h-3 w-3" />}
-                        {msg.senderName || ((msg.senderType === "portal" || msg.senderType === "client_portal") ? selectedThread.contactName : "Team")}
-                        {msg.isInternal && <span className="text-yellow-600 dark:text-yellow-400">(Internal Note)</span>}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{formatDate(msg.createdAt)}</span>
-                    </div>
-                    <p className="whitespace-pre-wrap" data-testid={`text-msg-content-${msg.id}`}>{msg.content}</p>
-                  </div>
-                ))
-              )}
-            </div>
-            {selectedThread.status !== "CLOSED" && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant={isInternalNote ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setIsInternalNote(!isInternalNote)}
-                    data-testid="button-toggle-internal"
-                  >
-                    {isInternalNote ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
-                    {isInternalNote ? "Internal Note" : "Reply to Client"}
-                  </Button>
-                  {isInternalNote && (
-                    <span className="text-xs text-yellow-600 dark:text-yellow-400">This note is only visible to your team</span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Textarea
-                    placeholder={isInternalNote ? "Add an internal note..." : "Type your reply..."}
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    className="flex-1"
-                    data-testid="input-team-reply"
-                  />
-                  <Button
-                    size="icon"
-                    onClick={() => sendMessageMutation.mutate({ threadId: selectedThread.id, content: chatMessage, isInternal: isInternalNote })}
-                    disabled={!chatMessage.trim() || sendMessageMutation.isPending}
-                    data-testid="button-send-team-reply"
-                  >
-                    {sendMessageMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-            )}
+            {messagesBlock}
+            {composerBlock}
           </CardContent>
         </Card>
       </div>
@@ -286,9 +309,9 @@ export function PortalChatContent() {
   }
 
   return (
-    <div className="space-y-4" data-testid="portal-chat-inbox">
+    <div className={compact ? "h-full flex flex-col gap-2" : "space-y-4"} data-testid="portal-chat-inbox">
 
-      <Card data-testid="card-filters">
+      <Card data-testid="card-filters" className="shrink-0">
         <CardContent className="p-3">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
@@ -342,7 +365,7 @@ export function PortalChatContent() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2" data-testid="threads-list">
+        <div className={`space-y-2 ${compact ? "flex-1 min-h-0 overflow-y-auto" : ""}`} data-testid="threads-list">
           {(threads as any[]).map((thread: any) => (
             <Card
               key={thread.id}

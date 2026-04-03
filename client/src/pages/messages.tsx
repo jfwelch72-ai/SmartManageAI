@@ -697,9 +697,9 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
 
   return (
     <TooltipProvider>
-      <div data-testid="team-messages-content">
+      <div data-testid="team-messages-content" className={compact ? "h-full flex flex-col" : ""}>
         {}
-        <Card className={compact ? "h-full border-0 shadow-none" : "h-[calc(100vh-280px)] min-h-[500px]"}>
+        <Card className={compact ? "flex-1 min-h-0 border-0 shadow-none" : "h-[calc(100vh-280px)] min-h-[500px]"}>
           <div className="flex h-full">
             {/* ── SIDEBAR ── */}
             {showConversationList && !isMobileView && (

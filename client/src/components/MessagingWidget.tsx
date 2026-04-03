@@ -164,14 +164,14 @@ export function MessagingWidget() {
                 </TabsList>
 
                 <TabsContent value="team" className="flex-1 overflow-hidden mt-0 px-1 pb-1" data-testid="tab-content-team">
-                  <div className="h-full overflow-auto messaging-widget-container">
+                  <div className="h-full flex flex-col overflow-hidden messaging-widget-container">
                     <TeamMessagesContent compact />
                   </div>
                 </TabsContent>
 
                 <TabsContent value="portal" className="flex-1 overflow-hidden mt-0 px-2 pb-2" data-testid="tab-content-portal">
-                  <div className="h-full overflow-auto">
-                    <PortalChatContent />
+                  <div className="h-full flex flex-col overflow-hidden">
+                    <PortalChatContent compact />
                   </div>
                 </TabsContent>
               </Tabs>
