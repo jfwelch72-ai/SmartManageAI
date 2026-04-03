@@ -3155,13 +3155,17 @@ const messagingSetup = (async () => {
   router.get("/api/call-notes", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
-      const orgId = await getOrgIdForFilter(userId);
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
       const search = (req.query.search as string || "").trim();
       const dateFrom = req.query.dateFrom as string | undefined;
       const dateTo = req.query.dateTo as string | undefined;
       const offset = (page - 1) * limit;
+
+      if (mustDenyAccess) {
+        return res.json({ calls: [], total: 0, page, limit });
+      }
 
       const conditions: SQL[] = [
         eq(videoCalls.status, "ENDED"),
