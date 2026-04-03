@@ -1,6 +1,7 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Clock, DollarSign, UserMinus, HardHat, Lock, AlertCircle } from "lucide-react";
+import { Users, Clock, DollarSign, UserMinus, HardHat, Lock, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -51,7 +52,7 @@ function getAbsentBg(absent: number, total: number): string {
 export function WorkforceSnapshotWidget() {
   const hasPermission = useFeaturePermission("canManagePayroll");
 
-  const { data, isLoading, isError } = useQuery<WorkforceSnapshot>({
+  const { data, isLoading, isError, refetch} = useQuery<WorkforceSnapshot>({
     queryKey: ["/api/dashboard/workforce-snapshot"],
     refetchInterval: 120000,
     enabled: hasPermission,
@@ -97,9 +98,13 @@ export function WorkforceSnapshotWidget() {
   if (isError) {
     return (
       <Card data-testid="workforce-snapshot-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load workforce data.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

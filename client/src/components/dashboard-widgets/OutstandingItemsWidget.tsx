@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   AlertCircle,
   AlertTriangle,
@@ -8,23 +9,71 @@ import {
   DollarSign,
   CheckCircle2,
   CloudRain,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useDashboardStats, useProjects } from "@/hooks/use-data";
+import { useMemo, useState } from "react";
 
-export function OutstandingItemsWidget() {
+interface OutstandingItem {
+  key: string;
+  icon: typeof AlertTriangle;
+  iconColor: string;
+  label: string;
+  count: number;
+  path: string;
+}
+
+export function OutstandingItemsWidget({ config }: { config?: Record<string, unknown> }) {
   const [, setLocation] = useLocation();
-  const { data: stats, isLoading: statsLoading, isError: statsError } = useDashboardStats();
-  const { data: projects = [], isLoading: projectsLoading, isError: projectsError } = useProjects();
+  const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useDashboardStats();
+  const { data: projects = [], isLoading: projectsLoading, isError: projectsError, refetch: refetchProjects } = useProjects();
+  const [showAll, setShowAll] = useState(false);
+  const displayLimit = (config?.displayLimit as number) || 3;
 
   const isLoading = statsLoading || projectsLoading;
   const isError = statsError || projectsError;
+
+  const projectsMissingBudget = useMemo(() => {
+    return projects.filter((p) => {
+      const budgetNum = Number(p.budget);
+      return !p.budget || isNaN(budgetNum) || budgetNum <= 0;
+    });
+  }, [projects]);
+
+  const items = useMemo<OutstandingItem[]>(() => {
+    const result: OutstandingItem[] = [];
+    if (stats?.pendingChangeOrdersCount) {
+      result.push({ key: "change-orders", icon: AlertTriangle, iconColor: "text-yellow-500", label: "Pending Change Orders", count: stats.pendingChangeOrdersCount, path: "/projects?changeOrders=pending" });
+    }
+    if (stats?.pendingTimeOffCount) {
+      result.push({ key: "timeoff", icon: CalendarClock, iconColor: "text-blue-500", label: "Pending Leave Requests", count: stats.pendingTimeOffCount, path: "/leave-management" });
+    }
+    if (projectsMissingBudget.length > 0) {
+      result.push({ key: "missing-budget", icon: DollarSign, iconColor: "text-orange-500", label: "Missing Budget Data", count: projectsMissingBudget.length, path: "/projects?filter=missingBudget" });
+    }
+    if (stats?.delaysNeedingAckCount) {
+      result.push({ key: "delays-ack", icon: CloudRain, iconColor: "text-blue-500", label: "Delays Awaiting Acknowledgment", count: stats.delaysNeedingAckCount, path: "/projects?filter=delaysNeedingAck" });
+    }
+    if (stats?.delaysNeedingChangeOrderCount) {
+      result.push({ key: "delays-co", icon: AlertTriangle, iconColor: "text-red-500", label: "Delays Needing Change Order", count: stats.delaysNeedingChangeOrderCount, path: "/projects?filter=delaysNeedingCO" });
+    }
+    return result;
+  }, [stats, projectsMissingBudget]);
+
+  const displayedItems = showAll ? items : items.slice(0, displayLimit);
+  const hasMore = items.length > displayLimit;
 
   if (isLoading) {
     return (
       <Card className="h-full" data-testid="card-outstanding-items">
         <CardHeader className="pb-3">
-          <Skeleton className="h-4 w-36" />
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            <Skeleton className="h-4 w-32" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -44,18 +93,23 @@ export function OutstandingItemsWidget() {
   if (isError) {
     return (
       <Card className="h-full" data-testid="card-outstanding-items-error">
-        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
-          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            Outstanding Items
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
+          <AlertCircle className="w-6 h-6 text-destructive" />
           <p className="text-sm text-muted-foreground">Failed to load outstanding items.</p>
+          <Button variant="outline" size="sm" onClick={() => { refetchStats(); refetchProjects(); }} data-testid="button-retry-outstanding">
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Retry
+          </Button>
         </CardContent>
       </Card>
     );
   }
-
-  const projectsMissingBudget = projects.filter((p) => {
-    const budgetNum = Number(p.budget);
-    return !p.budget || isNaN(budgetNum) || budgetNum <= 0;
-  });
 
   return (
     <Card className="h-full" data-testid="card-outstanding-items">
@@ -67,86 +121,55 @@ export function OutstandingItemsWidget() {
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {stats?.pendingChangeOrdersCount ? (
-            <div
-              className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer"
-              onClick={() => setLocation("/projects?changeOrders=pending")}
-              data-testid="outstanding-change-orders"
-            >
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                <span className="text-sm">Pending Change Orders</span>
+          {displayedItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.key}
+                className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer"
+                onClick={() => setLocation(item.path)}
+                data-testid={`outstanding-${item.key}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon className={`w-4 h-4 ${item.iconColor}`} />
+                  <span className="text-sm">{item.label}</span>
+                </div>
+                <Badge variant="secondary">{item.count}</Badge>
               </div>
-              <Badge variant="secondary">{stats.pendingChangeOrdersCount}</Badge>
-            </div>
-          ) : null}
+            );
+          })}
 
-          {stats?.pendingTimeOffCount ? (
-            <div
-              className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer"
-              onClick={() => setLocation("/leave-management")}
-              data-testid="outstanding-timeoff"
-            >
-              <div className="flex items-center gap-2">
-                <CalendarClock className="w-4 h-4 text-blue-500" />
-                <span className="text-sm">Pending Leave Requests</span>
-              </div>
-              <Badge variant="secondary">{stats.pendingTimeOffCount}</Badge>
-            </div>
-          ) : null}
-
-          {projectsMissingBudget.length > 0 && (
-            <div
-              className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer"
-              onClick={() => setLocation("/projects?filter=missingBudget")}
-              data-testid="outstanding-missing-budget"
-            >
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-orange-500" />
-                <span className="text-sm">Missing Budget Data</span>
-              </div>
-              <Badge variant="secondary">{projectsMissingBudget.length}</Badge>
+          {items.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-4 text-center" data-testid="outstanding-items-empty">
+              <CheckCircle2 className="w-6 h-6 text-green-500 mb-2" />
+              <p className="text-sm text-muted-foreground">All caught up! No outstanding items.</p>
             </div>
           )}
 
-          {stats?.delaysNeedingAckCount ? (
-            <div
-              className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer"
-              onClick={() => setLocation("/projects?filter=delaysNeedingAck")}
-              data-testid="outstanding-delays-ack"
+          {hasMore && !showAll && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-xs text-muted-foreground"
+              onClick={() => setShowAll(true)}
+              data-testid="button-show-more-outstanding"
             >
-              <div className="flex items-center gap-2">
-                <CloudRain className="w-4 h-4 text-blue-500" />
-                <span className="text-sm">Delays Awaiting Acknowledgment</span>
-              </div>
-              <Badge variant="secondary">{stats.delaysNeedingAckCount}</Badge>
-            </div>
-          ) : null}
-
-          {stats?.delaysNeedingChangeOrderCount ? (
-            <div
-              className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer"
-              onClick={() => setLocation("/projects?filter=delaysNeedingCO")}
-              data-testid="outstanding-delays-co"
+              <ChevronDown className="w-3.5 h-3.5 mr-1" />
+              Show {items.length - displayLimit} more
+            </Button>
+          )}
+          {showAll && hasMore && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-xs text-muted-foreground"
+              onClick={() => setShowAll(false)}
+              data-testid="button-show-less-outstanding"
             >
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-500" />
-                <span className="text-sm">Delays Needing Change Order</span>
-              </div>
-              <Badge variant="secondary">{stats.delaysNeedingChangeOrderCount}</Badge>
-            </div>
-          ) : null}
-
-          {!stats?.pendingChangeOrdersCount &&
-            !stats?.pendingTimeOffCount &&
-            projectsMissingBudget.length === 0 &&
-            !stats?.delaysNeedingAckCount &&
-            !stats?.delaysNeedingChangeOrderCount && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                All caught up! No outstanding items.
-              </div>
-            )}
+              <ChevronUp className="w-3.5 h-3.5 mr-1" />
+              Show less
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

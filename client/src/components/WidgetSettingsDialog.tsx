@@ -21,6 +21,7 @@ import { ChangeOrdersPendingSettings, type ChangeOrdersPendingConfig, DEFAULT_CO
 import { SafetyAlertsSettings, type SafetyAlertsConfig, DEFAULT_SAFETY_ALERTS_CONFIG } from "@/components/dashboard-widgets/SafetyAlertsSettings";
 import { LaborUtilizationSettings, type LaborUtilizationConfig, DEFAULT_LABOR_UTIL_CONFIG } from "@/components/dashboard-widgets/LaborUtilizationSettings";
 import { ProjectHealthSummarySettings, type ProjectHealthSummaryConfig, DEFAULT_PROJECT_HEALTH_CONFIG } from "@/components/dashboard-widgets/ProjectHealthSummarySettings";
+import { DisplayLimitSettings, type DisplayLimitConfig, DEFAULT_DISPLAY_LIMIT_CONFIG } from "@/components/dashboard-widgets/DisplayLimitSettings";
 
 interface WidgetSettingsDialogProps {
   open: boolean;
@@ -41,6 +42,11 @@ export const WIDGETS_WITH_SETTINGS = new Set([
   "SAFETY_ALERTS",
   "LABOR_UTILIZATION",
   "PROJECT_HEALTH_SUMMARY",
+  "ACTIVE_PROJECTS",
+  "ACTIVE_BIDS",
+  "MESSAGES",
+  "NOTIFICATIONS",
+  "OUTSTANDING_ITEMS",
 ]);
 
 export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType, sectionId }: WidgetSettingsDialogProps) {
@@ -130,6 +136,32 @@ export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType,
           <ProjectHealthSummarySettings
             config={{ ...DEFAULT_PROJECT_HEALTH_CONFIG, ...localConfig } as ProjectHealthSummaryConfig}
             onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "ACTIVE_PROJECTS":
+      case "ACTIVE_BIDS":
+      case "MESSAGES":
+        return (
+          <DisplayLimitSettings
+            config={{ ...DEFAULT_DISPLAY_LIMIT_CONFIG, ...localConfig } as DisplayLimitConfig}
+            onChange={(config) => setLocalConfig(config)}
+            defaultLimit={4}
+          />
+        );
+      case "NOTIFICATIONS":
+        return (
+          <DisplayLimitSettings
+            config={{ ...DEFAULT_DISPLAY_LIMIT_CONFIG, displayLimit: 5, ...localConfig } as DisplayLimitConfig}
+            onChange={(config) => setLocalConfig(config)}
+            defaultLimit={5}
+          />
+        );
+      case "OUTSTANDING_ITEMS":
+        return (
+          <DisplayLimitSettings
+            config={{ ...DEFAULT_DISPLAY_LIMIT_CONFIG, displayLimit: 3, ...localConfig } as DisplayLimitConfig}
+            onChange={(config) => setLocalConfig(config)}
+            defaultLimit={3}
           />
         );
       default:

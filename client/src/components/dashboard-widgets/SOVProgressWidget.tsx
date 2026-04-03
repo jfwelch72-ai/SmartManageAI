@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardList, DollarSign, ShieldCheck, ArrowRight, Lock, AlertCircle } from "lucide-react";
+import { ClipboardList, DollarSign, ShieldCheck, ArrowRight, Lock, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -55,7 +56,7 @@ function ProgressBar({ label, percent, color }: { label: string; percent: number
 export function SOVProgressWidget() {
   const hasPermission = useFeaturePermission("canAccessFinancials");
 
-  const { data, isLoading, isError } = useQuery<SOVProgress>({
+  const { data, isLoading, isError, refetch} = useQuery<SOVProgress>({
     queryKey: ["/api/dashboard/sov-progress"],
     refetchInterval: 300000,
     enabled: hasPermission,
@@ -98,9 +99,13 @@ export function SOVProgressWidget() {
   if (isError) {
     return (
       <Card data-testid="sov-progress-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load SOV data.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

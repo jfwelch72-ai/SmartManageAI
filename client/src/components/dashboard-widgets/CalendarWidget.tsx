@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, ChevronRight, AlertCircle } from "lucide-react";
+import { Calendar, ChevronRight, AlertCircle, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { CalendarEvent } from "@shared/schema";
@@ -18,7 +18,7 @@ function formatEventDate(dateStr: string | Date): string {
 
 export function CalendarWidget() {
   const [, setLocation] = useLocation();
-  const { data: calendarEvents = [], isLoading, isError } = useQuery<CalendarEvent[]>({
+  const { data: calendarEvents = [], isLoading, isError, refetch } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/my-events"],
   });
 
@@ -47,9 +47,13 @@ export function CalendarWidget() {
   if (isError) {
     return (
       <Card className="h-full" data-testid="card-calendar-error">
-        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load calendar events.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

@@ -2,14 +2,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Briefcase, ChevronRight, AlertCircle } from "lucide-react";
+import { Briefcase, ChevronRight, AlertCircle, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import { useProjects } from "@/hooks/use-data";
+import { useState } from "react";
 
-export function ActiveProjectsWidget() {
+export function ActiveProjectsWidget({ config }: { config?: Record<string, unknown> }) {
   const [, setLocation] = useLocation();
-  const { data: projects = [], isLoading, isError } = useProjects();
+  const { data: projects = [], isLoading, isError, refetch } = useProjects();
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
+  const [showAll, setShowAll] = useState(false);
+  const displayLimit = (config?.displayLimit as number) || 4;
+  const displayedProjects = showAll ? activeProjects : activeProjects.slice(0, displayLimit);
+  const hasMore = activeProjects.length > displayLimit;
 
   return (
     <Card className="h-full" data-testid="card-active-projects">
@@ -45,17 +50,22 @@ export function ActiveProjectsWidget() {
             ))}
           </div>
         ) : isError ? (
-          <div className="flex flex-col items-center justify-center py-6 text-center" data-testid="active-projects-error">
-            <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <div className="flex flex-col items-center justify-center py-6 text-center gap-2" data-testid="active-projects-error">
+            <AlertCircle className="w-6 h-6 text-destructive" />
             <p className="text-sm text-muted-foreground">Failed to load projects.</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-projects">
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              Retry
+            </Button>
           </div>
         ) : activeProjects.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No active projects
-          </p>
+          <div className="flex flex-col items-center justify-center py-6 text-center" data-testid="active-projects-empty">
+            <Briefcase className="w-6 h-6 text-muted-foreground/50 mb-2" />
+            <p className="text-sm text-muted-foreground">No active projects</p>
+          </div>
         ) : (
           <div className="space-y-3">
-            {activeProjects.slice(0, 4).map((project) => (
+            {displayedProjects.map((project) => (
               <div
                 key={project.code}
                 className="p-3 rounded-md border hover-elevate cursor-pointer"
@@ -76,6 +86,28 @@ export function ActiveProjectsWidget() {
                 </p>
               </div>
             ))}
+            {hasMore && !showAll && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-muted-foreground"
+                onClick={() => setShowAll(true)}
+                data-testid="button-show-more-projects"
+              >
+                Show {activeProjects.length - displayLimit} more
+              </Button>
+            )}
+            {showAll && hasMore && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-muted-foreground"
+                onClick={() => setShowAll(false)}
+                data-testid="button-show-less-projects"
+              >
+                Show less
+              </Button>
+            )}
           </div>
         )}
       </CardContent>

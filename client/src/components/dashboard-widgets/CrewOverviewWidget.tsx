@@ -1,21 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Users, AlertCircle } from "lucide-react";
+import { Users, AlertCircle, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useProjects } from "@/hooks/use-data";
 
 export function CrewOverviewWidget() {
   const [, setLocation] = useLocation();
-  const { data: projects = [], isLoading: projectsLoading, isError: projectsError } = useProjects();
+  const { data: projects = [], isLoading: projectsLoading, isError: projectsError, refetch: refetchProjects } = useProjects();
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
 
-  const { data: crewAssignments = [], isLoading: assignmentsLoading, isError: assignmentsError } = useQuery<any[]>({
+  const { data: crewAssignments = [], isLoading: assignmentsLoading, isError: assignmentsError, refetch: refetchAssignments } = useQuery<any[]>({
     queryKey: ["/api/crew-assignments"],
   });
 
-  const { data: crews = [], isLoading: crewsLoading, isError: crewsError } = useQuery<any[]>({
+  const { data: crews = [], isLoading: crewsLoading, isError: crewsError, refetch: refetchCrews } = useQuery<any[]>({
     queryKey: ["/api/crews"],
   });
 
@@ -46,9 +46,13 @@ export function CrewOverviewWidget() {
   if (isError) {
     return (
       <Card className="h-full" data-testid="card-crew-overview-error">
-        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load crew data.</p>
+              <Button variant="outline" size="sm" onClick={() => { refetchProjects(); refetchAssignments(); refetchCrews(); }} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

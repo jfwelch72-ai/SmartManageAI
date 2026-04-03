@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { HardHat, Bell, Check, AlertCircle } from "lucide-react";
+import { HardHat, Bell, Check, AlertCircle, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -10,7 +10,7 @@ import type { Notification } from "@shared/schema";
 
 export function ProjectAssignmentsWidget() {
   const [, setLocation] = useLocation();
-  const { data: notifications = [], isLoading, isError } = useQuery<Notification[]>({
+  const { data: notifications = [], isLoading, isError, refetch } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
 
@@ -50,9 +50,13 @@ export function ProjectAssignmentsWidget() {
   if (isError) {
     return (
       <Card className="h-full" data-testid="card-project-assignments-error">
-        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load assignments.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

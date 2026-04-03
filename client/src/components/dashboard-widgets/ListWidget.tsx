@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { List, Calendar, DollarSign, Clock, AlertCircle } from "lucide-react";
+import { List, Calendar, DollarSign, Clock, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
@@ -75,7 +76,7 @@ export function ListWidget({ config }: ListWidgetProps) {
   const merged = { ...DEFAULT_LIST_CONFIG, ...config };
   const entityDef = LIST_ENTITIES.find(e => e.value === merged.entity) || LIST_ENTITIES[0];
 
-  const { data, isLoading, isError } = useQuery<ListResponse>({
+  const { data, isLoading, isError, refetch} = useQuery<ListResponse>({
     queryKey: ["/api/dashboard/list", merged.entity, merged.status, merged.sortBy, merged.sortDir, merged.limit],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -113,9 +114,13 @@ export function ListWidget({ config }: ListWidgetProps) {
   if (isError) {
     return (
       <Card data-testid="list-widget-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load list data.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

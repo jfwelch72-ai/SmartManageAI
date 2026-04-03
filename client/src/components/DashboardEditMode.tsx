@@ -18,6 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,7 +88,7 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
   if (isEditMode) {
     return (
       <>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 gap-1">
             <Edit className="w-3 h-3" />
             <span className="hidden sm:inline">Edit Mode</span>
@@ -96,6 +97,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
           <Badge variant="secondary" className="text-xs">
             {sectionCount}s · {widgetCount}w
           </Badge>
+
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
 
           <Popover open={showAddSection} onOpenChange={setShowAddSection}>
             <Tooltip>
@@ -163,6 +166,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
             </TooltipTrigger>
             <TooltipContent>Browse and add widgets</TooltipContent>
           </Tooltip>
+
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
           
           <Tooltip>
             <TooltipTrigger asChild>
@@ -179,6 +184,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
             </TooltipTrigger>
             <TooltipContent>Reset to default layout</TooltipContent>
           </Tooltip>
+
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
 
           <Button 
             size="sm" 

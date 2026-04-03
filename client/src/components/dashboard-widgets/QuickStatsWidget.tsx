@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Briefcase, FileText, MessageSquare, Calendar, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Briefcase, FileText, MessageSquare, Calendar, AlertCircle, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import { useDashboardStats, useBids } from "@/hooks/use-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -20,12 +21,12 @@ interface QuickStatsWidgetProps {
 export function QuickStatsWidget({ config }: QuickStatsWidgetProps) {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const { data: stats, isLoading: statsLoading, isError: statsError } = useDashboardStats();
-  const { data: bids = [], isLoading: bidsLoading, isError: bidsError } = useBids();
-  const { data: conversations = [], isLoading: convsLoading, isError: convsError } = useQuery<ConversationWithDetails[]>({
+  const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useDashboardStats();
+  const { data: bids = [], isLoading: bidsLoading, isError: bidsError, refetch: refetchBids } = useBids();
+  const { data: conversations = [], isLoading: convsLoading, isError: convsError, refetch: refetchConvs } = useQuery<ConversationWithDetails[]>({
     queryKey: ["/api/conversations"],
   });
-  const { data: calendarEvents = [], isLoading: calLoading, isError: calError } = useQuery<any[]>({
+  const { data: calendarEvents = [], isLoading: calLoading, isError: calError, refetch: refetchCal } = useQuery<any[]>({
     queryKey: ["/api/calendar/my-events"],
   });
 
@@ -65,9 +66,13 @@ export function QuickStatsWidget({ config }: QuickStatsWidgetProps) {
 
   if (isError) {
     return (
-      <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground" data-testid="quick-stats-error">
-        <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-        <span>Failed to load stats.</span>
+      <div className="flex flex-col items-center justify-center py-6 text-center gap-2" data-testid="quick-stats-error">
+        <AlertCircle className="w-6 h-6 text-destructive" />
+        <p className="text-sm text-muted-foreground">Failed to load stats.</p>
+        <Button variant="outline" size="sm" onClick={() => { refetchStats(); refetchBids(); refetchConvs(); refetchCal(); }} data-testid="button-retry-stats">
+          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+          Retry
+        </Button>
       </div>
     );
   }

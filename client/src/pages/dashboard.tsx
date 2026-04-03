@@ -7,10 +7,20 @@ import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { AIDashboardPanel } from "@/components/AIDashboardPanel";
 import { AIFeatureTrigger } from "@/components/AIFeatureDialog";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
-import { Plus, Sun, Moon, Sunset } from "lucide-react";
+import { Plus, Sun, Moon, Sunset, ChevronDown, Sparkles, Brain, DollarSign, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { AIFeatureDialog } from "@/components/AIFeatureDialog";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { hasManagementAccess, isSuperAdmin, isHustler } from "@/lib/rbac";
@@ -26,12 +36,48 @@ function getTimeGreeting(): { greeting: string; icon: typeof Sun } {
   return { greeting: "Good night", icon: Moon };
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-4" data-testid="dashboard-skeleton">
+      {[1, 2, 3].map((sectionIdx) => (
+        <Card key={sectionIdx}>
+          <CardHeader className="py-2 px-3 sm:py-3 sm:px-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+              <Skeleton className="h-4 w-16" />
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-2 pb-2">
+            <div className={`grid ${sectionIdx === 1 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'} gap-3`}>
+              {Array.from({ length: sectionIdx === 1 ? 4 : 3 }).map((_, i) => (
+                <div key={i} className="rounded-lg border p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                  </div>
+                  <Skeleton className="h-8 w-16" />
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-2/3" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { isEditMode, isLoadingLayout } = useDashboardCustomization();
   const [widgetLibraryOpen, setWidgetLibraryOpen] = useState(false);
   const [widgetLibraryTargetSection, setWidgetLibraryTargetSection] = useState<string | undefined>(undefined);
+  const [mobileFeatureOpen, setMobileFeatureOpen] = useState<"ai-pm" | "cfo" | "voice-logs" | null>(null);
 
   const handleAddWidgetToSection = (sectionId: string) => {
     setWidgetLibraryTargetSection(sectionId);
@@ -84,16 +130,63 @@ export default function DashboardPage() {
             
             <div className="flex items-center gap-2 flex-wrap">
               <ThemePicker />
-              <AIAnalysisButton module="ALL" showDropdown={true} variant="outline" size="sm" data-testid="button-ai-analysis" />
-              <AIFeatureTrigger feature="ai-pm" variant="outline" size="sm" label="AI Tasks" data-testid="button-open-ai-pm" />
-              <AIFeatureTrigger feature="cfo" variant="outline" size="sm" label="Financials" data-testid="button-open-cfo" />
-              <AIFeatureTrigger feature="voice-logs" variant="outline" size="sm" label="Voice Logs" data-testid="button-open-voice-logs" />
+
+              <div className="hidden sm:flex items-center gap-2">
+                <AIAnalysisButton module="ALL" showDropdown={true} variant="outline" size="sm" data-testid="button-ai-analysis" />
+                <AIFeatureTrigger feature="ai-pm" variant="outline" size="sm" label="AI Tasks" data-testid="button-open-ai-pm" />
+                <AIFeatureTrigger feature="cfo" variant="outline" size="sm" label="Financials" data-testid="button-open-cfo" />
+                <AIFeatureTrigger feature="voice-logs" variant="outline" size="sm" label="Voice Logs" data-testid="button-open-voice-logs" />
+              </div>
+
+              <div className="flex sm:hidden items-center gap-1">
+                <AIAnalysisButton module="ALL" variant="outline" size="sm" data-testid="button-ai-analysis-mobile" />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" data-testid="button-quick-actions-dropdown">
+                      <Sparkles className="w-4 h-4 mr-1.5" />
+                      More
+                      <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onSelect={() => setMobileFeatureOpen("ai-pm")} data-testid="menu-item-ai-tasks">
+                      <Brain className="w-4 h-4 mr-2" />
+                      AI Tasks
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setMobileFeatureOpen("cfo")} data-testid="menu-item-financials">
+                      <DollarSign className="w-4 h-4 mr-2" />
+                      Financials
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setMobileFeatureOpen("voice-logs")} data-testid="menu-item-voice-logs">
+                      <Mic className="w-4 h-4 mr-2" />
+                      Voice Logs
+                    </DropdownMenuItem>
+                    {hasManagementAccess(user?.role) && !isEditMode && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setLocation('/bids?new=true')} data-testid="menu-item-new-bid">
+                          <Plus className="w-4 h-4 mr-2" />
+                          New Bid
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {mobileFeatureOpen && (
+                  <AIFeatureDialog
+                    feature={mobileFeatureOpen}
+                    open={true}
+                    onOpenChange={(open) => { if (!open) setMobileFeatureOpen(null); }}
+                  />
+                )}
+              </div>
+
               <DashboardEditMode 
                 onToggleWidgetLibrary={() => { setWidgetLibraryTargetSection(undefined); setWidgetLibraryOpen(!widgetLibraryOpen); }}
                 widgetLibraryOpen={widgetLibraryOpen}
               />
               {hasManagementAccess(user?.role) && !isEditMode && (
-                <Button onClick={() => setLocation('/bids?new=true')} data-testid="button-new-bid" className="w-full sm:w-auto">
+                <Button onClick={() => setLocation('/bids?new=true')} data-testid="button-new-bid" className="hidden sm:inline-flex">
                   <Plus className="w-4 h-4 mr-2" />
                   New Bid
                 </Button>
@@ -110,7 +203,7 @@ export default function DashboardPage() {
         )}
 
         {isLoadingLayout ? (
-          <div className="text-center py-12 text-muted-foreground">Loading your dashboard...</div>
+          <DashboardSkeleton />
         ) : (
           <DashboardGrid onAddWidgetToSection={handleAddWidgetToSection} />
         )}

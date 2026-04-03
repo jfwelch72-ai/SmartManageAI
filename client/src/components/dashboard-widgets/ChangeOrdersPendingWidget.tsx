@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { FileEdit, DollarSign, CheckCircle2, Lock, AlertCircle, Flag, ClipboardCheck, Send } from "lucide-react";
+import { FileEdit, DollarSign, CheckCircle2, Lock, AlertCircle, Flag, ClipboardCheck, Send , RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -46,7 +47,7 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
     ? `/api/dashboard/change-orders-pending?projectId=${encodeURIComponent(cfg.projectId)}`
     : "/api/dashboard/change-orders-pending";
 
-  const { data, isLoading, isError } = useQuery<ChangeOrdersPendingData>({
+  const { data, isLoading, isError, refetch} = useQuery<ChangeOrdersPendingData>({
     queryKey: ["/api/dashboard/change-orders-pending", { projectId: cfg.projectId }],
     queryFn: async () => {
       const res = await fetch(apiUrl, { credentials: "include" });
@@ -104,9 +105,13 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
   if (isError) {
     return (
       <Card data-testid="change-orders-pending-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load change orders.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

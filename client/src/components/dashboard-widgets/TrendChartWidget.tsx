@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { BarChart3, TrendingUp, AlertTriangle, AlertCircle } from "lucide-react";
+import { BarChart3, TrendingUp, AlertTriangle, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer,
@@ -91,7 +92,7 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
   const periodDef = TREND_PERIODS.find(p => p.value === merged.period) || TREND_PERIODS[1];
   const groupDef = TREND_GROUP_BY.find(g => g.value === merged.groupBy) || TREND_GROUP_BY[0];
 
-  const { data, isLoading, isError } = useQuery<TrendResponse>({
+  const { data, isLoading, isError, refetch} = useQuery<TrendResponse>({
     queryKey: ["/api/dashboard/trend", merged.metric, merged.period, merged.groupBy],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -122,9 +123,13 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
   if (isError) {
     return (
       <Card data-testid="trend-chart-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load trend data.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

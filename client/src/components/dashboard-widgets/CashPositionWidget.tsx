@@ -1,6 +1,7 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowDownLeft, ArrowUpRight, Wallet, TrendingUp, TrendingDown, Landmark, Lock, AlertCircle } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Wallet, TrendingUp, TrendingDown, Landmark, Lock, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -29,7 +30,7 @@ function formatSignedCurrency(value: number): string {
 export function CashPositionWidget() {
   const hasPermission = useFeaturePermission("canAccessFinancials");
 
-  const { data, isLoading, isError } = useQuery<CashPosition>({
+  const { data, isLoading, isError, refetch} = useQuery<CashPosition>({
     queryKey: ["/api/dashboard/cash-position"],
     refetchInterval: 300000,
     enabled: hasPermission,
@@ -75,9 +76,13 @@ export function CashPositionWidget() {
   if (isError) {
     return (
       <Card data-testid="cash-position-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load cash position.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

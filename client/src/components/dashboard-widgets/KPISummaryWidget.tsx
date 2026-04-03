@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +59,7 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
   const merged = { ...DEFAULT_KPI_CONFIG, ...config };
   const metricDef = KPI_METRICS.find(m => m.value === merged.metric) || KPI_METRICS[2];
 
-  const { data, isLoading, isError } = useQuery<{
+  const { data, isLoading, isError, refetch} = useQuery<{
     value: number;
     previousValue: number;
     changePercent: number;
@@ -97,9 +98,13 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
   if (isError) {
     return (
       <Card data-testid="kpi-summary-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load KPI data.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

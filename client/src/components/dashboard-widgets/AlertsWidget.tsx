@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, AlertCircle, Info, Shield, DollarSign, Clock, CreditCard, TrendingDown, CheckCircle2, ExternalLink } from "lucide-react";
+import { AlertTriangle, AlertCircle, Info, Shield, DollarSign, Clock, CreditCard, TrendingDown, CheckCircle2, ExternalLink , RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -60,7 +61,7 @@ const TYPE_LINKS: Record<string, string> = {
 
 export function AlertsWidget() {
   const [, setLocation] = useLocation();
-  const { data, isLoading, isError } = useQuery<AlertsResponse>({
+  const { data, isLoading, isError, refetch} = useQuery<AlertsResponse>({
     queryKey: ["/api/dashboard/alerts"],
     refetchInterval: 300000,
   });
@@ -89,9 +90,13 @@ export function AlertsWidget() {
   if (isError) {
     return (
       <Card data-testid="alerts-widget-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load alerts.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

@@ -1,6 +1,7 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PieChart as PieChartIcon, Lock, AlertCircle } from "lucide-react";
+import { PieChart as PieChartIcon, Lock, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -78,7 +79,7 @@ export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps
   if (merged.projectId) params.set("projectId", merged.projectId);
   if (merged.groupByDivision) params.set("groupByDivision", "true");
 
-  const { data, isLoading, isError } = useQuery<CostCodeResponse>({
+  const { data, isLoading, isError, refetch} = useQuery<CostCodeResponse>({
     queryKey: [`/api/dashboard/cost-code-breakdown?${params.toString()}`],
     refetchInterval: 300000,
     enabled: hasPermission,
@@ -116,9 +117,13 @@ export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps
   if (isError) {
     return (
       <Card data-testid="cost-code-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load cost code data.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

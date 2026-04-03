@@ -1,6 +1,7 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { HeartPulse, CheckCircle2, AlertCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { HeartPulse, CheckCircle2, AlertCircle, TrendingUp, TrendingDown, Minus , RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -53,7 +54,7 @@ function TrendIcon({ direction }: { direction: string | null | undefined }) {
 export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
   const cfg: ProjectHealthSummaryConfig = { ...DEFAULT_PROJECT_HEALTH_CONFIG, ...(config as Partial<ProjectHealthSummaryConfig>) };
 
-  const { data, isLoading, isError } = useQuery<ProjectHealthEntry[]>({
+  const { data, isLoading, isError, refetch} = useQuery<ProjectHealthEntry[]>({
     queryKey: ["/api/project-health/overview"],
     refetchInterval: 300000,
   });
@@ -93,9 +94,13 @@ export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
   if (isError) {
     return (
       <Card data-testid="project-health-summary-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load project health data.</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

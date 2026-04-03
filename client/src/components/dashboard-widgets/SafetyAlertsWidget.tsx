@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, AlertTriangle, CheckCircle2, AlertCircle, MessageSquare, ClipboardList, FileWarning } from "lucide-react";
+import { ShieldCheck, AlertTriangle, CheckCircle2, AlertCircle, MessageSquare, ClipboardList, FileWarning , RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -54,7 +55,7 @@ function getDaysOverdueColor(days: number): string {
 export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
   const cfg: SafetyAlertsConfig = { ...DEFAULT_SAFETY_ALERTS_CONFIG, ...(config as Partial<SafetyAlertsConfig>) };
 
-  const { data, isLoading, isError } = useQuery<SafetySummaryData>({
+  const { data, isLoading, isError, refetch: refetchSafety } = useQuery<SafetySummaryData>({
     queryKey: ["/api/dashboard/safety-summary", cfg.filterByProject || ""],
     queryFn: async () => {
       const url = cfg.filterByProject
@@ -67,17 +68,17 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
     refetchInterval: 300000,
   });
 
-  const { data: talksSummary } = useQuery<ToolboxTalksSummary>({
+  const { data: talksSummary, refetch: refetchTalks } = useQuery<ToolboxTalksSummary>({
     queryKey: ["/api/toolbox-talks/summary"],
     refetchInterval: 300000,
   });
 
-  const { data: checklistsSummary } = useQuery<ChecklistsSummary>({
+  const { data: checklistsSummary, refetch: refetchChecklists } = useQuery<ChecklistsSummary>({
     queryKey: ["/api/safety-checklists/summary"],
     refetchInterval: 300000,
   });
 
-  const { data: oshaSummary } = useQuery<OshaSummary>({
+  const { data: oshaSummary, refetch: refetchOsha } = useQuery<OshaSummary>({
     queryKey: ["/api/osha-incidents/summary"],
     refetchInterval: 300000,
   });
@@ -111,9 +112,13 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
   if (isError) {
     return (
       <Card data-testid="safety-alerts-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load safety data.</p>
+              <Button variant="outline" size="sm" onClick={() => { refetchSafety(); refetchTalks(); refetchChecklists(); refetchOsha(); }} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

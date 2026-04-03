@@ -1,7 +1,8 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { HelpCircle, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { HelpCircle, Clock, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -33,7 +34,7 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
     ? `/api/rfi?status=UNDER_REVIEW&projectId=${encodeURIComponent(cfg.projectId)}`
     : "/api/rfi?status=UNDER_REVIEW";
 
-  const { data: submittedRfis, isLoading: submittedLoading, isError: submittedError } = useQuery<RFIItem[]>({
+  const { data: submittedRfis, isLoading: submittedLoading, isError: submittedError, refetch: refetchSubmitted } = useQuery<RFIItem[]>({
     queryKey: ["/api/rfi", { status: "SUBMITTED", projectId: cfg.projectId }],
     queryFn: async () => {
       const res = await fetch(submittedUrl, { credentials: "include" });
@@ -43,7 +44,7 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
     refetchInterval: 300000,
   });
 
-  const { data: underReviewRfis, isLoading: underReviewLoading, isError: underReviewError } = useQuery<RFIItem[]>({
+  const { data: underReviewRfis, isLoading: underReviewLoading, isError: underReviewError, refetch: refetchUnderReview } = useQuery<RFIItem[]>({
     queryKey: ["/api/rfi", { status: "UNDER_REVIEW", projectId: cfg.projectId }],
     queryFn: async () => {
       const res = await fetch(underReviewUrl, { credentials: "include" });
@@ -82,9 +83,13 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
   if (isError) {
     return (
       <Card data-testid="rfi-status-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+        <CardContent className="flex flex-col items-center justify-center py-6 text-center gap-2">
           <AlertCircle className="w-6 h-6 text-destructive mb-2" />
           <p className="text-sm text-muted-foreground">Failed to load RFIs.</p>
+              <Button variant="outline" size="sm" onClick={() => { refetchSubmitted(); refetchUnderReview(); }} data-testid="button-retry-widget">
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry
+              </Button>
         </CardContent>
       </Card>
     );

@@ -66,10 +66,13 @@ export interface WidgetComponentProps {
 
 export type WidgetComponent = (props: WidgetComponentProps) => JSX.Element;
 
+export type WidgetCategory = "Financial" | "Operational" | "Workforce" | "Communication" | "AI" | "General";
+
 export interface WidgetDefinition {
   type: string;
   label: string;
   description: string;
+  category: WidgetCategory;
   icon: LucideIcon;
   component: WidgetComponent;
   defaultW: number;
@@ -82,6 +85,14 @@ export interface WidgetDefinition {
   roleGate?: string;
   featurePerm?: FeaturePermissionKey;
   hasSettings?: boolean;
+  queryKeys?: string[];
+}
+
+export function getSizeLabel(defaultW: number): string {
+  if (defaultW >= 12) return "Full width";
+  if (defaultW >= 6) return "Half width";
+  if (defaultW >= 4) return "Third width";
+  return "Compact";
 }
 
 function WrappedWeatherWidget(_props: WidgetComponentProps) {
@@ -117,6 +128,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     type: "QUICK_STATS",
     label: "Quick Stats",
     description: "Key metrics at a glance - projects, bids, messages, events",
+    category: "General",
     icon: BarChart3,
     component: QuickStatsWidgetWrapper,
     defaultW: 12,
@@ -127,11 +139,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 4,
     singleton: true,
     hasSettings: true,
+    queryKeys: ["/api/conversations", "/api/calendar/my-events"],
   },
   {
     type: "KPI_SUMMARY",
     label: "KPI Summary Card",
     description: "Configurable KPI metric with trend comparison - labor cost, revenue, margin, and more",
+    category: "Financial",
     icon: TrendingUp,
     component: KPISummaryWidgetWrapper,
     defaultW: 6,
@@ -142,11 +156,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 6,
     singleton: false,
     hasSettings: true,
+    queryKeys: ["/api/dashboard/kpi"],
   },
   {
     type: "TREND_CHART",
     label: "Trend Chart",
     description: "Line or bar chart showing metrics over time — labor cost, revenue, bid win rate, overtime, cash flow",
+    category: "Financial",
     icon: LineChart,
     component: TrendChartWidgetWrapper,
     defaultW: 12,
@@ -157,11 +173,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: false,
     hasSettings: true,
+    queryKeys: ["/api/dashboard/trend"],
   },
   {
     type: "DATA_LIST",
     label: "Data List",
     description: "Filtered, sorted list of projects, organizations, time entries, pay runs, subcontracts, or change orders",
+    category: "General",
     icon: List,
     component: ListWidgetWrapper,
     defaultW: 6,
@@ -172,11 +190,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 12,
     singleton: false,
     hasSettings: true,
+    queryKeys: ["/api/dashboard/list"],
   },
   {
     type: "ALERTS",
     label: "Alerts",
     description: "Dynamic alerts for insurance expiry, budget overruns, unapproved time, late payments, and low margins",
+    category: "Operational",
     icon: AlertTriangle,
     component: AlertsWidget,
     defaultW: 6,
@@ -187,11 +207,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 12,
     singleton: false,
     hasSettings: false,
+    queryKeys: ["/api/dashboard/alerts"],
   },
   {
     type: "WORKFORCE_SNAPSHOT",
     label: "Workforce Snapshot",
     description: "Today's workforce metrics — active workers, overtime %, labor cost, and absent workers",
+    category: "Workforce",
     icon: HardHat,
     component: WorkforceSnapshotWidget,
     defaultW: 6,
@@ -203,11 +225,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     featurePerm: "canManagePayroll",
     hasSettings: false,
+    queryKeys: ["/api/dashboard/workforce-snapshot"],
   },
   {
     type: "CASH_POSITION",
     label: "Cash Position",
     description: "Financial snapshot — accounts receivable, payable, payroll liability, and net cash flow",
+    category: "Financial",
     icon: Landmark,
     component: CashPositionWidget,
     defaultW: 6,
@@ -219,11 +243,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     featurePerm: "canAccessFinancials",
     hasSettings: false,
+    queryKeys: ["/api/dashboard/cash-position"],
   },
   {
     type: "SOV_PROGRESS",
     label: "SOV Progress",
     description: "Schedule of Values progress — % billed vs % complete, labor cost vs SOV, and retainage held",
+    category: "Financial",
     icon: ClipboardList,
     component: SOVProgressWidget,
     defaultW: 6,
@@ -235,11 +261,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     featurePerm: "canAccessFinancials",
     hasSettings: false,
+    queryKeys: ["/api/dashboard/sov-progress"],
   },
   {
     type: "BID_PIPELINE",
     label: "Bid Pipeline",
     description: "Active bids, pipeline value, win rate, and estimated labor exposure",
+    category: "Operational",
     icon: Briefcase,
     component: BidPipelineWidget,
     defaultW: 6,
@@ -250,11 +278,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 6,
     singleton: false,
     hasSettings: false,
+    queryKeys: ["/api/dashboard/bid-pipeline"],
   },
   {
     type: "COST_CODE_BREAKDOWN",
     label: "Cost Code Breakdown",
     description: "Labor by cost code (pie chart) or budget vs actual comparison (bar chart)",
+    category: "Financial",
     icon: PieChart,
     component: CostCodeBreakdownWidgetWrapper,
     defaultW: 6,
@@ -266,11 +296,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     featurePerm: "canAccessFinancials",
     hasSettings: true,
+    queryKeys: ["/api/dashboard/cost-code-breakdown"],
   },
   {
     type: "SCHEDULE_IMPACT",
     label: "Schedule Impact",
     description: "Labor allocation next 7 days, project manpower forecast, and overbooking conflicts",
+    category: "Operational",
     icon: CalendarDays,
     component: ScheduleImpactWidget,
     defaultW: 6,
@@ -281,11 +313,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 8,
     singleton: false,
     hasSettings: false,
+    queryKeys: ["/api/dashboard/schedule-impact"],
   },
   {
     type: "WEATHER",
     label: "Weather Forecast",
     description: "Current weather and 7-day forecast for your location",
+    category: "General",
     icon: CloudSun,
     component: WrappedWeatherWidget,
     defaultW: 12,
@@ -300,6 +334,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     type: "AI_INSIGHTS",
     label: "AI Insights",
     description: "AI-generated insights for scheduling, costs, and project health",
+    category: "AI",
     icon: Sparkles,
     component: WrappedAIInsightsWidget,
     defaultW: 12,
@@ -311,11 +346,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: true,
     roleGate: "management",
     featurePerm: "canUseAiFeatures",
+    queryKeys: ["/api/ai-insights"],
   },
   {
     type: "MESSAGES",
     label: "Messages",
     description: "Recent conversations and unread message count",
+    category: "Communication",
     icon: MessageSquare,
     component: MessagesWidget,
     defaultW: 4,
@@ -325,11 +362,14 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 10,
     singleton: false,
+    queryKeys: ["/api/conversations"],
+    hasSettings: true,
   },
   {
     type: "NOTIFICATIONS",
     label: "Notifications",
     description: "Unread notifications and alerts",
+    category: "Communication",
     icon: Bell,
     component: NotificationsWidget,
     defaultW: 4,
@@ -339,11 +379,14 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 10,
     singleton: false,
+    queryKeys: ["/api/notifications"],
+    hasSettings: true,
   },
   {
     type: "CALENDAR_EVENTS",
     label: "Calendar Events",
     description: "Upcoming events and schedule",
+    category: "General",
     icon: Calendar,
     component: CalendarWidget,
     defaultW: 4,
@@ -353,11 +396,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 10,
     singleton: false,
+    queryKeys: ["/api/calendar/my-events"],
   },
   {
     type: "AI_TASKS",
     label: "AI Tasks",
     description: "Pending AI-generated tasks and action items",
+    category: "AI",
     icon: ClipboardList,
     component: AITasksWidget,
     defaultW: 4,
@@ -368,11 +413,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 8,
     singleton: true,
     featurePerm: "canUseAiFeatures",
+    queryKeys: ["/api/ai/tasks"],
   },
   {
     type: "OUTSTANDING_ITEMS",
     label: "Outstanding Items",
     description: "Pending change orders, time-off requests, and delays",
+    category: "Operational",
     icon: AlertCircle,
     component: OutstandingItemsWidget,
     defaultW: 4,
@@ -382,13 +429,16 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 10,
     singleton: true,
+    hasSettings: true,
     roleGate: "management",
     featurePerm: "canAccessFinancials",
+    queryKeys: ["/api/dashboard/stats", "/api/projects"],
   },
   {
     type: "ACTIVE_PROJECTS",
     label: "Active Projects",
     description: "List of currently active projects",
+    category: "Operational",
     icon: Briefcase,
     component: ActiveProjectsWidget,
     defaultW: 4,
@@ -398,11 +448,14 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 10,
     singleton: false,
+    hasSettings: true,
+    queryKeys: ["/api/projects"],
   },
   {
     type: "ACTIVE_BIDS",
     label: "Active Bids",
     description: "Current bid pipeline and due dates",
+    category: "Operational",
     icon: FileText,
     component: ActiveBidsWidget,
     defaultW: 4,
@@ -412,12 +465,15 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 10,
     singleton: false,
+    hasSettings: true,
     roleGate: "management",
+    queryKeys: ["/api/bids"],
   },
   {
     type: "CREW_OVERVIEW",
     label: "Crew Overview",
     description: "Crew assignments and scheduling summary",
+    category: "Workforce",
     icon: Users,
     component: CrewOverviewWidget,
     defaultW: 4,
@@ -428,11 +484,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 8,
     singleton: true,
     roleGate: "superintendent",
+    queryKeys: ["/api/crew-assignments", "/api/crews"],
   },
   {
     type: "PROJECT_ASSIGNMENTS",
     label: "Project Assignments",
     description: "New project assignment notifications",
+    category: "Operational",
     icon: HardHat,
     component: ProjectAssignmentsWidget,
     defaultW: 12,
@@ -442,11 +500,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 6,
     singleton: true,
+    queryKeys: ["/api/notifications"],
   },
   {
     type: "QUICK_ACTIONS",
     label: "Quick Actions",
     description: "Role-specific shortcut buttons for common tasks",
+    category: "General",
     icon: Zap,
     component: QuickActionsWidget,
     defaultW: 12,
@@ -461,6 +521,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     type: "LABOR_UTILIZATION",
     label: "Labor Utilization",
     description: "Today's workforce utilization %, billable hours ratio, active workers, and 7-day sparkline",
+    category: "Workforce",
     icon: Activity,
     component: LaborUtilizationWidget,
     defaultW: 6,
@@ -472,11 +533,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     featurePerm: "canManagePayroll",
     hasSettings: true,
+    queryKeys: ["/api/dashboard/labor-utilization"],
   },
   {
     type: "PROJECT_HEALTH_SUMMARY",
     label: "Project Health Summary",
     description: "Health score distribution (healthy / at-risk / critical) across all active projects",
+    category: "Operational",
     icon: HeartPulse,
     component: ProjectHealthSummaryWidget,
     defaultW: 6,
@@ -488,11 +551,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     roleGate: "management",
     hasSettings: true,
+    queryKeys: ["/api/project-health/overview"],
   },
   {
     type: "RFI_STATUS",
     label: "RFI Status",
     description: "Open RFIs awaiting response — count, oldest first, with age indicator",
+    category: "Operational",
     icon: HelpCircle,
     component: RFIStatusWidget,
     defaultW: 6,
@@ -504,11 +569,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     roleGate: "management",
     hasSettings: true,
+    queryKeys: ["/api/rfi"],
   },
   {
     type: "CHANGE_ORDERS_PENDING",
     label: "Change Orders Pending",
     description: "Change orders awaiting approval — count, total value, and days pending",
+    category: "Financial",
     icon: FileEdit,
     component: ChangeOrdersPendingWidget,
     defaultW: 6,
@@ -520,11 +587,13 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     featurePerm: "canAccessFinancials",
     hasSettings: true,
+    queryKeys: ["/api/dashboard/change-orders-pending"],
   },
   {
     type: "SAFETY_ALERTS",
     label: "Safety Alerts",
     description: "Safety training completion rate, overdue assignments, and upcoming due dates",
+    category: "Workforce",
     icon: ShieldCheck,
     component: SafetyAlertsWidget,
     defaultW: 6,
@@ -536,6 +605,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     singleton: false,
     roleGate: "management",
     hasSettings: true,
+    queryKeys: ["/api/dashboard/safety-summary", "/api/toolbox-talks/summary", "/api/safety-checklists/summary", "/api/osha-incidents/summary"],
   },
 ];
 
