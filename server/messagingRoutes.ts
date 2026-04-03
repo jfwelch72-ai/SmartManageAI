@@ -3066,8 +3066,15 @@ const messagingSetup = (async () => {
         turnTier = "custom";
         console.log(`[ICE Config] Tier: custom | Metered unavailable, using ${envTurnServers.length} env-configured TURN server(s)`);
       } else {
-        turnTier = "none";
-        console.log("[ICE Config] Tier: none | No TURN servers available, returning STUN-only config");
+        const openRelayServers = [
+          { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+          { urls: "turns:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+        ];
+        iceServers.push(...openRelayServers);
+        turnTier = "custom";
+        console.log("[ICE Config] Tier: open_relay | Using free public TURN servers (openrelay.metered.ca)");
       }
 
       const hasTurn = iceServers.some(s => {
