@@ -446,7 +446,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
-import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping, emitCallStarted, emitCallJoined, emitCallLeft, emitCallEnded, emitWebRTCSignal } from "./messagingEvents";
+import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping, emitCallStarted, emitCallJoined, emitCallLeft, emitCallEnded } from "./messagingEvents";
 import { fileTypeFromBuffer } from "file-type";
 
 const router = Router();
@@ -2744,36 +2744,54 @@ const messagingSetup = (async () => {
     }
   });
 
-  router.post("/api/calls/:callId/signal", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/calls/:callId/livekit-token", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
-      const { targetUserId, signal } = req.body;
-
-      if (!targetUserId || !signal) return res.status(400).json({ error: "targetUserId and signal required" });
 
       const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
       if (!call) return res.status(404).json({ error: "Call not found" });
+      if (call.status === "ENDED") return res.status(400).json({ error: "Call has ended" });
 
       const isConvParticipant = await ensureParticipant(call.conversationId, userId);
-      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant of this conversation" });
 
-      const isTargetParticipant = await ensureParticipant(call.conversationId, targetUserId);
-      if (!isTargetParticipant) return res.status(403).json({ error: "Target user not a participant" });
+      const livekitApiKey = process.env.LIVEKIT_API_KEY;
+      const livekitApiSecret = process.env.LIVEKIT_API_SECRET;
+      const livekitUrl = process.env.LIVEKIT_URL;
 
-      const orgId = await getConversationOrgId(call.conversationId);
-      if (!orgId) {
-        return res.json({ success: true, delivered: false, reason: "org_not_found" });
+      if (!livekitApiKey || !livekitApiSecret || !livekitUrl) {
+        return res.status(500).json({ error: "LiveKit is not configured on the server" });
       }
 
-      const delivered = emitWebRTCSignal(orgId, targetUserId, { callId, fromUserId: userId, signal });
-      if (!delivered) {
-        return res.json({ success: true, delivered: false, reason: "peer_unreachable" });
-      }
+      const { AccessToken } = await import("livekit-server-sdk");
+      const roomName = `call-${callId}`;
+      const userInfo = await db.select({
+        firstName: users.firstName,
+        lastName: users.lastName,
+      }).from(users).where(eq(users.id, userId)).limit(1);
 
-      res.json({ success: true, delivered: true });
+      const participantName = userInfo.length > 0
+        ? `${userInfo[0].firstName} ${userInfo[0].lastName}`
+        : userId;
+
+      const at = new AccessToken(livekitApiKey, livekitApiSecret, {
+        identity: userId,
+        name: participantName,
+        ttl: "4h",
+      });
+      at.addGrant({
+        roomJoin: true,
+        room: roomName,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      });
+
+      const token = await at.toJwt();
+      res.json({ token, url: livekitUrl });
     } catch (error) {
-      logError("WebRTC signal error:", {}, error instanceof Error ? error : new Error(String(error)));
+      logError("LiveKit token error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2941,143 +2959,6 @@ const messagingSetup = (async () => {
       res.json(callsWithDetails);
     } catch (error) {
       logError("Get call history error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  console.log(`[ICE Config] Startup: METERED_API_KEY is ${process.env.METERED_API_KEY ? "configured" : "NOT configured"}`);
-
-  let meteredCredentialsCache: {
-    credentials: Array<{ urls: string | string[]; username?: string; credential?: string }>;
-    fetchedAt: number;
-  } | null = null;
-  const METERED_CACHE_TTL_MS = 10 * 60 * 1000;
-  const METERED_STALE_TTL_MS = 60 * 60 * 1000;
-  const METERED_RETRY_DELAYS = [500, 1500, 3000];
-
-  async function fetchMeteredCredentialsWithRetry(): Promise<{ credentials: Array<{ urls: string | string[]; username?: string; credential?: string }>; stale: boolean }> {
-    if (meteredCredentialsCache && Date.now() - meteredCredentialsCache.fetchedAt < METERED_CACHE_TTL_MS) {
-      return { credentials: meteredCredentialsCache.credentials, stale: false };
-    }
-
-    const apiKey = process.env.METERED_API_KEY;
-    if (!apiKey) {
-      console.warn("[ICE Config] METERED_API_KEY not set, cannot fetch Metered TURN credentials");
-      return { credentials: [], stale: false };
-    }
-
-    for (let attempt = 0; attempt <= METERED_RETRY_DELAYS.length; attempt++) {
-      let timeout: ReturnType<typeof setTimeout> | null = null;
-      try {
-        if (attempt > 0) {
-          const delay = METERED_RETRY_DELAYS[attempt - 1];
-          console.log(`[ICE Config] Retrying Metered credential fetch (attempt ${attempt + 1}) after ${delay}ms`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-
-        const controller = new AbortController();
-        timeout = setTimeout(() => controller.abort(), 5000);
-        const response = await fetch(
-          `https://smartmanageai.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`,
-          { signal: controller.signal }
-        );
-
-        if (!response.ok) {
-          console.error(`[ICE Config] Metered API returned status ${response.status} (attempt ${attempt + 1})`);
-          continue;
-        }
-
-        const credentials = await response.json() as Array<{ urls: string | string[]; username?: string; credential?: string }>;
-        meteredCredentialsCache = { credentials, fetchedAt: Date.now() };
-        console.log(`[ICE Config] Fetched ${credentials.length} Metered TURN credential(s) on attempt ${attempt + 1}`);
-        return { credentials, stale: false };
-      } catch (err) {
-        console.error(`[ICE Config] Metered credential fetch failed (attempt ${attempt + 1}):`, err instanceof Error ? err.message : err);
-      } finally {
-        if (timeout) clearTimeout(timeout);
-      }
-    }
-
-    if (meteredCredentialsCache && Date.now() - meteredCredentialsCache.fetchedAt < METERED_STALE_TTL_MS) {
-      console.warn("[ICE Config] All Metered fetch attempts failed, using stale cached credentials");
-      return { credentials: meteredCredentialsCache.credentials, stale: true };
-    }
-
-    console.error("[ICE Config] All Metered fetch attempts failed and no usable cache available");
-    return { credentials: [], stale: false };
-  }
-
-  router.get("/api/calls/ice-config", requireAuth, async (_req: AuthRequest, res) => {
-    try {
-      const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [
-        { urls: "stun:stun.relay.metered.ca:80" },
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-      ];
-
-      const turnUrl = process.env.TURN_SERVER_URL;
-      const turnUser = process.env.TURN_SERVER_USERNAME;
-      const turnCred = process.env.TURN_SERVER_CREDENTIAL;
-
-      let turnTier: "custom" | "metered" | "metered_stale" | "none" = "none";
-
-      const envTurnServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [];
-
-      const secondaryRelayUrl = process.env.SECONDARY_TURN_SERVER_URL;
-      const secondaryRelayUser = process.env.SECONDARY_TURN_SERVER_USERNAME;
-      const secondaryRelayCred = process.env.SECONDARY_TURN_SERVER_CREDENTIAL;
-      if (secondaryRelayUrl && secondaryRelayUser && secondaryRelayCred) {
-        const secondaryUrls = secondaryRelayUrl.split(",").map(u => u.trim()).filter(Boolean);
-        for (const url of secondaryUrls) {
-          envTurnServers.push({ urls: url, username: secondaryRelayUser, credential: secondaryRelayCred });
-        }
-        console.log(`[ICE Config] Added ${secondaryUrls.length} secondary TURN server(s) from env`);
-      }
-
-      const tertiaryRelayUrl = process.env.TERTIARY_TURN_SERVER_URL;
-      const tertiaryRelayUser = process.env.TERTIARY_TURN_SERVER_USERNAME;
-      const tertiaryRelayCred = process.env.TERTIARY_TURN_SERVER_CREDENTIAL;
-      if (tertiaryRelayUrl && tertiaryRelayUser && tertiaryRelayCred) {
-        const tertiaryUrls = tertiaryRelayUrl.split(",").map(u => u.trim()).filter(Boolean);
-        for (const url of tertiaryUrls) {
-          envTurnServers.push({ urls: url, username: tertiaryRelayUser, credential: tertiaryRelayCred });
-        }
-        console.log(`[ICE Config] Added ${tertiaryUrls.length} tertiary TURN server(s) from env`);
-      }
-
-      const { credentials: meteredServers, stale } = await fetchMeteredCredentialsWithRetry();
-      if (meteredServers.length > 0 && !stale) {
-        iceServers.push(...meteredServers);
-        turnTier = "metered";
-        console.log(`[ICE Config] Tier: metered | ${meteredServers.length} Metered TURN server(s) (default provider)`);
-      } else if (meteredServers.length > 0 && stale) {
-        iceServers.push(...meteredServers);
-        turnTier = "metered_stale";
-        console.log(`[ICE Config] Tier: metered_stale | ${meteredServers.length} stale Metered TURN server(s) (fresh fetch failed)`);
-      } else if (turnUrl && turnUser && turnCred) {
-        const turnUrls = turnUrl.split(",").map(u => u.trim()).filter(Boolean);
-        for (const url of turnUrls) {
-          iceServers.push({ urls: url, username: turnUser, credential: turnCred });
-        }
-        turnTier = "custom";
-        console.log(`[ICE Config] Tier: custom | Metered unavailable, using configured TURN server(s): ${turnUrls.join(", ")}`);
-      } else if (envTurnServers.length > 0) {
-        iceServers.push(...envTurnServers);
-        turnTier = "custom";
-        console.log(`[ICE Config] Tier: custom | Metered unavailable, using ${envTurnServers.length} env-configured TURN server(s)`);
-      } else {
-        turnTier = "none";
-        console.log("[ICE Config] Tier: none | No TURN servers available, STUN-only mode");
-      }
-
-      const hasTurn = iceServers.some(s => {
-        const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
-        return urls.some(u => u.startsWith("turn:") || u.startsWith("turns:"));
-      });
-
-      res.json({ iceServers, hasTurn, turnTier, stunOnly: !hasTurn });
-    } catch (error) {
-      logError("ICE config error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });

@@ -19,7 +19,7 @@ export function useGlobalCallEvents(): GlobalCallState {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
   const [conversationName, setConversationName] = useState("");
-  const { startGlobalCall, updateActiveCall, dispatchSignal, activeCall } = useGlobalVideoCall();
+  const { startGlobalCall, updateActiveCall, activeCall } = useGlobalVideoCall();
   const { addListener, removeListener, isConnected } = useGlobalSSE();
   const userRef = useRef(user);
   const activeCallRef = useRef(activeCall);
@@ -151,47 +151,18 @@ export function useGlobalCallEvents(): GlobalCallState {
       }
     };
 
-    const handleWebRTCSignal = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data);
-        console.log(`[CallEvents] SSE webrtc_signal received: type=${data.signal?.type}, from=${data.fromUserId}, callId=${data.callId}`);
-        if (data.signal && (data.signal.type === "offer" || data.signal.type === "answer") && data.fromUserId) {
-          updateActiveCall(prev => {
-            if (!prev || prev.id !== data.callId) return prev;
-            const alreadyIn = prev.participants.some((p: { userId: string }) => p.userId === data.fromUserId);
-            if (alreadyIn) return prev;
-            console.log(`[CallEvents] Auto-adding peer ${data.fromUserId} from webrtc_signal (${data.signal.type})`);
-            const newParticipant = {
-              id: `signal-${data.fromUserId}`,
-              callId: data.callId,
-              userId: data.fromUserId,
-              joinedAt: new Date().toISOString(),
-              leftAt: null,
-              user: { id: data.fromUserId, firstName: "Participant", lastName: "", role: "" },
-            };
-            return { ...prev, participants: [...prev.participants, newParticipant] };
-          });
-        }
-        dispatchSignal(data);
-      } catch (err) {
-        console.error("[CallEvents] Error handling webrtc_signal event:", err);
-      }
-    };
-
     addListener("call_started", handleCallStarted);
     addListener("call_ended", handleCallEnded);
     addListener("call_joined", handleCallJoined);
     addListener("call_left", handleCallLeft);
-    addListener("webrtc_signal", handleWebRTCSignal);
 
     return () => {
       removeListener("call_started", handleCallStarted);
       removeListener("call_ended", handleCallEnded);
       removeListener("call_joined", handleCallJoined);
       removeListener("call_left", handleCallLeft);
-      removeListener("webrtc_signal", handleWebRTCSignal);
     };
-  }, [user, isConnected, addListener, removeListener, updateActiveCall, dispatchSignal]);
+  }, [user, isConnected, addListener, removeListener, updateActiveCall]);
 
   useEffect(() => {
     if (incomingCall) {

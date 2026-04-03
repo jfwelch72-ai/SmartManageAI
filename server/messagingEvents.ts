@@ -197,15 +197,3 @@ export function emitCallEnded(
   }
 }
 
-export function emitWebRTCSignal(
-  orgId: string,
-  targetUserId: string,
-  signal: unknown,
-): boolean {
-  const clients = getClientsForUser(targetUserId).filter(c => c.orgId === orgId);
-  if (clients.length === 0) return false;
-  for (const client of clients) {
-    sendEvent(client, "webrtc_signal", signal);
-  }
-  return true;
-}
