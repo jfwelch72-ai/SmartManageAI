@@ -239,7 +239,7 @@ export function Sidebar({
                     <Plus className="w-3.5 h-3.5" />
                   </button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="z-[10000]" overlayClassName="z-[10000]">
                   <DialogHeader>
                     <DialogTitle>Create a Channel</DialogTitle>
                     <DialogDescription>Channels are where your team communicates around topics.</DialogDescription>
@@ -477,7 +477,7 @@ export function Sidebar({
                     <Plus className="w-3.5 h-3.5" />
                   </button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="z-[10000]" overlayClassName="z-[10000]">
                   <DialogHeader>
                     <DialogTitle>Start a Direct Message</DialogTitle>
                     <DialogDescription>Select a team member to start a private conversation</DialogDescription>
