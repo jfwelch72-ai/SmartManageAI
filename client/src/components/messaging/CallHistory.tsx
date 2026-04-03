@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Video, Clock, Users, FileText, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Video, Clock, Users, FileText, ChevronDown, ChevronUp, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -23,28 +23,40 @@ function formatDuration(seconds: number | null) {
 }
 
 function NotesViewer({ notes }: { notes: VideoCallNoteData[] }) {
-  const [expanded, setExpanded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
-  if (notes.length === 0) return <span className="text-xs text-muted-foreground">No notes</span>;
+  if (notes.length === 0) return <span className="text-xs text-muted-foreground italic">No notes taken</span>;
+
+  const hasAiSummary = notes.some(n => n.content.includes("--- AI Summary ---"));
 
   return (
     <div>
       <button
-        onClick={() => setExpanded(!expanded)}
-        className="text-xs text-primary hover:underline flex items-center gap-1"
+        onClick={() => setCollapsed(!collapsed)}
+        className="text-xs font-medium text-primary hover:underline flex items-center gap-1 mb-1"
         data-testid="button-toggle-call-notes"
       >
-        <FileText className="w-3 h-3" />
-        {notes.length} note(s)
-        {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        <FileText className="w-3.5 h-3.5" />
+        {notes.length} note{notes.length !== 1 ? "s" : ""}
+        {hasAiSummary && <Sparkles className="w-3 h-3 text-amber-500" />}
+        {collapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
       </button>
-      {expanded && (
-        <div className="mt-2 space-y-2">
-          {notes.map(note => (
-            <div key={note.id} className="text-xs bg-muted rounded p-2 whitespace-pre-wrap">
-              {note.content || "(empty)"}
-            </div>
-          ))}
+      {!collapsed && (
+        <div className="mt-1 space-y-2">
+          {notes.map(note => {
+            const isAi = note.content.includes("--- AI Summary ---");
+            return (
+              <div key={note.id} className="text-xs bg-muted/70 border rounded-md p-2.5 whitespace-pre-wrap leading-relaxed" data-testid={`call-note-${note.id}`}>
+                {isAi && (
+                  <div className="flex items-center gap-1 mb-1.5 text-amber-600 dark:text-amber-400">
+                    <Sparkles className="w-3 h-3" />
+                    <span className="text-[10px] font-medium">Contains AI Summary</span>
+                  </div>
+                )}
+                {note.content || "(empty)"}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

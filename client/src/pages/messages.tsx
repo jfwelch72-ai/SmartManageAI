@@ -20,6 +20,7 @@ import { Sidebar } from "@/components/messaging/Sidebar";
 import { MessageList } from "@/components/messaging/MessageList";
 import { OngoingCallBanner } from "@/components/messaging/OngoingCallBanner";
 import { CallHistory } from "@/components/messaging/CallHistory";
+import { AllCallNotes } from "@/components/messaging/AllCallNotes";
 import {
   type User,
   type Channel,
@@ -93,6 +94,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   // ── Video call state ──
   const [activeCallConversationIds, setActiveCallConversationIds] = useState<Set<string>>(new Set());
   const [startingCall, setStartingCall] = useState(false);
+  const [showCallNotes, setShowCallNotes] = useState(false);
 
   const [conversationActiveCalls, setConversationActiveCalls] = useState<Record<string, VideoCallData>>({});
 
@@ -706,8 +708,8 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 conversations={conversations}
                 allChannels={allChannels}
                 companyConversation={companyConversation}
-                selectedConversationId={selectedConversationId}
-                onSelectConversation={setSelectedConversationId}
+                selectedConversationId={showCallNotes ? null : selectedConversationId}
+                onSelectConversation={(id) => { setShowCallNotes(false); setSelectedConversationId(id); }}
                 availableUsers={availableUsers}
                 activeCallConversationIds={activeCallConversationIds}
                 onJoinCall={(conversationId) => {
@@ -715,18 +717,20 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                   if (callData) handleJoinOngoingCall(callData);
                 }}
                 compact={compact}
+                showCallNotes={showCallNotes}
+                onToggleCallNotes={() => { setShowCallNotes(!showCallNotes); if (!showCallNotes) setSelectedConversationId(null); }}
               />
             )}
 
             {/* Mobile sidebar (full-width when no conversation selected) */}
-            {showConversationList && isMobileView && !selectedConversationId && (
+            {showConversationList && isMobileView && !selectedConversationId && !showCallNotes && (
               <Sidebar
                 currentUserId={user?.id}
                 conversations={conversations}
                 allChannels={allChannels}
                 companyConversation={companyConversation}
                 selectedConversationId={selectedConversationId}
-                onSelectConversation={setSelectedConversationId}
+                onSelectConversation={(id) => { setShowCallNotes(false); setSelectedConversationId(id); }}
                 availableUsers={availableUsers}
                 activeCallConversationIds={activeCallConversationIds}
                 onJoinCall={(conversationId) => {
@@ -734,11 +738,24 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                   if (callData) handleJoinOngoingCall(callData);
                 }}
                 compact={compact}
+                showCallNotes={showCallNotes}
+                onToggleCallNotes={() => setShowCallNotes(true)}
+              />
+            )}
+
+            {/* ── CALL NOTES VIEW ── */}
+            {showCallNotes && (
+              <AllCallNotes
+                onBack={() => setShowCallNotes(false)}
+                onNavigateToConversation={(convId) => {
+                  setShowCallNotes(false);
+                  setSelectedConversationId(convId);
+                }}
               />
             )}
 
             {/* ── MESSAGES PANEL ── */}
-            {showMessages && selectedConversation && (
+            {showMessages && selectedConversation && !showCallNotes && (
               <div className={cn("flex flex-col flex-1 min-w-0", isMobileView ? "w-full" : "")}>
                 {/* Header */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0">
@@ -943,7 +960,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
             )}
 
             {/* ── Empty state when nothing selected on desktop ── */}
-            {!selectedConversation && !isMobileView && (
+            {!selectedConversation && !isMobileView && !showCallNotes && (
               <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
                 <MessageSquare className="w-12 h-12 text-muted-foreground/50 mb-4" />
                 <h2 className="text-lg font-semibold mb-2">Select a Channel or Conversation</h2>

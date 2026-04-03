@@ -3087,6 +3087,138 @@ const messagingSetup = (async () => {
       res.status(500).json({ error: "Internal server error" });
     }
   });
+  router.get("/api/call-notes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = await getOrgIdForFilter(userId);
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const search = (req.query.search as string || "").trim();
+      const dateFrom = req.query.dateFrom as string | undefined;
+      const dateTo = req.query.dateTo as string | undefined;
+      const offset = (page - 1) * limit;
+
+      const conditions: SQL[] = [
+        eq(videoCalls.status, "ENDED"),
+      ];
+
+      if (orgId) {
+        conditions.push(eq(conversations.organizationId, orgId));
+      }
+
+      const userConvIds = await db
+        .select({ conversationId: conversationParticipants.conversationId })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.userId, userId));
+      const convIdSet = userConvIds.map(r => r.conversationId);
+
+      if (convIdSet.length === 0) {
+        return res.json({ calls: [], total: 0, page, limit });
+      }
+
+      conditions.push(inArray(videoCalls.conversationId, convIdSet));
+
+      if (dateFrom) {
+        conditions.push(sql`${videoCalls.startedAt} >= ${new Date(dateFrom)}`);
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setDate(toDate.getDate() + 1);
+        conditions.push(sql`${videoCalls.startedAt} < ${toDate}`);
+      }
+
+      if (search) {
+        conditions.push(
+          sql`EXISTS (
+            SELECT 1 FROM video_call_notes vcn
+            WHERE vcn.call_id = ${videoCalls.id}
+            AND LOWER(vcn.content) LIKE ${'%' + search.toLowerCase() + '%'}
+          )`
+        );
+      }
+
+      const whereClause = and(...conditions);
+
+      const countResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(videoCalls)
+        .innerJoin(conversations, eq(videoCalls.conversationId, conversations.id))
+        .where(whereClause);
+      const total = countResult[0]?.count ?? 0;
+
+      const calls = await db
+        .select({
+          id: videoCalls.id,
+          conversationId: videoCalls.conversationId,
+          initiatorId: videoCalls.initiatorId,
+          status: videoCalls.status,
+          startedAt: videoCalls.startedAt,
+          endedAt: videoCalls.endedAt,
+          conversationName: conversations.name,
+          conversationType: conversations.type,
+        })
+        .from(videoCalls)
+        .innerJoin(conversations, eq(videoCalls.conversationId, conversations.id))
+        .where(whereClause)
+        .orderBy(desc(videoCalls.startedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const callsWithDetails = await Promise.all(calls.map(async (call) => {
+        const participantsData = await db
+          .select({
+            participant: videoCallParticipants,
+            user: { id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role },
+          })
+          .from(videoCallParticipants)
+          .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+          .where(eq(videoCallParticipants.callId, call.id));
+
+        const initiatorData = await db.select({
+          id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role,
+        }).from(users).where(eq(users.id, call.initiatorId)).limit(1);
+
+        const notes = await db.select().from(videoCallNotes)
+          .where(eq(videoCallNotes.callId, call.id))
+          .orderBy(desc(videoCallNotes.updatedAt));
+
+        const noteAuthors = notes.length > 0
+          ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+            .from(users)
+            .where(inArray(users.id, notes.map(n => n.authorId)))
+          : [];
+        const authorMap = Object.fromEntries(noteAuthors.map(a => [a.id, a]));
+
+        const durationSeconds = call.endedAt
+          ? Math.round((new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime()) / 1000)
+          : null;
+
+        return {
+          id: call.id,
+          conversationId: call.conversationId,
+          conversationName: call.conversationName,
+          conversationType: call.conversationType,
+          initiatorId: call.initiatorId,
+          status: call.status,
+          startedAt: call.startedAt,
+          endedAt: call.endedAt,
+          durationSeconds,
+          initiator: initiatorData[0],
+          participants: participantsData.map(p => ({ ...p.participant, user: p.user })),
+          notes: notes.map(n => ({
+            ...n,
+            author: authorMap[n.authorId] || null,
+          })),
+        };
+      }));
+
+      res.json({ calls: callsWithDetails, total, page, limit });
+    } catch (error) {
+      logError("Get all call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
 })();
 
 export { messagingSetup };

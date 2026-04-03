@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video } from "lucide-react";
+import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, FileText } from "lucide-react";
 import { SidebarSection } from "./SidebarSection";
 import { getInitials, type User, type Channel, type Conversation, type ChannelRow } from "./types";
 import { cn } from "@/lib/utils";
@@ -78,6 +78,8 @@ interface SidebarProps {
   activeCallConversationIds?: Set<string>;
   onJoinCall?: (conversationId: string) => void;
   compact?: boolean;
+  showCallNotes?: boolean;
+  onToggleCallNotes?: () => void;
 }
 
 export function Sidebar({
@@ -91,6 +93,8 @@ export function Sidebar({
   activeCallConversationIds = new Set(),
   onJoinCall,
   compact = false,
+  showCallNotes = false,
+  onToggleCallNotes,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [newChannelOpen, setNewChannelOpen] = useState(false);
@@ -442,6 +446,23 @@ export function Sidebar({
                 );
               })}
             </SidebarSection>
+          )}
+
+          {onToggleCallNotes && (
+            <>
+              <Separator className="my-1" />
+              <button
+                onClick={onToggleCallNotes}
+                className={cn(
+                  "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-accent transition-colors",
+                  showCallNotes && "bg-accent font-medium"
+                )}
+                data-testid="button-call-notes-view"
+              >
+                <FileText className="w-4 h-4 text-primary shrink-0" />
+                <span className="flex-1 truncate">Call Notes</span>
+              </button>
+            </>
           )}
 
           <Separator className="my-1" />
