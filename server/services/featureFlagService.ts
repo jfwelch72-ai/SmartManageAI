@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { organizations, FEATURE_FLAG_KEYS, type FeatureFlagKey } from "@shared/schema";
+import { organizations, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
 import { eq, or, isNull, sql } from "drizzle-orm";
 import {logInfo, logWarn } from "../utils/logger";
 
@@ -63,12 +63,14 @@ export async function setAllFeatureFlags(orgId: string, flags: FeatureFlagsMap):
 
 /**
  * Idempotent backfill: ensures every organization that has no feature flags
- * stored (NULL or empty string) gets the full all-enabled flag set.
+ * stored (NULL or empty string) gets the full flag set with most flags enabled.
+ * Flags in DISABLED_BY_DEFAULT_FLAGS (e.g. BIM_VIEWER) remain off.
  * Safe to call on every dev server startup — only touches rows with missing data.
  */
 export async function backfillMissingFeatureFlags(): Promise<void> {
+  const disabledSet = new Set<string>(DISABLED_BY_DEFAULT_FLAGS);
   const allFlagsOn = JSON.stringify(
-    Object.fromEntries(FEATURE_FLAG_KEYS.map(k => [k, true]))
+    Object.fromEntries(FEATURE_FLAG_KEYS.map(k => [k, !disabledSet.has(k)]))
   );
 
   const result = await db

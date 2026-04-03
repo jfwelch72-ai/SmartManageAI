@@ -12,12 +12,14 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck, Download, Trash2, Gavel, HardHat, Eye } from "lucide-react";
+import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck, Download, Trash2, Gavel, HardHat, Eye, ToggleRight } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { FeatureFlagKey } from "@shared/schema";
 
 interface Organization {
   id: string;
@@ -199,6 +201,30 @@ export default function PlatformOrganizationDetail() {
   const { data: orgFinancials, isLoading: financialsLoading } = useQuery<any>({
     queryKey: ["/api/platform/organizations", orgId, "financials"],
     enabled: !!orgId,
+  });
+
+  const { data: orgFeatureFlags, isLoading: featureFlagsLoading } = useQuery<{
+    flags: Partial<Record<FeatureFlagKey, boolean>>;
+    keys: FeatureFlagKey[];
+  }>({
+    queryKey: ["/api/feature-flags", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/feature-flags/${orgId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch feature flags");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
+  const toggleFlagMutation = useMutation({
+    mutationFn: async ({ flag, enabled }: { flag: FeatureFlagKey; enabled: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/feature-flags/${orgId}`, { flag, enabled });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId] });
+    },
+    onError: (e: Error) => toast({ title: "Failed to update feature flag", description: e.message, variant: "destructive" }),
   });
 
   const exportMutation = useMutation({
@@ -603,6 +629,10 @@ export default function PlatformOrganizationDetail() {
           <TabsTrigger value="financials" data-testid="tab-org-financials">
             <DollarSign className="h-4 w-4 mr-2" />
             Financials
+          </TabsTrigger>
+          <TabsTrigger value="feature-flags" data-testid="tab-org-feature-flags">
+            <ToggleRight className="h-4 w-4 mr-2" />
+            Feature Flags
           </TabsTrigger>
         </TabsList>
         </div>
@@ -1118,6 +1148,44 @@ export default function PlatformOrganizationDetail() {
                   </div>
                 ) : (
                   <p className="text-muted-foreground text-center py-8">Failed to load financial data</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="feature-flags">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ToggleRight className="h-5 w-5" />
+                  Feature Flags
+                </CardTitle>
+                <CardDescription>Toggle feature flags for this organization</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {featureFlagsLoading ? <Skeleton className="h-40 w-full" /> : orgFeatureFlags ? (
+                  <div className="space-y-4">
+                    {orgFeatureFlags.keys.map((key) => {
+                      const enabled = orgFeatureFlags.flags[key] ?? false;
+                      const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                      return (
+                        <div key={key} className="flex items-center justify-between p-4 rounded-lg border" data-testid={`feature-flag-row-${key}`}>
+                          <div>
+                            <div className="font-medium" data-testid={`feature-flag-label-${key}`}>{label}</div>
+                            <div className="text-sm text-muted-foreground">{key}</div>
+                          </div>
+                          <Switch
+                            checked={enabled}
+                            onCheckedChange={(checked) => toggleFlagMutation.mutate({ flag: key, enabled: checked })}
+                            disabled={toggleFlagMutation.isPending}
+                            data-testid={`feature-flag-toggle-${key}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">Failed to load feature flags</p>
                 )}
               </CardContent>
             </Card>

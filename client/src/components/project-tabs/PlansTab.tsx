@@ -34,6 +34,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import type { TakeoffSheet } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import LibraryPanel from "@/components/LibraryPanel";
 import DrawingSetsPanel from "@/components/DrawingSetsPanel";
 import ReportsPage from "@/pages/reports";
@@ -89,6 +90,8 @@ interface SheetStatusData {
 export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { isEnabled: isFeatureFlagEnabled } = useFeatureFlags();
+  const bimEnabled = isFeatureFlagEnabled("BIM_VIEWER");
 
   const { data: documents = [], isLoading: documentsLoading } = useProjectDocuments(projectCode);
   const { data: sheets = [] } = useQuery<TakeoffSheet[]>({
@@ -412,11 +415,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
 
     const allSubFolderDocIds = new Set(Object.values(subFolderDocs).flat());
 
-    return groups.map((group) => ({
-      ...group,
-      docs: filtered.filter((d: any) => group.types.includes(d.type) && !allSubFolderDocIds.has(d.id)),
-    }));
-  }, [documents, searchQuery, groups, subFolderDocs]);
+    return groups
+      .filter((group) => bimEnabled || group.name !== "BIM Models")
+      .map((group) => ({
+        ...group,
+        docs: filtered.filter((d: any) => group.types.includes(d.type) && !allSubFolderDocIds.has(d.id)),
+      }));
+  }, [documents, searchQuery, groups, subFolderDocs, bimEnabled]);
 
   const toggleGroup = (name: string) => {
     setGroups((prev) =>
@@ -875,7 +880,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                         <SelectItem value="PLANS">Plans</SelectItem>
                         <SelectItem value="SPECS">Specs</SelectItem>
                         <SelectItem value="TAKEOFF">Takeoff</SelectItem>
-                        <SelectItem value="BIM">BIM</SelectItem>
+                        {bimEnabled && <SelectItem value="BIM">BIM</SelectItem>}
                         <SelectItem value="OTHER">Other</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1118,7 +1123,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                           Import to Takeoff
                                         </DropdownMenuItem>
                                       )}
-                                      {isIfcFile(doc.fileName) && (
+                                      {bimEnabled && isIfcFile(doc.fileName) && (
                                         <DropdownMenuItem
                                           onClick={() => handleExtractBimQuantities(doc)}
                                           data-testid={`button-extract-bim-${doc.id}`}
@@ -1551,7 +1556,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
               </Button>
             )}
 
-            {splitViewMode ? (
+            {bimEnabled && splitViewMode ? (
               <>
                 <div className="w-1/2 flex flex-col border-r min-w-0" data-testid="split-view-takeoff">
                   <div className="flex items-center gap-2 px-2 py-1 border-b bg-muted/30 shrink-0">
@@ -1641,7 +1646,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 if (!doc) return <TakeoffWorkspace projectId={project.id} projectCode={project.code} />;
                 const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
                 const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
-                const isBim = doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc");
+                const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
 
                 if (isBim && previewUrlData?.url) {
                   return (
@@ -1764,7 +1769,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
               })()
             ) : (
               <div className="flex flex-col h-full">
-                {bimDocuments.length > 0 && (
+                {bimEnabled && bimDocuments.length > 0 && (
                   <div className="flex items-center justify-end px-2 py-1 border-b bg-muted/20 shrink-0">
                     <Button
                       size="sm"

@@ -28,9 +28,14 @@ export const FEATURE_FLAG_KEYS = [
   "HIRING_AI_SCORING",
   "HIRING_AUTO_TASKS",
   "HIRING_ATS_SYNC",
+  "BIM_VIEWER",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
+
+export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
+  "BIM_VIEWER",
+] as const;
 
 export const aiSettings = pgTable("ai_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

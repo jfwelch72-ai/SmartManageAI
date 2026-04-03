@@ -1,13 +1,24 @@
 import { logError } from "./utils/logger";
-import { Router } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { bimExtractions, takeoffMeasurements, takeoffSheets, bids, projects } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
+import { isFeatureEnabled } from "./services/featureFlagService";
 
 const router = Router();
+
+async function requireBimFeature(req: AuthRequest, res: Response, next: NextFunction) {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  if (user.role === "SUPER_ADMIN") return next();
+  if (!user.organizationId) return res.status(403).json({ error: "Organization required" });
+  const enabled = await isFeatureEnabled(user.organizationId, "BIM_VIEWER");
+  if (!enabled) return res.status(403).json({ error: "BIM Viewer is not enabled for this organization" });
+  return next();
+}
 
 const extractionDataSchema = z.object({
   documentId: z.string().optional(),
@@ -15,7 +26,7 @@ const extractionDataSchema = z.object({
   extractedData: z.string(),
 });
 
-router.post("/api/bids/:id/bim-extractions", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const bidId = req.params.id;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -45,7 +56,7 @@ router.post("/api/bids/:id/bim-extractions", requireAuth, async (req: AuthReques
   }
 });
 
-router.get("/api/bids/:id/bim-extractions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const bidId = req.params.id;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -83,7 +94,7 @@ const importSchema = z.object({
   sheetName: z.string().optional(),
 });
 
-router.post("/api/bids/:id/bim-extractions/import", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/bids/:id/bim-extractions/import", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const bidId = req.params.id;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -188,7 +199,7 @@ router.post("/api/bids/:id/bim-extractions/import", requireAuth, async (req: Aut
   }
 });
 
-router.patch("/api/bids/:bidId/bim-extractions/:id/mappings", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/bids/:bidId/bim-extractions/:id/mappings", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const { bidId, id } = req.params;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -228,7 +239,7 @@ router.patch("/api/bids/:bidId/bim-extractions/:id/mappings", requireAuth, async
   }
 });
 
-router.post("/api/projects/:id/bim-extractions", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const projectId = req.params.id;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -258,7 +269,7 @@ router.post("/api/projects/:id/bim-extractions", requireAuth, async (req: AuthRe
   }
 });
 
-router.get("/api/projects/:id/bim-extractions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const projectId = req.params.id;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -281,7 +292,7 @@ router.get("/api/projects/:id/bim-extractions", requireAuth, async (req: AuthReq
   }
 });
 
-router.post("/api/projects/:id/bim-extractions/import", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:id/bim-extractions/import", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const projectId = req.params.id;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -386,7 +397,7 @@ router.post("/api/projects/:id/bim-extractions/import", requireAuth, async (req:
   }
 });
 
-router.patch("/api/projects/:projectId/bim-extractions/:id/mappings", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:projectId/bim-extractions/:id/mappings", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
   try {
     const { projectId, id } = req.params;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
