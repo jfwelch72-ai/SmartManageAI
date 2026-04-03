@@ -143,28 +143,96 @@ export function MessageBubble({
                 </span>
               </div>
             )}
-            {message.voiceUrl ? (
-              <div className={cn(isOwn && "flex justify-end")}>
-                <VoicePlayer url={message.voiceUrl} durationSeconds={message.voiceDurationSeconds} />
-              </div>
-            ) : (
-              <div className={cn(
-                "rounded-2xl px-3 py-2 text-sm inline-block text-left",
-                isFieldNote
-                  ? "bg-amber-50 text-amber-950 border border-amber-200 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-800"
-                  : isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
-              )}>
-                {renderContent(message.content)}
-                {message.attachmentUrl && (
-                  <AttachmentRenderer
-                    url={message.attachmentUrl}
-                    name={message.attachmentName}
-                    type={message.attachmentType}
-                    size={message.attachmentSize}
-                  />
+            <div className={cn("flex items-center gap-1", isOwn && "flex-row-reverse")}>
+              {message.voiceUrl ? (
+                <div>
+                  <VoicePlayer url={message.voiceUrl} durationSeconds={message.voiceDurationSeconds} />
+                </div>
+              ) : (
+                <div className={cn(
+                  "rounded-2xl px-3 py-2 text-sm inline-block text-left",
+                  isFieldNote
+                    ? "bg-amber-50 text-amber-950 border border-amber-200 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-800"
+                    : isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
+                  {renderContent(message.content)}
+                  {message.attachmentUrl && (
+                    <AttachmentRenderer
+                      url={message.attachmentUrl}
+                      name={message.attachmentName}
+                      type={message.attachmentType}
+                      size={message.attachmentSize}
+                    />
+                  )}
+                </div>
+              )}
+              {/* ── Hover action toolbar ── */}
+              <div className="shrink-0 relative">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                  {!message.isDeleted && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onPickerToggle(message.id)}
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          data-testid={`button-react-${message.id}`}
+                        >
+                          <Smile className="w-3.5 h-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>React</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {canEdit && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => { onEditStart(message.id, message.content); }}
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          data-testid={`button-edit-${message.id}`}
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Edit</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {canDelete && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => onDelete(message.id)}
+                          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                          data-testid={`button-delete-${message.id}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Delete</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+                {isPickerOpen && (
+                  <div className={cn(
+                    "absolute top-full mt-1 bg-popover border rounded-xl shadow-lg p-1.5 flex gap-1 z-50",
+                    isOwn ? "right-0" : "left-0"
+                  )}
+                    data-testid={`emoji-picker-${message.id}`}
+                  >
+                    {CURATED_EMOJIS.map(emoji => (
+                      <button
+                        key={emoji}
+                        onClick={() => onReact(message.id, emoji)}
+                        className="text-xl hover:scale-125 transition-transform p-0.5 rounded"
+                        data-testid={`button-emoji-${message.id}-${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-            )}
+            </div>
             {/* Edited label with timestamp */}
             {message.isEdited && (
               <p className="text-[10px] text-muted-foreground mt-0.5 px-1">
@@ -226,81 +294,6 @@ export function MessageBubble({
         )}
       </div>
 
-      {/* ── Hover action toolbar ── */}
-      {!isEditing && (
-        <div className={cn(
-          "self-start mt-1 shrink-0 relative",
-          isOwn ? "order-first" : ""
-        )}>
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-            {/* React button */}
-            {!message.isDeleted && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => onPickerToggle(message.id)}
-                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    data-testid={`button-react-${message.id}`}
-                  >
-                    <Smile className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>React</TooltipContent>
-              </Tooltip>
-            )}
-            {/* Edit button */}
-            {canEdit && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => { onEditStart(message.id, message.content); }}
-                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    data-testid={`button-edit-${message.id}`}
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Edit</TooltipContent>
-              </Tooltip>
-            )}
-            {/* Delete button */}
-            {canDelete && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => onDelete(message.id)}
-                    className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                    data-testid={`button-delete-${message.id}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Delete</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-          {/* Emoji picker popover */}
-          {isPickerOpen && (
-            <div className={cn(
-              "absolute top-full mt-1 bg-popover border rounded-xl shadow-lg p-1.5 flex gap-1 z-50",
-              isOwn ? "right-0" : "left-0"
-            )}
-              data-testid={`emoji-picker-${message.id}`}
-            >
-              {CURATED_EMOJIS.map(emoji => (
-                <button
-                  key={emoji}
-                  onClick={() => onReact(message.id, emoji)}
-                  className="text-xl hover:scale-125 transition-transform p-0.5 rounded"
-                  data-testid={`button-emoji-${message.id}-${emoji}`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
