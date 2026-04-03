@@ -7989,3 +7989,35 @@ export const announcementDismissals = pgTable("announcement_dismissals", {
   userIdx: index("announcement_dismissals_user_idx").on(table.userId),
 }));
 
+export const executiveDigests = pgTable("executive_digests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  executiveSummary: text("executive_summary").notNull(),
+  keyHighlights: json("key_highlights").notNull().$type<string[]>(),
+  sections: json("sections").notNull().$type<{
+    title: string;
+    icon: string;
+    summary: string;
+    bullets: string[];
+    sentiment: string;
+  }[]>(),
+  actionItems: json("action_items").notNull().$type<{
+    priority: string;
+    description: string;
+    dueBy?: string;
+  }[]>(),
+  kpiSnapshot: json("kpi_snapshot").notNull().$type<{
+    name: string;
+    current: number;
+    previous: number;
+    unit: string;
+    trend: string;
+  }[]>(),
+  generatedBy: varchar("generated_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => ({
+  orgPeriodIdx: index("executive_digests_org_period_idx").on(table.organizationId, table.period),
+  generatedAtIdx: index("executive_digests_generated_at_idx").on(table.generatedAt),
+}));
+

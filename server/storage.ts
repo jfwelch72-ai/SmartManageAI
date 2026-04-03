@@ -1,3 +1,34 @@
-// Storage interface is no longer needed as we're using the database directly
-// This file is kept for backwards compatibility but can be removed
+import { db } from "./db";
+import { executiveDigests } from "@shared/schema";
+import { eq, and, desc } from "drizzle-orm";
+
+export interface ExecutiveDigestInsert {
+  organizationId: string;
+  period: string;
+  executiveSummary: string;
+  keyHighlights: string[];
+  sections: { title: string; icon: string; summary: string; bullets: string[]; sentiment: string }[];
+  actionItems: { priority: string; description: string; dueBy?: string }[];
+  kpiSnapshot: { name: string; current: number; previous: number; unit: string; trend: string }[];
+  generatedBy: string;
+}
+
+export async function createExecutiveDigest(data: ExecutiveDigestInsert) {
+  const [saved] = await db
+    .insert(executiveDigests)
+    .values(data)
+    .returning();
+  return saved;
+}
+
+export async function getLatestExecutiveDigest(organizationId: string, period: string) {
+  const [digest] = await db
+    .select()
+    .from(executiveDigests)
+    .where(and(eq(executiveDigests.organizationId, organizationId), eq(executiveDigests.period, period)))
+    .orderBy(desc(executiveDigests.generatedAt))
+    .limit(1);
+  return digest || null;
+}
+
 export const storage = {};

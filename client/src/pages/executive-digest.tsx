@@ -24,7 +24,7 @@ interface DigestSection {
 }
 
 interface ExecutiveDigest {
-  id: number;
+  id: string;
   generatedAt: string;
   period: 'daily' | 'weekly' | 'monthly';
   executiveSummary: string;
