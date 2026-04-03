@@ -22,6 +22,8 @@ import {
   RoomEvent,
   type RemoteParticipant,
   type LocalParticipant,
+  type RemoteTrackPublication,
+  type LocalTrackPublication,
 } from "livekit-client";
 
 const PARTICIPANT_POLL_INTERVAL_MS = 3000;
@@ -124,6 +126,7 @@ function CallContent({
   const [showNotes, setShowNotes] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
+  const [latestScreenShareIdentity, setLatestScreenShareIdentity] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -191,11 +194,43 @@ function CallContent({
     const handleDisconnected = () => {
       console.log("[LiveKit] Room disconnected");
     };
+    const handleTrackPublished = (pub: RemoteTrackPublication, participant: RemoteParticipant) => {
+      if (pub.source === Track.Source.ScreenShare) {
+        setLatestScreenShareIdentity(participant.identity);
+      }
+    };
+    const handleTrackUnpublished = (pub: RemoteTrackPublication, participant: RemoteParticipant) => {
+      if (pub.source === Track.Source.ScreenShare) {
+        setLatestScreenShareIdentity(prev =>
+          prev === participant.identity ? null : prev
+        );
+      }
+    };
+    const handleLocalTrackPublished = (pub: LocalTrackPublication) => {
+      if (pub.source === Track.Source.ScreenShare) {
+        setLatestScreenShareIdentity(localParticipant.identity);
+      }
+    };
+    const handleLocalTrackUnpublished = (pub: LocalTrackPublication) => {
+      if (pub.source === Track.Source.ScreenShare) {
+        setLatestScreenShareIdentity(prev =>
+          prev === localParticipant.identity ? null : prev
+        );
+      }
+    };
     room.on(RoomEvent.Disconnected, handleDisconnected);
+    room.on(RoomEvent.TrackPublished, handleTrackPublished);
+    room.on(RoomEvent.TrackUnpublished, handleTrackUnpublished);
+    room.on(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
+    room.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
     return () => {
       room.off(RoomEvent.Disconnected, handleDisconnected);
+      room.off(RoomEvent.TrackPublished, handleTrackPublished);
+      room.off(RoomEvent.TrackUnpublished, handleTrackUnpublished);
+      room.off(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
+      room.off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
     };
-  }, [room]);
+  }, [room, localParticipant.identity]);
 
   const toggleMute = useCallback(async () => {
     await localParticipant.setMicrophoneEnabled(isMuted);
@@ -266,6 +301,30 @@ function CallContent({
       t.publication?.track
   );
 
+  const allScreenShareTracks = tracks.filter(
+    t => t.source === Track.Source.ScreenShare && t.publication?.track
+  );
+
+  const activeScreenShareTrack = allScreenShareTracks.length > 0
+    ? (latestScreenShareIdentity
+        ? allScreenShareTracks.find(t => t.participant?.identity === latestScreenShareIdentity)
+        : null
+      ) || allScreenShareTracks[allScreenShareTracks.length - 1]
+    : null;
+
+  const activeScreenShareParticipant = activeScreenShareTrack?.participant;
+  const isLocalScreenShareActive = activeScreenShareParticipant?.identity === localParticipant.identity;
+
+  const getScreenSharerName = () => {
+    if (!activeScreenShareParticipant) return "";
+    if (isLocalScreenShareActive) return "Your screen";
+    const matched = otherParticipants.find(p => p.userId === activeScreenShareParticipant.identity);
+    if (matched) return `${matched.user.firstName}'s screen`;
+    return `${activeScreenShareParticipant.identity}'s screen`;
+  };
+
+  const showLocalInSidebar = !!activeScreenShareTrack && !isLocalScreenShareActive;
+
   const localVideoTrack = localScreenTrack || localCameraTrack;
 
   return (
@@ -303,7 +362,13 @@ function CallContent({
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 p-4 flex flex-col lg:flex-row gap-3 min-h-0">
           <div className="flex-1 min-h-0 relative rounded-xl bg-gray-800 border border-gray-700 overflow-hidden flex items-center justify-center" data-testid="video-local-main">
-            {otherParticipants.length === 0 && remoteParticipants.length === 0 ? (
+            {activeScreenShareTrack ? (
+              <VideoTrack
+                trackRef={activeScreenShareTrack as Parameters<typeof VideoTrack>[0]["trackRef"]}
+                className="w-full h-full object-contain"
+                data-testid="video-screenshare-main"
+              />
+            ) : otherParticipants.length === 0 && remoteParticipants.length === 0 ? (
               <div className="text-center">
                 <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3">
                   <Users className="w-10 h-10 text-gray-500" />
@@ -326,13 +391,41 @@ function CallContent({
                 data-testid="video-local-feed"
               />
             )}
-            <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
-              You {isMuted && "(muted)"} {isScreenSharing && "(sharing)"}
+            <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white" data-testid="text-main-label">
+              {activeScreenShareTrack ? (
+                <span className="flex items-center gap-1">
+                  <MonitorUp className="w-3 h-3" />
+                  {getScreenSharerName()}
+                </span>
+              ) : (
+                <>You {isMuted && "(muted)"} {isScreenSharing && "(sharing)"}</>
+              )}
             </div>
           </div>
 
-          {(remoteParticipants.length > 0 || otherParticipants.length > 0) && (
+          {(remoteParticipants.length > 0 || otherParticipants.length > 0 || showLocalInSidebar) && (
             <div className="flex flex-row lg:flex-col gap-3 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto min-h-0 lg:w-56 shrink-0 max-h-32 lg:max-h-none" data-testid="remote-participants-panel">
+              {showLocalInSidebar && (
+                <div
+                  className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden aspect-video shrink-0 w-40 lg:w-auto"
+                  data-testid="video-local-sidebar"
+                >
+                  {(isVideoOff || !localCameraTrack?.publication?.track) ? (
+                    <Avatar className="h-12 w-12">
+                      <AvatarFallback className="text-lg bg-gray-700 text-gray-300">You</AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <VideoTrack
+                      trackRef={localCameraTrack}
+                      className="w-full h-full object-cover [transform:rotateY(180deg)]"
+                      data-testid="video-local-feed"
+                    />
+                  )}
+                  <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
+                    You {isMuted && "(muted)"}
+                  </div>
+                </div>
+              )}
               {remoteParticipants.length > 0 ? (
                 remoteParticipants.map(rp => (
                   <RemoteParticipantTile
@@ -340,6 +433,7 @@ function CallContent({
                     participant={rp}
                     callParticipants={otherParticipants}
                     tracks={tracks}
+                    isScreenShareActive={activeScreenShareTrack?.participant?.identity === rp.identity}
                   />
                 ))
               ) : (
@@ -429,10 +523,12 @@ function RemoteParticipantTile({
   participant,
   callParticipants,
   tracks,
+  isScreenShareActive,
 }: {
   participant: RemoteParticipant;
   callParticipants: { userId: string; user: { firstName: string; lastName: string } }[];
   tracks: { participant?: LocalParticipant | RemoteParticipant; source: Track.Source; publication?: { track?: unknown } }[];
+  isScreenShareActive?: boolean;
 }) {
   const matchedParticipant = callParticipants.find(p => p.userId === participant.identity);
   const displayName = matchedParticipant
@@ -457,7 +553,7 @@ function RemoteParticipantTile({
       t.publication?.track
   );
 
-  const activeVideoTrack = screenTrack || videoTrack;
+  const activeVideoTrack = isScreenShareActive ? videoTrack : (screenTrack || videoTrack);
   const isCameraOff = !participant.isCameraEnabled;
   const isMuted = !participant.isMicrophoneEnabled;
 
