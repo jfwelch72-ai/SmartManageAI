@@ -838,7 +838,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                           <span>{selectedConversation.participants.length} {selectedConversation.participants.length === 1 ? "member" : "members"}</span>
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent align="start" className="w-64 p-0" data-testid="popover-member-list">
+                      <PopoverContent align="start" className="w-64 p-0" style={{ zIndex: 10001 }} data-testid="popover-member-list">
                         <div className="px-3 py-2 border-b">
                           <h4 className="text-sm font-medium">Members ({selectedConversation.participants.length})</h4>
                         </div>
@@ -890,7 +890,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                           {startingCall ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Start video call</TooltipContent>
+                      <TooltipContent style={{ zIndex: 10001 }}>Start video call</TooltipContent>
                     </Tooltip>
                   </div>
                 </div>
