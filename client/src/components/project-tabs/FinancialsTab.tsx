@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DollarSign, BarChart3, TrendingUp, FileEdit, FileSpreadsheet, Receipt, CreditCard, Activity, PieChart, Search } from "lucide-react";
 import { FeaturePermissions, hasFinancialAccess } from "@/lib/rbac";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import BudgetTab from "./BudgetTab";
 import CostLedgerTab from "./CostLedgerTab";
 import CostExplorerTab from "./CostExplorerTab";
@@ -41,6 +42,9 @@ export default function FinancialsTab({
   activeSubTab,
   onSubTabChange,
 }: FinancialsTabProps) {
+  const { isEnabled } = useFeatureFlags();
+  const revenueRecEnabled = isEnabled("REVENUE_RECOGNITION");
+
   const subTabs: SubTabConfig[] = [
     {
       value: "live-financials",
@@ -100,7 +104,7 @@ export default function FinancialsTab({
       value: "revenue-wip",
       label: "Revenue & WIP",
       icon: PieChart,
-      visible: hasFinancialAccess(userRole),
+      visible: hasFinancialAccess(userRole) && revenueRecEnabled,
     },
   ];
 

@@ -14,6 +14,7 @@ import { EquipmentMetrics } from "@/components/cfo/EquipmentMetrics";
 import { CostForecastingSection } from "@/components/cfo/CostForecastingSection";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import type {
   ProjectProfitability,
   EquipmentMetricsData,
@@ -34,6 +35,9 @@ export default function CFODashboard() {
   const { toast } = useToast();
   const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
   const hasAiPermission = useFeaturePermission('canUseAiFeatures');
+
+  const { isEnabled } = useFeatureFlags();
+  const whatIfEnabled = isEnabled("WHATIF_SIMULATOR");
 
   const canAccessCFO = !!user && (
     user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPER_ADMIN" ||
@@ -252,10 +256,12 @@ export default function CFODashboard() {
               onProjectClick={handleProjectClick}
             />
 
-            <CostForecastingSection
-              formatCurrency={formatCurrency}
-              onProjectClick={handleProjectClick}
-            />
+            {whatIfEnabled && (
+              <CostForecastingSection
+                formatCurrency={formatCurrency}
+                onProjectClick={handleProjectClick}
+              />
+            )}
 
             <PortfolioRiskSummary formatCurrency={formatCurrency} />
 

@@ -1,17 +1,11 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { Loader2, Download, Camera, ArrowLeft, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { Loader2, Download, ArrowLeft, TrendingUp, TrendingDown } from "lucide-react";
 import { Link } from "wouter";
 
 interface WipProject {
@@ -49,22 +43,6 @@ interface WipReportData {
   } | null;
 }
 
-interface HistorySnapshot {
-  id: string;
-  projectId: string;
-  period: string;
-  snapshotDate: string;
-  contractValue: string;
-  adjustedContractValue: string;
-  costsToDate: string;
-  estimatedTotalCost: string;
-  percentComplete: string;
-  earnedRevenue: string;
-  billingsToDate: string;
-  overUnderBilling: string;
-  grossProfit: string;
-  grossProfitPercent: string;
-}
 
 function fmt(value: number | string): string {
   const num = typeof value === "string" ? parseFloat(value) : value;
@@ -80,75 +58,23 @@ function pct(value: number | string): string {
 }
 
 export default function WipReportPage() {
-  const { toast } = useToast();
-  const [activeView, setActiveView] = useState<"current" | "history">("current");
-  const [historyMonths, setHistoryMonths] = useState("12");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-
   const { data: report, isLoading } = useQuery<WipReportData>({
     queryKey: ["/api/revenue-recognition/wip-report"],
   });
 
-  const historyParams = new URLSearchParams({ months: historyMonths });
-  if (startDate) historyParams.set("startDate", startDate);
-  if (endDate) historyParams.set("endDate", endDate);
-
-  const { data: history = [], isLoading: historyLoading } = useQuery<HistorySnapshot[]>({
-    queryKey: ["/api/revenue-recognition/history", historyMonths, startDate, endDate],
-    queryFn: () => apiRequest("GET", `/api/revenue-recognition/history?${historyParams.toString()}`).then((r) => r.json()),
-  });
-
-  const snapshotMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/revenue-recognition/snapshot"),
-    onSuccess: (_, __, ___) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/revenue-recognition/history"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/revenue-recognition/wip-report"] });
-      toast({ title: "Monthly snapshot saved successfully" });
-    },
-    onError: () => toast({ title: "Failed to save snapshot", variant: "destructive" }),
-  });
-
   const handleExportCSV = () => {
-    const params = new URLSearchParams();
-    if (activeView === "history") {
-      params.set("mode", "history");
-      params.set("months", historyMonths);
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-    }
-    const qs = params.toString();
-    window.open(`/api/revenue-recognition/wip-report/csv${qs ? "?" + qs : ""}`, "_blank");
+    window.open(`/api/revenue-recognition/wip-report/csv`, "_blank");
   };
 
   const handleExportPDF = () => {
-    const params = new URLSearchParams();
-    if (activeView === "history") {
-      params.set("mode", "history");
-      params.set("months", historyMonths);
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
-    }
-    const qs = params.toString();
-    window.open(`/api/revenue-recognition/wip-report/pdf${qs ? "?" + qs : ""}`, "_blank");
+    window.open(`/api/revenue-recognition/wip-report/pdf`, "_blank");
   };
 
   const projects = report?.projects || [];
   const totals = report?.totals;
 
-  const projectLookup = projects.reduce<Record<string, { code: string; name: string }>>((acc, p) => {
-    acc[p.projectId] = { code: p.projectCode, name: p.projectName };
-    return acc;
-  }, {});
-
   const totalUnderbilled = projects.filter((p) => p.overUnderBilling > 0).reduce((s, p) => s + p.overUnderBilling, 0);
   const totalOverbilled = projects.filter((p) => p.overUnderBilling < 0).reduce((s, p) => s + Math.abs(p.overUnderBilling), 0);
-
-  const groupedHistory = history.reduce<Record<string, HistorySnapshot[]>>((acc, snap) => {
-    if (!acc[snap.period]) acc[snap.period] = [];
-    acc[snap.period].push(snap);
-    return acc;
-  }, {});
 
   return (
     <div className="flex flex-col gap-6 p-6" data-testid="wip-report-page">
@@ -165,16 +91,6 @@ export default function WipReportPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => snapshotMutation.mutate()}
-            disabled={snapshotMutation.isPending}
-            data-testid="button-save-snapshot"
-          >
-            {snapshotMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Camera className="mr-1.5 h-4 w-4" />}
-            Save Snapshot
-          </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV} data-testid="button-export-csv">
             <Download className="mr-1.5 h-4 w-4" /> CSV
           </Button>
@@ -240,31 +156,11 @@ export default function WipReportPage() {
         </Card>
       </div>
 
-      <div className="flex gap-2">
-        <Button
-          variant={activeView === "current" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveView("current")}
-          data-testid="button-view-current"
-        >
-          Current WIP
-        </Button>
-        <Button
-          variant={activeView === "history" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveView("history")}
-          data-testid="button-view-history"
-        >
-          Historical Snapshots
-        </Button>
-      </div>
-
-      {activeView === "current" && (
-        <Card data-testid="card-wip-schedule">
-          <CardHeader>
-            <CardTitle className="text-base">WIP Schedule — All Active Projects</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card data-testid="card-wip-schedule">
+        <CardHeader>
+          <CardTitle className="text-base">WIP Schedule — All Active Projects</CardTitle>
+        </CardHeader>
+        <CardContent>
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -297,7 +193,7 @@ export default function WipReportPage() {
                       return (
                         <TableRow key={p.projectId} data-testid={`row-project-${p.projectCode}`}>
                           <TableCell className="sticky left-0 bg-background z-10">
-                            <Link href={`/projects/${p.projectCode}?tab=revenue-wip`}>
+                            <Link href={`/projects/${p.projectCode}`}>
                               <span className="font-medium text-primary hover:underline cursor-pointer" data-testid={`link-project-${p.projectCode}`}>
                                 {p.projectCode}
                               </span>
@@ -354,135 +250,9 @@ export default function WipReportPage() {
                 </Table>
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
+        </CardContent>
+      </Card>
 
-      {activeView === "history" && (
-        <Card data-testid="card-history">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Historical WIP Snapshots</CardTitle>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <label className="text-xs text-muted-foreground">From</label>
-                  <input
-                    type="month"
-                    value={startDate ? startDate.substring(0, 7) : ""}
-                    onChange={(e) => setStartDate(e.target.value ? e.target.value + "-01" : "")}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                    data-testid="input-start-date"
-                  />
-                </div>
-                <div className="flex items-center gap-1">
-                  <label className="text-xs text-muted-foreground">To</label>
-                  <input
-                    type="month"
-                    value={endDate ? endDate.substring(0, 7) : ""}
-                    onChange={(e) => setEndDate(e.target.value ? e.target.value + "-01" : "")}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                    data-testid="input-end-date"
-                  />
-                </div>
-                <Select value={historyMonths} onValueChange={setHistoryMonths}>
-                  <SelectTrigger className="w-[140px]" data-testid="select-months">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="6">Last 6 months</SelectItem>
-                    <SelectItem value="12">Last 12 months</SelectItem>
-                    <SelectItem value="24">Last 24 months</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {historyLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : history.length === 0 ? (
-              <div className="text-center py-8">
-                <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground" data-testid="text-no-history">
-                  No snapshots yet. Click "Save Snapshot" to capture the current WIP position.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {Object.entries(groupedHistory)
-                  .sort(([a], [b]) => b.localeCompare(a))
-                  .map(([period, snaps]) => {
-                    const periodTotals = snaps.reduce(
-                      (acc, s) => ({
-                        earnedRevenue: acc.earnedRevenue + parseFloat(s.earnedRevenue),
-                        billingsToDate: acc.billingsToDate + parseFloat(s.billingsToDate),
-                        overUnderBilling: acc.overUnderBilling + parseFloat(s.overUnderBilling),
-                        grossProfit: acc.grossProfit + parseFloat(s.grossProfit),
-                      }),
-                      { earnedRevenue: 0, billingsToDate: 0, overUnderBilling: 0, grossProfit: 0 },
-                    );
-
-                    return (
-                      <div key={period} data-testid={`history-period-${period}`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold text-sm">{period}</h4>
-                          <div className="flex gap-4 text-xs text-muted-foreground">
-                            <span>Earned: {fmt(periodTotals.earnedRevenue)}</span>
-                            <span className={periodTotals.overUnderBilling > 0 ? "text-amber-600" : periodTotals.overUnderBilling < 0 ? "text-blue-600" : ""}>
-                              Net: {fmt(periodTotals.overUnderBilling)}
-                            </span>
-                            <span className={periodTotals.grossProfit >= 0 ? "text-green-600" : "text-red-600"}>
-                              GP: {fmt(periodTotals.grossProfit)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Project</TableHead>
-                                <TableHead className="text-right">Adj. Contract</TableHead>
-                                <TableHead className="text-right">% Complete</TableHead>
-                                <TableHead className="text-right">Earned Rev.</TableHead>
-                                <TableHead className="text-right">Billings</TableHead>
-                                <TableHead className="text-right">Over/(Under)</TableHead>
-                                <TableHead className="text-right">GP</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {snaps.map((snap) => {
-                                const ou = parseFloat(snap.overUnderBilling);
-                                return (
-                                  <TableRow key={snap.id}>
-                                    <TableCell className="text-sm font-medium" title={projectLookup[snap.projectId]?.name || snap.projectId}>
-                                      {projectLookup[snap.projectId]?.code || snap.projectId.substring(0, 8)}
-                                    </TableCell>
-                                    <TableCell className="text-right font-mono text-sm">{fmt(snap.adjustedContractValue)}</TableCell>
-                                    <TableCell className="text-right font-mono text-sm">{pct(snap.percentComplete)}</TableCell>
-                                    <TableCell className="text-right font-mono text-sm">{fmt(snap.earnedRevenue)}</TableCell>
-                                    <TableCell className="text-right font-mono text-sm">{fmt(snap.billingsToDate)}</TableCell>
-                                    <TableCell className={`text-right font-mono text-sm ${ou > 0 ? "text-amber-600" : ou < 0 ? "text-blue-600" : ""}`}>
-                                      {fmt(snap.overUnderBilling)}
-                                    </TableCell>
-                                    <TableCell className={`text-right font-mono text-sm ${parseFloat(snap.grossProfit) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                                      {fmt(snap.grossProfit)}
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

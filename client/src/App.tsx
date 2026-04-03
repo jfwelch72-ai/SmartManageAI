@@ -8,6 +8,8 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { DashboardCustomizationProvider, useDashboardCustomization, type FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
 import { RoutePermissions, hasManagementAccess, hasCrmAccess } from "@/lib/rbac";
+import { useFeatureFlags as useFeatureFlagsHook } from "@/hooks/use-feature-flags";
+import type { FeatureFlagKey } from "@shared/schema";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
@@ -148,6 +150,22 @@ const ClauseLibraryPage = lazy(() => import("@/pages/clause-library"));
 const ProgressBillingPage = lazy(() => import("@/pages/progress-billing"));
 const WipReportPage = lazy(() => import("@/pages/wip-report"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+
+function FeatureFlagGate({ flag, children }: { flag: FeatureFlagKey; children: React.ReactNode }) {
+  const { isEnabled } = useFeatureFlagsHook();
+  if (!isEnabled(flag)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4 p-8">
+          <h2 className="text-2xl font-bold text-muted-foreground">Feature Not Available</h2>
+          <p className="text-muted-foreground">This feature is currently disabled.</p>
+          <Link href="/dashboard" className="inline-block px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90" data-testid="link-return-dashboard-flag">Return to Dashboard</Link>
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function ProtectedRoute({ 
   component: Component,
@@ -316,7 +334,7 @@ function Router() {
       {/* Executive Intelligence routes */}
       <Route path="/company-health" component={() => <ProtectedRoute component={CompanyHealthPage} permission={RoutePermissions.CFO} />} />
       <Route path="/executive-digest" component={() => <ProtectedRoute component={ExecutiveDigestPage} permission={RoutePermissions.CFO} />} />
-      <Route path="/what-if-simulator" component={() => <ProtectedRoute component={WhatIfSimulatorPage} permission={RoutePermissions.CFO} />} />
+      <Route path="/what-if-simulator" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="WHATIF_SIMULATOR"><WhatIfSimulatorPage /></FeatureFlagGate>} permission={RoutePermissions.CFO} />} />
 
       {/* Bid Network routes */}
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} featurePerm="canAccessBidNetwork" />} />
