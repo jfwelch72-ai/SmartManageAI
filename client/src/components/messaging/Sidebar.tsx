@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, FileText } from "lucide-react";
+import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, FileText, X } from "lucide-react";
 import { SidebarSection } from "./SidebarSection";
 import { getInitials, type Channel, type Conversation, type ChannelRow } from "./types";
 import { cn } from "@/lib/utils";
@@ -80,6 +80,7 @@ interface SidebarProps {
   showCallNotes?: boolean;
   onToggleCallNotes?: () => void;
   onNewDm?: () => void;
+  onRemoveDm?: (conversationId: string) => void;
 }
 
 export function Sidebar({
@@ -95,6 +96,7 @@ export function Sidebar({
   showCallNotes = false,
   onToggleCallNotes,
   onNewDm,
+  onRemoveDm,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [newChannelOpen, setNewChannelOpen] = useState(false);
@@ -471,13 +473,16 @@ export function Sidebar({
             }).map(c => {
               const other = c.participants.find(p => p.userId !== currentUserId);
               return (
-                <button
+                <div
                   key={c.id}
-                  onClick={() => onSelectConversation(c.id)}
+                  role="button"
+                  tabIndex={0}
                   className={cn(
-                    "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-accent transition-colors",
+                    "group/dm w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-accent focus-visible:bg-accent transition-colors cursor-pointer",
                     selectedConversationId === c.id && "bg-accent font-medium"
                   )}
+                  onClick={() => onSelectConversation(c.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectConversation(c.id); } }}
                   data-testid={`button-dm-${c.id}`}
                 >
                   <Avatar className="h-5 w-5 shrink-0">
@@ -507,7 +512,28 @@ export function Sidebar({
                   {c.unreadCount > 0 && (
                     <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
                   )}
-                </button>
+                  {onRemoveDm && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const otherName = other ? `${other.user.firstName} ${other.user.lastName}` : "this person";
+                            if (window.confirm(`Remove conversation with ${otherName}? This will only remove it from your sidebar.`)) {
+                              onRemoveDm(c.id);
+                            }
+                          }}
+                          className="shrink-0 p-0.5 rounded opacity-0 group-hover/dm:opacity-100 group-focus-within/dm:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+                          data-testid={`button-remove-dm-${c.id}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Remove conversation</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
               );
             })}
           </SidebarSection>

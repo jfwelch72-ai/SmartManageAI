@@ -618,6 +618,21 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     },
   });
 
+  const removeDmMutation = useMutation({
+    mutationFn: async (conversationId: string) => {
+      await apiRequest("DELETE", `/api/conversations/${conversationId}/leave`);
+    },
+    onSuccess: (_, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      if (selectedConversationId === conversationId) {
+        setSelectedConversationId(null);
+      }
+    },
+    onError: () => {
+      toast({ title: "Failed to remove conversation", variant: "destructive" });
+    },
+  });
+
   // ── Load earlier messages ──
   const loadMoreMessages = async () => {
     if (!selectedConversationId || isLoadingMore || !hasMore) return;
@@ -924,6 +939,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 showCallNotes={showCallNotes}
                 onToggleCallNotes={() => { setShowCallNotes(!showCallNotes); if (!showCallNotes) { setSelectedConversationId(null); setShowNewDm(false); } }}
                 onNewDm={() => { setPreviousConversationId(selectedConversationId); setShowNewDm(true); setSelectedConversationId(null); setShowCallNotes(false); }}
+                onRemoveDm={(id) => removeDmMutation.mutate(id)}
               />
             )}
 
@@ -945,6 +961,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 showCallNotes={showCallNotes}
                 onToggleCallNotes={() => setShowCallNotes(true)}
                 onNewDm={() => { setPreviousConversationId(selectedConversationId); setShowNewDm(true); setSelectedConversationId(null); setShowCallNotes(false); }}
+                onRemoveDm={(id) => removeDmMutation.mutate(id)}
               />
             )}
 

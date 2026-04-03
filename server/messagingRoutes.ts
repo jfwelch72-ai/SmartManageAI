@@ -1590,6 +1590,59 @@ const messagingSetup = (async () => {
     }
   });
 
+  router.delete("/api/conversations/:id/leave", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const conversationId = req.params.id;
+
+      const [conv] = await db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .limit(1);
+
+      if (!conv) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
+
+      if (conv.type !== "DIRECT") {
+        res.status(400).json({ error: "Only direct message conversations can be removed this way" });
+        return;
+      }
+
+      const [participant] = await db
+        .select()
+        .from(conversationParticipants)
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, conversationId),
+            eq(conversationParticipants.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (!participant) {
+        res.status(403).json({ error: "Not a participant of this conversation" });
+        return;
+      }
+
+      await db
+        .delete(conversationParticipants)
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, conversationId),
+            eq(conversationParticipants.userId, userId)
+          )
+        );
+
+      res.json({ success: true });
+    } catch (error) {
+      logError("Leave conversation error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get total unread message count for navigation badge
   router.get("/api/messages/unread-count", requireAuth, async (req: AuthRequest, res) => {
     try {
