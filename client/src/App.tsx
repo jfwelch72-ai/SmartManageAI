@@ -129,16 +129,9 @@ const EnterpriseSettingsPage = lazy(() => import("@/pages/enterprise-settings"))
 const ReportsPage = lazy(() => import("@/pages/reports"));
 const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
 const ProcurementModulePage = lazy(() => import("@/pages/procurement-module"));
-const HiringDashboardPage = lazy(() => import("@/pages/hiring/index"));
-const HiringJobsPage = lazy(() => import("@/pages/hiring/jobs"));
+const HiringPage = lazy(() => import("@/pages/hiring/index"));
 const HiringJobDetailPage = lazy(() => import("@/pages/hiring/job-detail"));
-const HiringCandidatesPage = lazy(() => import("@/pages/hiring/candidates"));
 const HiringCandidateDetailPage = lazy(() => import("@/pages/hiring/candidate-detail"));
-const HiringPipelinePage = lazy(() => import("@/pages/hiring/pipeline"));
-const HiringInterviewsPage = lazy(() => import("@/pages/hiring/interviews"));
-const HiringAnalyticsPage = lazy(() => import("@/pages/hiring/analytics"));
-const HiringTasksPage = lazy(() => import("@/pages/hiring/tasks"));
-const HiringSettingsPage = lazy(() => import("@/pages/hiring/settings"));
 const TalentPoolPage = lazy(() => import("@/pages/talent-pool"));
 const ContractsPage = lazy(() => import("@/pages/contracts"));
 const ClauseLibraryPage = lazy(() => import("@/pages/clause-library"));
@@ -375,15 +368,15 @@ function Router() {
       <Route path="/talent-pool/:id" component={() => <ProtectedRoute component={TalentPoolPage} />} />
       <Route path="/talent-pool" component={() => <ProtectedRoute component={() => <Redirect to="/marketplace?tab=talent" />} />} />
       <Route path="/hiring/jobs/:id" component={() => <ProtectedRoute component={HiringJobDetailPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
-      <Route path="/hiring/jobs" component={() => <ProtectedRoute component={HiringJobsPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
       <Route path="/hiring/candidates/:id" component={() => <ProtectedRoute component={HiringCandidateDetailPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
-      <Route path="/hiring/candidates" component={() => <ProtectedRoute component={HiringCandidatesPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
-      <Route path="/hiring/pipeline" component={() => <ProtectedRoute component={HiringPipelinePage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
-      <Route path="/hiring/interviews" component={() => <ProtectedRoute component={HiringInterviewsPage} permission={RoutePermissions.HIRING_ADVANCED} featurePerm="canManageHiring" />} />
-      <Route path="/hiring/tasks" component={() => <ProtectedRoute component={HiringTasksPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
-      <Route path="/hiring/analytics" component={() => <ProtectedRoute component={HiringAnalyticsPage} permission={RoutePermissions.HIRING_ADVANCED} featurePerm="canManageHiring" />} />
-      <Route path="/hiring/settings" component={() => <ProtectedRoute component={HiringSettingsPage} permission={RoutePermissions.HIRING_SETTINGS} featurePerm="canManageHiring" />} />
-      <Route path="/hiring" component={() => <ProtectedRoute component={HiringDashboardPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
+      <Route path="/hiring/jobs" component={() => <Redirect to="/hiring?tab=jobs" />} />
+      <Route path="/hiring/candidates" component={() => <Redirect to="/hiring?tab=candidates" />} />
+      <Route path="/hiring/pipeline" component={() => <Redirect to="/hiring?tab=pipeline" />} />
+      <Route path="/hiring/interviews" component={() => <Redirect to="/hiring?tab=interviews" />} />
+      <Route path="/hiring/tasks" component={() => <Redirect to="/hiring?tab=tasks" />} />
+      <Route path="/hiring/analytics" component={() => <Redirect to="/hiring?tab=analytics" />} />
+      <Route path="/hiring/settings" component={() => <Redirect to="/hiring?tab=settings" />} />
+      <Route path="/hiring" component={() => <ProtectedRoute component={HiringPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
 
       
       {/* Overhead & Fixed Costs Manager */}

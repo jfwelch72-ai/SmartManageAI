@@ -253,7 +253,7 @@ export default function CandidateDetailPage() {
     return (
       <div className="p-6">
         <p className="text-muted-foreground">Candidate not found.</p>
-        <Button variant="ghost" onClick={() => navigate("/hiring/candidates")} className="px-0 mt-2">
+        <Button variant="ghost" onClick={() => navigate("/hiring?tab=candidates")} className="px-0 mt-2">
           <ArrowLeft className="w-4 h-4 mr-1" />Back to Candidates
         </Button>
       </div>
@@ -272,7 +272,7 @@ export default function CandidateDetailPage() {
     <div className="p-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/hiring/candidates")} className="mb-1 -ml-2" data-testid="button-back-candidates">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/hiring?tab=candidates")} className="mb-1 -ml-2" data-testid="button-back-candidates">
             <ArrowLeft className="w-4 h-4 mr-1" />Candidates
           </Button>
           <div className="flex items-center gap-3">

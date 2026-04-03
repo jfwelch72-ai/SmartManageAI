@@ -147,7 +147,7 @@ export default function HiringJobDetailPage() {
     return (
       <div className="p-6">
         <p className="text-muted-foreground">Job not found.</p>
-        <Button variant="ghost" onClick={() => navigate("/hiring/jobs")} className="px-0 mt-2">
+        <Button variant="ghost" onClick={() => navigate("/hiring?tab=jobs")} className="px-0 mt-2">
           <ArrowLeft className="w-4 h-4 mr-1" />Back to Jobs
         </Button>
       </div>
@@ -178,7 +178,7 @@ export default function HiringJobDetailPage() {
     <div className="p-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/hiring/jobs")} className="mb-1 -ml-2" data-testid="button-back-jobs">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/hiring?tab=jobs")} className="mb-1 -ml-2" data-testid="button-back-jobs">
             <ArrowLeft className="w-4 h-4 mr-1" />Jobs
           </Button>
           <h1 className="text-2xl font-bold" data-testid="heading-job-title">{job.title}</h1>

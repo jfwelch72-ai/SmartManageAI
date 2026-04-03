@@ -92,7 +92,6 @@ export function AppSidebar() {
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [administrationOpen, setAdministrationOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
-  const [hiringOpen, setHiringOpen] = useState(false);
 
   const { data: walkthroughStatus } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
@@ -544,35 +543,19 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
         
-        {/* 7. Hiring group */}
+        {/* 7. Hiring link */}
         {hasHiringMenu && (
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                <Collapsible open={hiringOpen} onOpenChange={setHiringOpen} className="group/collapsible">
-                  <SidebarMenuItem>
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip="Hiring" data-testid="sidebar-hiring-group">
-                        <Users className="w-4 h-4" />
-                        <span>Hiring</span>
-                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                      </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub>
-                        {visibleHiringItems.map((item) => (
-                          <SidebarMenuSubItem key={item.href}>
-                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
-                              <Link href={item.href} data-testid={item.testId}>
-                                {item.label}
-                              </Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        ))}
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
-                  </SidebarMenuItem>
-                </Collapsible>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild tooltip="Hiring" isActive={isActive("/hiring")} data-testid="sidebar-hiring-link">
+                    <Link href="/hiring">
+                      <Users className="w-4 h-4" />
+                      <span>Hiring</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

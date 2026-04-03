@@ -93,7 +93,7 @@ export default function HiringPipelinePage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 sm:p-6">
+      <div>
         <div className="mb-4 space-y-1">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-5 w-72" />
@@ -113,7 +113,7 @@ export default function HiringPipelinePage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl sm:text-2xl font-bold" data-testid="heading-pipeline">Pipeline Board</h1>
         <p className="text-sm sm:text-base text-muted-foreground">Drag candidates between stages to update their status</p>

@@ -153,7 +153,7 @@ export default function HiringCandidatesPage() {
   }
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold" data-testid="heading-candidates">Candidates</h1>
         <p className="text-muted-foreground">All applicants across your open roles</p>

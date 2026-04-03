@@ -22,7 +22,6 @@ import {
   useDisconnectIntegration, useTestIntegration, useSyncIntegration,
 } from "@/lib/hiring-api";
 import { format } from "date-fns";
-import { Redirect } from "wouter";
 
 const SYNC_STATUS_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
   PENDING: { label: "Pending", icon: Clock },
@@ -270,7 +269,11 @@ export default function HiringSettingsPage() {
   const syncMutation = useSyncIntegration();
 
   if (user?.role !== "ADMIN") {
-    return <Redirect to="/hiring" />;
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        You do not have permission to access hiring settings.
+      </div>
+    );
   }
 
   const activeIntegration = integrations[0];
@@ -278,7 +281,7 @@ export default function HiringSettingsPage() {
     status === "connected" ? "default" : "destructive";
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl font-bold" data-testid="heading-hiring-settings">Hiring Settings</h1>
         <p className="text-muted-foreground">Configure ATS integrations, AI features, and pipeline stages</p>

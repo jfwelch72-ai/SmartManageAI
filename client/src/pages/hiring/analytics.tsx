@@ -187,7 +187,7 @@ export default function HiringAnalyticsPage() {
   const AI_HISTOGRAM_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6"];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold" data-testid="heading-hiring-analytics">Hiring Analytics</h1>
         <p className="text-muted-foreground">Pipeline performance and workforce acquisition metrics</p>
