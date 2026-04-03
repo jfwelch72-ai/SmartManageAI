@@ -1,27 +1,61 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  ChevronLeft,
+  ChevronRight,
   Activity,
+  FileText,
+  Hammer,
+  Clock,
+  TrendingUp,
+  DollarSign,
+  CreditCard,
   Cpu,
   HardDrive,
   Link2,
   ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
   AlertTriangle,
   CheckCircle,
   XCircle,
 } from "lucide-react";
+import { Link } from "wouter";
+import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+
+interface PlatformAnalyticsData {
+  weeklyActions: number;
+  monthlyProjectsCreated: number;
+  monthlyBidsCreated: number;
+  monthlyShiftsLogged: number;
+  mrr: number;
+  activeSubscriptions: number;
+  planBreakdown: Record<string, number>;
+  trend: Array<{ date: string; orgs: number; users: number }>;
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    entityType: string;
+    entityId: string;
+    userId: string;
+    oldValue: string | null;
+    newValue: string | null;
+    createdAt: string;
+  }>;
+  activityTotal: number;
+  activityPage: number;
+  activityPageSize: number;
+  days: number;
+}
 
 type SortDirection = "asc" | "desc";
 
@@ -71,21 +105,6 @@ interface IntegrationOrg {
   }>;
 }
 
-interface AuditLogEntry {
-  id: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  oldValue: string | null;
-  newValue: string | null;
-  ipAddress: string | null;
-  createdAt: string;
-  userName: string;
-  userEmail: string;
-  organizationId: string | null;
-  organizationName: string | null;
-}
-
 function useSortable<T>(data: T[] | undefined, defaultKey: keyof T, defaultDir: SortDirection = "desc") {
   const [sortKey, setSortKey] = useState<keyof T>(defaultKey);
   const [sortDir, setSortDir] = useState<SortDirection>(defaultDir);
@@ -121,6 +140,296 @@ function SortHeader({ label, field, sortKey, sortDir, onToggle }: {
       {label}
       <ArrowUpDown className={`h-3 w-3 ${sortKey === field ? "text-foreground" : "text-muted-foreground"}`} />
     </button>
+  );
+}
+
+function GrowthRevenueTab() {
+  const [days, setDays] = useState("30");
+  const [activityPage, setActivityPage] = useState(1);
+
+  const { data: analytics, isLoading } = useQuery<PlatformAnalyticsData>({
+    queryKey: ["/api/platform/analytics", { days, page: activityPage }],
+    queryFn: async () => {
+      const res = await fetch(`/api/platform/analytics?days=${days}&page=${activityPage}&pageSize=20`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch analytics");
+      return res.json();
+    },
+  });
+
+  const getActionBadge = (action: string) => {
+    switch (action) {
+      case "CREATE":
+        return <Badge variant="default">Created</Badge>;
+      case "UPDATE":
+        return <Badge variant="secondary">Updated</Badge>;
+      case "DELETE":
+        return <Badge variant="destructive">Deleted</Badge>;
+      default:
+        return <Badge variant="outline">{action}</Badge>;
+    }
+  };
+
+  const formatEntityType = (type: string) => {
+    return type
+      .replace(/_/g, " ")
+      .toLowerCase()
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+  };
+
+  const totalPages = analytics ? Math.ceil(analytics.activityTotal / analytics.activityPageSize) : 1;
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(value);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <Card key={i}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-4" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-16" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-end">
+        <Select value={days} onValueChange={(v) => { setDays(v); setActivityPage(1); }}>
+          <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-date-range">
+            <SelectValue placeholder="Time period" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="7">Last 7 days</SelectItem>
+            <SelectItem value="30">Last 30 days</SelectItem>
+            <SelectItem value="90">Last 90 days</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">MRR</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-mrr">
+              {formatCurrency(analytics?.mrr || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">Monthly recurring revenue</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Active Subs</CardTitle>
+            <CreditCard className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-active-subs">
+              {analytics?.activeSubscriptions || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Paid subscriptions</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Weekly Actions</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-weekly-actions">
+              {analytics?.weeklyActions || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Last 7 days</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Projects Created</CardTitle>
+            <Hammer className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-monthly-projects">
+              {analytics?.monthlyProjectsCreated || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Last {days} days</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Bids Created</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-monthly-bids">
+              {analytics?.monthlyBidsCreated || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Last {days} days</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Shifts Logged</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-monthly-shifts">
+              {analytics?.monthlyShiftsLogged || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Last {days} days</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Growth Trend
+          </CardTitle>
+          <CardDescription>New organizations and users over the last {days} days</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px]" data-testid="chart-growth-trend">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={analytics?.trend || []} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorOrgs" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--chart-2, 160 60% 45%))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--chart-2, 160 60% 45%))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={(val) => format(new Date(val), "MMM d")}
+                  className="text-muted-foreground"
+                />
+                <YAxis tick={{ fontSize: 12 }} allowDecimals={false} className="text-muted-foreground" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "var(--radius)",
+                  }}
+                  labelFormatter={(val) => format(new Date(val), "MMM d, yyyy")}
+                />
+                <Legend />
+                <Area
+                  type="monotone"
+                  dataKey="orgs"
+                  name="New Orgs"
+                  stroke="hsl(var(--primary))"
+                  fillOpacity={1}
+                  fill="url(#colorOrgs)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="users"
+                  name="New Users"
+                  stroke="hsl(var(--chart-2, 160 60% 45%))"
+                  fillOpacity={1}
+                  fill="url(#colorUsers)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Recent Activity
+              </CardTitle>
+              <CardDescription>
+                {analytics?.activityTotal || 0} total actions in the last {days} days
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={activityPage <= 1}
+                onClick={() => setActivityPage((p) => Math.max(1, p - 1))}
+                data-testid="button-activity-prev"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground" data-testid="text-activity-page">
+                Page {activityPage} of {totalPages || 1}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={activityPage >= totalPages}
+                onClick={() => setActivityPage((p) => p + 1)}
+                data-testid="button-activity-next"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Entity Type</TableHead>
+                  <TableHead>Entity ID</TableHead>
+                  <TableHead>Timestamp</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analytics?.recentActivity?.map((activity) => (
+                  <TableRow key={activity.id} data-testid={`row-activity-${activity.id}`}>
+                    <TableCell>{getActionBadge(activity.action)}</TableCell>
+                    <TableCell>{formatEntityType(activity.entityType)}</TableCell>
+                    <TableCell className="font-mono text-sm">{activity.entityId.slice(0, 8)}...</TableCell>
+                    <TableCell>
+                      {format(new Date(activity.createdAt), "MMM d, yyyy h:mm a")}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(!analytics?.recentActivity || analytics.recentActivity.length === 0) && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      No recent activity
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -507,246 +816,7 @@ function IntegrationHealthTab() {
   );
 }
 
-function AuditLogTable({ entries, testIdPrefix }: { entries: AuditLogEntry[]; testIdPrefix: string }) {
-  const { sorted, sortKey, sortDir, toggle } = useSortable<AuditLogEntry>(
-    entries, "createdAt"
-  );
-
-  return (
-    <ScrollArea className="h-[500px]">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm" data-testid={`table-${testIdPrefix}-logs`}>
-          <thead>
-            <tr className="border-b text-left text-muted-foreground">
-              <th className="pb-2 pr-3">
-                <SortHeader label="Time" field="createdAt" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("createdAt")} />
-              </th>
-              <th className="pb-2 pr-3">
-                <SortHeader label="Action" field="action" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("action")} />
-              </th>
-              <th className="pb-2 pr-3">
-                <SortHeader label="Entity" field="entityType" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("entityType")} />
-              </th>
-              <th className="pb-2 pr-3">
-                <SortHeader label="User" field="userName" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("userName")} />
-              </th>
-              <th className="pb-2 pr-3">
-                <SortHeader label="Organization" field="organizationName" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("organizationName")} />
-              </th>
-              <th className="pb-2 font-medium text-xs uppercase tracking-wider">IP</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((entry) => (
-              <tr key={entry.id} className="border-b last:border-0 hover:bg-muted/50" data-testid={`row-${testIdPrefix}-${entry.id}`}>
-                <td className="py-2 pr-3 whitespace-nowrap text-xs text-muted-foreground">
-                  {new Date(entry.createdAt).toLocaleString()}
-                </td>
-                <td className="py-2 pr-3">
-                  <Badge variant={
-                    entry.action === "DELETE" ? "destructive"
-                    : entry.action === "CREATE" ? "default"
-                    : "secondary"
-                  }>{entry.action}</Badge>
-                </td>
-                <td className="py-2 pr-3">
-                  <span className="font-medium">{entry.entityType}</span>
-                  <span className="text-xs text-muted-foreground ml-1 break-all">({entry.entityId.substring(0, 8)}...)</span>
-                </td>
-                <td className="py-2 pr-3">
-                  <div>{entry.userName}</div>
-                  <div className="text-xs text-muted-foreground">{entry.userEmail}</div>
-                </td>
-                <td className="py-2 pr-3 text-sm">{entry.organizationName || "N/A"}</td>
-                <td className="py-2 text-xs text-muted-foreground">{entry.ipAddress || "\u2014"}</td>
-              </tr>
-            ))}
-            {sorted.length === 0 && (
-              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No audit entries found</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </ScrollArea>
-  );
-}
-
-function AuditLogTab() {
-  const [page, setPage] = useState(1);
-  const [action, setAction] = useState("");
-  const [entityType, setEntityType] = useState("");
-  const [orgId, setOrgId] = useState("");
-  const [userId, setUserId] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const pageSize = 50;
-
-  const queryParams = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-  if (action) queryParams.set("action", action);
-  if (entityType) queryParams.set("entityType", entityType);
-  if (orgId) queryParams.set("orgId", orgId);
-  if (userId) queryParams.set("userId", userId);
-  if (startDate) queryParams.set("startDate", startDate);
-  if (endDate) queryParams.set("endDate", endDate);
-
-  const { data, isLoading } = useQuery<{
-    entries: AuditLogEntry[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-    filters: { actions: string[]; entityTypes: string[] };
-  }>({
-    queryKey: ["/api/platform/monitoring/audit-logs", page, action, entityType, orgId, userId, startDate, endDate],
-    queryFn: async () => {
-      const res = await fetch(`/api/platform/monitoring/audit-logs?${queryParams}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-  });
-
-  const { data: orgs } = useQuery<Array<{ id: string; name: string }>>({
-    queryKey: ["/api/platform/organizations"],
-    queryFn: async () => {
-      const res = await fetch("/api/platform/organizations", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-  });
-
-  const { data: platformUsers } = useQuery<Array<{ id: string; firstName: string; lastName: string; email: string }>>({
-    queryKey: ["/api/platform/users"],
-    queryFn: async () => {
-      const res = await fetch("/api/platform/users", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-  });
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FileText className="h-5 w-5" />
-          Cross-Organization Audit Logs
-        </CardTitle>
-        <CardDescription>Search and filter audit entries across all organizations</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          <Select value={action || "all"} onValueChange={(v) => { setAction(v === "all" ? "" : v); setPage(1); }}>
-            <SelectTrigger data-testid="select-audit-action">
-              <SelectValue placeholder="Action" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Actions</SelectItem>
-              {data?.filters.actions.map((a) => (
-                <SelectItem key={a} value={a}>{a}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={entityType || "all"} onValueChange={(v) => { setEntityType(v === "all" ? "" : v); setPage(1); }}>
-            <SelectTrigger data-testid="select-audit-entity-type">
-              <SelectValue placeholder="Entity Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Entity Types</SelectItem>
-              {data?.filters.entityTypes.map((e) => (
-                <SelectItem key={e} value={e}>{e}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={orgId || "all"} onValueChange={(v) => { setOrgId(v === "all" ? "" : v); setPage(1); }}>
-            <SelectTrigger data-testid="select-audit-org">
-              <SelectValue placeholder="Organization" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Organizations</SelectItem>
-              {orgs?.map((org) => (
-                <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={userId || "all"} onValueChange={(v) => { setUserId(v === "all" ? "" : v); setPage(1); }}>
-            <SelectTrigger data-testid="select-audit-user">
-              <SelectValue placeholder="User" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Users</SelectItem>
-              {platformUsers?.map((u) => (
-                <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.email})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Input
-            type="date"
-            value={startDate}
-            onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-            placeholder="Start Date"
-            data-testid="input-audit-start-date"
-          />
-
-          <Input
-            type="date"
-            value={endDate}
-            onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-            placeholder="End Date"
-            data-testid="input-audit-end-date"
-          />
-        </div>
-
-        {isLoading ? (
-          <Skeleton className="h-64 w-full" />
-        ) : (
-          <>
-            <div className="text-sm text-muted-foreground">
-              Showing {data?.entries.length || 0} of {data?.total.toLocaleString() || 0} entries
-            </div>
-
-            <AuditLogTable
-              entries={data?.entries || []}
-              testIdPrefix="audit"
-            />
-
-            {data && data.totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4">
-                <div className="text-sm text-muted-foreground">
-                  Page {data.page} of {data.totalPages}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                    data-testid="button-audit-prev"
-                  >
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(p => Math.min(data.totalPages, p + 1))}
-                    disabled={page >= data.totalPages}
-                    data-testid="button-audit-next"
-                  >
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-export default function PlatformMonitoring() {
+export default function PlatformAnalyticsMonitoring() {
   const { user } = useAuth();
 
   if (user?.role !== "SUPER_ADMIN") {
@@ -762,49 +832,51 @@ export default function PlatformMonitoring() {
   }
 
   return (
-    <div className="min-h-screen bg-background px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-monitoring-title">Platform Monitoring</h1>
-        <p className="text-muted-foreground text-sm sm:text-base">Resource usage, integration health, and cross-organization audit logs</p>
-      </div>
-
-      <Tabs defaultValue="api" className="space-y-4">
-        <div className="overflow-x-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
-        <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
-          <TabsTrigger value="api" data-testid="tab-api-usage">
-            <Activity className="h-4 w-4 mr-1.5" /> API Usage
-          </TabsTrigger>
-          <TabsTrigger value="ai" data-testid="tab-ai-usage">
-            <Cpu className="h-4 w-4 mr-1.5" /> AI Usage
-          </TabsTrigger>
-          <TabsTrigger value="storage" data-testid="tab-storage">
-            <HardDrive className="h-4 w-4 mr-1.5" /> Storage
-          </TabsTrigger>
-          <TabsTrigger value="integrations" data-testid="tab-integrations">
-            <Link2 className="h-4 w-4 mr-1.5" /> Integrations
-          </TabsTrigger>
-          <TabsTrigger value="audit" data-testid="tab-audit-logs">
-            <FileText className="h-4 w-4 mr-1.5" /> Audit Logs
-          </TabsTrigger>
-        </TabsList>
+    <div className="min-h-screen bg-background">
+      <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-analytics-monitoring-title">Analytics & Monitoring</h1>
+          <p className="text-muted-foreground text-sm">Platform usage metrics, resource monitoring, and integration health</p>
         </div>
 
-        <TabsContent value="api">
-          <ApiUsageTab />
-        </TabsContent>
-        <TabsContent value="ai">
-          <AiUsageTab />
-        </TabsContent>
-        <TabsContent value="storage">
-          <StorageTab />
-        </TabsContent>
-        <TabsContent value="integrations">
-          <IntegrationHealthTab />
-        </TabsContent>
-        <TabsContent value="audit">
-          <AuditLogTab />
-        </TabsContent>
-      </Tabs>
+        <Tabs defaultValue="growth" className="space-y-4">
+          <div className="overflow-x-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
+            <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
+              <TabsTrigger value="growth" data-testid="tab-growth-revenue">
+                <TrendingUp className="h-4 w-4 mr-1.5" /> Growth & Revenue
+              </TabsTrigger>
+              <TabsTrigger value="api" data-testid="tab-api-usage">
+                <Activity className="h-4 w-4 mr-1.5" /> API Usage
+              </TabsTrigger>
+              <TabsTrigger value="ai" data-testid="tab-ai-usage">
+                <Cpu className="h-4 w-4 mr-1.5" /> AI Usage
+              </TabsTrigger>
+              <TabsTrigger value="storage" data-testid="tab-storage">
+                <HardDrive className="h-4 w-4 mr-1.5" /> Storage
+              </TabsTrigger>
+              <TabsTrigger value="integrations" data-testid="tab-integrations">
+                <Link2 className="h-4 w-4 mr-1.5" /> Integrations
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="growth">
+            <GrowthRevenueTab />
+          </TabsContent>
+          <TabsContent value="api">
+            <ApiUsageTab />
+          </TabsContent>
+          <TabsContent value="ai">
+            <AiUsageTab />
+          </TabsContent>
+          <TabsContent value="storage">
+            <StorageTab />
+          </TabsContent>
+          <TabsContent value="integrations">
+            <IntegrationHealthTab />
+          </TabsContent>
+        </Tabs>
+      </main>
     </div>
   );
 }

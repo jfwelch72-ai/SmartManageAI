@@ -75,12 +75,8 @@ const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const PlatformAdminDashboard = lazy(() => import("@/pages/PlatformAdminDashboard"));
 const PlatformOrganizations = lazy(() => import("@/pages/PlatformOrganizations"));
 const PlatformOrganizationDetail = lazy(() => import("@/pages/PlatformOrganizationDetail"));
-const PlatformAnalytics = lazy(() => import("@/pages/PlatformAnalytics"));
-const PlatformSupportTools = lazy(() => import("@/pages/PlatformSupportTools"));
-const PlatformAuditDashboard = lazy(() => import("@/pages/PlatformAuditDashboard"));
-const PlatformMonitoring = lazy(() => import("@/pages/PlatformMonitoring"));
-const PlatformSubscriptions = lazy(() => import("@/pages/PlatformSubscriptions"));
-const PlatformAnnouncements = lazy(() => import("@/pages/PlatformAnnouncements"));
+const PlatformAnalyticsMonitoring = lazy(() => import("@/pages/PlatformAnalyticsMonitoring"));
+const PlatformTools = lazy(() => import("@/pages/PlatformTools"));
 const VendorPricingPage = lazy(() => import("@/pages/vendor-pricing"));
 const MobileSyncPage = lazy(() => import("@/pages/mobile-sync"));
 const CompanySettingsPage = lazy(() => import("@/pages/company-settings"));
@@ -375,12 +371,13 @@ function Router() {
       <Route path="/admin/organizations/:id/view" component={() => <ProtectedRoute component={ViewAsOrganization} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations/:id" component={() => <ProtectedRoute component={PlatformOrganizationDetail} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
-      <Route path="/admin/subscriptions" component={() => <ProtectedRoute component={PlatformSubscriptions} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
-      <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalytics} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
-      <Route path="/admin/support" component={() => <ProtectedRoute component={PlatformSupportTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
-      <Route path="/admin/audit" component={() => <ProtectedRoute component={PlatformAuditDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
-      <Route path="/admin/monitoring" component={() => <ProtectedRoute component={PlatformMonitoring} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
-      <Route path="/admin/announcements" component={() => <ProtectedRoute component={PlatformAnnouncements} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalyticsMonitoring} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/tools" component={() => <ProtectedRoute component={PlatformTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/subscriptions" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/support" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/audit" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/monitoring" component={() => <ProtectedRoute component={() => <Redirect to="/admin/analytics" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/announcements" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       
       {/* Hustler invite acceptance (public) */}
       <Route path="/hustler/accept-invite/:token" component={AcceptHustlerInvitePage} />

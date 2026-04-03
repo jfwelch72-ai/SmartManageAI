@@ -140,8 +140,8 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
   const platformAdminMobileNavItems = [
     { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/admin/organizations", icon: Building2, label: "Organizations" },
-    { href: "/admin/analytics", icon: Briefcase, label: "Analytics" },
-    { href: "/admin/support", icon: Shield, label: "Support Tools" },
+    { href: "/admin/analytics", icon: Briefcase, label: "Analytics & Monitoring" },
+    { href: "/admin/tools", icon: Shield, label: "Tools" },
   ];
 
   // Mobile navigation items for vendors
@@ -396,7 +396,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                     {item.href === "/admin" && <LayoutDashboard className="w-4 h-4" />}
                     {item.href === "/admin/organizations" && <Building2 className="w-4 h-4" />}
                     {item.href === "/admin/analytics" && <Briefcase className="w-4 h-4" />}
-                    {item.href === "/admin/support" && <Shield className="w-4 h-4" />}
+                    {item.href === "/admin/tools" && <Shield className="w-4 h-4" />}
                     {item.label}
                   </Link>
                 </Button>

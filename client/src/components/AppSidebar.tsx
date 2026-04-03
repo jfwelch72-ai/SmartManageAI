@@ -171,12 +171,8 @@ export function AppSidebar() {
                       <Link href={item.href} data-testid={item.testId}>
                         {item.href === "/admin" && <LayoutDashboard className="w-4 h-4" />}
                         {item.href === "/admin/organizations" && <Building2 className="w-4 h-4" />}
-                        {item.href === "/admin/subscriptions" && <DollarSign className="w-4 h-4" />}
-                        {item.href === "/admin/analytics" && <Briefcase className="w-4 h-4" />}
-                        {item.href === "/admin/support" && <Shield className="w-4 h-4" />}
-                        {item.href === "/admin/audit" && <FileSearch className="w-4 h-4" />}
-                        {item.href === "/admin/monitoring" && <BarChart3 className="w-4 h-4" />}
-                        {item.href === "/admin/announcements" && <Megaphone className="w-4 h-4" />}
+                        {item.href === "/admin/analytics" && <BarChart3 className="w-4 h-4" />}
+                        {item.href === "/admin/tools" && <Wrench className="w-4 h-4" />}
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>

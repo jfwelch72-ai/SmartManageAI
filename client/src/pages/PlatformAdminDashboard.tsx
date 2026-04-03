@@ -370,21 +370,21 @@ export default function PlatformAdminDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                Analytics
+                Analytics & Monitoring
               </CardTitle>
-              <CardDescription>Platform usage and feature adoption</CardDescription>
+              <CardDescription>Platform usage, metrics, and resource monitoring</CardDescription>
             </CardHeader>
           </Card>
         </Link>
 
-        <Link href="/admin/support">
+        <Link href="/admin/tools">
           <Card className="hover-elevate cursor-pointer transition-colors">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5" />
-                Support Tools
+                Tools
               </CardTitle>
-              <CardDescription>Backend support for user issues</CardDescription>
+              <CardDescription>Support tools, security audit, subscriptions, and announcements</CardDescription>
             </CardHeader>
           </Card>
         </Link>
