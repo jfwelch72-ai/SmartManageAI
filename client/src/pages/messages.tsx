@@ -699,7 +699,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     <TooltipProvider>
       <div data-testid="team-messages-content" className={compact ? "h-full flex flex-col" : ""}>
         {}
-        <Card className={compact ? "flex-1 min-h-0 border-0 shadow-none" : "h-[calc(100vh-280px)] min-h-[500px]"}>
+        <Card className={compact ? "flex-1 min-h-0 border-0 shadow-none overflow-hidden" : "h-[calc(100vh-280px)] min-h-[500px] overflow-hidden"}>
           <div className="flex h-full">
             {/* ── SIDEBAR ── */}
             {showConversationList && !isMobileView && (
@@ -756,7 +756,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
 
             {/* ── MESSAGES PANEL ── */}
             {showMessages && selectedConversation && !showCallNotes && (
-              <div className={cn("flex flex-col flex-1 min-w-0", isMobileView ? "w-full" : "")}>
+              <div className={cn("flex flex-col flex-1 min-w-0 min-h-0", isMobileView ? "w-full" : "")}>
                 {/* Header */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0">
                   {isMobileView && (

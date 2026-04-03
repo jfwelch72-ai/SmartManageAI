@@ -285,7 +285,7 @@ export function PortalChatContent({ compact = false }: { compact?: boolean }) {
 
     if (compact) {
       return (
-        <div className="h-full flex flex-col" data-testid="portal-chat-detail">
+        <div className="h-full flex flex-col min-h-0" data-testid="portal-chat-detail">
           {headerBlock}
           {infoBlock}
           {messagesBlock}
@@ -309,7 +309,7 @@ export function PortalChatContent({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className={compact ? "h-full flex flex-col gap-2" : "space-y-4"} data-testid="portal-chat-inbox">
+    <div className={compact ? "h-full flex flex-col gap-2 min-h-0" : "space-y-4"} data-testid="portal-chat-inbox">
 
       <Card data-testid="card-filters" className="shrink-0">
         <CardContent className="p-3">
