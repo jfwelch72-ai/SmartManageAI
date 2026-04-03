@@ -88,7 +88,9 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const scrollTopRef = useRef<number>(Infinity);
+  const scrollTopRef = useRef<number>(0);
+  const isAtBottomRef = useRef<boolean>(true);
+  const prevMessageCountRef = useRef<number>(0);
   const lastTypingSignalRef = useRef<number>(0);
 
   // ── Video call state ──
@@ -270,14 +272,20 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     setHasMore(false);
     setIsLoadingMore(false);
     hasLoadedAllRef.current = false;
-    scrollTopRef.current = Infinity;
+    scrollTopRef.current = 0;
+    isAtBottomRef.current = true;
+    prevMessageCountRef.current = 0;
   }, [selectedConversationId]);
 
-  // Track native scroll
+  // Track native scroll and whether user is near bottom
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const onScroll = () => { scrollTopRef.current = container.scrollTop; };
+    const onScroll = () => {
+      scrollTopRef.current = container.scrollTop;
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      isAtBottomRef.current = distanceFromBottom < 100;
+    };
     container.addEventListener("scroll", onScroll, { passive: true });
     return () => container.removeEventListener("scroll", onScroll);
   }, [selectedConversationId]);
@@ -420,7 +428,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   // ── Load earlier messages ──
   const loadMoreMessages = async () => {
     if (!selectedConversationId || isLoadingMore || !hasMore) return;
-    if (scrollTopRef.current > 50) return;
 
     const oldest = olderMessages.length > 0 ? olderMessages[0] : latestMessages[0];
     if (!oldest) return;
@@ -468,7 +475,12 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   }, [hasMore, selectedConversationId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const messageCount = latestMessages.length;
+    const hasNewMessages = messageCount > prevMessageCountRef.current;
+    prevMessageCountRef.current = messageCount;
+    if (hasNewMessages && isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [latestMessages]);
 
   // ── Composer handlers ──
