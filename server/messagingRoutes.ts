@@ -3059,28 +3059,26 @@ const messagingSetup = (async () => {
 
       console.log(`[ICE Config] Total fallback TURN servers: ${openRelayServers.length} (${openRelayServers.length > 4 ? "multi-provider" : "single-provider"})`);
 
-      if (turnUrl && turnUser && turnCred) {
+      const { credentials: meteredServers, stale } = await fetchMeteredCredentialsWithRetry();
+      if (meteredServers.length > 0 && !stale) {
+        iceServers.push(...meteredServers);
+        turnTier = "metered";
+        console.log(`[ICE Config] Tier: metered | ${meteredServers.length} Metered TURN server(s) (default provider)`);
+      } else if (meteredServers.length > 0 && stale) {
+        iceServers.push(...meteredServers);
+        turnTier = "metered_stale";
+        console.log(`[ICE Config] Tier: metered_stale | ${meteredServers.length} stale Metered TURN server(s) (fresh fetch failed)`);
+      } else if (turnUrl && turnUser && turnCred) {
         const turnUrls = turnUrl.split(",").map(u => u.trim()).filter(Boolean);
         for (const url of turnUrls) {
           iceServers.push({ urls: url, username: turnUser, credential: turnCred });
         }
         turnTier = "custom";
-        console.log(`[ICE Config] Tier: custom | Using configured TURN server(s): ${turnUrls.join(", ")}`);
+        console.log(`[ICE Config] Tier: custom | Metered unavailable, using configured TURN server(s): ${turnUrls.join(", ")}`);
       } else {
-        const { credentials: meteredServers, stale } = await fetchMeteredCredentialsWithRetry();
-        if (meteredServers.length > 0 && !stale) {
-          iceServers.push(...meteredServers);
-          turnTier = "metered";
-          console.log(`[ICE Config] Tier: metered | ${meteredServers.length} Metered TURN server(s) included`);
-        } else if (meteredServers.length > 0 && stale) {
-          iceServers.push(...meteredServers);
-          turnTier = "metered_stale";
-          console.log(`[ICE Config] Tier: metered_stale | ${meteredServers.length} stale Metered TURN server(s) (fresh fetch failed)`);
-        } else {
-          iceServers.push(...openRelayServers);
-          turnTier = "open_relay";
-          console.log("[ICE Config] Tier: open_relay | Using free public TURN fallback (Open Relay Project)");
-        }
+        iceServers.push(...openRelayServers);
+        turnTier = "open_relay";
+        console.log("[ICE Config] Tier: open_relay | Metered unavailable, using free public TURN fallback (Open Relay Project)");
       }
 
       const hasTurn = iceServers.some(s => {
