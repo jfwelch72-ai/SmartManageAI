@@ -10,7 +10,8 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, Users } from "lucide-react";
+import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, Users, X, Search, UserPlus } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { getInitials } from "@/components/messaging/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -32,12 +33,200 @@ import {
   type VideoCallData,
 } from "@/components/messaging/types";
 
+function NewMessagePanel({
+  availableUsers,
+  currentUserId,
+  onCancel,
+  onConversationCreated,
+  isMobileView,
+}: {
+  availableUsers: User[];
+  currentUserId: string;
+  onCancel: () => void;
+  onConversationCreated: (id: string) => void;
+  isMobileView: boolean;
+}) {
+  const { toast } = useToast();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const createConversationMutation = useMutation({
+    mutationFn: async ({ type, participantIds }: { type: string; participantIds: string[] }) => {
+      const response = apiRequest("POST", "/api/conversations", { type, participantIds });
+      return (await response).json();
+    },
+    onSuccess: (newConversation) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      onConversationCreated(newConversation.id);
+    },
+    onError: () => {
+      toast({ title: "Failed to create conversation", variant: "destructive" });
+    },
+  });
+
+  const filteredUsers = availableUsers.filter(u => {
+    if (u.id === currentUserId) return false;
+    if (selectedUsers.some(s => s.id === u.id)) return false;
+    if (!searchQuery.trim()) return true;
+    const fullName = `${u.firstName} ${u.lastName}`.toLowerCase();
+    return fullName.includes(searchQuery.toLowerCase()) || (u.role ?? "").toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  const handleSelectUser = (user: User) => {
+    setSelectedUsers(prev => [...prev, user]);
+    setSearchQuery("");
+    setDropdownOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const handleRemoveUser = (userId: string) => {
+    setSelectedUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
+  const handleStartConversation = () => {
+    if (selectedUsers.length === 0) return;
+    const type = selectedUsers.length === 1 ? "DIRECT" : "GROUP";
+    const participantIds = selectedUsers.map(u => u.id);
+    createConversationMutation.mutate({ type, participantIds });
+  };
+
+  return (
+    <div className={cn("flex flex-col flex-1 min-w-0 min-h-0", isMobileView ? "w-full" : "")} data-testid="new-message-panel">
+      <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0">
+        {isMobileView && (
+          <Button variant="ghost" size="icon" onClick={onCancel} data-testid="button-new-dm-back">
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+        )}
+        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+          <UserPlus className="w-4 h-4" />
+        </div>
+        <h2 className="font-semibold text-sm leading-tight" data-testid="text-new-message-title">New Message</h2>
+        {!isMobileView && (
+          <Button variant="ghost" size="icon" className="ml-auto h-8 w-8" onClick={onCancel} data-testid="button-new-dm-cancel">
+            <X className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
+
+      <div className="px-4 py-3 border-b space-y-2">
+        <div className="flex flex-wrap items-center gap-1.5 min-h-[36px]">
+          <span className="text-sm text-muted-foreground shrink-0">To:</span>
+          {selectedUsers.map(u => (
+            <span
+              key={u.id}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium"
+              data-testid={`chip-selected-user-${u.id}`}
+            >
+              {u.firstName} {u.lastName}
+              <button
+                onClick={() => handleRemoveUser(u.id)}
+                className="hover:bg-primary/20 rounded-full p-0.5 transition-colors"
+                data-testid={`button-remove-user-${u.id}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          <div className="relative flex-1 min-w-[120px]" ref={dropdownRef}>
+            <Input
+              ref={inputRef}
+              placeholder={selectedUsers.length === 0 ? "Search for people..." : "Add more..."}
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setDropdownOpen(true); }}
+              onFocus={() => setDropdownOpen(true)}
+              className="h-8 text-sm border-0 shadow-none focus-visible:ring-0 px-1"
+              data-testid="input-new-dm-search"
+            />
+            {dropdownOpen && (searchQuery.trim() || selectedUsers.length === 0) && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-md z-50 max-h-[240px] overflow-auto" data-testid="dropdown-user-results">
+                {filteredUsers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-3" data-testid="text-no-users-found">No users found</p>
+                ) : (
+                  filteredUsers.map(u => (
+                    <button
+                      key={u.id}
+                      onClick={() => handleSelectUser(u)}
+                      className="w-full flex items-center gap-3 p-2 hover:bg-accent transition-colors text-left"
+                      data-testid={`button-select-user-${u.id}`}
+                    >
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarFallback className="text-xs">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{u.firstName} {u.lastName}</p>
+                        <p className="text-xs text-muted-foreground truncate">{u.role}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        {selectedUsers.length === 0 ? (
+          <>
+            <Search className="w-10 h-10 text-muted-foreground/40 mb-3" />
+            <p className="text-sm text-muted-foreground" data-testid="text-new-dm-hint">Search for people to start a conversation</p>
+          </>
+        ) : (
+          <>
+            <div className="flex -space-x-2 mb-3">
+              {selectedUsers.slice(0, 5).map(u => (
+                <Avatar key={u.id} className="h-10 w-10 border-2 border-background">
+                  <AvatarFallback className="text-xs">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
+                </Avatar>
+              ))}
+              {selectedUsers.length > 5 && (
+                <div className="h-10 w-10 rounded-full border-2 border-background bg-muted flex items-center justify-center text-xs font-medium">
+                  +{selectedUsers.length - 5}
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mb-4" data-testid="text-selected-count">
+              {selectedUsers.length === 1
+                ? `Start a direct message with ${selectedUsers[0].firstName} ${selectedUsers[0].lastName}`
+                : `Start a group conversation with ${selectedUsers.length} people`}
+            </p>
+            <Button
+              onClick={handleStartConversation}
+              disabled={createConversationMutation.isPending}
+              data-testid="button-start-conversation"
+            >
+              {createConversationMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Start Conversation
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TeamMessagesContent({ compact = false }: { compact?: boolean }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const searchString = useSearch();
   const [, navigate] = useLocation();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [showNewDm, setShowNewDm] = useState(false);
+  const [previousConversationId, setPreviousConversationId] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
   const { startGlobalCall, activeCall: globalActiveCall } = useGlobalVideoCall();
 
@@ -46,6 +235,8 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     const convId = params.get("conversation");
     if (convId) {
       setSelectedConversationId(convId);
+      setShowNewDm(false);
+      setShowCallNotes(false);
     }
   }, [searchString]);
 
@@ -54,6 +245,8 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       const detail = (e as CustomEvent)?.detail;
       if (detail?.conversationId) {
         setSelectedConversationId(detail.conversationId);
+        setShowNewDm(false);
+        setShowCallNotes(false);
       }
     };
     window.addEventListener("select-conversation", handleSelectConversation);
@@ -720,9 +913,8 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 conversations={conversations}
                 allChannels={allChannels}
                 companyConversation={companyConversation}
-                selectedConversationId={showCallNotes ? null : selectedConversationId}
-                onSelectConversation={(id) => { setShowCallNotes(false); setSelectedConversationId(id); }}
-                availableUsers={availableUsers}
+                selectedConversationId={showCallNotes || showNewDm ? null : selectedConversationId}
+                onSelectConversation={(id) => { setShowCallNotes(false); setShowNewDm(false); setSelectedConversationId(id); }}
                 activeCallConversationIds={activeCallConversationIds}
                 onJoinCall={(conversationId) => {
                   const callData = conversationActiveCalls[conversationId];
@@ -730,20 +922,20 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 }}
                 compact={compact}
                 showCallNotes={showCallNotes}
-                onToggleCallNotes={() => { setShowCallNotes(!showCallNotes); if (!showCallNotes) setSelectedConversationId(null); }}
+                onToggleCallNotes={() => { setShowCallNotes(!showCallNotes); if (!showCallNotes) { setSelectedConversationId(null); setShowNewDm(false); } }}
+                onNewDm={() => { setPreviousConversationId(selectedConversationId); setShowNewDm(true); setSelectedConversationId(null); setShowCallNotes(false); }}
               />
             )}
 
             {/* Mobile sidebar (full-width when no conversation selected) */}
-            {showConversationList && isMobileView && !selectedConversationId && !showCallNotes && (
+            {showConversationList && isMobileView && !selectedConversationId && !showCallNotes && !showNewDm && (
               <Sidebar
                 currentUserId={user?.id}
                 conversations={conversations}
                 allChannels={allChannels}
                 companyConversation={companyConversation}
                 selectedConversationId={selectedConversationId}
-                onSelectConversation={(id) => { setShowCallNotes(false); setSelectedConversationId(id); }}
-                availableUsers={availableUsers}
+                onSelectConversation={(id) => { setShowCallNotes(false); setShowNewDm(false); setSelectedConversationId(id); }}
                 activeCallConversationIds={activeCallConversationIds}
                 onJoinCall={(conversationId) => {
                   const callData = conversationActiveCalls[conversationId];
@@ -752,6 +944,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                 compact={compact}
                 showCallNotes={showCallNotes}
                 onToggleCallNotes={() => setShowCallNotes(true)}
+                onNewDm={() => { setPreviousConversationId(selectedConversationId); setShowNewDm(true); setSelectedConversationId(null); setShowCallNotes(false); }}
               />
             )}
 
@@ -971,8 +1164,23 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
               </div>
             )}
 
+            {/* ── NEW DM PANEL ── */}
+            {showNewDm && !showCallNotes && (
+              <NewMessagePanel
+                availableUsers={availableUsers}
+                currentUserId={user?.id ?? ""}
+                onCancel={() => { setShowNewDm(false); setSelectedConversationId(previousConversationId); setPreviousConversationId(null); }}
+                onConversationCreated={(id) => {
+                  setShowNewDm(false);
+                  setPreviousConversationId(null);
+                  setSelectedConversationId(id);
+                }}
+                isMobileView={isMobileView}
+              />
+            )}
+
             {/* ── Empty state when nothing selected on desktop ── */}
-            {!selectedConversation && !isMobileView && !showCallNotes && (
+            {!selectedConversation && !isMobileView && !showCallNotes && !showNewDm && (
               <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
                 <MessageSquare className="w-12 h-12 text-muted-foreground/50 mb-4" />
                 <h2 className="text-lg font-semibold mb-2">Select a Channel or Conversation</h2>

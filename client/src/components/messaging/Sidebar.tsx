@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, FileText } from "lucide-react";
 import { SidebarSection } from "./SidebarSection";
-import { getInitials, type User, type Channel, type Conversation, type ChannelRow } from "./types";
+import { getInitials, type Channel, type Conversation, type ChannelRow } from "./types";
 import { cn } from "@/lib/utils";
 
 function EntityBadge({ conversation }: { conversation: Conversation }) {
@@ -74,12 +74,12 @@ interface SidebarProps {
   companyConversation?: Conversation;
   selectedConversationId: string | null;
   onSelectConversation: (id: string) => void;
-  availableUsers: User[];
   activeCallConversationIds?: Set<string>;
   onJoinCall?: (conversationId: string) => void;
   compact?: boolean;
   showCallNotes?: boolean;
   onToggleCallNotes?: () => void;
+  onNewDm?: () => void;
 }
 
 export function Sidebar({
@@ -89,12 +89,12 @@ export function Sidebar({
   companyConversation,
   selectedConversationId,
   onSelectConversation,
-  availableUsers,
   activeCallConversationIds = new Set(),
   onJoinCall,
   compact = false,
   showCallNotes = false,
   onToggleCallNotes,
+  onNewDm,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [newChannelOpen, setNewChannelOpen] = useState(false);
@@ -102,7 +102,6 @@ export function Sidebar({
   const [newChannelDescription, setNewChannelDescription] = useState("");
   const [newChannelTopic, setNewChannelTopic] = useState("");
   const [newChannelSlug, setNewChannelSlug] = useState("");
-  const [newDmOpen, setNewDmOpen] = useState(false);
 
   const createChannelMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string; topic?: string; slug?: string }) => {
@@ -121,17 +120,6 @@ export function Sidebar({
     },
   });
 
-  const createConversationMutation = useMutation({
-    mutationFn: async ({ type, participantIds }: { type: string; participantIds: string[] }) => {
-      const response = await apiRequest("POST", "/api/conversations", { type, participantIds });
-      return response.json();
-    },
-    onSuccess: (newConversation) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-      onSelectConversation(newConversation.id);
-      setNewDmOpen(false);
-    },
-  });
 
   const joinChannelMutation = useMutation({
     mutationFn: async (channelId: string) => {
@@ -471,43 +459,9 @@ export function Sidebar({
           <SidebarSection
             label="Direct Messages"
             action={
-              <Dialog open={newDmOpen} onOpenChange={setNewDmOpen}>
-                <DialogTrigger asChild>
-                  <button className="p-0.5 rounded hover:bg-accent" data-testid="button-new-dm">
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="z-[10000]" overlayClassName="z-[10000]">
-                  <DialogHeader>
-                    <DialogTitle>Start a Direct Message</DialogTitle>
-                    <DialogDescription>Select a team member to start a private conversation</DialogDescription>
-                  </DialogHeader>
-                  <ScrollArea className="h-[300px] mt-4">
-                    {availableUsers.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No team members available</p>
-                    ) : (
-                      <div className="space-y-1">
-                        {availableUsers.map(u => (
-                          <button
-                            key={u.id}
-                            onClick={() => createConversationMutation.mutate({ type: "DIRECT", participantIds: [u.id] })}
-                            className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors text-left"
-                            data-testid={`button-dm-user-${u.id}`}
-                          >
-                            <Avatar className="h-8 w-8">
-                              <AvatarFallback className="text-xs">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="text-sm font-medium">{u.firstName} {u.lastName}</p>
-                              <p className="text-xs text-muted-foreground">{u.role}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </ScrollArea>
-                </DialogContent>
-              </Dialog>
+              <button className="p-0.5 rounded hover:bg-accent" onClick={onNewDm} data-testid="button-new-dm">
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             }
           >
             {directMessages.filter(c => {
