@@ -37,6 +37,26 @@ const FALLBACK_ICE_SERVERS: RTCConfiguration = {
       username: "openrelayproject",
       credential: "openrelayproject",
     },
+    {
+      urls: "turn:relay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:relay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:relay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turns:relay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
 };
 
@@ -46,6 +66,7 @@ const PARTICIPANT_POLL_INTERVAL_MS = 3000;
 const ICE_TIMEOUT_WITH_TURN_MS = 15000;
 const ICE_TIMEOUT_STUN_ONLY_MS = 8000;
 const ICE_SLOW_CHECK_MS = 3000;
+const CONNECTED_NO_TRACKS_TIMEOUT_MS = 5000;
 
 interface SignalMessage {
   type: "offer" | "answer" | "ice-candidate" | "camera-state";
@@ -84,7 +105,7 @@ export function VideoCallOverlay({
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteCameraOff, setRemoteCameraOff] = useState<Record<string, boolean>>({});
-  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying" | "checking_slow" | "peer_unreachable">>({});
+  const [peerStates, setPeerStates] = useState<Record<string, RTCIceConnectionState | "retrying" | "checking_slow" | "peer_unreachable" | "connected_no_video">>({});
   const [iceFailureReasons, setIceFailureReasons] = useState<Record<string, "turn_unreachable" | "network_blocked">>({});
   const iceFailureReasonsRef = useRef<Record<string, "turn_unreachable" | "network_blocked">>({});
   const [iceConfig, setIceConfig] = useState<RTCConfiguration>(FALLBACK_ICE_SERVERS);
@@ -102,6 +123,8 @@ export function VideoCallOverlay({
   const retryCountRef = useRef<Record<string, number>>({});
   const iceConfigRef = useRef<RTCConfiguration>(FALLBACK_ICE_SERVERS);
   const signalHandlerRegisteredRef = useRef(false);
+  const connectedNoTracksRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const retryConnectionRef = useRef<(remoteUserId: string) => void>(() => {});
   const [turnPreCheckStatus, setTurnPreCheckStatus] = useState<"pending" | "ok" | "stun_only" | "no_connectivity">("pending");
 
   useEffect(() => {
@@ -371,8 +394,22 @@ export function VideoCallOverlay({
     if (peerConnectionsRef.current[remoteUserId]) {
       peerConnectionsRef.current[remoteUserId].close();
     }
+    if (connectedNoTracksRef.current[remoteUserId]) {
+      clearTimeout(connectedNoTracksRef.current[remoteUserId]);
+      delete connectedNoTracksRef.current[remoteUserId];
+    }
 
-    const pc = new RTCPeerConnection(overrideConfig || iceConfigRef.current);
+    let config = overrideConfig || iceConfigRef.current;
+    if (turnPreCheckStatus === "stun_only" && !overrideConfig) {
+      config = {
+        ...config,
+        iceCandidatePoolSize: 6,
+        bundlePolicy: "max-bundle",
+      };
+      console.log(`[WebRTC] STUN-only mode: using aggressive ICE gathering for ${remoteUserId}`);
+    }
+
+    const pc = new RTCPeerConnection(config);
     peerConnectionsRef.current[remoteUserId] = pc;
 
     if (localStreamRef.current) {
@@ -388,25 +425,70 @@ export function VideoCallOverlay({
     };
 
     pc.ontrack = (event) => {
-      let remoteStream = event.streams[0];
-      if (!remoteStream) {
-        remoteStream = new MediaStream();
-        remoteStream.addTrack(event.track);
+      console.log(`[WebRTC] Track received from ${remoteUserId}: kind=${event.track.kind}, id=${event.track.id}, readyState=${event.track.readyState}, muted=${event.track.muted}, hasStream=${!!event.streams[0]}`);
+
+      event.track.onended = () => {
+        console.warn(`[WebRTC] Remote track ended: kind=${event.track.kind}, id=${event.track.id}, peer=${remoteUserId} — scheduling cleanup/retry`);
+        setRemoteStreams(prev => {
+          const existing = prev[remoteUserId];
+          if (!existing) return prev;
+          const liveTracks = existing.getTracks().filter(t => t.readyState === "live");
+          if (liveTracks.length === 0) {
+            console.log(`[WebRTC] All tracks ended for ${remoteUserId}, removing stream and retrying`);
+            const next = { ...prev };
+            delete next[remoteUserId];
+            setTimeout(() => {
+              const pc = peerConnectionsRef.current[remoteUserId];
+              if (pc && (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed")) {
+                console.log(`[WebRTC] Renegotiating with ${remoteUserId} after all tracks ended`);
+                retryConnectionRef.current(remoteUserId);
+              }
+            }, 1000);
+            return next;
+          }
+          return { ...prev, [remoteUserId]: new MediaStream(liveTracks) };
+        });
+      };
+      event.track.onmute = () => {
+        console.log(`[WebRTC] Remote track muted: kind=${event.track.kind}, peer=${remoteUserId}`);
+      };
+      event.track.onunmute = () => {
+        console.log(`[WebRTC] Remote track unmuted: kind=${event.track.kind}, peer=${remoteUserId}`);
+      };
+
+      if (event.track.kind === "video" && event.track.readyState === "live" && connectedNoTracksRef.current[remoteUserId]) {
+        clearTimeout(connectedNoTracksRef.current[remoteUserId]);
+        delete connectedNoTracksRef.current[remoteUserId];
+        console.log(`[WebRTC] Live video track received from ${remoteUserId}, clearing connected_no_video timer`);
       }
+
       setRemoteStreams(prev => {
         const existing = prev[remoteUserId];
-        if (existing && event.streams[0]) {
-          return { ...prev, [remoteUserId]: event.streams[0] };
-        }
-        if (existing && !event.streams[0]) {
+        if (existing) {
           const hasTrack = existing.getTracks().some(t => t.id === event.track.id);
           if (!hasTrack) {
             existing.addTrack(event.track);
+            console.log(`[WebRTC] Added ${event.track.kind} track to existing stream for ${remoteUserId} (total tracks: ${existing.getTracks().length})`);
           }
           return { ...prev, [remoteUserId]: new MediaStream(existing.getTracks()) };
         }
-        return { ...prev, [remoteUserId]: remoteStream };
+        const newStream = event.streams[0] || new MediaStream();
+        if (!event.streams[0]) {
+          newStream.addTrack(event.track);
+        }
+        console.log(`[WebRTC] Created new stream for ${remoteUserId} with ${newStream.getTracks().length} track(s)`);
+        return { ...prev, [remoteUserId]: newStream };
       });
+
+      if (event.track.kind === "video" && event.track.readyState === "live") {
+        setPeerStates(prev => {
+          if (prev[remoteUserId] === "connected_no_video") {
+            console.log(`[WebRTC] Live video track received from ${remoteUserId}, clearing connected_no_video state`);
+            return { ...prev, [remoteUserId]: "connected" };
+          }
+          return prev;
+        });
+      }
     };
 
     pc.oniceconnectionstatechange = () => {
@@ -424,9 +506,29 @@ export function VideoCallOverlay({
           delete iceTimeoutRef.current[`${remoteUserId}_slow`];
         }
         retryCountRef.current[remoteUserId] = 0;
+
+        if (connectedNoTracksRef.current[remoteUserId]) {
+          clearTimeout(connectedNoTracksRef.current[remoteUserId]);
+        }
+        connectedNoTracksRef.current[remoteUserId] = setTimeout(() => {
+          setRemoteStreams(currentStreams => {
+            const stream = currentStreams[remoteUserId];
+            const hasVideoTracks = stream && stream.getVideoTracks().length > 0;
+            if (!hasVideoTracks) {
+              console.warn(`[WebRTC] Connected to ${remoteUserId} but no video tracks received after ${CONNECTED_NO_TRACKS_TIMEOUT_MS / 1000}s`);
+              setPeerStates(prev => ({ ...prev, [remoteUserId]: "connected_no_video" }));
+            }
+            return currentStreams;
+          });
+          delete connectedNoTracksRef.current[remoteUserId];
+        }, CONNECTED_NO_TRACKS_TIMEOUT_MS);
       }
 
       if (state === "failed") {
+        if (connectedNoTracksRef.current[remoteUserId]) {
+          clearTimeout(connectedNoTracksRef.current[remoteUserId]);
+          delete connectedNoTracksRef.current[remoteUserId];
+        }
         if (iceTimeoutRef.current[remoteUserId]) {
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
           delete iceTimeoutRef.current[remoteUserId];
@@ -470,6 +572,10 @@ export function VideoCallOverlay({
           });
         }
       } else if (state === "disconnected") {
+        if (connectedNoTracksRef.current[remoteUserId]) {
+          clearTimeout(connectedNoTracksRef.current[remoteUserId]);
+          delete connectedNoTracksRef.current[remoteUserId];
+        }
         if (iceTimeoutRef.current[remoteUserId]) {
           clearTimeout(iceTimeoutRef.current[remoteUserId]);
           delete iceTimeoutRef.current[remoteUserId];
@@ -508,11 +614,11 @@ export function VideoCallOverlay({
             setPeerStates(prev => ({ ...prev, [remoteUserId]: "checking_slow" }));
           }
         }, ICE_SLOW_CHECK_MS);
-        const hasTurnConfig = iceConfigRef.current.iceServers?.some(s => {
+        const hasTurnConfig = turnPreCheckStatus === "ok" || (turnPreCheckStatus !== "stun_only" && iceConfigRef.current.iceServers?.some(s => {
           const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
           return urls.some((u: string) => u.startsWith("turn:") || u.startsWith("turns:"));
-        });
-        const iceTimeoutMs = hasTurnConfig ? ICE_TIMEOUT_WITH_TURN_MS : ICE_TIMEOUT_STUN_ONLY_MS;
+        }));
+        const iceTimeoutMs = (hasTurnConfig && turnPreCheckStatus !== "stun_only") ? ICE_TIMEOUT_WITH_TURN_MS : ICE_TIMEOUT_STUN_ONLY_MS;
         iceTimeoutRef.current[remoteUserId] = setTimeout(async () => {
           if (pc.iceConnectionState === "checking") {
             let hasRelayCandidates = false;
@@ -545,7 +651,7 @@ export function VideoCallOverlay({
     };
 
     return pc;
-  }, [sendSignal]);
+  }, [sendSignal, turnPreCheckStatus]);
 
   const flushPendingCandidates = useCallback(async (remoteUserId: string) => {
     const pc = peerConnectionsRef.current[remoteUserId];
@@ -619,6 +725,8 @@ export function VideoCallOverlay({
       setPeerStates(prev => ({ ...prev, [remoteUserId]: "failed" }));
     }
   }, [createPeerConnection, sendSignal]);
+
+  retryConnectionRef.current = retryConnection;
 
   const handleRetryConnection = useCallback((remoteUserId: string) => {
     retryCountRef.current[remoteUserId] = 0;
@@ -799,6 +907,8 @@ export function VideoCallOverlay({
       iceTimeoutRef.current = {};
       Object.values(signalRetryTimerRef.current).forEach(t => clearTimeout(t));
       signalRetryTimerRef.current = {};
+      Object.values(connectedNoTracksRef.current).forEach(t => clearTimeout(t));
+      connectedNoTracksRef.current = {};
     };
   }, []);
 
@@ -986,6 +1096,7 @@ export function VideoCallOverlay({
               const isConnecting = iceState === "new" || iceState === "checking" || isCheckingSlow;
               const isFailed = iceState === "failed";
               const isPeerUnreachable = iceState === "peer_unreachable";
+              const isConnectedNoVideo = iceState === "connected_no_video";
               return (
                 <div
                   key={p.userId}
@@ -1067,6 +1178,12 @@ export function VideoCallOverlay({
                       {isCheckingSlow && (
                         <p className="text-amber-400 text-xs" data-testid="text-slow-connection">Taking longer than expected...</p>
                       )}
+                    </div>
+                  ) : isConnectedNoVideo ? (
+                    <div className="flex flex-col items-center gap-2 text-center px-4">
+                      <Video className="w-10 h-10 text-amber-400" />
+                      <p className="text-amber-400 text-sm font-medium" data-testid="text-connected-no-video">Connected — waiting for video</p>
+                      <p className="text-gray-500 text-xs">The connection was established but no video has been received yet. The other participant may have their camera off.</p>
                     </div>
                   ) : (
                     <Avatar className="h-20 w-20">
@@ -1179,6 +1296,22 @@ function RemoteVideo({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamIdRef = useRef<string>("");
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [trackEnded, setTrackEnded] = useState(false);
+  const [prolongedMuted, setProlongedMuted] = useState(false);
+
+  const attemptPlay = useCallback((el: HTMLVideoElement) => {
+    el.play().then(() => {
+      setAutoplayBlocked(false);
+    }).catch((err) => {
+      if (err.name === "NotAllowedError") {
+        console.warn(`[WebRTC] Autoplay blocked for remote video from ${participant.user.firstName}`);
+        setAutoplayBlocked(true);
+      } else {
+        console.warn(`[WebRTC] Play failed for remote video:`, err.message);
+      }
+    });
+  }, [participant.user.firstName]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -1188,19 +1321,17 @@ function RemoteVideo({
     if (streamIdRef.current !== currentStreamId || el.srcObject !== stream) {
       streamIdRef.current = currentStreamId;
       el.srcObject = stream;
-      el.play().catch(() => {});
+      attemptPlay(el);
     }
-  }, [stream]);
+  }, [stream, attemptPlay]);
 
   useEffect(() => {
     const el = videoRef.current;
     if (!el || !stream) return;
 
     const handleTrackChange = () => {
-      if (el.srcObject !== stream) {
-        el.srcObject = stream;
-        el.play().catch(() => {});
-      }
+      el.srcObject = stream;
+      attemptPlay(el);
     };
 
     stream.addEventListener("addtrack", handleTrackChange);
@@ -1209,15 +1340,114 @@ function RemoteVideo({
       stream.removeEventListener("addtrack", handleTrackChange);
       stream.removeEventListener("removetrack", handleTrackChange);
     };
-  }, [stream]);
+  }, [stream, attemptPlay]);
+
+  useEffect(() => {
+    if (!stream) return;
+
+    const videoTracks = stream.getVideoTracks();
+    const hasLiveTracks = videoTracks.some(t => t.readyState === "live");
+    if (hasLiveTracks) {
+      setTrackEnded(false);
+    }
+
+    const cleanups: (() => void)[] = [];
+
+    for (const track of videoTracks) {
+      const handleEnded = () => {
+        console.warn(`[WebRTC] Video track ended for ${participant.user.firstName}: id=${track.id}`);
+        const allEnded = stream.getVideoTracks().every(t => t.readyState === "ended");
+        if (allEnded) {
+          setTrackEnded(true);
+        }
+      };
+      track.addEventListener("ended", handleEnded);
+      cleanups.push(() => track.removeEventListener("ended", handleEnded));
+    }
+
+    const allEndedNow = videoTracks.length > 0 && videoTracks.every(t => t.readyState === "ended");
+    if (allEndedNow) {
+      setTrackEnded(true);
+    }
+
+    const interval = setInterval(() => {
+      const vTracks = stream.getVideoTracks();
+      const allEnded = vTracks.length > 0 && vTracks.every(t => t.readyState === "ended");
+      if (allEnded) {
+        setTrackEnded(true);
+      } else if (vTracks.some(t => t.readyState === "live")) {
+        setTrackEnded(false);
+      }
+    }, 3000);
+
+    return () => {
+      cleanups.forEach(fn => fn());
+      clearInterval(interval);
+    };
+  }, [stream, participant.user.firstName]);
+
+  useEffect(() => {
+    if (!stream) return;
+    let mutedSinceMs = 0;
+    const PROLONGED_MUTE_THRESHOLD_MS = 10000;
+
+    const checkMuted = () => {
+      const vTracks = stream.getVideoTracks();
+      const allMuted = vTracks.length > 0 && vTracks.every(t => t.muted && t.readyState === "live");
+      if (allMuted) {
+        if (mutedSinceMs === 0) {
+          mutedSinceMs = Date.now();
+        } else if (Date.now() - mutedSinceMs >= PROLONGED_MUTE_THRESHOLD_MS) {
+          console.warn(`[WebRTC] Video tracks muted for >${PROLONGED_MUTE_THRESHOLD_MS / 1000}s for ${participant.user.firstName}`);
+          setProlongedMuted(true);
+        }
+      } else {
+        mutedSinceMs = 0;
+        setProlongedMuted(false);
+      }
+    };
+
+    const interval = setInterval(checkMuted, 2000);
+    return () => clearInterval(interval);
+  }, [stream, participant.user.firstName]);
+
+  const handleClickToPlay = useCallback(() => {
+    const el = videoRef.current;
+    if (el) {
+      attemptPlay(el);
+    }
+  }, [attemptPlay]);
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      className="w-full h-full object-cover"
-      data-testid="video-remote-feed"
-    />
+    <div className="relative w-full h-full">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className="w-full h-full object-cover"
+        data-testid="video-remote-feed"
+      />
+      {autoplayBlocked && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 cursor-pointer"
+          onClick={handleClickToPlay}
+          data-testid="overlay-click-to-play"
+        >
+          <Video className="w-10 h-10 text-white mb-2" />
+          <p className="text-white text-sm font-medium">Click to play</p>
+          <p className="text-gray-400 text-xs mt-1">Browser blocked autoplay</p>
+        </div>
+      )}
+      {trackEnded && !autoplayBlocked && (
+        <div className="absolute top-2 right-2 bg-amber-900/80 rounded px-2 py-1 text-xs text-amber-300" data-testid="badge-track-ended">
+          Video track ended
+        </div>
+      )}
+      {prolongedMuted && !trackEnded && !autoplayBlocked && (
+        <div className="absolute top-2 right-2 bg-amber-900/80 rounded px-2 py-1 text-xs text-amber-300" data-testid="badge-prolonged-muted">
+          Video signal paused
+        </div>
+      )}
+    </div>
   );
 }

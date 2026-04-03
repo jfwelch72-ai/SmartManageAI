@@ -3019,12 +3019,45 @@ const messagingSetup = (async () => {
 
       let turnTier: "custom" | "metered" | "metered_stale" | "open_relay" | "none" = "none";
 
-      const openRelayServers = [
+      const openRelayServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [];
+
+      openRelayServers.push(
         { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
         { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
         { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
         { urls: "turns:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-      ];
+      );
+
+      openRelayServers.push(
+        { urls: "turn:relay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:relay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turn:relay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+        { urls: "turns:relay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+      );
+
+      const secondaryRelayUrl = process.env.SECONDARY_TURN_SERVER_URL;
+      const secondaryRelayUser = process.env.SECONDARY_TURN_SERVER_USERNAME;
+      const secondaryRelayCred = process.env.SECONDARY_TURN_SERVER_CREDENTIAL;
+      if (secondaryRelayUrl && secondaryRelayUser && secondaryRelayCred) {
+        const secondaryUrls = secondaryRelayUrl.split(",").map(u => u.trim()).filter(Boolean);
+        for (const url of secondaryUrls) {
+          openRelayServers.push({ urls: url, username: secondaryRelayUser, credential: secondaryRelayCred });
+        }
+        console.log(`[ICE Config] Added ${secondaryUrls.length} secondary TURN server(s) from env`);
+      }
+
+      const tertiaryRelayUrl = process.env.TERTIARY_TURN_SERVER_URL;
+      const tertiaryRelayUser = process.env.TERTIARY_TURN_SERVER_USERNAME;
+      const tertiaryRelayCred = process.env.TERTIARY_TURN_SERVER_CREDENTIAL;
+      if (tertiaryRelayUrl && tertiaryRelayUser && tertiaryRelayCred) {
+        const tertiaryUrls = tertiaryRelayUrl.split(",").map(u => u.trim()).filter(Boolean);
+        for (const url of tertiaryUrls) {
+          openRelayServers.push({ urls: url, username: tertiaryRelayUser, credential: tertiaryRelayCred });
+        }
+        console.log(`[ICE Config] Added ${tertiaryUrls.length} tertiary TURN server(s) from env`);
+      }
+
+      console.log(`[ICE Config] Total fallback TURN servers: ${openRelayServers.length} (${openRelayServers.length > 4 ? "multi-provider" : "single-provider"})`);
 
       if (turnUrl && turnUser && turnCred) {
         const turnUrls = turnUrl.split(",").map(u => u.trim()).filter(Boolean);
@@ -3055,7 +3088,7 @@ const messagingSetup = (async () => {
         return urls.some(u => u.startsWith("turn:") || u.startsWith("turns:"));
       });
 
-      res.json({ iceServers, hasTurn, turnTier });
+      res.json({ iceServers, hasTurn, turnTier, stunOnly: !hasTurn });
     } catch (error) {
       logError("ICE config error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
