@@ -19,7 +19,7 @@ export function useGlobalCallEvents(): GlobalCallState {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
   const [conversationName, setConversationName] = useState("");
-  const { startGlobalCall, updateActiveCall, activeCall } = useGlobalVideoCall();
+  const { startGlobalCall, updateActiveCall, activeCall, roomRef } = useGlobalVideoCall();
   const { addListener, removeListener, isConnected } = useGlobalSSE();
   const userRef = useRef(user);
   const activeCallRef = useRef(activeCall);
@@ -94,6 +94,11 @@ export function useGlobalCallEvents(): GlobalCallState {
           if (prev?.id === data.callId) return null;
           return prev;
         });
+        if (roomRef.current) {
+          try {
+            roomRef.current.disconnect();
+          } catch {}
+        }
         updateActiveCall(prev => {
           if (prev?.id === data.callId) return null;
           return prev;

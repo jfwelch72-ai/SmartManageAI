@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CallNotesPanel } from "./CallNotesPanel";
 import { getInitials, type VideoCallData, type Conversation } from "./types";
 import { cn } from "@/lib/utils";
+import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
 import {
   LiveKitRoom,
   VideoTrack,
@@ -131,8 +132,18 @@ function CallContent({
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const room = useRoomContext();
+  const { roomRef } = useGlobalVideoCall();
   const { localParticipant } = useLocalParticipant();
   const remoteParticipants = useRemoteParticipants();
+
+  useEffect(() => {
+    roomRef.current = room;
+    return () => {
+      if (roomRef.current === room) {
+        roomRef.current = null;
+      }
+    };
+  }, [room, roomRef]);
 
   const isMuted = !localParticipant.isMicrophoneEnabled;
   const isVideoOff = !localParticipant.isCameraEnabled;
@@ -509,7 +520,7 @@ function CallContent({
           variant="destructive"
           size="icon"
           className="h-14 w-14 rounded-full"
-          onClick={(activeParticipants.length === 2 || isInitiator) ? handleEndCall : handleLeaveCall}
+          onClick={(conversation.participants.length <= 2 || isInitiator) ? handleEndCall : handleLeaveCall}
           data-testid="button-end-call"
         >
           <PhoneOff className="w-6 h-6" />

@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useRef, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useRef, useCallback, type ReactNode, type MutableRefObject } from "react";
 import type { VideoCallData, Conversation } from "@/components/messaging/types";
 import { apiRequest } from "@/lib/queryClient";
+import type { Room } from "livekit-client";
 
 interface GlobalVideoCallContextType {
   activeCall: VideoCallData | null;
@@ -10,6 +11,7 @@ interface GlobalVideoCallContextType {
   leaveGlobalCall: () => Promise<void>;
   clearGlobalCall: () => void;
   updateActiveCall: (updater: (prev: VideoCallData | null) => VideoCallData | null) => void;
+  roomRef: MutableRefObject<Room | null>;
 }
 
 const GlobalVideoCallContext = createContext<GlobalVideoCallContextType | null>(null);
@@ -18,6 +20,7 @@ export function GlobalVideoCallProvider({ children }: { children: ReactNode }) {
   const [activeCall, setActiveCall] = useState<VideoCallData | null>(null);
   const [activeCallConversation, setActiveCallConversation] = useState<Conversation | null>(null);
   const activeCallRef = useRef<VideoCallData | null>(null);
+  const roomRef = useRef<Room | null>(null);
 
   const updateActiveCallRef = (call: VideoCallData | null) => {
     activeCallRef.current = call;
@@ -78,6 +81,7 @@ export function GlobalVideoCallProvider({ children }: { children: ReactNode }) {
       leaveGlobalCall,
       clearGlobalCall,
       updateActiveCall,
+      roomRef,
     }}>
       {children}
     </GlobalVideoCallContext.Provider>

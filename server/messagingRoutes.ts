@@ -2647,7 +2647,13 @@ const messagingSetup = (async () => {
       const participantIds = await getConversationParticipantIds(call.conversationId);
       const orgId = await getConversationOrgId(call.conversationId);
 
-      if (remainingActive.length === 0) {
+      if (remainingActive.length <= 1) {
+        if (remainingActive.length === 1) {
+          await db.update(videoCallParticipants)
+            .set({ leftAt: new Date() })
+            .where(and(eq(videoCallParticipants.callId, callId), sql`${videoCallParticipants.leftAt} IS NULL`));
+        }
+
         await db.update(videoCalls).set({ status: "ENDED", endedAt: new Date() }).where(eq(videoCalls.id, callId));
 
         const callParticipants = await db
