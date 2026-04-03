@@ -301,75 +301,66 @@ function CallContent({
       </div>
 
       <div className="flex flex-1 min-h-0">
-        <div className="flex-1 p-4 flex flex-col">
-          <div className={cn(
-            "flex-1 grid gap-3",
-            otherParticipants.length === 0 && "grid-cols-1",
-            otherParticipants.length === 1 && "grid-cols-1",
-            otherParticipants.length >= 2 && otherParticipants.length <= 4 && "grid-cols-2",
-            otherParticipants.length > 4 && "grid-cols-3",
-          )}>
-            {otherParticipants.length === 0 && remoteParticipants.length === 0 && (
-              <div className="flex items-center justify-center rounded-xl bg-gray-800 border border-gray-700">
-                <div className="text-center">
-                  <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3">
-                    <Users className="w-10 h-10 text-gray-500" />
-                  </div>
-                  <p className="text-gray-400 text-sm">Waiting for others to join...</p>
+        <div className="flex-1 p-4 flex flex-col lg:flex-row gap-3 min-h-0">
+          <div className="flex-1 min-h-0 relative rounded-xl bg-gray-800 border border-gray-700 overflow-hidden flex items-center justify-center" data-testid="video-local-main">
+            {otherParticipants.length === 0 && remoteParticipants.length === 0 ? (
+              <div className="text-center">
+                <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center mx-auto mb-3">
+                  <Users className="w-10 h-10 text-gray-500" />
                 </div>
+                <p className="text-gray-400 text-sm">Waiting for others to join...</p>
               </div>
-            )}
-            {remoteParticipants.length > 0 ? (
-              remoteParticipants.map(rp => (
-                <RemoteParticipantTile
-                  key={rp.identity}
-                  participant={rp}
-                  callParticipants={otherParticipants}
-                  tracks={tracks}
-                />
-              ))
+            ) : (isVideoOff && !isScreenSharing) || !localVideoTrack?.publication?.track ? (
+              <div className="flex items-center justify-center h-full">
+                <Avatar className="h-20 w-20">
+                  <AvatarFallback className="text-2xl bg-gray-700 text-gray-300">You</AvatarFallback>
+                </Avatar>
+              </div>
             ) : (
-              otherParticipants.map(p => (
-                <div
-                  key={p.userId}
-                  className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden"
-                  data-testid={`video-feed-${p.userId}`}
-                >
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="w-10 h-10 text-blue-400 animate-spin" />
-                    <p className="text-blue-400 text-sm" data-testid="text-connecting">Connecting...</p>
-                  </div>
-                  <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
-                    {p.user?.firstName ?? ""} {p.user?.lastName ?? ""}
-                  </div>
-                </div>
-              ))
+              <VideoTrack
+                trackRef={localVideoTrack}
+                className={cn(
+                  "w-full h-full object-cover",
+                  !isScreenSharing && "[transform:rotateY(180deg)]"
+                )}
+                data-testid="video-local-feed"
+              />
             )}
-          </div>
-
-          <div className="mt-3 flex justify-end">
-            <div className="relative w-48 h-36 rounded-lg overflow-hidden bg-gray-800 border border-gray-700">
-              {(isVideoOff && !isScreenSharing) || !localVideoTrack?.publication?.track ? (
-                <div className="flex items-center justify-center h-full">
-                  <Avatar className="h-12 w-12">
-                    <AvatarFallback className="text-lg bg-gray-700 text-gray-300">You</AvatarFallback>
-                  </Avatar>
-                </div>
-              ) : (
-                <VideoTrack
-                  trackRef={localVideoTrack}
-                  className={cn(
-                    "w-full h-full object-cover",
-                    !isScreenSharing && "[transform:rotateY(180deg)]"
-                  )}
-                  data-testid="video-local-feed"
-                />
-              )}
-              <div className="absolute bottom-1 left-1 bg-black/60 rounded px-1.5 py-0.5 text-[10px] text-white">
-                You {isMuted && "(muted)"} {isScreenSharing && "(sharing)"}
-              </div>
+            <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
+              You {isMuted && "(muted)"} {isScreenSharing && "(sharing)"}
             </div>
           </div>
+
+          {(remoteParticipants.length > 0 || otherParticipants.length > 0) && (
+            <div className="flex flex-row lg:flex-col gap-3 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto min-h-0 lg:w-56 shrink-0 max-h-32 lg:max-h-none" data-testid="remote-participants-panel">
+              {remoteParticipants.length > 0 ? (
+                remoteParticipants.map(rp => (
+                  <RemoteParticipantTile
+                    key={rp.identity}
+                    participant={rp}
+                    callParticipants={otherParticipants}
+                    tracks={tracks}
+                  />
+                ))
+              ) : (
+                otherParticipants.map(p => (
+                  <div
+                    key={p.userId}
+                    className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden aspect-video shrink-0 w-40 lg:w-auto"
+                    data-testid={`video-feed-${p.userId}`}
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-10 h-10 text-blue-400 animate-spin" />
+                      <p className="text-blue-400 text-sm" data-testid="text-connecting">Connecting...</p>
+                    </div>
+                    <div className="absolute bottom-2 left-2 bg-black/60 rounded px-2 py-0.5 text-xs text-white">
+                      {p.user?.firstName ?? ""} {p.user?.lastName ?? ""}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {showNotes && (
@@ -472,7 +463,7 @@ function RemoteParticipantTile({
 
   return (
     <div
-      className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden"
+      className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden aspect-video shrink-0 w-40 lg:w-auto"
       data-testid={`video-feed-${participant.identity}`}
     >
       {activeVideoTrack?.publication?.track ? (
