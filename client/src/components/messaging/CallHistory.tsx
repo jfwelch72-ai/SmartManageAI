@@ -83,7 +83,7 @@ export function CallHistory({ conversationId }: CallHistoryProps) {
           Call History
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg z-[10001]" overlayClassName="z-[10000]">
         <DialogHeader>
           <DialogTitle>Call History</DialogTitle>
         </DialogHeader>
