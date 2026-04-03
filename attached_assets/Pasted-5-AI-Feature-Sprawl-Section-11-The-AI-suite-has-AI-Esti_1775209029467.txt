@@ -1,0 +1,12 @@
+5. AI Feature Sprawl (Section 11)
+The AI suite has: AI Estimator, AI Bid Wizard, AI Contract Analyzer, AI Document Analyzer, AI CFO Analytics, AI PM Dashboard, AI Scheduling, AI Onboarding, AI Voice Logs, AI Resume Scoring, AI Content Generation, AI Takeoff features. Each has its own route file and page. The bible lists AI touching nearly every module.
+Recommendation: Consolidate behind a single AI orchestration layer (you already have aiOrchestrationRoutes — lean into it). The AI should be integrated contextually into existing features rather than having dedicated AI pages. For example, AI contract analysis should be a button on the contracts page, not a separate page.
+6. Notification Channels (Section 15)
+You support Email, Web Push, SMS, Microsoft Teams, and Slack — with per-user, per-channel, per-notification-type preferences. That's a matrix of 5 channels × 20+ notification types × per-user preferences. The configuration complexity is enormous.
+Recommendation: Start with Email + Web Push only. SMS, Teams, and Slack integrations should be gated behind enterprise tiers and only built when customers actually request them.
+7. Three Separate Portals (Section 16)
+Client Portal, Subcontractor Portal, and Vendor Dashboard are three separate external-facing applications. Each needs its own auth flow, its own UI, and its own maintenance.
+Recommendation: Merge into a single "External Portal" with role-based views. The data model already supports this — the differentiation should be in what data is shown, not in having three separate codebases.
+8. Financial Module Depth (Section 7)
+You have SOV, AIA Progress Billing, Change Orders, T&M Billing, WIP Reports, Cost Ledger, Revenue Recognition, Subcontractor Payables, and a What-If Simulator. This is very deep — deeper than some dedicated construction accounting software.
+Recommendation: The core billing flow (SOV → Progress Billing → Change Orders) is essential. But Revenue Recognition and the What-If Simulator could be deferred. WIP Reports are important but could be simplified to a read-only view rather than a full module.
