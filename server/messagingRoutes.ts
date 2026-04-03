@@ -918,6 +918,88 @@ const messagingSetup = (async () => {
     }
   });
 
+  router.post("/api/conversations/:id/participants", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const organizationId = req.user!.organizationId;
+      const conversationId = req.params.id;
+      const { userIds } = req.body;
+
+      if (!organizationId) {
+        res.status(400).json({ error: "You must belong to an organization" });
+        return;
+      }
+
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        res.status(400).json({ error: "userIds must be a non-empty array" });
+        return;
+      }
+
+      const dedupedUserIds = [...new Set(userIds as string[])];
+
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) {
+        res.status(403).json({ error: "Not a participant of this conversation" });
+        return;
+      }
+
+      const [conv] = await db
+        .select()
+        .from(conversations)
+        .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)))
+        .limit(1);
+
+      if (!conv) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
+
+      if (conv.type === "DIRECT") {
+        res.status(400).json({ error: "Cannot add participants to direct conversations" });
+        return;
+      }
+
+      const validUsers = await db
+        .select({ id: users.id, organizationId: users.organizationId })
+        .from(users)
+        .where(inArray(users.id, dedupedUserIds));
+
+      if (validUsers.length !== dedupedUserIds.length) {
+        res.status(400).json({ error: "One or more user IDs are invalid" });
+        return;
+      }
+
+      const crossOrgUsers = validUsers.filter(u => u.organizationId !== organizationId);
+      if (crossOrgUsers.length > 0) {
+        res.status(400).json({ error: "Cannot add users from different organizations" });
+        return;
+      }
+
+      const existingParticipants = await db
+        .select({ userId: conversationParticipants.userId })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.conversationId, conversationId));
+
+      const existingUserIds = new Set(existingParticipants.map(p => p.userId));
+      const newUserIds = dedupedUserIds.filter(id => !existingUserIds.has(id));
+
+      if (newUserIds.length > 0) {
+        await db.insert(conversationParticipants).values(
+          newUserIds.map((uid: string) => ({
+            conversationId,
+            userId: uid,
+            isAdmin: false,
+          }))
+        );
+      }
+
+      res.status(201).json({ added: newUserIds.length });
+    } catch (error) {
+      logError("Add participants error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get messages for a conversation (cursor-based pagination)
   // Query params:
   //   before=<messageId> — return the PAGE_SIZE messages immediately preceding this message

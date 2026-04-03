@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, Users, X, Search, UserPlus } from "lucide-react";
@@ -430,6 +431,25 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const hasLoadedAllRef = useRef(false);
+
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [addPeopleMode, setAddPeopleMode] = useState(false);
+  const [addPeopleSearch, setAddPeopleSearch] = useState("");
+
+  const addParticipantsMutation = useMutation({
+    mutationFn: async ({ conversationId, userIds }: { conversationId: string; userIds: string[] }) => {
+      const res = await apiRequest("POST", `/api/conversations/${conversationId}/participants`, { userIds });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      toast({ title: "Member added successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add member", variant: "destructive" });
+    },
+  });
 
   const MAX_VOICE_SECONDS = 120;
 
@@ -1052,48 +1072,140 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                     </p>
                   </div>
                   {selectedConversation.participants && selectedConversation.participants.length > 0 && (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="View conversation members"
-                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-full px-2 py-1 transition-colors shrink-0"
-                          data-testid="button-member-count"
-                        >
-                          <Users className="w-3.5 h-3.5" />
-                          <span>{selectedConversation.participants.length} {selectedConversation.participants.length === 1 ? "member" : "members"}</span>
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="start" className="w-64 p-0" style={{ zIndex: 10001 }} data-testid="popover-member-list">
-                        <div className="px-3 py-2 border-b">
-                          <h4 className="text-sm font-medium">Members ({selectedConversation.participants.length})</h4>
-                        </div>
-                        <ScrollArea className={cn("max-h-[280px]", selectedConversation.participants.length > 5 && "h-[280px]")}>
-                          <div className="p-1">
-                            {selectedConversation.participants.map((p) => (
-                              <div
-                                key={p.id}
-                                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm"
-                                data-testid={`member-item-${p.userId}`}
+                    <>
+                      <button
+                        type="button"
+                        aria-label="View conversation members"
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-full px-2 py-1 transition-colors shrink-0"
+                        data-testid="button-member-count"
+                        onClick={() => { setMembersModalOpen(true); setMemberSearchQuery(""); setAddPeopleMode(false); setAddPeopleSearch(""); }}
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>{selectedConversation.participants.length} {selectedConversation.participants.length === 1 ? "member" : "members"}</span>
+                      </button>
+                      <Dialog open={membersModalOpen} onOpenChange={(open) => { setMembersModalOpen(open); if (!open) { setAddPeopleMode(false); setAddPeopleSearch(""); } }}>
+                        <DialogContent className="sm:max-w-lg md:max-w-xl w-[95vw] h-[85vh] max-h-[85vh] flex flex-col gap-0 p-0" data-testid="dialog-members-modal">
+                          <DialogHeader className="px-5 pt-5 pb-3 border-b">
+                            <DialogTitle className="text-lg font-bold" data-testid="text-members-title">
+                              {selectedConversation.name || selectedConversation.participants.filter(p => p.userId !== user?.id).map(p => `${p.user.firstName}`).join(", ")}
+                            </DialogTitle>
+                          </DialogHeader>
+                          <div className="border-b px-5">
+                            <div className="flex gap-4">
+                              <button
+                                className="py-2 text-sm font-medium border-b-2 border-primary text-foreground"
+                                data-testid="tab-members"
                               >
-                                <Avatar className="h-6 w-6 shrink-0">
-                                  <AvatarFallback className="text-[10px]">
-                                    {getInitials(p.user.firstName, p.user.lastName)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium truncate leading-tight">{p.user.firstName} {p.user.lastName}</p>
-                                  <p className="text-[11px] text-muted-foreground truncate leading-tight">{p.user.role}</p>
-                                </div>
-                                {p.isAdmin && (
-                                  <span className="text-[10px] text-primary font-medium shrink-0">Admin</span>
-                                )}
-                              </div>
-                            ))}
+                                Members
+                              </button>
+                              <button className="py-2 text-sm font-medium text-muted-foreground cursor-not-allowed opacity-50" disabled data-testid="tab-about">About</button>
+                              <button className="py-2 text-sm font-medium text-muted-foreground cursor-not-allowed opacity-50" disabled data-testid="tab-settings">Settings</button>
+                            </div>
                           </div>
-                        </ScrollArea>
-                      </PopoverContent>
-                    </Popover>
+                          <div className="px-5 pt-4 pb-2">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                              <Input
+                                placeholder="Find members"
+                                value={memberSearchQuery}
+                                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                className="pl-9"
+                                data-testid="input-find-members"
+                              />
+                            </div>
+                          </div>
+                          {!addPeopleMode && selectedConversation.type !== "DIRECT" && (
+                            <button
+                              className="flex items-center gap-3 px-5 py-2.5 hover:bg-accent transition-colors text-sm"
+                              onClick={() => setAddPeopleMode(true)}
+                              data-testid="button-add-people"
+                            >
+                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                <UserPlus className="w-4 h-4 text-primary" />
+                              </div>
+                              <span className="font-medium">Add people</span>
+                            </button>
+                          )}
+                          {addPeopleMode && (
+                            <div className="px-5 pb-2">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm font-medium">Add people</span>
+                                <button onClick={() => { setAddPeopleMode(false); setAddPeopleSearch(""); }} className="ml-auto text-xs text-muted-foreground hover:text-foreground" data-testid="button-cancel-add">Cancel</button>
+                              </div>
+                              <Input
+                                placeholder="Search users to add..."
+                                value={addPeopleSearch}
+                                onChange={(e) => setAddPeopleSearch(e.target.value)}
+                                data-testid="input-add-people-search"
+                                autoFocus
+                              />
+                              <ScrollArea className="max-h-[160px] mt-2">
+                                {availableUsers
+                                  .filter(u => {
+                                    if (u.id === user?.id) return false;
+                                    const isAlreadyMember = selectedConversation.participants.some(p => p.userId === u.id);
+                                    if (isAlreadyMember) return false;
+                                    if (!addPeopleSearch) return true;
+                                    const name = `${u.firstName} ${u.lastName}`.toLowerCase();
+                                    return name.includes(addPeopleSearch.toLowerCase());
+                                  })
+                                  .map(u => (
+                                    <button
+                                      key={u.id}
+                                      className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md hover:bg-accent text-sm text-left disabled:opacity-50"
+                                      disabled={addParticipantsMutation.isPending}
+                                      onClick={() => {
+                                        addParticipantsMutation.mutate({ conversationId: selectedConversation.id, userIds: [u.id] });
+                                        setAddPeopleMode(false);
+                                        setAddPeopleSearch("");
+                                      }}
+                                      data-testid={`button-add-user-${u.id}`}
+                                    >
+                                      <Avatar className="h-6 w-6 shrink-0">
+                                        <AvatarFallback className="text-[10px]">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
+                                      </Avatar>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-medium truncate">{u.firstName} {u.lastName}</p>
+                                        <p className="text-[11px] text-muted-foreground truncate">{u.role}</p>
+                                      </div>
+                                    </button>
+                                  ))}
+                              </ScrollArea>
+                            </div>
+                          )}
+                          <ScrollArea className="flex-1 min-h-0">
+                            <div className="px-3 py-1">
+                              {selectedConversation.participants
+                                .filter(p => {
+                                  if (!memberSearchQuery) return true;
+                                  const name = `${p.user.firstName} ${p.user.lastName}`.toLowerCase();
+                                  return name.includes(memberSearchQuery.toLowerCase());
+                                })
+                                .map((p) => (
+                                  <div
+                                    key={p.id}
+                                    className="flex items-center gap-3 px-2 py-2 rounded-md text-sm"
+                                    data-testid={`member-item-${p.userId}`}
+                                  >
+                                    <Avatar className="h-8 w-8 shrink-0">
+                                      <AvatarFallback className="text-xs">
+                                        {getInitials(p.user.firstName, p.user.lastName)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium truncate leading-tight">{p.user.firstName} {p.user.lastName}</p>
+                                      <p className="text-[11px] text-muted-foreground truncate leading-tight">{p.user.role}</p>
+                                    </div>
+                                    {p.isAdmin && (
+                                      <span className="text-[10px] bg-primary/10 text-primary font-medium shrink-0 px-1.5 py-0.5 rounded">Admin</span>
+                                    )}
+                                  </div>
+                                ))}
+                            </div>
+                          </ScrollArea>
+                        </DialogContent>
+                      </Dialog>
+                    </>
                   )}
                   {selectedConversation.topic && (
                     <div className="ml-auto hidden sm:flex items-center gap-1 text-xs text-muted-foreground max-w-[40%] truncate">
