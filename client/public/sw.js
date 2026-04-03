@@ -17,6 +17,8 @@ const OFFLINE_QUEUE_STORE = 'offline-queue';
 const SYNC_HISTORY_STORE = 'sync-history';
 const OFFLINE_DB_NAME = 'smartmanageai-offline';
 const OFFLINE_DB_VERSION = 2;
+const MAX_RETRIES = 5;
+const RETRY_BACKOFF_BASE = 2000;
 
 function openOfflineDB() {
   return new Promise((resolve, reject) => {
@@ -46,6 +48,7 @@ async function addToOfflineQueue(item) {
     const request = store.add({
       ...item,
       status: 'pending',
+      retryable: true,
       createdAt: Date.now(),
       retryCount: 0,
     });
@@ -55,20 +58,31 @@ async function addToOfflineQueue(item) {
   });
 }
 
-async function getOfflineQueue() {
+async function getPendingAndRetryableItems() {
   const db = await openOfflineDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(OFFLINE_QUEUE_STORE, 'readonly');
     const store = tx.objectStore(OFFLINE_QUEUE_STORE);
-    const index = store.index('status');
-    const request = index.getAll('pending');
-    request.onsuccess = () => resolve(request.result);
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const all = request.result;
+      const now = Date.now();
+      const items = all.filter(item =>
+        item.status === 'pending' ||
+        (item.status === 'failed' && item.retryable !== false && (item.retryCount || 0) < MAX_RETRIES && (!item.nextRetryAt || item.nextRetryAt <= now))
+      );
+      resolve(items);
+    };
     request.onerror = () => reject(request.error);
     tx.oncomplete = () => db.close();
   });
 }
 
-async function updateQueueItemStatus(id, status, error) {
+function isPermanentError(status) {
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+
+async function updateQueueItem(id, updates) {
   const db = await openOfflineDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(OFFLINE_QUEUE_STORE, 'readwrite');
@@ -77,10 +91,7 @@ async function updateQueueItemStatus(id, status, error) {
     getReq.onsuccess = () => {
       const item = getReq.result;
       if (item) {
-        item.status = status;
-        if (error) item.errorMessage = error;
-        if (status === 'synced') item.syncedAt = Date.now();
-        if (status === 'failed') item.retryCount = (item.retryCount || 0) + 1;
+        Object.assign(item, updates);
         store.put(item);
       }
       resolve();
@@ -90,9 +101,22 @@ async function updateQueueItemStatus(id, status, error) {
   });
 }
 
+async function addSyncHistoryEntry(entry) {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SYNC_HISTORY_STORE, 'readwrite');
+    const store = tx.objectStore(SYNC_HISTORY_STORE);
+    store.add(entry);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 async function processOfflineQueue() {
-  const items = await getOfflineQueue();
+  const items = await getPendingAndRetryableItems();
   const results = { synced: 0, failed: 0 };
+  const errors = [];
+  const startTime = Date.now();
 
   for (const item of items) {
     try {
@@ -104,16 +128,91 @@ async function processOfflineQueue() {
       });
 
       if (response.ok) {
-        await updateQueueItemStatus(item.id, 'synced');
+        await updateQueueItem(item.id, {
+          status: 'synced',
+          syncedAt: Date.now(),
+          errorMessage: undefined,
+        });
         results.synced++;
-      } else {
-        await updateQueueItemStatus(item.id, 'failed', `HTTP ${response.status}`);
+      } else if (response.status === 409) {
+        let conflictMessage = 'Conflict: server version is newer (HTTP 409)';
+        try {
+          const conflictData = await response.json();
+          conflictMessage = 'Conflict: ' + (conflictData.error || 'server version is newer');
+        } catch (_e) {}
+        await updateQueueItem(item.id, {
+          status: 'failed',
+          retryable: false,
+          errorMessage: conflictMessage,
+        });
         results.failed++;
+        errors.push('Conflict on ' + item.entityType + ': server has newer data');
+      } else if (isPermanentError(response.status)) {
+        let errorDetail = 'HTTP ' + response.status;
+        try {
+          const errorData = await response.json();
+          errorDetail = errorData.error || errorDetail;
+        } catch (_e) {}
+        await updateQueueItem(item.id, {
+          status: 'failed',
+          retryable: false,
+          errorMessage: errorDetail + ' — not retryable',
+        });
+        results.failed++;
+        errors.push(errorDetail);
+      } else {
+        const newRetryCount = (item.retryCount || 0) + 1;
+        if (newRetryCount >= MAX_RETRIES) {
+          await updateQueueItem(item.id, {
+            status: 'failed',
+            retryable: false,
+            retryCount: newRetryCount,
+            errorMessage: 'Max retries (' + MAX_RETRIES + ') exceeded — HTTP ' + response.status,
+          });
+        } else {
+          const backoff = RETRY_BACKOFF_BASE * Math.pow(2, newRetryCount - 1);
+          await updateQueueItem(item.id, {
+            status: 'failed',
+            retryCount: newRetryCount,
+            nextRetryAt: Date.now() + backoff,
+            errorMessage: 'Retry ' + newRetryCount + '/' + MAX_RETRIES + ' scheduled (HTTP ' + response.status + ')',
+          });
+        }
+        results.failed++;
+        errors.push('HTTP ' + response.status + ' — will retry');
       }
     } catch (err) {
-      await updateQueueItemStatus(item.id, 'failed', err.message);
+      const newRetryCount = (item.retryCount || 0) + 1;
+      const errMsg = err.message || String(err);
+      if (newRetryCount >= MAX_RETRIES) {
+        await updateQueueItem(item.id, {
+          status: 'failed',
+          retryable: false,
+          retryCount: newRetryCount,
+          errorMessage: 'Max retries (' + MAX_RETRIES + ') exceeded — ' + errMsg,
+        });
+      } else {
+        const backoff = RETRY_BACKOFF_BASE * Math.pow(2, newRetryCount - 1);
+        await updateQueueItem(item.id, {
+          status: 'failed',
+          retryCount: newRetryCount,
+          nextRetryAt: Date.now() + backoff,
+          errorMessage: 'Retry ' + newRetryCount + '/' + MAX_RETRIES + ' scheduled — ' + errMsg,
+        });
+      }
       results.failed++;
+      errors.push(errMsg);
     }
+  }
+
+  if (items.length > 0) {
+    await addSyncHistoryEntry({
+      timestamp: Date.now(),
+      itemsSynced: results.synced,
+      itemsFailed: results.failed,
+      duration: Date.now() - startTime,
+      errors,
+    });
   }
 
   const clients = await self.clients.matchAll();
@@ -296,17 +395,7 @@ function guessEntityType(pathname) {
 
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-offline-queue') {
-    event.waitUntil(
-      self.clients.matchAll().then(async (clients) => {
-        if (clients.length > 0) {
-          clients.forEach(client => {
-            client.postMessage({ type: 'TRIGGER_SYNC' });
-          });
-        } else {
-          await processOfflineQueue();
-        }
-      })
-    );
+    event.waitUntil(processOfflineQueue());
   }
 });
 
@@ -344,9 +433,17 @@ self.addEventListener('message', (event) => {
       })()
     );
   }
+
+  if (event.data && event.data.type === 'GET_PENDING_COUNT') {
+    event.waitUntil(
+      (async () => {
+        const items = await getPendingAndRetryableItems();
+        event.ports?.[0]?.postMessage({ count: items.length });
+      })()
+    );
+  }
 });
 
-// Web Push: handle incoming push notifications
 self.addEventListener('push', (event) => {
   let data = { title: 'SmartManageAI', message: 'You have a new notification.', url: '/' };
 
@@ -371,7 +468,6 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Web Push: handle notification click — open or focus the app
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 

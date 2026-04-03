@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -14,10 +14,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Cloud, CloudOff, RefreshCw, Trash2, Clock, CheckCircle, XCircle, 
   AlertTriangle, FileText, Mic, Camera, Timer, StickyNote, ChevronRight,
-  History, WifiOff, Wifi, HardDrive, Send
+  History, WifiOff, Wifi, HardDrive, Send, Ban, RotateCcw, ArrowRightLeft
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-import { getQueueItems, getSyncHistory, processQueue, clearSyncedItems, deleteQueueItem, retryFailedItem, type OfflineQueueItem, type SyncHistoryEntry } from "@/lib/offlineQueue";
+import { getQueueItems, getSyncHistory, processQueue, clearSyncedItems, deleteQueueItem, retryFailedItem, getItemState, getItemDescription, getActionableErrorMessage, type OfflineQueueItem, type SyncHistoryEntry, type OfflineItemState } from "@/lib/offlineQueue";
 
 interface SyncStats {
   total: number;
@@ -44,10 +44,23 @@ export default function OfflineSyncPage() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
   const [conflictItem, setConflictItem] = useState<OfflineQueueItem | null>(null);
+  const [serverConflictData, setServerConflictData] = useState<Record<string, unknown> | null>(null);
+  const [serverDataLoadFailed, setServerDataLoadFailed] = useState(false);
+  const [showReconnectBanner, setShowReconnectBanner] = useState(false);
+  const wasOfflineRef = useRef(!navigator.onLine);
 
   useEffect(() => {
-    const goOnline = () => setIsOnline(true);
-    const goOffline = () => setIsOnline(false);
+    const goOnline = () => {
+      setIsOnline(true);
+      if (wasOfflineRef.current) {
+        checkPendingOnReconnect();
+      }
+      wasOfflineRef.current = false;
+    };
+    const goOffline = () => {
+      setIsOnline(false);
+      wasOfflineRef.current = true;
+    };
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
     return () => {
@@ -56,8 +69,39 @@ export default function OfflineSyncPage() {
     };
   }, []);
 
+  const checkPendingOnReconnect = async () => {
+    try {
+      const items = await getQueueItems();
+      const pendingItems = items.filter(i => {
+        const state = getItemState(i);
+        return state === 'pending' || state === 'retrying';
+      });
+      if (pendingItems.length > 0) {
+        setShowReconnectBanner(true);
+        toast({
+          title: "You're back online",
+          description: `${pendingItems.length} item${pendingItems.length !== 1 ? 's' : ''} waiting to sync`,
+        });
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     loadLocalData();
+  }, []);
+
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'SYNC_COMPLETE') {
+        loadLocalData();
+        toast({
+          title: "Background sync complete",
+          description: `${event.data.results.synced} synced, ${event.data.results.failed} failed`,
+        });
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', handleMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', handleMessage);
   }, []);
 
   const loadLocalData = async () => {
@@ -71,6 +115,7 @@ export default function OfflineSyncPage() {
 
   const handleLocalSync = async () => {
     setIsSyncing(true);
+    setShowReconnectBanner(false);
     try {
       const result = await processQueue();
       toast({
@@ -117,6 +162,28 @@ export default function OfflineSyncPage() {
   const isConflictError = (item: OfflineQueueItem) =>
     item.status === 'failed' && item.errorMessage?.includes('Conflict');
 
+  const fetchServerConflictData = async (item: OfflineQueueItem) => {
+    setServerConflictData(null);
+    setServerDataLoadFailed(false);
+    try {
+      const getUrl = item.url.replace(/\?.*/, '');
+      const response = await fetch(getUrl, { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setServerConflictData(data);
+      } else {
+        setServerDataLoadFailed(true);
+      }
+    } catch {
+      setServerDataLoadFailed(true);
+    }
+  };
+
+  const handleOpenConflict = async (item: OfflineQueueItem) => {
+    setConflictItem(item);
+    await fetchServerConflictData(item);
+  };
+
   const handleForceOverwrite = async (item: OfflineQueueItem) => {
     try {
       const response = await fetch(item.url, {
@@ -138,6 +205,8 @@ export default function OfflineSyncPage() {
       toast({ title: "Force overwrite failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
     }
     setConflictItem(null);
+    setServerConflictData(null);
+    setServerDataLoadFailed(false);
     await loadLocalData();
   };
 
@@ -145,6 +214,8 @@ export default function OfflineSyncPage() {
     await deleteQueueItem(item.id!);
     toast({ title: "Local changes discarded", description: "Server version will be kept" });
     setConflictItem(null);
+    setServerConflictData(null);
+    setServerDataLoadFailed(false);
     await loadLocalData();
   };
 
@@ -204,15 +275,28 @@ export default function OfflineSyncPage() {
     switch (status) {
       case "PENDING":
       case "pending":
-        return <Badge variant="secondary" className="gap-1"><Clock className="h-3 w-3" /> Pending</Badge>;
+        return <Badge variant="secondary" className="gap-1" data-testid="badge-pending"><Clock className="h-3 w-3" /> Pending</Badge>;
       case "SYNCED":
       case "synced":
-        return <Badge className="gap-1 bg-green-600"><CheckCircle className="h-3 w-3" /> Synced</Badge>;
+        return <Badge className="gap-1 bg-green-600" data-testid="badge-synced"><CheckCircle className="h-3 w-3" /> Synced</Badge>;
       case "FAILED":
       case "failed":
-        return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Failed</Badge>;
+        return <Badge variant="destructive" className="gap-1" data-testid="badge-failed"><XCircle className="h-3 w-3" /> Failed</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const getStateBadge = (state: OfflineItemState) => {
+    switch (state) {
+      case 'pending':
+        return <Badge variant="secondary" className="gap-1" data-testid="badge-state-pending"><Clock className="h-3 w-3" /> Pending</Badge>;
+      case 'retrying':
+        return <Badge variant="outline" className="gap-1 text-amber-600 border-amber-300" data-testid="badge-state-retrying"><RotateCcw className="h-3 w-3" /> Retrying</Badge>;
+      case 'permanently_failed':
+        return <Badge variant="destructive" className="gap-1" data-testid="badge-state-permanently-failed"><Ban className="h-3 w-3" /> Failed</Badge>;
+      case 'synced':
+        return <Badge className="gap-1 bg-green-600" data-testid="badge-state-synced"><CheckCircle className="h-3 w-3" /> Synced</Badge>;
     }
   };
 
@@ -246,12 +330,62 @@ export default function OfflineSyncPage() {
     }
   };
 
-  const localPendingCount = localQueue.filter(i => i.status === "pending").length;
+  const localPendingCount = localQueue.filter(i => getItemState(i) === 'pending').length;
+  const localRetryingCount = localQueue.filter(i => getItemState(i) === 'retrying').length;
   const localSyncedCount = localQueue.filter(i => i.status === "synced").length;
-  const localFailedCount = localQueue.filter(i => i.status === "failed").length;
+  const localFailedCount = localQueue.filter(i => getItemState(i) === 'permanently_failed').length;
+  const now = Date.now();
+  const localReadyToRetryCount = localQueue.filter(i => getItemState(i) === 'retrying' && (!i.nextRetryAt || i.nextRetryAt <= now)).length;
+  const localSyncableCount = localPendingCount + localReadyToRetryCount;
+
+  const renderFieldComparison = (key: string, localVal: unknown, serverVal: unknown) => {
+    const localStr = localVal == null ? '—' : String(localVal);
+    const serverStr = serverVal == null ? '—' : String(serverVal);
+    const isDifferent = localStr !== serverStr;
+    return (
+      <div key={key} className={`grid grid-cols-3 gap-2 py-1.5 px-2 rounded text-xs ${isDifferent ? 'bg-amber-50 dark:bg-amber-950/30' : ''}`}>
+        <span className="font-medium text-muted-foreground truncate">{key}</span>
+        <span className={`truncate ${isDifferent ? 'text-blue-600 font-medium' : ''}`}>{localStr}</span>
+        <span className={`truncate ${isDifferent ? 'text-green-600 font-medium' : ''}`}>{serverStr}</span>
+      </div>
+    );
+  };
 
   return (
     <div className="p-6 space-y-6" data-testid="page-offline-sync">
+      {showReconnectBanner && localSyncableCount > 0 && (
+        <div className="flex items-center justify-between p-4 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800" data-testid="banner-reconnect">
+          <div className="flex items-center gap-3">
+            <Wifi className="h-5 w-5 text-blue-600" />
+            <div>
+              <p className="font-medium text-sm text-blue-900 dark:text-blue-100">You're back online</p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                {localSyncableCount} item{localSyncableCount !== 1 ? 's' : ''} pending sync
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleLocalSync}
+              disabled={isSyncing}
+              data-testid="button-reconnect-sync"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${isSyncing ? "animate-spin" : ""}`} />
+              {isSyncing ? "Syncing..." : "Sync Now"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowReconnectBanner(false)}
+              data-testid="button-dismiss-banner"
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Offline Sync</h1>
@@ -282,7 +416,7 @@ export default function OfflineSyncPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
@@ -311,6 +445,18 @@ export default function OfflineSyncPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <RotateCcw className="h-4 w-4" /> Retrying
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-amber-500" data-testid="stat-retrying">
+              {localRetryingCount}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <CheckCircle className="h-4 w-4" /> Synced
             </CardTitle>
           </CardHeader>
@@ -323,7 +469,7 @@ export default function OfflineSyncPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <XCircle className="h-4 w-4" /> Failed
+              <Ban className="h-4 w-4" /> Failed
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -346,8 +492,8 @@ export default function OfflineSyncPage() {
           <TabsTrigger value="local-queue" data-testid="tab-local-queue">
             <HardDrive className="h-4 w-4 mr-2" />
             Local Queue
-            {localPendingCount > 0 && (
-              <Badge variant="secondary" className="ml-2">{localPendingCount}</Badge>
+            {localSyncableCount > 0 && (
+              <Badge variant="secondary" className="ml-2">{localSyncableCount}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="sync-history" data-testid="tab-sync-history">
@@ -439,6 +585,9 @@ export default function OfflineSyncPage() {
                             </span>
                           )}
                         </p>
+                        {item.errorMessage && (
+                          <p className="text-xs text-destructive mt-0.5 truncate max-w-md">{item.errorMessage}</p>
+                        )}
                       </div>
                       {getStatusBadge(item.status)}
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -460,14 +609,14 @@ export default function OfflineSyncPage() {
 
         <TabsContent value="local-queue" className="mt-6 space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            {localPendingCount > 0 && isOnline && (
+            {localSyncableCount > 0 && isOnline && (
               <Button
                 onClick={handleLocalSync}
                 disabled={isSyncing}
                 data-testid="button-sync-local"
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
-                {isSyncing ? "Syncing..." : `Sync ${localPendingCount} Item${localPendingCount !== 1 ? "s" : ""}`}
+                {isSyncing ? "Syncing..." : `Sync ${localSyncableCount} Item${localSyncableCount !== 1 ? "s" : ""}`}
               </Button>
             )}
             {localSyncedCount > 0 && (
@@ -492,67 +641,81 @@ export default function OfflineSyncPage() {
             </Card>
           ) : (
             <div className="space-y-2">
-              {localQueue.map((item) => (
-                <Card key={item.id} data-testid={`card-local-item-${item.id}`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                        {getEntityIcon(item.entityType)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{item.entityType.replace("_", " ")}</span>
-                          {getOperationBadge(item.operationType)}
+              {localQueue.map((item) => {
+                const state = getItemState(item);
+                const description = getItemDescription(item);
+                const errorMsg = state === 'permanently_failed' || state === 'retrying' ? getActionableErrorMessage(item) : null;
+                return (
+                  <Card key={item.id} data-testid={`card-local-item-${item.id}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                          {getEntityIcon(item.entityType)}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
-                          {item.retryCount > 0 && (
-                            <span className="ml-2 text-destructive">
-                              ({item.retryCount} retries)
-                            </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm" data-testid={`text-item-description-${item.id}`}>{description}</span>
+                            {getOperationBadge(item.operationType)}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                            {state === 'retrying' && item.retryCount > 0 && (
+                              <span className="ml-2 text-amber-600">
+                                (attempt {item.retryCount}/{5})
+                              </span>
+                            )}
+                            {state === 'retrying' && item.nextRetryAt && (
+                              <span className="ml-1 text-amber-600">
+                                · next retry {formatDistanceToNow(new Date(item.nextRetryAt), { addSuffix: true })}
+                              </span>
+                            )}
+                          </p>
+                          {errorMsg && (
+                            <p className="text-xs mt-1 text-destructive" data-testid={`text-error-${item.id}`}>
+                              {errorMsg}
+                            </p>
                           )}
-                        </p>
-                        {item.errorMessage && (
-                          <p className="text-xs text-destructive mt-1">{item.errorMessage}</p>
-                        )}
-                      </div>
-                      {getStatusBadge(item.status)}
-                      <div className="flex items-center gap-1">
-                        {isConflictError(item) && item.id && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setConflictItem(item)}
-                            className="text-xs text-yellow-700 border-yellow-300"
-                            data-testid={`button-resolve-conflict-${item.id}`}
-                          >
-                            <AlertTriangle className="h-3 w-3 mr-1" />
-                            Resolve
-                          </Button>
-                        )}
-                        {item.status === 'failed' && !isConflictError(item) && item.id && (
+                        </div>
+                        {getStateBadge(state)}
+                        <div className="flex items-center gap-1">
+                          {isConflictError(item) && item.id && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenConflict(item)}
+                              className="text-xs text-yellow-700 border-yellow-300"
+                              data-testid={`button-resolve-conflict-${item.id}`}
+                            >
+                              <ArrowRightLeft className="h-3 w-3 mr-1" />
+                              Resolve
+                            </Button>
+                          )}
+                          {state === 'permanently_failed' && !isConflictError(item) && item.id && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRetryLocalItem(item.id!)}
+                              title="Reset and retry"
+                              data-testid={`button-retry-local-${item.id}`}
+                            >
+                              <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleRetryLocalItem(item.id!)}
-                            data-testid={`button-retry-local-${item.id}`}
+                            onClick={() => item.id && handleDeleteLocalItem(item.id)}
+                            title="Discard"
+                            data-testid={`button-delete-local-${item.id}`}
                           >
-                            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
                           </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => item.id && handleDeleteLocalItem(item.id)}
-                          data-testid={`button-delete-local-${item.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 text-muted-foreground" />
-                        </Button>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -718,16 +881,17 @@ export default function OfflineSyncPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={!!conflictItem} onOpenChange={() => setConflictItem(null)}>
-        <DialogContent>
+
+      <Dialog open={!!conflictItem} onOpenChange={() => { setConflictItem(null); setServerConflictData(null); setServerDataLoadFailed(false); }}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-600" />
+              <ArrowRightLeft className="h-5 w-5 text-yellow-600" />
               Resolve Sync Conflict
             </DialogTitle>
             <DialogDescription>
               The server version of this record has changed since you made your offline edits.
-              Choose how to resolve this conflict.
+              Compare both versions and choose which to keep.
             </DialogDescription>
           </DialogHeader>
           {conflictItem && (
@@ -743,14 +907,59 @@ export default function OfflineSyncPage() {
                 </div>
               </div>
 
-              {conflictItem.body && (
+              {conflictItem.body && serverConflictData ? (
                 <div className="space-y-2">
-                  <span className="text-sm text-muted-foreground">Your Local Changes</span>
-                  <pre className="p-3 bg-muted rounded-lg text-xs overflow-auto max-h-32">
-                    {JSON.stringify(conflictItem.body, null, 2)}
-                  </pre>
+                  <div className="grid grid-cols-3 gap-2 text-xs font-semibold text-muted-foreground px-2 pb-1 border-b">
+                    <span>Field</span>
+                    <span className="text-blue-600">Your Changes</span>
+                    <span className="text-green-600">Server Version</span>
+                  </div>
+                  <ScrollArea className="max-h-[300px]">
+                    <div className="space-y-0.5">
+                      {Object.keys(conflictItem.body).filter(k => k !== 'lastKnownUpdatedAt').map(key => 
+                        renderFieldComparison(
+                          key,
+                          (conflictItem.body as Record<string, unknown>)[key],
+                          (serverConflictData as Record<string, unknown>)[key]
+                        )
+                      )}
+                    </div>
+                  </ScrollArea>
                 </div>
-              )}
+              ) : conflictItem.body && !serverConflictData ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-blue-600">Your Local Changes</p>
+                      <pre className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-xs overflow-auto max-h-40 border border-blue-200 dark:border-blue-800">
+                        {JSON.stringify(conflictItem.body, null, 2)}
+                      </pre>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-green-600">Server Version</p>
+                      {serverDataLoadFailed ? (
+                        <div className="p-3 bg-muted rounded-lg text-xs text-center space-y-2">
+                          <p className="text-destructive">Could not load server version</p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => fetchServerConflictData(conflictItem)}
+                            data-testid="button-retry-fetch-server"
+                          >
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                            Retry
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-muted rounded-lg text-xs flex items-center justify-center h-20 text-muted-foreground">
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Loading server data...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg text-sm text-yellow-800 dark:text-yellow-200">
                 <p className="font-medium mb-1">What happened?</p>

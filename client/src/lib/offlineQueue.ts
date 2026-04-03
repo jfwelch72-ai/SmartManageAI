@@ -5,6 +5,8 @@ const SYNC_HISTORY_STORE = 'sync-history';
 const MAX_RETRIES = 5;
 const RETRY_BACKOFF_BASE = 2000;
 
+export type OfflineItemState = 'pending' | 'retrying' | 'permanently_failed' | 'synced';
+
 export interface OfflineQueueItem {
   id?: number;
   url: string;
@@ -19,6 +21,57 @@ export interface OfflineQueueItem {
   errorMessage?: string;
   retryCount: number;
   nextRetryAt?: number;
+}
+
+export function getItemState(item: OfflineQueueItem): OfflineItemState {
+  if (item.status === 'synced') return 'synced';
+  if (item.status === 'pending') return 'pending';
+  if (item.status === 'failed') {
+    if (item.retryable === false || item.retryCount >= MAX_RETRIES) return 'permanently_failed';
+    return 'retrying';
+  }
+  return 'pending';
+}
+
+export function getItemDescription(item: OfflineQueueItem): string {
+  const entityLabels: Record<string, string> = {
+    'TIME_ENTRY': 'Time Entry',
+    'NOTE': 'Note',
+    'ISSUE': 'Issue',
+    'VOICE_LOG': 'Voice Log',
+    'PHOTO': 'Photo',
+  };
+  const opLabels: Record<string, string> = {
+    'CREATE': 'New',
+    'UPDATE': 'Updated',
+    'DELETE': 'Deleted',
+  };
+  const entity = entityLabels[item.entityType] || item.entityType.replace('_', ' ');
+  const op = opLabels[item.operationType] || item.operationType;
+  
+  let detail = '';
+  if (item.body) {
+    const b = item.body;
+    if (b.title) detail = String(b.title);
+    else if (b.description) detail = String(b.description).slice(0, 60);
+    else if (b.content) detail = String(b.content).slice(0, 60);
+    else if (b.notes) detail = String(b.notes).slice(0, 60);
+    else if (b.transcription) detail = String(b.transcription).slice(0, 60);
+  }
+  
+  return detail ? `${op} ${entity}: ${detail}` : `${op} ${entity}`;
+}
+
+export function getActionableErrorMessage(item: OfflineQueueItem): string {
+  if (!item.errorMessage) return 'Unknown error';
+  const msg = item.errorMessage;
+  if (msg.includes('Conflict')) return 'The server has a newer version of this record. Resolve the conflict to continue.';
+  if (msg.includes('404') || msg.includes('not found')) return 'The target record was deleted on the server. You can discard this change.';
+  if (msg.includes('403') || msg.includes('no access') || msg.includes('Forbidden')) return 'You no longer have permission to modify this record.';
+  if (msg.includes('400') || msg.includes('Invalid')) return 'The data is invalid and cannot be saved. You may need to discard and re-enter.';
+  if (msg.includes('Max retries')) return 'This item failed too many times and will not be retried automatically. Try syncing manually or discard.';
+  if (msg.includes('Retry')) return msg;
+  return msg;
 }
 
 export interface SyncHistoryEntry {
@@ -156,10 +209,15 @@ export async function processQueue(): Promise<{ synced: number; failed: number }
           await markAsNonRetryable(item.id!, conflictMessage);
           results.failed++;
           errors.push(`Conflict on ${item.entityType}: server has newer data`);
-        } else if (response.status >= 400 && response.status < 500) {
-          await markAsNonRetryable(item.id!, `HTTP ${response.status} - not retryable`);
+        } else if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+          let errorDetail = `HTTP ${response.status}`;
+          try {
+            const errorData = await response.json();
+            errorDetail = errorData.error || errorDetail;
+          } catch (_e) {}
+          await markAsNonRetryable(item.id!, `${errorDetail} — not retryable`);
           results.failed++;
-          errors.push(`HTTP ${response.status}`);
+          errors.push(errorDetail);
         } else {
           await markForRetry(item);
           results.failed++;
