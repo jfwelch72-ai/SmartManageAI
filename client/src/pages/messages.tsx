@@ -960,7 +960,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
             )}
 
             {/* ── MESSAGES PANEL ── */}
-            {showMessages && selectedConversation && !showCallNotes && (
+            {showMessages && selectedConversation && !showCallNotes && !showNewDm && (
               <div className={cn("flex flex-col flex-1 min-w-0 min-h-0", isMobileView ? "w-full" : "")}>
                 {/* Header */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0">
