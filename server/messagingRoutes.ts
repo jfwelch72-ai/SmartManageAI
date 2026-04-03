@@ -3008,11 +3008,9 @@ const messagingSetup = (async () => {
   router.get("/api/calls/ice-config", requireAuth, async (_req: AuthRequest, res) => {
     try {
       const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [
+        { urls: "stun:stun.relay.metered.ca:80" },
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" },
-        { urls: "stun:stun4.l.google.com:19302" },
       ];
 
       const turnUrl = process.env.TURN_SERVER_URL;
@@ -3066,15 +3064,8 @@ const messagingSetup = (async () => {
         turnTier = "custom";
         console.log(`[ICE Config] Tier: custom | Metered unavailable, using ${envTurnServers.length} env-configured TURN server(s)`);
       } else {
-        const openRelayServers = [
-          { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-          { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-          { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
-          { urls: "turns:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-        ];
-        iceServers.push(...openRelayServers);
-        turnTier = "custom";
-        console.log("[ICE Config] Tier: open_relay | Using free public TURN servers (openrelay.metered.ca)");
+        turnTier = "none";
+        console.log("[ICE Config] Tier: none | No TURN servers available, STUN-only mode");
       }
 
       const hasTurn = iceServers.some(s => {
