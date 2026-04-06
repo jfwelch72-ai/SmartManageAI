@@ -20,7 +20,8 @@
  * - VENDOR: External vendor portal access — submit pricing to enrolled clients, view enrollments (NO contractor features)
  */
 
-export type UserRole = "SUPER_ADMIN" | "ADMIN" | "HUSTLER" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "FIELD_WORKER" | "VENDOR";
+export type { UserRole } from "@shared/schema";
+import type { UserRole } from "@shared/schema";
 
 export const CORE_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
 export const ASSIGNABLE_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];

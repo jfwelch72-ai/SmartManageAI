@@ -1,8 +1,8 @@
 import { logError } from "./utils/logger";
 import { File } from "@google-cloud/storage";
 import { db } from "./db";
-import { filePermissions, objectAclPolicies } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { filePermissions, objectAclPolicies, projects, bids, vendorEnrollments, vendorUsers, media, planDocuments, bidDocuments, subcontractorBidInvitations, subcontractorBidRequests } from "@shared/schema";
+import { eq, and, or, sql } from "drizzle-orm";
 
 const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
 
@@ -134,16 +134,94 @@ export async function canAccessObject({
     return true;
   }
 
-  // CRITICAL: Verify organization membership
-  // Files are isolated per organization - users can only access files from their own organization
-  // Legacy files without organizationId are denied unless user is SUPER_ADMIN (handled above)
-  if (aclPolicy.organizationId) {
-    if (!userOrganizationId || userOrganizationId !== aclPolicy.organizationId) {
-      return false;
+  if (!aclPolicy.organizationId) {
+    return false;
+  }
+
+  const isOrgMember = userOrganizationId && userOrganizationId === aclPolicy.organizationId;
+
+  if (!isOrgMember && userRole === "VENDOR" && requestedPermission === ObjectPermission.READ && userId && fileId && fileType) {
+    try {
+      const vendorUserResult = await db
+        .select({ crmOrgId: vendorUsers.crmOrganisationId })
+        .from(vendorUsers)
+        .where(eq(vendorUsers.userId, userId))
+        .limit(1);
+      const vendorCrmOrgId = vendorUserResult[0]?.crmOrgId;
+      const vendorOrgId = userOrganizationId;
+
+      if (vendorCrmOrgId) {
+        const [enrollment] = await db
+          .select({ id: vendorEnrollments.id })
+          .from(vendorEnrollments)
+          .where(
+            and(
+              eq(vendorEnrollments.vendorCrmOrgId, vendorCrmOrgId),
+              eq(vendorEnrollments.contractorOrgId, aclPolicy.organizationId),
+              eq(vendorEnrollments.status, "ACTIVE")
+            )
+          )
+          .limit(1);
+
+        if (enrollment) {
+          if (fileType === "DOCUMENT") {
+            const [bd] = await db
+              .select({ bidId: bidDocuments.bidId })
+              .from(bidDocuments)
+              .where(eq(bidDocuments.id, fileId))
+              .limit(1);
+
+            if (bd?.bidId) {
+              const [invitation] = await db
+                .select({ id: subcontractorBidInvitations.id })
+                .from(subcontractorBidInvitations)
+                .innerJoin(subcontractorBidRequests, eq(subcontractorBidInvitations.bidRequestId, subcontractorBidRequests.id))
+                .where(
+                  and(
+                    eq(subcontractorBidRequests.bidId, bd.bidId),
+                    vendorOrgId
+                      ? eq(subcontractorBidInvitations.invitedOrganizationId, vendorOrgId)
+                      : sql`false`
+                  )
+                )
+                .limit(1);
+              if (invitation) return true;
+            }
+          }
+
+          let fileProjectId: string | null = null;
+          if (fileType === "MEDIA") {
+            const [m] = await db.select({ projectId: media.projectId }).from(media).where(eq(media.id, fileId)).limit(1);
+            fileProjectId = m?.projectId ?? null;
+          } else if (fileType === "DOCUMENT") {
+            const [d] = await db.select({ projectId: planDocuments.projectId }).from(planDocuments).where(eq(planDocuments.id, fileId)).limit(1);
+            fileProjectId = d?.projectId ?? null;
+          }
+
+          if (fileProjectId) {
+            const [invitation] = await db
+              .select({ id: subcontractorBidInvitations.id })
+              .from(subcontractorBidInvitations)
+              .innerJoin(subcontractorBidRequests, eq(subcontractorBidInvitations.bidRequestId, subcontractorBidRequests.id))
+              .where(
+                and(
+                  eq(subcontractorBidRequests.projectId, fileProjectId),
+                  vendorOrgId
+                    ? eq(subcontractorBidInvitations.invitedOrganizationId, vendorOrgId)
+                    : sql`false`
+                )
+              )
+              .limit(1);
+            if (invitation) return true;
+          }
+        }
+      }
+    } catch (err) {
+      logError("VENDOR cross-org ACL lookup failed:", {}, err instanceof Error ? err : new Error(String(err)));
     }
-  } else {
-    // Legacy files without organizationId - deny access for security
-    // Only SUPER_ADMIN can access legacy files (handled above)
+  }
+
+  if (!isOrgMember) {
     return false;
   }
 
@@ -166,8 +244,8 @@ export async function canAccessObject({
     return true;
   }
 
-  // Check explicit permissions in database for SUPERINTENDENT and FIELD_WORKER
-  if (fileId && fileType && (userRole === "SUPERINTENDENT" || userRole === "FIELD_WORKER")) {
+  // Check explicit permissions in database for SUPERINTENDENT, FIELD_WORKER, and ESTIMATOR
+  if (fileId && fileType && (userRole === "SUPERINTENDENT" || userRole === "FIELD_WORKER" || userRole === "ESTIMATOR")) {
     const permission = await db
       .select()
       .from(filePermissions)
@@ -182,6 +260,67 @@ export async function canAccessObject({
 
     if (permission.length > 0) {
       return true;
+    }
+  }
+
+  if (userRole === "ESTIMATOR" && requestedPermission === ObjectPermission.READ && fileId && fileType) {
+    try {
+      let fileProjectId: string | null = null;
+      let fileBidId: string | null = null;
+
+      if (fileType === "MEDIA") {
+        const [m] = await db.select({ projectId: media.projectId }).from(media).where(eq(media.id, fileId)).limit(1);
+        fileProjectId = m?.projectId ?? null;
+      } else if (fileType === "DOCUMENT") {
+        const [d] = await db.select({ projectId: planDocuments.projectId }).from(planDocuments).where(eq(planDocuments.id, fileId)).limit(1);
+        fileProjectId = d?.projectId ?? null;
+
+        if (!fileProjectId) {
+          const [bd] = await db.select({ bidId: bidDocuments.bidId }).from(bidDocuments).where(eq(bidDocuments.id, fileId)).limit(1);
+          fileBidId = bd?.bidId ?? null;
+        }
+      }
+
+      if (fileBidId) {
+        const [assignedBid] = await db
+          .select({ id: bids.id })
+          .from(bids)
+          .where(
+            and(
+              eq(bids.id, fileBidId),
+              eq(bids.gcOrganizationId, aclPolicy.organizationId),
+              eq(bids.estimatorId, userId)
+            )
+          ).limit(1);
+        if (assignedBid) return true;
+      }
+
+      if (fileProjectId) {
+        const [assignedProject] = await db
+          .select({ id: projects.id })
+          .from(projects)
+          .where(
+            and(
+              eq(projects.id, fileProjectId),
+              eq(projects.estimatorId, userId)
+            )
+          ).limit(1);
+        if (assignedProject) return true;
+
+        const [assignedBid] = await db
+          .select({ id: bids.id })
+          .from(bids)
+          .where(
+            and(
+              eq(bids.gcOrganizationId, aclPolicy.organizationId),
+              eq(bids.estimatorId, userId),
+              sql`${bids.convertedToProjectId} = ${fileProjectId}`
+            )
+          ).limit(1);
+        if (assignedBid) return true;
+      }
+    } catch (err) {
+      logError("ESTIMATOR ACL lookup failed:", {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 

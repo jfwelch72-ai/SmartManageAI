@@ -9,7 +9,8 @@ import {
   clientPortalAccess, users
 } from "@shared/schema";
 import type { PgColumn } from "drizzle-orm/pg-core";
-import type { Response } from "express";
+import type { Response, Request } from "express";
+import { logAudit } from "./auditLogger";
 
 /**
  * Check if the user is a SUPER_ADMIN (platform-level admin who can see all organizations)
@@ -103,6 +104,23 @@ export function getOrgIdForFilter(req: AuthRequest): {
   }
   
   if (user.role === "SUPER_ADMIN") {
+    const targetOrgId = req.query?.organizationId as string
+      || req.body?.organizationId as string
+      || req.params?.organizationId as string
+      || null;
+    logAudit({
+      userId: user.id,
+      entityType: "cross_org_access",
+      entityId: targetOrgId || "all_orgs",
+      action: "CREATE",
+      oldValue: null,
+      newValue: JSON.stringify({
+        targetOrganizationId: targetOrgId,
+        resource: req.originalUrl,
+        method: req.method,
+        scope: targetOrgId ? "targeted" : "unfiltered",
+      }),
+    }, req as Request).catch(() => {});
     return { shouldFilter: false, orgId: null, isSuperAdmin: true, mustDenyAccess: false };
   }
   
@@ -135,6 +153,26 @@ export function getOrgIdForFilter(req: AuthRequest): {
  * @param resourceOrgId - The organizationId of the resource being accessed (e.g., project.gcOrganizationId)
  * @returns true if the user can access the resource, false if denied (response already sent)
  */
+export function logSuperAdminCrossOrgAccess(req: AuthRequest, targetOrgId: string | null | undefined, resource?: string): void {
+  const user = req.user;
+  if (!user || user.role !== "SUPER_ADMIN") return;
+  if (!targetOrgId) return;
+  if (user.organizationId && user.organizationId === targetOrgId) return;
+
+  logAudit({
+    userId: user.id,
+    entityType: "cross_org_access",
+    entityId: targetOrgId,
+    action: "CREATE",
+    oldValue: null,
+    newValue: JSON.stringify({
+      targetOrganizationId: targetOrgId,
+      resource: resource || req.originalUrl,
+      method: req.method,
+    }),
+  }, req as Request).catch(() => {});
+}
+
 export function verifyOrgAccess(req: AuthRequest, res: Response, resourceOrgId: string | null | undefined): boolean {
   const user = req.user;
   if (!user) {
@@ -142,7 +180,10 @@ export function verifyOrgAccess(req: AuthRequest, res: Response, resourceOrgId: 
     return false;
   }
 
-  if (isSuperAdmin(user)) return true;
+  if (isSuperAdmin(user)) {
+    logSuperAdminCrossOrgAccess(req, resourceOrgId);
+    return true;
+  }
 
   if (!user.organizationId) {
     res.status(403).json({ error: "No organization access" });

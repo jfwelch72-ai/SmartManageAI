@@ -386,8 +386,34 @@ import { verifyOrgAccess } from "./orgFilter";
 import type { Response } from "express";
 
 const router = Router();
-const ROLES = ["ADMIN", "MANAGER"] as const;
+const ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT"] as const;
 const APPROVE_ROLES = ["ADMIN", "MANAGER"] as const;
+
+async function verifyProjectAssignment(req: AuthRequest, res: Response, projectId: string): Promise<boolean> {
+  if (req.user!.role === "ADMIN" || req.user!.role === "MANAGER") return true;
+
+  const [project] = await db.select({
+    superintendentId: projects.superintendentId,
+    estimatorId: projects.estimatorId,
+    projectManagerId: projects.projectManagerId,
+  }).from(projects).where(eq(projects.id, projectId)).limit(1);
+
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return false;
+  }
+
+  if (
+    project.superintendentId === req.user!.id ||
+    project.estimatorId === req.user!.id ||
+    project.projectManagerId === req.user!.id
+  ) {
+    return true;
+  }
+
+  res.status(403).json({ error: "You are not assigned to this project" });
+  return false;
+}
 
 async function ensureProcurementSequences() {
   await db.execute(sql`CREATE SEQUENCE IF NOT EXISTS pr_number_seq`);
@@ -520,6 +546,8 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
       .where(and(eq(projects.id, prData.projectId), eq(projects.gcOrganizationId, orgId))).limit(1);
     if (!projOwner) { res.status(400).json({ error: "Project not found in your organization" }); return; }
 
+    if (!(await verifyProjectAssignment(req, res, prData.projectId))) return;
+
     const pr = await db.transaction(async (tx) => {
       const [{ nextNum }] = await tx.select({
         nextNum: sql<number>`nextval('pr_number_seq')`,
@@ -577,6 +605,8 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
 
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT requests can be edited" }); return; }
 
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
+
     const { items } = req.body;
     const setData: Record<string, unknown> = {};
     setData.updatedAt = new Date();
@@ -627,6 +657,7 @@ router.delete("/api/procurement-module/requests/:id", requireAuth, requireRole(.
     const [existing] = await db.select().from(purchaseRequests)
       .where(and(eq(purchaseRequests.id, req.params.id), eq(purchaseRequests.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT requests can be deleted" }); return; }
 
     await db.delete(purchaseRequests).where(eq(purchaseRequests.id, req.params.id));
@@ -645,6 +676,7 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
     const [existing] = await db.select().from(purchaseRequests)
       .where(and(eq(purchaseRequests.id, req.params.id), eq(purchaseRequests.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT requests can be submitted" }); return; }
 
     const [updated] = await db.update(purchaseRequests)
@@ -736,6 +768,7 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
     const [pr] = await db.select().from(purchaseRequests)
       .where(and(eq(purchaseRequests.id, req.params.id), eq(purchaseRequests.orgId, orgId))).limit(1);
     if (!pr) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, pr.projectId))) return;
     if (pr.status !== "APPROVED") { res.status(400).json({ error: "Only approved requests can be converted" }); return; }
 
     const prItems = await db.select().from(purchaseRequestItems)
@@ -967,6 +1000,8 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
       .where(and(eq(projects.id, poData.projectId), eq(projects.gcOrganizationId, orgId))).limit(1);
     if (!projOwner) { res.status(400).json({ error: "Project not found in your organization" }); return; }
 
+    if (!(await verifyProjectAssignment(req, res, poData.projectId))) return;
+
     if (poData.vendorId) {
       const [vendorOwner] = await db.select({ id: crmOrganisations.id }).from(crmOrganisations)
         .where(and(eq(crmOrganisations.id, poData.vendorId), eq(crmOrganisations.organizationId, orgId))).limit(1);
@@ -1032,6 +1067,7 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
     const [existing] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
 
     if (existing.status !== "DRAFT" && existing.status !== "PENDING_APPROVAL") {
       res.status(400).json({ error: "Only DRAFT or PENDING_APPROVAL orders can be edited" }); return;
@@ -1096,6 +1132,7 @@ router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...
     const [existing] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT orders can be deleted" }); return; }
 
     await db.delete(purchaseOrders).where(eq(purchaseOrders.id, req.params.id));
@@ -1114,6 +1151,7 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
     const [existing] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT orders can be submitted" }); return; }
 
     const [updated] = await db.update(purchaseOrders)
@@ -1143,6 +1181,7 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
     const [existing] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be approved" }); return; }
 
     const [updated] = await db.update(purchaseOrders)
@@ -1180,6 +1219,7 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
     const [existing] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be rejected" }); return; }
 
     const rejectionNotes = (req.body.rejectionNotes || req.body.notes || "").trim();
@@ -1216,6 +1256,7 @@ router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(
     const [existing] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "APPROVED") { res.status(400).json({ error: "Only approved orders can be sent" }); return; }
 
     const [updated] = await db.update(purchaseOrders)
@@ -1474,6 +1515,7 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
     const [po] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, po.projectId))) return;
 
     const receivableStatuses = ["APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL"];
     if (!receivableStatuses.includes(po.status)) {
@@ -1786,6 +1828,7 @@ router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLE
     const [po] = await db.select().from(purchaseOrders)
       .where(and(eq(purchaseOrders.id, parsed.data.poId), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, po.projectId))) return;
 
     const resolvedVendorId = parsed.data.vendorId || po.vendorId || null;
     if (resolvedVendorId) {
@@ -1847,6 +1890,10 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
     const [existing] = await db.select().from(vendorInvoices)
       .where(and(eq(vendorInvoices.id, req.params.id), eq(vendorInvoices.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+
+    const [invPo] = await db.select({ projectId: purchaseOrders.projectId }).from(purchaseOrders)
+      .where(eq(purchaseOrders.id, existing.poId)).limit(1);
+    if (invPo && !(await verifyProjectAssignment(req, res, invPo.projectId))) return;
 
     if (existing.status !== "PENDING") { res.status(400).json({ error: "Only PENDING invoices can be edited" }); return; }
 
@@ -2065,6 +2112,7 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
     const [po] = await db.select().from(purchaseOrders)
       .where(eq(purchaseOrders.id, invoice.poId)).limit(1);
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
+    if (!(await verifyProjectAssignment(req, res, po.projectId))) return;
 
     const matchResult = await computeThreeWayMatch(invoice, po, orgId);
     const matchStatus = matchResult.matchStatus;

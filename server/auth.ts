@@ -6,6 +6,7 @@ import { db } from "./db";
 import { users, organizations, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
 import { getRoleDefaults, mergePermissions } from "./dashboardRoutes";
+import type { UserRole } from "@shared/schema";
 
 // Enforce SESSION_SECRET - fail fast if not set
 if (!process.env.SESSION_SECRET) {
@@ -203,7 +204,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 }
 
 // Type for all valid user roles (must match userRoleEnum in schema.ts) — 8 roles
-export type UserRole = "SUPER_ADMIN" | "ADMIN" | "HUSTLER" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "FIELD_WORKER" | "VENDOR";
+export type { UserRole };
 
 // Middleware to require specific roles (8 roles supported including SUPER_ADMIN and HUSTLER)
 // For HUSTLER users, checks effectiveRole if available (enables owner-level access to linked orgs)

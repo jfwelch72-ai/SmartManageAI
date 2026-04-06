@@ -61,7 +61,7 @@ router.get("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, re
   }
 });
 
-router.post("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/api/projects/:code/notes", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -219,7 +219,7 @@ router.get("/api/projects/:code/media", requireAuth, async (req: AuthRequest, re
   }
 });
 
-router.post("/api/projects/:code/media", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/api/projects/:code/media", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -275,7 +275,7 @@ router.post("/api/projects/:code/media", requireAuth, async (req: AuthRequest, r
   }
 });
 
-router.delete("/api/media/:id", requireAuth, async (req: AuthRequest, res, next) => {
+router.delete("/api/media/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"), async (req: AuthRequest, res, next) => {
   try {
     const [mediaItem] = await db.select().from(media).where(eq(media.id, req.params.id)).limit(1);
 

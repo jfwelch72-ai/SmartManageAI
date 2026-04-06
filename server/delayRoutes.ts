@@ -14,6 +14,14 @@ import crypto from "crypto";
 
 const router = Router();
 
+function isAssignedToProject(user: { id: string; role: string }, project: { superintendentId: string | null; estimatorId: string | null; projectManagerId: string | null }): boolean {
+  if (user.role === "ADMIN" || user.role === "MANAGER") return true;
+  if (user.role === "SUPERINTENDENT" && project.superintendentId === user.id) return true;
+  if (user.role === "ESTIMATOR" && project.estimatorId === user.id) return true;
+  if (project.projectManagerId === user.id) return true;
+  return false;
+}
+
 // ========================================
 // Routes from delayRoutes.ts
 // ========================================
@@ -285,6 +293,11 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
       return;
     }
 
+    if (!isAssignedToProject(req.user!, project)) {
+      res.status(403).json({ error: "You are not assigned to this project" });
+      return;
+    }
+
     const delayNumber = await generateDelayNumber(project.code);
 
     const sanitizedBody = {
@@ -424,6 +437,12 @@ router.patch("/delays/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERI
       return;
     }
 
+    const [delayProject] = await db.select().from(projects).where(eq(projects.id, delay.projectId)).limit(1);
+    if (delayProject && !isAssignedToProject(req.user!, delayProject)) {
+      res.status(403).json({ error: "You are not assigned to this project" });
+      return;
+    }
+
     if (delay.status !== "DRAFT") {
       res.status(400).json({ error: "Can only edit delays in DRAFT status" });
       return;
@@ -508,6 +527,11 @@ router.post("/delays/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "
       .from(projects)
       .where(eq(projects.id, delay.projectId))
       .limit(1);
+
+    if (project && !isAssignedToProject(req.user!, project)) {
+      res.status(403).json({ error: "You are not assigned to this project" });
+      return;
+    }
 
     const now = new Date();
     const [updatedDelay] = await db
@@ -617,6 +641,14 @@ router.post("/delays/:id/resolve", requireAuth, requireRole("ADMIN", "MANAGER", 
     if (!delay) {
       res.status(404).json({ error: "Delay not found" });
       return;
+    }
+
+    if (req.user!.role === "SUPERINTENDENT") {
+      const [delayProject] = await db.select().from(projects).where(eq(projects.id, delay.projectId)).limit(1);
+      if (delayProject && !isAssignedToProject(req.user!, delayProject)) {
+        res.status(403).json({ error: "You can only resolve delays on projects you are assigned to" });
+        return;
+      }
     }
 
     if (!isValidTransition(delay.status, "RESOLVED")) {
@@ -946,6 +978,11 @@ router.post("/delays/:id/notifications/generate", requireAuth, requireRole("ADMI
       return;
     }
 
+    if (req.user!.role === "SUPERINTENDENT" && !isAssignedToProject(req.user!, project)) {
+      res.status(403).json({ error: "You can only manage notifications on projects you are assigned to" });
+      return;
+    }
+
     const { subject, body } = generateNotificationEmailContent(delay, project, recipientType);
     
     const sanitizedRecipientName = sanitizeShortText(recipientName);
@@ -1049,6 +1086,17 @@ router.patch("/delays/:delayId/notifications/:notificationId", requireAuth, requ
     if (!notification) {
       res.status(404).json({ error: "Notification not found" });
       return;
+    }
+
+    if (req.user!.role === "SUPERINTENDENT") {
+      const delay = await getDelayById(delayId);
+      if (delay) {
+        const [delayProject] = await db.select().from(projects).where(eq(projects.id, delay.projectId)).limit(1);
+        if (delayProject && !isAssignedToProject(req.user!, delayProject)) {
+          res.status(403).json({ error: "You can only edit notifications on projects you are assigned to" });
+          return;
+        }
+      }
     }
 
     if (notification.status === "FINALIZED") {
@@ -1246,6 +1294,14 @@ router.post("/delays/:id/fetch-weather-evidence", requireAuth, requireRole("ADMI
       return;
     }
 
+    if (req.user!.role === "SUPERINTENDENT") {
+      const [delayProject] = await db.select().from(projects).where(eq(projects.id, delay.projectId)).limit(1);
+      if (delayProject && !isAssignedToProject(req.user!, delayProject)) {
+        res.status(403).json({ error: "You can only access weather evidence on projects you are assigned to" });
+        return;
+      }
+    }
+
     if (delay.reason !== "WEATHER") {
       res.status(400).json({ error: "Weather evidence can only be fetched for WEATHER type delays" });
       return;
@@ -1441,6 +1497,13 @@ router.post("/delay-claims/locks", requireAuth, requireRole("ADMIN", "MANAGER", 
     if (!projectId || !reportDate) {
       return res.status(400).json({ error: "Project ID and report date are required" });
     }
+
+    if (req.user!.role === "SUPERINTENDENT") {
+      const [lockProject] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (lockProject && !isAssignedToProject(req.user!, lockProject)) {
+        return res.status(403).json({ error: "You can only lock reports on projects you are assigned to" });
+      }
+    }
     
     // Check for existing lock
     const [existing] = await db
@@ -1587,6 +1650,13 @@ router.post("/delay-claims/locks/:id/unlock", requireAuth, requireRole("ADMIN", 
     if (!existing) {
       return res.status(404).json({ error: "Lock record not found" });
     }
+
+    if (req.user!.role === "SUPERINTENDENT") {
+      const [lockProject] = await db.select().from(projects).where(eq(projects.id, existing.projectId)).limit(1);
+      if (lockProject && !isAssignedToProject(req.user!, lockProject)) {
+        return res.status(403).json({ error: "You can only unlock reports on projects you are assigned to" });
+      }
+    }
     
     if (existing.status === "SUPERVISOR_LOCKED") {
       return res.status(400).json({ error: "Supervisor locked reports cannot be unlocked" });
@@ -1676,7 +1746,7 @@ router.get("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, 
 });
 
 // POST /api/delay-claims/photo-custody - Record a custody action
-router.post("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/photo-custody", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1834,6 +1904,13 @@ router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER
     if (!project) {
       return res.status(400).json({ error: "Invalid project ID" });
     }
+
+    if (req.user!.role === "SUPERINTENDENT") {
+      const [fullProject] = await db.select().from(projects).where(eq(projects.id, validated.projectId)).limit(1);
+      if (fullProject && !isAssignedToProject(req.user!, fullProject)) {
+        return res.status(403).json({ error: "You can only create claims on projects you are assigned to" });
+      }
+    }
     
     const claimNumber = await generateClaimNumber(project.code);
     
@@ -1885,6 +1962,13 @@ router.patch("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER", "
     
     if (!existing) {
       return res.status(404).json({ error: "Delay claim not found" });
+    }
+
+    if (req.user!.role === "SUPERINTENDENT") {
+      const [claimProject] = await db.select().from(projects).where(eq(projects.id, existing.projectId)).limit(1);
+      if (claimProject && !isAssignedToProject(req.user!, claimProject)) {
+        return res.status(403).json({ error: "You can only edit claims on projects you are assigned to" });
+      }
     }
     
     const updates: Partial<DelayClaim> = {
@@ -1947,6 +2031,13 @@ router.post("/delay-claims/:id/submit", requireAuth, requireRole("ADMIN", "MANAG
     
     if (!existing) {
       return res.status(404).json({ error: "Delay claim not found" });
+    }
+
+    if (req.user!.role === "SUPERINTENDENT") {
+      const [claimProject] = await db.select().from(projects).where(eq(projects.id, existing.projectId)).limit(1);
+      if (claimProject && !isAssignedToProject(req.user!, claimProject)) {
+        return res.status(403).json({ error: "You can only submit claims on projects you are assigned to" });
+      }
     }
     
     if (!isValidClaimTransition(existing.status, "SUBMITTED")) {

@@ -29,7 +29,7 @@ import {
 import { computeAssemblyQuantity, type FormulaContext } from "@shared/utils/assemblyFormula";
 import { computeNetAreaInFt2 } from "@shared/utils/geometry";
 import { eq, and, desc, sql, or, isNull, inArray } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 import { 
@@ -393,7 +393,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Create new estimate for project
-  router.post("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/projects/:projectId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       console.log("[Estimate] Create estimate request:", { projectId: req.params.projectId, user: req.user?.email });
       const { projectId } = req.params;
@@ -518,7 +518,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Create new estimate for bid
-  router.post("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/bids/:bidId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       console.log("[Estimate] Create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
       const { bidId } = req.params;
@@ -567,7 +567,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Import takeoff quantities into estimate
-  router.post("/api/projects/:projectId/estimate/import-takeoff", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/projects/:projectId/estimate/import-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
       const { estimateId, categoryIds } = req.body as { estimateId: string, categoryIds: string[] };
@@ -1020,7 +1020,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Import takeoff measurements into a bid estimate
-  router.post("/api/bids/:bidId/estimate/import-takeoff", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/bids/:bidId/estimate/import-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { bidId } = req.params;
       const { estimateId, categoryIds, jobClassificationId, checkDuplicates, duplicateAction } = req.body as {
@@ -1612,7 +1612,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Production rate labor estimation — must be before /:estimateId routes to avoid route shadowing
-  router.post("/api/estimates/production-rates/estimate-labor", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/production-rates/estimate-labor", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -1670,7 +1670,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Add manual line item
-  router.post("/api/estimates/:estimateId/line-items", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
       const lineItem = req.body;
@@ -1849,7 +1849,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Update line item
-  router.put("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
+  router.put("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId } = req.params;
       const updates = req.body;
@@ -2042,7 +2042,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Delete line item
-  router.delete("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId } = req.params;
 
@@ -2147,7 +2147,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Set subcontractor assignments for a line item (replaces all existing)
-  router.post("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId } = req.params;
       const { shouldFilter, orgId } = getOrgIdForFilter(req);
@@ -2244,7 +2244,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Delete a single subcontractor assignment
-  router.delete("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors/:assignmentId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors/:assignmentId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId, assignmentId } = req.params;
       const { shouldFilter, orgId } = getOrgIdForFilter(req);
@@ -2412,7 +2412,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Approve estimate and sync to project budget, create procurement items and scope items
-  router.post("/api/estimates/:estimateId/approve", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/approve", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
       const userId = req.user!.id;
@@ -2537,7 +2537,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // AI CFO estimate analysis
-  router.post("/api/estimates/:estimateId/analyze", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
 
@@ -2901,7 +2901,7 @@ Provide comprehensive financial analysis and recommendations.`
     }
   });
 
-  router.post("/api/estimates/:estimateId/line-items/auto-populate-labor", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/auto-populate-labor", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
       const { lineItemId, applyRate } = req.body;
@@ -3026,7 +3026,7 @@ Provide comprehensive financial analysis and recommendations.`
   });
 
   // Sync material calculator results to estimate line item
-  router.post("/api/estimates/:estimateId/line-items/:lineItemId/sync-materials", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/:lineItemId/sync-materials", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId } = req.params;
       
@@ -3210,7 +3210,7 @@ router.get("/api/historical-costs/aggregated", requireAuth, async (req: AuthRequ
   }
 });
 
-router.post("/api/historical-costs", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -3231,7 +3231,7 @@ router.post("/api/historical-costs", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
-router.delete("/api/historical-costs/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/historical-costs/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -3247,7 +3247,7 @@ router.delete("/api/historical-costs/:id", requireAuth, async (req: AuthRequest,
   }
 });
 
-router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const { estimateId } = req.params;
     const { assemblyId, quantity: baseQuantity } = req.body;
@@ -3415,11 +3415,14 @@ router.get("/api/estimates/:estimateId/match-review", requireAuth, async (req: A
   }
 });
 
-router.post("/api/estimates/:estimateId/match-review/:lineItemId/accept", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/estimates/:estimateId/match-review/:lineItemId/accept", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!hasEstimateAccess(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
     }
 
     const { vendorPricingId } = req.body;

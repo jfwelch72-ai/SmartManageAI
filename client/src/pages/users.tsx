@@ -125,6 +125,15 @@ const ROLE_LABELS: Record<string, string> = {
   HUSTLER: "Hustler",
 };
 
+const ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
+  ADMIN: "Admin",
+  MANAGER: "Manager",
+  SUPERINTENDENT: "Superintendent",
+  ESTIMATOR: "Estimator",
+  FIELD_WORKER: "Field Worker",
+  VENDOR: "Vendor",
+};
+
 const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
   SUPER_ADMIN: "destructive",
   ADMIN: "destructive",
@@ -513,7 +522,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                    {Object.entries(ASSIGNABLE_ROLE_LABELS).map(([value, label]) => (
                       <SelectItem
                         key={value}
                         value={value}
@@ -524,6 +533,9 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground" data-testid="text-hustler-role-note">
+                  The Hustler role is automatically assigned during onboarding for multi-organization owners and cannot be manually assigned.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Temporary Password *</Label>
@@ -748,7 +760,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {Object.entries(ROLE_LABELS).map(
+                                {Object.entries(ASSIGNABLE_ROLE_LABELS).map(
                                   ([value, label]) => (
                                     <SelectItem key={value} value={value}>
                                       {label}
@@ -820,7 +832,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {Object.entries(ROLE_LABELS).map(
+                                  {Object.entries(ASSIGNABLE_ROLE_LABELS).map(
                                     ([value, label]) => (
                                       <SelectItem key={value} value={value}>
                                         {label}

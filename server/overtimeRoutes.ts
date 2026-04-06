@@ -165,7 +165,7 @@ router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequ
   }
 });
 
-router.post("/api/overtime-requests", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"), async (req: AuthRequest, res) => {
   try {
     const { shiftId, requestedHours, superintendentId, notes } = req.body;
     if (!shiftId || !requestedHours || !superintendentId) {
@@ -255,7 +255,7 @@ router.get("/api/overtime-requests/my", requireAuth, async (req: AuthRequest, re
   }
 });
 
-router.post("/api/overtime-requests/by-shifts", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shiftIds } = req.body;
     if (!shiftIds || !Array.isArray(shiftIds) || shiftIds.length === 0) {

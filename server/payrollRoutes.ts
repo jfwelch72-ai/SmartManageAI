@@ -790,7 +790,7 @@ router.get("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
+router.post("/api/payroll/pay-runs", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1293,8 +1293,8 @@ const payRunStatusHandler = async (req: any, res: Response) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-router.put("/api/payroll/pay-runs/:id/status", requireAuth, payRunStatusHandler);
-router.patch("/api/payroll/pay-runs/:id/status", requireAuth, payRunStatusHandler);
+router.put("/api/payroll/pay-runs/:id/status", requireAuth, requireFeaturePermission("canManagePayroll"), payRunStatusHandler);
+router.patch("/api/payroll/pay-runs/:id/status", requireAuth, requireFeaturePermission("canManagePayroll"), payRunStatusHandler);
 
 router.get("/api/payroll/workers", requireAuth, async (req, res) => {
   try {
@@ -1545,7 +1545,7 @@ router.get("/api/payroll/deduction-types", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/api/payroll/deduction-types", requireAuth, async (req, res) => {
+router.post("/api/payroll/deduction-types", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1570,7 +1570,7 @@ router.post("/api/payroll/deduction-types", requireAuth, async (req, res) => {
   }
 });
 
-router.patch("/api/payroll/deduction-types/:id", requireAuth, async (req, res) => {
+router.patch("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1602,7 +1602,7 @@ router.patch("/api/payroll/deduction-types/:id", requireAuth, async (req, res) =
   }
 });
 
-router.delete("/api/payroll/deduction-types/:id", requireAuth, async (req, res) => {
+router.delete("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1678,7 +1678,7 @@ router.get("/api/payroll/employee-deductions/:userId", requireAuth, async (req, 
   }
 });
 
-router.post("/api/payroll/employee-deductions", requireAuth, async (req, res) => {
+router.post("/api/payroll/employee-deductions", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1709,7 +1709,7 @@ router.post("/api/payroll/employee-deductions", requireAuth, async (req, res) =>
   }
 });
 
-router.patch("/api/payroll/employee-deductions/:id", requireAuth, async (req, res) => {
+router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1736,7 +1736,7 @@ router.patch("/api/payroll/employee-deductions/:id", requireAuth, async (req, re
   }
 });
 
-router.delete("/api/payroll/employee-deductions/:id", requireAuth, async (req, res) => {
+router.delete("/api/payroll/employee-deductions/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2138,7 +2138,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
   }
 });
 
-router.delete("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
+router.delete("/api/payroll/pay-runs/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
