@@ -4480,10 +4480,12 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canManageWebsite: boolean("can_manage_website").notNull().default(false),
   canAccessExecutiveDigest: boolean("can_access_executive_digest").notNull().default(false),
 
-  // Category 9: AI Features (57)
+  // Category 9: AI Features (57-59)
   canUseAiFeatures: boolean("can_use_ai_features").notNull().default(false),
+  canViewSafety: boolean("can_view_safety").notNull().default(false),
+  canViewAiSummaries: boolean("can_view_ai_summaries").notNull().default(false),
 
-  // Category 10: Administration (58-64)
+  // Category 10: Administration (60-66)
   canAccessCompanySettings: boolean("can_access_company_settings").notNull().default(false),
   canManageUsers: boolean("can_manage_users").notNull().default(false),
   canAccessApprovals: boolean("can_access_approvals").notNull().default(false),

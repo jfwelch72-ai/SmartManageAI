@@ -219,7 +219,7 @@ type FeaturePermissionKeys =
   | 'canAccessCRM' | 'canCreateCRMContacts' | 'canAccessMarketplace'
   | 'canManageHiring' | 'canAccessHiringInterviews' | 'canManageHiringSettings'
   | 'canPostSocialMedia' | 'canManageWebsite' | 'canAccessExecutiveDigest'
-  | 'canUseAiFeatures'
+  | 'canUseAiFeatures' | 'canViewSafety' | 'canViewAiSummaries'
   | 'canAccessCompanySettings' | 'canManageUsers' | 'canAccessApprovals' | 'canAccessAuditLogs'
   | 'canAccessReports' | 'canAccessEnterpriseSettings' | 'canManageAISettings'
   | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
@@ -247,7 +247,7 @@ const ALL_FALSE: PermissionSet = {
   canAccessCRM: false, canCreateCRMContacts: false, canAccessMarketplace: false,
   canManageHiring: false, canAccessHiringInterviews: false, canManageHiringSettings: false,
   canPostSocialMedia: false, canManageWebsite: false, canAccessExecutiveDigest: false,
-  canUseAiFeatures: false,
+  canUseAiFeatures: false, canViewSafety: false, canViewAiSummaries: false,
   canAccessCompanySettings: false, canManageUsers: false, canAccessApprovals: false,
   canAccessAuditLogs: false, canAccessReports: false, canAccessEnterpriseSettings: false,
   canManageAISettings: false,
@@ -275,7 +275,7 @@ const ALL_TRUE: PermissionSet = {
   canAccessCRM: true, canCreateCRMContacts: true, canAccessMarketplace: true,
   canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
   canPostSocialMedia: true, canManageWebsite: true, canAccessExecutiveDigest: true,
-  canUseAiFeatures: true,
+  canUseAiFeatures: true, canViewSafety: true, canViewAiSummaries: true,
   canAccessCompanySettings: true, canManageUsers: true, canAccessApprovals: true,
   canAccessAuditLogs: true, canAccessReports: true, canAccessEnterpriseSettings: true,
   canManageAISettings: true,
@@ -344,7 +344,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: true,
     canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
     canAccessBulletins: true, canAccessTimeClock: true, canManageLeave: true,
-    canViewProjectTimeEntries: true,
+    canViewProjectTimeEntries: true, canViewSafety: true, canViewAiSummaries: true,
   },
   VENDOR: {
     ...ALL_FALSE,
@@ -412,7 +412,10 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
       const dbPerms: Partial<PermissionSet> = {};
       if (perm) {
         for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
-          dbPerms[key] = (perm as Record<string, unknown>)[key] as boolean ?? false;
+          const val = (perm as Record<string, unknown>)[key];
+          if (typeof val === 'boolean') {
+            dbPerms[key] = val;
+          }
         }
       }
       const effective = mergePermissions(roleDefaults, perm ? dbPerms : null);
@@ -1095,7 +1098,10 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
     const dbPerms: Partial<PermissionSet> | null = permission ? (() => {
       const perms: Partial<PermissionSet> = {};
       for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
-        perms[key] = (permission as Record<string, unknown>)[key] as boolean ?? false;
+        const val = (permission as Record<string, unknown>)[key];
+        if (typeof val === 'boolean') {
+          perms[key] = val;
+        }
       }
       return perms;
     })() : null;

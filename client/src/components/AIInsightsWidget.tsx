@@ -75,10 +75,11 @@ const moduleConfig: Record<string, { icon: any; label: string }> = {
   CHANGE_ORDERS: { icon: BarChart3, label: "Change Orders" },
 };
 
-function InsightCard({ insight, onAcknowledge, onClick }: { 
+function InsightCard({ insight, onAcknowledge, onClick, readOnly = false }: { 
   insight: AIInsight; 
   onAcknowledge: (id: string) => void;
   onClick: () => void;
+  readOnly?: boolean;
 }) {
   const config = severityConfig[insight.severity] || severityConfig.INFO;
   const Icon = config.icon;
@@ -124,7 +125,7 @@ function InsightCard({ insight, onAcknowledge, onClick }: {
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
-          {!insight.isAcknowledged && (
+          {!insight.isAcknowledged && !readOnly && (
             <Button 
               size="sm" 
               variant="ghost" 
@@ -147,12 +148,17 @@ function InsightCard({ insight, onAcknowledge, onClick }: {
 export function AIInsightsWidget({ 
   compact = false,
   projectId,
+  isReadOnly: isReadOnlyProp,
 }: { 
   compact?: boolean;
   projectId?: string;
+  isReadOnly?: boolean;
 }) {
   const { toast } = useToast();
-  const hasPermission = useFeaturePermission("canUseAiFeatures");
+  const hasAiFeatures = useFeaturePermission("canUseAiFeatures");
+  const hasAiSummaries = useFeaturePermission("canViewAiSummaries");
+  const hasPermission = hasAiFeatures || hasAiSummaries;
+  const isReadOnly = isReadOnlyProp ?? (hasAiSummaries && !hasAiFeatures);
   const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
@@ -258,20 +264,22 @@ export function AIInsightsWidget({
                 {summary?.totalUnacknowledged || 0} unacknowledged insights
               </CardDescription>
             </div>
-            <Button 
-              size="sm" 
-              variant="outline"
-              onClick={() => runAnalysisMutation.mutate('ALL')}
-              disabled={runAnalysisMutation.isPending}
-              data-testid="run-ai-analysis-button"
-            >
-              {runAnalysisMutation.isPending ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              <span className="ml-2">{runAnalysisMutation.isPending ? 'Analyzing...' : 'Run Analysis'}</span>
-            </Button>
+            {!isReadOnly && (
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => runAnalysisMutation.mutate('ALL')}
+                disabled={runAnalysisMutation.isPending}
+                data-testid="run-ai-analysis-button"
+              >
+                {runAnalysisMutation.isPending ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                <span className="ml-2">{runAnalysisMutation.isPending ? 'Analyzing...' : 'Run Analysis'}</span>
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -314,6 +322,7 @@ export function AIInsightsWidget({
                   <InsightCard 
                     key={insight.id} 
                     insight={insight} 
+                    readOnly={isReadOnly}
                     onAcknowledge={(id) => acknowledgeMutation.mutate(id)}
                     onClick={() => setSelectedInsight(insight)}
                   />
@@ -404,7 +413,7 @@ export function AIInsightsWidget({
                 )}
 
                 <div className="flex justify-end gap-2 pt-4 border-t">
-                  {!selectedInsight.isAcknowledged && (
+                  {!selectedInsight.isAcknowledged && !isReadOnly && (
                     <Button 
                       onClick={() => {
                         acknowledgeMutation.mutate(selectedInsight.id);

@@ -21,6 +21,7 @@ import { ensureMessageColumns } from "./utils/ensureMessageColumns";
 import { ensureNotificationEnumValues } from "./utils/ensureNotificationEnumValues";
 import { ensureEstimateCategoryEnumValues } from "./utils/ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./utils/ensureTakeoffEnhancements";
+import { ensureFieldWorkerPermColumns } from "./utils/ensureFieldWorkerPermColumns";
 
 const app = express();
 
@@ -184,6 +185,7 @@ app.use((req, res, next) => {
   await ensureNotificationEnumValues();
   await ensureEstimateCategoryEnumValues();
   await ensureTakeoffEnhancements();
+  await ensureFieldWorkerPermColumns();
   await backfillMissingFeatureFlags();
 
   let portRetryCount = 0;

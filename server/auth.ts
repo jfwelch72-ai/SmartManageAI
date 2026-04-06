@@ -250,14 +250,14 @@ export type FeaturePermissionKey =
   | 'canAccessCRM' | 'canCreateCRMContacts' | 'canAccessMarketplace'
   | 'canManageHiring' | 'canAccessHiringInterviews' | 'canManageHiringSettings'
   | 'canPostSocialMedia' | 'canManageWebsite' | 'canAccessExecutiveDigest'
-  | 'canUseAiFeatures'
+  | 'canUseAiFeatures' | 'canViewSafety' | 'canViewAiSummaries'
   | 'canAccessCompanySettings' | 'canManageUsers' | 'canAccessApprovals' | 'canAccessAuditLogs'
   | 'canAccessReports' | 'canAccessEnterpriseSettings' | 'canManageAISettings'
   | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
   | 'canViewProjectReceipts' | 'canViewProjectTimeEntries' | 'canViewProjectSubcontractors'
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff';
 
-async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean>> {
+export async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean>> {
   if (role === "SUPER_ADMIN") return getRoleDefaults("SUPER_ADMIN");
   const roleDefaults = getRoleDefaults(role);
   if (!orgId) return roleDefaults;

@@ -46,6 +46,8 @@ interface UserPermissions {
   canManageContracts: boolean;
   canManageHiring: boolean;
   canManageSafety: boolean;
+  canViewSafety: boolean;
+  canViewAiSummaries: boolean;
   canManageScheduling: boolean;
   canAccessBidNetwork: boolean;
   canManageLeave: boolean;
@@ -144,7 +146,7 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
 
   const { user: authUser } = useAuth();
 
-  const { data: permissions = { canAccessFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false, canManageContracts: false, canManageHiring: false, canManageSafety: false, canManageScheduling: false, canAccessBidNetwork: false, canManageLeave: false, canAccessTimeMaterial: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
+  const { data: permissions = { canAccessFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false, canManageContracts: false, canManageHiring: false, canManageSafety: false, canViewSafety: false, canViewAiSummaries: false, canManageScheduling: false, canAccessBidNetwork: false, canManageLeave: false, canAccessTimeMaterial: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
     queryKey: ["/api/dashboard/my-permissions"],
     enabled: !!authUser,
   });

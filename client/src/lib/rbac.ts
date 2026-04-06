@@ -105,7 +105,7 @@ export function hasEquipmentAccess(role?: string, perms?: FeaturePerms): boolean
 }
 
 export function hasSafetyAccess(role?: string, perms?: FeaturePerms): boolean {
-  if (perms) return !!perms.canManageSafety;
+  if (perms) return !!perms.canManageSafety || !!perms.canViewSafety;
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT";
 }
 
@@ -388,6 +388,8 @@ export interface FeaturePerms {
   canManageWebsite?: boolean;
   canAccessExecutiveDigest?: boolean;
   canUseAiFeatures?: boolean;
+  canViewSafety?: boolean;
+  canViewAiSummaries?: boolean;
   canAccessCompanySettings?: boolean;
   canManageUsers?: boolean;
   canAccessApprovals?: boolean;

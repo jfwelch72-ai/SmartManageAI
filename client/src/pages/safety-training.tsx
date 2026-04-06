@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -155,7 +156,9 @@ export default function SafetyTrainingPage() {
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [completingAssignment, setCompletingAssignment] = useState<Assignment | null>(null);
 
-  const isAdmin = ["ADMIN", "MANAGER"].includes(user?.role || "");
+  const { permissions } = useDashboardCustomization();
+  const canManageSafety = !!permissions.canManageSafety || ["ADMIN", "MANAGER"].includes(user?.role || "");
+  const isAdmin = canManageSafety;
 
   const { data: trainings = [], isLoading: loadingTrainings } = useQuery<Training[]>({ queryKey: ["/api/safety-training"] });
   const { data: assignments = [], isLoading: loadingAssignments } = useQuery<Assignment[]>({ queryKey: ["/api/safety-training/assignments"] });
@@ -403,7 +406,7 @@ export default function SafetyTrainingPage() {
                         <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1">
-                            {a.status !== "COMPLETED" && (
+                            {a.status !== "COMPLETED" && isAdmin && (
                               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setCompletingAssignment(a); setShowCompleteDialog(true); }} data-testid={`button-mark-complete-${a.id}`}>
                                 <CheckCircle2 className="h-3 w-3 mr-1" /> Complete
                               </Button>
@@ -650,7 +653,7 @@ function SafetyChecklistsTab({ isAdmin }: { isAdmin: boolean }) {
           </Button>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => setShowStartChecklist(true)} data-testid="button-start-checklist"><Plus className="h-4 w-4 mr-1" /> Start Checklist</Button>
+          {isAdmin && <Button size="sm" onClick={() => setShowStartChecklist(true)} data-testid="button-start-checklist"><Plus className="h-4 w-4 mr-1" /> Start Checklist</Button>}
           {isAdmin && subTab === "templates" && <Button size="sm" variant="outline" onClick={() => setShowTemplateForm(true)} data-testid="button-new-template"><Plus className="h-4 w-4 mr-1" /> New Template</Button>}
         </div>
       </div>

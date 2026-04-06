@@ -18,6 +18,8 @@ import type { ChangeOrder } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import ProjectHealthWidget from "@/components/ProjectHealthWidget";
+import AIInsightsWidget from "@/components/AIInsightsWidget";
+import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 
 interface ProjectFinancials {
   budget: number;
@@ -80,6 +82,8 @@ export default function OverviewTab({
 }: OverviewTabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { permissions: dashPerms } = useDashboardCustomization();
+  const showAiSummaries = !!dashPerms.canViewAiSummaries || !!dashPerms.canUseAiFeatures;
   const { data: scheduleData } = useQuery<{ schedule: { baselineStartDate: string; baselineEndDate?: string } | null; tasks: { percentComplete: number }[] }>({
     queryKey: ["/api/projects", projectCode, "schedule"],
     enabled: !!projectCode,
@@ -946,6 +950,15 @@ export default function OverviewTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {showAiSummaries && project?.id && (
+        <div className="col-span-full mt-6">
+          <AIInsightsWidget
+            projectId={project.id}
+            isReadOnly={!dashPerms.canUseAiFeatures}
+          />
+        </div>
+      )}
     </>
   );
 }

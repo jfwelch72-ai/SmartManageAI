@@ -12,6 +12,7 @@ import {
   unitsOfMeasure,
   scopeItems, estimateLineItems, estimates, changeOrders,
   projectDelays, dailyScopeProgress, projectSchedules, projectScheduleTasks,
+  crewMembers, crewProjectAssignments,
   insertAIBidDocumentAnalysisSchema,
   type AIBidDocumentAnalysis,
   type MasterSowItem,
@@ -21,7 +22,7 @@ import {
 import { eq, desc, and, sql, ilike, or, inArray } from "drizzle-orm";
 import { z } from "zod";
 import OpenAI from "openai";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireAnyFeaturePermission, getEffectivePermissions, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { extractDocumentContent } from "./ai/documentExtractor";
@@ -49,6 +50,21 @@ import {
 } from "./ai/scopePredictionEngine";
 
 const router = Router();
+
+async function getAssignedProjectIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ projectId: crewProjectAssignments.projectId })
+    .from(crewMembers)
+    .innerJoin(crewProjectAssignments, eq(crewMembers.crewId, crewProjectAssignments.crewId))
+    .where(eq(crewMembers.userId, userId));
+  return [...new Set(rows.map(r => r.projectId))];
+}
+
+async function isViewOnlyAiUser(user: AuthRequest['user']): Promise<boolean> {
+  const effectiveRole = user.effectiveRole || user.role;
+  const effective = await getEffectivePermissions(user.id, user.organizationId ?? null, effectiveRole);
+  return !!effective.canViewAiSummaries && !effective.canUseAiFeatures;
+}
 
 // ========================================
 // Routes from aiBidDocumentRoutes.ts
@@ -2708,7 +2724,7 @@ router.post("/ai/scope/from-document", sensitiveLimiter, requireAuth, async (req
 // Routes from aiInsightsRoutes.ts
 // ========================================
 
-router.get("/ai-insights/dashboard-summary", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-insights/dashboard-summary", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 'canViewAiSummaries'), async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -2721,6 +2737,14 @@ router.get("/ai-insights/dashboard-summary", requireAuth, requireRole("ADMIN", "
       conditions.push(
         sql`(${aiInsights.organizationId} = ${organizationId} OR ${aiInsights.organizationId} IS NULL)`
       );
+    }
+
+    if (await isViewOnlyAiUser(req.user)) {
+      const assignedIds = await getAssignedProjectIds(req.user.id);
+      if (assignedIds.length === 0) {
+        return res.json({ recentInsights: [], countBySeverity: {}, countByModule: {}, totalUnacknowledged: 0 });
+      }
+      conditions.push(inArray(aiInsights.projectId, assignedIds));
     }
 
     const recentInsights = await db
@@ -2769,7 +2793,7 @@ router.get("/ai-insights/dashboard-summary", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.get("/ai-insights", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-insights", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 'canViewAiSummaries'), async (req: AuthRequest, res) => {
   try {
     const { module, projectId, severity, acknowledged } = req.query;
     const organizationId = req.user.organizationId;
@@ -2782,12 +2806,25 @@ router.get("/ai-insights", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       );
     }
 
-    if (module) {
-      conditions.push(eq(aiInsights.module, module as any));
+    if (await isViewOnlyAiUser(req.user)) {
+      const assignedIds = await getAssignedProjectIds(req.user.id);
+      if (assignedIds.length === 0) {
+        return res.json([]);
+      }
+      if (projectId) {
+        if (!assignedIds.includes(projectId as string)) {
+          return res.status(403).json({ error: "Access denied to this project's insights" });
+        }
+        conditions.push(eq(aiInsights.projectId, projectId as string));
+      } else {
+        conditions.push(inArray(aiInsights.projectId, assignedIds));
+      }
+    } else if (projectId) {
+      conditions.push(eq(aiInsights.projectId, projectId as string));
     }
 
-    if (projectId) {
-      conditions.push(eq(aiInsights.projectId, projectId as string));
+    if (module) {
+      conditions.push(eq(aiInsights.module, module as any));
     }
 
     if (severity) {
@@ -2823,7 +2860,7 @@ router.get("/ai-insights", requireAuth, requireRole("ADMIN", "MANAGER"), async (
   }
 });
 
-router.get("/ai-insights/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-insights/:id", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 'canViewAiSummaries'), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
 
@@ -2843,6 +2880,13 @@ router.get("/ai-insights/:id", requireAuth, requireRole("ADMIN", "MANAGER"), asy
       return res.status(403).json({ error: "Access denied" });
     }
 
+    if (await isViewOnlyAiUser(req.user)) {
+      const assignedIds = await getAssignedProjectIds(req.user.id);
+      if (!insight.projectId || !assignedIds.includes(insight.projectId)) {
+        return res.status(403).json({ error: "Access denied to this project's insights" });
+      }
+    }
+
     const parsedInsight = {
       ...insight,
       metrics: insight.metrics ? JSON.parse(insight.metrics) : null,
@@ -2857,7 +2901,7 @@ router.get("/ai-insights/:id", requireAuth, requireRole("ADMIN", "MANAGER"), asy
   }
 });
 
-router.patch("/ai-insights/:id/acknowledge", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/ai-insights/:id/acknowledge", requireAuth, requireAnyFeaturePermission('canUseAiFeatures'), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
 

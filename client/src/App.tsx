@@ -352,7 +352,7 @@ function Router() {
       <Route path="/reports" component={() => <ProtectedRoute component={ReportsPage} permission={RoutePermissions.REPORTS} featurePerm="canAccessReports" />} />
       <Route path="/manage-workers/:id" component={() => <ProtectedRoute component={WorkerDetailPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
-      <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} featurePerm="canManageSafety" />} />
+      <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} featurePerm={["canManageSafety", "canViewSafety"]} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/overtime-rules" component={() => <ProtectedRoute component={OvertimeRulesPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/contracts" component={() => <ProtectedRoute component={ContractsPage} permission={(role?: string) => ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role || "")} featurePerm="canManageContracts" />} />

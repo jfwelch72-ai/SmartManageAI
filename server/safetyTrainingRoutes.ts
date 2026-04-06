@@ -96,9 +96,9 @@
  *     responses:
  *       201: { description: Training assigned }
  */
-import { Router } from "express";
+import { Router, type Response, type NextFunction } from "express";
 import { db } from "./db";
-import { requireAuth, requireFeaturePermission } from "./auth";
+import { requireAuth, requireFeaturePermission, requireAnyFeaturePermission } from "./auth";
 import { safetyTrainings, safetyTrainingAssignments, insertSafetyTrainingSchema, insertSafetyTrainingAssignmentSchema, users, organizations } from "@shared/schema";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -106,7 +106,14 @@ import type { AuthRequest } from "./auth";
 
 const router = Router();
 
-router.use("/api/safety-training", requireAuth, requireFeaturePermission('canManageSafety'));
+router.use("/api/safety-training", requireAuth);
+
+router.use("/api/safety-training", (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.method === 'GET') {
+    return requireAnyFeaturePermission('canManageSafety', 'canViewSafety')(req, res, next);
+  }
+  return requireFeaturePermission('canManageSafety')(req, res, next);
+});
 
 function isSafetyAdmin(role?: string): boolean {
   return ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(role || "");
