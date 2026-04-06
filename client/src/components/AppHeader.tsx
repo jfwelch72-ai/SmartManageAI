@@ -25,7 +25,7 @@ import {
 import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw, Package, Store, ExternalLink } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
-import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, hasContractorAccess, isVendor } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, hasEquipmentAccess, isSuperAdmin, hasContractorAccess, isVendor, getRoleDisplayName } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
@@ -342,7 +342,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                     </Avatar>
                     <div>
                       <p className="font-medium">{userName}</p>
-                      <p className="text-sm text-muted-foreground">{userRole}</p>
+                      <p className="text-sm text-muted-foreground">{getRoleDisplayName(userRole)}</p>
                     </div>
                   </div>
                   <Button
@@ -464,7 +464,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                   </Link>
                 </Button>
               )}
-              {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
+              {hasEquipmentAccess(userRole) && (
                 <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-equipment">
                   <Link href="/equipment">
                     <Truck className="w-4 h-4" />

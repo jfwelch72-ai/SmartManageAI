@@ -151,6 +151,7 @@ const ROLE_OPTIONS = [
   { value: "ESTIMATOR", label: "Estimator" },
   { value: "FIELD_WORKER", label: "Field Worker" },
   { value: "VENDOR", label: "Vendor" },
+  { value: "HUSTLER", label: "Hustler" },
 ];
 
 const EMPLOYMENT_TYPE_OPTIONS = [
@@ -168,7 +169,9 @@ const ROLE_LABELS: Record<string, string> = {
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
   FIELD_WORKER: "Field Worker",
+  HOURLY_EMPLOYEE: "Field Worker",
   VENDOR: "Vendor",
+  HUSTLER: "Hustler",
 };
 
 const ATTENDANCE_COLORS: Record<string, string> = {

@@ -715,8 +715,8 @@ export function SubmittalDetailDialog({
   const detail = selectedDetail || submittal;
 
   const canManageChain = ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(permissionRole || "");
-  const canManageItems = ["ADMIN", "MANAGER", "ESTIMATOR", "SUPER_ADMIN"].includes(userRole);
-  const canUploadAttachments = ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "SUPER_ADMIN"].includes(userRole);
+  const canManageItems = ["ADMIN", "MANAGER"].includes(userRole);
+  const canUploadAttachments = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
   const canDeleteAnyAttachment = ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(userRole);
 
   const { data: reviews = [] } = useQuery<SubmittalReview[]>({

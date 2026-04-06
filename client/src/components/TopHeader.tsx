@@ -13,7 +13,7 @@ import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot, Settings } from "lu
 import ThemeToggle from "./ThemeToggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
-import { hasContractorAccess, isSuperAdmin } from "@/lib/rbac";
+import { hasContractorAccess, isSuperAdmin, getRoleDisplayName } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
@@ -233,7 +233,7 @@ export default function TopHeader() {
                 </Avatar>
                 <div className="hidden md:block text-left">
                   <p className="text-sm font-medium">{userName}</p>
-                  <p className="text-xs text-muted-foreground">{userRole}</p>
+                  <p className="text-xs text-muted-foreground">{getRoleDisplayName(userRole)}</p>
                 </div>
               </Button>
             </DropdownMenuTrigger>

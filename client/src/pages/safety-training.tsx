@@ -155,7 +155,7 @@ export default function SafetyTrainingPage() {
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [completingAssignment, setCompletingAssignment] = useState<Assignment | null>(null);
 
-  const isAdmin = ["ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"].includes(user?.role || "");
+  const isAdmin = ["ADMIN", "MANAGER"].includes(user?.role || "");
 
   const { data: trainings = [], isLoading: loadingTrainings } = useQuery<Training[]>({ queryKey: ["/api/safety-training"] });
   const { data: assignments = [], isLoading: loadingAssignments } = useQuery<Assignment[]>({ queryKey: ["/api/safety-training/assignments"] });

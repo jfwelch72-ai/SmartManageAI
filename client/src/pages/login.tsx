@@ -6,7 +6,7 @@ import { isSuperAdmin } from "@/lib/rbac";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FlaskConical, Shield, Users, HardHat, Calculator, Building2, Clock, Wrench, Truck, Zap, Sparkles, DollarSign, Megaphone, ShieldAlert, UserCog, Cog, Compass, ShoppingCart, Radio } from "lucide-react";
+import { Loader2, FlaskConical, Shield, Users, HardHat, Calculator, Building2, Clock, Truck, Zap, Sparkles, Compass } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 

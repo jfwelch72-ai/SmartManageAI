@@ -20,7 +20,7 @@ export function CompanyNotificationsTab() {
 
   const { data: payrollSettings, isLoading: loadingPayroll } = useQuery<PayrollSettings>({
     queryKey: ["/api/payroll/settings"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)
+    enabled: !!user && ["ADMIN", "MANAGER"].includes(user.role)
   });
 
   const [payrollForm, setPayrollForm] = useState({

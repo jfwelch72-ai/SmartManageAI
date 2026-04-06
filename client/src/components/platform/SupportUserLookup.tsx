@@ -59,7 +59,9 @@ const roleLabels: Record<string, string> = {
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
   FIELD_WORKER: "Field Worker",
+  HOURLY_EMPLOYEE: "Field Worker",
   VENDOR: "Vendor",
+  HUSTLER: "Hustler",
 };
 
 export function SupportUserLookup() {
@@ -366,6 +368,7 @@ export function SupportUserLookup() {
                 <SelectItem value="ESTIMATOR">Estimator</SelectItem>
                 <SelectItem value="FIELD_WORKER">Field Worker</SelectItem>
                 <SelectItem value="VENDOR">Vendor</SelectItem>
+                <SelectItem value="HUSTLER">Hustler</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -795,6 +798,7 @@ export function SupportUserLookup() {
                   <SelectItem value="ESTIMATOR">Estimator</SelectItem>
                   <SelectItem value="FIELD_WORKER">Field Worker</SelectItem>
                   <SelectItem value="VENDOR">Vendor</SelectItem>
+                  <SelectItem value="HUSTLER">Hustler</SelectItem>
                 </SelectContent>
               </Select>
             </div>

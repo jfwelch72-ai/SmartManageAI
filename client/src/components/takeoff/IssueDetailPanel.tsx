@@ -58,7 +58,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 function canWrite(role: string): boolean {
-  return ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "SUPER_ADMIN"].includes(role);
+  return ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"].includes(role);
 }
 
 export function IssueDetailPanel({ issue, sheetId, currentUser, orgUsers, onClose, onDelete }: IssueDetailPanelProps) {

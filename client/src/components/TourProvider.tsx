@@ -219,49 +219,6 @@ const estimatorTourSteps: TourStep[] = [
   },
 ];
 
-const officeTourSteps: TourStep[] = [
-  {
-    target: '[data-testid="sidebar-dashboard"]',
-    title: "Office Dashboard",
-    content: "See pending invoices, payables due, and administrative tasks requiring attention.",
-    profitabilityTip: "Stay on top of cash flow with clear visibility.",
-    path: "/dashboard",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="sidebar-crm"]',
-    title: "Contact Management",
-    content: "Manage all your business contacts - clients, vendors, subcontractors. Keep records organized.",
-    profitabilityTip: "Good records mean faster billing and fewer disputes.",
-    path: "/crm",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="sidebar-subcontractor-payables"]',
-    title: "Subcontractor Payables",
-    content: "Track what you owe subcontractors, approve payments, and maintain good vendor relationships.",
-    profitabilityTip: "Timely payments get you better pricing and priority scheduling.",
-    path: "/subcontractor-payables",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="sidebar-time-entry"]',
-    title: "Time Entry",
-    content: "Review and process time entries for payroll. Allocate labor costs to the correct projects.",
-    profitabilityTip: "Accurate job costing reveals your true project profitability.",
-    path: "/time-entry",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="sidebar-financials-group"]',
-    title: "Financials",
-    content: "Access financial tools including CFO dashboard, cost rates, and billing schedules within each project.",
-    profitabilityTip: "Proper billing schedules improve cash flow.",
-    path: "/dashboard",
-    disableBeacon: true,
-  },
-];
-
 const crewTourSteps: TourStep[] = [
   {
     target: '[data-testid="sidebar-dashboard"]',
@@ -293,33 +250,6 @@ const crewTourSteps: TourStep[] = [
     content: "Communicate with your foreman, office staff, and other crew members securely.",
     profitabilityTip: "Quick communication solves problems before they grow.",
     path: "/messages",
-    disableBeacon: true,
-  },
-];
-
-const maintenanceTourSteps: TourStep[] = [
-  {
-    target: '[data-testid="sidebar-dashboard"]',
-    title: "Equipment Dashboard",
-    content: "See equipment status, upcoming maintenance, and repair requests at a glance.",
-    profitabilityTip: "Preventive maintenance costs less than breakdowns.",
-    path: "/dashboard",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="sidebar-equipment"]',
-    title: "Equipment Fleet",
-    content: "Track all equipment - vehicles, tools, machinery. Know where everything is and its condition.",
-    profitabilityTip: "Well-maintained equipment lasts longer and performs better.",
-    path: "/equipment",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="sidebar-time-clock"]',
-    title: "Time Tracking",
-    content: "Log your maintenance hours against specific equipment for accurate cost tracking.",
-    profitabilityTip: "Know your true maintenance costs per piece of equipment.",
-    path: "/time-clock",
     disableBeacon: true,
   },
 ];

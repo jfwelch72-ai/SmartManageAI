@@ -106,7 +106,7 @@ export default function AIPMDashboard() {
         (t) =>
           t.status !== "DISMISSED" &&
           t.status !== "COMPLETED" &&
-          (t.role === "MANAGER" ||
+          (t.role === "ADMIN" || t.role === "MANAGER" ||
             t.title.toLowerCase().includes("textura") ||
             t.title.toLowerCase().includes("billing") ||
             t.title.toLowerCase().includes("draw") ||

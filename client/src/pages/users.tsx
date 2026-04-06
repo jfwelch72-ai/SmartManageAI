@@ -116,12 +116,13 @@ interface UserWithPermissions extends SelectUser {
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
   ADMIN: "Admin",
-  HUSTLER: "Hustler",
   MANAGER: "Manager",
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
   FIELD_WORKER: "Field Worker",
+  HOURLY_EMPLOYEE: "Field Worker",
   VENDOR: "Vendor",
+  HUSTLER: "Hustler",
 };
 
 const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
@@ -132,7 +133,9 @@ const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
   SUPERINTENDENT: "default",
   ESTIMATOR: "default",
   FIELD_WORKER: "secondary",
+  HOURLY_EMPLOYEE: "secondary",
   VENDOR: "secondary",
+  HUSTLER: "destructive",
 };
 
 // Status filter options
