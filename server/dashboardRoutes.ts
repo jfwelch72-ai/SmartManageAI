@@ -935,7 +935,7 @@ async function seedBuiltInPresets() {
   }
 }
 
-seedBuiltInPresets();
+export { seedBuiltInPresets };
 
 router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
   try {

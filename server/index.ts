@@ -22,6 +22,9 @@ import { ensureNotificationEnumValues } from "./utils/ensureNotificationEnumValu
 import { ensureEstimateCategoryEnumValues } from "./utils/ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./utils/ensureTakeoffEnhancements";
 import { ensureFieldWorkerPermColumns } from "./utils/ensureFieldWorkerPermColumns";
+import { ensurePeerRatingColumns } from "./utils/ensurePeerRatingColumns";
+import { ensurePermissionPresetsTable } from "./utils/ensurePermissionPresetsTable";
+import { seedBuiltInPresets } from "./dashboardRoutes";
 
 const app = express();
 
@@ -186,6 +189,9 @@ app.use((req, res, next) => {
   await ensureEstimateCategoryEnumValues();
   await ensureTakeoffEnhancements();
   await ensureFieldWorkerPermColumns();
+  await ensurePeerRatingColumns();
+  await ensurePermissionPresetsTable();
+  await seedBuiltInPresets();
   await backfillMissingFeatureFlags();
 
   let portRetryCount = 0;
