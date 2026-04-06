@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { DashboardCustomizationProvider, useDashboardCustomization, type FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
-import { RoutePermissions, hasManagementAccess, hasCrmAccess } from "@/lib/rbac";
+import { RoutePermissions } from "@/lib/rbac";
 import { useFeatureFlags as useFeatureFlagsHook } from "@/hooks/use-feature-flags";
 import type { FeatureFlagKey } from "@shared/schema";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -138,6 +138,8 @@ const ContractsPage = lazy(() => import("@/pages/contracts"));
 const ClauseLibraryPage = lazy(() => import("@/pages/clause-library"));
 const ProgressBillingPage = lazy(() => import("@/pages/progress-billing"));
 const WipReportPage = lazy(() => import("@/pages/wip-report"));
+const CFODashboardPage = lazy(() => import("@/pages/cfo-dashboard"));
+const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 
 function FeatureFlagGate({ flag, children }: { flag: FeatureFlagKey; children: React.ReactNode }) {
@@ -265,18 +267,18 @@ function Router() {
       <Route path="/profile" component={() => <ProtectedRoute component={ProfilePage} />} />
       <Route path="/settings/:section" component={() => <ProtectedRoute component={SettingsPage} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={SettingsPage} />} />
-      <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
-      <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
-      <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />
-      <Route path="/leave-management" component={() => <ProtectedRoute component={LeaveManagementPage} featurePerm="canManageLeave" />} />
-      <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} />} />
-      <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} />} />
-      <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
-      <Route path="/messages" component={() => <Redirect to="/dashboard" />} />
-      <Route path="/portal-chat" component={() => <Redirect to="/dashboard" />} />
+      <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} permission={RoutePermissions.PROJECTS} />} />
+      <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} permission={RoutePermissions.PROJECT_DETAIL} />} />
+      <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} permission={RoutePermissions.CALENDAR} />} />
+      <Route path="/leave-management" component={() => <ProtectedRoute component={LeaveManagementPage} permission={RoutePermissions.LEAVE_MANAGEMENT} />} />
+      <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} permission={RoutePermissions.BULLETINS} />} />
+      <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} permission={RoutePermissions.TASKS} />} />
+      <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} permission={RoutePermissions.TIME_CLOCK} />} />
+      <Route path="/messages" component={() => <ProtectedRoute component={UnifiedMessagesPage} permission={RoutePermissions.MESSAGES} />} />
+      <Route path="/portal-chat" component={() => <ProtectedRoute component={UnifiedMessagesPage} permission={RoutePermissions.MESSAGES} />} />
       
       {/* Admin-only routes */}
-      <Route path="/users" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=users" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/users" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=users" />} permission={RoutePermissions.USERS} />} />
       <Route path="/ai-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=ai-settings" />} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} featurePerm="canViewFinancials" />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} featurePerm="canManageScheduling" />} />
@@ -292,7 +294,7 @@ function Router() {
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} permission={RoutePermissions.BIDS} />} />
-      <Route path="/historical-costs" component={() => <ProtectedRoute component={HistoricalCostsPage} permission={RoutePermissions.BIDS} featurePerm="canViewFinancials" />} />
+      <Route path="/historical-costs" component={() => <ProtectedRoute component={HistoricalCostsPage} permission={RoutePermissions.HISTORICAL_COSTS} />} />
       <Route path="/bids/:code/estimate" component={() => <ProtectedRoute component={BidEstimate} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} featurePerm="canManageScheduling" />} />
@@ -302,8 +304,9 @@ function Router() {
       <Route path="/wip-report" component={() => <ProtectedRoute component={WipReportPage} permission={RoutePermissions.CFO} />} />
       <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} permission={RoutePermissions.TIME_CLOCK_MANAGER} featurePerm="canManagePayroll" />} />
       <Route path="/ai-pm" component={() => <ProtectedRoute component={() => <Redirect to="/dashboard" />} permission={RoutePermissions.AI_PM} featurePerm="canUseAiFeatures" />} />
-      <Route path="/cfo" component={() => <ProtectedRoute component={() => <Redirect to="/dashboard" />} permission={RoutePermissions.CFO} />} />
-      <Route path="/production-rates" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=production-rates" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/cfo-dashboard" component={() => <ProtectedRoute component={CFODashboardPage} permission={RoutePermissions.CFO} />} />
+      <Route path="/cfo" component={() => <ProtectedRoute component={() => <Redirect to="/cfo-dashboard" />} permission={RoutePermissions.CFO} />} />
+      <Route path="/production-rates" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=production-rates" />} permission={RoutePermissions.PRODUCTION_RATES} />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
       <Route path="/scope-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=scope-settings" />} permission={RoutePermissions.SCOPE_SETTINGS} />} />
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
@@ -330,7 +333,7 @@ function Router() {
       
       {/* Marketplace routes */}
       <Route path="/marketplace/contractors/:orgId" component={() => <ProtectedRoute component={ContractorProfilePage} />} />
-      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} permission={(role?: string) => hasCrmAccess(role)} />} />
+      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} permission={RoutePermissions.MARKETPLACE} />} />
       <Route path="/vendor-scores" component={() => <ProtectedRoute component={VendorScoresPage} permission={RoutePermissions.CRM} />} />
       <Route path="/material-price-index" component={() => <ProtectedRoute component={MaterialPriceIndexPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crew-marketplace" component={() => <ProtectedRoute component={() => <Redirect to="/marketplace?tab=crews" />} permission={RoutePermissions.CRM} />} />
@@ -339,30 +342,30 @@ function Router() {
       
       {/* Executive Intelligence routes */}
       <Route path="/company-health" component={() => <ProtectedRoute component={CompanyHealthPage} permission={RoutePermissions.CFO} />} />
-      <Route path="/executive-digest" component={() => <ProtectedRoute component={ExecutiveDigestPage} permission={RoutePermissions.CFO} />} />
+      <Route path="/executive-digest" component={() => <ProtectedRoute component={ExecutiveDigestPage} permission={RoutePermissions.EXECUTIVE_DIGEST} />} />
       <Route path="/what-if-simulator" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="WHATIF_SIMULATOR"><WhatIfSimulatorPage /></FeatureFlagGate>} permission={RoutePermissions.CFO} />} />
 
       {/* Bid Network routes */}
-      <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
-      <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
-      <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
-      <Route path="/bid-inbox" component={() => <ProtectedRoute component={() => <Redirect to="/bids?tab=inbox" />} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
+      <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BID_NETWORK_GC} />} />
+      <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BID_NETWORK_GC} />} />
+      <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BID_NETWORK_INBOX} />} />
+      <Route path="/bid-inbox" component={() => <ProtectedRoute component={() => <Redirect to="/bids?tab=inbox" />} permission={RoutePermissions.BID_NETWORK_INBOX} />} />
 
       {/* Tools routes */}
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={ReportsPage} permission={RoutePermissions.REPORTS} featurePerm="canAccessReports" />} />
       <Route path="/manage-workers/:id" component={() => <ProtectedRoute component={WorkerDetailPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
-      <Route path="/rate-coworkers" component={() => <ProtectedRoute component={RateCoworkersPage} featurePerm="canSubmitPeerRatings" />} />
-      <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} featurePerm={["canManageSafety", "canViewSafety"]} />} />
+      <Route path="/rate-coworkers" component={() => <ProtectedRoute component={RateCoworkersPage} permission={RoutePermissions.RATE_COWORKERS} />} />
+      <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} permission={RoutePermissions.SAFETY_TRAINING} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/overtime-rules" component={() => <ProtectedRoute component={OvertimeRulesPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/contracts" component={() => <ProtectedRoute component={ContractsPage} permission={(role?: string) => ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role || "")} featurePerm="canManageContracts" />} />
       <Route path="/clause-library" component={() => <ProtectedRoute component={ClauseLibraryPage} permission={(role?: string) => ["ADMIN", "MANAGER"].includes(role || "")} featurePerm="canManageContracts" />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canViewFinancials" />} />
-      <Route path="/website-builder" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=website" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/website-builder" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=website" />} permission={RoutePermissions.WEBSITE_BUILDER} />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />
-      <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} permission={(role?: string) => hasManagementAccess(role)} featurePerm="canUseAiFeatures" />} />
+      <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} permission={RoutePermissions.EMAIL_ASSISTANT} />} />
       <Route path="/procurement-module" component={() => <ProtectedRoute component={ProcurementModulePage} permission={RoutePermissions.PROCUREMENT} featurePerm="canManageProcurement" />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
 
@@ -382,7 +385,7 @@ function Router() {
 
       
       {/* Overhead & Fixed Costs Manager */}
-      <Route path="/overhead-costs" component={() => <Redirect to="/company-settings?tab=overhead-costs" />} />
+      <Route path="/overhead-costs" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=overhead-costs" />} permission={RoutePermissions.OVERHEAD_COSTS} />} />
       
       {/* Vendor Portal routes redirect to unified portal */}
       <Route path="/vendor/pricing" component={() => <Redirect to="/portal?tab=pricing" />} />

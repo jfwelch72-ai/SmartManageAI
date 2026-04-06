@@ -151,7 +151,7 @@ export function hasSafetyAccess(role?: string, perms?: FeaturePerms): boolean {
 
 export function hasProcurementAccess(role?: string, perms?: FeaturePerms): boolean {
   if (perms) return !!perms.canManageProcurement;
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER";
 }
 
 export function hasHRAccess(role?: string, perms?: FeaturePerms): boolean {
@@ -269,12 +269,12 @@ export const RoutePermissions = {
   TIME_CLOCK_MANAGER: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
   AI_PM: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canUseAiFeatures : hasManagementAccess(role),
   CFO: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCFODashboard : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-  TM_DAILY: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : hasManagementAccess(role),
+  TM_DAILY: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
   TM_BILLING: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
   PROGRESS_BILLING: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProgressBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
   PRODUCTION_RATES: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProductionRates : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
   CRM: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms),
-  SCOPE_SETTINGS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessScopeSettings : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER",
+  SCOPE_SETTINGS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessScopeSettings : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
   EQUIPMENT: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role, perms),
 
   AI_BID_ANALYSIS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canUseAiBidAnalysis : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER",
@@ -297,7 +297,7 @@ export const RoutePermissions = {
   BID_NETWORK_GC: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessBidNetworkGC : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER",
   BID_NETWORK_INBOX: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessBidNetworkInbox : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "VENDOR" || role === "HUSTLER",
 
-  MANAGE_WORKERS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : hasManagementAccess(role),
+  MANAGE_WORKERS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
 
   PAYROLL_MANAGEMENT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManagePayroll : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER",
 
@@ -313,6 +313,16 @@ export const RoutePermissions = {
   HIRING_SETTINGS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageHiringSettings : role === "ADMIN",
 
   OVERHEAD_COSTS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessOverheadCosts : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
+
+  BULLETINS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessBulletins : hasContractorAccess(role),
+  EMAIL_ASSISTANT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessEmailAssistant : hasManagementAccess(role),
+  TASKS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTasks : hasContractorAccess(role),
+  HISTORICAL_COSTS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessHistoricalCosts : canAccessBids(role) || hasFinancialAccess(role),
+  RATE_COWORKERS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canSubmitPeerRatings : hasContractorAccess(role),
+  SAFETY_TRAINING: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms),
+  LEAVE_MANAGEMENT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role),
+  MARKETPLACE: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role),
+  EXECUTIVE_DIGEST: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER",
 };
 
 export const FeaturePermissions = {
@@ -499,6 +509,12 @@ export const NavigationConfig = {
       testId: "nav-tasks",
       visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTasks : hasContractorAccess(role),
     },
+    {
+      href: "/messages",
+      label: "Messages",
+      testId: "nav-messages",
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMessages : hasContractorAccess(role),
+    },
   ],
 
   preconstructionMenu: [
@@ -554,7 +570,7 @@ export const NavigationConfig = {
       href: "/tm-daily",
       label: "T&M Daily Sheets",
       testId: "nav-tm-daily",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : hasManagementAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
     },
     {
       href: "/crews",
@@ -566,7 +582,7 @@ export const NavigationConfig = {
       href: "/manage-workers",
       label: "Workforce Management",
       testId: "nav-manage-workers",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : hasManagementAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
     },
     {
       href: "/rate-coworkers",
@@ -591,27 +607,6 @@ export const NavigationConfig = {
       label: "Leave Management",
       testId: "nav-leave-management",
       visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role),
-    },
-  ],
-
-  timeClockMenu: [
-    {
-      href: "/time-clock",
-      label: "My Time Clock",
-      testId: "nav-my-time-clock",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTimeClock : hasContractorAccess(role),
-    },
-    {
-      href: "/time-clock-manager",
-      label: "Manage Time Clock",
-      testId: "nav-manage-time-clock",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/tm-daily",
-      label: "T&M Daily Sheets",
-      testId: "nav-tm-daily",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : hasManagementAccess(role),
     },
   ],
 
@@ -689,7 +684,7 @@ export const NavigationConfig = {
 
   insightsMenu: [
     {
-      href: "/cfo-dashboard",
+      href: "/executive-digest",
       label: "Executive Digest",
       testId: "nav-executive-digest",
       visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER",
@@ -713,7 +708,7 @@ export const NavigationConfig = {
       href: "/scope-settings",
       label: "Scope Settings",
       testId: "nav-scope-settings",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessScopeSettings : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER",
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessScopeSettings : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
     },
     {
       href: "/ai-settings",
@@ -738,6 +733,25 @@ export const NavigationConfig = {
     },
   ],
 };
+
+export type SidebarSection = 'portfolio' | 'dashboard' | 'bulletins' | 'projects' | 'operations' | 'workforce' | 'preconstruction' | 'marketplace' | 'crm' | 'financials' | 'insights' | 'hiring' | 'administration' | 'tools';
+
+export const DEFAULT_SECTION_ORDER: SidebarSection[] = [
+  'portfolio', 'dashboard', 'bulletins', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'financials', 'insights', 'hiring', 'administration', 'tools'
+];
+
+export const ROLE_SECTION_ORDER: Partial<Record<string, SidebarSection[]>> = {
+  FIELD_WORKER: ['dashboard', 'workforce', 'projects', 'bulletins'],
+  SUPERINTENDENT: ['operations', 'workforce', 'dashboard', 'bulletins', 'projects', 'preconstruction', 'financials', 'administration'],
+  ESTIMATOR: ['preconstruction', 'operations', 'dashboard', 'bulletins', 'financials', 'projects', 'crm', 'marketplace', 'administration'],
+};
+
+export function getSidebarSectionOrder(role?: string): SidebarSection[] {
+  if (role && ROLE_SECTION_ORDER[role]) {
+    return ROLE_SECTION_ORDER[role]!;
+  }
+  return DEFAULT_SECTION_ORDER;
+}
 
 export const PlatformAdminNavConfig = {
   mainNav: [
