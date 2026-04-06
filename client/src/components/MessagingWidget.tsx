@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle, MessageSquare, X, Minimize2, Maximize2 } from "lucide-react";
+import { MessageCircle, MessageSquare, X, Minimize2, Maximize2, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { TeamMessagesContent } from "@/pages/messages";
 import { PortalChatContent } from "@/pages/portal-chat";
+import { AskQuestionsContent } from "@/components/AskQuestionsContent";
 
 const MINIMIZED_KEY = "smartmanage-messaging-widget-minimized";
 
@@ -29,6 +30,8 @@ export function MessagingWidget() {
         setActiveTab("portal");
       } else if (detail?.tab === "team") {
         setActiveTab("team");
+      } else if (detail?.tab === "ask") {
+        setActiveTab("ask");
       }
       if (detail?.conversationId) {
         window.dispatchEvent(
@@ -161,6 +164,10 @@ export function MessagingWidget() {
                       </Badge>
                     )}
                   </TabsTrigger>
+                  <TabsTrigger value="ask" className="gap-1.5" data-testid="tab-widget-ask">
+                    <Database className="h-3.5 w-3.5" />
+                    <span>Ask AI</span>
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="team" className="flex-1 overflow-hidden mt-0 px-1 pb-1" data-testid="tab-content-team">
@@ -172,6 +179,12 @@ export function MessagingWidget() {
                 <TabsContent value="portal" className="flex-1 overflow-hidden mt-0 px-2 pb-2" data-testid="tab-content-portal">
                   <div className="h-full flex flex-col overflow-hidden">
                     <PortalChatContent compact />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="ask" className="flex-1 overflow-hidden mt-0 px-1 pb-1" data-testid="tab-content-ask">
+                  <div className="h-full flex flex-col overflow-hidden">
+                    <AskQuestionsContent compact />
                   </div>
                 </TabsContent>
               </Tabs>

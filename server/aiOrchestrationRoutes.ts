@@ -1,5 +1,5 @@
 import { Router , NextFunction } from "express";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, users } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
@@ -10,7 +10,7 @@ import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
 import { logError } from "./utils/logger";
 import { runAIAnalysis, getLatestAIRun, getAIRunById, getTasksForRole, updateTaskStatus } from "./ai/orchestrator";
-import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { openai, AI_MODEL_GPT5, AI_MODEL_GPT4O } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { getTotalStepsForRole, generateWalkthroughPrompt } from "./ai/walkthroughContent";
 import { analyzeSchedulingModule, analyzeDelaysModule, analyzeCostsModule, analyzeEquipmentModule, analyzeVendorPricingModule, analyzeProjectHealthModule, runComprehensiveAnalysis, saveAnalysisResults } from "./ai/moduleAnalyzers";
@@ -36,6 +36,7 @@ router.use("/ai-settings", requireAuth, requireFeaturePermission('canUseAiFeatur
 router.use("/ai-pm", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 router.use("/ai-analyze", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 router.use("/ai/assistant", requireAuth, requireFeaturePermission('canUseAiFeatures'));
+router.use("/ai/ask-database", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 
 router.get("/ai-settings", requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
@@ -508,5 +509,424 @@ const TRADE_DETECTION_PROMPTS: Record<string, string> = {
   STEEL_ERECTION: "Focus on: columns by section size (EA, note weight/LF), beams/girders (LF, note section), open web joists (EA, note series), metal deck by gauge (SF), connections/base plates (EA), stair stringers/treads (EA or flights). Reference structural steel schedules.",
   GENERAL_CONTRACTOR: "Comprehensive analysis across all visible trades. Group detected items by trade type (structural, architectural, mechanical, electrical, plumbing, sitework). Measure using appropriate units for each trade. Identify the drawing type (plan, elevation, section, detail) and note any visible dimensions, scales, or specifications.",
 };
+
+// ========================================
+// Ask Database - Natural Language Data Queries
+// ========================================
+
+const DATABASE_SCHEMA_DESCRIPTION = `
+You have access to a PostgreSQL database for a construction management platform. Here are the key tables and their columns:
+
+-- Organizations
+organizations(id, name, slug, trade_type, trade_name, region, address, city, state, zip_code, phone, email, is_active, created_at)
+
+-- Users (employees)
+users(id, organization_id, first_name, last_name, email, phone, role, is_active, cost_rate_regular, cost_rate_overtime, trade_specialization, employment_type, created_at)
+-- role values: ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, HOURLY_EMPLOYEE
+
+-- Projects
+projects(id, name, code, client_name, status, location_address, city, state, start_date, end_date, estimated_completion_date, description, budget, contract_amount, budget_amount, gc_organization_id, created_at)
+-- status values: PLANNING, ACTIVE, ON_HOLD, COMPLETED, CANCELLED
+
+-- Bids
+bids(id, name, code, client_name, bid_amount, due_date, location_address, city, state, description, status, gc_organization_id, ai_win_probability, awarded_at, submitted_at, created_at)
+-- status values: DRAFT, SUBMITTED, WON, LOST, CANCELLED
+
+-- Time Entries
+time_entries(id, user_id, project_id, date, hours_regular, hours_overtime, cost_code, notes, approval_status, created_at)
+
+-- Tasks
+tasks(id, project_id, title, description, status, priority, assigned_to_id, due_date, completed_at, created_at)
+
+-- Change Orders
+change_orders(id, project_id, title, description, amount, status, created_at)
+-- status values: DRAFT, SUBMITTED, APPROVED, REJECTED
+
+-- Invoices
+invoices(id, project_id, invoice_number, amount, status, due_date, paid_at, created_at)
+
+-- Procurement Items
+procurement_items(id, project_id, description, vendor, quantity, unit, unit_cost, status, po_number, needed_by_date, created_at)
+
+-- Equipment
+equipment(id, organization_id, name, type, status, daily_rate, current_project_id, created_at)
+
+-- Daily Reports
+daily_reports(id, project_id, report_date, weather, crew_size, work_performed, safety_incidents, created_at)
+
+-- Inspections
+project_inspections(id, project_id, type, status, scheduled_date, completed_date, result, inspector_name, notes, created_at)
+`;
+
+const ASK_DATABASE_SYSTEM_PROMPT = `You are a SQL query generator for a construction management database. Given a natural language question, generate a safe, read-only PostgreSQL SELECT query.
+
+CRITICAL RULES:
+1. ONLY generate SELECT statements. Never generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, or any other modifying statement.
+2. Do NOT include any organization filter or WHERE clause for organization_id/gc_organization_id — the system automatically applies organization scoping. Just query the tables directly.
+3. LIMIT results to at most 50 rows.
+4. Use clear column aliases for readability.
+5. Do not access system tables, pg_catalog, information_schema, or any administrative tables.
+6. Do not use subqueries that could modify data.
+7. Do not use functions like pg_sleep, pg_terminate_backend, or any administrative functions.
+8. NEVER use UNION, EXCEPT, INTERSECT, WITH, or OR.
+9. Do NOT use any parameter placeholders ($1, $2, etc.). The system handles parameterization.
+10. Use AND for all conditions. Use IN(...) instead of OR for multiple value checks.
+11. Do NOT use subqueries (nested SELECT statements). Use JOINs instead.
+12. Do NOT use schema-qualified table names (e.g., public.users). Just use the table name directly.
+13. Use only simple string values in single quotes. Do not use double quotes or backticks for identifiers.
+
+${DATABASE_SCHEMA_DESCRIPTION}
+
+Respond with a JSON object containing:
+{
+  "sql": "the SELECT query without any organization filter (it is applied automatically)",
+  "explanation": "brief explanation of what the query does",
+  "needsOrgFilter": true
+}
+
+If the question cannot be answered with the available tables, respond with:
+{
+  "sql": null,
+  "explanation": "explanation of why it cannot be answered",
+  "needsOrgFilter": false
+}`;
+
+const ANSWER_SYSTEM_PROMPT = `You are a helpful data analyst for a construction management platform. Given a user's question and the query results, provide a clear, concise natural language answer. Format numbers nicely (currency with $, percentages with %). If the results are empty, say so clearly. Keep answers brief but informative. Do not mention SQL queries or technical database details - just answer the question naturally as if you looked up the information.`;
+
+const ALLOWED_TABLES = new Set([
+  'organizations', 'users', 'projects', 'bids', 'time_entries', 'tasks',
+  'change_orders', 'invoices', 'procurement_items', 'equipment',
+  'daily_reports', 'project_inspections',
+]);
+
+const ORG_FILTER_COLUMN: Record<string, string> = {
+  organizations: 'id',
+  users: 'organization_id',
+  projects: 'gc_organization_id',
+  bids: 'gc_organization_id',
+  equipment: 'organization_id',
+};
+
+const TABLES_NEEDING_DIRECT_ORG_FILTER = new Set(Object.keys(ORG_FILTER_COLUMN));
+
+const TABLES_ORG_VIA_PROJECT_JOIN = new Set([
+  'time_entries', 'tasks', 'change_orders', 'invoices',
+  'procurement_items', 'daily_reports', 'project_inspections',
+]);
+
+const SENSITIVE_COLUMNS = new Set([
+  'password_hash', 'token_version', 'oauth_provider_id', 'failed_login_attempts',
+  'locked_until', 'oauth_provider', 'email_verified',
+]);
+
+const MAX_RESULT_ROWS = 50;
+
+function extractAllTableReferences(sqlQuery: string): string[] {
+  const lower = sqlQuery.toLowerCase();
+  const found = new Set<string>();
+
+  const fromJoinMatches = lower.match(/\b(?:from|join)\s+(\w+)/gi) || [];
+  for (const m of fromJoinMatches) {
+    found.add(m.replace(/^(?:from|join)\s+/i, '').trim());
+  }
+
+  const commaFromMatch = lower.match(/\bfrom\s+([\w\s,]+?)(?:\bwhere\b|\bjoin\b|\bgroup\b|\border\b|\blimit\b|\bhaving\b|$)/gi);
+  if (commaFromMatch) {
+    for (const clause of commaFromMatch) {
+      const afterFrom = clause.replace(/^from\s+/i, '').replace(/\b(where|join|group|order|limit|having)\b.*$/i, '');
+      const parts = afterFrom.split(',');
+      for (const part of parts) {
+        const tableName = part.trim().split(/\s+/)[0];
+        if (tableName && /^\w+$/.test(tableName)) {
+          found.add(tableName);
+        }
+      }
+    }
+  }
+
+  for (const table of ALLOWED_TABLES) {
+    const tablePattern = new RegExp(`\\b${table}\\b`, 'i');
+    if (tablePattern.test(sqlQuery)) {
+      found.add(table);
+    }
+  }
+
+  const selectKeywords = new Set(['select', 'from', 'where', 'join', 'inner', 'left', 'right', 'outer',
+    'on', 'and', 'as', 'count', 'sum', 'avg', 'min', 'max', 'group', 'by', 'order', 'asc', 'desc',
+    'limit', 'distinct', 'case', 'when', 'then', 'else', 'end', 'not', 'null', 'is', 'in', 'between',
+    'like', 'ilike', 'having', 'cast', 'coalesce', 'true', 'false', 'date', 'timestamp', 'interval',
+    'extract', 'now', 'current_date', 'current_timestamp', 'lower', 'upper', 'trim', 'length',
+    'round', 'floor', 'ceil', 'abs', 'concat', 'substring', 'replace', 'to_char']);
+
+  return Array.from(found).filter(t => !selectKeywords.has(t));
+}
+
+function validateSqlSafety(sqlQuery: string): { safe: boolean; reason?: string } {
+  const normalized = sqlQuery.toUpperCase().replace(/\s+/g, ' ').trim();
+
+  const dangerousPatterns = [
+    /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|EXECUTE|EXEC)\b/,
+    /\b(INTO)\s+\w/,
+    /\bPG_SLEEP\b/,
+    /\bPG_TERMINATE\b/,
+    /\bPG_CATALOG\b/,
+    /\bINFORMATION_SCHEMA\b/,
+    /\bCOPY\b/,
+    /\bSET\s+(ROLE|SESSION)/,
+    /\bPG_READ_FILE\b/,
+    /\bLO_IMPORT\b/,
+    /\bDBLINK\b/,
+    /\bUNION\b/,
+    /\bEXCEPT\b/,
+    /\bINTERSECT\b/,
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(normalized)) {
+      return { safe: false, reason: `Query contains forbidden pattern` };
+    }
+  }
+
+  if (!normalized.startsWith('SELECT')) {
+    return { safe: false, reason: 'Query must start with SELECT' };
+  }
+
+  if (sqlQuery.includes(';')) {
+    return { safe: false, reason: 'Multiple statements not allowed' };
+  }
+
+  if (/\bOR\b/i.test(sqlQuery)) {
+    return { safe: false, reason: 'OR clauses are not allowed' };
+  }
+
+  if (/\bWITH\b/i.test(sqlQuery)) {
+    return { safe: false, reason: 'CTEs (WITH) are not allowed in inner queries' };
+  }
+
+  const selectCount = (normalized.match(/\bSELECT\b/g) || []).length;
+  if (selectCount > 1) {
+    return { safe: false, reason: 'Subqueries are not allowed' };
+  }
+
+  if (/\bpublic\./i.test(sqlQuery)) {
+    return { safe: false, reason: 'Schema-qualified table names are not allowed' };
+  }
+
+  if (/["'`]/.test(sqlQuery.replace(/'[^']*'/g, ''))) {
+    return { safe: false, reason: 'Quoted identifiers are not allowed' };
+  }
+
+  for (const col of SENSITIVE_COLUMNS) {
+    if (sqlQuery.toLowerCase().includes(col)) {
+      return { safe: false, reason: 'Query references sensitive columns' };
+    }
+  }
+
+  if (sqlQuery.includes('$')) {
+    return { safe: false, reason: 'Parameter placeholders are not allowed (org filter is applied automatically)' };
+  }
+
+  const tables = extractAllTableReferences(sqlQuery);
+  if (tables.length === 0) {
+    return { safe: false, reason: 'No tables referenced' };
+  }
+
+  for (const table of tables) {
+    if (!ALLOWED_TABLES.has(table)) {
+      return { safe: false, reason: `Table '${table}' is not accessible` };
+    }
+  }
+
+  for (const table of tables) {
+    if (!TABLES_NEEDING_DIRECT_ORG_FILTER.has(table) && !TABLES_ORG_VIA_PROJECT_JOIN.has(table)) {
+      return { safe: false, reason: `Table '${table}' cannot be org-scoped` };
+    }
+  }
+
+  return { safe: true };
+}
+
+function wrapWithOrgScope(sqlQuery: string, tables: string[]): string | null {
+  const uniqueTables = Array.from(new Set(tables));
+  const cteParts: string[] = [];
+
+  for (const table of uniqueTables) {
+    if (TABLES_NEEDING_DIRECT_ORG_FILTER.has(table)) {
+      const col = ORG_FILTER_COLUMN[table];
+      cteParts.push(`${table} AS (SELECT * FROM public.${table} WHERE ${col} = $1)`);
+    } else if (TABLES_ORG_VIA_PROJECT_JOIN.has(table)) {
+      cteParts.push(`${table} AS (SELECT t.* FROM public.${table} t INNER JOIN public.projects p ON t.project_id = p.id WHERE p.gc_organization_id = $1)`);
+    }
+  }
+
+  if (cteParts.length === 0) {
+    return null;
+  }
+
+  return `WITH ${cteParts.join(', ')} ${sqlQuery}`;
+}
+
+function enforceLimit(sqlQuery: string): string {
+  const normalized = sqlQuery.toUpperCase().replace(/\s+/g, ' ').trim();
+  if (normalized.includes('LIMIT')) {
+    return sqlQuery.replace(/LIMIT\s+(\d+)/i, (_, n) => {
+      const parsed = parseInt(n, 10);
+      return `LIMIT ${Math.min(parsed, MAX_RESULT_ROWS)}`;
+    });
+  }
+  return `${sqlQuery.replace(/;?\s*$/, '')} LIMIT ${MAX_RESULT_ROWS}`;
+}
+
+function stripSensitiveColumns(rows: Record<string, any>[]): Record<string, any>[] {
+  return rows.map(row => {
+    const clean: Record<string, any> = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (!SENSITIVE_COLUMNS.has(key)) {
+        clean[key] = value;
+      }
+    }
+    return clean;
+  });
+}
+
+router.post("/ai/ask-database", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { question, conversationHistory = [] } = req.body;
+
+    if (!question || typeof question !== 'string') {
+      return res.status(400).json({ error: "Question is required" });
+    }
+
+    if (question.length > 500) {
+      return res.status(400).json({ error: "Question is too long (max 500 characters)" });
+    }
+
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+
+    const sqlGenMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+      { role: 'system', content: ASK_DATABASE_SYSTEM_PROMPT },
+    ];
+
+    const recentHistory = conversationHistory.slice(-6);
+    for (const msg of recentHistory) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        sqlGenMessages.push({ role: msg.role, content: msg.content });
+      }
+    }
+
+    sqlGenMessages.push({ role: 'user', content: question });
+
+    let sqlResult: { sql: string | null; explanation: string; needsOrgFilter: boolean };
+
+    const governed = await governedAiCall({
+      orgId: organizationId,
+      userId: req.user!.id,
+      actionType: "ask_database",
+      inputRefs: { question: question.substring(0, 200) },
+      fn: async () => {
+        const c = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: sqlGenMessages,
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+          max_tokens: 1000,
+        });
+        const content = c.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from AI');
+        const parsed = JSON.parse(content);
+        return { result: parsed, completion: c };
+      },
+    });
+
+    if (governed.blocked) {
+      return res.status(429).json({ error: governed.reason || "AI usage limit reached" });
+    }
+
+    sqlResult = governed.result;
+
+    if (!sqlResult.sql) {
+      return res.json({
+        answer: sqlResult.explanation || "I'm not able to answer that question with the available data.",
+        queryExecuted: false,
+      });
+    }
+
+    const safety = validateSqlSafety(sqlResult.sql);
+    if (!safety.safe) {
+      logError("Unsafe SQL blocked", { reason: safety.reason });
+      return res.json({
+        answer: "I wasn't able to generate a safe query for that question. Could you try rephrasing it?",
+        queryExecuted: false,
+      });
+    }
+
+    const tables = extractAllTableReferences(sqlResult.sql);
+    const scopedSql = wrapWithOrgScope(sqlResult.sql, tables);
+    if (!scopedSql) {
+      return res.json({
+        answer: "I wasn't able to safely scope that query to your organization. Could you try rephrasing?",
+        queryExecuted: false,
+      });
+    }
+    const limitedSql = enforceLimit(scopedSql);
+
+    let queryResults: any[];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN TRANSACTION READ ONLY');
+      await client.query('SET LOCAL statement_timeout = 5000');
+      const result = await client.query(limitedSql, [organizationId]);
+      await client.query('COMMIT');
+      queryResults = stripSensitiveColumns(result.rows || []);
+    } catch (dbError: any) {
+      await client.query('ROLLBACK').catch(() => {});
+      logError("Ask database query execution error", {});
+      return res.json({
+        answer: "I had trouble running that query. The question might reference data that doesn't exist yet, or could you try rephrasing?",
+        queryExecuted: false,
+      });
+    } finally {
+      client.release();
+    }
+
+    const answerGoverned = await governedAiCall({
+      orgId: organizationId,
+      userId: req.user!.id,
+      actionType: "ask_database_answer",
+      fn: async () => {
+        const c = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: ANSWER_SYSTEM_PROMPT },
+            {
+              role: 'user',
+              content: `Question: ${question}\n\nQuery results (${queryResults.length} rows):\n${JSON.stringify(queryResults.slice(0, MAX_RESULT_ROWS), null, 2)}`
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 1000,
+        });
+        const r = c.choices[0]?.message?.content;
+        return { result: r, completion: c };
+      },
+    });
+
+    if (answerGoverned.blocked) {
+      return res.status(429).json({ error: answerGoverned.reason || "AI usage limit reached" });
+    }
+
+    res.json({
+      answer: answerGoverned.result || "I found some results but had trouble formatting them.",
+      queryExecuted: true,
+      rowCount: queryResults.length,
+    });
+  } catch (error: any) {
+    logError("Ask database error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to process your question. Please try again." });
+  }
+});
 
 export default router;
