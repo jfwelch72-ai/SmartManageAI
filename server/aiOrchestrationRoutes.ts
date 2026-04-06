@@ -570,9 +570,26 @@ CRITICAL RULES:
 8. NEVER use UNION, EXCEPT, or INTERSECT.
 9. Do NOT use any parameter placeholders ($1, $2, etc.). The system handles parameterization.
 10. You may use OR in simple WHERE conditions (e.g., WHERE status = 'active' OR status = 'pending'). However, prefer IN(...) when checking the same column for multiple values. Do NOT use OR for tautologies like OR 1=1 or OR TRUE.
-11. Do NOT use subqueries (nested SELECT statements). Use JOINs instead.
+11. Do NOT use subqueries (nested SELECT statements). Use JOINs instead. There must be exactly ONE SELECT keyword in the entire query.
 12. Do NOT use schema-qualified table names (e.g., public.users). Just use the table name directly.
-13. Use only simple string values in single quotes. Do not use double quotes or backticks for identifiers.
+13. Do NOT use backticks or any quoted identifiers. Column and table names must be bare/unquoted. Avoid double quotes for identifiers.
+14. Do NOT use CTEs (WITH ... AS).
+15. Do NOT use semicolons.
+
+EXAMPLES OF VALID QUERIES:
+- SELECT COUNT(*) AS active_projects FROM projects WHERE status = 'ACTIVE'
+- SELECT p.name AS project_name, SUM(b.bid_amount) AS total_bid_value FROM projects p JOIN bids b ON b.gc_organization_id = p.gc_organization_id GROUP BY p.name ORDER BY total_bid_value DESC LIMIT 10
+- SELECT t.title AS task_name, t.due_date FROM tasks t JOIN projects p ON t.project_id = p.id WHERE t.due_date < CURRENT_DATE ORDER BY t.due_date LIMIT 50
+- SELECT u.first_name, u.last_name, u.role FROM users u WHERE u.is_active = true ORDER BY u.last_name LIMIT 50
+- SELECT COALESCE(SUM(bid_amount), 0) AS total_value FROM bids WHERE status = 'SUBMITTED'
+
+EXAMPLES OF INVALID QUERIES (never generate these):
+- SELECT * FROM (SELECT ... FROM projects) sub  -- subqueries are forbidden
+- WITH cte AS (SELECT ...) SELECT ...  -- CTEs are forbidden
+- SELECT * FROM public.projects  -- schema-qualified names are forbidden
+- SELECT * FROM projects; SELECT * FROM bids  -- multiple statements forbidden
+- SELECT * FROM projects WHERE id = $1  -- parameter placeholders forbidden
+- SELECT * FROM projects UNION SELECT * FROM bids  -- UNION forbidden
 
 ${DATABASE_SCHEMA_DESCRIPTION}
 
@@ -724,8 +741,8 @@ function validateSqlSafety(sqlQuery: string): { safe: boolean; reason?: string }
     return { safe: false, reason: 'Schema-qualified table names are not allowed' };
   }
 
-  if (/["'`]/.test(sqlQuery.replace(/'[^']*'/g, ''))) {
-    return { safe: false, reason: 'Quoted identifiers are not allowed' };
+  if (/[`]/.test(sqlQuery.replace(/'[^']*'/g, ''))) {
+    return { safe: false, reason: 'Backtick-quoted identifiers are not allowed' };
   }
 
   for (const col of SENSITIVE_COLUMNS) {
@@ -831,48 +848,71 @@ router.post("/ai/ask-database", requireAuth, requireFeaturePermission('canUseAiF
 
     sqlGenMessages.push({ role: 'user', content: question });
 
-    let sqlResult: { sql: string | null; explanation: string; needsOrgFilter: boolean };
+    let sqlResult!: { sql: string | null; explanation: string; needsOrgFilter: boolean };
 
-    const governed = await governedAiCall({
-      orgId: organizationId,
-      userId: req.user!.id,
-      actionType: "ask_database",
-      inputRefs: { question: question.substring(0, 200) },
-      fn: async () => {
-        const c = await openai.chat.completions.create({
-          model: AI_MODEL_GPT4O,
-          messages: sqlGenMessages,
-          response_format: { type: 'json_object' },
-          temperature: 0.1,
-          max_tokens: 1000,
+    const MAX_RETRIES = 2;
+    let lastSafetyReason: string | undefined;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0 && lastSafetyReason) {
+        sqlGenMessages.push({
+          role: 'user',
+          content: `Your previous query was rejected because: ${lastSafetyReason}. Please regenerate a valid query using only a simple SELECT with JOINs. Remember: no subqueries, no CTEs, no backtick-quoted identifiers, no schema-qualified names, no UNION, no parameter placeholders, no semicolons. Use bare column/table names without any quoting.`,
         });
-        const content = c.choices[0]?.message?.content;
-        if (!content) throw new Error('No response from AI');
-        const parsed = JSON.parse(content);
-        return { result: parsed, completion: c };
-      },
-    });
+      }
 
-    if (governed.blocked) {
-      return res.status(429).json({ error: governed.reason || "AI usage limit reached", errorType: "rate_limit" });
-    }
-
-    sqlResult = governed.result;
-
-    if (!sqlResult.sql) {
-      return res.json({
-        answer: sqlResult.explanation || "I'm not able to answer that question with the available data.",
-        queryExecuted: false,
+      const governed = await governedAiCall({
+        orgId: organizationId,
+        userId: req.user!.id,
+        actionType: "ask_database",
+        inputRefs: { question: question.substring(0, 200) },
+        fn: async () => {
+          const c = await openai.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages: sqlGenMessages,
+            response_format: { type: 'json_object' },
+            temperature: 0.1,
+            max_tokens: 1000,
+          });
+          const content = c.choices[0]?.message?.content;
+          if (!content) throw new Error('No response from AI');
+          const parsed = JSON.parse(content);
+          return { result: parsed, completion: c };
+        },
       });
-    }
 
-    const safety = validateSqlSafety(sqlResult.sql);
-    if (!safety.safe) {
-      logError("Unsafe SQL blocked", { reason: safety.reason });
-      return res.json({
-        answer: "I wasn't able to generate a safe query for that question. Could you try rephrasing it?",
-        queryExecuted: false,
+      if (governed.blocked) {
+        return res.status(429).json({ error: governed.reason || "AI usage limit reached", errorType: "rate_limit" });
+      }
+
+      sqlResult = governed.result;
+
+      if (!sqlResult.sql) {
+        return res.json({
+          answer: sqlResult.explanation || "I'm not able to answer that question with the available data.",
+          queryExecuted: false,
+        });
+      }
+
+      const safety = validateSqlSafety(sqlResult.sql);
+      if (safety.safe) {
+        break;
+      }
+
+      lastSafetyReason = safety.reason;
+      logError("Unsafe SQL blocked", {
+        reason: safety.reason,
+        question: question.substring(0, 200),
+        sql: sqlResult.sql.substring(0, 500),
+        attempt: attempt + 1,
       });
+
+      if (attempt === MAX_RETRIES) {
+        return res.json({
+          answer: "I wasn't able to generate a safe query for that question. Could you try rephrasing it?",
+          queryExecuted: false,
+        });
+      }
     }
 
     const tables = extractAllTableReferences(sqlResult.sql);
