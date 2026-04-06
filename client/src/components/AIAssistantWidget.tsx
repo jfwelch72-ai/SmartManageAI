@@ -206,8 +206,8 @@ export function AIAssistantWidget() {
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const response = await apiRequest("POST", "/api/ai/assistant/chat", {
-        message,
+      const response = await apiRequest("POST", "/api/ai/ask-database", {
+        question: message,
         conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
       });
       return response.json();
@@ -215,15 +215,30 @@ export function AIAssistantWidget() {
     onSuccess: (data) => {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: data.response,
+        content: data.answer || "I found some results but had trouble formatting the response.",
         timestamp: new Date(),
-        responseType: data.responseType || "data",
+        responseType: "data",
       }]);
     },
-    onError: () => {
+    onError: (error: any) => {
+      const msg = error?.message || "";
+      const statusMatch = msg.match(/^(\d{3}):/);
+      const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+      let errorMessage: string;
+      if (status === 429) {
+        errorMessage = "AI usage limit reached. Please try again later.";
+      } else if (status === 503) {
+        errorMessage = "The AI service is temporarily unavailable. Please try again in a moment.";
+      } else if (status === 502) {
+        errorMessage = "The AI returned an unexpected response. Please try rephrasing your question.";
+      } else if (status === 400) {
+        errorMessage = "There was an issue with your question. Please try rephrasing it.";
+      } else {
+        errorMessage = "Something went wrong processing your question. Please try again.";
+      }
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Sorry, I encountered an error. Please try again.",
+        content: errorMessage,
         timestamp: new Date(),
       }]);
     },
