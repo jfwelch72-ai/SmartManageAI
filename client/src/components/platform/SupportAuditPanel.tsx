@@ -45,9 +45,7 @@ const roleLabels: Record<string, string> = {
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
   FIELD_WORKER: "Field Worker",
-  HOURLY_EMPLOYEE: "Field Worker",
   VENDOR: "Vendor",
-  HUSTLER: "Hustler",
 };
 
 export function SupportAuditPanel() {

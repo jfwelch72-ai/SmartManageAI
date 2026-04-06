@@ -103,7 +103,8 @@ interface PermissionSet {
   canManageHiring: boolean;
   canManageSafety: boolean;
   canManageScheduling: boolean;
-  canAccessBidNetwork: boolean;
+  canAccessBidNetworkGC: boolean;
+  canAccessBidNetworkInbox: boolean;
   canManageLeave: boolean;
   canAccessTimeMaterial: boolean;
 }
@@ -123,7 +124,8 @@ interface UserWithPermissions extends SelectUser {
   canManageHiring?: boolean;
   canManageSafety?: boolean;
   canManageScheduling?: boolean;
-  canAccessBidNetwork?: boolean;
+  canAccessBidNetworkGC?: boolean;
+  canAccessBidNetworkInbox?: boolean;
   canManageLeave?: boolean;
   canAccessTimeMaterial?: boolean;
   roleDefaults?: PermissionSet;
@@ -138,7 +140,6 @@ const ROLE_LABELS: Record<string, string> = {
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
   FIELD_WORKER: "Field Worker",
-  HOURLY_EMPLOYEE: "Field Worker",
   VENDOR: "Vendor",
   HUSTLER: "Hustler",
 };
@@ -163,9 +164,7 @@ const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
   SUPERINTENDENT: "default",
   ESTIMATOR: "default",
   FIELD_WORKER: "secondary",
-  HOURLY_EMPLOYEE: "secondary",
   VENDOR: "secondary",
-  HUSTLER: "destructive",
 };
 
 // Status filter options
@@ -460,7 +459,8 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
       permissions: [
         { key: "canManageScheduling" as const, label: "Scheduling & Crews", icon: CalendarClock, description: "Manage crews, scheduling, and time entries" },
         { key: "canAccessTimeMaterial" as const, label: "T&M Billing", icon: Clock, description: "Access T&M daily sheets and billing" },
-        { key: "canAccessBidNetwork" as const, label: "Bid Network", icon: Network, description: "Access bid network and solicitations" },
+        { key: "canAccessBidNetworkGC" as const, label: "Bid Network (GC)", icon: Network, description: "Access bid network as general contractor" },
+        { key: "canAccessBidNetworkInbox" as const, label: "Bid Network (Inbox)", icon: Network, description: "Access bid network inbox and solicitations" },
       ],
     },
   ];

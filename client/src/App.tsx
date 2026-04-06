@@ -343,10 +343,10 @@ function Router() {
       <Route path="/what-if-simulator" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="WHATIF_SIMULATOR"><WhatIfSimulatorPage /></FeatureFlagGate>} permission={RoutePermissions.CFO} />} />
 
       {/* Bid Network routes */}
-      <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} featurePerm="canAccessBidNetwork" />} />
-      <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BIDS} featurePerm="canAccessBidNetwork" />} />
-      <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} featurePerm="canAccessBidNetwork" />} />
-      <Route path="/bid-inbox" component={() => <ProtectedRoute component={() => <Redirect to="/bids?tab=inbox" />} permission={RoutePermissions.BIDS} featurePerm="canAccessBidNetwork" />} />
+      <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
+      <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
+      <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
+      <Route path="/bid-inbox" component={() => <ProtectedRoute component={() => <Redirect to="/bids?tab=inbox" />} permission={RoutePermissions.BIDS} featurePerm={["canAccessBidNetworkGC", "canAccessBidNetworkInbox"]} />} />
 
       {/* Tools routes */}
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />

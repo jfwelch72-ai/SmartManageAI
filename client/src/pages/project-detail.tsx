@@ -461,7 +461,6 @@ const ROLE_DEFAULT_TABS: Record<string, string[]> = {
   SUPERINTENDENT: ["overview", "daily-notes", "inspections", "time", "field-takeoff"],
   ESTIMATOR: ["overview", "estimate", "plans", "project-financials"],
   FIELD_WORKER: ["overview", "daily-notes", "time"],
-  HOURLY_EMPLOYEE: ["overview", "daily-notes", "time"],
 };
 
 function getPinnedTabs(userId: string): string[] {
