@@ -4519,6 +4519,24 @@ export const insertUserDashboardPermissionSchema = createInsertSchema(userDashbo
 export type InsertUserDashboardPermission = z.infer<typeof insertUserDashboardPermissionSchema>;
 export type UserDashboardPermission = typeof userDashboardPermissions.$inferSelect;
 
+export const permissionPresets = pgTable("permission_presets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  targetRole: varchar("target_role", { length: 50 }).notNull(),
+  permissions: text("permissions").notNull(),
+  isBuiltIn: boolean("is_built_in").notNull().default(false),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("permission_presets_org_idx").on(table.organizationId),
+  roleIdx: index("permission_presets_role_idx").on(table.targetRole),
+}));
+
+export const insertPermissionPresetSchema = createInsertSchema(permissionPresets).omit({ id: true, createdAt: true });
+export type InsertPermissionPreset = z.infer<typeof insertPermissionPresetSchema>;
+export type PermissionPreset = typeof permissionPresets.$inferSelect;
+
 // User Dashboard Layouts - Store widget arrangement per user
 export const userDashboardLayouts = pgTable("user_dashboard_layouts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

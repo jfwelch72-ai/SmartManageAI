@@ -46,6 +46,16 @@ import {
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   UserPlus,
   Search,
   Filter,
@@ -71,6 +81,10 @@ import {
   Network,
   CalendarOff,
   Clock,
+  Zap,
+  Save,
+  Trash2,
+  PackageOpen,
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
@@ -308,6 +322,71 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
 
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [permSearchTerm, setPermSearchTerm] = useState("");
+
+  interface PresetData {
+    id: string;
+    name: string;
+    description: string | null;
+    targetRole: string;
+    permissions: Record<string, boolean>;
+    isBuiltIn: boolean;
+    organizationId: string | null;
+  }
+
+  const [presetConfirm, setPresetConfirm] = useState<{ userId: string; preset: PresetData } | null>(null);
+  const [showSavePreset, setShowSavePreset] = useState<{ userId: string; role: string; permissions: Record<string, boolean> } | null>(null);
+  const [savePresetName, setSavePresetName] = useState("");
+  const [savePresetDesc, setSavePresetDesc] = useState("");
+  const [deletePresetConfirm, setDeletePresetConfirm] = useState<PresetData | null>(null);
+
+  const { data: presets = [] } = useQuery<PresetData[]>({
+    queryKey: ['/api/dashboard/permission-presets'],
+    enabled: user?.role === "ADMIN" || user?.role === "SUPER_ADMIN",
+  });
+
+  const applyPresetMutation = useMutation({
+    mutationFn: async ({ userId, presetId }: { userId: string; presetId: string }) => {
+      return await apiRequest("PUT", `/api/dashboard/permissions/${userId}/apply-preset`, { presetId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permissions"] });
+      toast({ title: "Preset applied", description: "Permission preset has been applied to the user" });
+      setPresetConfirm(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to apply preset", variant: "destructive" });
+    },
+  });
+
+  const savePresetMutation = useMutation({
+    mutationFn: async (data: { name: string; description?: string; targetRole: string; permissions: Record<string, boolean> }) => {
+      return await apiRequest("POST", "/api/dashboard/permission-presets", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permission-presets"] });
+      toast({ title: "Preset saved", description: "Custom permission preset has been saved" });
+      setShowSavePreset(null);
+      setSavePresetName("");
+      setSavePresetDesc("");
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to save preset", variant: "destructive" });
+    },
+  });
+
+  const deletePresetMutation = useMutation({
+    mutationFn: async (presetId: string) => {
+      return await apiRequest("DELETE", `/api/dashboard/permission-presets/${presetId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permission-presets"] });
+      toast({ title: "Preset deleted", description: "Custom permission preset has been deleted" });
+      setDeletePresetConfirm(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to delete preset", variant: "destructive" });
+    },
+  });
 
   const PERMISSION_GROUPS = [
     {
@@ -958,8 +1037,64 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
 
                           {isExpanded && (
                             <div className="border-t px-4 pb-4 pt-3 space-y-4">
+                              {!isAdmin && (() => {
+                                const userPresets = presets.filter(p => p.targetRole === u.role);
+                                return userPresets.length > 0 ? (
+                                  <div data-testid={`section-presets-${u.id}`}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <PackageOpen className="w-4 h-4 text-muted-foreground" />
+                                      <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Apply Preset</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                      {userPresets.map((preset) => (
+                                        <div
+                                          key={preset.id}
+                                          className="flex items-center justify-between gap-2 p-2.5 rounded-lg border hover:bg-muted/50 transition-colors"
+                                          data-testid={`preset-card-${preset.id}`}
+                                        >
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-sm font-medium truncate">{preset.name}</span>
+                                              {!preset.isBuiltIn && (
+                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">Custom</Badge>
+                                              )}
+                                            </div>
+                                            {preset.description && (
+                                              <div className="text-xs text-muted-foreground truncate">{preset.description}</div>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-7 px-2 text-xs"
+                                              onClick={() => setPresetConfirm({ userId: u.id, preset })}
+                                              disabled={applyPresetMutation.isPending}
+                                              data-testid={`button-apply-preset-${preset.id}-${u.id}`}
+                                            >
+                                              <Zap className="w-3 h-3 mr-1" />
+                                              Apply
+                                            </Button>
+                                            {!preset.isBuiltIn && (
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                                onClick={() => setDeletePresetConfirm(preset)}
+                                                data-testid={`button-delete-preset-${preset.id}`}
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null;
+                              })()}
                               {!isAdmin && (
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 flex-wrap">
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -982,6 +1117,32 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                     <XCircle className="w-3.5 h-3.5 mr-1.5" />
                                     Revoke All
                                   </Button>
+                                  {["MANAGER", "SUPERINTENDENT", "ESTIMATOR", "VENDOR"].includes(u.role) && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1 sm:flex-none"
+                                    onClick={() => {
+                                      const currentPerms: Record<string, boolean> = {};
+                                      if (u.effective) {
+                                        const eff = u.effective as Record<string, boolean>;
+                                        Object.keys(eff).forEach(k => {
+                                          currentPerms[k] = !!eff[k];
+                                        });
+                                      } else {
+                                        const uRecord = u as unknown as Record<string, unknown>;
+                                        ALL_PERM_KEYS.forEach(k => { currentPerms[k] = !!uRecord[k]; });
+                                      }
+                                      setShowSavePreset({ userId: u.id, role: u.role, permissions: currentPerms });
+                                      setSavePresetName("");
+                                      setSavePresetDesc("");
+                                    }}
+                                    data-testid={`button-save-preset-${u.id}`}
+                                  >
+                                    <Save className="w-3.5 h-3.5 mr-1.5" />
+                                    Save as Preset
+                                  </Button>
+                                  )}
                                 </div>
                               )}
 
@@ -1050,6 +1211,108 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <AlertDialog open={!!presetConfirm} onOpenChange={(open) => !open && setPresetConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Apply Permission Preset</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will replace all current permissions with the "{presetConfirm?.preset.name}" preset. The user's permissions will be updated immediately. You can still fine-tune individual permissions afterwards.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-apply-preset">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                data-testid="button-confirm-apply-preset"
+                onClick={() => {
+                  if (presetConfirm) {
+                    applyPresetMutation.mutate({ userId: presetConfirm.userId, presetId: presetConfirm.preset.id });
+                  }
+                }}
+              >
+                Apply Preset
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <Dialog open={!!showSavePreset} onOpenChange={(open) => !open && setShowSavePreset(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Save as Preset</DialogTitle>
+              <DialogDescription>
+                Save the current permission configuration as a reusable preset for {showSavePreset?.role ? ROLE_LABELS[showSavePreset.role] || showSavePreset.role : ''} users in your organization.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="presetName">Preset Name *</Label>
+                <Input
+                  id="presetName"
+                  value={savePresetName}
+                  onChange={(e) => setSavePresetName(e.target.value)}
+                  placeholder="e.g., Senior PM at our company"
+                  data-testid="input-preset-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="presetDesc">Description</Label>
+                <Input
+                  id="presetDesc"
+                  value={savePresetDesc}
+                  onChange={(e) => setSavePresetDesc(e.target.value)}
+                  placeholder="Brief description of this preset"
+                  data-testid="input-preset-description"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSavePreset(null)} data-testid="button-cancel-save-preset">Cancel</Button>
+              <Button
+                onClick={() => {
+                  if (showSavePreset && savePresetName.trim()) {
+                    savePresetMutation.mutate({
+                      name: savePresetName.trim(),
+                      description: savePresetDesc.trim() || undefined,
+                      targetRole: showSavePreset.role,
+                      permissions: showSavePreset.permissions,
+                    });
+                  }
+                }}
+                disabled={!savePresetName.trim() || savePresetMutation.isPending}
+                data-testid="button-confirm-save-preset"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Save Preset
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <AlertDialog open={!!deletePresetConfirm} onOpenChange={(open) => !open && setDeletePresetConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Custom Preset</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete the "{deletePresetConfirm?.name}" preset? This action cannot be undone. Users who had this preset applied will keep their current permissions.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-delete-preset">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-confirm-delete-preset"
+                onClick={() => {
+                  if (deletePresetConfirm) {
+                    deletePresetMutation.mutate(deletePresetConfirm.id);
+                  }
+                }}
+              >
+                Delete Preset
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </>
   );
 

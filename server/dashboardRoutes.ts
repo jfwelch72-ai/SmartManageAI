@@ -187,7 +187,7 @@
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
-import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests } from "@shared/schema";
+import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -466,6 +466,582 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
   } catch (error) {
     logError('Error updating permissions:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to update permissions' });
+  }
+});
+
+const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: string; permissions: Record<string, boolean> }> = [
+  {
+    name: "Project Manager (PM)",
+    description: "Full project lifecycle, scheduling, budgets, change orders",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_TRUE,
+      canAccessActiveProjectsOnly: false,
+      canManageCrews: false,
+      canAccessCostRates: false,
+      canManageWebsite: false,
+      canManageAISettings: false,
+      canAccessAuditLogs: false,
+      canAccessEnterpriseSettings: false,
+      canManageUsers: false,
+      canManageHiringSettings: false,
+      canPostSocialMedia: false,
+      canManageHiring: false,
+      canAccessHiringInterviews: false,
+    },
+  },
+  {
+    name: "Operations Manager",
+    description: "Equipment, procurement, workforce, KPIs, scheduling",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canManageEquipment: true, canManageProcurement: true, canManageWorkforce: true,
+      canManageScheduling: true, canManageCrews: true, canAccessKPIs: true,
+      canAccessReports: true, canAccessTimeClock: true, canManageTimeClock: true,
+      canApproveTime: true, canAccessTMDaily: true, canManageLeave: true,
+      canManageSafety: true, canLockDailyReports: true,
+      canAccessCompanySettings: true, canAccessApprovals: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Office Manager",
+    description: "Financials, payroll, contracts, hiring, CRM, reporting",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canAccessFinancials: true, canAccessCFODashboard: true, canManagePayroll: true,
+      canManageContracts: true, canAccessSubcontracts: true, canAccessOverheadCosts: true,
+      canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
+      canAccessCRM: true, canCreateCRMContacts: true, canAccessReports: true,
+      canAccessKPIs: true, canAccessCompanySettings: true, canAccessApprovals: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Assistant Manager",
+    description: "Read-heavy access, limited approval/management permissions",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canViewBids: true, canAccessHistoricalCosts: true,
+      canAccessFinancials: true, canAccessReports: true, canAccessKPIs: true,
+      canAccessTimeClock: true, canAccessTMDaily: true,
+      canAccessCRM: true, canAccessCompanySettings: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Marketing Manager",
+    description: "CRM, marketplace, bid network, contacts, reports, KPIs, executive digest",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canAccessCRM: true, canCreateCRMContacts: true, canAccessMarketplace: true,
+      canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+      canAccessReports: true, canAccessKPIs: true, canAccessExecutiveDigest: true,
+      canPostSocialMedia: true, canManageWebsite: true,
+      canUseAiFeatures: true, canAccessCompanySettings: true,
+    },
+  },
+  {
+    name: "Sales Manager",
+    description: "CRM, marketplace, bid network, contacts, reports, KPIs, pipeline focus",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canAccessCRM: true, canCreateCRMContacts: true, canAccessMarketplace: true,
+      canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+      canManageBidResponses: true, canViewBids: true, canEditBids: true,
+      canAccessReports: true, canAccessKPIs: true, canAccessExecutiveDigest: true,
+      canAccessCompanySettings: true,
+    },
+  },
+  {
+    name: "CFO / Finance Director",
+    description: "Full financials, CFO dashboard, payroll, overhead costs, cost rates, contracts, reports",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canAccessFinancials: true, canAccessCostRates: true, canAccessCFODashboard: true,
+      canAccessTMBilling: true, canAccessProgressBilling: true,
+      canManagePayroll: true, canAccessOverheadCosts: true, canAccessProductionRates: true,
+      canManageContracts: true, canAccessSubcontracts: true, canAccessVendorPricing: true,
+      canAccessReports: true, canAccessKPIs: true, canAccessExecutiveDigest: true,
+      canAccessCompanySettings: true, canAccessApprovals: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "HR Manager",
+    description: "Hiring, workforce management, leave, safety training, scheduling, user management",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
+      canManageWorkforce: true, canManageLeave: true, canManageSafety: true,
+      canManageScheduling: true, canManageUsers: true,
+      canAccessTimeClock: true, canManageTimeClock: true,
+      canAccessReports: true, canAccessCompanySettings: true,
+      canViewProjectTimeEntries: true,
+    },
+  },
+  {
+    name: "Procurement Manager",
+    description: "Procurement, vendor pricing, contracts, subcontracts, CRM, bid network",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canManageProcurement: true, canAccessVendorPricing: true,
+      canManageContracts: true, canAccessSubcontracts: true,
+      canAccessCRM: true, canCreateCRMContacts: true,
+      canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true, canManageBidResponses: true,
+      canAccessReports: true, canAccessCompanySettings: true, canAccessApprovals: true,
+      canViewProjectBudget: true, canViewProjectProcurement: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Safety Manager",
+    description: "Safety training, bulletins, daily reports, workforce, leave, projects (read-only)",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canManageSafety: true, canLockDailyReports: true,
+      canManageWorkforce: true, canManageLeave: true,
+      canAccessReports: true, canAccessCompanySettings: true,
+      canViewProjectTimeEntries: true,
+    },
+  },
+  {
+    name: "Equipment Manager",
+    description: "Equipment, procurement, scheduling, reports, maintenance-related",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canManageEquipment: true, canManageProcurement: true,
+      canManageScheduling: true, canAccessReports: true,
+      canAccessCompanySettings: true, canAccessApprovals: true,
+      canViewProjectProcurement: true,
+    },
+  },
+  {
+    name: "Digital Marketing / Social Media Manager",
+    description: "Social media posting, website builder, executive digest, CRM access, AI features",
+    targetRole: "MANAGER",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canPostSocialMedia: true, canManageWebsite: true, canAccessExecutiveDigest: true,
+      canAccessCRM: true, canCreateCRMContacts: true,
+      canUseAiFeatures: true, canAccessReports: true,
+      canAccessCompanySettings: true,
+    },
+  },
+  {
+    name: "Lead Superintendent",
+    description: "Full field control, approvals, scheduling, daily report locking",
+    targetRole: "SUPERINTENDENT",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canViewBids: true, canAccessHistoricalCosts: true,
+      canAccessFinancials: true, canManageContracts: true, canAccessSubcontracts: true,
+      canAccessProductionRates: true,
+      canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
+      canAccessTMDaily: true, canManageWorkforce: true, canManageSafety: true,
+      canManageScheduling: true, canManageCrews: true, canAccessKPIs: true, canLockDailyReports: true,
+      canManageEquipment: true, canManageProcurement: true,
+      canAccessCRM: true, canCreateCRMContacts: true,
+      canAccessCompanySettings: true, canAccessApprovals: true, canAccessReports: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+      canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
+    },
+  },
+  {
+    name: "Assistant Superintendent",
+    description: "Supports PM, limited approvals, no scheduling control",
+    targetRole: "SUPERINTENDENT",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canViewBids: true, canAccessHistoricalCosts: true,
+      canAccessFinancials: true, canAccessProductionRates: true,
+      canAccessTimeClock: true, canManageTimeClock: true, canAccessTMDaily: true,
+      canManageWorkforce: true, canManageSafety: true,
+      canAccessKPIs: true, canLockDailyReports: true,
+      canManageEquipment: true,
+      canAccessCRM: true,
+      canAccessCompanySettings: true, canAccessReports: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+      canCreateChangeOrders: true,
+    },
+  },
+  {
+    name: "QA/QC Superintendent",
+    description: "Inspections focus, punch lists, safety, daily reports (no time approval)",
+    targetRole: "SUPERINTENDENT",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canAccessHistoricalCosts: true,
+      canAccessTimeClock: true, canAccessTMDaily: true,
+      canManageSafety: true, canLockDailyReports: true,
+      canAccessCompanySettings: true, canAccessReports: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Maintenance Superintendent",
+    description: "Equipment, procurement, time clock, daily reports, safety (no bidding or financials)",
+    targetRole: "SUPERINTENDENT",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canManageEquipment: true, canManageProcurement: true,
+      canAccessTimeClock: true, canManageTimeClock: true, canAccessTMDaily: true,
+      canManageSafety: true, canLockDailyReports: true,
+      canAccessCompanySettings: true, canAccessReports: true,
+      canViewProjectProcurement: true, canViewProjectTimeEntries: true,
+    },
+  },
+  {
+    name: "Dispatcher",
+    description: "Scheduling, crews, time clock management, calendar, projects, messages (no approvals or financials)",
+    targetRole: "SUPERINTENDENT",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canManageScheduling: true, canManageCrews: true,
+      canAccessTimeClock: true, canManageTimeClock: true,
+      canAccessCompanySettings: true,
+      canViewProjectTimeEntries: true,
+    },
+  },
+  {
+    name: "Junior Estimator",
+    description: "View bids, assist with takeoffs, no submission or conversion",
+    targetRole: "ESTIMATOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canViewBids: true, canAccessHistoricalCosts: true,
+      canAccessFinancials: true, canAccessProductionRates: true,
+      canAccessTimeClock: true,
+      canAccessCRM: true,
+      canAccessCompanySettings: true, canAccessReports: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Senior Estimator",
+    description: "Full estimating, submit bids, generate PDFs, convert to projects",
+    targetRole: "ESTIMATOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canViewBids: true, canEditBids: true, canDeleteBids: true, canGenerateBidPDFs: true,
+      canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+      canManageBidResponses: true, canAccessHistoricalCosts: true, canAccessScopeSettings: true,
+      canUseAiBidAnalysis: true, canCreateProjects: true,
+      canAccessFinancials: true, canAccessCostRates: true, canAccessProductionRates: true,
+      canAccessTimeClock: true,
+      canAccessCRM: true, canCreateCRMContacts: true,
+      canUseAiFeatures: true,
+      canAccessCompanySettings: true, canAccessReports: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Precon Manager",
+    description: "Everything senior has plus pipeline review, scope settings, AI analysis",
+    targetRole: "ESTIMATOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canViewBids: true, canEditBids: true, canDeleteBids: true, canGenerateBidPDFs: true,
+      canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+      canManageBidResponses: true, canDeleteBidRequests: true,
+      canAccessHistoricalCosts: true, canAccessScopeSettings: true,
+      canUseAiBidAnalysis: true, canUseAiContractAnalysis: true, canCreateProjects: true,
+      canAccessFinancials: true, canAccessCostRates: true, canAccessProductionRates: true,
+      canAccessTimeClock: true,
+      canAccessCRM: true, canCreateCRMContacts: true,
+      canUseAiFeatures: true, canAccessKPIs: true, canAccessExecutiveDigest: true,
+      canAccessCompanySettings: true, canAccessReports: true, canAccessApprovals: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    },
+  },
+  {
+    name: "Subcontractor",
+    description: "Submit bids, view scopes, bid network access",
+    targetRole: "VENDOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessBidNetworkInbox: true,
+      canViewBids: true, canEditBids: true, canGenerateBidPDFs: true,
+      canAccessMessages: true,
+    },
+  },
+  {
+    name: "Supplier",
+    description: "Pricing only, no project or bid access",
+    targetRole: "VENDOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessBidNetworkInbox: true,
+      canAccessVendorPricing: true,
+    },
+  },
+  {
+    name: "Service Vendor",
+    description: "Limited project interaction, view assigned work",
+    targetRole: "VENDOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessBidNetworkInbox: true,
+      canAccessMessages: true,
+      canAccessTimeClock: true,
+    },
+  },
+];
+
+async function seedBuiltInPresets() {
+  try {
+    const existing = await db.select({ id: permissionPresets.id }).from(permissionPresets)
+      .where(eq(permissionPresets.isBuiltIn, true));
+    if (existing.length >= BUILT_IN_PRESETS.length) return;
+
+    await db.delete(permissionPresets).where(eq(permissionPresets.isBuiltIn, true));
+
+    for (const preset of BUILT_IN_PRESETS) {
+      await db.insert(permissionPresets).values({
+        name: preset.name,
+        description: preset.description,
+        targetRole: preset.targetRole,
+        permissions: JSON.stringify(preset.permissions),
+        isBuiltIn: true,
+        organizationId: null,
+      });
+    }
+  } catch (error) {
+    logError('Error seeding built-in presets:', {}, error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+seedBuiltInPresets();
+
+router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const role = (req.query.role as string) || '';
+
+    const builtInRows = role
+      ? await db.select().from(permissionPresets).where(and(eq(permissionPresets.isBuiltIn, true), eq(permissionPresets.targetRole, role)))
+      : await db.select().from(permissionPresets).where(eq(permissionPresets.isBuiltIn, true));
+
+    let customRows: typeof builtInRows = [];
+    if (orgId) {
+      customRows = role
+        ? await db.select().from(permissionPresets).where(and(eq(permissionPresets.isBuiltIn, false), eq(permissionPresets.organizationId, orgId), eq(permissionPresets.targetRole, role)))
+        : await db.select().from(permissionPresets).where(and(eq(permissionPresets.isBuiltIn, false), eq(permissionPresets.organizationId, orgId)));
+    }
+
+    const allRows = [...builtInRows, ...customRows].map(row => ({
+      ...row,
+      permissions: JSON.parse(row.permissions) as Record<string, boolean>,
+    }));
+
+    res.json(allRows);
+  } catch (error) {
+    logError('Error fetching permission presets:', {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: 'Failed to fetch permission presets' });
+  }
+});
+
+router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: 'Organization required' });
+    }
+
+    const schema = z.object({
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      targetRole: z.enum(['MANAGER', 'SUPERINTENDENT', 'ESTIMATOR', 'VENDOR']),
+      permissions: z.record(z.enum(Object.keys(ALL_FALSE) as [string, ...string[]]), z.boolean()),
+    });
+
+    let data;
+    try {
+      data = schema.parse(req.body);
+    } catch (validationError) {
+      return res.status(400).json({ error: 'Invalid preset data', details: validationError instanceof z.ZodError ? validationError.errors : undefined });
+    }
+
+    const [created] = await db.insert(permissionPresets).values({
+      name: data.name,
+      description: data.description || null,
+      targetRole: data.targetRole,
+      permissions: JSON.stringify(data.permissions),
+      isBuiltIn: false,
+      organizationId: orgId,
+    }).returning();
+
+    res.json({ ...created, permissions: data.permissions });
+  } catch (error) {
+    logError('Error creating permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: 'Failed to create permission preset' });
+  }
+});
+
+router.delete('/api/dashboard/permission-presets/:id', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.user!.organizationId;
+
+    if (!orgId) {
+      return res.status(403).json({ error: 'Organization required' });
+    }
+
+    const [preset] = await db.select().from(permissionPresets)
+      .where(eq(permissionPresets.id, id));
+
+    if (!preset) {
+      return res.status(404).json({ error: 'Preset not found' });
+    }
+
+    if (preset.isBuiltIn) {
+      return res.status(400).json({ error: 'Cannot delete built-in presets' });
+    }
+
+    if (preset.organizationId !== orgId) {
+      return res.status(403).json({ error: 'Cannot delete presets from other organizations' });
+    }
+
+    await db.delete(permissionPresets).where(eq(permissionPresets.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    logError('Error deleting permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: 'Failed to delete permission preset' });
+  }
+});
+
+router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const orgId = req.user!.organizationId;
+    const adminId = req.user!.id;
+
+    if (!orgId) {
+      return res.status(403).json({ error: 'Organization required' });
+    }
+
+    const schema = z.object({
+      presetId: z.string(),
+    });
+    const { presetId } = schema.parse(req.body);
+
+    const [preset] = await db.select().from(permissionPresets)
+      .where(eq(permissionPresets.id, presetId));
+
+    if (!preset) {
+      return res.status(404).json({ error: 'Preset not found' });
+    }
+
+    if (!preset.isBuiltIn && preset.organizationId !== orgId) {
+      return res.status(403).json({ error: 'Cannot use presets from other organizations' });
+    }
+
+    const permSet: Record<string, boolean> = JSON.parse(preset.permissions);
+
+    const [targetUser] = await db.select().from(users)
+      .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found in your organization' });
+    }
+
+    if (preset.targetRole !== targetUser.role) {
+      return res.status(400).json({ error: `Preset is for ${preset.targetRole} role, but user has ${targetUser.role} role` });
+    }
+
+    const existing = await db.select().from(userDashboardPermissions)
+      .where(and(
+        eq(userDashboardPermissions.organizationId, orgId),
+        eq(userDashboardPermissions.userId, userId)
+      ));
+
+    const fullPermSet: Record<string, boolean> = { ...ALL_FALSE };
+    for (const key of Object.keys(permSet)) {
+      if (key in fullPermSet) {
+        fullPermSet[key] = permSet[key];
+      }
+    }
+
+    if (existing.length > 0) {
+      await db.update(userDashboardPermissions)
+        .set({
+          ...fullPermSet,
+          grantedByUserId: adminId,
+          grantedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(userDashboardPermissions.id, existing[0].id));
+    } else {
+      await db.insert(userDashboardPermissions).values({
+        organizationId: orgId,
+        userId,
+        ...fullPermSet,
+        grantedByUserId: adminId,
+        grantedAt: new Date(),
+      });
+    }
+
+    res.json({ success: true, permissions: fullPermSet });
+  } catch (error) {
+    logError('Error applying permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: 'Failed to apply permission preset' });
   }
 });
 
