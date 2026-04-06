@@ -535,10 +535,13 @@ bids(id, name, code, client_name, bid_amount, due_date, location_address, city, 
 time_entries(id, user_id, project_id, date, hours_regular, hours_overtime, cost_code, notes, approval_status, created_at)
 
 -- Tasks
-tasks(id, project_id, title, description, status, priority, assigned_to_id, due_date, completed_at, created_at)
+tasks(id, organization_id, project_id, title, description, category, priority, status, source_type, assigned_to_id, due_date, completed_at, created_at)
+-- status values: PENDING, IN_PROGRESS, COMPLETED, DISMISSED
+-- priority values: LOW, MEDIUM, HIGH, CRITICAL
+-- source_type values: MANUAL, AI_GENERATED, EMAIL_DERIVED, SYSTEM
 
 -- Change Orders
-change_orders(id, project_id, title, description, amount, status, created_at)
+change_orders(id, project_id, change_order_number, description, amount, status, requested_by_id, submitted_at, approved_by_id, approved_at, created_at)
 -- status values: DRAFT, SUBMITTED, APPROVED, REJECTED
 
 -- Invoices
@@ -555,6 +558,79 @@ daily_reports(id, project_id, report_date, weather, crew_size, work_performed, s
 
 -- Inspections
 project_inspections(id, project_id, type, status, scheduled_date, completed_date, result, inspector_name, notes, created_at)
+
+-- Estimates
+estimates(id, bid_id, project_id, version_number, status, base_bid_amount, notes, created_by_id, created_at)
+-- status values: DRAFT, REVIEW, APPROVED, REJECTED
+
+-- Receipts (expense receipts)
+receipts(id, project_id, user_id, date, vendor, amount, category, notes, cost_code, created_at)
+
+-- Scope Items (project scope line items for billing/tracking)
+scope_items(id, project_id, description, unit, total_quantity, completed_quantity, billed_quantity, unit_price, billing_status, created_at)
+-- billing_status values: NOT_READY, READY, BILLED
+
+-- Weekly Payroll Reports
+weekly_payroll_reports(id, organization_id, week_start_date, week_end_date, total_regular_hours, total_overtime_hours, total_employees, generated_at, created_at)
+
+-- Pay Runs
+pay_runs(id, organization_id, pay_period_start, pay_period_end, run_number, status, total_regular_hours, total_overtime_hours, total_labor_cost, total_gross_amount, total_deductions, total_net_amount, total_workers, notes, created_at)
+-- status values: DRAFT, PENDING_APPROVAL, APPROVED, PROCESSING, COMPLETED, CANCELLED
+
+-- Purchase Requests
+purchase_requests(id, org_id, project_id, requested_by_id, pr_number, title, status, needed_by_date, notes, total_estimated_cost, approved_by_id, approved_at, created_at)
+-- status values: DRAFT, PENDING, APPROVED, REJECTED, CANCELLED
+
+-- Purchase Orders
+purchase_orders(id, org_id, project_id, pr_id, vendor_id, po_number, status, terms, delivery_address, needed_by_date, notes, total_cost, approved_by_id, approved_at, created_at)
+-- status values: DRAFT, PENDING, APPROVED, SENT, PARTIAL, RECEIVED, CANCELLED
+
+-- Vendor Invoices
+vendor_invoices(id, org_id, po_id, vendor_id, invoice_number, invoice_date, due_date, total_amount, status, notes, created_at)
+-- status values: PENDING, APPROVED, REJECTED, PAID
+
+-- Contracts
+contracts(id, organization_id, project_id, bid_id, contract_number, contract_type, status, contract_value, effective_date, expiration_date, payment_terms, retention_percent, scope_summary, created_at)
+-- contract_type values: PRIME, SUBCONTRACT, PURCHASE_ORDER, SERVICE_AGREEMENT
+-- status values: DRAFT, PENDING_REVIEW, APPROVED, ACTIVE, COMPLETED, TERMINATED
+
+-- Project Notes
+project_notes(id, project_id, author_id, note_type, text, created_at)
+-- note_type values: GENERAL, SAFETY, QUALITY, WEATHER, DELAY, CLIENT
+
+-- OSHA Incidents
+osha_incidents(id, organization_id, case_number, project_id, employee_name, date_of_injury, event_description, injury_illness_type, body_part_affected, treatment_type, classification, is_recordable, days_away_from_work, days_of_restricted_duty, created_at)
+
+-- Leave Requests
+leave_requests(id, employee_id, organization_id, leave_type_id, start_date, end_date, reason, status, reviewer_id, reviewed_at, created_at)
+-- status values: PENDING, APPROVED, REJECTED, CANCELLED
+
+-- CRM Organisations (vendors, subcontractors, suppliers, clients)
+crm_organisations(id, organization_id, type, name, address, city, state, zip_code, website, trade_specialty, crm_status, is_active, created_at)
+-- type values: SUBCONTRACTOR, SUPPLIER, CLIENT, OWNER_REP, ARCHITECT, ENGINEER, EQUIPMENT_RENTAL, OTHER
+
+-- CRM Contacts
+crm_contacts(id, organization_id, organisation_id, first_name, last_name, title, role, email, phone, is_primary, is_active, created_at)
+-- role values: OWNER, PROJECT_MANAGER, ESTIMATOR, SUPERINTENDENT, ACCOUNTS_PAYABLE, ACCOUNTS_RECEIVABLE, SAFETY_OFFICER, OTHER
+
+-- CRM Opportunities (sales pipeline / deals)
+crm_opportunities(id, organization_id, name, stage, deal_value, probability, crm_organisation_id, assigned_to_id, project_type, expected_close_date, source, created_at)
+-- stage values: LEAD, QUALIFIED, PROPOSAL, NEGOTIATION, WON, LOST
+
+-- Drawing Sets
+drawing_sets(id, project_id, organization_id, name, description, is_primary, created_at)
+
+-- Bid Subcontractor Quotes
+bid_subcontractor_quotes(id, bid_id, project_id, subcontractor_name, scope_of_work, quote_amount, lead_time, contact_name, contact_email, contact_phone, is_selected, created_at)
+
+-- Bid Material Quotes
+bid_material_quotes(id, bid_id, project_id, material_name, description, specs, cost, lead_time, supplier_name, supplier_contact, is_selected, created_at)
+
+-- Pay Run Line Items (individual worker pay details per pay run)
+pay_run_line_items(id, pay_run_id, user_id, project_id, cost_code, regular_hours, overtime_hours, regular_rate, overtime_rate, total_amount, gross_amount, total_deductions, net_amount, created_at)
+
+-- Change Order Revisions (audit trail of change order status changes)
+change_order_revisions(id, change_order_id, revision_number, previous_status, new_status, amount, description, revised_by_id, created_at)
 `;
 
 const ASK_DATABASE_SYSTEM_PROMPT = `You are a SQL query generator for a construction management database. Given a natural language question, generate a safe, read-only PostgreSQL SELECT query.
@@ -613,6 +689,13 @@ const ALLOWED_TABLES = new Set([
   'organizations', 'users', 'projects', 'bids', 'time_entries', 'tasks',
   'change_orders', 'invoices', 'procurement_items', 'equipment',
   'daily_reports', 'project_inspections',
+  'estimates', 'receipts', 'scope_items',
+  'weekly_payroll_reports', 'pay_runs', 'pay_run_line_items',
+  'purchase_requests', 'purchase_orders', 'vendor_invoices',
+  'contracts', 'project_notes', 'osha_incidents',
+  'leave_requests', 'crm_organisations', 'crm_contacts', 'crm_opportunities',
+  'drawing_sets',
+  'bid_subcontractor_quotes', 'bid_material_quotes', 'change_order_revisions',
 ]);
 
 const ORG_FILTER_COLUMN: Record<string, string> = {
@@ -621,14 +704,36 @@ const ORG_FILTER_COLUMN: Record<string, string> = {
   projects: 'gc_organization_id',
   bids: 'gc_organization_id',
   equipment: 'organization_id',
+  tasks: 'organization_id',
+  weekly_payroll_reports: 'organization_id',
+  pay_runs: 'organization_id',
+  purchase_requests: 'org_id',
+  purchase_orders: 'org_id',
+  vendor_invoices: 'org_id',
+  contracts: 'organization_id',
+  osha_incidents: 'organization_id',
+  leave_requests: 'organization_id',
+  crm_organisations: 'organization_id',
+  crm_contacts: 'organization_id',
+  crm_opportunities: 'organization_id',
+  drawing_sets: 'organization_id',
 };
 
 const TABLES_NEEDING_DIRECT_ORG_FILTER = new Set(Object.keys(ORG_FILTER_COLUMN));
 
 const TABLES_ORG_VIA_PROJECT_JOIN = new Set([
-  'time_entries', 'tasks', 'change_orders', 'invoices',
+  'time_entries', 'change_orders', 'invoices',
   'procurement_items', 'daily_reports', 'project_inspections',
+  'receipts', 'scope_items', 'project_notes',
 ]);
+
+const TABLES_CUSTOM_ORG_CTE: Record<string, string> = {
+  estimates: `estimates AS (SELECT t.* FROM public.estimates t LEFT JOIN public.projects p ON t.project_id = p.id LEFT JOIN public.bids b ON t.bid_id = b.id WHERE p.gc_organization_id = $1 OR b.gc_organization_id = $1)`,
+  bid_subcontractor_quotes: `bid_subcontractor_quotes AS (SELECT t.* FROM public.bid_subcontractor_quotes t LEFT JOIN public.projects p ON t.project_id = p.id LEFT JOIN public.bids b ON t.bid_id = b.id WHERE p.gc_organization_id = $1 OR b.gc_organization_id = $1)`,
+  bid_material_quotes: `bid_material_quotes AS (SELECT t.* FROM public.bid_material_quotes t LEFT JOIN public.projects p ON t.project_id = p.id LEFT JOIN public.bids b ON t.bid_id = b.id WHERE p.gc_organization_id = $1 OR b.gc_organization_id = $1)`,
+  pay_run_line_items: `pay_run_line_items AS (SELECT t.* FROM public.pay_run_line_items t INNER JOIN public.pay_runs pr ON t.pay_run_id = pr.id WHERE pr.organization_id = $1)`,
+  change_order_revisions: `change_order_revisions AS (SELECT t.* FROM public.change_order_revisions t INNER JOIN public.change_orders co ON t.change_order_id = co.id INNER JOIN public.projects p ON co.project_id = p.id WHERE p.gc_organization_id = $1)`,
+};
 
 const SENSITIVE_COLUMNS = new Set([
   'password_hash', 'token_version', 'oauth_provider_id', 'failed_login_attempts',
@@ -782,7 +887,7 @@ function validateSqlSafety(sqlQuery: string): { safe: boolean; reason?: string }
   }
 
   for (const table of tables) {
-    if (!TABLES_NEEDING_DIRECT_ORG_FILTER.has(table) && !TABLES_ORG_VIA_PROJECT_JOIN.has(table)) {
+    if (!TABLES_NEEDING_DIRECT_ORG_FILTER.has(table) && !TABLES_ORG_VIA_PROJECT_JOIN.has(table) && !(table in TABLES_CUSTOM_ORG_CTE)) {
       return { safe: false, reason: `Table '${table}' cannot be org-scoped` };
     }
   }
@@ -800,6 +905,8 @@ function wrapWithOrgScope(sqlQuery: string, tables: string[]): string | null {
       cteParts.push(`${table} AS (SELECT * FROM public.${table} WHERE ${col} = $1)`);
     } else if (TABLES_ORG_VIA_PROJECT_JOIN.has(table)) {
       cteParts.push(`${table} AS (SELECT t.* FROM public.${table} t INNER JOIN public.projects p ON t.project_id = p.id WHERE p.gc_organization_id = $1)`);
+    } else if (table in TABLES_CUSTOM_ORG_CTE) {
+      cteParts.push(TABLES_CUSTOM_ORG_CTE[table]);
     }
   }
 
