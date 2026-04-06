@@ -53,6 +53,7 @@ import { z } from "zod";
 import { isValidE164 } from "./services/smsService";
 import { isValidTeamsWebhookUrl } from "./services/teamsService";
 import { isValidSlackWebhookUrl } from "./services/slackService";
+import { hasFeature } from "./services/featureAccess";
 
 const router = Router();
 
@@ -95,6 +96,9 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
       .from(notificationTypePrefs)
       .where(eq(notificationTypePrefs.userId, userId));
 
+    const orgId = req.user!.organizationId;
+    const enterpriseNotificationsEnabled = orgId ? await hasFeature(orgId, "ENTERPRISE_NOTIFICATIONS") : false;
+
     res.json({
       channel: channelRow
         ? {
@@ -125,6 +129,7 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
         teamsEnabled: r.teamsEnabled,
         slackEnabled: r.slackEnabled,
       })),
+      enterpriseNotificationsEnabled,
     });
   } catch (error) {
     logError("Get notification preferences error:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -144,57 +149,108 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
     const { channel, typeOverrides } = parsed.data;
     const now = new Date();
 
-    // Upsert channel prefs (preserve existing webhook URLs)
-    await db
-      .insert(notificationChannelPrefs)
-      .values({
-        userId,
-        emailEnabled: channel.emailEnabled,
-        smsEnabled: channel.smsEnabled,
-        pushEnabled: channel.pushEnabled,
-        teamsEnabled: channel.teamsEnabled,
-        slackEnabled: channel.slackEnabled,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: notificationChannelPrefs.userId,
-        set: {
+    const orgId = req.user!.organizationId;
+    const enterpriseNotifs = orgId ? await hasFeature(orgId, "ENTERPRISE_NOTIFICATIONS") : false;
+
+    if (enterpriseNotifs) {
+      await db
+        .insert(notificationChannelPrefs)
+        .values({
+          userId,
           emailEnabled: channel.emailEnabled,
           smsEnabled: channel.smsEnabled,
           pushEnabled: channel.pushEnabled,
           teamsEnabled: channel.teamsEnabled,
           slackEnabled: channel.slackEnabled,
           updatedAt: now,
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: notificationChannelPrefs.userId,
+          set: {
+            emailEnabled: channel.emailEnabled,
+            smsEnabled: channel.smsEnabled,
+            pushEnabled: channel.pushEnabled,
+            teamsEnabled: channel.teamsEnabled,
+            slackEnabled: channel.slackEnabled,
+            updatedAt: now,
+          },
+        });
+    } else {
+      await db
+        .insert(notificationChannelPrefs)
+        .values({
+          userId,
+          emailEnabled: channel.emailEnabled,
+          smsEnabled: false,
+          pushEnabled: channel.pushEnabled,
+          teamsEnabled: false,
+          slackEnabled: false,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: notificationChannelPrefs.userId,
+          set: {
+            emailEnabled: channel.emailEnabled,
+            pushEnabled: channel.pushEnabled,
+            updatedAt: now,
+          },
+        });
+    }
 
     // Upsert per-type overrides if provided
     if (typeOverrides) {
       for (const [notifType, prefs] of Object.entries(typeOverrides)) {
         const typedNotifType = notifType as (typeof notificationTypeEnum.enumValues)[number];
-        await db
-          .insert(notificationTypePrefs)
-          .values({
-            userId,
-            notificationType: typedNotifType,
-            emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
-            smsEnabled: prefs.smsEnabled ?? channel.smsEnabled,
-            pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
-            teamsEnabled: prefs.teamsEnabled ?? channel.teamsEnabled,
-            slackEnabled: prefs.slackEnabled ?? channel.slackEnabled,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
-            set: {
+        const smsVal = enterpriseNotifs ? (prefs.smsEnabled ?? channel.smsEnabled) : false;
+        const teamsVal = enterpriseNotifs ? (prefs.teamsEnabled ?? channel.teamsEnabled) : false;
+        const slackVal = enterpriseNotifs ? (prefs.slackEnabled ?? channel.slackEnabled) : false;
+
+        if (enterpriseNotifs) {
+          await db
+            .insert(notificationTypePrefs)
+            .values({
+              userId,
+              notificationType: typedNotifType,
               emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
-              smsEnabled: prefs.smsEnabled ?? channel.smsEnabled,
+              smsEnabled: smsVal,
               pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
-              teamsEnabled: prefs.teamsEnabled ?? channel.teamsEnabled,
-              slackEnabled: prefs.slackEnabled ?? channel.slackEnabled,
+              teamsEnabled: teamsVal,
+              slackEnabled: slackVal,
               updatedAt: now,
-            },
-          });
+            })
+            .onConflictDoUpdate({
+              target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+              set: {
+                emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
+                smsEnabled: smsVal,
+                pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
+                teamsEnabled: teamsVal,
+                slackEnabled: slackVal,
+                updatedAt: now,
+              },
+            });
+        } else {
+          await db
+            .insert(notificationTypePrefs)
+            .values({
+              userId,
+              notificationType: typedNotifType,
+              emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
+              smsEnabled: false,
+              pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
+              teamsEnabled: false,
+              slackEnabled: false,
+              updatedAt: now,
+            })
+            .onConflictDoUpdate({
+              target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+              set: {
+                emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
+                pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
+                updatedAt: now,
+              },
+            });
+        }
       }
     }
 
@@ -215,6 +271,12 @@ router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: A
     }
 
     const { smsPhoneNumber, teamsWebhookUrl, slackWebhookUrl } = parsed.data;
+
+    const orgId = req.user!.organizationId;
+    const enterpriseNotifs = orgId ? await hasFeature(orgId, "ENTERPRISE_NOTIFICATIONS") : false;
+    if (!enterpriseNotifs && (smsPhoneNumber || teamsWebhookUrl || slackWebhookUrl)) {
+      return res.status(403).json({ error: "SMS, Teams, and Slack integrations require an enterprise plan." });
+    }
 
     if (smsPhoneNumber && !isValidE164(smsPhoneNumber)) {
       return res.status(400).json({ error: "Phone number must be in E.164 format (e.g. +15551234567)" });

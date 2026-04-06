@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,13 +12,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, FileText, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare } from "lucide-react";
 import type { PayrollSettings } from "./types";
 import { DAYS_OF_WEEK } from "./types";
 
 export function CompanyNotificationsTab() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { can } = useEntitlements();
+  const hasEnterpriseNotifications = can("ENTERPRISE_NOTIFICATIONS");
 
   const { data: payrollSettings, isLoading: loadingPayroll } = useQuery<PayrollSettings>({
     queryKey: ["/api/payroll/settings"],
@@ -186,6 +190,84 @@ export function CompanyNotificationsTab() {
                   Starts on {DAYS_OF_WEEK.find(d => d.value === payrollForm.workWeekStartDay)?.label || "Sunday"}
                 </p>
               </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                Notification Channels
+              </CardTitle>
+              <CardDescription>Available notification delivery channels for your organization</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between py-1" data-testid="row-company-channel-email">
+                  <div>
+                    <p className="text-sm font-medium">Email</p>
+                    <p className="text-xs text-muted-foreground">Available to all users</p>
+                  </div>
+                  <Badge variant="secondary" className="text-xs" data-testid="badge-available-email">Available</Badge>
+                </div>
+                <div className="flex items-center justify-between py-1" data-testid="row-company-channel-push">
+                  <div>
+                    <p className="text-sm font-medium">Web Push</p>
+                    <p className="text-xs text-muted-foreground">Available to all users</p>
+                  </div>
+                  <Badge variant="secondary" className="text-xs" data-testid="badge-available-push">Available</Badge>
+                </div>
+                <div className="flex items-center justify-between py-1" data-testid="row-company-channel-sms">
+                  <div>
+                    <p className="text-sm font-medium">SMS</p>
+                    <p className="text-xs text-muted-foreground">Text message alerts for critical notifications</p>
+                  </div>
+                  {hasEnterpriseNotifications ? (
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-available-sms">Available</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-sms">
+                      <Lock className="h-3 w-3" />
+                      Enterprise
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center justify-between py-1" data-testid="row-company-channel-teams">
+                  <div>
+                    <p className="text-sm font-medium">Microsoft Teams</p>
+                    <p className="text-xs text-muted-foreground">Deliver notifications to Teams channels</p>
+                  </div>
+                  {hasEnterpriseNotifications ? (
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-available-teams">Available</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-teams">
+                      <Lock className="h-3 w-3" />
+                      Enterprise
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center justify-between py-1" data-testid="row-company-channel-slack">
+                  <div>
+                    <p className="text-sm font-medium">Slack</p>
+                    <p className="text-xs text-muted-foreground">Deliver notifications to Slack channels</p>
+                  </div>
+                  {hasEnterpriseNotifications ? (
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-available-slack">Available</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-slack">
+                      <Lock className="h-3 w-3" />
+                      Enterprise
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              {!hasEnterpriseNotifications && (
+                <Alert data-testid="alert-enterprise-upgrade">
+                  <Lock className="h-4 w-4" />
+                  <AlertDescription>
+                    SMS, Microsoft Teams, and Slack notification channels are available on the Scale plan. 
+                    Upgrade to unlock these channels for your organization.
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
         </div>

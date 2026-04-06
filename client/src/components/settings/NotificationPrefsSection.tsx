@@ -2,14 +2,16 @@ import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Bell, Loader2 } from "lucide-react";
+import { Bell, Loader2, Lock } from "lucide-react";
 
 interface ChannelPrefsData {
   emailEnabled: boolean;
@@ -78,6 +80,8 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 export default function NotificationPrefsSection() {
   const { toast } = useToast();
+  const { can } = useEntitlements();
+  const hasEnterpriseNotifications = can("ENTERPRISE_NOTIFICATIONS");
 
   const { data: notifPrefs, isLoading: loadingNotifPrefs } = useQuery<{ channel: ChannelPrefsData; typeOverrides: TypeOverride[] }>({
     queryKey: ["/api/notifications/preferences"],
@@ -265,13 +269,34 @@ export default function NotificationPrefsSection() {
 
                   <div data-testid="row-pref-sms">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">SMS</p>
-                        <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="text-sm font-medium">SMS</p>
+                          <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
+                        </div>
+                        {!hasEnterpriseNotifications && (
+                          <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-sms">
+                            <Lock className="h-3 w-3" />
+                            Enterprise
+                          </Badge>
+                        )}
                       </div>
-                      <Switch checked={channelPrefs.smsEnabled} onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, smsEnabled: checked }))} data-testid="switch-pref-sms" />
+                      {hasEnterpriseNotifications ? (
+                        <Switch checked={channelPrefs.smsEnabled} onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, smsEnabled: checked }))} data-testid="switch-pref-sms" />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0} className="inline-flex">
+                              <Switch checked={false} disabled data-testid="switch-pref-sms" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">
+                            Upgrade to the Scale plan to enable SMS notifications.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
-                    {channelPrefs.smsEnabled && (
+                    {hasEnterpriseNotifications && channelPrefs.smsEnabled && (
                       <div className="mt-2 space-y-1">
                         <Label htmlFor="sms-phone-input" className="text-xs text-muted-foreground">Mobile number (E.164 format)</Label>
                         <Input id="sms-phone-input" value={smsPhoneInput} onChange={(e) => setSmsPhoneInput(e.target.value)} placeholder="+15551234567" data-testid="input-sms-phone" />
@@ -302,13 +327,34 @@ export default function NotificationPrefsSection() {
 
                   <div data-testid="row-pref-teams">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">Microsoft Teams</p>
-                        <p className="text-xs text-muted-foreground">Receive messages in your Teams workspace</p>
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="text-sm font-medium">Microsoft Teams</p>
+                          <p className="text-xs text-muted-foreground">Receive messages in your Teams workspace</p>
+                        </div>
+                        {!hasEnterpriseNotifications && (
+                          <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-teams">
+                            <Lock className="h-3 w-3" />
+                            Enterprise
+                          </Badge>
+                        )}
                       </div>
-                      <Switch checked={channelPrefs.teamsEnabled} onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, teamsEnabled: checked }))} data-testid="switch-pref-teams" />
+                      {hasEnterpriseNotifications ? (
+                        <Switch checked={channelPrefs.teamsEnabled} onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, teamsEnabled: checked }))} data-testid="switch-pref-teams" />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0} className="inline-flex">
+                              <Switch checked={false} disabled data-testid="switch-pref-teams" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">
+                            Upgrade to the Scale plan to enable Teams notifications.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
-                    {channelPrefs.teamsEnabled && (
+                    {hasEnterpriseNotifications && channelPrefs.teamsEnabled && (
                       <div className="mt-2 space-y-1">
                         <Label htmlFor="teams-webhook-input" className="text-xs text-muted-foreground">Teams incoming webhook URL</Label>
                         <Input id="teams-webhook-input" value={teamsWebhookInput} onChange={(e) => setTeamsWebhookInput(e.target.value)} placeholder="https://xxx.webhook.office.com/..." data-testid="input-teams-webhook" />
@@ -318,13 +364,34 @@ export default function NotificationPrefsSection() {
 
                   <div data-testid="row-pref-slack">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">Slack</p>
-                        <p className="text-xs text-muted-foreground">Receive messages in your Slack workspace</p>
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="text-sm font-medium">Slack</p>
+                          <p className="text-xs text-muted-foreground">Receive messages in your Slack workspace</p>
+                        </div>
+                        {!hasEnterpriseNotifications && (
+                          <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-slack">
+                            <Lock className="h-3 w-3" />
+                            Enterprise
+                          </Badge>
+                        )}
                       </div>
-                      <Switch checked={channelPrefs.slackEnabled} onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, slackEnabled: checked }))} data-testid="switch-pref-slack" />
+                      {hasEnterpriseNotifications ? (
+                        <Switch checked={channelPrefs.slackEnabled} onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, slackEnabled: checked }))} data-testid="switch-pref-slack" />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0} className="inline-flex">
+                              <Switch checked={false} disabled data-testid="switch-pref-slack" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">
+                            Upgrade to the Scale plan to enable Slack notifications.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
-                    {channelPrefs.slackEnabled && (
+                    {hasEnterpriseNotifications && channelPrefs.slackEnabled && (
                       <div className="mt-2 space-y-1">
                         <Label htmlFor="slack-webhook-input" className="text-xs text-muted-foreground">Slack incoming webhook URL</Label>
                         <Input id="slack-webhook-input" value={slackWebhookInput} onChange={(e) => setSlackWebhookInput(e.target.value)} placeholder="https://hooks.slack.com/services/..." data-testid="input-slack-webhook" />
@@ -334,7 +401,7 @@ export default function NotificationPrefsSection() {
                 </div>
               </div>
 
-              {(channelPrefs.smsEnabled || channelPrefs.teamsEnabled || channelPrefs.slackEnabled) && (
+              {hasEnterpriseNotifications && (channelPrefs.smsEnabled || channelPrefs.teamsEnabled || channelPrefs.slackEnabled) && (
                 <Button
                   variant="outline"
                   size="sm"

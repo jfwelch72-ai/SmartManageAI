@@ -73,7 +73,8 @@ export type FeatureKey =
   | "PUNCH_LIST"
   | "WARRANTY_MODULE"
   | "RISK_MANAGEMENT"
-  | "ASSET_MANAGEMENT";
+  | "ASSET_MANAGEMENT"
+  | "ENTERPRISE_NOTIFICATIONS";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
@@ -142,6 +143,7 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "WORKFLOW_BUILDER",
     "RISK_MANAGEMENT",
     "ASSET_MANAGEMENT",
+    "ENTERPRISE_NOTIFICATIONS",
   ],
 };
 
@@ -489,6 +491,10 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   ASSET_MANAGEMENT: {
     name: "Asset Management",
     description: "Company asset tracking, depreciation, and lifecycle management",
+  },
+  ENTERPRISE_NOTIFICATIONS: {
+    name: "Enterprise Notifications",
+    description: "SMS, Microsoft Teams, and Slack notification channels",
   },
 };
 

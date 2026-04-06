@@ -7,6 +7,7 @@ import { sendSms } from "./smsService";
 import { sendTeamsMessage } from "./teamsService";
 import { sendSlackMessage } from "./slackService";
 import { logError } from "../utils/logger";
+import { hasFeature } from "./featureAccess";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -393,7 +394,7 @@ function deliverSlack(webhookUrl: string | null, notification: NotificationRecor
 export async function deliverNotification(notification: NotificationRecord): Promise<void> {
   try {
     const [userRow] = await db
-      .select({ email: users.email, phone: users.phone })
+      .select({ email: users.email, phone: users.phone, organizationId: users.organizationId })
       .from(users)
       .where(eq(users.id, notification.userId))
       .limit(1);
@@ -402,22 +403,27 @@ export async function deliverNotification(notification: NotificationRecord): Pro
 
     const prefs = await loadEffectivePrefs(notification.userId, notification.type);
 
+    let enterpriseNotifications = false;
+    if (userRow.organizationId && (prefs.smsEnabled || prefs.teamsEnabled || prefs.slackEnabled)) {
+      enterpriseNotifications = await hasFeature(userRow.organizationId, "ENTERPRISE_NOTIFICATIONS");
+    }
+
     const tasks: Promise<void>[] = [];
 
     if (prefs.emailEnabled) {
       tasks.push(deliverEmail(userRow.email, notification));
     }
-    if (prefs.smsEnabled) {
+    if (prefs.smsEnabled && enterpriseNotifications) {
       const smsPhone = prefs.smsPhoneNumber || userRow.phone || null;
       deliverSms(smsPhone, notification);
     }
     if (prefs.pushEnabled) {
       tasks.push(deliverPush(notification.userId, notification));
     }
-    if (prefs.teamsEnabled) {
+    if (prefs.teamsEnabled && enterpriseNotifications) {
       deliverTeams(prefs.teamsWebhookUrl, notification);
     }
-    if (prefs.slackEnabled) {
+    if (prefs.slackEnabled && enterpriseNotifications) {
       deliverSlack(prefs.slackWebhookUrl, notification);
     }
 
