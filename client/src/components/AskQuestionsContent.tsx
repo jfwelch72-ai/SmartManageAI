@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Send, Loader2, Database, HelpCircle, User, Bot } from "lucide-react";
+import { Send, Loader2, Database, HelpCircle, User, Bot, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,11 +20,42 @@ const EXAMPLE_QUESTIONS = [
   "What is our total contract value?",
 ];
 
+interface SpeechRecognitionEvent {
+  results: { readonly length: number; [index: number]: { isFinal: boolean; readonly length: number; 0: { transcript: string } } };
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+function getSpeechRecognitionAPI(): SpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const win = window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+  return win.SpeechRecognition || win.webkitSpeechRecognition || null;
+}
+
+const SpeechRecognitionAPI = getSpeechRecognitionAPI();
+
 export function AskQuestionsContent({ compact }: { compact?: boolean }) {
   const [messages, setMessages] = useState<QAMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [isListening, setIsListening] = useState(false);
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   useEffect(() => {
     scrollEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -34,6 +65,79 @@ export function AskQuestionsContent({ compact }: { compact?: boolean }) {
     if (inputRef.current) {
       inputRef.current.focus();
     }
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  const startListening = useCallback(() => {
+    if (!SpeechRecognitionAPI) return;
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript;
+        } else {
+          interimTranscript += result[0].transcript;
+        }
+      }
+      setInputValue(finalTranscript + interimTranscript);
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (event.error === "not-allowed") {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: "Microphone access was denied. Please allow microphone permissions in your browser settings to use voice input.",
+          timestamp: new Date(),
+        }]);
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      setIsListening(false);
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  const toggleVoiceInput = useCallback(() => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isListening, stopListening, startListening]);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
   }, []);
 
   const askMutation = useMutation({
@@ -78,6 +182,10 @@ export function AskQuestionsContent({ compact }: { compact?: boolean }) {
   const handleSend = () => {
     const question = inputValue.trim();
     if (!question || askMutation.isPending) return;
+
+    if (isListening) {
+      stopListening();
+    }
 
     setMessages(prev => [...prev, {
       role: "user",
@@ -202,6 +310,23 @@ export function AskQuestionsContent({ compact }: { compact?: boolean }) {
             maxLength={500}
             data-testid="input-ask-question"
           />
+          {SpeechRecognitionAPI && (
+            <Button
+              size="sm"
+              variant={isListening ? "default" : "outline"}
+              className={`h-9 px-3 transition-colors ${isListening ? "bg-red-500 hover:bg-red-600 text-white animate-pulse" : ""}`}
+              onClick={toggleVoiceInput}
+              disabled={askMutation.isPending}
+              data-testid="button-voice-input"
+              title={isListening ? "Stop listening" : "Voice input"}
+            >
+              {isListening ? (
+                <MicOff className="h-4 w-4" />
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
+            </Button>
+          )}
           <Button
             size="sm"
             className="h-9 px-3"

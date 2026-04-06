@@ -567,9 +567,9 @@ CRITICAL RULES:
 5. Do not access system tables, pg_catalog, information_schema, or any administrative tables.
 6. Do not use subqueries that could modify data.
 7. Do not use functions like pg_sleep, pg_terminate_backend, or any administrative functions.
-8. NEVER use UNION, EXCEPT, INTERSECT, WITH, or OR.
+8. NEVER use UNION, EXCEPT, or INTERSECT.
 9. Do NOT use any parameter placeholders ($1, $2, etc.). The system handles parameterization.
-10. Use AND for all conditions. Use IN(...) instead of OR for multiple value checks.
+10. You may use OR in simple WHERE conditions (e.g., WHERE status = 'active' OR status = 'pending'). However, prefer IN(...) when checking the same column for multiple values. Do NOT use OR for tautologies like OR 1=1 or OR TRUE.
 11. Do NOT use subqueries (nested SELECT statements). Use JOINs instead.
 12. Do NOT use schema-qualified table names (e.g., public.users). Just use the table name directly.
 13. Use only simple string values in single quotes. Do not use double quotes or backticks for identifiers.
@@ -694,8 +694,21 @@ function validateSqlSafety(sqlQuery: string): { safe: boolean; reason?: string }
     return { safe: false, reason: 'Multiple statements not allowed' };
   }
 
-  if (/\bOR\b/i.test(sqlQuery)) {
-    return { safe: false, reason: 'OR clauses are not allowed' };
+  const sqlWithoutLiterals = normalized.replace(/'[^']*'/g, "'_LITERAL_'");
+  const orInjectionPatterns = [
+    /\bOR\s+\d+\s*=\s*\d+\b/,
+    /\bOR\s+'_LITERAL_'\s*=\s*'_LITERAL_'/,
+    /\bOR\s+TRUE\b/,
+    /\bOR\s+FALSE\s+IS\s+FALSE\b/,
+    /\bOR\s+NOT\s+FALSE\b/,
+    /\bOR\s+NULL\s+IS\s+NULL\b/,
+    /\bOR\s+CAST\s*\(/,
+    /\bOR\s+\(\s*SELECT\b/,
+  ];
+  for (const pattern of orInjectionPatterns) {
+    if (pattern.test(sqlWithoutLiterals)) {
+      return { safe: false, reason: 'OR clause contains a potentially unsafe pattern' };
+    }
   }
 
   if (/\bWITH\b/i.test(sqlQuery)) {
