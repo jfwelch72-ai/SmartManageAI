@@ -514,7 +514,26 @@ const TRADE_DETECTION_PROMPTS: Record<string, string> = {
 // ========================================
 
 const DATABASE_SCHEMA_DESCRIPTION = `
-You have access to a PostgreSQL database for a construction management platform. Here are the key tables and their columns:
+You have access to a PostgreSQL database for a construction management platform.
+
+=== TABLE DIRECTORY (find the right tables by domain) ===
+CORE: organizations, users, projects, bids, tasks
+MESSAGING & COMMUNICATION: conversations, conversation_participants, messages, message_reactions, message_read_receipts, message_entity_links, video_calls, video_call_participants, call_notes
+FINANCE: invoices, estimates, estimate_line_items, change_orders, change_order_items, change_order_revisions, receipts, cost_codes, cost_transactions, budget_alerts, forecast_adjustments
+WORKFORCE: time_entries, weekly_payroll_reports, pay_runs, pay_run_line_items, shift_assignments, leave_requests, osha_incidents
+CRM: crm_organisations, crm_contacts, crm_opportunities, crm_organisation_notes, crm_opportunity_activities
+PROCUREMENT: purchase_requests, purchase_orders, purchase_order_line_items, vendor_invoices, vendor_invoice_line_items
+CONTRACTS & BILLING: contracts, contract_line_items, subcontracts, sov_items, pay_applications, pay_application_items, aia_billing_periods, aia_billing_items
+EQUIPMENT: equipment, equipment_assignments, equipment_maintenance_records
+DOCUMENTS: drawing_sets, document_revisions, transmittals, transmittal_items, rfis, submittals
+SCHEDULING: schedule_activities, schedule_dependencies, schedule_baselines
+HIRING: job_postings, hiring_candidates, hiring_interviews, hiring_tasks
+DAILY REPORTS: daily_reports, daily_scope_progress, project_inspections
+SAFETY & QUALITY: safety_observations, safety_trainings, quality_issues, punch_list_items
+KPIs: kpi_templates, kpi_assignments, kpi_entries
+=== END TABLE DIRECTORY ===
+
+Here are the key tables and their columns:
 
 -- Organizations
 organizations(id, name, slug, trade_type, trade_name, region, address, city, state, zip_code, phone, email, is_active, created_at)
@@ -1295,6 +1314,8 @@ EXAMPLES OF VALID QUERIES:
 - SELECT t.title AS task_name, t.due_date FROM tasks t JOIN projects p ON t.project_id = p.id WHERE t.due_date < CURRENT_DATE ORDER BY t.due_date LIMIT 50
 - SELECT u.first_name, u.last_name, u.role FROM users u WHERE u.is_active = true ORDER BY u.last_name LIMIT 50
 - SELECT COALESCE(SUM(bid_amount), 0) AS total_value FROM bids WHERE status = 'SUBMITTED'
+- SELECT c.name AS conversation_name, COUNT(m.id) AS message_count FROM conversations c JOIN messages m ON m.conversation_id = c.id GROUP BY c.id, c.name ORDER BY message_count DESC LIMIT 10
+- SELECT COUNT(*) AS unread_count FROM messages m JOIN conversation_participants cp ON cp.conversation_id = m.conversation_id WHERE cp.user_id = m.sender_id AND m.created_at > cp.last_read_at
 
 EXAMPLES OF INVALID QUERIES (never generate these):
 - SELECT * FROM (SELECT ... FROM projects) sub  -- subqueries are forbidden
