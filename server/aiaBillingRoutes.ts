@@ -193,7 +193,7 @@ import { sendEmail } from "./email";
 const router = Router();
 
 router.use(requireAuth);
-router.use(requireFeaturePermission("canAccessFinancials"));
+router.use(requireFeaturePermission("canViewFinancials"));
 
 const validPayAppStatusTransitions: Record<string, string[]> = {
   DRAFT: ["SUBMITTED"],

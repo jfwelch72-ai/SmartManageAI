@@ -72,7 +72,7 @@ interface CostCodeBreakdownWidgetProps {
 }
 
 export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps) {
-  const hasPermission = useFeaturePermission("canAccessFinancials");
+  const hasPermission = useFeaturePermission("canViewFinancials");
   const merged = { ...DEFAULT_COST_CODE_CONFIG, ...config };
 
   const params = new URLSearchParams({ mode: merged.mode || "labor" });

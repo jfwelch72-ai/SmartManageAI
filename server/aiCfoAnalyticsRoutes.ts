@@ -11,7 +11,7 @@ import { getAiAuditLog, getOrgLimitsWithUsage, getCostBreakdownByActionType } fr
 
 const router = Router();
 
-router.use("/cfo", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 'canAccessFinancials'));
+router.use("/cfo", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 'canViewFinancials'));
 
 router.get("/cfo/profitability", requireAuth, async (req: AuthRequest, res, next) => {
   try {

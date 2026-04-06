@@ -110,7 +110,7 @@ const router = Router();
 // Routes from sovRoutes.ts
 // ========================================
 
-router.use("/sov", requireAuth, requireFeaturePermission('canAccessFinancials'));
+router.use("/sov", requireAuth, requireFeaturePermission('canViewFinancials'));
 
 router.get("/sov", async (req: AuthRequest, res: Response) => {
   try {

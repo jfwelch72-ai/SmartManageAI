@@ -45,7 +45,7 @@ async function verifyContractAccessForMgmt(contractId: string, req: AuthRequest)
   return { contract: contract.contract, hasAccess: true };
 }
 
-router.get("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -71,7 +71,7 @@ const createSovLineItemSchema = z.object({
   changeOrderRef: z.string().optional().nullable(),
 });
 
-router.post("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -126,7 +126,7 @@ const updateSovLineItemSchema = z.object({
   changeOrderRef: z.string().optional().nullable(),
 });
 
-router.patch("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, itemId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -177,7 +177,7 @@ router.patch("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOr
   }
 });
 
-router.delete("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.delete("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, itemId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -209,7 +209,7 @@ router.delete("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleO
   }
 });
 
-router.get("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -228,7 +228,7 @@ router.get("/subcontracts/:contractId/pay-applications", requireAuth, requireRol
   }
 });
 
-router.get("/subcontracts/:contractId/pay-applications/:payAppId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/pay-applications/:payAppId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -272,7 +272,7 @@ function fmtDate(date: Date | string | null): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-router.get("/subcontracts/:contractId/pay-applications/:payAppId/pdf", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/pay-applications/:payAppId/pdf", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -416,7 +416,7 @@ const createSubPayAppSchema = z.object({
   periodTo: z.string().optional(),
 });
 
-router.post("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -524,7 +524,7 @@ const updateSubPayAppLineItemSchema = z.object({
   })),
 });
 
-router.patch("/subcontracts/:contractId/pay-applications/:payAppId/line-items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/pay-applications/:payAppId/line-items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -647,7 +647,7 @@ const updateSubPayAppStatusSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -726,7 +726,7 @@ router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requ
   }
 });
 
-router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -770,7 +770,7 @@ router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeat
   }
 });
 
-router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json({ totals: { totalRetentionHeld: "0.00", totalReleased: "0.00", balanceRemaining: "0.00" }, contracts: [] });
@@ -876,7 +876,7 @@ async function getRetentionBalance(contractId: string): Promise<number> {
   return totalHeld - totalReleased;
 }
 
-router.post("/subcontracts/:contractId/retention/release", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/retention/release", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -919,7 +919,7 @@ const retentionReleaseActionSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-router.patch("/subcontracts/:contractId/retention/release/:releaseId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/retention/release/:releaseId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, releaseId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -970,7 +970,7 @@ router.patch("/subcontracts/:contractId/retention/release/:releaseId", requireAu
   }
 });
 
-router.get("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1009,7 +1009,7 @@ const createPerformanceScoreSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.post("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1050,7 +1050,7 @@ router.post("/subcontracts/:contractId/performance", requireAuth, requireRoleOrF
   }
 });
 
-router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -1124,7 +1124,7 @@ router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeatur
 // Contract Attachments
 // =====================
 
-router.get("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1146,7 +1146,7 @@ router.get("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFe
   }
 });
 
-router.post("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1179,7 +1179,7 @@ router.post("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrF
   }
 });
 
-router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId, attachmentId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1199,7 +1199,7 @@ router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth
 // SOV Revision History
 // =====================
 
-router.get("/subcontracts/:contractId/sov/revisions", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/sov/revisions", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);

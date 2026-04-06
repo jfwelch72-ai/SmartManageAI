@@ -4435,8 +4435,10 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canUseAiBidAnalysis: boolean("can_use_ai_bid_analysis").notNull().default(false),
   canUseAiContractAnalysis: boolean("can_use_ai_contract_analysis").notNull().default(false),
 
-  // Category 3: Financial Management (24-33)
+  // Category 3: Financial Management (24-35)
   canAccessFinancials: boolean("can_access_financials").notNull().default(false),
+  canViewFinancials: boolean("can_view_financials").notNull().default(false),
+  canEditFinancials: boolean("can_edit_financials").notNull().default(false),
   canAccessCostRates: boolean("can_access_cost_rates").notNull().default(false),
   canAccessCFODashboard: boolean("can_access_cfo_dashboard").notNull().default(false),
   canAccessTMBilling: boolean("can_access_tm_billing").notNull().default(false),

@@ -17,7 +17,7 @@ import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
 
-router.get("/api/revenue-recognition/project/:projectId", requireAuth, requireFeaturePermission("canAccessFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/project/:projectId", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -48,7 +48,7 @@ router.get("/api/revenue-recognition/project/:projectId", requireAuth, requireFe
   }
 });
 
-router.get("/api/revenue-recognition/project-by-code/:code", requireAuth, requireFeaturePermission("canAccessFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/project-by-code/:code", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
   try {
     const { code } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -79,7 +79,7 @@ router.get("/api/revenue-recognition/project-by-code/:code", requireAuth, requir
   }
 });
 
-router.get("/api/revenue-recognition/wip-report", requireAuth, requireFeaturePermission("canAccessFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/wip-report", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -136,7 +136,7 @@ router.get("/api/revenue-recognition/wip-report", requireAuth, requireFeaturePer
   }
 });
 
-router.post("/api/revenue-recognition/snapshot", requireAuth, requireFeaturePermission("canAccessFinancials"), async (req: AuthRequest, res: Response) => {
+router.post("/api/revenue-recognition/snapshot", requireAuth, requireFeaturePermission("canEditFinancials"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -152,7 +152,7 @@ router.post("/api/revenue-recognition/snapshot", requireAuth, requireFeaturePerm
   }
 });
 
-router.get("/api/revenue-recognition/history", requireAuth, requireFeaturePermission("canAccessFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/history", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -173,7 +173,7 @@ router.get("/api/revenue-recognition/history", requireAuth, requireFeaturePermis
   }
 });
 
-router.get("/api/revenue-recognition/wip-report/csv", requireAuth, requireFeaturePermission("canAccessFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/wip-report/csv", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -304,7 +304,7 @@ router.get("/api/revenue-recognition/wip-report/csv", requireAuth, requireFeatur
   }
 });
 
-router.get("/api/revenue-recognition/wip-report/pdf", requireAuth, requireFeaturePermission("canAccessFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/wip-report/pdf", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 

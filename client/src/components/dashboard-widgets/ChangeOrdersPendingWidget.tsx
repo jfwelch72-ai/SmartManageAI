@@ -40,7 +40,7 @@ function formatCurrency(value: number): string {
 }
 
 export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
-  const hasPermission = useFeaturePermission("canAccessFinancials");
+  const hasPermission = useFeaturePermission("canViewFinancials");
   const cfg: ChangeOrdersPendingConfig = { ...DEFAULT_CO_PENDING_CONFIG, ...(config as Partial<ChangeOrdersPendingConfig>) };
 
   const apiUrl = cfg.projectId

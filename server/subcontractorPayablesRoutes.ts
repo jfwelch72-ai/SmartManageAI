@@ -107,7 +107,7 @@ async function sendPayableNotifications(
   }
 }
 
-router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -188,7 +188,7 @@ router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 
   }
 });
 
-router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -233,7 +233,7 @@ router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MAN
   }
 });
 
-router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -289,7 +289,7 @@ const createPayableSchema = z.object({
   invoiceNumber: z.string().optional().nullable()
 });
 
-router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -393,7 +393,7 @@ router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"],
   }
 });
 
-router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -491,7 +491,7 @@ const rejectPayableSchema = z.object({
   rejectionReason: z.string().min(1, "Rejection reason is required")
 });
 
-router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -602,7 +602,7 @@ const markPaidSchema = z.object({
   paymentMethod: z.enum(["CHECK", "ACH", "WIRE", "CREDIT_CARD", "CASH"]).optional().nullable()
 });
 
-router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);

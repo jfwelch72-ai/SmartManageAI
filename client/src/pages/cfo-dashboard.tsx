@@ -33,7 +33,7 @@ export default function CFODashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
+  const hasFinancialsPermission = useFeaturePermission('canViewFinancials');
   const hasAiPermission = useFeaturePermission('canUseAiFeatures');
 
   const { isEnabled } = useFeatureFlags();

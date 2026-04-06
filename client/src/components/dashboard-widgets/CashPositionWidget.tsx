@@ -28,7 +28,7 @@ function formatSignedCurrency(value: number): string {
 }
 
 export function CashPositionWidget() {
-  const hasPermission = useFeaturePermission("canAccessFinancials");
+  const hasPermission = useFeaturePermission("canViewFinancials");
 
   const { data, isLoading, isError, refetch} = useQuery<CashPosition>({
     queryKey: ["/api/dashboard/cash-position"],

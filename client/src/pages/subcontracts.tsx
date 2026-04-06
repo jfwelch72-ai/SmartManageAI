@@ -94,7 +94,7 @@ interface SubcontractorContract {
 
 export default function SubcontractsPage() {
   const { user } = useAuth();
-  const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
+  const hasFinancialsPermission = useFeaturePermission('canViewFinancials');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);

@@ -55,7 +55,7 @@ export default function SubcontractorPayablesPage() {
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [isPayOpen, setIsPayOpen] = useState(false);
 
-  const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
+  const hasFinancialsPermission = useFeaturePermission('canViewFinancials');
   const isAuthorized =
     !!user &&
     (user.role === "ADMIN" ||

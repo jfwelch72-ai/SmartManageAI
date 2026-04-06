@@ -90,6 +90,8 @@ import type { SelectUser } from "@shared/schema";
 
 interface PermissionSet {
   canAccessFinancials: boolean;
+  canViewFinancials: boolean;
+  canEditFinancials: boolean;
   canManagePayroll: boolean;
   canAccessReports: boolean;
   canUseAiFeatures: boolean;
@@ -108,6 +110,8 @@ interface PermissionSet {
 
 interface UserWithPermissions extends SelectUser {
   canAccessFinancials?: boolean;
+  canViewFinancials?: boolean;
+  canEditFinancials?: boolean;
   canManagePayroll?: boolean;
   canAccessReports?: boolean;
   canUseAiFeatures?: boolean;
@@ -139,9 +143,13 @@ const ROLE_LABELS: Record<string, string> = {
   HUSTLER: "Hustler",
 };
 
+const ROLE_SUBTITLES: Record<string, string> = {
+  MANAGER: "Also known as: Project Manager",
+};
+
 const ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
   ADMIN: "Admin",
-  MANAGER: "Manager",
+  MANAGER: "Manager (Project Manager)",
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
   FIELD_WORKER: "Field Worker",
@@ -169,9 +177,16 @@ const STATUS_FILTERS = [
 
 const HUSTLER_BASE_PERMISSIONS = new Set([
   "canAccessFinancials",
+  "canViewFinancials",
+  "canEditFinancials",
   "canAccessKPIs",
   "canManageHiring",
   "canAccessHiringInterviews",
+  "canManageUsers",
+  "canAccessDashboard",
+  "canAccessProjects",
+  "canAccessMessages",
+  "canAccessCalendar",
 ]);
 
 export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
@@ -399,7 +414,9 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     {
       label: "Financial",
       permissions: [
-        { key: "canAccessFinancials" as const, label: "Financials Access", icon: DollarSign, description: "View budgets, cost rates, and CFO dashboard" },
+        { key: "canAccessFinancials" as const, label: "Financials Access (Legacy)", icon: DollarSign, description: "Legacy financial access flag — use View/Edit Financials instead" },
+        { key: "canViewFinancials" as const, label: "View Financials", icon: DollarSign, description: "View financial dashboards, reports, and budgets (read-only)" },
+        { key: "canEditFinancials" as const, label: "Edit Financials", icon: CreditCard, description: "Create and modify transactions, billing, and budgets" },
         { key: "canManagePayroll" as const, label: "Payroll Management", icon: CreditCard, description: "Manage payroll, pay runs, and deductions" },
       ],
     },
@@ -1023,9 +1040,18 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                   <span className="font-medium truncate" data-testid={`text-perm-name-${u.id}`}>
                                     {u.firstName} {u.lastName}
                                   </span>
-                                  <Badge variant={ROLE_COLORS[u.role] || "secondary"} className="shrink-0">
-                                    {ROLE_LABELS[u.role] || u.role}
-                                  </Badge>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Badge variant={ROLE_COLORS[u.role] || "secondary"} className="shrink-0">
+                                        {ROLE_LABELS[u.role] || u.role}
+                                      </Badge>
+                                    </TooltipTrigger>
+                                    {ROLE_SUBTITLES[u.role] && (
+                                      <TooltipContent>
+                                        <p>{ROLE_SUBTITLES[u.role]}</p>
+                                      </TooltipContent>
+                                    )}
+                                  </Tooltip>
                                 </div>
                                 <div className="text-sm text-muted-foreground truncate" data-testid={`text-perm-email-${u.id}`}>
                                   {u.email}

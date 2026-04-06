@@ -241,7 +241,8 @@ export type FeaturePermissionKey =
   | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
   | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
   | 'canAccessHistoricalCosts' | 'canAccessScopeSettings' | 'canUseAiBidAnalysis' | 'canUseAiContractAnalysis'
-  | 'canAccessFinancials' | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
+  | 'canAccessFinancials' | 'canViewFinancials' | 'canEditFinancials'
+  | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
   | 'canManageContracts' | 'canAccessSubcontracts' | 'canAccessOverheadCosts' | 'canAccessProductionRates' | 'canAccessVendorPricing'
   | 'canAccessTimeClock' | 'canManageTimeClock' | 'canApproveTime' | 'canAccessTMDaily'
   | 'canManagePayroll' | 'canManageCrews' | 'canManageWorkforce' | 'canManageLeave'
@@ -275,6 +276,10 @@ export async function getEffectivePermissions(userId: string, orgId: string | nu
       if (typeof val === 'boolean') {
         dbPerms[key] = val;
       }
+    }
+    if ((perm as Record<string, unknown>).canAccessFinancials === true) {
+      dbPerms.canViewFinancials = true;
+      dbPerms.canEditFinancials = true;
     }
     return mergePermissions(roleDefaults, dbPerms);
   } catch (error) {

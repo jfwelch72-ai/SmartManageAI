@@ -499,7 +499,7 @@ export default function ProjectDetailPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
-  const canAccessFinancialsPerms = useFeaturePermission("canAccessFinancials");
+  const canAccessFinancialsPerms = useFeaturePermission("canViewFinancials");
   const [pinnedTabValues, setPinnedTabValuesState] = useState<string[]>(() => {
     const stored = getPinnedTabs(user?.id || "default");
     if (stored.length > 0) return stored;

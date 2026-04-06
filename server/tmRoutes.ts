@@ -527,7 +527,7 @@ function registerTMInvoiceRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tm-invoices", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-invoices", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res) => {
     try {
       const { ticketIds, projectId, clientName, clientAddress, clientEmail, dueDate, notes, taxRate } = req.body;
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -739,7 +739,7 @@ function registerTMInvoiceRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tm-invoices/:invoiceId/send", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-invoices/:invoiceId/send", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res) => {
     try {
       const { invoiceId } = req.params;
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -769,7 +769,7 @@ function registerTMInvoiceRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tm-invoices/:invoiceId/mark-paid", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-invoices/:invoiceId/mark-paid", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res) => {
     try {
       const { invoiceId } = req.params;
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -891,8 +891,8 @@ function hasTMCreateAccess(role: string): boolean {
 
 export function registerTMTicketRoutes(app: Express) {
   app.use("/api/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'));
-  app.use("/api/tm-billing", requireAuth, requireFeaturePermission('canAccessFinancials'));
-  app.use("/api/tm-invoices", requireAuth, requireFeaturePermission('canAccessFinancials'));
+  app.use("/api/tm-billing", requireAuth, requireFeaturePermission('canViewFinancials'));
+  app.use("/api/tm-invoices", requireAuth, requireFeaturePermission('canViewFinancials'));
 
   registerTMApprovalRoutes(app);
   registerTMInvoiceRoutes(app);

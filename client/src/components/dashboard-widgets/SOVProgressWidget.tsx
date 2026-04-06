@@ -54,7 +54,7 @@ function ProgressBar({ label, percent, color }: { label: string; percent: number
 }
 
 export function SOVProgressWidget() {
-  const hasPermission = useFeaturePermission("canAccessFinancials");
+  const hasPermission = useFeaturePermission("canViewFinancials");
 
   const { data, isLoading, isError, refetch} = useQuery<SOVProgress>({
     queryKey: ["/api/dashboard/sov-progress"],

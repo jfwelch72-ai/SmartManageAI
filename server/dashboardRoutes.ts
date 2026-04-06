@@ -189,6 +189,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets, hustlerOrganizations } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens } from "./auth";
+import type { UserRole } from "@shared/schema";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
 import { KNOWN_WIDGET_TYPES, migrateV2ToV3, getDefaultLayoutForRole, PRESET_PALETTES } from "./dashboardDefaults";
@@ -210,7 +211,8 @@ type FeaturePermissionKeys =
   | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
   | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
   | 'canAccessHistoricalCosts' | 'canAccessScopeSettings' | 'canUseAiBidAnalysis' | 'canUseAiContractAnalysis'
-  | 'canAccessFinancials' | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
+  | 'canAccessFinancials' | 'canViewFinancials' | 'canEditFinancials'
+  | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
   | 'canManageContracts' | 'canAccessSubcontracts' | 'canAccessOverheadCosts' | 'canAccessProductionRates' | 'canAccessVendorPricing'
   | 'canAccessTimeClock' | 'canManageTimeClock' | 'canApproveTime' | 'canAccessTMDaily'
   | 'canManagePayroll' | 'canManageCrews' | 'canManageWorkforce' | 'canManageLeave'
@@ -237,7 +239,8 @@ const ALL_FALSE: PermissionSet = {
   canConvertBidToProject: false, canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false,
   canManageBidResponses: false, canDeleteBidRequests: false, canAccessHistoricalCosts: false,
   canAccessScopeSettings: false, canUseAiBidAnalysis: false, canUseAiContractAnalysis: false,
-  canAccessFinancials: false, canAccessCostRates: false, canAccessCFODashboard: false,
+  canAccessFinancials: false, canViewFinancials: false, canEditFinancials: false,
+  canAccessCostRates: false, canAccessCFODashboard: false,
   canAccessTMBilling: false, canAccessProgressBilling: false, canManageContracts: false,
   canAccessSubcontracts: false, canAccessOverheadCosts: false, canAccessProductionRates: false,
   canAccessVendorPricing: false,
@@ -266,7 +269,8 @@ const ALL_TRUE: PermissionSet = {
   canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
   canManageBidResponses: true, canDeleteBidRequests: true, canAccessHistoricalCosts: true,
   canAccessScopeSettings: true, canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
-  canAccessFinancials: true, canAccessCostRates: true, canAccessCFODashboard: true,
+  canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+  canAccessCostRates: true, canAccessCFODashboard: true,
   canAccessTMBilling: true, canAccessProgressBilling: true, canManageContracts: true,
   canAccessSubcontracts: true, canAccessOverheadCosts: true, canAccessProductionRates: true,
   canAccessVendorPricing: true,
@@ -287,35 +291,57 @@ const ALL_TRUE: PermissionSet = {
   canSubmitPeerRatings: true, canViewPeerRatings: true,
 };
 
+export const ROLE_HIERARCHY: UserRole[] = [
+  "SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"
+];
+
+export function rolesAtOrAbove(role: UserRole): UserRole[] {
+  const idx = ROLE_HIERARCHY.indexOf(role);
+  if (idx === -1) return [role];
+  return ROLE_HIERARCHY.slice(0, idx + 1);
+}
+
+export function rolesAtOrBelow(role: UserRole): UserRole[] {
+  const idx = ROLE_HIERARCHY.indexOf(role);
+  if (idx === -1) return [role];
+  return ROLE_HIERARCHY.slice(idx);
+}
+
+export function isRoleAtOrAbove(userRole: UserRole, threshold: UserRole): boolean {
+  const userIdx = ROLE_HIERARCHY.indexOf(userRole);
+  const thresholdIdx = ROLE_HIERARCHY.indexOf(threshold);
+  if (userIdx === -1 || thresholdIdx === -1) return false;
+  return userIdx <= thresholdIdx;
+}
+
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   ADMIN: ALL_TRUE,
   SUPER_ADMIN: { ...ALL_TRUE },
   HUSTLER: {
-    ...ALL_FALSE,
-    canAccessFinancials: true,
-    canAccessKPIs: true,
-    canManageHiring: true,
-    canAccessHiringInterviews: true,
+    ...ALL_TRUE,
+    canAccessActiveProjectsOnly: false,
+    canAccessEnterpriseSettings: false,
+    canManageHiringSettings: false,
   },
   MANAGER: {
     ...ALL_TRUE,
     canAccessActiveProjectsOnly: false,
-    canManageCrews: false,
     canAccessCostRates: false,
     canManageWebsite: false,
     canManageAISettings: false,
-    canAccessAuditLogs: false,
     canAccessEnterpriseSettings: false,
-    canManageUsers: false,
     canManageHiringSettings: false,
+    canManageUsers: false,
   },
   SUPERINTENDENT: {
     ...ALL_FALSE,
     canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
     canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
     canViewBids: true, canAccessHistoricalCosts: true,
-    canAccessFinancials: true, canManageContracts: true, canAccessSubcontracts: true,
+    canAccessFinancials: true, canViewFinancials: true, canEditFinancials: false,
+    canManageContracts: true, canAccessSubcontracts: true,
     canAccessProductionRates: true,
+    canAccessCFODashboard: true,
     canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
     canAccessTMDaily: true, canManageWorkforce: true, canManageSafety: true,
     canManageScheduling: true, canAccessKPIs: true, canLockDailyReports: true,
@@ -334,8 +360,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canViewBids: true, canEditBids: true, canGenerateBidPDFs: true,
     canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
     canAccessHistoricalCosts: true, canAccessScopeSettings: true, canUseAiBidAnalysis: true,
-    canCreateProjects: true,
-    canAccessFinancials: true, canAccessCostRates: true, canAccessProductionRates: true,
+    canCreateProjects: true, canEditProjects: true,
+    canAccessFinancials: true, canViewFinancials: true, canEditFinancials: false,
+    canAccessCostRates: true, canAccessProductionRates: true,
     canAccessTimeClock: true,
     canAccessCRM: true, canCreateCRMContacts: true,
     canUseAiFeatures: true,
@@ -354,6 +381,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   },
   VENDOR: {
     ...ALL_FALSE,
+    canAccessDashboard: true,
+    canAccessMessages: true,
     canAccessBidNetworkInbox: true,
   },
 };
@@ -546,7 +575,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       ...ALL_FALSE,
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
-      canAccessFinancials: true, canAccessCFODashboard: true, canManagePayroll: true,
+      canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+      canAccessCFODashboard: true, canManagePayroll: true,
       canManageContracts: true, canAccessSubcontracts: true, canAccessOverheadCosts: true,
       canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
       canAccessCRM: true, canCreateCRMContacts: true, canAccessReports: true,
@@ -564,7 +594,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canAccessReports: true, canAccessKPIs: true,
+      canAccessFinancials: true, canViewFinancials: true,
+      canAccessReports: true, canAccessKPIs: true,
       canAccessTimeClock: true, canAccessTMDaily: true,
       canAccessCRM: true, canAccessCompanySettings: true,
       canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
@@ -609,7 +640,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       ...ALL_FALSE,
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
-      canAccessFinancials: true, canAccessCostRates: true, canAccessCFODashboard: true,
+      canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+      canAccessCostRates: true, canAccessCFODashboard: true,
       canAccessTMBilling: true, canAccessProgressBilling: true,
       canManagePayroll: true, canAccessOverheadCosts: true, canAccessProductionRates: true,
       canManageContracts: true, canAccessSubcontracts: true, canAccessVendorPricing: true,
@@ -702,7 +734,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canManageContracts: true, canAccessSubcontracts: true,
+      canAccessFinancials: true, canViewFinancials: true,
+      canManageContracts: true, canAccessSubcontracts: true,
       canAccessProductionRates: true,
       canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
       canAccessTMDaily: true, canManageWorkforce: true, canManageSafety: true,
@@ -724,7 +757,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canAccessProductionRates: true,
+      canAccessFinancials: true, canViewFinancials: true,
+      canAccessProductionRates: true,
       canAccessTimeClock: true, canManageTimeClock: true, canAccessTMDaily: true,
       canManageWorkforce: true, canManageSafety: true,
       canAccessKPIs: true, canLockDailyReports: true,
@@ -790,7 +824,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canAccessProductionRates: true,
+      canAccessFinancials: true, canViewFinancials: true,
+      canAccessProductionRates: true,
       canAccessTimeClock: true,
       canAccessCRM: true,
       canAccessCompanySettings: true, canAccessReports: true,
@@ -810,7 +845,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
       canManageBidResponses: true, canAccessHistoricalCosts: true, canAccessScopeSettings: true,
       canUseAiBidAnalysis: true, canCreateProjects: true,
-      canAccessFinancials: true, canAccessCostRates: true, canAccessProductionRates: true,
+      canAccessFinancials: true, canViewFinancials: true,
+      canAccessCostRates: true, canAccessProductionRates: true,
       canAccessTimeClock: true,
       canAccessCRM: true, canCreateCRMContacts: true,
       canUseAiFeatures: true,
@@ -832,7 +868,8 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canManageBidResponses: true, canDeleteBidRequests: true,
       canAccessHistoricalCosts: true, canAccessScopeSettings: true,
       canUseAiBidAnalysis: true, canUseAiContractAnalysis: true, canCreateProjects: true,
-      canAccessFinancials: true, canAccessCostRates: true, canAccessProductionRates: true,
+      canAccessFinancials: true, canViewFinancials: true,
+      canAccessCostRates: true, canAccessProductionRates: true,
       canAccessTimeClock: true,
       canAccessCRM: true, canCreateCRMContacts: true,
       canUseAiFeatures: true, canAccessKPIs: true, canAccessExecutiveDigest: true,
@@ -3561,7 +3598,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
 // Cash Position Widget
 // ====================
 
-router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -3647,7 +3684,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
 // SOV Progress Widget
 // ====================
 
-router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -3894,7 +3931,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
 // Cost Code Breakdown Widget
 // ============================
 
-router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4452,7 +4489,7 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
 // ====================
 // Change Orders Pending Widget
 // ====================
-router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
