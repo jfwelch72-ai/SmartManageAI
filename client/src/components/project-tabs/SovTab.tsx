@@ -66,7 +66,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
 
   const userRole = user?.role;
   const canEdit = hasManagementAccess(userRole) || hasFinancialAccess(userRole);
-  const canApprove = userRole === "ADMIN" || userRole === "SUPER_ADMIN";
+  const canApprove = userRole === "ADMIN";
 
   const { data: allSovs = [], isLoading: loadingSOVs } = useQuery<SOV[]>({
     queryKey: ["/api/sov"],

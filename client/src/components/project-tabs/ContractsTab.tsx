@@ -18,7 +18,7 @@ interface ContractsTabProps {
   userRole: string;
 }
 
-const CONTRACT_MANAGE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
+const CONTRACT_MANAGE_ROLES = ["ADMIN", "MANAGER"];
 
 function canManageContractsClient(role?: string) {
   return CONTRACT_MANAGE_ROLES.includes(role || "");
@@ -1293,7 +1293,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
               <p className="text-xs text-muted-foreground mb-2">Choose one or more team members to review and approve this contract.</p>
               <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
                 {orgMembers
-                  .filter(m => ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(m.role))
+                  .filter(m => ["ADMIN", "MANAGER"].includes(m.role))
                   .map(m => (
                     <label key={m.id} className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer text-sm">
                       <input

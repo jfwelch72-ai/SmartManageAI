@@ -946,7 +946,7 @@ export default function SettingsPage() {
 
   if (!user) return null;
 
-  const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
+  const isAdmin = user.role === "ADMIN";
   const isManager = user.role === "MANAGER";
   const canSeeOrg = isAdmin || isManager;
   const canSeeIntegrations = isAdmin;

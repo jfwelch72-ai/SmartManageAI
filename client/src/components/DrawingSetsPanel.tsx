@@ -83,7 +83,7 @@ export default function DrawingSetsPanel({
   const [compareSetId, setCompareSetId] = useState<string | null>(null);
   const [manageSetId, setManageSetId] = useState<string | null>(null);
 
-  const isAdmin = ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole);
+  const isAdmin = ["ADMIN", "MANAGER"].includes(userRole);
 
   const { data: drawingSets = [], isLoading } = useQuery<DrawingSet[]>({
     queryKey: ["/api/projects", projectId, "drawing-sets"],

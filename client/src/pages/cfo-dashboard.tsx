@@ -40,7 +40,7 @@ export default function CFODashboard() {
   const whatIfEnabled = isEnabled("WHATIF_SIMULATOR");
 
   const canAccessCFO = !!user && (
-    user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPER_ADMIN" ||
+    user.role === "ADMIN" || user.role === "MANAGER" ||
     hasFinancialsPermission || hasAiPermission
   );
 

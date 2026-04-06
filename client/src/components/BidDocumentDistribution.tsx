@@ -162,7 +162,7 @@ export default function BidDocumentDistribution({ bidId, projectId, projectName,
     });
   }
 
-  const canManage = ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole);
+  const canManage = ["ADMIN", "MANAGER"].includes(userRole);
 
   return (
     <Card>

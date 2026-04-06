@@ -286,7 +286,7 @@ const ALL_TRUE: PermissionSet = {
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   ADMIN: ALL_TRUE,
-  SUPER_ADMIN: { ...ALL_FALSE },
+  SUPER_ADMIN: { ...ALL_TRUE },
   HUSTLER: {
     ...ALL_FALSE,
     canAccessFinancials: true,
@@ -381,7 +381,7 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
       lastName: users.lastName,
       email: users.email,
       role: users.role,
-    }).from(users).where(eq(users.organizationId, orgId));
+    }).from(users).where(and(eq(users.organizationId, orgId), sql`${users.role} != 'SUPER_ADMIN'`));
 
     const permissions = await db.select().from(userDashboardPermissions)
       .where(eq(userDashboardPermissions.organizationId, orgId));
@@ -2264,7 +2264,9 @@ router.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER"), async (re
     
     let allUsers;
     if (shouldFilter && orgId) {
-      allUsers = await db.select().from(users).where(eq(users.organizationId, orgId));
+      allUsers = await db.select().from(users).where(
+        and(eq(users.organizationId, orgId), sql`${users.role} != 'SUPER_ADMIN'`)
+      );
     } else {
       allUsers = await db.select().from(users);
     }
@@ -2318,6 +2320,10 @@ router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthReq
 
     const { firstName, lastName, email, phone, role, password } = validationResult.data;
 
+    if (role === "SUPER_ADMIN" && req.user?.role !== "SUPER_ADMIN") {
+      res.status(403).json({ error: "Cannot assign Super Admin role" }); return;
+    }
+
     const passwordHash = await hashPassword(password);
 
     // Auto-assign to requesting admin's organization
@@ -2347,8 +2353,14 @@ router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthReq
 // Update user (Admin only)
 router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
-    const [targetUser] = await db.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, req.params.id)).limit(1);
+    const [targetUser] = await db.select({ organizationId: users.organizationId, role: users.role }).from(users).where(eq(users.id, req.params.id)).limit(1);
     if (!targetUser) { res.status(404).json({ error: "User not found" }); return; }
+    if (targetUser.role === "SUPER_ADMIN" && req.user?.role !== "SUPER_ADMIN") {
+      res.status(403).json({ error: "Cannot modify a Super Admin user" }); return;
+    }
+    if (req.body.role === "SUPER_ADMIN" && req.user?.role !== "SUPER_ADMIN") {
+      res.status(403).json({ error: "Cannot assign Super Admin role" }); return;
+    }
     if (!verifyUserOrgAccess(req, res, targetUser)) return;
 
     // SECURITY: Sanitize text inputs for data integrity
@@ -2411,6 +2423,11 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
 // Update user cost rates (Admin only)
 router.patch("/api/users/:id/cost-rates", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
+    const [targetUserCheck] = await db.select({ role: users.role }).from(users).where(eq(users.id, req.params.id)).limit(1);
+    if (targetUserCheck?.role === "SUPER_ADMIN" && req.user?.role !== "SUPER_ADMIN") {
+      res.status(403).json({ error: "Cannot modify a Super Admin user" }); return;
+    }
+
     const { costRateRegular, costRateOvertime } = req.body;
 
     if (costRateRegular === undefined || costRateRegular === null || costRateRegular === "") {

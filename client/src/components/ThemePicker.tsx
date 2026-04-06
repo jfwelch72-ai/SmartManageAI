@@ -207,7 +207,7 @@ export function ThemePicker() {
   } = useDashboardCustomization();
 
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const isAdmin = user?.role === "ADMIN";
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("presets");

@@ -85,8 +85,8 @@ export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } 
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiConversation, setAiConversation] = useState<Array<{role: string; content: string}>>([]);
-  const isAdmin = !!user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
-  const canEdit = !!user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
+  const isAdmin = !!user && user.role === "ADMIN";
+  const canEdit = !!user && ["ADMIN", "MANAGER"].includes(user.role);
 
   const [analyticsPeriod, setAnalyticsPeriod] = useState(30);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);

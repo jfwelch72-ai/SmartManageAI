@@ -1,7 +1,7 @@
 /**
  * Role-Based Access Control (RBAC) Utilities
  * 
- * 8-Role System with 73 Feature Flags
+ * 7 Org-Level Roles + 1 Platform-Level Role, with 73 Feature Flags
  * 
  * Architecture:
  * - Server-side authorization is AUTHORITATIVE via requireRoleOrFeature / requireFeaturePermission
@@ -9,8 +9,10 @@
  * - When feature flags (perms) are provided, they are ALWAYS used exclusively
  * - Role-string fallbacks ONLY activate when perms have not loaded yet (async fetch)
  * 
- * Role Hierarchy:
- * - SUPER_ADMIN: Platform administrator — monitors all organizations, analytics, support tools (NO contractor features)
+ * Platform Role (separate from org roles — not included in CORE_ROLES):
+ * - SUPER_ADMIN: Platform administrator — bypasses org permission system, has dedicated admin panel
+ * 
+ * Org-Level Roles (CORE_ROLES):
  * - ADMIN: Organization admin — full access to everything within their organization including user management
  * - HUSTLER: Multi-organization owner — switches between linked orgs, per-org permissions
  * - MANAGER: Management-level — full org features except user management & website builder
@@ -23,7 +25,7 @@
 export type { UserRole } from "@shared/schema";
 import type { UserRole } from "@shared/schema";
 
-export const CORE_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
+export const CORE_ROLES: UserRole[] = ["ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
 export const ASSIGNABLE_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
 
 export const ROLE_DISPLAY_NAMES: Record<string, string> = {
@@ -55,7 +57,7 @@ export function isOrganizationAdmin(role?: string): boolean {
 }
 
 export function isAdmin(role?: string): boolean {
-  return role === "SUPER_ADMIN" || role === "ADMIN";
+  return role === "ADMIN";
 }
 
 export function isFieldWorker(role?: string): boolean {

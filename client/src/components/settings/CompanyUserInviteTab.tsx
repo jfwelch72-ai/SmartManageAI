@@ -28,7 +28,7 @@ export function CompanyUserInviteTab() {
 
   const { data: hustlerLinkRequests = { requests: [] }, isLoading: loadingHustlerRequests } = useQuery<{ requests: HustlerLinkRequest[] }>({
     queryKey: ["/api/hustler/link-requests/organization"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN"].includes(user.role)
+    enabled: !!user && user.role === "ADMIN"
   });
 
   const inviteHustlerMutation = useMutation({

@@ -27,17 +27,17 @@ export function CompanyProfileTab({ activeDocTab }: CompanyProfileTabProps) {
 
   const { data: documents = [], isLoading: loadingDocuments } = useQuery<OrganizationDocument[]>({
     queryKey: ["/api/organization-documents"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN"].includes(user.role)
+    enabled: !!user && user.role === "ADMIN"
   });
 
   const { data: typesData, isLoading: loadingTypes } = useQuery<TypesResponse>({
     queryKey: ["/api/organization-documents/types"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN"].includes(user.role)
+    enabled: !!user && user.role === "ADMIN"
   });
 
   const { data: summary } = useQuery<DocumentSummary>({
     queryKey: ["/api/organization-documents/summary"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN"].includes(user.role)
+    enabled: !!user && user.role === "ADMIN"
   });
 
   const { data: historyDocs = [] } = useQuery<OrganizationDocument[]>({

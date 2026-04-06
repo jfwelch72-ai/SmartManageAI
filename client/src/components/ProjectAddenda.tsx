@@ -115,8 +115,8 @@ export default function ProjectAddenda({ projectId, projectCode, userRole }: Pro
   const [newFileName, setNewFileName] = useState("");
   const [newFileUrl, setNewFileUrl] = useState("");
 
-  const canManage = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(userRole);
-  const canDelete = ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole);
+  const canManage = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(userRole);
+  const canDelete = ["ADMIN", "MANAGER"].includes(userRole);
 
   const { data: addendaList = [], isLoading } = useQuery<Addendum[]>({
     queryKey: ["/api/projects", projectId, "addenda"],

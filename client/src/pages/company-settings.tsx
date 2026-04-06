@@ -172,7 +172,7 @@ export default function CompanySettings() {
     );
   }
 
-  const isOrgAdmin = user.role === "SUPER_ADMIN" || user.role === "ADMIN";
+  const isOrgAdmin = user.role === "ADMIN";
   const canViewCoreTabs = isOrgAdmin;
   const canViewCostCodes = isOrgAdmin;
   const canViewUsers = isOrgAdmin;

@@ -25,12 +25,12 @@ export function CompanyTradeConfigTab() {
 
   const { data: tradeConfig, isLoading: loadingTradeConfig } = useQuery<TradeConfigResponse>({
     queryKey: ["/api/organization/trade-config"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "HUSTLER"].includes(user.role)
+    enabled: !!user && ["ADMIN", "HUSTLER"].includes(user.role)
   });
 
   const { data: allTradesData } = useQuery<{ categories: string[]; trades: Trade[] }>({
     queryKey: ["/api/onboarding-library/trades"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "HUSTLER"].includes(user.role),
+    enabled: !!user && ["ADMIN", "HUSTLER"].includes(user.role),
     staleTime: 5 * 60 * 1000,
   });
 

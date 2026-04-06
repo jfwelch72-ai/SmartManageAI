@@ -138,8 +138,8 @@ export default function DocumentRevisionPanel({
     },
   });
 
-  const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(userRole);
-  const canUpload = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
+  const isAdmin = userRole === "ADMIN";
+  const canUpload = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>

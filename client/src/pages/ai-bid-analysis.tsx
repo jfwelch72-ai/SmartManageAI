@@ -40,7 +40,7 @@ export default function AIBidAnalysisPage() {
   const [selectedBidId, setSelectedBidId] = useState<string>("");
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [selectedAnalysis, setSelectedAnalysis] = useState<BidDocumentAnalysis | null>(null);
-  const roles = ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"];
+  const roles = ["ADMIN", "MANAGER", "ESTIMATOR"];
 
   const { data: bids = [] } = useQuery<EntityItem[]>({
     queryKey: ["/api/ai-bid-document/bids"],

@@ -101,7 +101,7 @@ export function IssueDetailPanel({ issue, sheetId, currentUser, orgUsers, onClos
   });
 
   const userCanWrite = canWrite(currentUser?.role);
-  const isAdmin = ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(currentUser?.role);
+  const isAdmin = ["ADMIN", "MANAGER"].includes(currentUser?.role);
   const isCreator = issue.createdById === currentUser?.id;
 
   const comments = issue.comments || [];

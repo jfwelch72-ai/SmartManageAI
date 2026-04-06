@@ -131,17 +131,17 @@ export default function SubcontractsPage() {
 
   const { data: projects = [], isLoading: loadingProjects } = useQuery<Project[]>({
     queryKey: ["/api/subcontracts/projects"],
-    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission)
+    enabled: !!user && (["ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission)
   });
 
   const { data: subcontractors = [], isLoading: loadingSubs } = useQuery<Subcontractor[]>({
     queryKey: ["/api/subcontracts/subcontractors"],
-    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission)
+    enabled: !!user && (["ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission)
   });
 
   const { data: contracts = [], isLoading: loadingContracts } = useQuery<SubcontractorContract[]>({
     queryKey: ["/api/subcontracts"],
-    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role) || hasFinancialsPermission)
+    enabled: !!user && (["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role) || hasFinancialsPermission)
   });
 
   const createContractMutation = useMutation({
@@ -375,8 +375,8 @@ export default function SubcontractsPage() {
     }).format(num);
   };
 
-  const canEdit = user && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role);
-  const canDelete = user && ["SUPER_ADMIN", "ADMIN"].includes(user.role);
+  const canEdit = user && ["ADMIN", "MANAGER"].includes(user.role);
+  const canDelete = user && user.role === "ADMIN";
 
   const pendingContracts = contracts.filter(c => c.status === "PENDING");
   const activeContracts = contracts.filter(c => c.status === "ACTIVE");
@@ -393,7 +393,7 @@ export default function SubcontractsPage() {
     );
   }
 
-  if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role) && !hasFinancialsPermission) {
+  if (!["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role) && !hasFinancialsPermission) {
     return (
       <div className="p-8 text-center">
         <p className="text-muted-foreground">You don't have access to Subcontract Agreements</p>

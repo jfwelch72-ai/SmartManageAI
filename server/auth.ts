@@ -258,6 +258,7 @@ export type FeaturePermissionKey =
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff';
 
 async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean>> {
+  if (role === "SUPER_ADMIN") return getRoleDefaults("SUPER_ADMIN");
   const roleDefaults = getRoleDefaults(role);
   if (!orgId) return roleDefaults;
   try {

@@ -162,7 +162,6 @@ const EMPLOYMENT_TYPE_OPTIONS = [
 ];
 
 const ROLE_LABELS: Record<string, string> = {
-  SUPER_ADMIN: "Super Admin",
   ADMIN: "Admin",
   HUSTLER: "Hustler",
   MANAGER: "Manager",
@@ -171,7 +170,6 @@ const ROLE_LABELS: Record<string, string> = {
   FIELD_WORKER: "Field Worker",
   HOURLY_EMPLOYEE: "Field Worker",
   VENDOR: "Vendor",
-  HUSTLER: "Hustler",
 };
 
 const ATTENDANCE_COLORS: Record<string, string> = {

@@ -128,7 +128,6 @@ interface UserWithPermissions extends SelectUser {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  SUPER_ADMIN: "Super Admin",
   ADMIN: "Admin",
   MANAGER: "Manager",
   SUPERINTENDENT: "Superintendent",
@@ -149,7 +148,6 @@ const ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
-  SUPER_ADMIN: "destructive",
   ADMIN: "destructive",
   HUSTLER: "destructive",
   MANAGER: "default",
@@ -190,9 +188,10 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     password: "",
   });
 
-  const { data: users = [], isLoading } = useQuery<SelectUser[]>({
+  const { data: rawUsers = [], isLoading } = useQuery<SelectUser[]>({
     queryKey: ["/api/users"],
   });
+  const users = rawUsers.filter(u => u.role !== "SUPER_ADMIN");
 
   // Create user mutation
   const createUserMutation = useMutation({
@@ -254,7 +253,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   const { data: usersWithPermissions = [], isLoading: permissionsLoading } =
     useQuery<UserWithPermissions[]>({
       queryKey: ["/api/dashboard/permissions"],
-      enabled: user?.role === "ADMIN" || user?.role === "SUPER_ADMIN",
+      enabled: user?.role === "ADMIN",
     });
 
   // Filtered users
@@ -341,7 +340,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
 
   const { data: presets = [] } = useQuery<PresetData[]>({
     queryKey: ['/api/dashboard/permission-presets'],
-    enabled: user?.role === "ADMIN" || user?.role === "SUPER_ADMIN",
+    enabled: user?.role === "ADMIN",
   });
 
   const applyPresetMutation = useMutation({
@@ -496,7 +495,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     return null;
   }
 
-  if (!embedded && user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+  if (!embedded && user.role !== "ADMIN") {
     return (
       <div className="min-h-screen bg-background">
         <main className="mx-auto max-w-full px-6 py-8">
@@ -998,7 +997,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                 ) : (
                   <div className="space-y-3">
                     {filteredPermUsers.map((u) => {
-                      const isAdmin = u.role === "ADMIN" || u.role === "SUPER_ADMIN";
+                      const isAdmin = u.role === "ADMIN";
                       const isExpanded = expandedUsers.has(u.id) || isMobile;
                       const effectivePerms = u.effective;
                       const grantedCount = isAdmin ? ALL_PERM_KEYS.length : effectivePerms ? ALL_PERM_KEYS.filter(k => effectivePerms[k]).length : ALL_PERM_KEYS.filter(k => !!(u as any)[k]).length;

@@ -46,7 +46,7 @@ export default function BillingPage() {
   const { data: plansData } = usePlans();
   const [, setLocation] = useLocation();
 
-  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const isAdmin = user?.role === "ADMIN";
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   useEffect(() => {

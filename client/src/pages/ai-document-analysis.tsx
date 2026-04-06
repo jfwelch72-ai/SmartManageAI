@@ -143,7 +143,7 @@ function BidAnalysisSection() {
   const [selectedBidId, setSelectedBidId] = useState<string>("");
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [selectedAnalysis, setSelectedAnalysis] = useState<BidDocumentAnalysis | null>(null);
-  const roles = ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"];
+  const roles = ["ADMIN", "MANAGER", "ESTIMATOR"];
 
   const { data: bids = [] } = useQuery<EntityItem[]>({
     queryKey: ["/api/ai-bid-document/bids"],
@@ -251,7 +251,7 @@ function ContractAnalysisSection() {
   const [selectedDocType, setSelectedDocType] = useState<string>("CONTRACT");
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [selectedAnalysis, setSelectedAnalysis] = useState<ContractDocumentAnalysis | null>(null);
-  const roles = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
+  const roles = ["ADMIN", "MANAGER"];
 
   const { data: projects = [] } = useQuery<EntityItem[]>({ queryKey: ["/api/ai-contract-document/projects"], enabled: !!user && roles.includes(user.role) });
   const { data: analyses = [], isLoading } = useQuery<ContractDocumentAnalysis[]>({ queryKey: ["/api/ai-contract-document"], enabled: !!user && roles.includes(user.role) });
@@ -390,8 +390,8 @@ export default function AIDocumentAnalysisPage() {
 
   if (!user) return <div className="p-8 text-center"><p className="text-muted-foreground">Please log in to access AI Document Analysis</p></div>;
 
-  const bidRoles = ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"];
-  const contractRoles = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
+  const bidRoles = ["ADMIN", "MANAGER", "ESTIMATOR"];
+  const contractRoles = ["ADMIN", "MANAGER"];
   const hasBidAccess = bidRoles.includes(user.role);
   const hasContractAccess = contractRoles.includes(user.role);
   const hasAccess = hasBidAccess || hasContractAccess;

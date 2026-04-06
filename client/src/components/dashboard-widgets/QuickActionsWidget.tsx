@@ -79,7 +79,7 @@ export function QuickActionsWidget() {
   const { user } = useAuth();
   const { permissions } = useDashboardCustomization();
   const role = (user as any)?.effectiveRole || user?.role || "";
-  const isAdmin = role === "ADMIN" || role === "SUPER_ADMIN";
+  const isAdmin = role === "ADMIN";
 
   const actions = ALL_ACTIONS.filter((action) => {
     if (!action.roles.includes(role)) return false;
