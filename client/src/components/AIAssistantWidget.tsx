@@ -1,15 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, X, Send, Loader2, Minimize, Maximize, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin, EyeOff } from "lucide-react";
+import { Bot, X, Send, Loader2, Minimize, Maximize, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin, EyeOff, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { AskQuestionsContent } from "@/components/AskQuestionsContent";
 
 interface Message {
   role: "user" | "assistant";
@@ -51,6 +53,7 @@ export function AIAssistantWidget() {
   const [location, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeMode, setActiveMode] = useState<"assistant" | "ask-ai">("assistant");
   const [isMinimized, setIsMinimized] = useState(() => {
     const stored = localStorage.getItem(MINIMIZED_KEY);
     return stored === "true";
@@ -504,291 +507,318 @@ export function AIAssistantWidget() {
           </div>
 
           {!isMinimized && (
-            <div className={isFullscreen ? "flex flex-col flex-1 min-h-0" : ""}>
+            <div className={isFullscreen ? "flex flex-col flex-1 min-h-0" : "flex flex-col"}>
               {isInWalkthrough && walkthroughStatus && (
                 <div className="px-3 pt-2">
                   <Progress value={progress} className="h-1.5" />
                 </div>
               )}
 
-              <ScrollArea className={`${isFullscreen ? "flex-1" : "h-80"} p-3 ${isFullscreen ? "px-6" : ""}`} ref={scrollRef}>
-                {shouldShowWelcomeInWidget && walkthroughStatus?.walkthrough ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                    <div className="p-4 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 mb-4">
-                      <Lightbulb className="h-10 w-10 text-primary" />
-                    </div>
-                    <h3 className="text-lg font-semibold mb-2">
-                      Welcome, {walkthroughStatus.walkthrough.roleName}!
-                    </h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      {walkthroughStatus.walkthrough.welcomeMessage}
-                    </p>
-                    <div className="flex flex-col gap-2 w-full">
-                      <Button 
-                        onClick={() => startWalkthroughMutation.mutate()}
-                        disabled={startWalkthroughMutation.isPending}
-                        className="w-full"
-                        data-testid="button-start-walkthrough"
-                      >
-                        {startWalkthroughMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 mr-2" />
-                        )}
-                        Start Quick Tour
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        onClick={() => skipWalkthroughMutation.mutate()}
-                        disabled={skipWalkthroughMutation.isPending}
-                        className="text-xs"
-                        data-testid="button-skip-walkthrough"
-                      >
-                        <SkipForward className="h-3 w-3 mr-1" />
-                        Skip, I know my way around
-                      </Button>
-                    </div>
-                  </div>
-                ) : isInWalkthrough && currentStep ? (
-                  <div className="space-y-4">
-                    {navigationHint && (
-                      <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-2 animate-in fade-in duration-300" data-testid="navigation-hint">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                        <span className="text-sm text-green-700 dark:text-green-400">{navigationHint}</span>
-                      </div>
-                    )}
-                    <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="outline" className="text-xs">
-                          Step {currentStep.stepNumber}
-                        </Badge>
-                        <span className="font-medium text-sm">{currentStep.title}</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-3">
-                        {currentStep.description}
-                      </p>
-                      <div className="p-2 rounded bg-muted/50 mb-3">
-                        <p className="text-sm font-medium flex items-start gap-2">
-                          <Target className="h-4 w-4 mt-0.5 text-primary shrink-0" />
-                          {currentStep.action}
+              {(isInWalkthrough || shouldShowWelcomeInWidget) ? (
+                <>
+                  <ScrollArea className={`${isFullscreen ? "flex-1" : "h-80"} p-3 ${isFullscreen ? "px-6" : ""}`} ref={scrollRef}>
+                    {shouldShowWelcomeInWidget && walkthroughStatus?.walkthrough ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                        <div className="p-4 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 mb-4">
+                          <Lightbulb className="h-10 w-10 text-primary" />
+                        </div>
+                        <h3 className="text-lg font-semibold mb-2">
+                          Welcome, {walkthroughStatus.walkthrough.roleName}!
+                        </h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          {walkthroughStatus.walkthrough.welcomeMessage}
                         </p>
+                        <div className="flex flex-col gap-2 w-full">
+                          <Button 
+                            onClick={() => startWalkthroughMutation.mutate()}
+                            disabled={startWalkthroughMutation.isPending}
+                            className="w-full"
+                            data-testid="button-start-walkthrough"
+                          >
+                            {startWalkthroughMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 mr-2" />
+                            )}
+                            Start Quick Tour
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            onClick={() => skipWalkthroughMutation.mutate()}
+                            disabled={skipWalkthroughMutation.isPending}
+                            className="text-xs"
+                            data-testid="button-skip-walkthrough"
+                          >
+                            <SkipForward className="h-3 w-3 mr-1" />
+                            Skip, I know my way around
+                          </Button>
+                        </div>
                       </div>
-                      {location !== currentStep.targetPage && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={navigateToStep}
-                          className="w-full"
-                          data-testid="button-navigate-step"
+                    ) : isInWalkthrough && currentStep ? (
+                      <div className="space-y-4">
+                        {navigationHint && (
+                          <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-2 animate-in fade-in duration-300" data-testid="navigation-hint">
+                            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                            <span className="text-sm text-green-700 dark:text-green-400">{navigationHint}</span>
+                          </div>
+                        )}
+                        <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="text-xs">
+                              Step {currentStep.stepNumber}
+                            </Badge>
+                            <span className="font-medium text-sm">{currentStep.title}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-3">
+                            {currentStep.description}
+                          </p>
+                          <div className="p-2 rounded bg-muted/50 mb-3">
+                            <p className="text-sm font-medium flex items-start gap-2">
+                              <Target className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                              {currentStep.action}
+                            </p>
+                          </div>
+                          {location !== currentStep.targetPage && (
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={navigateToStep}
+                              className="w-full"
+                              data-testid="button-navigate-step"
+                            >
+                              <MapPin className="h-3 w-3 mr-2" />
+                              Go to {currentStep.targetPage.replace(/^\//, '').split('/').map(s => s.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')).join(' / ')}
+                            </Button>
+                          )}
+                        </div>
+
+                        {currentStep.tips.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tips</p>
+                            {currentStep.tips.map((tip, idx) => (
+                              <div key={idx} className="flex items-start gap-2 text-xs text-muted-foreground">
+                                <Lightbulb className="h-3 w-3 mt-0.5 text-yellow-500 shrink-0" />
+                                <span>{tip}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {messages.length > 0 && (
+                          <div className="border-t pt-3 space-y-3">
+                            {messages.map((msg, idx) => (
+                              <div
+                                key={idx}
+                                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                              >
+                                <div
+                                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                                    msg.role === "user"
+                                      ? "bg-primary text-primary-foreground"
+                                      : "bg-muted"
+                                  }`}
+                                >
+                                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                                </div>
+                              </div>
+                            ))}
+                            {chatMutation.isPending && (
+                              <div className="flex justify-start">
+                                <div className="bg-muted rounded-lg px-3 py-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </ScrollArea>
+
+                  {isInWalkthrough && (
+                    <div className={`p-3 border-t ${isFullscreen ? "px-6" : ""}`}>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <Input
+                            ref={inputRef}
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder="Ask about this step..."
+                            className="flex-1 text-sm"
+                            disabled={chatMutation.isPending}
+                            data-testid="input-walkthrough-message"
+                          />
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={handleSend}
+                            disabled={!inputValue.trim() || chatMutation.isPending}
+                            data-testid="button-walkthrough-send"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="default"
+                            className="flex-1"
+                            onClick={() => nextStepMutation.mutate()}
+                            disabled={nextStepMutation.isPending}
+                            data-testid="button-next-step"
+                          >
+                            {nextStepMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : walkthroughStatus && walkthroughStatus.walkthroughStep === walkthroughStatus.totalSteps ? (
+                              <CheckCircle2 className="h-4 w-4 mr-2" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 mr-2" />
+                            )}
+                            {walkthroughStatus && walkthroughStatus.walkthroughStep === walkthroughStatus.totalSteps 
+                              ? "Complete Tour" 
+                              : "Next Step"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => skipWalkthroughMutation.mutate()}
+                            disabled={skipWalkthroughMutation.isPending}
+                            title="Skip walkthrough"
+                            data-testid="button-skip-step"
+                          >
+                            <SkipForward className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Tabs value={activeMode} onValueChange={(v) => setActiveMode(v as "assistant" | "ask-ai")} className="flex flex-col flex-1 overflow-hidden">
+                  <TabsList className="mx-3 mt-2 shrink-0" data-testid="tabs-ai-assistant-mode">
+                    <TabsTrigger value="assistant" className="gap-1.5" data-testid="tab-ai-assistant">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Assistant</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="ask-ai" className="gap-1.5" data-testid="tab-ai-ask-data">
+                      <Database className="h-3.5 w-3.5" />
+                      <span>Ask AI</span>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="assistant" className="flex-1 flex flex-col overflow-hidden mt-0" data-testid="tab-content-assistant">
+                    <ScrollArea className={`${isFullscreen ? "flex-1" : "h-80"} p-3 ${isFullscreen ? "px-6" : ""}`} ref={scrollRef}>
+                      {messages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                          <Bot className="h-12 w-12 text-muted-foreground mb-3" />
+                          <p className="text-sm font-medium mb-1">Hi, I'm {assistantName}!</p>
+                          <p className="text-xs text-muted-foreground">
+                            Ask me anything about using the platform. I can help with projects, bids, delays, and more.
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-3 justify-center">
+                            {["How do I create a delay?", "What is a change order?", "Help with time clock"].map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                onClick={() => {
+                                  setInputValue(suggestion);
+                                  inputRef.current?.focus();
+                                }}
+                                className="text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                          {walkthroughStatus?.walkthroughCompleted && (
+                            <button
+                              onClick={() => resetWalkthroughMutation.mutate()}
+                              disabled={resetWalkthroughMutation.isPending}
+                              className="flex items-center gap-1 mt-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              data-testid="button-retake-walkthrough"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              Retake the quick tour
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {messages.map((msg, idx) => (
+                            <div
+                              key={idx}
+                              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                            >
+                              <div
+                                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                                  msg.role === "user"
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted"
+                                }`}
+                              >
+                                <div className="whitespace-pre-wrap">{msg.content}</div>
+                              </div>
+                            </div>
+                          ))}
+                          {chatMutation.isPending && (
+                            <div className="flex justify-start">
+                              <div className="bg-muted rounded-lg px-3 py-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </ScrollArea>
+
+                    <div className={`p-3 border-t ${isFullscreen ? "px-6" : ""}`}>
+                      <div className="flex gap-2">
+                        <Input
+                          ref={inputRef}
+                          value={inputValue}
+                          onChange={(e) => setInputValue(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          placeholder="Ask a question..."
+                          className="flex-1 text-sm"
+                          disabled={chatMutation.isPending}
+                          data-testid="input-ai-assistant-message"
+                        />
+                        <Button
+                          size="icon"
+                          onClick={handleSend}
+                          disabled={!inputValue.trim() || chatMutation.isPending}
+                          data-testid="button-ai-assistant-send"
                         >
-                          <MapPin className="h-3 w-3 mr-2" />
-                          Go to {currentStep.targetPage.replace(/^\//, '').split('/').map(s => s.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')).join(' / ')}
+                          <Send className="h-4 w-4" />
                         </Button>
+                      </div>
+                      {messages.length > 0 && (
+                        <div className="flex items-center justify-between mt-2">
+                          <button
+                            onClick={clearChat}
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            data-testid="button-ai-assistant-clear"
+                          >
+                            Clear chat
+                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Assistant</span>
+                            <Switch
+                              checked={isEnabled}
+                              onCheckedChange={setIsEnabled}
+                              className="scale-75"
+                              data-testid="switch-ai-assistant-toggle"
+                            />
+                          </div>
+                        </div>
                       )}
                     </div>
+                  </TabsContent>
 
-                    {currentStep.tips.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tips</p>
-                        {currentStep.tips.map((tip, idx) => (
-                          <div key={idx} className="flex items-start gap-2 text-xs text-muted-foreground">
-                            <Lightbulb className="h-3 w-3 mt-0.5 text-yellow-500 shrink-0" />
-                            <span>{tip}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {messages.length > 0 && (
-                      <div className="border-t pt-3 space-y-3">
-                        {messages.map((msg, idx) => (
-                          <div
-                            key={idx}
-                            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                          >
-                            <div
-                              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                                msg.role === "user"
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted"
-                              }`}
-                            >
-                              <div className="whitespace-pre-wrap">{msg.content}</div>
-                            </div>
-                          </div>
-                        ))}
-                        {chatMutation.isPending && (
-                          <div className="flex justify-start">
-                            <div className="bg-muted rounded-lg px-3 py-2">
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                    <Bot className="h-12 w-12 text-muted-foreground mb-3" />
-                    <p className="text-sm font-medium mb-1">Hi, I'm {assistantName}!</p>
-                    <p className="text-xs text-muted-foreground">
-                      Ask me anything about using the platform. I can help with projects, bids, delays, and more.
-                    </p>
-                    <div className="flex flex-wrap gap-1 mt-3 justify-center">
-                      {["How do I create a delay?", "What is a change order?", "Help with time clock"].map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          onClick={() => {
-                            setInputValue(suggestion);
-                            inputRef.current?.focus();
-                          }}
-                          className="text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                    {walkthroughStatus?.walkthroughCompleted && (
-                      <button
-                        onClick={() => resetWalkthroughMutation.mutate()}
-                        disabled={resetWalkthroughMutation.isPending}
-                        className="flex items-center gap-1 mt-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        data-testid="button-retake-walkthrough"
-                      >
-                        <RotateCcw className="h-3 w-3" />
-                        Retake the quick tour
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {messages.map((msg, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                      >
-                        <div
-                          className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                            msg.role === "user"
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted"
-                          }`}
-                        >
-                          <div className="whitespace-pre-wrap">{msg.content}</div>
-                        </div>
-                      </div>
-                    ))}
-                    {chatMutation.isPending && (
-                      <div className="flex justify-start">
-                        <div className="bg-muted rounded-lg px-3 py-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </ScrollArea>
-
-              <div className={`p-3 border-t ${isFullscreen ? "px-6" : ""}`}>
-                {isInWalkthrough ? (
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <Input
-                        ref={inputRef}
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Ask about this step..."
-                        className="flex-1 text-sm"
-                        disabled={chatMutation.isPending}
-                        data-testid="input-walkthrough-message"
-                      />
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={handleSend}
-                        disabled={!inputValue.trim() || chatMutation.isPending}
-                        data-testid="button-walkthrough-send"
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="default"
-                        className="flex-1"
-                        onClick={() => nextStepMutation.mutate()}
-                        disabled={nextStepMutation.isPending}
-                        data-testid="button-next-step"
-                      >
-                        {nextStepMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : walkthroughStatus && walkthroughStatus.walkthroughStep === walkthroughStatus.totalSteps ? (
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 mr-2" />
-                        )}
-                        {walkthroughStatus && walkthroughStatus.walkthroughStep === walkthroughStatus.totalSteps 
-                          ? "Complete Tour" 
-                          : "Next Step"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => skipWalkthroughMutation.mutate()}
-                        disabled={skipWalkthroughMutation.isPending}
-                        title="Skip walkthrough"
-                        data-testid="button-skip-step"
-                      >
-                        <SkipForward className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex gap-2">
-                      <Input
-                        ref={inputRef}
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Ask a question..."
-                        className="flex-1 text-sm"
-                        disabled={chatMutation.isPending}
-                        data-testid="input-ai-assistant-message"
-                      />
-                      <Button
-                        size="icon"
-                        onClick={handleSend}
-                        disabled={!inputValue.trim() || chatMutation.isPending}
-                        data-testid="button-ai-assistant-send"
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    {messages.length > 0 && (
-                      <div className="flex items-center justify-between mt-2">
-                        <button
-                          onClick={clearChat}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          data-testid="button-ai-assistant-clear"
-                        >
-                          Clear chat
-                        </button>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">Assistant</span>
-                          <Switch
-                            checked={isEnabled}
-                            onCheckedChange={setIsEnabled}
-                            className="scale-75"
-                            data-testid="switch-ai-assistant-toggle"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                  <TabsContent value="ask-ai" className="flex-1 flex flex-col overflow-hidden mt-0" data-testid="tab-content-ask-ai">
+                    <AskQuestionsContent compact />
+                  </TabsContent>
+                </Tabs>
+              )}
             </div>
           )}
 
