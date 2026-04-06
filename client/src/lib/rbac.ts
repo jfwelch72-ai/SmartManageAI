@@ -22,6 +22,25 @@
 
 export type UserRole = "SUPER_ADMIN" | "ADMIN" | "HUSTLER" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "FIELD_WORKER" | "VENDOR";
 
+export const CORE_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
+export const ASSIGNABLE_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
+
+export const ROLE_DISPLAY_NAMES: Record<string, string> = {
+  SUPER_ADMIN: "Super Admin",
+  ADMIN: "Admin",
+  HUSTLER: "Hustler",
+  MANAGER: "Manager",
+  SUPERINTENDENT: "Superintendent",
+  ESTIMATOR: "Estimator",
+  FIELD_WORKER: "Field Worker",
+  VENDOR: "Vendor",
+};
+
+export function getRoleDisplayName(role?: string): string {
+  if (!role) return "Unknown";
+  return ROLE_DISPLAY_NAMES[role] || role.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
 export function isSuperAdmin(role?: string): boolean {
   return role === "SUPER_ADMIN";
 }
