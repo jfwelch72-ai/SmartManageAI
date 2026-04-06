@@ -1,22 +1,21 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, X, Send, Loader2, Minimize, Maximize, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin, EyeOff, Database } from "lucide-react";
+import { Bot, X, Send, Loader2, Minimize, Maximize, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin, EyeOff, Database, HelpCircle, Mic, MicOff, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { AskQuestionsContent } from "@/components/AskQuestionsContent";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  responseType?: "assistant" | "data";
 }
 
 interface WalkthroughStep {
@@ -46,6 +45,49 @@ interface WalkthroughStatus {
 const STORAGE_KEY = "smartmanage-ai-assistant-enabled";
 const MINIMIZED_KEY = "smartmanage-ai-assistant-minimized";
 
+const EXAMPLE_DATA_QUESTIONS = [
+  "How many active projects do we have?",
+  "What's the total value of open bids?",
+  "Show me overdue tasks",
+  "How many employees are on staff?",
+  "What is our total contract value?",
+];
+
+const EXAMPLE_HELP_QUESTIONS = [
+  "How do I create a delay?",
+  "What is a change order?",
+  "Help with time clock",
+];
+
+interface SpeechRecognitionEvent {
+  results: { readonly length: number; [index: number]: { isFinal: boolean; readonly length: number; 0: { transcript: string } } };
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+function getSpeechRecognitionAPI(): SpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const win = window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+  return win.SpeechRecognition || win.webkitSpeechRecognition || null;
+}
+
+const SpeechRecognitionAPI = getSpeechRecognitionAPI();
+
 export function AIAssistantWidget() {
   const { user, organizationName } = useAuth();
   const assistantName = organizationName ? `${organizationName} AI` : "SmartManageAI";
@@ -53,7 +95,7 @@ export function AIAssistantWidget() {
   const [location, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [activeMode, setActiveMode] = useState<"assistant" | "ask-ai">("assistant");
+  const [isListening, setIsListening] = useState(false);
   const [isMinimized, setIsMinimized] = useState(() => {
     const stored = localStorage.getItem(MINIMIZED_KEY);
     return stored === "true";
@@ -71,9 +113,11 @@ export function AIAssistantWidget() {
   const [navigationHint, setNavigationHint] = useState<string | null>(null);
   const [messagingWidgetOpen, setMessagingWidgetOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const prevLocation = useRef<string | null>(null);
   const celebratedMilestones = useRef<Set<number>>(new Set());
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   const { data: walkthroughStatus, isLoading: statusLoading } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
@@ -92,6 +136,7 @@ export function AIAssistantWidget() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+    scrollEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
@@ -99,6 +144,79 @@ export function AIAssistantWidget() {
       inputRef.current.focus();
     }
   }, [isOpen, isMinimized]);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  const startListening = useCallback(() => {
+    if (!SpeechRecognitionAPI) return;
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript;
+        } else {
+          interimTranscript += result[0].transcript;
+        }
+      }
+      setInputValue(finalTranscript + interimTranscript);
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (event.error === "not-allowed") {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: "Microphone access was denied. Please allow microphone permissions in your browser settings to use voice input.",
+          timestamp: new Date(),
+        }]);
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      setIsListening(false);
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  const toggleVoiceInput = useCallback(() => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isListening, stopListening, startListening]);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(isEnabled));
@@ -293,6 +411,7 @@ export function AIAssistantWidget() {
         role: "assistant",
         content: data.response,
         timestamp: new Date(),
+        responseType: data.responseType || "assistant",
       }]);
     },
     onError: () => {
@@ -307,6 +426,10 @@ export function AIAssistantWidget() {
   const handleSend = () => {
     const message = inputValue.trim();
     if (!message || chatMutation.isPending) return;
+
+    if (isListening) {
+      stopListening();
+    }
 
     setMessages(prev => [...prev, {
       role: "user",
@@ -694,40 +817,59 @@ export function AIAssistantWidget() {
                   )}
                 </>
               ) : (
-                <Tabs value={activeMode} onValueChange={(v) => setActiveMode(v as "assistant" | "ask-ai")} className="flex flex-col flex-1 overflow-hidden">
-                  <TabsList className="mx-3 mt-2 shrink-0" data-testid="tabs-ai-assistant-mode">
-                    <TabsTrigger value="assistant" className="gap-1.5" data-testid="tab-ai-assistant">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Assistant</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="ask-ai" className="gap-1.5" data-testid="tab-ai-ask-data">
-                      <Database className="h-3.5 w-3.5" />
-                      <span>Ask AI</span>
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="assistant" className="flex-1 flex flex-col overflow-hidden mt-0" data-testid="tab-content-assistant">
+                <div className="flex flex-col flex-1 overflow-hidden" data-testid="unified-chat-content">
                     <ScrollArea className={`${isFullscreen ? "flex-1" : "h-80"} p-3 ${isFullscreen ? "px-6" : ""}`} ref={scrollRef}>
                       {messages.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-center px-4">
                           <Bot className="h-12 w-12 text-muted-foreground mb-3" />
-                          <p className="text-sm font-medium mb-1">Hi, I'm {assistantName}!</p>
+                          <p className="text-sm font-medium mb-1" data-testid="text-unified-welcome">Hi, I'm {assistantName}!</p>
                           <p className="text-xs text-muted-foreground">
-                            Ask me anything about using the platform. I can help with projects, bids, delays, and more.
+                            Ask me anything about using the platform, or query your data directly.
                           </p>
-                          <div className="flex flex-wrap gap-1 mt-3 justify-center">
-                            {["How do I create a delay?", "What is a change order?", "Help with time clock"].map((suggestion) => (
-                              <button
-                                key={suggestion}
-                                onClick={() => {
-                                  setInputValue(suggestion);
-                                  inputRef.current?.focus();
-                                }}
-                                className="text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
-                              >
-                                {suggestion}
-                              </button>
-                            ))}
+                          <div className="w-full mt-4 space-y-3">
+                            <div>
+                              <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1">
+                                <Sparkles className="h-3 w-3" />
+                                Platform help
+                              </p>
+                              <div className="flex flex-wrap gap-1 justify-center">
+                                {EXAMPLE_HELP_QUESTIONS.map((suggestion) => (
+                                  <button
+                                    key={suggestion}
+                                    onClick={() => {
+                                      setInputValue(suggestion);
+                                      inputRef.current?.focus();
+                                    }}
+                                    className="text-xs px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
+                                    data-testid={`button-help-suggestion-${suggestion.slice(0, 15).replace(/\s+/g, '-').toLowerCase()}`}
+                                  >
+                                    {suggestion}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-1">
+                                <Database className="h-3 w-3" />
+                                Data questions
+                              </p>
+                              <div className="space-y-1">
+                                {EXAMPLE_DATA_QUESTIONS.map((q, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => {
+                                      setInputValue(q);
+                                      inputRef.current?.focus();
+                                    }}
+                                    className="block w-full text-left text-xs px-3 py-1.5 rounded-md border hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                                    data-testid={`button-data-suggestion-${i}`}
+                                  >
+                                    <HelpCircle className="h-3 w-3 inline mr-1.5 opacity-50" />
+                                    {q}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           </div>
                           {walkthroughStatus?.walkthroughCompleted && (
                             <button
@@ -746,26 +888,57 @@ export function AIAssistantWidget() {
                           {messages.map((msg, idx) => (
                             <div
                               key={idx}
-                              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                              className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                              data-testid={`message-${msg.role}-${idx}`}
                             >
+                              {msg.role === "assistant" && (
+                                <div className="flex-shrink-0 mt-0.5">
+                                  <div className={`h-6 w-6 rounded-full flex items-center justify-center ${msg.responseType === "data" ? "bg-blue-500/10" : "bg-primary/10"}`}>
+                                    {msg.responseType === "data" ? (
+                                      <Database className="h-3.5 w-3.5 text-blue-500" />
+                                    ) : (
+                                      <Bot className="h-3.5 w-3.5 text-primary" />
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                               <div
-                                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                                className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                                   msg.role === "user"
                                     ? "bg-primary text-primary-foreground"
                                     : "bg-muted"
                                 }`}
                               >
-                                <div className="whitespace-pre-wrap">{msg.content}</div>
+                                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                                <span className="text-[10px] opacity-60 mt-1 block">
+                                  {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
                               </div>
+                              {msg.role === "user" && (
+                                <div className="flex-shrink-0 mt-0.5">
+                                  <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center">
+                                    <User className="h-3.5 w-3.5 text-primary-foreground" />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                           {chatMutation.isPending && (
-                            <div className="flex justify-start">
-                              <div className="bg-muted rounded-lg px-3 py-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                            <div className="flex gap-2 justify-start" data-testid="loading-indicator">
+                              <div className="flex-shrink-0 mt-0.5">
+                                <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <Bot className="h-3.5 w-3.5 text-primary" />
+                                </div>
+                              </div>
+                              <div className="bg-muted rounded-lg px-3 py-2 text-sm">
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <span>Thinking...</span>
+                                </div>
                               </div>
                             </div>
                           )}
+                          <div ref={scrollEndRef} />
                         </div>
                       )}
                     </ScrollArea>
@@ -777,11 +950,29 @@ export function AIAssistantWidget() {
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
                           onKeyDown={handleKeyDown}
-                          placeholder="Ask a question..."
+                          placeholder="Ask anything..."
                           className="flex-1 text-sm"
                           disabled={chatMutation.isPending}
+                          maxLength={500}
                           data-testid="input-ai-assistant-message"
                         />
+                        {SpeechRecognitionAPI && (
+                          <Button
+                            size="sm"
+                            variant={isListening ? "default" : "outline"}
+                            className={`h-9 px-3 transition-colors ${isListening ? "bg-red-500 hover:bg-red-600 text-white animate-pulse" : ""}`}
+                            onClick={toggleVoiceInput}
+                            disabled={chatMutation.isPending}
+                            data-testid="button-voice-input"
+                            title={isListening ? "Stop listening" : "Voice input"}
+                          >
+                            {isListening ? (
+                              <MicOff className="h-4 w-4" />
+                            ) : (
+                              <Mic className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           size="icon"
                           onClick={handleSend}
@@ -812,12 +1003,7 @@ export function AIAssistantWidget() {
                         </div>
                       )}
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="ask-ai" className="flex-1 flex flex-col overflow-hidden mt-0" data-testid="tab-content-ask-ai">
-                    <AskQuestionsContent compact />
-                  </TabsContent>
-                </Tabs>
+                  </div>
               )}
             </div>
           )}

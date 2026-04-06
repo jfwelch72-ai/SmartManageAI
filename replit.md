@@ -28,7 +28,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Live Project Profitability Tracking**: Automated real-time cost monitoring.
 *   **Subcontract Management**: Full subcontract lifecycle with SOV scope alignment, AIA G702/G703-style pay applications, and retention tracking.
 *   **Procurement Module**: Full procure-to-pay lifecycle with automated 3-Way Match and RBAC approvals.
-*   **Communication & Collaboration**: Unified Messaging System with Video Calling, Client Portal Chat, Subcontractor Portal System, and Ask AI tab for natural language database queries.
+*   **Communication & Collaboration**: Unified Messaging System with Video Calling, Client Portal Chat, Subcontractor Portal System, and unified AI chat (combined assistant help + natural language data queries in a single conversation).
 *   **Unified External Portal**: Single entry point (`/portal`) for Client, Subcontractor, and Vendor access with role-based auto-detection.
 *   **Takeoff Cross-Module Connections**: Convert takeoff measurements to purchase requests, auto-detect version deltas for PCOs, generate SOV line items, and provide cost lifecycle summaries.
 *   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets.

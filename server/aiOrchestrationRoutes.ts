@@ -285,6 +285,174 @@ router.get("/ai-pm/runs", requireAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
+const DATA_QUERY_PATTERNS = [
+  /how many/i, /what(?:'s| is| are) (?:the |our |my )?(?:total|count|number|sum|average)/i,
+  /show (?:me |all |the )?(?:overdue|active|pending|open|completed|recent)/i,
+  /list (?:all |the |my |our )?/i,
+  /(?:total|sum|count|average|avg) (?:of |for )?(?:projects|bids|tasks|employees|contracts|invoices|equipment|change orders|delays)/i,
+  /(?:projects|bids|tasks|employees|contracts|invoices|equipment|change orders|delays)[\s\S]*(?:total|count|value|amount|status|overdue|active|pending)/i,
+  /what(?:'s| is| are) (?:the |our |my )?(?:.*?)(?:value|amount|cost|revenue|profit|budget)/i,
+  /how much/i,
+  /(?:on staff|in the system|in our database)/i,
+  /(?:open|active|pending|overdue|completed|cancelled) (?:projects|bids|tasks|contracts|invoices|change orders|delays)/i,
+];
+
+function detectDataIntent(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+  if (lower.startsWith("how do i") || lower.startsWith("how can i") || lower.startsWith("what is a ") || lower.startsWith("what are the steps") || lower.startsWith("help me") || lower.startsWith("explain")) {
+    return false;
+  }
+  return DATA_QUERY_PATTERNS.some(pattern => pattern.test(message));
+}
+
+async function handleDataQuery(
+  question: string,
+  conversationHistory: { role: string; content: string }[],
+  organizationId: number,
+  userId: number,
+): Promise<{ answer: string; queryExecuted: boolean }> {
+  const sqlGenMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+    { role: 'system', content: ASK_DATABASE_SYSTEM_PROMPT },
+  ];
+
+  const recentHistory = conversationHistory.slice(-6);
+  for (const msg of recentHistory) {
+    if (msg.role === 'user' || msg.role === 'assistant') {
+      sqlGenMessages.push({ role: msg.role as 'user' | 'assistant', content: msg.content });
+    }
+  }
+
+  sqlGenMessages.push({ role: 'user', content: question });
+
+  let sqlResult!: { sql: string | null; explanation: string; needsOrgFilter: boolean };
+
+  const MAX_RETRIES = 2;
+  let lastSafetyReason: string | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0 && lastSafetyReason) {
+      sqlGenMessages.push({
+        role: 'user',
+        content: `Your previous query was rejected because: ${lastSafetyReason}. Please regenerate a valid query. IMPORTANT FORMATTING RULES:
+- Output ONLY the JSON object, no markdown code fences.
+- Do NOT use double-quoted identifiers (e.g. "projects") — use bare names: projects
+- Do NOT use backtick-quoted identifiers.
+- Do NOT use schema-qualified names like public.projects.
+- Do NOT use subqueries, CTEs, UNION, parameter placeholders ($1), or semicolons.
+- Use only a single SELECT statement with JOINs if needed.
+
+Example of a correct response:
+{"sql": "SELECT COUNT(*) AS total FROM projects WHERE status = 'ACTIVE'", "explanation": "Counts active projects", "needsOrgFilter": true}`,
+      });
+    }
+
+    const governed = await governedAiCall({
+      orgId: organizationId,
+      userId,
+      actionType: "ask_database",
+      inputRefs: { question: question.substring(0, 200) },
+      fn: async () => {
+        const c = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: sqlGenMessages,
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+          max_tokens: 1000,
+        });
+        const content = c.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from AI');
+        const parsed = JSON.parse(content);
+        return { result: parsed, completion: c };
+      },
+    });
+
+    if (governed.blocked) {
+      throw new Error("AI usage limit reached");
+    }
+
+    sqlResult = governed.result;
+
+    if (!sqlResult.sql) {
+      return {
+        answer: sqlResult.explanation || "I'm not able to answer that question with the available data.",
+        queryExecuted: false,
+      };
+    }
+
+    sqlResult.sql = normalizeSqlFromAI(sqlResult.sql);
+
+    const safety = validateSqlSafety(sqlResult.sql);
+    if (safety.safe) {
+      break;
+    }
+
+    lastSafetyReason = safety.reason;
+
+    if (attempt === MAX_RETRIES) {
+      return {
+        answer: "I wasn't able to generate a safe query for that question. Could you try rephrasing it?",
+        queryExecuted: false,
+      };
+    }
+  }
+
+  const tables = extractAllTableReferences(sqlResult.sql);
+  const scopedSql = wrapWithOrgScope(sqlResult.sql, tables);
+  if (!scopedSql) {
+    return {
+      answer: "I wasn't able to safely scope that query to your organization. Could you try rephrasing?",
+      queryExecuted: false,
+    };
+  }
+  const limitedSql = enforceLimit(scopedSql);
+
+  let queryResults: any[];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN TRANSACTION READ ONLY');
+    await client.query('SET LOCAL statement_timeout = 5000');
+    const result = await client.query(limitedSql, [organizationId]);
+    await client.query('COMMIT');
+    queryResults = stripSensitiveColumns(result.rows || []);
+  } catch (dbError: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw dbError;
+  } finally {
+    client.release();
+  }
+
+  const answerGoverned = await governedAiCall({
+    orgId: organizationId,
+    userId,
+    actionType: "ask_database_answer",
+    fn: async () => {
+      const c = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: ANSWER_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: `Question: ${question}\n\nQuery results (${queryResults.length} rows):\n${JSON.stringify(queryResults.slice(0, MAX_RESULT_ROWS), null, 2)}`
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 1000,
+      });
+      const r = c.choices[0]?.message?.content;
+      return { result: r, completion: c };
+    },
+  });
+
+  if (answerGoverned.blocked) {
+    throw new Error("AI usage limit reached");
+  }
+
+  return {
+    answer: answerGoverned.result || "I found some results but had trouble formatting them.",
+    queryExecuted: true,
+  };
+}
+
 router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { message, currentPath, conversationHistory = [] } = req.body;
@@ -306,6 +474,23 @@ router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res, nex
     const userRole = req.user.role;
     const userName = `${req.user.firstName} ${req.user.lastName}`;
     const userFirstName = userStatus?.firstName || req.user.firstName || 'there';
+
+    const organizationId = req.user?.organizationId;
+    const isDataQuery = !isInWalkthrough && organizationId && detectDataIntent(message);
+
+    if (isDataQuery) {
+      try {
+        const dataResponse = await handleDataQuery(message, conversationHistory, organizationId, req.user!.id);
+        return res.json({
+          response: dataResponse.answer,
+          responseType: "data",
+          isWalkthroughMode: false,
+          walkthroughStep: null,
+        });
+      } catch (dataError: any) {
+        logWarn("Data query routing failed, falling back to assistant", { error: dataError?.message });
+      }
+    }
 
     let systemPrompt: string;
 
@@ -389,6 +574,7 @@ Tailor your responses to the user's role and current location in the app.`;
     }
     res.json({ 
       response,
+      responseType: "assistant",
       isWalkthroughMode: isInWalkthrough,
       walkthroughStep: isInWalkthrough ? userStatus.walkthroughStep : null,
       usage: {
