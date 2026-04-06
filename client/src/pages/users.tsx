@@ -124,6 +124,7 @@ interface UserWithPermissions extends SelectUser {
   canAccessTimeMaterial?: boolean;
   roleDefaults?: PermissionSet;
   effective?: PermissionSet;
+  effectiveRole?: string;
   grantedAt?: string;
 }
 
@@ -165,6 +166,13 @@ const STATUS_FILTERS = [
   { value: "ACTIVE", label: "Active" },
   { value: "INACTIVE", label: "Inactive" },
 ];
+
+const HUSTLER_BASE_PERMISSIONS = new Set([
+  "canAccessFinancials",
+  "canAccessKPIs",
+  "canManageHiring",
+  "canAccessHiringInterviews",
+]);
 
 export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
@@ -1159,6 +1167,10 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                         const isRoleDefault = u.roleDefaults?.[perm.key] ?? false;
                                         const dbValue = !!(u as any)[perm.key];
                                         const effectiveValue = isAdmin ? true : (isRoleDefault || dbValue);
+                                        const isHustler = u.role === "HUSTLER";
+                                        const isHustlerBase = isHustler && HUSTLER_BASE_PERMISSIONS.has(perm.key);
+                                        const isInheritedFromRole = isHustler && !isHustlerBase && isRoleDefault;
+                                        const inheritedRoleName = isInheritedFromRole ? (ROLE_LABELS[u.effectiveRole || "ADMIN"] || u.effectiveRole || "Admin") : null;
                                         return (
                                           <div
                                             key={perm.key}
@@ -1168,11 +1180,16 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                               <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                               <div className="min-w-0">
-                                                <div className="flex items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
                                                   <span className="text-sm font-medium leading-tight">{perm.label}</span>
-                                                  {!isAdmin && isRoleDefault && (
+                                                  {!isAdmin && isRoleDefault && !isInheritedFromRole && (
                                                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-blue-300 text-blue-600 dark:border-blue-600 dark:text-blue-400 shrink-0">
                                                       Role default
+                                                    </Badge>
+                                                  )}
+                                                  {isInheritedFromRole && (
+                                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-purple-300 text-purple-600 dark:border-purple-600 dark:text-purple-400 shrink-0" data-testid={`badge-inherited-${perm.key}-${u.id}`}>
+                                                      Inherited from {inheritedRoleName}
                                                     </Badge>
                                                   )}
                                                 </div>

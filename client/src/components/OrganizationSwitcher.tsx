@@ -10,9 +10,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Check, ChevronDown, Loader2, Wrench, Inbox } from "lucide-react";
+import { Building2, Check, ChevronDown, Loader2, Wrench, Inbox, Shield } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getRoleDisplayName } from "@/lib/rbac";
 import { Link } from "wouter";
 
 interface Organization {
@@ -70,13 +71,19 @@ export function OrganizationSwitcher() {
       });
       return response.json();
     },
-    onSuccess: async (result) => {
+    onSuccess: async (result, organizationId) => {
       queryClient.invalidateQueries();
       await queryClient.refetchQueries({ queryKey: ["/api/auth/me"] });
-      
+
+      const switchedOrg = data?.organizations.find(
+        (org) => org.organizationId === organizationId
+      );
+      const effectiveRole = getRoleDisplayName(switchedOrg?.roleOverride || "ADMIN");
+      const orgName = switchedOrg?.organization.name || "organization";
+
       toast({
         title: "Organization Switched",
-        description: result.message || "Successfully switched organization",
+        description: `You're now operating as ${effectiveRole} in ${orgName}`,
       });
       setIsOpen(false);
     },
@@ -153,7 +160,7 @@ export function OrganizationSwitcher() {
           >
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{org.organization.name}</div>
-              <div className="flex items-center gap-1 mt-0.5">
+              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                 <Badge 
                   variant="secondary" 
                   className={`text-[10px] px-1.5 py-0 h-4 ${
@@ -166,6 +173,14 @@ export function OrganizationSwitcher() {
                 >
                   <Wrench className="h-2.5 w-2.5 mr-0.5" />
                   {org.organization.tradeName || org.organization.tradeType.replace(/_/g, ' ')}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 h-4 border-purple-300 text-purple-600 dark:border-purple-600 dark:text-purple-400"
+                  data-testid={`badge-effective-role-${org.organizationId}`}
+                >
+                  <Shield className="h-2.5 w-2.5 mr-0.5" />
+                  {getRoleDisplayName(org.roleOverride || "ADMIN")}
                 </Badge>
               </div>
             </div>

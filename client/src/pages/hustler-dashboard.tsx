@@ -9,11 +9,124 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle, Download, Target, ListChecks, BarChart3 } from "lucide-react";
+import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle, Download, Target, ListChecks, BarChart3, Shield } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
+import { getRoleDisplayName } from "@/lib/rbac";
+
+const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
+  ADMIN: {
+    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: false,
+    canCreateProjects: true, canEditProjects: true, canAccessCalendar: true,
+    canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+    canAccessEmailAssistant: true, canViewBids: true, canEditBids: true,
+    canDeleteBids: true, canGenerateBidPDFs: true, canConvertBidToProject: true,
+    canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+    canManageBidResponses: true, canDeleteBidRequests: true,
+    canAccessHistoricalCosts: true, canAccessScopeSettings: true,
+    canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
+    canAccessFinancials: true, canAccessCostRates: true, canAccessCFODashboard: true,
+    canAccessTMBilling: true, canAccessProgressBilling: true,
+    canManageContracts: true, canAccessSubcontracts: true, canAccessOverheadCosts: true,
+    canAccessProductionRates: true, canAccessVendorPricing: true,
+    canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
+    canAccessTMDaily: true, canManagePayroll: true, canManageCrews: true,
+    canManageWorkforce: true, canManageLeave: true, canManageSafety: true,
+    canManageScheduling: true, canAccessKPIs: true, canLockDailyReports: true,
+    canManageEquipment: true, canManageProcurement: true,
+    canAccessCRM: true, canCreateCRMContacts: true, canAccessMarketplace: true,
+    canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
+    canPostSocialMedia: true, canManageWebsite: true, canAccessExecutiveDigest: true,
+    canUseAiFeatures: true, canAccessCompanySettings: true, canManageUsers: true,
+    canAccessApprovals: true, canAccessAuditLogs: true, canAccessReports: true,
+    canAccessEnterpriseSettings: true, canManageAISettings: true,
+    canViewProjectBudget: true, canViewProjectEstimates: true,
+    canViewProjectProcurement: true, canViewProjectReceipts: true,
+    canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
+  },
+  MANAGER: {
+    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: false,
+    canCreateProjects: true, canEditProjects: true, canAccessCalendar: true,
+    canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+    canAccessEmailAssistant: true, canViewBids: true, canEditBids: true,
+    canDeleteBids: true, canGenerateBidPDFs: true, canConvertBidToProject: true,
+    canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+    canManageBidResponses: true, canDeleteBidRequests: true,
+    canAccessHistoricalCosts: true, canAccessScopeSettings: true,
+    canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
+    canAccessFinancials: true, canAccessCFODashboard: true,
+    canAccessTMBilling: true, canAccessProgressBilling: true,
+    canManageContracts: true, canAccessSubcontracts: true, canAccessOverheadCosts: true,
+    canAccessProductionRates: true, canAccessVendorPricing: true,
+    canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
+    canAccessTMDaily: true, canManagePayroll: true,
+    canManageWorkforce: true, canManageLeave: true, canManageSafety: true,
+    canManageScheduling: true, canAccessKPIs: true, canLockDailyReports: true,
+    canManageEquipment: true, canManageProcurement: true,
+    canAccessCRM: true, canCreateCRMContacts: true, canAccessMarketplace: true,
+    canManageHiring: true, canAccessHiringInterviews: true,
+    canPostSocialMedia: true, canAccessExecutiveDigest: true,
+    canUseAiFeatures: true, canAccessCompanySettings: true,
+    canAccessApprovals: true, canAccessReports: true,
+    canViewProjectBudget: true, canViewProjectEstimates: true,
+    canViewProjectProcurement: true, canViewProjectReceipts: true,
+    canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
+  },
+  SUPERINTENDENT: {
+    canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+    canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+    canViewBids: true, canAccessHistoricalCosts: true,
+    canAccessFinancials: true, canManageContracts: true, canAccessSubcontracts: true,
+    canAccessProductionRates: true,
+    canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
+    canAccessTMDaily: true, canManageWorkforce: true, canManageSafety: true,
+    canManageScheduling: true, canAccessKPIs: true, canLockDailyReports: true,
+    canManageEquipment: true, canManageProcurement: true,
+    canAccessCRM: true, canCreateCRMContacts: true,
+    canAccessCompanySettings: true, canAccessApprovals: true, canAccessReports: true,
+    canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+    canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    canCreateChangeOrders: true,
+  },
+  ESTIMATOR: {
+    canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+    canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+    canViewBids: true, canEditBids: true, canGenerateBidPDFs: true,
+    canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+    canAccessHistoricalCosts: true, canAccessScopeSettings: true, canUseAiBidAnalysis: true,
+    canCreateProjects: true,
+    canAccessFinancials: true, canAccessCostRates: true, canAccessProductionRates: true,
+    canAccessTimeClock: true,
+    canAccessCRM: true, canCreateCRMContacts: true,
+    canUseAiFeatures: true,
+    canAccessCompanySettings: true, canAccessReports: true,
+    canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+    canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+  },
+  FIELD_WORKER: {
+    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: true,
+    canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
+    canAccessBulletins: true, canAccessTimeClock: true, canManageLeave: true,
+    canViewProjectTimeEntries: true,
+  },
+  HUSTLER: {
+    canAccessFinancials: true, canAccessKPIs: true,
+    canManageHiring: true, canAccessHiringInterviews: true,
+  },
+  VENDOR: {
+    canAccessBidNetworkInbox: true,
+  },
+};
+
+function getPermissionCountForRole(role: string): number {
+  const perms = ROLE_DEFAULT_PERMISSIONS[role];
+  if (!perms) return 0;
+  return Object.values(perms).filter(v => v === true).length;
+}
 
 interface PortfolioStats {
   totalOrganizations: number;
@@ -529,6 +642,67 @@ export default function HustlerDashboard() {
                               data-testid={`badge-org-health-${org.id}`}
                             >
                               {hs === "PENDING_TASKS" ? "TASKS" : hs}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Access Summary Card */}
+        {data?.organizations && data.organizations.length > 0 && (
+          <Card className="mb-6" data-testid="card-access-summary">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Shield className="h-5 w-5 text-purple-500" />
+                Access Summary
+              </CardTitle>
+              <CardDescription>Your effective role and permission level across all linked organizations</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 font-medium">Organization</th>
+                      <th className="text-center py-2 font-medium">Effective Role</th>
+                      <th className="text-center py-2 font-medium">Permissions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.organizations.map((org) => {
+                      const effectiveRole = org.roleOverride || "ADMIN";
+                      const permCount = getPermissionCountForRole(effectiveRole);
+                      return (
+                        <tr key={org.organizationId} className="border-b" data-testid={`row-access-${org.organizationId}`}>
+                          <td className="py-3">
+                            <div className="flex items-center gap-2">
+                              {org.organization.logoUrl ? (
+                                <img src={org.organization.logoUrl} alt={org.organization.name} className="h-6 w-6 rounded" />
+                              ) : (
+                                <Building2 className="h-5 w-5 text-muted-foreground" />
+                              )}
+                              <span className="font-medium" data-testid={`text-access-org-name-${org.organizationId}`}>{org.organization.name}</span>
+                            </div>
+                          </td>
+                          <td className="text-center py-3">
+                            <Badge
+                              variant="outline"
+                              className="border-purple-300 text-purple-600 dark:border-purple-600 dark:text-purple-400"
+                              data-testid={`badge-access-role-${org.organizationId}`}
+                            >
+                              <Shield className="h-3 w-3 mr-1" />
+                              {getRoleDisplayName(effectiveRole)}
+                            </Badge>
+                          </td>
+                          <td className="text-center py-3">
+                            <Badge variant="secondary" data-testid={`badge-access-perms-${org.organizationId}`}>
+                              {permCount} permissions
                             </Badge>
                           </td>
                         </tr>

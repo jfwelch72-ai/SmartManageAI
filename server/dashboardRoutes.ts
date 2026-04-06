@@ -187,7 +187,7 @@
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
-import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets } from "@shared/schema";
+import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets, hustlerOrganizations } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -386,9 +386,29 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
     const permissions = await db.select().from(userDashboardPermissions)
       .where(eq(userDashboardPermissions.organizationId, orgId));
 
+    const hustlerUserIds = orgUsers.filter(u => u.role === 'HUSTLER').map(u => u.id);
+    let hustlerLinks: { userId: string; roleOverride: string | null }[] = [];
+    if (hustlerUserIds.length > 0) {
+      hustlerLinks = await db.select({
+        userId: hustlerOrganizations.userId,
+        roleOverride: hustlerOrganizations.roleOverride,
+      }).from(hustlerOrganizations).where(
+        and(
+          eq(hustlerOrganizations.organizationId, orgId),
+          eq(hustlerOrganizations.isActive, true),
+          sql`${hustlerOrganizations.userId} = ANY(${hustlerUserIds})`
+        )
+      );
+    }
+
     const usersWithPermissions = orgUsers.map(user => {
       const perm = permissions.find(p => p.userId === user.id);
-      const roleDefaults = getRoleDefaults(user.role);
+      let effectiveRole: string | undefined;
+      if (user.role === 'HUSTLER') {
+        const link = hustlerLinks.find(l => l.userId === user.id);
+        effectiveRole = link?.roleOverride || 'ADMIN';
+      }
+      const roleDefaults = getRoleDefaults(effectiveRole || user.role);
       const dbPerms: Partial<PermissionSet> = {};
       if (perm) {
         for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
@@ -401,6 +421,7 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
         ...dbPerms,
         roleDefaults,
         effective,
+        effectiveRole,
         grantedAt: perm?.grantedAt,
       };
     });
