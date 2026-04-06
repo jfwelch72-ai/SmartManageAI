@@ -501,10 +501,10 @@ function AuthGatedWidget() {
       setAiOpen(!!detail?.isOpen);
     };
     window.addEventListener("messaging-widget-state", handleMessaging);
-    window.addEventListener("ai-assistant-widget-state", handleAi);
+    window.addEventListener("ask-ai-widget-state", handleAi);
     return () => {
       window.removeEventListener("messaging-widget-state", handleMessaging);
-      window.removeEventListener("ai-assistant-widget-state", handleAi);
+      window.removeEventListener("ask-ai-widget-state", handleAi);
     };
   }, []);
 

@@ -22,19 +22,19 @@ import { useState, useEffect } from "react";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
 import { getNotificationDestination } from "@/lib/notificationDestination";
 
-const AI_ASSISTANT_STORAGE_KEY = "smartmanage-ai-assistant-enabled";
+const ASK_AI_STORAGE_KEY = "smartmanage-ask-ai-enabled";
 
 export default function TopHeader() {
   const { user, logout } = useAuth();
-  const [isAIAssistantEnabled, setIsAIAssistantEnabled] = useState(() => {
-    const stored = localStorage.getItem(AI_ASSISTANT_STORAGE_KEY);
+  const [isAskAiEnabled, setIsAskAiEnabled] = useState(() => {
+    const stored = localStorage.getItem(ASK_AI_STORAGE_KEY);
     return stored !== "false";
   });
 
-  const handleToggleAIAssistant = () => {
-    const newValue = !isAIAssistantEnabled;
-    setIsAIAssistantEnabled(newValue);
-    localStorage.setItem(AI_ASSISTANT_STORAGE_KEY, String(newValue));
+  const handleToggleAskAi = () => {
+    const newValue = !isAskAiEnabled;
+    setIsAskAiEnabled(newValue);
+    localStorage.setItem(ASK_AI_STORAGE_KEY, String(newValue));
     window.dispatchEvent(new Event("storage"));
   };
 
@@ -246,9 +246,9 @@ export default function TopHeader() {
                   Profile & Settings
                 </DropdownMenuItem>
               </Link>
-              <DropdownMenuItem onClick={handleToggleAIAssistant} data-testid="menu-toggle-ai">
+              <DropdownMenuItem onClick={handleToggleAskAi} data-testid="menu-toggle-ai">
                 <Bot className="mr-2 h-4 w-4" />
-                {isAIAssistantEnabled ? "Hide AI Assistant" : "Show AI Assistant"}
+                {isAskAiEnabled ? "Hide Ask AI" : "Show Ask AI"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">

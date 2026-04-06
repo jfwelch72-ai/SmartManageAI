@@ -11,8 +11,6 @@ import { sanitizeShortText } from "./sanitization";
 import { logError, logWarn } from "./utils/logger";
 import { runAIAnalysis, getLatestAIRun, getAIRunById, getTasksForRole, updateTaskStatus } from "./ai/orchestrator";
 import { openai, AI_MODEL_GPT5, AI_MODEL_GPT4O } from "./ai/openaiClient";
-import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
-import { getTotalStepsForRole, generateWalkthroughPrompt } from "./ai/walkthroughContent";
 import { analyzeSchedulingModule, analyzeDelaysModule, analyzeCostsModule, analyzeEquipmentModule, analyzeVendorPricingModule, analyzeProjectHealthModule, runComprehensiveAnalysis, saveAnalysisResults } from "./ai/moduleAnalyzers";
 import { governedAiCall } from "./services/aiGovernance";
 
@@ -455,28 +453,14 @@ Example of a correct response:
 
 router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const { message, currentPath, conversationHistory = [] } = req.body;
+    const { message, conversationHistory = [] } = req.body;
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    const [userStatus] = await db.select({
-      walkthroughCompleted: users.walkthroughCompleted,
-      walkthroughStep: users.walkthroughStep,
-      role: users.role,
-      firstName: users.firstName,
-    }).from(users).where(eq(users.id, req.user.id));
-
-    const isInWalkthrough = userStatus && !userStatus.walkthroughCompleted && userStatus.walkthroughStep > 0;
-
-    const pageContext = getPageContext(currentPath || '/dashboard');
-    const userRole = req.user.role;
-    const userName = `${req.user.firstName} ${req.user.lastName}`;
-    const userFirstName = userStatus?.firstName || req.user.firstName || 'there';
-
     const organizationId = req.user?.organizationId;
-    const isDataQuery = !isInWalkthrough && organizationId && detectDataIntent(message);
+    const isDataQuery = organizationId && detectDataIntent(message);
 
     if (isDataQuery) {
       try {
@@ -484,106 +468,22 @@ router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res, nex
         return res.json({
           response: dataResponse.answer,
           responseType: "data",
-          isWalkthroughMode: false,
-          walkthroughStep: null,
         });
       } catch (dataError: any) {
-        logWarn("Data query routing failed, falling back to assistant", { error: dataError?.message });
+        logWarn("Data query routing failed", { error: dataError?.message });
+        return res.json({
+          response: "I wasn't able to retrieve that data right now. Please try rephrasing your question or try again shortly.",
+          responseType: "data",
+        });
       }
     }
 
-    let systemPrompt: string;
-
-    if (isInWalkthrough) {
-      const walkthroughPrompt = generateWalkthroughPrompt(userStatus.role, userStatus.walkthroughStep, userFirstName);
-      const totalSteps = getTotalStepsForRole(userStatus.role);
-      
-      systemPrompt = `${walkthroughPrompt}
-
-## Current Context
-- User: ${userName} (call them "${userFirstName}")
-- Role: ${userRole}
-- ${pageContext}
-- Walkthrough Progress: Step ${userStatus.walkthroughStep} of ${totalSteps}
-
-When ${userFirstName} says they've completed the current step or wants to continue, congratulate them with enthusiasm and remind them to click "Next Step" to proceed. Use their first name naturally to keep it personal. Be supportive and encouraging throughout their learning journey!`;
-    } else {
-      systemPrompt = `${AI_ASSISTANT_SYSTEM_PROMPT}
-
-## Current Context
-- User: ${userName}
-- Role: ${userRole}
-- ${pageContext}
-
-Tailor your responses to the user's role and current location in the app.`;
-    }
-
-    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
-      { role: 'system', content: systemPrompt }
-    ];
-
-    const recentHistory = conversationHistory.slice(-10);
-    for (const msg of recentHistory) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        messages.push({ role: msg.role, content: msg.content });
-      }
-    }
-
-    messages.push({ role: 'user', content: message });
-
-    let completion: any;
-    let response: string | null | undefined;
-
-    if (req.user.organizationId) {
-      let capturedCompletion: any;
-      const governed = await governedAiCall({
-        orgId: req.user.organizationId,
-        userId: req.user.id,
-        actionType: "assistant_chat",
-        fn: async () => {
-          const c = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages,
-            temperature: 0.7,
-            max_tokens: 1000,
-          });
-          capturedCompletion = c;
-          const r = c.choices[0]?.message?.content;
-          return { result: r, completion: c };
-        },
-      });
-
-      if (governed.blocked) {
-        return res.status(429).json({ error: governed.reason || "AI usage limit reached" });
-      }
-
-      response = governed.result;
-      completion = capturedCompletion;
-    } else {
-      completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages,
-        temperature: 0.7,
-        max_tokens: 1000,
-      });
-      response = completion.choices[0]?.message?.content;
-    }
-
-    if (!response) {
-      throw new Error('No response from AI');
-    }
-    res.json({ 
-      response,
-      responseType: "assistant",
-      isWalkthroughMode: isInWalkthrough,
-      walkthroughStep: isInWalkthrough ? userStatus.walkthroughStep : null,
-      usage: {
-        promptTokens: completion?.usage?.prompt_tokens,
-        completionTokens: completion?.usage?.completion_tokens,
-      }
+    res.json({
+      response: "I'm designed to help you query your data. Try asking questions like \"How many active projects do we have?\" or \"What's the total value of open bids?\" and I'll look that up for you.",
+      responseType: "data",
     });
   } catch (error: any) {
-    logError("AI Assistant chat error:", {}, error instanceof Error ? error : new Error(String(error)));
+    logError("Ask AI chat error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get AI response. Please try again." });
   }
 });

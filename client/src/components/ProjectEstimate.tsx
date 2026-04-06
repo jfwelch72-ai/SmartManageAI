@@ -1073,7 +1073,7 @@ export default function ProjectEstimate() {
                         setAddLineItemOpen(false);
                         setAiSowAssistantOpen(true);
                       }}
-                      data-testid="button-open-ai-assistant"
+                      data-testid="button-open-ask-ai"
                     >
                       <Sparkles className="h-4 w-4 mr-2" />
                       Add with AI
