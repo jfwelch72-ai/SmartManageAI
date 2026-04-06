@@ -794,16 +794,16 @@ router.post("/ai/ask-database", requireAuth, async (req: AuthRequest, res, next)
     const { question, conversationHistory = [] } = req.body;
 
     if (!question || typeof question !== 'string') {
-      return res.status(400).json({ error: "Question is required" });
+      return res.status(400).json({ error: "Question is required", errorType: "validation_error" });
     }
 
     if (question.length > 500) {
-      return res.status(400).json({ error: "Question is too long (max 500 characters)" });
+      return res.status(400).json({ error: "Question is too long (max 500 characters)", errorType: "validation_error" });
     }
 
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
-      return res.status(400).json({ error: "Organization context required" });
+      return res.status(400).json({ error: "Organization context required", errorType: "validation_error" });
     }
 
     const sqlGenMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
@@ -842,7 +842,7 @@ router.post("/ai/ask-database", requireAuth, async (req: AuthRequest, res, next)
     });
 
     if (governed.blocked) {
-      return res.status(429).json({ error: governed.reason || "AI usage limit reached" });
+      return res.status(429).json({ error: governed.reason || "AI usage limit reached", errorType: "rate_limit" });
     }
 
     sqlResult = governed.result;
@@ -883,10 +883,15 @@ router.post("/ai/ask-database", requireAuth, async (req: AuthRequest, res, next)
       queryResults = stripSensitiveColumns(result.rows || []);
     } catch (dbError: any) {
       await client.query('ROLLBACK').catch(() => {});
-      logError("Ask database query execution error", {});
-      return res.json({
-        answer: "I had trouble running that query. The question might reference data that doesn't exist yet, or could you try rephrasing?",
-        queryExecuted: false,
+      logError("Ask database query execution error", {
+        code: dbError?.code,
+        message: dbError?.message,
+        routine: dbError?.routine,
+        question: question.substring(0, 200),
+      });
+      return res.status(400).json({
+        error: "The query couldn't be run against your data. Try rephrasing your question or asking about different data.",
+        errorType: "db_query_error",
       });
     } finally {
       client.release();
@@ -915,7 +920,7 @@ router.post("/ai/ask-database", requireAuth, async (req: AuthRequest, res, next)
     });
 
     if (answerGoverned.blocked) {
-      return res.status(429).json({ error: answerGoverned.reason || "AI usage limit reached" });
+      return res.status(429).json({ error: answerGoverned.reason || "AI usage limit reached", errorType: "rate_limit" });
     }
 
     res.json({
@@ -924,8 +929,24 @@ router.post("/ai/ask-database", requireAuth, async (req: AuthRequest, res, next)
       rowCount: queryResults.length,
     });
   } catch (error: any) {
-    logError("Ask database error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to process your question. Please try again." });
+    const err = error instanceof Error ? error : new Error(String(error));
+    logError("Ask database error", { type: err.name, message: err.message }, err);
+
+    const lowerMsg = (err.message || "").toLowerCase();
+    if (lowerMsg.includes("timeout") || lowerMsg.includes("timed out") || lowerMsg.includes("etimedout")) {
+      return res.status(503).json({ error: "The AI service timed out. Please try again in a moment.", errorType: "ai_timeout" });
+    }
+    if (lowerMsg.includes("rate limit") || lowerMsg.includes("rate_limit") || error?.status === 429) {
+      return res.status(429).json({ error: "AI usage limit reached. Please try again later.", errorType: "rate_limit" });
+    }
+    if (err instanceof SyntaxError || lowerMsg.includes("json")) {
+      return res.status(502).json({ error: "The AI returned an unexpected response. Please try rephrasing your question.", errorType: "parse_error" });
+    }
+    if (error?.status === 503 || error?.status === 502 || lowerMsg.includes("overloaded") || lowerMsg.includes("unavailable")) {
+      return res.status(503).json({ error: "The AI service is temporarily unavailable. Please try again shortly.", errorType: "ai_unavailable" });
+    }
+
+    res.status(500).json({ error: "Something went wrong processing your question. Please try again.", errorType: "server_error" });
   }
 });
 

@@ -52,9 +52,21 @@ export function AskQuestionsContent({ compact }: { compact?: boolean }) {
       }]);
     },
     onError: (error: any) => {
-      const errorMessage = error?.message?.includes("429")
-        ? "AI usage limit reached for today. Please try again tomorrow."
-        : "Sorry, I had trouble processing that question. Please try again.";
+      const msg = error?.message || "";
+      const statusMatch = msg.match(/^(\d{3}):/);
+      const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+      let errorMessage: string;
+      if (status === 429) {
+        errorMessage = "AI usage limit reached. Please try again later.";
+      } else if (status === 503) {
+        errorMessage = "The AI service is temporarily unavailable. Please try again in a moment.";
+      } else if (status === 502) {
+        errorMessage = "The AI returned an unexpected response. Please try rephrasing your question.";
+      } else if (status === 400) {
+        errorMessage = "There was an issue with your question. Please try rephrasing it.";
+      } else {
+        errorMessage = "Something went wrong processing your question. Please try again.";
+      }
       setMessages(prev => [...prev, {
         role: "assistant",
         content: errorMessage,

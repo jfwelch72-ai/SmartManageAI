@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { aiActionAudit, organizations, users } from "@shared/schema";
+import { aiActionAudit, organizationSubscriptions, users } from "@shared/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { logInfo, logWarn, logError } from "../utils/logger";
 import { AI_MODEL_GPT5 } from "../ai/openaiClient";
@@ -44,14 +44,21 @@ async function getOrgPlanTier(orgId: string): Promise<string> {
     return cached.tier;
   }
   try {
-    const [org] = await db.select({ planTier: organizations.planTier }).from(organizations)
-      .where(eq(organizations.id, orgId));
-    const tier = org?.planTier || "starter";
+    const [sub] = await db
+      .select({ planTier: organizationSubscriptions.planTier })
+      .from(organizationSubscriptions)
+      .where(and(
+        eq(organizationSubscriptions.organizationId, orgId),
+        eq(organizationSubscriptions.status, "active"),
+      ))
+      .orderBy(sql`${organizationSubscriptions.updatedAt} DESC`)
+      .limit(1);
+    const tier = sub?.planTier || "free";
     orgTierCache.set(orgId, { tier, cachedAt: Date.now() });
     return tier;
   } catch (err) {
     logError("Failed to look up org plan tier", { orgId, error: String(err) });
-    return "starter";
+    return "free";
   }
 }
 
