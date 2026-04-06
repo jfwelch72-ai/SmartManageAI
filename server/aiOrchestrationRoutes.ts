@@ -544,11 +544,11 @@ users(id, organization_id, first_name, last_name, email, phone, role, is_active,
 
 -- Projects
 projects(id, name, code, client_name, status, location_address, city, state, start_date, end_date, estimated_completion_date, description, budget, contract_amount, budget_amount, gc_organization_id, created_at)
--- status values: PLANNING, ACTIVE, ON_HOLD, COMPLETED, CANCELLED
+-- status values: BID, PLANNING, ACTIVE, COMPLETE, CLOSED
 
 -- Bids
 bids(id, name, code, client_name, bid_amount, due_date, location_address, city, state, description, status, gc_organization_id, ai_win_probability, awarded_at, submitted_at, created_at)
--- status values: DRAFT, SUBMITTED, WON, LOST, CANCELLED
+-- status values: DRAFT, ACTIVE, SUBMITTED, AWARDED, LOST, CANCELLED
 
 -- Time Entries
 time_entries(id, user_id, project_id, date, hours_regular, hours_overtime, cost_code, notes, approval_status, created_at)
@@ -570,7 +570,7 @@ task_attachments(id, task_id, file_name, file_url, file_size, mime_type, uploade
 
 -- Change Orders
 change_orders(id, project_id, change_order_number, description, amount, status, requested_by_id, submitted_at, approved_by_id, approved_at, created_at)
--- status values: DRAFT, SUBMITTED, APPROVED, REJECTED
+-- status values: DRAFT, PENDING_APPROVAL, SUBMITTED, APPROVED, REJECTED, PCO, PRICING_REVIEW, VOIDED
 
 -- Change Order Revisions (audit trail of change order status changes)
 change_order_revisions(id, change_order_id, revision_number, previous_status, new_status, amount, description, revised_by_id, created_at)
@@ -597,7 +597,7 @@ project_inspections(id, project_id, type, status, scheduled_date, completed_date
 
 -- Estimates
 estimates(id, bid_id, project_id, version_number, status, base_bid_amount, notes, created_by_id, created_at)
--- status values: DRAFT, REVIEW, APPROVED, REJECTED
+-- status values: DRAFT, SUBMITTED, WON, LOST, PENDING_APPROVAL, APPROVED, REJECTED
 
 -- Estimate Line Items (individual cost items within an estimate)
 estimate_line_items(id, estimate_id, category, description, quantity, unit, material_cost, labor_hours, labor_cost, equipment_hours, equipment_cost, subcontractor_cost, total_cost, created_at)
@@ -638,7 +638,7 @@ vendor_invoices(id, org_id, po_id, vendor_id, invoice_number, invoice_date, due_
 -- Contracts
 contracts(id, organization_id, project_id, bid_id, contract_number, contract_type, status, contract_value, effective_date, expiration_date, payment_terms, retention_percent, scope_summary, created_at)
 -- contract_type values: PRIME, SUBCONTRACT, PURCHASE_ORDER, SERVICE_AGREEMENT
--- status values: DRAFT, PENDING_REVIEW, APPROVED, ACTIVE, COMPLETED, TERMINATED
+-- status values: DRAFT, IN_REVIEW, REDLINED, PENDING_APPROVAL, APPROVED, EXECUTED, AMENDED
 
 -- Project Notes
 project_notes(id, project_id, author_id, note_type, text, created_at)
