@@ -8,7 +8,7 @@ import { type AuthRequest, requireAuth, requireRole, requireFeaturePermission, r
 import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
-import { logError } from "./utils/logger";
+import { logError, logWarn } from "./utils/logger";
 import { runAIAnalysis, getLatestAIRun, getAIRunById, getTasksForRole, updateTaskStatus } from "./ai/orchestrator";
 import { openai, AI_MODEL_GPT5, AI_MODEL_GPT4O } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
@@ -637,8 +637,23 @@ const SENSITIVE_COLUMNS = new Set([
 
 const MAX_RESULT_ROWS = 50;
 
+function normalizeSqlFromAI(rawSql: string): string {
+  let sql = rawSql.trim();
+
+  sql = sql.replace(/^```(?:sql)?\s*/i, '').replace(/\s*```$/i, '');
+
+  sql = sql.replace(/"(\w+)"/g, '$1');
+
+  sql = sql.replace(/;+\s*$/, '');
+
+  sql = sql.replace(/\s+/g, ' ').trim();
+
+  return sql;
+}
+
 function extractAllTableReferences(sqlQuery: string): string[] {
-  const lower = sqlQuery.toLowerCase();
+  const stripped = sqlQuery.replace(/["`]/g, '');
+  const lower = stripped.toLowerCase();
   const found = new Set<string>();
 
   const fromJoinMatches = lower.match(/\b(?:from|join)\s+(\w+)/gi) || [];
@@ -662,7 +677,7 @@ function extractAllTableReferences(sqlQuery: string): string[] {
 
   for (const table of ALLOWED_TABLES) {
     const tablePattern = new RegExp(`\\b${table}\\b`, 'i');
-    if (tablePattern.test(sqlQuery)) {
+    if (tablePattern.test(stripped)) {
       found.add(table);
     }
   }
@@ -682,7 +697,7 @@ function validateSqlSafety(sqlQuery: string): { safe: boolean; reason?: string }
 
   const dangerousPatterns = [
     /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|EXECUTE|EXEC)\b/,
-    /\b(INTO)\s+\w/,
+    /\b(?:INSERT|SELECT)\s+INTO\b/,
     /\bPG_SLEEP\b/,
     /\bPG_TERMINATE\b/,
     /\bPG_CATALOG\b/,
@@ -857,7 +872,16 @@ router.post("/ai/ask-database", requireAuth, requireFeaturePermission('canUseAiF
       if (attempt > 0 && lastSafetyReason) {
         sqlGenMessages.push({
           role: 'user',
-          content: `Your previous query was rejected because: ${lastSafetyReason}. Please regenerate a valid query using only a simple SELECT with JOINs. Remember: no subqueries, no CTEs, no backtick-quoted identifiers, no schema-qualified names, no UNION, no parameter placeholders, no semicolons. Use bare column/table names without any quoting.`,
+          content: `Your previous query was rejected because: ${lastSafetyReason}. Please regenerate a valid query. IMPORTANT FORMATTING RULES:
+- Output ONLY the JSON object, no markdown code fences.
+- Do NOT use double-quoted identifiers (e.g. "projects") — use bare names: projects
+- Do NOT use backtick-quoted identifiers.
+- Do NOT use schema-qualified names like public.projects.
+- Do NOT use subqueries, CTEs, UNION, parameter placeholders ($1), or semicolons.
+- Use only a single SELECT statement with JOINs if needed.
+
+Example of a correct response:
+{"sql": "SELECT COUNT(*) AS total FROM projects WHERE status = 'ACTIVE'", "explanation": "Counts active projects", "needsOrgFilter": true}`,
         });
       }
 
@@ -894,17 +918,22 @@ router.post("/ai/ask-database", requireAuth, requireFeaturePermission('canUseAiF
         });
       }
 
+      const rawSql = sqlResult.sql;
+      sqlResult.sql = normalizeSqlFromAI(sqlResult.sql);
+
       const safety = validateSqlSafety(sqlResult.sql);
       if (safety.safe) {
         break;
       }
 
       lastSafetyReason = safety.reason;
-      logError("Unsafe SQL blocked", {
-        reason: safety.reason,
-        question: question.substring(0, 200),
-        sql: sqlResult.sql.substring(0, 500),
+      logWarn("Ask-database SQL failed validation", {
         attempt: attempt + 1,
+        reason: safety.reason || 'unknown',
+        question: question.substring(0, 200),
+        rawAiSql: rawSql,
+        normalizedSql: sqlResult.sql.substring(0, 500),
+        aiResponse: JSON.stringify(governed.result),
       });
 
       if (attempt === MAX_RETRIES) {
