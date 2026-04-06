@@ -38,6 +38,8 @@ export const organizations = pgTable("organizations", {
   overheadCriticalThreshold: decimal("overhead_critical_threshold", { precision: 8, scale: 4 }),
   overheadCategoryWeights: text("overhead_category_weights"),
   monthlyRevenueTargets: text("monthly_revenue_targets"),
+  peerRatingAnonymityMode: text("peer_rating_anonymity_mode").notNull().default("fully_anonymous"),
+  peerRatingScopeMode: text("peer_rating_scope_mode").notNull().default("project_crew"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

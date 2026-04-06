@@ -406,6 +406,8 @@ export interface FeaturePerms {
   canCreateChangeOrders?: boolean;
   canDeleteScopeItems?: boolean;
   canEditProjectHandoff?: boolean;
+  canSubmitPeerRatings?: boolean;
+  canViewPeerRatings?: boolean;
 }
 
 export interface NavItem {
@@ -524,6 +526,12 @@ export const NavigationConfig = {
       label: "Workforce Management",
       testId: "nav-manage-workers",
       visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : hasManagementAccess(role),
+    },
+    {
+      href: "/rate-coworkers",
+      label: "Rate Coworkers",
+      testId: "nav-rate-coworkers",
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canSubmitPeerRatings : hasContractorAccess(role),
     },
     {
       href: "/payroll-management",

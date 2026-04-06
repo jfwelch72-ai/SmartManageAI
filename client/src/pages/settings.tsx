@@ -485,8 +485,95 @@ function PreferencesSection() {
   );
 }
 
+function PeerRatingSettings() {
+  const { toast } = useToast();
+
+  const { data: settings, isLoading } = useQuery<{
+    peerRatingAnonymityMode: string;
+    peerRatingScopeMode: string;
+  }>({
+    queryKey: ["/api/peer-ratings/settings"],
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: Record<string, string>) => {
+      return await apiRequest("PATCH", "/api/peer-ratings/settings", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/peer-ratings/settings"] });
+      toast({ title: "Peer rating settings updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update settings", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return <Skeleton className="h-48 w-full" />;
+  }
+
+  const anonymityMode = settings?.peerRatingAnonymityMode || "fully_anonymous";
+  const scopeMode = settings?.peerRatingScopeMode || "project_crew";
+
+  return (
+    <Card data-testid="peer-rating-settings-card">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Users className="h-5 w-5" />
+          Peer Ratings
+        </CardTitle>
+        <CardDescription>Configure how peer coworker ratings work in your organization</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Anonymity Mode</Label>
+          <Select
+            value={anonymityMode}
+            onValueChange={(val) => updateMutation.mutate({ peerRatingAnonymityMode: val })}
+          >
+            <SelectTrigger data-testid="select-peer-anonymity">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fully_anonymous" data-testid="option-fully-anonymous">Fully Anonymous</SelectItem>
+              <SelectItem value="managers_can_see" data-testid="option-managers-can-see">Anonymous but Managers Can See Reviewer</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {anonymityMode === "fully_anonymous"
+              ? "No one can see who left a specific rating, including managers."
+              : "Managers and admins can see who submitted each rating."}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Rating Scope</Label>
+          <Select
+            value={scopeMode}
+            onValueChange={(val) => updateMutation.mutate({ peerRatingScopeMode: val })}
+          >
+            <SelectTrigger data-testid="select-peer-scope">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="project_crew" data-testid="option-project-crew">Same Project/Crew Only</SelectItem>
+              <SelectItem value="org_wide" data-testid="option-org-wide">Organization-Wide</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {scopeMode === "project_crew"
+              ? "Workers can only rate coworkers in the same project or crew."
+              : "Workers can rate any coworker in the organization."}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function OrganizationSection() {
-  const { organizationName } = useAuth();
+  const { organizationName, user } = useAuth();
+  const isManagerOrAdmin = user?.role === "ADMIN" || user?.role === "MANAGER";
 
   return (
     <div className="space-y-6">
@@ -551,6 +638,8 @@ function OrganizationSection() {
           </Link>
         </CardContent>
       </Card>
+
+      {isManagerOrAdmin && <PeerRatingSettings />}
     </div>
   );
 }

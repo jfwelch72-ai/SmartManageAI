@@ -565,6 +565,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { registerPerformanceRoutes } = await import("./performanceRoutes");
   registerPerformanceRoutes(app);
 
+  const { registerPeerRatingRoutes } = await import("./peerRatingRoutes");
+  registerPeerRatingRoutes(app);
+
   seedCoreTradeModifierCategories().catch(err => {
     logError("Failed to seed core modifier categories:", {}, err instanceof Error ? err : new Error(String(err)));
   });

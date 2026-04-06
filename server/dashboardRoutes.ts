@@ -224,7 +224,8 @@ type FeaturePermissionKeys =
   | 'canAccessReports' | 'canAccessEnterpriseSettings' | 'canManageAISettings'
   | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
   | 'canViewProjectReceipts' | 'canViewProjectTimeEntries' | 'canViewProjectSubcontractors'
-  | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff';
+  | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
+  | 'canSubmitPeerRatings' | 'canViewPeerRatings';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean>;
 
@@ -254,6 +255,7 @@ const ALL_FALSE: PermissionSet = {
   canViewProjectBudget: false, canViewProjectEstimates: false, canViewProjectProcurement: false,
   canViewProjectReceipts: false, canViewProjectTimeEntries: false, canViewProjectSubcontractors: false,
   canCreateChangeOrders: false, canDeleteScopeItems: false, canEditProjectHandoff: false,
+  canSubmitPeerRatings: false, canViewPeerRatings: false,
 };
 
 const ALL_TRUE: PermissionSet = {
@@ -282,6 +284,7 @@ const ALL_TRUE: PermissionSet = {
   canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
   canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
   canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
+  canSubmitPeerRatings: true, canViewPeerRatings: true,
 };
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
@@ -322,6 +325,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
     canCreateChangeOrders: true,
+    canSubmitPeerRatings: true, canViewPeerRatings: true,
   },
   ESTIMATOR: {
     ...ALL_FALSE,
@@ -338,6 +342,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessCompanySettings: true, canAccessReports: true,
     canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    canSubmitPeerRatings: true, canViewPeerRatings: true,
   },
   FIELD_WORKER: {
     ...ALL_FALSE,
@@ -345,6 +350,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
     canAccessBulletins: true, canAccessTimeClock: true, canManageLeave: true,
     canViewProjectTimeEntries: true, canViewSafety: true, canViewAiSummaries: true,
+    canSubmitPeerRatings: true, canViewPeerRatings: true,
   },
   VENDOR: {
     ...ALL_FALSE,

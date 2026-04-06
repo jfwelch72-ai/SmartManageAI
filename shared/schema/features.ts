@@ -4505,6 +4505,10 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canDeleteScopeItems: boolean("can_delete_scope_items").notNull().default(false),
   canEditProjectHandoff: boolean("can_edit_project_handoff").notNull().default(false),
 
+  // Category 12: Peer Ratings (74-75)
+  canSubmitPeerRatings: boolean("can_submit_peer_ratings").notNull().default(false),
+  canViewPeerRatings: boolean("can_view_peer_ratings").notNull().default(false),
+
   // Granted by admin
   grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
   grantedAt: timestamp("granted_at"),
@@ -5990,6 +5994,32 @@ export const performanceReviews = pgTable("performance_reviews", {
 export const insertPerformanceReviewSchema = createInsertSchema(performanceReviews).omit({ id: true, createdAt: true });
 export type InsertPerformanceReview = z.infer<typeof insertPerformanceReviewSchema>;
 export type PerformanceReview = typeof performanceReviews.$inferSelect;
+
+export const peerRatings = pgTable("peer_ratings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  raterId: varchar("rater_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  rateeId: varchar("ratee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  crewId: varchar("crew_id").references(() => crews.id, { onDelete: "set null" }),
+  period: text("period").notNull(),
+  teamwork: integer("teamwork").notNull(),
+  reliability: integer("reliability").notNull(),
+  communication: integer("communication").notNull(),
+  helpfulness: integer("helpfulness").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("peer_ratings_org_idx").on(table.organizationId),
+  rateeIdx: index("peer_ratings_ratee_idx").on(table.rateeId),
+  raterIdx: index("peer_ratings_rater_idx").on(table.raterId),
+  // uniqueRating enforced via raw SQL index peer_ratings_unique_v3:
+  // UNIQUE(organization_id, rater_id, ratee_id, COALESCE(project_id, ''), period)
+}));
+
+export const insertPeerRatingSchema = createInsertSchema(peerRatings).omit({ id: true, createdAt: true });
+export type InsertPeerRating = z.infer<typeof insertPeerRatingSchema>;
+export type PeerRating = typeof peerRatings.$inferSelect;
 
 export const supervisorNotes = pgTable("supervisor_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

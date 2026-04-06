@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ import {
   Shield,
   MessageSquareQuote,
   Loader2,
+  Star,
+  Users,
 } from "lucide-react";
 import { type WorkerData, RatingStars, getCertStatus } from "./types";
 
@@ -355,7 +357,157 @@ export function PerformanceTab({
           </CardContent>
         </Card>
       )}
+
+      <PeerRatingsSection userId={user.id} />
     </div>
+  );
+}
+
+function PeerScoreBar({ label, value }: { label: string; value: number | null }) {
+  const displayValue = value !== null ? value.toFixed(1) : "—";
+  const pct = value !== null ? (value / 5) * 100 : 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-sm">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium">{displayValue}/5</span>
+      </div>
+      <div className="h-2 bg-muted rounded-full overflow-hidden">
+        <div className="h-full bg-yellow-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function PeerRatingsSection({ userId }: { userId: string }) {
+  const { data: peerScores, isLoading } = useQuery<{
+    avgTeamwork: number | null;
+    avgReliability: number | null;
+    avgCommunication: number | null;
+    avgHelpfulness: number | null;
+    totalRatings: number;
+    anonymityMode?: string;
+    individualRatings?: Array<{
+      id: string;
+      teamwork: number;
+      reliability: number;
+      communication: number;
+      helpfulness: number;
+      comment: string | null;
+      period: string;
+      createdAt: string;
+      raterId?: string | null;
+      raterFirstName?: string | null;
+      raterLastName?: string | null;
+    }>;
+  }>({
+    queryKey: ["/api/peer-ratings/user", userId, "scores"],
+    queryFn: async () => {
+      const res = await fetch(`/api/peer-ratings/user/${userId}/scores`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch peer scores");
+      return res.json();
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Peer Ratings
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-8 bg-muted rounded animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!peerScores || peerScores.totalRatings === 0) {
+    return (
+      <Card data-testid="peer-ratings-section-empty">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Peer Ratings
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground" data-testid="text-no-peer-ratings">No peer ratings received yet.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const overallAvg = [
+    peerScores.avgTeamwork, peerScores.avgReliability,
+    peerScores.avgCommunication, peerScores.avgHelpfulness,
+  ].filter(v => v !== null);
+  const avgOverall = overallAvg.length > 0
+    ? (overallAvg.reduce((s, v) => s + v!, 0) / overallAvg.length).toFixed(1)
+    : "—";
+
+  return (
+    <Card data-testid="peer-ratings-section">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          Peer Ratings
+          <Badge variant="secondary" className="ml-auto" data-testid="badge-peer-rating-count">
+            {peerScores.totalRatings} rating{peerScores.totalRatings !== 1 ? "s" : ""}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
+          <span className="text-xl font-bold" data-testid="text-peer-overall-score">{avgOverall}</span>
+          <span className="text-sm text-muted-foreground">overall average</span>
+        </div>
+        <PeerScoreBar label="Teamwork" value={peerScores.avgTeamwork} />
+        <PeerScoreBar label="Reliability" value={peerScores.avgReliability} />
+        <PeerScoreBar label="Communication" value={peerScores.avgCommunication} />
+        <PeerScoreBar label="Helpfulness" value={peerScores.avgHelpfulness} />
+
+        {peerScores.individualRatings && peerScores.individualRatings.length > 0 && (
+          <div className="mt-4 pt-4 border-t space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground">Individual Ratings</h4>
+            {peerScores.anonymityMode === "managers_can_see" && (
+              <p className="text-xs text-muted-foreground italic">Rater identity visible (managers_can_see mode)</p>
+            )}
+            {peerScores.individualRatings.map((rating) => (
+              <div key={rating.id} className="p-3 bg-muted/50 rounded-lg space-y-1" data-testid={`peer-rating-detail-${rating.id}`}>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{rating.period}</span>
+                  {rating.raterFirstName ? (
+                    <span data-testid={`text-rater-name-${rating.id}`}>
+                      Rated by: {rating.raterFirstName} {rating.raterLastName}
+                    </span>
+                  ) : (
+                    <span>Anonymous</span>
+                  )}
+                </div>
+                <div className="flex gap-3 text-xs">
+                  <span>T: {rating.teamwork}</span>
+                  <span>R: {rating.reliability}</span>
+                  <span>C: {rating.communication}</span>
+                  <span>H: {rating.helpfulness}</span>
+                </div>
+                {rating.comment && (
+                  <p className="text-sm text-muted-foreground italic">"{rating.comment}"</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
