@@ -36,7 +36,6 @@ router.use("/ai-settings", requireAuth, requireFeaturePermission('canUseAiFeatur
 router.use("/ai-pm", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 router.use("/ai-analyze", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 router.use("/ai/assistant", requireAuth, requireFeaturePermission('canUseAiFeatures'));
-router.use("/ai/ask-database", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 
 router.get("/ai-settings", requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
@@ -789,7 +788,7 @@ function stripSensitiveColumns(rows: Record<string, any>[]): Record<string, any>
   });
 }
 
-router.post("/ai/ask-database", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/ai/ask-database", requireAuth, requireFeaturePermission('canUseAiFeatures'), async (req: AuthRequest, res, next) => {
   try {
     const { question, conversationHistory = [] } = req.body;
 
