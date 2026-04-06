@@ -5,7 +5,7 @@ import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
 import type { AuthRequest } from "./auth";
 
-const HIRING_ROLES = ["ADMIN", "HUSTLER", "HR_MANAGER"] as const;
+const HIRING_ROLES = ["ADMIN", "HUSTLER"] as const;
 import {
   talentProfiles,
   users,

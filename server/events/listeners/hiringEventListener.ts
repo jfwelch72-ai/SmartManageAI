@@ -15,7 +15,7 @@ import type {
 
 type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
 
-const HR_ROLES = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "HR_MANAGER"] as const;
+const HR_ROLES = ["ADMIN", "MANAGER"] as const;
 
 async function getHrUserIds(orgId: string): Promise<string[]> {
   try {

@@ -329,7 +329,7 @@ function Router() {
       
       {/* Marketplace routes */}
       <Route path="/marketplace/contractors/:orgId" component={() => <ProtectedRoute component={ContractorProfilePage} />} />
-      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} permission={(role?: string) => hasCrmAccess(role) || role === "MARKETING"} />} />
+      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} permission={(role?: string) => hasCrmAccess(role) || role === "MANAGER"} />} />
       <Route path="/vendor-scores" component={() => <ProtectedRoute component={VendorScoresPage} permission={RoutePermissions.CRM} />} />
       <Route path="/material-price-index" component={() => <ProtectedRoute component={MaterialPriceIndexPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crew-marketplace" component={() => <ProtectedRoute component={() => <Redirect to="/marketplace?tab=crews" />} permission={RoutePermissions.CRM} />} />
@@ -355,12 +355,12 @@ function Router() {
       <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} featurePerm="canManageSafety" />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/overtime-rules" component={() => <ProtectedRoute component={OvertimeRulesPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
-      <Route path="/contracts" component={() => <ProtectedRoute component={ContractsPage} permission={(role?: string) => ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"].includes(role || "")} featurePerm="canManageContracts" />} />
+      <Route path="/contracts" component={() => <ProtectedRoute component={ContractsPage} permission={(role?: string) => ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(role || "")} featurePerm="canManageContracts" />} />
       <Route path="/clause-library" component={() => <ProtectedRoute component={ClauseLibraryPage} permission={(role?: string) => ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(role || "")} featurePerm="canManageContracts" />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canAccessFinancials" />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=website" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />
-      <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} permission={(role?: string) => hasManagementAccess(role) || role === "SALES" || role === "MARKETING"} featurePerm="canUseAiFeatures" />} />
+      <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} permission={(role?: string) => hasManagementAccess(role) || role === "MANAGER"} featurePerm="canUseAiFeatures" />} />
       <Route path="/procurement-module" component={() => <ProtectedRoute component={ProcurementModulePage} permission={RoutePermissions.PROCUREMENT} featurePerm="canManageProcurement" />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
 

@@ -68,7 +68,7 @@ interface MaintenanceLogsTabProps {
   handoverComplete?: boolean;
 }
 
-const MANAGEMENT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER", "SAFETY_MANAGER"];
+const MANAGEMENT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"];
 function canManage(role: string) { return MANAGEMENT_ROLES.includes(role); }
 
 const TYPE_OPTIONS: { value: MaintenanceType; label: string; icon: typeof Wrench }[] = [

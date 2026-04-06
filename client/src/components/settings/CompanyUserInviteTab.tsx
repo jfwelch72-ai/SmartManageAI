@@ -178,7 +178,7 @@ export function CompanyUserInviteTab() {
                   <SelectItem value="MANAGER">Manager</SelectItem>
                   <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
                   <SelectItem value="ESTIMATOR">Estimator</SelectItem>
-                  <SelectItem value="OFFICE_MANAGER">Office Manager</SelectItem>
+                  <SelectItem value="FIELD_WORKER">Field Worker</SelectItem>
                 </SelectContent>
               </Select>
             </div>

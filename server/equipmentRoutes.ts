@@ -1990,7 +1990,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // RENTAL VENDORS
   // ============================================
 
-  router.get("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2016,7 +2016,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
     }
   });
 
-  router.get("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2146,7 +2146,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // RENTAL EQUIPMENT CATALOG
   // ============================================
 
-  router.get("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2179,7 +2179,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
     }
   });
 
-  router.get("/api/rental-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2364,7 +2364,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // PROJECT EQUIPMENT (assigned to project)
   // ============================================
 
-  router.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2421,7 +2421,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // PROJECT EQUIPMENT PLANS
   // ============================================
 
-  router.get("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2658,7 +2658,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // GET EQUIPMENT ASSIGNED TO PROJECT (for project detail page)
   // ============================================
 
-  router.get("/api/projects/:projectId/assigned-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/projects/:projectId/assigned-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
       
@@ -2942,7 +2942,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // ============================================
 
   // Get equipment repairs
-  router.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2992,7 +2992,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   });
 
   // Report equipment repair
-  router.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3055,7 +3055,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   });
 
   // Update repair status
-  router.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3110,7 +3110,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // ============================================
 
   // Submit weekly hour log for equipment
-  router.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3173,7 +3173,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   });
 
   // Get hour logs for equipment
-  router.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3220,7 +3220,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   });
 
   // AI-powered equipment maintenance recommendations
-  router.post("/api/equipment/:equipmentId/ai-recommendations", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/ai-recommendations", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       const { problemDescription } = req.body;
@@ -3343,7 +3343,7 @@ Please provide:
         .select({ id: users.id })
         .from(users)
         .where(and(
-          eq(users.role, "MAINTENANCE_MANAGER"),
+          eq(users.role),
           eq(users.isActive, true)
         ));
       

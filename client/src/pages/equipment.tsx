@@ -454,7 +454,7 @@ export default function EquipmentPage() {
     user?.role === "ADMIN" ||
     user?.role === "MANAGER" ||
     user?.role === "SUPERINTENDENT" ||
-    user?.role === "MAINTENANCE_MANAGER";
+    user?.role === "FIELD_WORKER";
   const canDeleteEquipment = user?.role === "ADMIN" || user?.role === "MANAGER";
 
   if (!user) return null;

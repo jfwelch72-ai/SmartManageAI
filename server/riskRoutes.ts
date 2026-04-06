@@ -49,7 +49,7 @@ async function verifyProjectOrgAccess(req: AuthRequest, projectId: string, res: 
   return { project };
 }
 
-router.get("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const { status, category, severity, sortBy } = req.query;
@@ -116,7 +116,7 @@ router.get("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANA
   }
 });
 
-router.get("/projects/:projectId/risks/summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/risks/summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const conditions = [eq(projectRisks.projectId, projectId)];
@@ -170,7 +170,7 @@ router.get("/projects/:projectId/risks/summary", requireAuth, requireRole("ADMIN
   }
 });
 
-router.get("/projects/:projectId/risks/matrix", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/risks/matrix", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const conditions = [eq(projectRisks.projectId, projectId)];
@@ -211,7 +211,7 @@ router.get("/projects/:projectId/risks/matrix", requireAuth, requireRole("ADMIN"
   }
 });
 
-router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
 
@@ -257,7 +257,7 @@ router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MAN
   }
 });
 
-router.patch("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId, riskId } = req.params;
 
@@ -355,7 +355,7 @@ router.delete("/projects/:projectId/risks/:riskId", requireAuth, requireRole("AD
   }
 });
 
-router.post("/projects/:projectId/risks/ai-suggest", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/risks/ai-suggest", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
 
@@ -414,7 +414,7 @@ Suggest relevant construction project risks that haven't been identified yet.`;
   }
 });
 
-router.get("/risks/portfolio-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER_ADMIN", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/risks/portfolio-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) { res.status(403).json({ error: "Access denied" }); return; }

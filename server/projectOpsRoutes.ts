@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
-import { requireAuth, requireRole, type AuthRequest, type UserRole } from "./auth";
+import { requireAuth, requireRole, requireRoleOrFeature, type AuthRequest, type UserRole } from "./auth";
 import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logDelete } from "./auditLogger";
@@ -285,7 +285,7 @@ router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (re
   }
 });
 
-router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
+router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const validationResult = insertPlanDocumentSchema.extend({
       uploadedById: z.string().optional(),
@@ -328,7 +328,7 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
   }
 });
 
-router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
+router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const bodySchema = z.object({
       url: z.string().url(),
@@ -578,7 +578,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
   }
 });
 
-router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
+router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const bodySchema = z.object({
       provider: z.enum(["gdrive", "dropbox"]),
@@ -895,7 +895,7 @@ router.get("/api/documents/:documentId/download-url", requireAuth, async (req: A
 // File Permissions Routes
 // ====================
 
-router.post("/api/file-permissions", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/file-permissions", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res) => {
   try {
     const validationResult = insertFilePermissionSchema.extend({
       grantedById: z.string().optional(),
@@ -939,7 +939,7 @@ router.post("/api/file-permissions", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.delete("/api/file-permissions/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/file-permissions/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res) => {
   try {
     const [deleted] = await db
       .delete(filePermissions)
@@ -958,7 +958,7 @@ router.delete("/api/file-permissions/:id", requireAuth, requireRole("ADMIN", "MA
   }
 });
 
-router.get("/api/file-permissions/:fileType/:fileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/file-permissions/:fileType/:fileId", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res) => {
   try {
     const { fileType, fileId } = req.params;
     
@@ -1119,7 +1119,7 @@ router.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthReq
   }
 });
 
-router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1258,7 +1258,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
 
 const updateChangeOrderSchema = insertChangeOrderSchema.omit({ requestedById: true }).partial();
 
-router.patch("/api/change-orders/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1349,7 +1349,7 @@ router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthReq
   }
 });
 
-router.put("/api/change-orders/:id/line-items", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.put("/api/change-orders/:id/line-items", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const { laborEntries, equipmentEntries, materialEntries, costBreakdown, overheadPercent, profitPercent, subcontractorMarkupPercent } = req.body;
@@ -1807,9 +1807,9 @@ router.get("/api/project-health-portfolio/summary", requireAuth, async (req, res
 // Project Vault - Aggregated Documents
 // ====================
 
-const VAULT_MANAGEMENT_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HUSTLER", "SAFETY_MANAGER", "HR_MANAGER", "EQUIPMENT_MANAGER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER"];
-const VAULT_CONTRACT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"];
-const VAULT_CHANGE_ORDER_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HUSTLER", "PROJECT_ENGINEER"];
+const VAULT_MANAGEMENT_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "HUSTLER"];
+const VAULT_CONTRACT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
+const VAULT_CHANGE_ORDER_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "HUSTLER"];
 
 interface VaultDocument {
   id: string;

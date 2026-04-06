@@ -10,8 +10,8 @@ const router = Router();
 
 function canAccessProfitability(role?: string): boolean {
   return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" ||
-    role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "OFFICE_MANAGER" ||
-    role === "HUSTLER" || role === "PROJECT_ENGINEER" || role === "PROCUREMENT_MANAGER";
+    role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "MANAGER" ||
+    role === "HUSTLER" || role === "ESTIMATOR" || role === "MANAGER";
 }
 
 router.get("/api/projects/:code/profitability/live", requireAuth, async (req: AuthRequest, res) => {

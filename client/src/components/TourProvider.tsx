@@ -363,12 +363,8 @@ function getTourStepsForRole(role: string): TourStep[] {
       return managerTourSteps;
     case "ESTIMATOR":
       return estimatorTourSteps;
-    case "OFFICE_MANAGER":
-      return officeTourSteps;
-    case "HOURLY_EMPLOYEE":
+    case "FIELD_WORKER":
       return crewTourSteps;
-    case "MAINTENANCE_MANAGER":
-      return maintenanceTourSteps;
     case "VENDOR":
       return vendorTourSteps;
     default:
@@ -436,7 +432,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [tourSteps, setTourSteps] = useState<Step[]>([]);
   const [pendingNavigation, setPendingNavigation] = useState<{ path: string; targetStep: number } | null>(null);
   
-  const role = user?.role || "HOURLY_EMPLOYEE";
+  const role = user?.role || "FIELD_WORKER";
   
   useEffect(() => {
     if (user?.role) {

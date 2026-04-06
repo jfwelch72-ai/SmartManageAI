@@ -46,7 +46,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Account Settings Hub**: Unified settings page (`/settings`) merging Profile and Settings, with URL-based sidebar routing for various sections.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
 *   **Platform Monitoring & Observability**: Super Admin dashboard with API usage tracking, AI usage analytics, object storage usage, platform integration health checks, and cross-organization audit log viewer.
-*   **Feature Permissions System**: Granular per-user feature access control.
+*   **Feature Permissions System**: Granular per-user feature access control via 73 boolean flags in `user_dashboard_permissions` table, with role-based defaults for 8 consolidated roles.
+*   **RBAC (8-Role System)**: Consolidated from 18 roles to 8: SUPER_ADMIN, ADMIN, HUSTLER, MANAGER, SUPERINTENDENT, ESTIMATOR, FIELD_WORKER, VENDOR. Migration mapping: OFFICE_MANAGER/HR_MANAGER/SALES/MARKETING/PROCUREMENT_MANAGER→MANAGER, SAFETY_MANAGER/DISPATCHER→SUPERINTENDENT, PROJECT_ENGINEER→ESTIMATOR, MAINTENANCE_MANAGER/EQUIPMENT_MANAGER/HOURLY_EMPLOYEE→FIELD_WORKER. Migration file: `migrations/0025_consolidate_roles_and_permissions.sql`.
 *   **Social Media Management System**: Content management with scheduling, AI generation, multi-platform support, and approval workflow.
 *   **BIM Quantity Extraction**: Client-side IFC file parsing using web-ifc for building element quantity extraction.
 *   **Contract Management Lifecycle**: Full contract lifecycle with E-Signature Integration and AI-Powered Risk Analysis.

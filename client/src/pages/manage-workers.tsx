@@ -145,20 +145,12 @@ const assignRewardSchema = z.object({ employeeId: z.string().min(1), rewardTypeI
 const ROLE_OPTIONS = [
   { value: "ALL", label: "All Roles" },
   { value: "ADMIN", label: "Admin" },
+  { value: "HUSTLER", label: "Hustler" },
   { value: "MANAGER", label: "Manager" },
   { value: "SUPERINTENDENT", label: "Superintendent" },
   { value: "ESTIMATOR", label: "Estimator" },
-  { value: "OFFICE_MANAGER", label: "Office Manager" },
-  { value: "HOURLY_EMPLOYEE", label: "Hourly Employee" },
-  { value: "MAINTENANCE_MANAGER", label: "Maintenance Manager" },
-  { value: "SALES", label: "Sales" },
-  { value: "MARKETING", label: "Marketing" },
-  { value: "SAFETY_MANAGER", label: "Safety Manager" },
-  { value: "HR_MANAGER", label: "HR Manager" },
-  { value: "EQUIPMENT_MANAGER", label: "Equipment Manager" },
-  { value: "PROJECT_ENGINEER", label: "Project Engineer" },
-  { value: "PROCUREMENT_MANAGER", label: "Procurement Manager" },
-  { value: "DISPATCHER", label: "Dispatcher" },
+  { value: "FIELD_WORKER", label: "Field Worker" },
+  { value: "VENDOR", label: "Vendor" },
 ];
 
 const EMPLOYMENT_TYPE_OPTIONS = [
@@ -169,21 +161,14 @@ const EMPLOYMENT_TYPE_OPTIONS = [
 ];
 
 const ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: "Super Admin",
   ADMIN: "Admin",
+  HUSTLER: "Hustler",
   MANAGER: "Manager",
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
-  OFFICE_MANAGER: "Office Manager",
-  HOURLY_EMPLOYEE: "Hourly Employee",
-  MAINTENANCE_MANAGER: "Maintenance Manager",
-  SALES: "Sales",
-  MARKETING: "Marketing",
-  SAFETY_MANAGER: "Safety Manager",
-  HR_MANAGER: "HR Manager",
-  EQUIPMENT_MANAGER: "Equipment Manager",
-  PROJECT_ENGINEER: "Project Engineer",
-  PROCUREMENT_MANAGER: "Procurement Manager",
-  DISPATCHER: "Dispatcher",
+  FIELD_WORKER: "Field Worker",
+  VENDOR: "Vendor",
 };
 
 const ATTENDANCE_COLORS: Record<string, string> = {
@@ -882,7 +867,7 @@ function ManageCriteriaDialog() {
 function PerformanceTab() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER" || user?.role === "HR_MANAGER" || user?.role === "SAFETY_MANAGER";
+  const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER";
   const [perfSubTab, setPerfSubTab] = useState<"rate" | "kpi-library" | "history" | "analytics">("rate");
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [scores, setScores] = useState<Record<string, number>>({});
@@ -1157,7 +1142,7 @@ function PerformanceTab() {
 function PerformanceAnalyticsSection() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
-  const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
+  const isManager = user?.role === "MANAGER";
   const canSeeLeaderboard = isAdmin || isManager;
 
   const { data: leaderboard = [], isLoading: loadingLb } = useQuery<LeaderboardEntry[]>({ queryKey: ["/api/performance/leaderboard"], enabled: canSeeLeaderboard });
@@ -1578,9 +1563,9 @@ export default function ManageWorkersPage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const isAdmin = user?.role === "ADMIN";
-  const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
-  const canManageWorkers = isAdmin || isManager || user?.role === "HR_MANAGER" || user?.role === "SAFETY_MANAGER" || user?.role === "SUPERINTENDENT";
-  const canViewAnalytics = isAdmin || isManager || user?.role === "HR_MANAGER" || user?.role === "SAFETY_MANAGER" || user?.role === "SUPERINTENDENT";
+  const isManager = user?.role === "MANAGER";
+  const canManageWorkers = isAdmin || isManager || user?.role === "SUPERINTENDENT";
+  const canViewAnalytics = isAdmin || isManager || user?.role === "SUPERINTENDENT";
   const defaultTab = canManageWorkers ? "workers" : "performance";
   const [activeTab, setActiveTab] = useState(defaultTab);
 

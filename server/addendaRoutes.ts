@@ -38,7 +38,7 @@ router.get("/projects/:projectId/addenda", requireAuth, async (req, res) => {
 router.post("/projects/:projectId/addenda", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
-    if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_MANAGER"].includes(user.role)) {
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     const { projectId } = req.params;
@@ -96,7 +96,7 @@ router.get("/addenda/:id", requireAuth, async (req, res) => {
 router.patch("/addenda/:id", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
-    if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_MANAGER"].includes(user.role)) {
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     const { title, description, relatedDocumentId, storageKey, fileUrl, fileName } = req.body;
@@ -147,7 +147,7 @@ router.delete("/addenda/:id", requireAuth, async (req, res) => {
 router.post("/addenda/:id/issue", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
-    if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_MANAGER"].includes(user.role)) {
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     const [existing] = await db.select().from(addenda)

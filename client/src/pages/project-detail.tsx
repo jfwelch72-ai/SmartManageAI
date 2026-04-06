@@ -345,7 +345,7 @@ function buildTabConfigs(
       value: "contracts",
       label: "Contracts",
       icon: FileText,
-      visible: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"].includes(userRole || ""),
+      visible: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(userRole || ""),
       group: "Documents & Communication",
     },
     {
@@ -458,12 +458,11 @@ const ROLE_DEFAULT_TABS: Record<string, string[]> = {
   SUPER_ADMIN: ["overview", "project-financials", "schedule", "risks"],
   ADMIN: ["overview", "project-financials", "schedule", "procurement"],
   MANAGER: ["overview", "project-financials", "schedule", "daily-notes"],
-  PROJECT_MANAGER: ["overview", "schedule", "daily-notes", "project-financials"],
+  HUSTLER: ["overview", "project-financials", "schedule", "risks"],
   SUPERINTENDENT: ["overview", "daily-notes", "inspections", "time", "field-takeoff"],
-  PROJECT_ENGINEER: ["overview", "rfis", "submittals", "plans", "schedule"],
   ESTIMATOR: ["overview", "estimate", "plans", "project-financials"],
-  FOREMAN: ["overview", "daily-notes", "time", "field-takeoff"],
-  OFFICE_MANAGER: ["overview", "project-financials", "payroll", "procurement"],
+  FIELD_WORKER: ["overview", "daily-notes", "time", "field-takeoff"],
+  VENDOR: ["overview"],
 };
 
 function getPinnedTabs(userId: string): string[] {
@@ -585,7 +584,7 @@ export default function ProjectDetailPage() {
     user?.role === "ADMIN" ||
     user?.role === "MANAGER" ||
     user?.role === "SUPERINTENDENT" ||
-    user?.role === "OFFICE_MANAGER" ||
+    user?.role === "MANAGER" ||
     canAccessFinancialsPerms === true;
   const tabConfigs = buildTabConfigs(user?.role, canAccessSOV, project?.status);
   const visibleTabs = tabConfigs.filter((t) => t.visible);

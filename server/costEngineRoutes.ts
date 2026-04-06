@@ -20,7 +20,7 @@ const router = Router();
 
 function canAccessCostEngine(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" ||
-    role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "HUSTLER";
+    role === "ESTIMATOR" || role === "MANAGER" || role === "HUSTLER";
 }
 
 async function getProjectByCode(code: string) {

@@ -114,43 +114,25 @@ interface UserWithPermissions extends SelectUser {
 }
 
 const ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: "Super Admin",
   ADMIN: "Admin",
-  MANAGER: "Project Manager",
-  SUPERINTENDENT: "Field Superintendent",
-  ESTIMATOR: "Estimator",
-  OFFICE_MANAGER: "Office Manager",
-  HOURLY_EMPLOYEE: "Hourly Employee",
-  MAINTENANCE_MANAGER: "Maintenance Manager",
   HUSTLER: "Hustler",
+  MANAGER: "Manager",
+  SUPERINTENDENT: "Superintendent",
+  ESTIMATOR: "Estimator",
+  FIELD_WORKER: "Field Worker",
   VENDOR: "Vendor",
-  SALES: "Sales",
-  MARKETING: "Marketing",
-  SAFETY_MANAGER: "Safety Manager",
-  HR_MANAGER: "HR Manager",
-  EQUIPMENT_MANAGER: "Equipment Manager",
-  PROJECT_ENGINEER: "Project Engineer",
-  PROCUREMENT_MANAGER: "Procurement Manager",
-  DISPATCHER: "Dispatcher",
 };
 
 const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
+  SUPER_ADMIN: "destructive",
   ADMIN: "destructive",
+  HUSTLER: "destructive",
   MANAGER: "default",
   SUPERINTENDENT: "default",
   ESTIMATOR: "default",
-  OFFICE_MANAGER: "default",
-  HOURLY_EMPLOYEE: "secondary",
-  MAINTENANCE_MANAGER: "default",
-  HUSTLER: "destructive",
+  FIELD_WORKER: "secondary",
   VENDOR: "secondary",
-  SALES: "default",
-  MARKETING: "default",
-  SAFETY_MANAGER: "default",
-  HR_MANAGER: "default",
-  EQUIPMENT_MANAGER: "default",
-  PROJECT_ENGINEER: "default",
-  PROCUREMENT_MANAGER: "default",
-  DISPATCHER: "default",
 };
 
 // Status filter options
@@ -178,7 +160,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     lastName: "",
     email: "",
     phone: "",
-    role: "HOURLY_EMPLOYEE",
+    role: "FIELD_WORKER",
     password: "",
   });
 
@@ -203,7 +185,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
         lastName: "",
         email: "",
         phone: "",
-        role: "HOURLY_EMPLOYEE",
+        role: "FIELD_WORKER",
         password: "",
       });
     },

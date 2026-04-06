@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireRoleOrFeature, type AuthRequest } from "./auth";
 import { db } from "./db";
 import { drawingSets, drawingSetItems, takeoffSheets, projects } from "@shared/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
@@ -30,7 +30,7 @@ router.get("/:projectId/drawing-sets", requireAuth, async (req: AuthRequest, res
   }
 });
 
-router.post("/:projectId/drawing-sets", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/:projectId/drawing-sets", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
   try {
     const user = getUserOrThrow(req, res);
     if (!user) return;
@@ -59,7 +59,7 @@ router.post("/:projectId/drawing-sets", requireAuth, requireRole("SUPER_ADMIN", 
   }
 });
 
-router.patch("/drawing-sets/:setId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -85,7 +85,7 @@ router.patch("/drawing-sets/:setId", requireAuth, requireRole("SUPER_ADMIN", "AD
   }
 });
 
-router.delete("/drawing-sets/:setId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -103,7 +103,7 @@ router.delete("/drawing-sets/:setId", requireAuth, requireRole("SUPER_ADMIN", "A
   }
 });
 
-router.post("/drawing-sets/:setId/primary", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/drawing-sets/:setId/primary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -154,7 +154,7 @@ router.get("/drawing-sets/:setId/items", requireAuth, async (req: AuthRequest, r
   }
 });
 
-router.post("/drawing-sets/:setId/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/drawing-sets/:setId/items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -191,7 +191,7 @@ router.post("/drawing-sets/:setId/items", requireAuth, requireRole("SUPER_ADMIN"
   }
 });
 
-router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -232,7 +232,7 @@ router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRole("SUPER_A
   }
 });
 
-router.delete("/drawing-sets/:setId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/drawing-sets/:setId/items/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;

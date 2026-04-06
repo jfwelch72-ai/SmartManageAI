@@ -330,7 +330,7 @@ export default function EquipmentDetailPage() {
     user?.role === "ADMIN" ||
     user?.role === "MANAGER" ||
     user?.role === "SUPERINTENDENT" ||
-    user?.role === "MAINTENANCE_MANAGER";
+    user?.role === "FIELD_WORKER";
   const isAssigned = equipment?.status === "ASSIGNED" && activeAssignment;
 
   const handleEdit = () => {

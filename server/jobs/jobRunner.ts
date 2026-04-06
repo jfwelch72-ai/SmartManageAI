@@ -628,7 +628,7 @@ async function processComplianceExpirations() {
     .where(
       and(
         inArray(users.organizationId, orgIds),
-        inArray(users.role, ["ADMIN", "MANAGER", "OFFICE_MANAGER", "PROCUREMENT_MANAGER"])
+        inArray(users.role, ["ADMIN", "MANAGER"])
       )
     );
 
@@ -709,7 +709,7 @@ async function processComplianceExpirations() {
 async function processProfitabilityMonitor() {
   logInfo("Starting profitability monitor run");
 
-  const FINANCIAL_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HUSTLER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER"];
+  const FINANCIAL_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "HUSTLER"];
   const THRESHOLDS = [
     { pct: 5, label: "5%", severity: "MINOR_CONCERN" },
     { pct: 10, label: "10%", severity: "MINOR_CONCERN" },

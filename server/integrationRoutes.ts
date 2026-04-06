@@ -300,7 +300,7 @@ async function getValidAccessToken(provider: CloudProvider, orgId: string): Prom
   return { accessToken, connection };
 }
 
-router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
+router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { provider, folderId, query } = req.query as Record<string, string>;
 

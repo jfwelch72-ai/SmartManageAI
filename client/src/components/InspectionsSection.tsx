@@ -98,7 +98,7 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
   const canCreateInspection = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
   const canEditInspection = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
   const canPassFail = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
-  const canSchedule = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "OFFICE_MANAGER";
+  const canSchedule = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
 
   const { data: inspections = [], isLoading } = useQuery<ProjectInspection[]>({
     queryKey: ["/api/projects", projectId, "inspections"],

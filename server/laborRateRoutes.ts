@@ -26,7 +26,7 @@ const router = Router();
 
 // ==================== JOB CLASSIFICATIONS ====================
 
-router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -179,7 +179,7 @@ router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (
 
 // ==================== EMPLOYEE CLASSIFICATIONS ====================
 
-router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -443,7 +443,7 @@ router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN",
 
 // ==================== PREVAILING WAGE RATES ====================
 
-router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -669,7 +669,7 @@ function computeBurdenedCost(baseSalary: number, burdenPercentage: number, fixed
   return baseSalary + (baseSalary * burdenPercentage / 100) + fixedBurdenAmount;
 }
 
-router.get("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -778,7 +778,7 @@ router.delete("/salary-categories/:id", requireAuth, requireRole("ADMIN"), async
 
 // ==================== BURDEN RATES ====================
 
-router.get("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -894,7 +894,7 @@ router.delete("/burden-rates/:id", requireAuth, requireRole("ADMIN"), async (req
 
 // ==================== EMPLOYEE COST ASSIGNMENTS ====================
 
-router.get("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });

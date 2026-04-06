@@ -46,11 +46,11 @@ const router = Router();
 // ============================================
 
 /** Full read + write hiring access */
-const HIRING_FULL = ["ADMIN", "HUSTLER", "HR_MANAGER"] as const;
+const HIRING_FULL = ["ADMIN", "HUSTLER"] as const;
 /** Candidate-review (read candidates/interviews, approve stage moves) */
-const HIRING_REVIEW = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER", "OFFICE_MANAGER"] as const;
-/** Manager-level hiring: can schedule interviews, run AI review, update stage — excludes OFFICE_MANAGER */
-const HIRING_MANAGER_LEVEL = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER"] as const;
+const HIRING_REVIEW = ["ADMIN", "HUSTLER", "MANAGER"] as const;
+/** Manager-level hiring: can schedule interviews, run AI review, update stage */
+const HIRING_MANAGER_LEVEL = ["ADMIN", "HUSTLER", "MANAGER"] as const;
 /** Advanced hiring views (Interviews list + Analytics pages): ADMIN/HUSTLER/MANAGER only */
 const HIRING_ADVANCED = ["ADMIN", "HUSTLER", "MANAGER"] as const;
 /** Integration management restricted to ADMIN only (ATS credentials are sensitive) */

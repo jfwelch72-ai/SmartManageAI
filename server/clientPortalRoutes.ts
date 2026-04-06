@@ -35,7 +35,7 @@ const portalAccessSchema = z.object({
   name: z.string().optional(),
 });
 
-router.post("/portal/access/create", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/portal/access/create", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;

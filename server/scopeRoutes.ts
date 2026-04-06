@@ -2719,7 +2719,7 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
           .where(
             and(
               eq(users.organizationId, project.gcOrganizationId),
-              eq(users.role, "OFFICE_MANAGER"),
+              eq(users.role),
               eq(users.isActive, true)
             )
           );
@@ -2782,7 +2782,7 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
     }
 
     const isCreator = existingProgress.createdById === req.user!.id;
-    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
+    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
     
     if (!isCreator && !isAuthorized) {
       res.status(403).json({ error: "Permission denied" });
@@ -2849,7 +2849,7 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
           const officeManagers = await db
             .select()
             .from(users)
-            .where(eq(users.role, "OFFICE_MANAGER"));
+            .where(eq(users.role));
 
           if (officeManagers.length > 0) {
             const notificationValues = officeManagers.map(manager => ({
@@ -2912,7 +2912,7 @@ router.delete("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth,
     }
 
     const isCreator = existingProgress.createdById === req.user!.id;
-    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
+    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
     
     if (!isCreator && !isAuthorized) {
       res.status(403).json({ error: "Permission denied" });

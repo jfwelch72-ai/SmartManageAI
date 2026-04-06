@@ -85,8 +85,8 @@ export default function HiringTasksPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const role = user?.role;
-  const canEdit = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER", "OFFICE_MANAGER"].includes(role ?? "");
-  const canCreate = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER"].includes(role ?? "");
+  const canEdit = ["ADMIN", "HUSTLER", "MANAGER"].includes(role ?? "");
+  const canCreate = ["ADMIN", "HUSTLER", "MANAGER"].includes(role ?? "");
 
   const [showDialog, setShowDialog] = useState(false);
   const [newTitle, setNewTitle] = useState("");

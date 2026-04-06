@@ -124,7 +124,7 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
   const canCreateDelay = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
   const canGenerateNotification = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
   const canAcknowledge = userRole === "ADMIN" || userRole === "MANAGER";
-  const canCreateChangeOrder = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "OFFICE_MANAGER";
+  const canCreateChangeOrder = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
 
   const { data: delays = [], isLoading } = useQuery<ExtendedDelay[]>({
     queryKey: ["/api/projects", projectId, "delays"],

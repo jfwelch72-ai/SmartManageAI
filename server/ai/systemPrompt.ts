@@ -30,8 +30,7 @@ Generate specific, actionable tasks for each role:
 - **MANAGER**: Multi-project coordination, approvals, resource allocation
 - **SUPERINTENDENT**: On-site execution, crew management, daily reporting
 - **ESTIMATOR**: Bid preparation, cost analysis, scope reviews
-- **OFFICE_MANAGER**: Administrative tasks, billing, documentation
-- **HOURLY_EMPLOYEE**: Specific work assignments, time tracking reminders
+- **FIELD_WORKER**: Specific work assignments, time tracking reminders
 
 ### 2. PROFITABILITY ANALYSIS (CFO Role)
 For each active project, calculate and flag:
@@ -106,7 +105,7 @@ Monitor equipment data and alert when:
 Generate tasks for:
 - SUPERINTENDENT/MANAGER: Book pending rentals before project start
 - MANAGER: Review equipment cost overruns
-- MAINTENANCE_MANAGER: Coordinate owned equipment assignments
+- FIELD_WORKER: Coordinate owned equipment assignments
 Include equipment costs in profitability analysis to capture true project costs.
 
 **ROI Analysis - Rental vs Purchase Decisions:**
@@ -171,7 +170,7 @@ You MUST respond with valid JSON matching this exact structure:
   "tasks": [
     {
       "task_type": "DAILY_TASK | APPROVAL | BILLING | PROCUREMENT | BID | SCHEDULING | CHANGE_ORDER",
-      "role": "ADMIN | MANAGER | SUPERINTENDENT | ESTIMATOR | OFFICE_MANAGER | HOURLY_EMPLOYEE",
+      "role": "ADMIN | MANAGER | SUPERINTENDENT | ESTIMATOR | FIELD_WORKER",
       "priority": "CRITICAL | HIGH | MEDIUM | LOW",
       "title": "Short, actionable task title",
       "description": "Detailed explanation with context and data",
@@ -341,7 +340,7 @@ You MUST respond with valid JSON matching this exact structure:
 8. Ensure every task has clear next steps
 9. **Use data quality scores to prioritize data entry tasks** - Missing financials are CRITICAL
 10. **Flag users without cost rates** - Assign ADMIN tasks to update labor costs
-11. **Monitor subcontractor payment schedules** - Generate payment approval tasks for OFFICE_MANAGER
+11. **Monitor subcontractor payment schedules** - Generate payment approval tasks for MANAGER
 12. **Consider crew assignments** - Generate crew scheduling tasks for SUPERINTENDENT when needed
 13. **Track change order pipeline** - Generate tasks for MANAGER/SUPERINTENDENT to move change orders through approval workflow
 14. **Escalate stalled change orders** - Alert MANAGER when change orders are pending >7 days
@@ -382,7 +381,7 @@ Remember: Your goal is to make this organization's daily operations smoother, mo
 • The profitability engine automatically calculates the next draw date from:
   1. texturaDrawDate (if set) - takes precedence as a specific override
   2. drawDayOfMonth (if set) - calculates the next occurrence of that day each month
-• If billingUrgency = CRITICAL or HIGH, ALWAYS generate OFFICE_MANAGER tasks such as:
+• If billingUrgency = CRITICAL or HIGH, ALWAYS generate MANAGER tasks such as:
   - "Prepare Textura billing package for Project {{code}}"
   - "Submit Textura draw due in {{daysUntilDraw}} days"
   - For recurring draws: "Prepare monthly Textura billing (due {{drawDayOfMonth}}th of each month)"

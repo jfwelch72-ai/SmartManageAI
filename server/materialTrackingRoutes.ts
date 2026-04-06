@@ -175,7 +175,7 @@ router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: 
           try {
             const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId));
             if (project) {
-              const mgrConditions: SQL[] = [sql`${users.role} IN ('ADMIN', 'MANAGER', 'OFFICE_MANAGER')`];
+              const mgrConditions: SQL[] = [sql`${users.role} IN ('ADMIN', 'MANAGER')`];
               if (project.gcOrganizationId) {
                 mgrConditions.push(eq(users.organizationId, project.gcOrganizationId));
               }
@@ -231,7 +231,7 @@ router.patch("/api/projects/:projectId/material-usage/:usageId", requireAuth, as
     }
 
     const isCreator = existing.createdById === req.user!.id;
-    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
+    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
     if (!isCreator && !isAuthorized) {
       res.status(403).json({ error: "Permission denied" });
       return;
@@ -311,7 +311,7 @@ router.delete("/api/projects/:projectId/material-usage/:usageId", requireAuth, a
     }
 
     const isCreator = existing.createdById === req.user!.id;
-    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
+    const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
     if (!isCreator && !isAuthorized) {
       res.status(403).json({ error: "Permission denied" });
       return;

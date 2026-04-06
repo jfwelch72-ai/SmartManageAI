@@ -2149,7 +2149,7 @@ router.post("/api/bids/:code/material-quotes/:quoteId/send-rfq", requireAuth, re
 // Handoff Packet Routes (Job Information for QuickBooks)
 // ====================
 
-router.get("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "OFFICE_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2174,7 +2174,7 @@ router.get("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2266,7 +2266,7 @@ router.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.get("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "OFFICE_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {
@@ -2291,7 +2291,7 @@ router.get("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN
   }
 });
 
-router.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {

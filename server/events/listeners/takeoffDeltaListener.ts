@@ -7,7 +7,7 @@ import { deliverNotifications } from "../../services/notificationDelivery";
 import { computeTakeoffDelta, createChangeOrderFromDelta } from "../../services/takeoffDeltaChangeOrderService";
 import type { TakeoffVersionSupersededEvent } from "../eventTypes";
 
-const ADMIN_ROLES = ["ADMIN", "MANAGER", "OFFICE_MANAGER"] as const;
+const ADMIN_ROLES = ["ADMIN", "MANAGER"] as const;
 
 async function getAdminUserIds(orgId: string): Promise<string[]> {
   try {

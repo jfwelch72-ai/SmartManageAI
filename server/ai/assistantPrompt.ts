@@ -132,12 +132,12 @@ The platform includes AI-powered features for:
 
 ## User Roles (RBAC)
 1. **ADMIN**: Full access to all features, user management, system settings
-2. **MANAGER**: Project management, bid oversight, reports, team management
-3. **OFFICE_MANAGER**: Administrative tasks, billing, supply ordering
-4. **SUPERINTENDENT**: Field operations, crew management, daily logistics
-5. **ESTIMATOR**: Bid creation, cost estimation, takeoffs
-6. **FOREMAN**: Crew supervision, daily reporting
-7. **HOURLY_EMPLOYEE**: Time clock, basic project viewing
+2. **MANAGER**: Project management, bid oversight, reports, team management, billing
+3. **SUPERINTENDENT**: Field operations, crew management, daily logistics, safety
+4. **ESTIMATOR**: Bid creation, cost estimation, takeoffs
+5. **FIELD_WORKER**: Time clock, basic project viewing, daily notes
+6. **HUSTLER**: Multi-organization owner with per-org permissions
+7. **VENDOR**: External vendor portal, pricing submissions
 
 ## Common Tasks
 

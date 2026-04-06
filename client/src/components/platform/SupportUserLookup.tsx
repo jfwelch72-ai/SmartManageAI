@@ -54,12 +54,12 @@ interface User {
 const roleLabels: Record<string, string> = {
   SUPER_ADMIN: "Platform Admin",
   ADMIN: "Admin",
+  HUSTLER: "Hustler",
   MANAGER: "Manager",
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
-  OFFICE_MANAGER: "Office Manager",
-  HOURLY_EMPLOYEE: "Hourly Employee",
-  MAINTENANCE_MANAGER: "Maintenance Manager",
+  FIELD_WORKER: "Field Worker",
+  VENDOR: "Vendor",
 };
 
 export function SupportUserLookup() {
@@ -78,7 +78,7 @@ export function SupportUserLookup() {
     email: "",
     password: "",
     organizationId: "",
-    role: "HOURLY_EMPLOYEE",
+    role: "FIELD_WORKER",
   });
 
   const { data: organizations } = useQuery<Organization[]>({
@@ -96,7 +96,7 @@ export function SupportUserLookup() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
       setCreateDialogOpen(false);
-      setNewUserForm({ firstName: "", lastName: "", email: "", password: "", organizationId: "", role: "HOURLY_EMPLOYEE" });
+      setNewUserForm({ firstName: "", lastName: "", email: "", password: "", organizationId: "", role: "FIELD_WORKER" });
       toast({ title: "User created", description: "The new user account has been created successfully" });
     },
     onError: (error: any) => {
@@ -309,9 +309,7 @@ export function SupportUserLookup() {
                       <SelectItem value="MANAGER">Manager</SelectItem>
                       <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
                       <SelectItem value="ESTIMATOR">Estimator</SelectItem>
-                      <SelectItem value="OFFICE_MANAGER">Office Manager</SelectItem>
-                      <SelectItem value="HOURLY_EMPLOYEE">Hourly Employee</SelectItem>
-                      <SelectItem value="MAINTENANCE_MANAGER">Maintenance Manager</SelectItem>
+                      <SelectItem value="FIELD_WORKER">Field Worker</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -362,12 +360,12 @@ export function SupportUserLookup() {
                 <SelectItem value="all">All Roles</SelectItem>
                 <SelectItem value="SUPER_ADMIN">Platform Admin</SelectItem>
                 <SelectItem value="ADMIN">Admin</SelectItem>
+                <SelectItem value="HUSTLER">Hustler</SelectItem>
                 <SelectItem value="MANAGER">Manager</SelectItem>
                 <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
                 <SelectItem value="ESTIMATOR">Estimator</SelectItem>
-                <SelectItem value="OFFICE_MANAGER">Office Manager</SelectItem>
-                <SelectItem value="MAINTENANCE_MANAGER">Maintenance Manager</SelectItem>
-                <SelectItem value="HOURLY_EMPLOYEE">Hourly Employee</SelectItem>
+                <SelectItem value="FIELD_WORKER">Field Worker</SelectItem>
+                <SelectItem value="VENDOR">Vendor</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -791,22 +789,12 @@ export function SupportUserLookup() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ADMIN">Admin</SelectItem>
+                  <SelectItem value="HUSTLER">Hustler</SelectItem>
                   <SelectItem value="MANAGER">Manager</SelectItem>
                   <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
                   <SelectItem value="ESTIMATOR">Estimator</SelectItem>
-                  <SelectItem value="OFFICE_MANAGER">Office Manager</SelectItem>
-                  <SelectItem value="HOURLY_EMPLOYEE">Hourly Employee</SelectItem>
-                  <SelectItem value="MAINTENANCE_MANAGER">Maintenance Manager</SelectItem>
+                  <SelectItem value="FIELD_WORKER">Field Worker</SelectItem>
                   <SelectItem value="VENDOR">Vendor</SelectItem>
-                  <SelectItem value="HUSTLER">Hustler</SelectItem>
-                  <SelectItem value="SALES">Sales</SelectItem>
-                  <SelectItem value="MARKETING">Marketing</SelectItem>
-                  <SelectItem value="SAFETY_MANAGER">Safety Manager</SelectItem>
-                  <SelectItem value="HR_MANAGER">HR Manager</SelectItem>
-                  <SelectItem value="EQUIPMENT_MANAGER">Equipment Manager</SelectItem>
-                  <SelectItem value="PROJECT_ENGINEER">Project Engineer</SelectItem>
-                  <SelectItem value="PROCUREMENT_MANAGER">Procurement Manager</SelectItem>
-                  <SelectItem value="DISPATCHER">Dispatcher</SelectItem>
                 </SelectContent>
               </Select>
             </div>

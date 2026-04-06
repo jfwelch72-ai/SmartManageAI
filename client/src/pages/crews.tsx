@@ -1544,7 +1544,7 @@ export default function CrewsPage() {
                   {users
                     .filter(
                       (u) =>
-                        u.role === "HOURLY_EMPLOYEE" &&
+                        u.role === "FIELD_WORKER" &&
                         !crewMembers.some((cm) => cm.user.id === u.id),
                     )
                     .map((u) => (

@@ -51,7 +51,7 @@ async function verifyIssueSheetAccess(sheetId: string, user: { id: string; organ
   return { allowed: false, sheet, reason: "Sheet has no parent" };
 }
 
-const WRITE_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR", "FOREMAN", "SUPERINTENDENT", "PROJECT_ENGINEER"];
+const WRITE_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "SUPERINTENDENT"];
 
 function canWrite(role: string): boolean {
   return WRITE_ROLES.includes(role) || role === "SUPER_ADMIN";

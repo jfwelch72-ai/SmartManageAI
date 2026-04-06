@@ -556,7 +556,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .select({
       total: sql<number>`count(*)::int`,
       superintendents: sql<number>`count(*) filter (where ${users.role} = 'SUPERINTENDENT')::int`,
-      hourlyWorkers: sql<number>`count(*) filter (where ${users.role} = 'HOURLY_EMPLOYEE')::int`,
+      hourlyWorkers: sql<number>`count(*) filter (where ${users.role} = 'FIELD_WORKER')::int`,
       withoutCostRates: sql<number>`count(*) filter (where ${users.costRateRegular} is null or ${users.costRateOvertime} is null)::int`,
     })
     .from(users);

@@ -155,7 +155,7 @@ router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequ
       .from(users)
       .where(and(
         eq(users.organizationId, orgId),
-        sql`${users.role} IN ('SUPERINTENDENT', 'OFFICE_MANAGER', 'MANAGER', 'ADMIN')`
+        sql`${users.role} IN ('SUPERINTENDENT', 'MANAGER', 'ADMIN')`
       ))
       .orderBy(users.firstName);
     res.json(approvers);
@@ -271,7 +271,7 @@ router.post("/api/overtime-requests/by-shifts", requireAuth, async (req: AuthReq
   }
 });
 
-router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     const requests = await db.select().from(overtimeRequests)
@@ -320,7 +320,7 @@ router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const { approvedHours } = req.body;
@@ -366,7 +366,7 @@ router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMI
   }
 });
 
-router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;

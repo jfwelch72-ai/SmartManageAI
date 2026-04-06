@@ -66,7 +66,7 @@
  *   post:
  *     tags: [Change Orders]
  *     summary: Promote PCO to review status
- *     description: Requires ADMIN, MANAGER, or PROJECT_ENGINEER role.
+ *     description: Requires ADMIN, MANAGER, or ESTIMATOR role.
  *     parameters:
  *       - name: id
  *         in: path
@@ -139,8 +139,8 @@ import { logError } from "./utils/logger";
 import { eventBus } from "./events";
 import { db } from "./db";
 import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprovals, budgetLineItems, orgCostCodes } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
-import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { type AuthRequest, requireAuth, requireRole, requireRoleOrFeature } from "./auth";
 import { logAudit } from "./auditLogger";
 import { insertNotifications } from "./services/notificationService";
 import { sanitizeText } from "./sanitization";
@@ -161,7 +161,7 @@ const router = Router();
  * For backward compatibility, this now redirects to SUBMITTED status directly
  * Also handles migrating any existing PENDING_APPROVAL records to SUBMITTED
  */
-router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/request-approval", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -249,7 +249,7 @@ router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"
  * Submit a change order to client
  * DRAFT -> SUBMITTED (simplified workflow)
  */
-router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/submit", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -366,7 +366,7 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
  * Approve a change order
  * SUBMITTED -> APPROVED (simplified workflow)
  */
-router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -494,7 +494,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
           .where(
             and(
               eq(users.organizationId, project.gcOrganizationId),
-              eq(users.role, "OFFICE_MANAGER"),
+              inArray(users.role, ["ADMIN", "MANAGER"]),
               eq(users.isActive, true)
             )
           );
@@ -588,7 +588,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
  * Reject a change order
  * Any non-terminal state -> REJECTED
  */
-router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     // SECURITY: Sanitize text inputs for data integrity
     const rejectionReason = req.body.rejectionReason ? sanitizeText(req.body.rejectionReason) : undefined;
@@ -709,7 +709,7 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
  * Promote a PCO to pricing review
  * PCO -> PRICING_REVIEW
  */
-router.post("/:id/promote-to-review", requireAuth, requireRole("ADMIN", "MANAGER", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/promote-to-review", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -785,7 +785,7 @@ router.post("/:id/promote-to-review", requireAuth, requireRole("ADMIN", "MANAGER
  * Approve pricing and submit to client
  * PRICING_REVIEW -> SUBMITTED
  */
-router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/approve-pricing", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -875,7 +875,7 @@ router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER")
  * Return a change order from pricing review back to PCO
  * PRICING_REVIEW -> PCO
  */
-router.post("/:id/return-to-pco", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/return-to-pco", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     const reason = req.body.reason ? sanitizeText(req.body.reason) : undefined;
 
@@ -1018,7 +1018,7 @@ router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequ
  * Return a change order to draft for revision
  * PENDING_APPROVAL -> DRAFT or SUBMITTED -> DRAFT or REJECTED -> DRAFT
  */
-router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/return-to-draft", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     // SECURITY: Sanitize text inputs for data integrity
     const reason = req.body.reason ? sanitizeText(req.body.reason) : undefined;

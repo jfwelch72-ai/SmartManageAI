@@ -87,13 +87,14 @@ export default function PlatformAdminDashboard() {
   };
 
   const roleLabels: Record<string, string> = {
+    SUPER_ADMIN: "Super Admins",
     ADMIN: "Administrators",
+    HUSTLER: "Hustlers",
     MANAGER: "Managers",
     SUPERINTENDENT: "Superintendents",
     ESTIMATOR: "Estimators",
-    OFFICE_MANAGER: "Office Managers",
-    HOURLY_EMPLOYEE: "Hourly Employees",
-    MAINTENANCE_MANAGER: "Maintenance Managers",
+    FIELD_WORKER: "Field Workers",
+    VENDOR: "Vendors",
   };
 
   if (isLoading) {

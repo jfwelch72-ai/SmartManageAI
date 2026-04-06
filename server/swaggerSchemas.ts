@@ -158,12 +158,7 @@ export function zodSchemaToOpenApi(): Record<string, any> {
       phone: { type: "string", nullable: true },
       role: {
         type: "string",
-        enum: [
-          "SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR",
-          "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR",
-          "HUSTLER", "SALES", "MARKETING", "SAFETY_MANAGER", "HR_MANAGER",
-          "EQUIPMENT_MANAGER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER", "DISPATCHER",
-        ],
+        enum: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR", "HUSTLER", ],
       },
       isActive: { type: "boolean" },
       organizationId: { type: "string", format: "uuid" },

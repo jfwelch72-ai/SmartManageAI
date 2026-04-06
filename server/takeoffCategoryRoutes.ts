@@ -97,7 +97,7 @@ router.get("/api/subcontractor-contracts/:contractId/payments", requireAuth, asy
 });
 
 // Create payment for a contract (Admin/Manager only)
-router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res, next) => {
+router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { contractId } = req.params;
     const { insertSubcontractorPaymentSchema } = await import("@shared/schema");

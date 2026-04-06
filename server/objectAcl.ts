@@ -166,8 +166,8 @@ export async function canAccessObject({
     return true;
   }
 
-  // Check explicit permissions in database for SUPERINTENDENT and HOURLY_EMPLOYEE
-  if (fileId && fileType && (userRole === "SUPERINTENDENT" || userRole === "HOURLY_EMPLOYEE")) {
+  // Check explicit permissions in database for SUPERINTENDENT and FIELD_WORKER
+  if (fileId && fileType && (userRole === "SUPERINTENDENT" || userRole === "FIELD_WORKER")) {
     const permission = await db
       .select()
       .from(filePermissions)

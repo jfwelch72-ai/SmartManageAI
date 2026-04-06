@@ -15,7 +15,7 @@ function canManage(role?: string) {
   return MANAGE_ROLES.includes(role || "");
 }
 
-const VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"];
+const VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"];
 
 function canView(role?: string) {
   return VIEW_ROLES.includes(role || "");

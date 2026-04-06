@@ -3609,7 +3609,7 @@ router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.singl
       .from(users)
       .where(and(
         eq(users.organizationId, orgId),
-        sql`${users.role} IN ('ADMIN', 'HUSTLER', 'HR_MANAGER')`
+        sql`${users.role} IN ('ADMIN', 'HUSTLER', 'MANAGER')`
       ));
 
     for (const admin of adminUsers) {

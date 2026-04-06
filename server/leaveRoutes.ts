@@ -52,7 +52,7 @@ router.get("/api/leave/types", async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/api/leave/types", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/leave/types", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -84,7 +84,7 @@ router.post("/api/leave/types", requireAuth, requireRole("ADMIN", "MANAGER", "HR
   }
 });
 
-router.patch("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -119,7 +119,7 @@ router.patch("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.delete("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -170,7 +170,7 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => 
 
     const requestedEmployeeId = req.query.employeeId as string | undefined;
     const userRole = req.user!.role;
-    const isManagerRole = isSA || ["ADMIN", "MANAGER", "HR_MANAGER", "SUPERINTENDENT"].includes(userRole || "");
+    const isManagerRole = isSA || ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole || "");
 
     if (requestedEmployeeId && requestedEmployeeId !== req.user!.id && !isManagerRole) {
       return res.status(403).json({ error: "Access denied. Only managers can view other employees' balances." });
@@ -250,7 +250,7 @@ router.get("/api/leave/requests", requireAuth, async (req: AuthRequest, res) => 
     const employeeFilter = req.query.employeeId as string | undefined;
     const scope = req.query.scope as string | undefined;
     const userRole = req.user!.role;
-    const isManagerRole = ["ADMIN", "MANAGER", "HR_MANAGER", "SUPERINTENDENT"].includes(userRole || "");
+    const isManagerRole = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole || "");
 
     const conditions = [eq(leaveRequests.organizationId, orgId)];
 
@@ -347,7 +347,7 @@ router.post("/api/leave/requests", requireAuth, async (req: AuthRequest, res) =>
       .where(
         and(
           eq(users.organizationId, orgId),
-          sql`${users.role} IN ('ADMIN', 'MANAGER', 'HR_MANAGER')`,
+          sql`${users.role} IN ('ADMIN', 'MANAGER')`,
           eq(users.isActive, true)
         )
       );
@@ -373,7 +373,7 @@ router.post("/api/leave/requests", requireAuth, async (req: AuthRequest, res) =>
   }
 });
 
-router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -439,7 +439,7 @@ router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN",
   }
 });
 
-router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -507,7 +507,7 @@ router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-router.get("/api/leave/team-calendar", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/leave/team-calendar", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {

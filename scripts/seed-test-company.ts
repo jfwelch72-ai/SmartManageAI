@@ -29,7 +29,7 @@ interface TestUser {
   firstName: string;
   lastName: string;
   email: string;
-  role: "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER" | "SALES" | "MARKETING" | "SAFETY_MANAGER" | "HR_MANAGER" | "EQUIPMENT_MANAGER" | "PROJECT_ENGINEER" | "PROCUREMENT_MANAGER" | "DISPATCHER";
+  role: "SUPER_ADMIN" | "ADMIN" | "HUSTLER" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "FIELD_WORKER" | "VENDOR";
   phone?: string;
 }
 
@@ -39,19 +39,19 @@ const MAIN_ORG_USERS: TestUser[] = [
   { firstName: "Project", lastName: "Manager", email: "manager@realtest.com", role: "MANAGER", phone: "555-100-0003" },
   { firstName: "Site", lastName: "Superintendent", email: "super@realtest.com", role: "SUPERINTENDENT", phone: "555-100-0004" },
   { firstName: "Cost", lastName: "Estimator", email: "estimator@realtest.com", role: "ESTIMATOR", phone: "555-100-0005" },
-  { firstName: "Office", lastName: "Manager", email: "office@realtest.com", role: "OFFICE_MANAGER", phone: "555-100-0006" },
-  { firstName: "Field", lastName: "Worker", email: "worker@realtest.com", role: "HOURLY_EMPLOYEE", phone: "555-100-0007" },
-  { firstName: "Equipment", lastName: "Manager", email: "maintenance@realtest.com", role: "MAINTENANCE_MANAGER", phone: "555-100-0008" },
+  { firstName: "Office", lastName: "Manager", email: "office@realtest.com", role: "MANAGER", phone: "555-100-0006" },
+  { firstName: "Field", lastName: "Worker", email: "worker@realtest.com", role: "FIELD_WORKER", phone: "555-100-0007" },
+  { firstName: "Equipment", lastName: "Manager", email: "maintenance@realtest.com", role: "FIELD_WORKER", phone: "555-100-0008" },
   { firstName: "Vendor", lastName: "Contact", email: "vendor@realtest.com", role: "VENDOR", phone: "555-100-0009" },
   { firstName: "Business", lastName: "Owner", email: "hustler@realtest.com", role: "HUSTLER", phone: "555-100-0010" },
-  { firstName: "Sales", lastName: "Rep", email: "sales@realtest.com", role: "SALES", phone: "555-100-0011" },
-  { firstName: "Marketing", lastName: "Lead", email: "marketing@realtest.com", role: "MARKETING", phone: "555-100-0012" },
-  { firstName: "Safety", lastName: "Manager", email: "safety@realtest.com", role: "SAFETY_MANAGER", phone: "555-100-0013" },
-  { firstName: "HR", lastName: "Manager", email: "hr@realtest.com", role: "HR_MANAGER", phone: "555-100-0014" },
-  { firstName: "Equipment", lastName: "Manager", email: "equipment@realtest.com", role: "EQUIPMENT_MANAGER", phone: "555-100-0015" },
-  { firstName: "Project", lastName: "Engineer", email: "engineer@realtest.com", role: "PROJECT_ENGINEER", phone: "555-100-0016" },
-  { firstName: "Procurement", lastName: "Manager", email: "procurement@realtest.com", role: "PROCUREMENT_MANAGER", phone: "555-100-0017" },
-  { firstName: "Fleet", lastName: "Dispatcher", email: "dispatcher@realtest.com", role: "DISPATCHER", phone: "555-100-0018" },
+  { firstName: "Sales", lastName: "Rep", email: "sales@realtest.com", role: "MANAGER", phone: "555-100-0011" },
+  { firstName: "Marketing", lastName: "Lead", email: "marketing@realtest.com", role: "MANAGER", phone: "555-100-0012" },
+  { firstName: "Safety", lastName: "Manager", email: "safety@realtest.com", role: "SUPERINTENDENT", phone: "555-100-0013" },
+  { firstName: "HR", lastName: "Manager", email: "hr@realtest.com", role: "MANAGER", phone: "555-100-0014" },
+  { firstName: "Equipment", lastName: "Manager", email: "equipment@realtest.com", role: "FIELD_WORKER", phone: "555-100-0015" },
+  { firstName: "Project", lastName: "Engineer", email: "engineer@realtest.com", role: "ESTIMATOR", phone: "555-100-0016" },
+  { firstName: "Procurement", lastName: "Manager", email: "procurement@realtest.com", role: "MANAGER", phone: "555-100-0017" },
+  { firstName: "Fleet", lastName: "Dispatcher", email: "dispatcher@realtest.com", role: "SUPERINTENDENT", phone: "555-100-0018" },
 ];
 
 const SUB_ORG_USERS: TestUser[] = [

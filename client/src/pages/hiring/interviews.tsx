@@ -68,7 +68,7 @@ export default function HiringInterviewsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const role = user?.role;
-  const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER";
+  const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "MANAGER";
 
   const [showSchedule, setShowSchedule] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);

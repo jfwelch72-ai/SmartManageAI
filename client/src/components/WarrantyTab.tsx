@@ -174,7 +174,7 @@ const TASK_STATUS_COLORS: Record<string, string> = {
 };
 
 // Role helpers
-const MANAGEMENT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER", "SAFETY_MANAGER"];
+const MANAGEMENT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"];
 const CLOSE_ROLES = ["ADMIN", "MANAGER"];
 
 const REJECT_ROLES = ["ADMIN", "MANAGER"];
@@ -201,7 +201,7 @@ function allowedTransitions(status: CaseStatus, role: string): CaseStatus[] {
       { targets: ["REJECTED"], roleCheck: canReject },
     ],
     IN_REPAIR: [
-      { targets: ["REPAIRED"], roleCheck: (r) => MANAGEMENT_ROLES.includes(r) || r === "HOURLY_EMPLOYEE" },
+      { targets: ["REPAIRED"], roleCheck: (r) => MANAGEMENT_ROLES.includes(r) || r === "FIELD_WORKER" },
       { targets: ["REJECTED"], roleCheck: canReject },
     ],
     REPAIRED: [

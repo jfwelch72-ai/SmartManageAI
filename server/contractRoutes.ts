@@ -26,7 +26,7 @@ interface ContractAttachment {
 router.use("/api/contracts", requireAuth, requireFeaturePermission('canManageContracts'));
 
 const CONTRACT_MANAGE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"] as const;
-const CONTRACT_VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"] as const;
+const CONTRACT_VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"] as const;
 
 function canManageContracts(role?: string) {
   return (CONTRACT_MANAGE_ROLES as readonly string[]).includes(role || "");

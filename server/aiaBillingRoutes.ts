@@ -183,7 +183,7 @@ import {
   purchaseOrders, purchaseOrderItems,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte, inArray, type SQL } from "drizzle-orm";
-import { requireAuth, AuthRequest, requireRole, requireFeaturePermission } from "./auth";
+import { requireAuth, AuthRequest, requireRole, requireFeaturePermission, requireRoleOrFeature } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { verifyProjectAccess, verifySOVAccess, calculateSOVTotals } from "./sovHelpers";
 import { generateAIAG702PDF, generateAIAG703PDF } from "./aia-pdf-service";
@@ -290,7 +290,7 @@ const createPayAppSchema = z.object({
   contractFor: z.string().optional(),
 });
 
-router.post("/pay-applications", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -380,7 +380,7 @@ const updatePayAppStatusSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-router.patch("/pay-applications/:id/status", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const parsed = updatePayAppStatusSchema.safeParse(req.body);
@@ -481,7 +481,7 @@ const recordPaymentSchema = z.object({
   paymentMethod: z.enum(["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]).optional().default("CHECK"),
 });
 
-router.post("/pay-applications/:id/record-payment", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -560,7 +560,7 @@ router.post("/pay-applications/:id/record-payment", requireRole("SUPER_ADMIN", "
 // AIA G702/G703 PDF GENERATION
 // ========================================
 
-router.post("/pay-applications/:id/sync-totals", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications/:id/sync-totals", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -728,7 +728,7 @@ router.get("/pay-applications/:id/g703-pdf", async (req: AuthRequest, res: Respo
 // PERIOD ROLL-FORWARD
 // ========================================
 
-router.post("/pay-applications/roll-forward", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications/roll-forward", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { sovId, periodTo } = req.body;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -954,7 +954,7 @@ const createStoredMaterialSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.post("/stored-materials", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/stored-materials", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1024,7 +1024,7 @@ router.post("/stored-materials", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
   }
 });
 
-router.patch("/stored-materials/:id/incorporate", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/stored-materials/:id/incorporate", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1116,7 +1116,7 @@ router.get("/billing-integration/change-orders/:projectId", async (req: AuthRequ
   }
 });
 
-router.post("/billing-integration/add-co-to-sov", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/billing-integration/add-co-to-sov", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { sovId, changeOrderId } = req.body;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1238,7 +1238,7 @@ const importTmTicketsSchema = z.object({
   groupByCostCode: z.boolean().optional().default(false),
 });
 
-router.post("/billing-integration/import-tm-tickets", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/billing-integration/import-tm-tickets", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const parsed = importTmTicketsSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
@@ -1369,7 +1369,7 @@ const createRetentionReleaseSchema = z.object({
   reason: z.string().optional(),
 });
 
-router.post("/retention-releases", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/retention-releases", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1429,7 +1429,7 @@ const validReleaseStatusTransitions: Record<string, string[]> = {
   RELEASED: [],
 };
 
-router.patch("/retention-releases/:id/status", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/retention-releases/:id/status", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const parsed = updateRetentionReleaseStatusSchema.safeParse(req.body);

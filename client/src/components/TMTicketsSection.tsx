@@ -49,7 +49,7 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [ticketToReject, setTicketToReject] = useState<string | null>(null);
 
-  const canCreate = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(userRole);
+  const canCreate = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
   const canApprove = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
 
   const toggleTicketExpanded = (id: string) => {

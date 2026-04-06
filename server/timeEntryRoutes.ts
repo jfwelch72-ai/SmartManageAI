@@ -14,7 +14,7 @@ import * as workflowEngine from "./services/workflowEngine";
 
 const router = Router();
 
-router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -83,7 +83,7 @@ router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMI
   }
 });
 
-router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -174,7 +174,7 @@ router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -346,7 +346,7 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
 router.post("/api/time-entries/bulk-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
 router.patch("/api/time-entries/batch-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
 
-router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -378,7 +378,7 @@ router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -450,7 +450,7 @@ router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGE
   }
 });
 
-router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     

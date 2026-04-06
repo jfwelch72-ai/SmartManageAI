@@ -18,15 +18,15 @@ const router = Router();
 // ─── Role Sets ────────────────────────────────────────────────────────────────
 
 const MANAGEMENT_ROLES: UserRole[] = [
-  "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
-  "OFFICE_MANAGER", "SAFETY_MANAGER",
+  "ADMIN", "MANAGER", "SUPERINTENDENT",
+  "MANAGER",
 ];
 
 const CLOSE_ROLES: UserRole[] = ["ADMIN", "MANAGER"];
 
 const WORKER_ROLES: UserRole[] = [
-  "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
-  "OFFICE_MANAGER", "SAFETY_MANAGER", "HOURLY_EMPLOYEE",
+  "ADMIN", "MANAGER", "SUPERINTENDENT",
+  "MANAGER", "FIELD_WORKER",
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

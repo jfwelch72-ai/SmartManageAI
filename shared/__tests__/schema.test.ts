@@ -21,8 +21,12 @@ describe("Schema Enums", () => {
     expect(roles).toContain("ADMIN");
     expect(roles).toContain("MANAGER");
     expect(roles).toContain("SUPER_ADMIN");
-    expect(roles).toContain("HOURLY_EMPLOYEE");
-    expect(roles.length).toBeGreaterThanOrEqual(10);
+    expect(roles).toContain("FIELD_WORKER");
+    expect(roles).toContain("HUSTLER");
+    expect(roles).toContain("SUPERINTENDENT");
+    expect(roles).toContain("ESTIMATOR");
+    expect(roles).toContain("VENDOR");
+    expect(roles.length).toBe(8);
   });
 
   it("should have valid project statuses", () => {

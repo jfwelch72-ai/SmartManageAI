@@ -93,7 +93,7 @@ const LEFT_BORDER: Record<string, string> = {
 };
 
 function isManagement(role: string) {
-  return ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER", "SAFETY_MANAGER"].includes(role);
+  return ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(role);
 }
 
 function canVerify(role: string) {
@@ -101,8 +101,7 @@ function canVerify(role: string) {
 }
 
 function canChangeStatus(role: string) {
-  return ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
-    "OFFICE_MANAGER", "SAFETY_MANAGER", "HOURLY_EMPLOYEE"].includes(role);
+  return ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"].includes(role);
 }
 
 // ─── User Type ────────────────────────────────────────────────────────────────

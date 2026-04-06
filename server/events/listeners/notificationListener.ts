@@ -23,7 +23,7 @@ import type {
 
 type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
 
-const ADMIN_ROLES = ["ADMIN", "MANAGER", "OFFICE_MANAGER"] as const;
+const ADMIN_ROLES = ["ADMIN", "MANAGER"] as const;
 type AdminRole = (typeof ADMIN_ROLES)[number];
 
 async function getAdminUserIds(orgId: string): Promise<string[]> {
@@ -336,7 +336,7 @@ export function registerNotificationListener(): void {
   eventBus.on("safety.incident_created", async (event: SafetyIncidentCreatedEvent) => {
     try {
       const adminIds = await getAdminUserIds(event.orgId);
-      const safetyRoles = ["SAFETY_MANAGER", "SUPERINTENDENT"] as const;
+      const safetyRoles = ["SUPERINTENDENT"] as const;
       const safetyRows = await db
         .select({ id: users.id })
         .from(users)

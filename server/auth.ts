@@ -202,10 +202,10 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
-// Type for all valid user roles (must match userRoleEnum in schema.ts)
-export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER" | "SALES" | "MARKETING" | "SAFETY_MANAGER" | "HR_MANAGER" | "EQUIPMENT_MANAGER" | "PROJECT_ENGINEER" | "PROCUREMENT_MANAGER" | "DISPATCHER";
+// Type for all valid user roles (must match userRoleEnum in schema.ts) — 8 roles
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "HUSTLER" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "FIELD_WORKER" | "VENDOR";
 
-// Middleware to require specific roles (all 18 roles supported including SUPER_ADMIN and HUSTLER)
+// Middleware to require specific roles (8 roles supported including SUPER_ADMIN and HUSTLER)
 // For HUSTLER users, checks effectiveRole if available (enables owner-level access to linked orgs)
 export function requireRole(...roles: UserRole[]) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
@@ -234,7 +234,51 @@ export function getEffectiveRole(user: SanitizedUser): UserRole {
   return (user.effectiveRole || user.role) as UserRole;
 }
 
-export type FeaturePermissionKey = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement' | 'canManageContracts' | 'canManageHiring' | 'canManageSafety' | 'canManageScheduling' | 'canAccessBidNetwork' | 'canManageLeave' | 'canAccessTimeMaterial';
+export type FeaturePermissionKey =
+  | 'canAccessDashboard' | 'canAccessProjects' | 'canAccessActiveProjectsOnly' | 'canCreateProjects' | 'canEditProjects'
+  | 'canAccessCalendar' | 'canAccessTasks' | 'canAccessMessages' | 'canAccessBulletins' | 'canAccessEmailAssistant'
+  | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
+  | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
+  | 'canAccessHistoricalCosts' | 'canAccessScopeSettings' | 'canUseAiBidAnalysis' | 'canUseAiContractAnalysis'
+  | 'canAccessFinancials' | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
+  | 'canManageContracts' | 'canAccessSubcontracts' | 'canAccessOverheadCosts' | 'canAccessProductionRates' | 'canAccessVendorPricing'
+  | 'canAccessTimeClock' | 'canManageTimeClock' | 'canApproveTime' | 'canAccessTMDaily'
+  | 'canManagePayroll' | 'canManageCrews' | 'canManageWorkforce' | 'canManageLeave'
+  | 'canManageSafety' | 'canManageScheduling' | 'canAccessKPIs' | 'canLockDailyReports'
+  | 'canManageEquipment' | 'canManageProcurement'
+  | 'canAccessCRM' | 'canCreateCRMContacts' | 'canAccessMarketplace'
+  | 'canManageHiring' | 'canAccessHiringInterviews' | 'canManageHiringSettings'
+  | 'canPostSocialMedia' | 'canManageWebsite' | 'canAccessExecutiveDigest'
+  | 'canUseAiFeatures'
+  | 'canAccessCompanySettings' | 'canManageUsers' | 'canAccessApprovals' | 'canAccessAuditLogs'
+  | 'canAccessReports' | 'canAccessEnterpriseSettings' | 'canManageAISettings'
+  | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
+  | 'canViewProjectReceipts' | 'canViewProjectTimeEntries' | 'canViewProjectSubcontractors'
+  | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff';
+
+async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean>> {
+  const roleDefaults = getRoleDefaults(role);
+  if (!orgId) return roleDefaults;
+  try {
+    const [perm] = await db.select().from(userDashboardPermissions)
+      .where(and(
+        eq(userDashboardPermissions.organizationId, orgId),
+        eq(userDashboardPermissions.userId, userId)
+      ));
+    if (!perm) return roleDefaults;
+    const dbPerms: Partial<Record<string, boolean>> = {};
+    for (const key of Object.keys(roleDefaults)) {
+      const val = (perm as Record<string, unknown>)[key];
+      if (typeof val === 'boolean') {
+        dbPerms[key] = val;
+      }
+    }
+    return mergePermissions(roleDefaults, dbPerms);
+  } catch (error) {
+    logError('Error fetching effective permissions:', {}, error instanceof Error ? error : new Error(String(error)));
+    return roleDefaults;
+  }
+}
 
 export function requireFeaturePermission(permKey: FeaturePermissionKey) {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -244,34 +288,11 @@ export function requireFeaturePermission(permKey: FeaturePermissionKey) {
     }
 
     const effectiveRole = req.user.effectiveRole || req.user.role;
+    const effective = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, effectiveRole);
 
-    if (effectiveRole === 'ADMIN' || effectiveRole === 'SUPER_ADMIN') {
+    if (effective[permKey]) {
       next();
       return;
-    }
-
-    const roleDefaults = getRoleDefaults(effectiveRole);
-    if (roleDefaults[permKey]) {
-      next();
-      return;
-    }
-
-    const orgId = req.user.organizationId;
-    if (orgId) {
-      try {
-        const [perm] = await db.select().from(userDashboardPermissions)
-          .where(and(
-            eq(userDashboardPermissions.organizationId, orgId),
-            eq(userDashboardPermissions.userId, req.user.id)
-          ));
-
-        if (perm && perm[permKey]) {
-          next();
-          return;
-        }
-      } catch (error) {
-        logError('Error checking feature permission:', {}, error instanceof Error ? error : new Error(String(error)));
-      }
     }
 
     res.status(403).json({ error: "Feature permission required: " + permKey });
@@ -286,33 +307,11 @@ export function requireAnyFeaturePermission(...permKeys: FeaturePermissionKey[])
     }
 
     const effectiveRole = req.user.effectiveRole || req.user.role;
+    const effective = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, effectiveRole);
 
-    if (effectiveRole === 'ADMIN' || effectiveRole === 'SUPER_ADMIN') {
+    if (permKeys.some(k => effective[k])) {
       next();
       return;
-    }
-
-    const roleDefaults = getRoleDefaults(effectiveRole);
-    if (permKeys.some(k => roleDefaults[k])) {
-      next();
-      return;
-    }
-
-    const orgId = req.user.organizationId;
-    if (orgId) {
-      try {
-        const [perm] = await db.select().from(userDashboardPermissions)
-          .where(and(
-            eq(userDashboardPermissions.organizationId, orgId),
-            eq(userDashboardPermissions.userId, req.user.id)
-          ));
-        if (perm && permKeys.some(k => perm[k])) {
-          next();
-          return;
-        }
-      } catch (error) {
-        logError('Error checking feature permission:', {}, error instanceof Error ? error : new Error(String(error)));
-      }
     }
 
     res.status(403).json({ error: "Feature permission required: " + permKeys.join(' or ') });
@@ -333,32 +332,11 @@ export function requireRoleOrFeature(roles: UserRole[], permKey: FeaturePermissi
       return;
     }
 
-    if (roleToCheck === 'ADMIN' || roleToCheck === 'SUPER_ADMIN') {
+    const effective = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, roleToCheck);
+
+    if (effective[permKey]) {
       next();
       return;
-    }
-
-    const roleDefaults = getRoleDefaults(roleToCheck);
-    if (roleDefaults[permKey]) {
-      next();
-      return;
-    }
-
-    const orgId = req.user.organizationId;
-    if (orgId) {
-      try {
-        const [perm] = await db.select().from(userDashboardPermissions)
-          .where(and(
-            eq(userDashboardPermissions.organizationId, orgId),
-            eq(userDashboardPermissions.userId, req.user.id)
-          ));
-        if (perm && perm[permKey]) {
-          next();
-          return;
-        }
-      } catch (error) {
-        logError('Error checking feature permission:', {}, error instanceof Error ? error : new Error(String(error)));
-      }
     }
 
     res.status(403).json({ error: "Insufficient permissions" });

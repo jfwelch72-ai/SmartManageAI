@@ -4402,41 +4402,111 @@ export type EmailSummary = typeof emailSummaries.$inferSelect;
 // DASHBOARD CUSTOMIZATION SYSTEM
 // ============================================
 
-// Feature Permissions - Granular per-user feature access control
+// Feature Permissions - Granular per-user feature access control (73 flags)
 export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  
-  // Financial permissions
+
+  // Category 1: Core Pages & Navigation (1-10)
+  canAccessDashboard: boolean("can_access_dashboard").notNull().default(false),
+  canAccessProjects: boolean("can_access_projects").notNull().default(false),
+  canAccessActiveProjectsOnly: boolean("can_access_active_projects_only").notNull().default(false),
+  canCreateProjects: boolean("can_create_projects").notNull().default(false),
+  canEditProjects: boolean("can_edit_projects").notNull().default(false),
+  canAccessCalendar: boolean("can_access_calendar").notNull().default(false),
+  canAccessTasks: boolean("can_access_tasks").notNull().default(false),
+  canAccessMessages: boolean("can_access_messages").notNull().default(false),
+  canAccessBulletins: boolean("can_access_bulletins").notNull().default(false),
+  canAccessEmailAssistant: boolean("can_access_email_assistant").notNull().default(false),
+
+  // Category 2: Pre-Construction & Bidding (11-23)
+  canViewBids: boolean("can_view_bids").notNull().default(false),
+  canEditBids: boolean("can_edit_bids").notNull().default(false),
+  canDeleteBids: boolean("can_delete_bids").notNull().default(false),
+  canGenerateBidPDFs: boolean("can_generate_bid_pdfs").notNull().default(false),
+  canConvertBidToProject: boolean("can_convert_bid_to_project").notNull().default(false),
+  canAccessBidNetworkGC: boolean("can_access_bid_network_gc").notNull().default(false),
+  canAccessBidNetworkInbox: boolean("can_access_bid_network_inbox").notNull().default(false),
+  canManageBidResponses: boolean("can_manage_bid_responses").notNull().default(false),
+  canDeleteBidRequests: boolean("can_delete_bid_requests").notNull().default(false),
+  canAccessHistoricalCosts: boolean("can_access_historical_costs").notNull().default(false),
+  canAccessScopeSettings: boolean("can_access_scope_settings").notNull().default(false),
+  canUseAiBidAnalysis: boolean("can_use_ai_bid_analysis").notNull().default(false),
+  canUseAiContractAnalysis: boolean("can_use_ai_contract_analysis").notNull().default(false),
+
+  // Category 3: Financial Management (24-33)
   canAccessFinancials: boolean("can_access_financials").notNull().default(false),
-  canManagePayroll: boolean("can_manage_payroll").notNull().default(false),
-  
-  // Operations permissions
-  canAccessReports: boolean("can_access_reports").notNull().default(false),
-  canUseAiFeatures: boolean("can_use_ai_features").notNull().default(false),
-  
-  // Marketing permissions
-  canPostSocialMedia: boolean("can_post_social_media").notNull().default(false),
-  canManageWebsite: boolean("can_manage_website").notNull().default(false),
-  
-  // Management permissions
-  canManageEquipment: boolean("can_manage_equipment").notNull().default(false),
-  canManageProcurement: boolean("can_manage_procurement").notNull().default(false),
-  
-  // Extended permissions
+  canAccessCostRates: boolean("can_access_cost_rates").notNull().default(false),
+  canAccessCFODashboard: boolean("can_access_cfo_dashboard").notNull().default(false),
+  canAccessTMBilling: boolean("can_access_tm_billing").notNull().default(false),
+  canAccessProgressBilling: boolean("can_access_progress_billing").notNull().default(false),
   canManageContracts: boolean("can_manage_contracts").notNull().default(false),
-  canManageHiring: boolean("can_manage_hiring").notNull().default(false),
+  canAccessSubcontracts: boolean("can_access_subcontracts").notNull().default(false),
+  canAccessOverheadCosts: boolean("can_access_overhead_costs").notNull().default(false),
+  canAccessProductionRates: boolean("can_access_production_rates").notNull().default(false),
+  canAccessVendorPricing: boolean("can_access_vendor_pricing").notNull().default(false),
+
+  // Category 4: Workforce & Time Management (34-45)
+  canAccessTimeClock: boolean("can_access_time_clock").notNull().default(false),
+  canManageTimeClock: boolean("can_manage_time_clock").notNull().default(false),
+  canApproveTime: boolean("can_approve_time").notNull().default(false),
+  canAccessTMDaily: boolean("can_access_tm_daily").notNull().default(false),
+  canManagePayroll: boolean("can_manage_payroll").notNull().default(false),
+  canManageCrews: boolean("can_manage_crews").notNull().default(false),
+  canManageWorkforce: boolean("can_manage_workforce").notNull().default(false),
+  canManageLeave: boolean("can_manage_leave").notNull().default(false),
   canManageSafety: boolean("can_manage_safety").notNull().default(false),
   canManageScheduling: boolean("can_manage_scheduling").notNull().default(false),
-  canAccessBidNetwork: boolean("can_access_bid_network").notNull().default(false),
-  canManageLeave: boolean("can_manage_leave").notNull().default(false),
-  canAccessTimeMaterial: boolean("can_access_time_material").notNull().default(false),
-  
+  canAccessKPIs: boolean("can_access_kpis").notNull().default(false),
+  canLockDailyReports: boolean("can_lock_daily_reports").notNull().default(false),
+
+  // Category 5: Operations (46-47)
+  canManageEquipment: boolean("can_manage_equipment").notNull().default(false),
+  canManageProcurement: boolean("can_manage_procurement").notNull().default(false),
+
+  // Category 6: CRM & Sales (48-50)
+  canAccessCRM: boolean("can_access_crm").notNull().default(false),
+  canCreateCRMContacts: boolean("can_create_crm_contacts").notNull().default(false),
+  canAccessMarketplace: boolean("can_access_marketplace").notNull().default(false),
+
+  // Category 7: Hiring & Recruitment (51-53)
+  canManageHiring: boolean("can_manage_hiring").notNull().default(false),
+  canAccessHiringInterviews: boolean("can_access_hiring_interviews").notNull().default(false),
+  canManageHiringSettings: boolean("can_manage_hiring_settings").notNull().default(false),
+
+  // Category 8: Marketing & Insights (54-56)
+  canPostSocialMedia: boolean("can_post_social_media").notNull().default(false),
+  canManageWebsite: boolean("can_manage_website").notNull().default(false),
+  canAccessExecutiveDigest: boolean("can_access_executive_digest").notNull().default(false),
+
+  // Category 9: AI Features (57)
+  canUseAiFeatures: boolean("can_use_ai_features").notNull().default(false),
+
+  // Category 10: Administration (58-64)
+  canAccessCompanySettings: boolean("can_access_company_settings").notNull().default(false),
+  canManageUsers: boolean("can_manage_users").notNull().default(false),
+  canAccessApprovals: boolean("can_access_approvals").notNull().default(false),
+  canAccessAuditLogs: boolean("can_access_audit_logs").notNull().default(false),
+  canAccessReports: boolean("can_access_reports").notNull().default(false),
+  canAccessEnterpriseSettings: boolean("can_access_enterprise_settings").notNull().default(false),
+  canManageAISettings: boolean("can_manage_ai_settings").notNull().default(false),
+
+  // Category 11: Project Detail Tabs (65-73)
+  canViewProjectBudget: boolean("can_view_project_budget").notNull().default(false),
+  canViewProjectEstimates: boolean("can_view_project_estimates").notNull().default(false),
+  canViewProjectProcurement: boolean("can_view_project_procurement").notNull().default(false),
+  canViewProjectReceipts: boolean("can_view_project_receipts").notNull().default(false),
+  canViewProjectTimeEntries: boolean("can_view_project_time_entries").notNull().default(false),
+  canViewProjectSubcontractors: boolean("can_view_project_subcontractors").notNull().default(false),
+  canCreateChangeOrders: boolean("can_create_change_orders").notNull().default(false),
+  canDeleteScopeItems: boolean("can_delete_scope_items").notNull().default(false),
+  canEditProjectHandoff: boolean("can_edit_project_handoff").notNull().default(false),
+
   // Granted by admin
   grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
   grantedAt: timestamp("granted_at"),
-  
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

@@ -540,7 +540,7 @@ organizations(id, name, slug, trade_type, trade_name, region, address, city, sta
 
 -- Users (employees)
 users(id, organization_id, first_name, last_name, email, phone, role, is_active, cost_rate_regular, cost_rate_overtime, trade_specialization, employment_type, created_at)
--- role values: ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, HOURLY_EMPLOYEE
+-- role values: ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, FIELD_WORKER, HUSTLER, VENDOR
 
 -- Projects
 projects(id, name, code, client_name, status, location_address, city, state, start_date, end_date, estimated_completion_date, description, budget, contract_amount, budget_amount, gc_organization_id, created_at)

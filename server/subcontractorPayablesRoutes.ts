@@ -77,7 +77,7 @@ async function sendPayableNotifications(
         and(
           eq(users.organizationId, organizationId),
           eq(users.isActive, true),
-          inArray(users.role, ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"])
+          inArray(users.role, ["ADMIN", "MANAGER", "SUPERINTENDENT"])
         )
       );
 
@@ -107,7 +107,7 @@ async function sendPayableNotifications(
   }
 }
 
-router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -188,7 +188,7 @@ router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "
   }
 });
 
-router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -233,7 +233,7 @@ router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MAN
   }
 });
 
-router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);

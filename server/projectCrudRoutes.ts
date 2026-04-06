@@ -4,7 +4,7 @@
  *   get:
  *     tags: [Projects]
  *     summary: List all projects
- *     description: Returns paginated list of projects for the authenticated user's organization. HOURLY_EMPLOYEE role only sees ACTIVE projects.
+ *     description: Returns paginated list of projects for the authenticated user's organization. FIELD_WORKER role only sees ACTIVE projects.
  *     parameters:
  *       - $ref: '#/components/parameters/PageParam'
  *       - $ref: '#/components/parameters/LimitParam'
@@ -177,7 +177,7 @@ import { eventBus } from "./events";
 import { projects, users, scopeItems, changeOrders, projectLaborRates, projectEmployeeRates, insertProjectSchema, timeClockShifts, procurementItems, receipts, subcontractorContracts, subcontractorPayments, tmDailySheets, tmTickets, aiNoteInsights, aiTasks, projectPlans, takeoffMeasurements, takeoffSheets, quantityCategories, tasks, handoffPackets, estimates, estimateLineItems, timeEntries, calendarEvents, media, planDocuments, projectNotes, dailyScopeProgress, conversations, conversationParticipants, crewMembers, crewProjectAssignments, scheduleOfValues, sovLineItems, subcontractors } from "@shared/schema";
 import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { type AuthRequest, requireAuth, requireRole, requireRoleOrFeature } from "./auth";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
@@ -296,7 +296,7 @@ router.get("/api/projects", requireAuth, async (req: AuthRequest, res, next) => 
     const conditions: SQL[] = [];
     
     const userRole = req.user!.effectiveRole || req.user!.role;
-    if (userRole === "HOURLY_EMPLOYEE") {
+    if (userRole === "FIELD_WORKER") {
       if (status && status !== "ACTIVE") {
         return res.json({
           data: [],
@@ -431,7 +431,7 @@ router.get("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", 
   }
 });
 
-router.post("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
+router.post("/api/projects/:code/labor-rates", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCostRates"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -535,7 +535,7 @@ router.get("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN
   }
 });
 
-router.post("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
+router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCostRates"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -614,7 +614,7 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMI
   }
 });
 
-router.delete("/api/projects/:code/employee-rates/:rateId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
+router.delete("/api/projects/:code/employee-rates/:rateId", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCostRates"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -972,7 +972,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
             // Included: project manager, privileged roles, and crew members from
             // crews currently assigned to this project.
             // Creator is already added as admin above; use onConflictDoNothing for safety.
-            const PRIVILEGED_ROLES = ["ADMIN", "MANAGER", "PROJECT_MANAGER", "SUPERINTENDENT", "ESTIMATOR"] as const;
+            const PRIVILEGED_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"] as const;
 
             // Privileged users + project manager from the org
             const privilegedUsers = await db
@@ -1167,7 +1167,7 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
   }
 });
 
-router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
+router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateProjects"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     

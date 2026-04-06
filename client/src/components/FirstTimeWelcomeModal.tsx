@@ -82,17 +82,7 @@ const roleFeatures: Record<string, { icon: any; features: string[]; intro: strin
       "Handling T&M work and change orders",
     ],
   },
-  OFFICE_MANAGER: {
-    icon: Target,
-    intro: "As Office Manager, you keep everything running smoothly. Let's cover:",
-    features: [
-      "Managing billing and keeping invoices organized",
-      "Maintaining strong vendor relationships",
-      "Streamlining supply ordering",
-      "Staying connected with field teams",
-    ],
-  },
-  HOURLY_EMPLOYEE: {
+  FIELD_WORKER: {
     icon: Clock,
     intro: "Welcome to the team! Here's what you need to know:",
     features: [

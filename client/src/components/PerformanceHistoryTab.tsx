@@ -88,7 +88,7 @@ function CollapsibleSection({
 export default function PerformanceHistoryTab() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const isManager = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"].includes(user?.role || "");
+  const isManager = ["SUPERINTENDENT", "MANAGER", "ADMIN"].includes(user?.role || "");
   const isSuperintendent = user?.role === "SUPERINTENDENT";
 
   const [editingOverview, setEditingOverview] = useState(false);

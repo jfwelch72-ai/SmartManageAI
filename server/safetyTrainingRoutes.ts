@@ -109,7 +109,7 @@ const router = Router();
 router.use("/api/safety-training", requireAuth, requireFeaturePermission('canManageSafety'));
 
 function isSafetyAdmin(role?: string): boolean {
-  return ["ADMIN", "SUPER_ADMIN", "SAFETY_MANAGER", "HR_MANAGER", "MANAGER"].includes(role || "");
+  return ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(role || "");
 }
 
 // GET /api/safety-training — list all training programs for org

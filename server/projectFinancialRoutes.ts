@@ -52,7 +52,7 @@ router.get("/api/time-entries", requireAuth, async (req: AuthRequest, res, next)
 
     const conditions = [];
     
-    if (req.user!.role === "HOURLY_EMPLOYEE") {
+    if (req.user!.role === "FIELD_WORKER") {
       conditions.push(eq(timeEntries.userId, req.user!.id));
     } else if (userId) {
       conditions.push(eq(timeEntries.userId, userId as string));

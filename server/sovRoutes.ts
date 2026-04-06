@@ -261,7 +261,7 @@ const createSOVSchema = z.object({
   })).optional(),
 });
 
-router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -437,7 +437,7 @@ router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
 // Routes from sovBillingRoutes.ts
 // ========================================
 
-router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json({ changeOrders: [], sovSummary: [] });
@@ -536,7 +536,7 @@ router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 const validStatusTransitions: Record<string, { nextStates: string[]; allowedRoles: string[] }> = {
   DRAFT: { 
     nextStates: ["PENDING", "SUBMITTED"], 
-    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"]
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"]
   },
   PENDING: { 
     nextStates: ["APPROVED", "DRAFT", "UNDER_REVIEW"], 
@@ -556,7 +556,7 @@ const validStatusTransitions: Record<string, { nextStates: string[]; allowedRole
   },
   REJECTED: {
     nextStates: ["DRAFT", "PENDING"],
-    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"]
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER"]
   },
   PAID: { 
     nextStates: ["ARCHIVED"], 
@@ -880,7 +880,7 @@ const addLineItemSchema = z.object({
   organizationSowItemId: z.string().optional(),
 });
 
-router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { id: sovId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -974,7 +974,7 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
   }
 });
 
-router.delete("/sov/:sovId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/sov/:sovId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { sovId, itemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1037,7 +1037,7 @@ const updateLineItemSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { sovId, lineItemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1171,7 +1171,7 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
             .where(
               and(
                 eq(users.organizationId, project.gcOrganizationId),
-                eq(users.role, "OFFICE_MANAGER"),
+                eq(users.role),
                 eq(users.isActive, true)
               )
             );
@@ -1206,7 +1206,7 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
 // Routes from sovPaymentRoutes.ts
 // ========================================
 
-router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -1248,7 +1248,7 @@ router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
   }
 });
 
-router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1297,7 +1297,7 @@ router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
   }
 });
 
-router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1328,7 +1328,7 @@ router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "A
   }
 });
 
-router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -1368,7 +1368,7 @@ router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
   }
 });
 
-router.post("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });

@@ -484,8 +484,8 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     completionMessage: "You're ready to rock, {{firstName}}! Managing field operations, tracking progress, keeping projects on schedule — you've got all the tools. I'm here anytime you have questions. Just click my icon. Now get out there and crush it!"
   },
 
-  OFFICE_MANAGER: {
-    role: "OFFICE_MANAGER",
+  _OFFICE_MANAGER_LEGACY: {
+    role: "MANAGER",
     roleName: "Office Manager",
     welcomeMessage: "Hey {{firstName}}! Welcome to your workspace. As Office Manager, you're the one keeping everything running smoothly behind the scenes — billing, vendors, supplies, coordination. Let me show you around!",
     steps: [
@@ -545,8 +545,8 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     completionMessage: "You did it, {{firstName}}! Billing, vendors, coordination — you've got it all covered. The office is in good hands! I'm here whenever you need help. Just click my icon anytime!"
   },
 
-  HOURLY_EMPLOYEE: {
-    role: "HOURLY_EMPLOYEE",
+  FIELD_WORKER: {
+    role: "FIELD_WORKER",
     roleName: "Field Worker",
     welcomeMessage: "Hey {{firstName}}! Welcome to the team! I'm here to help you get started. As a field worker, you've got a few simple things to know — clocking in, checking your schedule, and staying connected. Super easy, I promise!",
     steps: [
@@ -593,8 +593,8 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     completionMessage: "Welcome to the team, {{firstName}}! You've got the basics down — clock in, check your schedule, clock out. Simple as that! If you ever have questions, I'm right here. Just click my icon. Now go do great work!"
   },
 
-  MAINTENANCE_MANAGER: {
-    role: "MAINTENANCE_MANAGER",
+  _MAINTENANCE_MANAGER_LEGACY: {
+    role: "FIELD_WORKER",
     roleName: "Maintenance Manager",
     welcomeMessage: "Hey {{firstName}}! Great to have you here. As Maintenance Manager, you're in charge of keeping everything running — equipment, vehicles, tools. Let me show you how to stay on top of it all!",
     steps: [

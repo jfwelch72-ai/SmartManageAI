@@ -142,11 +142,10 @@ Severity levels:
 
 Recipients (who should be notified):
 - ADMIN: For all critical issues, major financial impacts
-- MANAGER: For high-priority items, change orders, client communication
-- OFFICE_MANAGER: For supply orders, administrative tasks, billing-related items
+- MANAGER: For high-priority items, change orders, client communication, billing
 - SUPERINTENDENT: For field operations, crew management, daily logistics
 - ESTIMATOR: For potential change orders, scope clarifications
-- HOURLY_EMPLOYEE: Generally not a recipient (field workers report, don't receive)
+- FIELD_WORKER: Generally not a recipient (field workers report, don't receive)
 
 Analyze each note and extract actionable insights. Return your analysis as a JSON array.`;
 
@@ -247,7 +246,7 @@ Return format: { "insights": [ ... ] }`;
       "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"
     ];
     const validSeverities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-    const validRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT", "ESTIMATOR", "HOURLY_EMPLOYEE"];
+    const validRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"];
 
     // Validate and map each insight
     const validatedInsights: AIInsight[] = [];

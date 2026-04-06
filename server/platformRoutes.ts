@@ -597,7 +597,7 @@ router.patch("/platform/users/:userId/role", requireAuth, requireSuperAdmin, asy
     const { userId } = req.params;
     const { role } = req.body;
 
-    const validRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR", "HUSTLER", "SALES", "MARKETING", "SAFETY_MANAGER", "HR_MANAGER", "EQUIPMENT_MANAGER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER", "DISPATCHER"];
+    const validRoles = ["ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
     if (!role || !validRoles.includes(role)) {
       return res.status(400).json({ error: "Invalid role. Must be one of: " + validRoles.join(", ") });
     }
@@ -954,7 +954,7 @@ router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthR
       lastName,
       email,
       phone: phone || null,
-      role: role || "HOURLY_EMPLOYEE",
+      role: role || "FIELD_WORKER",
       isActive: true,
       passwordHash,
       organizationId,
@@ -965,7 +965,7 @@ router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthR
       entityType: "users",
       entityId: newUser.id,
       userId: req.user!.id,
-      newValue: JSON.stringify({ email, firstName, lastName, role: role || "HOURLY_EMPLOYEE", organizationId }),
+      newValue: JSON.stringify({ email, firstName, lastName, role: role || "FIELD_WORKER", organizationId }),
     }, req);
 
     const { passwordHash: _, tokenVersion, ...userWithoutPassword } = newUser;

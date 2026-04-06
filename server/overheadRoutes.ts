@@ -10,19 +10,7 @@ import { sendValidationError } from "./utils/validation";
 
 const router = Router();
 
-const OVERHEAD_CATEGORIES = [
-  "SALARIES",
-  "INSURANCE",
-  "RENT_LEASE",
-  "LOANS_FINANCING",
-  "SUBSCRIPTIONS",
-  "UTILITIES",
-  "VEHICLES",
-  "MARKETING",
-  "PROFESSIONAL_FEES",
-  "EQUIPMENT",
-  "OTHER",
-] as const;
+const OVERHEAD_CATEGORIES = ["SALARIES", "INSURANCE", "RENT_LEASE", "LOANS_FINANCING", "SUBSCRIPTIONS", "UTILITIES", "VEHICLES", "MANAGER", "PROFESSIONAL_FEES", "EQUIPMENT", "OTHER", ] as const;
 
 const OVERHEAD_FREQUENCIES = ["MONTHLY", "QUARTERLY", "ANNUAL", "ONE_TIME"] as const;
 
@@ -45,7 +33,7 @@ function toMonthly(amount: number, frequency: string, amortizationMonths?: numbe
 
 function requireOverheadRole(req: AuthRequest, res: Response): boolean {
   const role = req.user?.role;
-  if (role !== "ADMIN" && role !== "MANAGER" && role !== "OFFICE_MANAGER") {
+  if (role !== "ADMIN" && role !== "MANAGER") {
     res.status(403).json({ error: "Insufficient permissions" });
     return false;
   }
@@ -56,11 +44,11 @@ function canReadBidBenchmark(role?: string): boolean {
   return (
     role === "ADMIN" ||
     role === "MANAGER" ||
-    role === "OFFICE_MANAGER" ||
+    role === "MANAGER" ||
     role === "ESTIMATOR" ||
     role === "SUPERINTENDENT" ||
     role === "HUSTLER" ||
-    role === "PROJECT_ENGINEER"
+    role === "ESTIMATOR"
   );
 }
 
@@ -101,7 +89,7 @@ function itemToJson(item: Record<string, unknown>): string {
   });
 }
 
-// GET /api/overhead/items  (ADMIN | MANAGER | OFFICE_MANAGER)
+// GET /api/overhead/items  (ADMIN | MANAGER)
 router.get("/api/overhead/items", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
@@ -346,7 +334,7 @@ router.get("/api/overhead/summary", requireAuth, async (req: AuthRequest, res: R
   });
 });
 
-// PATCH /api/overhead/revenue-target  (ADMIN | MANAGER | OFFICE_MANAGER)
+// PATCH /api/overhead/revenue-target  (ADMIN | MANAGER)
 router.patch("/api/overhead/revenue-target", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;

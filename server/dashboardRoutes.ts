@@ -109,7 +109,7 @@
  *   get:
  *     tags: [Admin]
  *     summary: List users
- *     description: Requires ADMIN, MANAGER, or OFFICE_MANAGER role.
+ *     description: Requires ADMIN or MANAGER role with canAccessProgressBilling permission.
  *     responses:
  *       200: { description: List of users }
  *   post:
@@ -204,175 +204,152 @@ const router = Router();
 // Routes from dashboardLayoutRoutes.ts
 // ========================================
 
-type FeaturePermissionKeys = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement' | 'canManageContracts' | 'canManageHiring' | 'canManageSafety' | 'canManageScheduling' | 'canAccessBidNetwork' | 'canManageLeave' | 'canAccessTimeMaterial';
+type FeaturePermissionKeys =
+  | 'canAccessDashboard' | 'canAccessProjects' | 'canAccessActiveProjectsOnly' | 'canCreateProjects' | 'canEditProjects'
+  | 'canAccessCalendar' | 'canAccessTasks' | 'canAccessMessages' | 'canAccessBulletins' | 'canAccessEmailAssistant'
+  | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
+  | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
+  | 'canAccessHistoricalCosts' | 'canAccessScopeSettings' | 'canUseAiBidAnalysis' | 'canUseAiContractAnalysis'
+  | 'canAccessFinancials' | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
+  | 'canManageContracts' | 'canAccessSubcontracts' | 'canAccessOverheadCosts' | 'canAccessProductionRates' | 'canAccessVendorPricing'
+  | 'canAccessTimeClock' | 'canManageTimeClock' | 'canApproveTime' | 'canAccessTMDaily'
+  | 'canManagePayroll' | 'canManageCrews' | 'canManageWorkforce' | 'canManageLeave'
+  | 'canManageSafety' | 'canManageScheduling' | 'canAccessKPIs' | 'canLockDailyReports'
+  | 'canManageEquipment' | 'canManageProcurement'
+  | 'canAccessCRM' | 'canCreateCRMContacts' | 'canAccessMarketplace'
+  | 'canManageHiring' | 'canAccessHiringInterviews' | 'canManageHiringSettings'
+  | 'canPostSocialMedia' | 'canManageWebsite' | 'canAccessExecutiveDigest'
+  | 'canUseAiFeatures'
+  | 'canAccessCompanySettings' | 'canManageUsers' | 'canAccessApprovals' | 'canAccessAuditLogs'
+  | 'canAccessReports' | 'canAccessEnterpriseSettings' | 'canManageAISettings'
+  | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
+  | 'canViewProjectReceipts' | 'canViewProjectTimeEntries' | 'canViewProjectSubcontractors'
+  | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean>;
 
 const ALL_FALSE: PermissionSet = {
-  canAccessFinancials: false,
-  canManagePayroll: false,
-  canAccessReports: false,
+  canAccessDashboard: false, canAccessProjects: false, canAccessActiveProjectsOnly: false,
+  canCreateProjects: false, canEditProjects: false, canAccessCalendar: false,
+  canAccessTasks: false, canAccessMessages: false, canAccessBulletins: false, canAccessEmailAssistant: false,
+  canViewBids: false, canEditBids: false, canDeleteBids: false, canGenerateBidPDFs: false,
+  canConvertBidToProject: false, canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false,
+  canManageBidResponses: false, canDeleteBidRequests: false, canAccessHistoricalCosts: false,
+  canAccessScopeSettings: false, canUseAiBidAnalysis: false, canUseAiContractAnalysis: false,
+  canAccessFinancials: false, canAccessCostRates: false, canAccessCFODashboard: false,
+  canAccessTMBilling: false, canAccessProgressBilling: false, canManageContracts: false,
+  canAccessSubcontracts: false, canAccessOverheadCosts: false, canAccessProductionRates: false,
+  canAccessVendorPricing: false,
+  canAccessTimeClock: false, canManageTimeClock: false, canApproveTime: false, canAccessTMDaily: false,
+  canManagePayroll: false, canManageCrews: false, canManageWorkforce: false, canManageLeave: false,
+  canManageSafety: false, canManageScheduling: false, canAccessKPIs: false, canLockDailyReports: false,
+  canManageEquipment: false, canManageProcurement: false,
+  canAccessCRM: false, canCreateCRMContacts: false, canAccessMarketplace: false,
+  canManageHiring: false, canAccessHiringInterviews: false, canManageHiringSettings: false,
+  canPostSocialMedia: false, canManageWebsite: false, canAccessExecutiveDigest: false,
   canUseAiFeatures: false,
-  canPostSocialMedia: false,
-  canManageWebsite: false,
-  canManageEquipment: false,
-  canManageProcurement: false,
-  canManageContracts: false,
-  canManageHiring: false,
-  canManageSafety: false,
-  canManageScheduling: false,
-  canAccessBidNetwork: false,
-  canManageLeave: false,
-  canAccessTimeMaterial: false,
+  canAccessCompanySettings: false, canManageUsers: false, canAccessApprovals: false,
+  canAccessAuditLogs: false, canAccessReports: false, canAccessEnterpriseSettings: false,
+  canManageAISettings: false,
+  canViewProjectBudget: false, canViewProjectEstimates: false, canViewProjectProcurement: false,
+  canViewProjectReceipts: false, canViewProjectTimeEntries: false, canViewProjectSubcontractors: false,
+  canCreateChangeOrders: false, canDeleteScopeItems: false, canEditProjectHandoff: false,
 };
 
 const ALL_TRUE: PermissionSet = {
-  canAccessFinancials: true,
-  canManagePayroll: true,
-  canAccessReports: true,
+  canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: false,
+  canCreateProjects: true, canEditProjects: true, canAccessCalendar: true,
+  canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true, canAccessEmailAssistant: true,
+  canViewBids: true, canEditBids: true, canDeleteBids: true, canGenerateBidPDFs: true,
+  canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+  canManageBidResponses: true, canDeleteBidRequests: true, canAccessHistoricalCosts: true,
+  canAccessScopeSettings: true, canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
+  canAccessFinancials: true, canAccessCostRates: true, canAccessCFODashboard: true,
+  canAccessTMBilling: true, canAccessProgressBilling: true, canManageContracts: true,
+  canAccessSubcontracts: true, canAccessOverheadCosts: true, canAccessProductionRates: true,
+  canAccessVendorPricing: true,
+  canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true, canAccessTMDaily: true,
+  canManagePayroll: true, canManageCrews: true, canManageWorkforce: true, canManageLeave: true,
+  canManageSafety: true, canManageScheduling: true, canAccessKPIs: true, canLockDailyReports: true,
+  canManageEquipment: true, canManageProcurement: true,
+  canAccessCRM: true, canCreateCRMContacts: true, canAccessMarketplace: true,
+  canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
+  canPostSocialMedia: true, canManageWebsite: true, canAccessExecutiveDigest: true,
   canUseAiFeatures: true,
-  canPostSocialMedia: true,
-  canManageWebsite: true,
-  canManageEquipment: true,
-  canManageProcurement: true,
-  canManageContracts: true,
-  canManageHiring: true,
-  canManageSafety: true,
-  canManageScheduling: true,
-  canAccessBidNetwork: true,
-  canManageLeave: true,
-  canAccessTimeMaterial: true,
+  canAccessCompanySettings: true, canManageUsers: true, canAccessApprovals: true,
+  canAccessAuditLogs: true, canAccessReports: true, canAccessEnterpriseSettings: true,
+  canManageAISettings: true,
+  canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+  canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+  canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
 };
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   ADMIN: ALL_TRUE,
-  SUPER_ADMIN: ALL_TRUE,
-  MANAGER: {
+  SUPER_ADMIN: { ...ALL_FALSE },
+  HUSTLER: {
+    ...ALL_FALSE,
     canAccessFinancials: true,
-    canManagePayroll: true,
-    canAccessReports: true,
-    canUseAiFeatures: true,
-    canPostSocialMedia: true,
-    canManageWebsite: false,
-    canManageEquipment: true,
-    canManageProcurement: true,
-    canManageContracts: true,
+    canAccessKPIs: true,
     canManageHiring: true,
-    canManageSafety: true,
-    canManageScheduling: true,
-    canAccessBidNetwork: true,
-    canManageLeave: true,
-    canAccessTimeMaterial: true,
+    canAccessHiringInterviews: true,
+  },
+  MANAGER: {
+    ...ALL_TRUE,
+    canAccessActiveProjectsOnly: false,
+    canManageCrews: false,
+    canAccessCostRates: false,
+    canManageWebsite: false,
+    canManageAISettings: false,
+    canAccessAuditLogs: false,
+    canAccessEnterpriseSettings: false,
+    canManageUsers: false,
+    canManageHiringSettings: false,
   },
   SUPERINTENDENT: {
-    canAccessFinancials: true,
-    canManagePayroll: false,
-    canAccessReports: true,
-    canUseAiFeatures: false,
-    canPostSocialMedia: false,
-    canManageWebsite: false,
-    canManageEquipment: true,
-    canManageProcurement: false,
-    canManageContracts: true,
-    canManageHiring: false,
-    canManageSafety: true,
-    canManageScheduling: true,
-    canAccessBidNetwork: false,
-    canManageLeave: false,
-    canAccessTimeMaterial: true,
+    ...ALL_FALSE,
+    canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+    canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+    canViewBids: true, canAccessHistoricalCosts: true,
+    canAccessFinancials: true, canManageContracts: true, canAccessSubcontracts: true,
+    canAccessProductionRates: true,
+    canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
+    canAccessTMDaily: true, canManageWorkforce: true, canManageSafety: true,
+    canManageScheduling: true, canAccessKPIs: true, canLockDailyReports: true,
+    canManageEquipment: true, canManageProcurement: true,
+    canAccessCRM: true, canCreateCRMContacts: true,
+    canAccessCompanySettings: true, canAccessApprovals: true, canAccessReports: true,
+    canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+    canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+    canCreateChangeOrders: true,
   },
   ESTIMATOR: {
-    canAccessFinancials: true,
-    canManagePayroll: false,
-    canAccessReports: true,
+    ...ALL_FALSE,
+    canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+    canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+    canViewBids: true, canEditBids: true, canGenerateBidPDFs: true,
+    canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+    canAccessHistoricalCosts: true, canAccessScopeSettings: true, canUseAiBidAnalysis: true,
+    canCreateProjects: true,
+    canAccessFinancials: true, canAccessCostRates: true, canAccessProductionRates: true,
+    canAccessTimeClock: true,
+    canAccessCRM: true, canCreateCRMContacts: true,
     canUseAiFeatures: true,
-    canPostSocialMedia: false,
-    canManageWebsite: false,
-    canManageEquipment: false,
-    canManageProcurement: false,
-    canManageContracts: false,
-    canManageHiring: false,
-    canManageSafety: false,
-    canManageScheduling: false,
-    canAccessBidNetwork: true,
-    canManageLeave: false,
-    canAccessTimeMaterial: false,
+    canAccessCompanySettings: true, canAccessReports: true,
+    canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+    canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
   },
-  OFFICE_MANAGER: {
-    canAccessFinancials: true,
-    canManagePayroll: true,
-    canAccessReports: false,
-    canUseAiFeatures: false,
-    canPostSocialMedia: false,
-    canManageWebsite: false,
-    canManageEquipment: false,
-    canManageProcurement: false,
-    canManageContracts: false,
-    canManageHiring: true,
-    canManageSafety: false,
-    canManageScheduling: false,
-    canAccessBidNetwork: false,
-    canManageLeave: true,
-    canAccessTimeMaterial: false,
-  },
-  HUSTLER: {
-    canAccessFinancials: true,
-    canManagePayroll: false,
-    canAccessReports: false,
-    canUseAiFeatures: false,
-    canPostSocialMedia: false,
-    canManageWebsite: false,
-    canManageEquipment: false,
-    canManageProcurement: false,
-    canManageContracts: false,
-    canManageHiring: true,
-    canManageSafety: false,
-    canManageScheduling: false,
-    canAccessBidNetwork: false,
-    canManageLeave: false,
-    canAccessTimeMaterial: false,
-  },
-  MAINTENANCE_MANAGER: {
+  FIELD_WORKER: {
     ...ALL_FALSE,
-    canManageEquipment: true,
+    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: true,
+    canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
+    canAccessBulletins: true, canAccessTimeClock: true, canManageLeave: true,
+    canViewProjectTimeEntries: true,
   },
-  EQUIPMENT_MANAGER: {
+  VENDOR: {
     ...ALL_FALSE,
-    canManageEquipment: true,
+    canAccessBidNetworkInbox: true,
   },
-  PROCUREMENT_MANAGER: {
-    ...ALL_FALSE,
-    canManageProcurement: true,
-  },
-  SAFETY_MANAGER: {
-    ...ALL_FALSE,
-    canAccessReports: true,
-    canManageSafety: true,
-  },
-  HR_MANAGER: {
-    ...ALL_FALSE,
-    canAccessReports: true,
-    canManagePayroll: true,
-    canManageHiring: true,
-    canManageLeave: true,
-  },
-  SALES: {
-    ...ALL_FALSE,
-    canAccessReports: true,
-  },
-  MARKETING: {
-    ...ALL_FALSE,
-    canPostSocialMedia: true,
-    canManageWebsite: true,
-  },
-  PROJECT_ENGINEER: {
-    ...ALL_FALSE,
-    canAccessReports: true,
-    canManageContracts: true,
-  },
-  DISPATCHER: { ...ALL_FALSE },
-  HOURLY_EMPLOYEE: { ...ALL_FALSE },
-  VENDOR: { ...ALL_FALSE },
 };
 
 export function getRoleDefaults(role?: string | null): PermissionSet {
@@ -381,23 +358,14 @@ export function getRoleDefaults(role?: string | null): PermissionSet {
 }
 
 export function mergePermissions(roleDefaults: PermissionSet, dbPerms: Partial<PermissionSet> | null): PermissionSet {
-  return {
-    canAccessFinancials: roleDefaults.canAccessFinancials || (dbPerms?.canAccessFinancials ?? false),
-    canManagePayroll: roleDefaults.canManagePayroll || (dbPerms?.canManagePayroll ?? false),
-    canAccessReports: roleDefaults.canAccessReports || (dbPerms?.canAccessReports ?? false),
-    canUseAiFeatures: roleDefaults.canUseAiFeatures || (dbPerms?.canUseAiFeatures ?? false),
-    canPostSocialMedia: roleDefaults.canPostSocialMedia || (dbPerms?.canPostSocialMedia ?? false),
-    canManageWebsite: roleDefaults.canManageWebsite || (dbPerms?.canManageWebsite ?? false),
-    canManageEquipment: roleDefaults.canManageEquipment || (dbPerms?.canManageEquipment ?? false),
-    canManageProcurement: roleDefaults.canManageProcurement || (dbPerms?.canManageProcurement ?? false),
-    canManageContracts: roleDefaults.canManageContracts || (dbPerms?.canManageContracts ?? false),
-    canManageHiring: roleDefaults.canManageHiring || (dbPerms?.canManageHiring ?? false),
-    canManageSafety: roleDefaults.canManageSafety || (dbPerms?.canManageSafety ?? false),
-    canManageScheduling: roleDefaults.canManageScheduling || (dbPerms?.canManageScheduling ?? false),
-    canAccessBidNetwork: roleDefaults.canAccessBidNetwork || (dbPerms?.canAccessBidNetwork ?? false),
-    canManageLeave: roleDefaults.canManageLeave || (dbPerms?.canManageLeave ?? false),
-    canAccessTimeMaterial: roleDefaults.canAccessTimeMaterial || (dbPerms?.canAccessTimeMaterial ?? false),
-  };
+  if (!dbPerms) return { ...roleDefaults };
+  const result = { ...roleDefaults };
+  for (const key of Object.keys(result) as FeaturePermissionKeys[]) {
+    if (key in dbPerms && typeof dbPerms[key] === 'boolean') {
+      result[key] = dbPerms[key]!;
+    }
+  }
+  return result;
 }
 
 router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
@@ -421,24 +389,13 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
     const usersWithPermissions = orgUsers.map(user => {
       const perm = permissions.find(p => p.userId === user.id);
       const roleDefaults = getRoleDefaults(user.role);
-      const dbPerms = {
-        canAccessFinancials: perm?.canAccessFinancials || false,
-        canManagePayroll: perm?.canManagePayroll || false,
-        canAccessReports: perm?.canAccessReports || false,
-        canUseAiFeatures: perm?.canUseAiFeatures || false,
-        canPostSocialMedia: perm?.canPostSocialMedia || false,
-        canManageWebsite: perm?.canManageWebsite || false,
-        canManageEquipment: perm?.canManageEquipment || false,
-        canManageProcurement: perm?.canManageProcurement || false,
-        canManageContracts: perm?.canManageContracts || false,
-        canManageHiring: perm?.canManageHiring || false,
-        canManageSafety: perm?.canManageSafety || false,
-        canManageScheduling: perm?.canManageScheduling || false,
-        canAccessBidNetwork: perm?.canAccessBidNetwork || false,
-        canManageLeave: perm?.canManageLeave || false,
-        canAccessTimeMaterial: perm?.canAccessTimeMaterial || false,
-      };
-      const effective = mergePermissions(roleDefaults, dbPerms);
+      const dbPerms: Partial<PermissionSet> = {};
+      if (perm) {
+        for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+          dbPerms[key] = (perm as Record<string, unknown>)[key] as boolean ?? false;
+        }
+      }
+      const effective = mergePermissions(roleDefaults, perm ? dbPerms : null);
       return {
         ...user,
         ...dbPerms,
@@ -465,23 +422,11 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
       return res.status(403).json({ error: 'Organization required' });
     }
 
-    const schema = z.object({
-      canAccessFinancials: z.boolean(),
-      canManagePayroll: z.boolean(),
-      canAccessReports: z.boolean(),
-      canUseAiFeatures: z.boolean(),
-      canPostSocialMedia: z.boolean(),
-      canManageWebsite: z.boolean(),
-      canManageEquipment: z.boolean(),
-      canManageProcurement: z.boolean(),
-      canManageContracts: z.boolean(),
-      canManageHiring: z.boolean(),
-      canManageSafety: z.boolean(),
-      canManageScheduling: z.boolean(),
-      canAccessBidNetwork: z.boolean(),
-      canManageLeave: z.boolean(),
-      canAccessTimeMaterial: z.boolean(),
-    });
+    const schemaShape: Record<string, z.ZodBoolean> = {};
+    for (const key of Object.keys(ALL_FALSE)) {
+      schemaShape[key] = z.boolean();
+    }
+    const schema = z.object(schemaShape);
 
     const data = schema.parse(req.body);
 
@@ -532,8 +477,12 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
 
     const roleDefaults = getRoleDefaults(effectiveRole);
 
-    if (effectiveRole === 'ADMIN' || effectiveRole === 'SUPER_ADMIN') {
+    if (effectiveRole === 'ADMIN') {
       return res.json(ALL_TRUE);
+    }
+
+    if (effectiveRole === 'SUPER_ADMIN') {
+      return res.json(roleDefaults);
     }
 
     if (!orgId) {
@@ -546,23 +495,13 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
         eq(userDashboardPermissions.userId, userId)
       ));
 
-    const dbPerms = permission ? {
-      canAccessFinancials: permission.canAccessFinancials ?? false,
-      canManagePayroll: permission.canManagePayroll ?? false,
-      canAccessReports: permission.canAccessReports ?? false,
-      canUseAiFeatures: permission.canUseAiFeatures ?? false,
-      canPostSocialMedia: permission.canPostSocialMedia ?? false,
-      canManageWebsite: permission.canManageWebsite ?? false,
-      canManageEquipment: permission.canManageEquipment ?? false,
-      canManageProcurement: permission.canManageProcurement ?? false,
-      canManageContracts: permission.canManageContracts ?? false,
-      canManageHiring: permission.canManageHiring ?? false,
-      canManageSafety: permission.canManageSafety ?? false,
-      canManageScheduling: permission.canManageScheduling ?? false,
-      canAccessBidNetwork: permission.canAccessBidNetwork ?? false,
-      canManageLeave: permission.canManageLeave ?? false,
-      canAccessTimeMaterial: permission.canAccessTimeMaterial ?? false,
-    } : null;
+    const dbPerms: Partial<PermissionSet> | null = permission ? (() => {
+      const perms: Partial<PermissionSet> = {};
+      for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+        perms[key] = (permission as Record<string, unknown>)[key] as boolean ?? false;
+      }
+      return perms;
+    })() : null;
 
     res.json(mergePermissions(roleDefaults, dbPerms));
   } catch (error) {
@@ -1737,7 +1676,7 @@ const updateUserSchema = insertUserSchema.omit({ passwordHash: true }).partial()
 });
 
 // Get all users (Admin/Manager/Office Manager)
-router.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     // Organization filtering: SUPER_ADMIN sees all users, others see only their org's users
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1811,7 +1750,7 @@ router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthReq
       lastName,
       email,
       phone: phone || null,
-      role: role || "HOURLY_EMPLOYEE",
+      role: role || "FIELD_WORKER",
       isActive: true,
       passwordHash,
       organizationId: req.user!.organizationId,
@@ -2911,7 +2850,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
 // Workforce Snapshot Widget
 // ====================
 
-router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER", "HR_MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -2930,7 +2869,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
       SELECT COUNT(DISTINCT u."id")::int as count
       FROM "users" u
       WHERE u."is_active" = true
-        AND u."role"::text IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'MAINTENANCE_MANAGER', 'MANAGER', 'HUSTLER')
+        AND u."role"::text IN ('FIELD_WORKER', 'SUPERINTENDENT', 'MANAGER', 'HUSTLER')
         ${orgCond}
     `);
     const totalWorkers = (totalResult.rows[0] as any)?.count || 0;
@@ -2996,7 +2935,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
 // Cash Position Widget
 // ====================
 
-router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -3082,7 +3021,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
 // SOV Progress Widget
 // ====================
 
-router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -3329,7 +3268,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
 // Cost Code Breakdown Widget
 // ============================
 
-router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -3725,7 +3664,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
 // ====================
 // Labor Utilization Widget
 // ====================
-router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER", "HR_MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -3744,7 +3683,7 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
       SELECT COUNT(*)::int as count
       FROM "users" u
       WHERE u."is_active" = true
-        AND u."role" IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'PROJECT_ENGINEER', 'DISPATCHER', 'EQUIPMENT_MANAGER', 'MAINTENANCE_MANAGER')
+        AND u."role" IN ('FIELD_WORKER', 'SUPERINTENDENT', 'ESTIMATOR')
         ${orgCond}
     `);
     const totalWorkers = (totalResult.rows[0] as any)?.count || 0;
@@ -3756,7 +3695,7 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
       FROM "time_entries" te
       JOIN "users" u ON te."user_id" = u."id"
       WHERE te."date" = ${todayStart.toISOString().split('T')[0]}::date
-        AND u."role" IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'PROJECT_ENGINEER', 'DISPATCHER', 'EQUIPMENT_MANAGER', 'MAINTENANCE_MANAGER')
+        AND u."role" IN ('FIELD_WORKER', 'SUPERINTENDENT', 'ESTIMATOR')
         AND u."is_active" = true
         ${orgCond}
     `);
@@ -3789,7 +3728,7 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
         FROM "time_entries" te
         JOIN "users" u ON te."user_id" = u."id"
         WHERE te."date" = ${dayStr}::date
-          AND u."role" IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'PROJECT_ENGINEER', 'DISPATCHER', 'EQUIPMENT_MANAGER', 'MAINTENANCE_MANAGER')
+          AND u."role" IN ('FIELD_WORKER', 'SUPERINTENDENT', 'ESTIMATOR')
           AND u."is_active" = true
           ${orgCond}
       `);
@@ -3812,7 +3751,7 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
 // ====================
 // Safety Summary Widget
 // ====================
-router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SAFETY_MANAGER", "HR_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -3887,7 +3826,7 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
 // ====================
 // Change Orders Pending Widget
 // ====================
-router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 

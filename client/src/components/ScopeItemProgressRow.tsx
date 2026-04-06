@@ -49,7 +49,7 @@ export default function ScopeItemProgressRow({ scopeItemId, onDelete, isMobile }
   });
 
   // Check if user can edit billing status (Superintendent, Office Manager, Admin, Manager)
-  const canEditBillingStatus = user && ["SUPERINTENDENT", "OFFICE_MANAGER", "ADMIN", "MANAGER"].includes(user.role);
+  const canEditBillingStatus = user && ["SUPERINTENDENT", "MANAGER", "ADMIN"].includes(user.role);
 
   if (isLoading && !progressEntries) {
     if (isMobile) {

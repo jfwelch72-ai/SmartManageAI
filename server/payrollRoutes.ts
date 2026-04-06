@@ -1152,7 +1152,7 @@ router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
   }
 });
 
-const PAYROLL_APPROVE_ROLES = ["ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"] as const;
+const PAYROLL_APPROVE_ROLES = ["ADMIN", "SUPER_ADMIN"] as const;
 
 const payRunStatusHandler = async (req: any, res: Response) => {
   try {
@@ -2179,7 +2179,7 @@ router.delete("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
 // Routes from payrollNotificationRoutes.ts
 // ========================================
 
-router.get("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2260,7 +2260,7 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
       .from(users)
       .where(and(
         eq(users.organizationId, orgId),
-        eq(users.role, "OFFICE_MANAGER")
+        eq(users.role)
       ))
       .limit(1);
 
@@ -2312,7 +2312,7 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
   }
 });
 
-router.patch("/api/payroll-notifications/:id/process", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/payroll-notifications/:id/process", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2378,7 +2378,7 @@ function getWeekBounds(date: Date, startDay: typeof WORK_WEEK_DAYS[number]): { s
   return { start: weekStart, end: weekEnd };
 }
 
-router.get("/api/payroll/settings", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2408,7 +2408,7 @@ router.get("/api/payroll/settings", requireAuth, requireRole("ADMIN", "OFFICE_MA
   }
 });
 
-router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2467,7 +2467,7 @@ router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "OFFICE_MA
   }
 });
 
-router.get("/api/payroll/weekly-reports", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN", "MANAGER"), async (req, res) => {
+router.get("/api/payroll/weekly-reports", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2492,7 +2492,7 @@ router.get("/api/payroll/weekly-reports", requireAuth, requireRole("ADMIN", "OFF
   }
 });
 
-router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN", "MANAGER"), async (req, res) => {
+router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2522,7 +2522,7 @@ router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", 
   }
 });
 
-router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), async (req, res) => {
+router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2713,7 +2713,7 @@ router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADM
   }
 });
 
-router.get("/api/payroll/current-week-summary", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), async (req, res) => {
+router.get("/api/payroll/current-week-summary", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);

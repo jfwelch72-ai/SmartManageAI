@@ -101,7 +101,7 @@ export function ChangeOrderFiles({ changeOrderId, alwaysExpanded = false }: Chan
                 >
                   <Download className="w-4 h-4" />
                 </Button>
-                {(file.uploadedById === user?.id || ["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(user?.role || "")) && (
+                {(file.uploadedById === user?.id || ["ADMIN", "MANAGER"].includes(user?.role || "")) && (
                   <Button
                     size="icon"
                     variant="ghost"

@@ -227,7 +227,7 @@ export default function OverviewTab({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-4">
             <CardTitle>Project Team & Timeline</CardTitle>
-            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER") && (
+            {(user?.role === "ADMIN" || user?.role === "MANAGER") && (
               <Button
                 size="sm"
                 variant="outline"
@@ -301,7 +301,7 @@ export default function OverviewTab({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-4">
             <CardTitle>Financial Information</CardTitle>
-            {(user?.role === "ADMIN" || user?.role === "OFFICE_MANAGER") && (
+            {(user?.role === "ADMIN" || user?.role === "MANAGER") && (
               <Button
                 size="sm"
                 variant="outline"

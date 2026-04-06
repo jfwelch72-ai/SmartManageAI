@@ -929,7 +929,7 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
     enabled: !!projectId,
   });
 
-  const canManageEquipment = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "MAINTENANCE_MANAGER";
+  const canManageEquipment = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "FIELD_WORKER";
   const canManagePlans = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "ESTIMATOR";
 
   const returnEquipment = useMutation({

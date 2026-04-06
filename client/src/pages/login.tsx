@@ -13,22 +13,12 @@ import { useToast } from "@/hooks/use-toast";
 const DEV_ROLES = [
   { role: "SUPER_ADMIN", label: "Super Admin", icon: Shield, description: "Platform-wide access" },
   { role: "ADMIN", label: "Admin", icon: Users, description: "Organization admin" },
+  { role: "HUSTLER", label: "Hustler", icon: Zap, description: "Multi-org access" },
   { role: "MANAGER", label: "Manager", icon: Building2, description: "Project management" },
   { role: "SUPERINTENDENT", label: "Superintendent", icon: HardHat, description: "Field operations" },
   { role: "ESTIMATOR", label: "Estimator", icon: Calculator, description: "Cost estimation" },
-  { role: "OFFICE_MANAGER", label: "Office Manager", icon: Building2, description: "Office operations" },
-  { role: "HOURLY_EMPLOYEE", label: "Field Worker", icon: Clock, description: "Time tracking" },
-  { role: "MAINTENANCE_MANAGER", label: "Maintenance", icon: Wrench, description: "Equipment management" },
+  { role: "FIELD_WORKER", label: "Field Worker", icon: Clock, description: "Time tracking" },
   { role: "VENDOR", label: "Vendor", icon: Truck, description: "Supplier access" },
-  { role: "HUSTLER", label: "Hustler", icon: Zap, description: "Multi-org access" },
-  { role: "SALES", label: "Sales", icon: DollarSign, description: "CRM & pipeline" },
-  { role: "MARKETING", label: "Marketing", icon: Megaphone, description: "Campaigns & leads" },
-  { role: "SAFETY_MANAGER", label: "Safety Manager", icon: ShieldAlert, description: "Safety & compliance" },
-  { role: "HR_MANAGER", label: "HR Manager", icon: UserCog, description: "HR & onboarding" },
-  { role: "EQUIPMENT_MANAGER", label: "Equipment Mgr", icon: Cog, description: "Equipment registry" },
-  { role: "PROJECT_ENGINEER", label: "Project Engineer", icon: Compass, description: "RFIs & submittals" },
-  { role: "PROCUREMENT_MANAGER", label: "Procurement Mgr", icon: ShoppingCart, description: "POs & vendors" },
-  { role: "DISPATCHER", label: "Dispatcher", icon: Radio, description: "Crew scheduling" },
 ];
 
 export default function LoginPage() {

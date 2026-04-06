@@ -20,7 +20,7 @@ function serializePartUpload(uploadId: string, task: () => Promise<void>): Promi
   return queued;
 }
 
-router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { scopeItems } = await import("@shared/schema");
     const events = await db
@@ -40,7 +40,7 @@ router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("
   }
 });
 
-router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const schema = z.object({
       scopeItemId: z.string(),

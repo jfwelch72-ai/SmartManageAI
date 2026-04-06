@@ -99,14 +99,14 @@ export default function AIPMDashboard() {
     tasks?.filter((t) => t.status === "IN_PROGRESS") || [];
   const completedTasks = tasks?.filter((t) => t.status === "COMPLETED") || [];
 
-  // Filter billing-related tasks (Textura draw dates, OFFICE_MANAGER tasks, etc.)
+  // Filter billing-related tasks (Textura draw dates, billing/office tasks, etc.)
   const billingTasks =
     tasks
       ?.filter(
         (t) =>
           t.status !== "DISMISSED" &&
           t.status !== "COMPLETED" &&
-          (t.role === "OFFICE_MANAGER" ||
+          (t.role === "MANAGER" ||
             t.title.toLowerCase().includes("textura") ||
             t.title.toLowerCase().includes("billing") ||
             t.title.toLowerCase().includes("draw") ||

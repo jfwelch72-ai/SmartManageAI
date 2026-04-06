@@ -545,19 +545,9 @@ export function getDefaultLayoutForRole(role: string): DashboardLayoutConfig {
     case 'MANAGER':
     case 'SUPERINTENDENT':
     case 'ESTIMATOR':
-    case 'OFFICE_MANAGER':
-    case 'HR_MANAGER':
-    case 'SAFETY_MANAGER':
-    case 'PROCUREMENT_MANAGER':
-    case 'DISPATCHER':
       return OPERATIONS_TIER;
-    case 'HOURLY_EMPLOYEE':
+    case 'FIELD_WORKER':
     case 'VENDOR':
-    case 'PROJECT_ENGINEER':
-    case 'EQUIPMENT_MANAGER':
-    case 'MAINTENANCE_MANAGER':
-    case 'SALES':
-    case 'MARKETING':
       return FIELD_TIER;
     default:
       return BASIC_TIER;

@@ -13,7 +13,7 @@ const router = Router();
 
 const linkOrganizationSchema = z.object({
   organizationId: z.string().uuid(),
-  roleOverride: z.enum(["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"]).optional(),
+  roleOverride: z.enum(["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"]).optional(),
 });
 
 const switchOrganizationSchema = z.object({
@@ -550,7 +550,7 @@ router.get("/hustler/current-role", requireAuth, requireRole("HUSTLER"), async (
 const inviteHustlerSchema = z.object({
   hustlerEmail: z.string().email(),
   message: z.string().optional(),
-  roleOverride: z.enum(["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"]).optional(),
+  roleOverride: z.enum(["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"]).optional(),
 });
 
 const respondToRequestSchema = z.object({

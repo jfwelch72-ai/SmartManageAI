@@ -116,7 +116,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      const managerRoles = ["ADMIN", "MANAGER"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -229,7 +229,7 @@ const router = Router();
       const userRole = req.user?.role;
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      const managerRoles = ["ADMIN", "MANAGER"];
       if (!userRole || !managerRoles.includes(userRole)) { res.status(403).json({ error: "Insufficient permissions" }); return; }
       if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
 
@@ -359,7 +359,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      const managerRoles = ["ADMIN", "MANAGER"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -486,7 +486,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      const managerRoles = ["ADMIN", "MANAGER"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -538,7 +538,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      const managerRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -586,7 +586,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      const managerRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -669,7 +669,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      const managerRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -720,7 +720,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      const managerRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -760,7 +760,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      const managerRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;
@@ -813,7 +813,7 @@ const router = Router();
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      const managerRoles = ["ADMIN", "MANAGER"];
       if (!userRole || !managerRoles.includes(userRole)) {
         res.status(403).json({ error: "Insufficient permissions" });
         return;

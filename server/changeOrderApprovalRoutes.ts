@@ -696,7 +696,7 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response, n
 
     // Project-level permission: non-privileged roles may only upload if they are
     // the project superintendent, estimator, or the change order requester
-    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(user.role)) {
+    if (!["ADMIN", "MANAGER"].includes(user.role)) {
       const [proj] = await db.select().from(projects).where(eq(projects.id, order.projectId)).limit(1);
       if (!proj) {
         res.status(404).json({ error: "Project not found" });
@@ -821,7 +821,7 @@ router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response, ne
     // the project superintendent, estimator, or the change order requester
     const viewUser = req.user!;
     const viewUserId = viewUser.id;
-    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(viewUser.role)) {
+    if (!["ADMIN", "MANAGER"].includes(viewUser.role)) {
       const [proj] = await db.select().from(projects).where(eq(projects.id, orderForFiles.projectId)).limit(1);
       if (!proj) {
         res.status(404).json({ error: "Project not found" });
@@ -900,7 +900,7 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
     // the project superintendent, estimator, or the change order requester
     const deleteUser = req.user!;
     const deleteUserId = deleteUser.id;
-    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(deleteUser.role)) {
+    if (!["ADMIN", "MANAGER"].includes(deleteUser.role)) {
       const [proj] = await db.select().from(projects).where(eq(projects.id, deleteOrder.projectId)).limit(1);
       if (!proj) {
         res.status(404).json({ error: "Project not found" });
@@ -927,7 +927,7 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
     }
 
     const user = req.user!;
-    if (attachment.uploadedById !== user.id && !["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(user.role)) {
+    if (attachment.uploadedById !== user.id && !["ADMIN", "MANAGER"].includes(user.role)) {
       res.status(403).json({ error: "You don't have permission to delete this file" });
       return;
     }

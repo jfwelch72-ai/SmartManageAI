@@ -47,7 +47,7 @@ export interface AIAnalysisResponse {
   }[];
   tasks: {
     task_type: 'DAILY_TASK' | 'APPROVAL' | 'BILLING' | 'PROCUREMENT' | 'BID' | 'SCHEDULING';
-    role: 'ADMIN' | 'MANAGER' | 'SUPERINTENDENT' | 'ESTIMATOR' | 'OFFICE_MANAGER' | 'HOURLY_EMPLOYEE';
+    role: 'ADMIN' | 'MANAGER' | 'SUPERINTENDENT' | 'ESTIMATOR' | 'FIELD_WORKER';
     priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
     title: string;
     description: string;

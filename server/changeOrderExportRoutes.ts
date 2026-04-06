@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Change Orders]
  *     summary: Add change order to schedule of values
- *     description: Links an approved change order to the project's SOV. Requires ADMIN, MANAGER, or OFFICE_MANAGER role.
+ *     description: Links an approved change order to the project's SOV. Requires ADMIN or MANAGER role with canAccessProgressBilling permission.
  *     parameters:
  *       - name: id
  *         in: path
@@ -99,7 +99,7 @@ import { isValidTransition, getChangeOrderById, checkOrgAccess, notifyStatusChan
 
 const router = Router();
 
-router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const [co] = await db.select().from(changeOrders).where(eq(changeOrders.id, req.params.id)).limit(1);
     if (!co) return res.status(404).json({ error: "Change order not found" });

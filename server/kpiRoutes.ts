@@ -16,7 +16,7 @@ import { z } from "zod";
 
 const router = Router();
 
-const MANAGEMENT_ROLES = ["ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER", "OFFICE_MANAGER", "HR_MANAGER"];
+const MANAGEMENT_ROLES = ["ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"];
 
 function canManageKpis(role: string): boolean {
   return MANAGEMENT_ROLES.includes(role);

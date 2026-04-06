@@ -111,7 +111,7 @@
  *   get:
  *     tags: [Time & Attendance]
  *     summary: Get shifts pending approval
- *     description: Returns shifts awaiting manager approval. Requires ADMIN, MANAGER, SUPERINTENDENT, OFFICE_MANAGER, HR_MANAGER, or DISPATCHER role.
+ *     description: Returns shifts awaiting manager approval. Requires ADMIN, MANAGER, or SUPERINTENDENT role.
  *     responses:
  *       200: { description: List of pending shifts }
  * /api/time-clock/active-shifts:
@@ -171,7 +171,7 @@
  *   post:
  *     tags: [Time & Attendance]
  *     summary: Approve a shift
- *     description: Requires ADMIN, MANAGER, SUPERINTENDENT, OFFICE_MANAGER, HR_MANAGER, or DISPATCHER role.
+ *     description: Requires ADMIN, MANAGER, or SUPERINTENDENT role.
  *     parameters:
  *       - name: id
  *         in: path
@@ -807,7 +807,7 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
   }
 });
 
-router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     const pendingShifts = await db
@@ -853,7 +853,7 @@ router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN"
   }
 });
 
-router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     const activeShifts = await db
@@ -936,7 +936,7 @@ router.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("
   }
 });
 
-router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1112,7 +1112,7 @@ router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRol
   }
 });
 
-router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const schema = z.object({
       createTimeEntry: z.boolean().optional(),
@@ -1224,7 +1224,7 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
   }
 });
 
-router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1440,7 +1440,7 @@ router.get("/api/projects/:projectId/labor-hours", requireAuth, requireRole("ADM
   }
 });
 
-router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { projectId } = req.params;
     const { startDate, endDate } = req.query;

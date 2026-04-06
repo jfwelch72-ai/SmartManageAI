@@ -247,7 +247,7 @@ export default function CrmPipelineView() {
   const [sortField, setSortField] = useState<SortField>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const canEdit = ["ADMIN", "MANAGER", "ESTIMATOR", "SALES"].includes(user?.role ?? "");
+  const canEdit = ["ADMIN", "MANAGER", "ESTIMATOR"].includes(user?.role ?? "");
   const canDelete = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
   const canManageProjects = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
 

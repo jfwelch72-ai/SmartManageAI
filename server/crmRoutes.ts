@@ -211,7 +211,7 @@ const router = Router();
 // Routes from crmVendorRoutes.ts
 // ========================================
 
-router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -268,7 +268,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
     }
   });
 
-  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {
@@ -656,7 +656,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
     }
   });
 
-  router.get("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -834,7 +834,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
     }
   });
 
-  router.get("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -884,7 +884,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
     }
   });
 
-  router.post("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1035,7 +1035,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
     }
   });
 
-  router.get("/api/crm/organisations/:id/communications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/:id/communications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId: userOrgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {
@@ -1225,7 +1225,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
 
 const CONTACT_READ_ROLES = [
   "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT",
-  "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER",
+  "MANAGER",
 ] as const;
 
 router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES), async (req: AuthRequest, res) => {
@@ -1311,7 +1311,7 @@ router.get("/api/crm/organisations/:id/contacts", requireAuth, requireRole(...CO
   }
 });
 
-router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "SALES", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied - no organization" });
@@ -1463,8 +1463,8 @@ router.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGE
 // Routes from crmPipelineRoutes.ts
 // ========================================
 
-const PIPELINE_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR", "SALES", "OFFICE_MANAGER"] as const;
-const EDIT_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR", "SALES"] as const;
+const PIPELINE_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR"] as const;
+const EDIT_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR"] as const;
 const DELETE_ROLES = ["ADMIN", "MANAGER"] as const;
 
 const STAGE_LABELS: Record<string, string> = {
@@ -1983,7 +1983,7 @@ router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requir
   }
 });
 
-router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SALES"), async (req: AuthRequest, res) => {
+router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });

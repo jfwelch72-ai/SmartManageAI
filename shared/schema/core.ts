@@ -293,7 +293,7 @@ export const users = pgTable("users", {
   lastName: text("last_name").notNull(),
   email: text("email").notNull().unique(),
   phone: text("phone"),
-  role: userRoleEnum("role").notNull().default("HOURLY_EMPLOYEE"),
+  role: userRoleEnum("role").notNull().default("FIELD_WORKER"),
   isActive: boolean("is_active").notNull().default(true),
   passwordHash: text("password_hash"),
   tokenVersion: integer("token_version").notNull().default(0),

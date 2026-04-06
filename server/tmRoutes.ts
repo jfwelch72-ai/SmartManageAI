@@ -293,7 +293,7 @@ function registerTMApprovalRoutes(app: Express) {
 // ========================================
 
 function hasBillingApprovalAccess(role: string): boolean {
-  return ["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(role);
+  return ["ADMIN", "MANAGER"].includes(role);
 }
 
 function registerTMInvoiceRoutes(app: Express) {
@@ -458,7 +458,7 @@ function registerTMInvoiceRoutes(app: Express) {
             }
           });
 
-          const billingRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"] as const;
+          const billingRoles = ["ADMIN", "MANAGER"] as const;
           const billingUserIds = await getApproverUserIds(project.gcOrganizationId, req.user!.id, billingRoles);
           if (billingUserIds.length > 0) {
             await notifyUsers(billingUserIds, {

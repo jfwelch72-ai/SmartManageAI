@@ -217,7 +217,7 @@ export default function SubcontractsPage() {
   });
 
   // Payables queries & mutations
-  const isPayablesAuthorized = !!user && (["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(user.role) || hasFinancialsPermission);
+  const isPayablesAuthorized = !!user && (["ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission);
 
   const { data: payables = [], isLoading: payablesLoading } = useQuery<Payable[]>({
     queryKey: ["/api/payables"],

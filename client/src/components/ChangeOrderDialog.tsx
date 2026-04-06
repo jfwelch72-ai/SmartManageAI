@@ -196,9 +196,10 @@ const p = (v: string) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const APPROVAL_ROLES = [
-  { value: "MANAGER", label: "Manager" },
   { value: "ADMIN", label: "Admin" },
-  { value: "OFFICE_MANAGER", label: "Office Manager" },
+  { value: "MANAGER", label: "Manager" },
+  { value: "SUPERINTENDENT", label: "Superintendent" },
+  { value: "ESTIMATOR", label: "Estimator" },
 ];
 
 export function ChangeOrderDialog({
@@ -235,7 +236,7 @@ export function ChangeOrderDialog({
   const [showSectionSettings, setShowSectionSettings] = useState(false);
 
   const canManage = ["ADMIN", "MANAGER"].includes(userRole);
-  const canReview = ["ADMIN", "MANAGER", "PROJECT_ENGINEER"].includes(userRole);
+  const canReview = ["ADMIN", "MANAGER", "ESTIMATOR"].includes(userRole);
   const isAdmin = userRole === "ADMIN";
   const canEdit = canManage && (changeOrder?.status === "DRAFT" || changeOrder?.status === "PCO");
   const nonTerminalStatuses = ["DRAFT", "PCO", "PENDING_APPROVAL", "SUBMITTED"];

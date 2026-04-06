@@ -40,12 +40,12 @@ interface User {
 const roleLabels: Record<string, string> = {
   SUPER_ADMIN: "Platform Admin",
   ADMIN: "Admin",
+  HUSTLER: "Hustler",
   MANAGER: "Manager",
   SUPERINTENDENT: "Superintendent",
   ESTIMATOR: "Estimator",
-  OFFICE_MANAGER: "Office Manager",
-  HOURLY_EMPLOYEE: "Hourly Employee",
-  MAINTENANCE_MANAGER: "Maintenance Manager",
+  FIELD_WORKER: "Field Worker",
+  VENDOR: "Vendor",
 };
 
 export function SupportAuditPanel() {

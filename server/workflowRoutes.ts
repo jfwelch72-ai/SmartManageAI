@@ -506,7 +506,7 @@ router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Respo
   }
 });
 
-router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(400).json({ error: "Organization required" });

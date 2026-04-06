@@ -25,11 +25,12 @@ const ENTITY_TYPES = [
 
 const ROLES = [
   { value: "ADMIN", label: "Admin" },
+  { value: "HUSTLER", label: "Hustler" },
   { value: "MANAGER", label: "Manager" },
   { value: "SUPERINTENDENT", label: "Superintendent" },
-  { value: "OFFICE_MANAGER", label: "Office Manager" },
   { value: "ESTIMATOR", label: "Estimator" },
-  { value: "PROCUREMENT_MANAGER", label: "Procurement Manager" },
+  { value: "FIELD_WORKER", label: "Field Worker" },
+  { value: "VENDOR", label: "Vendor" },
 ];
 
 const STAGE_COLORS = [

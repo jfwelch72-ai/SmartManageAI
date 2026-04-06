@@ -19,8 +19,8 @@ const PRIORITY_ORDER: Record<string, number> = {
 
 // Roles that can manage items (create/edit)
 const MANAGEMENT_ROLES: UserRole[] = [
-  "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
-  "OFFICE_MANAGER", "SAFETY_MANAGER",
+  "ADMIN", "MANAGER", "SUPERINTENDENT",
+  "MANAGER",
 ];
 
 // Roles that can verify/reject (close out phase gate)
@@ -28,8 +28,8 @@ const VERIFY_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
 
 // Roles that can mark in-progress / resolved
 const WORKER_ROLES: UserRole[] = [
-  "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
-  "OFFICE_MANAGER", "SAFETY_MANAGER", "HOURLY_EMPLOYEE",
+  "ADMIN", "MANAGER", "SUPERINTENDENT",
+  "MANAGER", "FIELD_WORKER",
 ];
 
 async function getProjectByCode(code: string) {

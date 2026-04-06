@@ -62,7 +62,7 @@ async function seed() {
       firstName: "Mike",
       lastName: "Johnson",
       email: "mike@tfrllc.com",
-      role: "HOURLY_EMPLOYEE",
+      role: "FIELD_WORKER",
       isActive: true,
       passwordHash: demoPasswordHash,
       organizationId: demoOrg.id,
@@ -752,7 +752,7 @@ async function seed() {
   console.log("   1. admin@tfrllc.com (ADMIN)");
   console.log("   2. sarah@tfrconst.com (MANAGER)");
   console.log("   3. jake@tfrconstructionohio.com (SUPERINTENDENT)");
-  console.log("   4. mike@tfrllc.com (HOURLY_EMPLOYEE)");
+  console.log("   4. mike@tfrllc.com (FIELD_WORKER)");
   console.log("   Credentials use default seed values — change them in production!");
 }
 

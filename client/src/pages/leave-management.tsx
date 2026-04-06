@@ -578,7 +578,7 @@ export default function LeaveManagementPage() {
   const { user } = useAuth();
   const [showRequestDialog, setShowRequestDialog] = useState(false);
 
-  const isManager = ["ADMIN", "MANAGER", "HR_MANAGER"].includes(user?.role || "");
+  const isManager = ["ADMIN", "MANAGER"].includes(user?.role || "");
 
   const { data: balances = [], isLoading: balancesLoading, isError: balancesError } = useLeaveBalances();
 

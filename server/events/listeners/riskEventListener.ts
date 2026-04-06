@@ -8,7 +8,7 @@ import type { RiskStatusChangedEvent, ProjectCreatedEvent } from "../eventTypes"
 import { openai, AI_MODEL_GPT5 } from "../../ai/openaiClient";
 import { sanitizeShortText, sanitizeText } from "../../sanitization";
 
-const ADMIN_ROLES = ["ADMIN", "MANAGER", "OFFICE_MANAGER"] as const;
+const ADMIN_ROLES = ["ADMIN", "MANAGER"] as const;
 
 async function getAdminUserIds(orgId: string): Promise<string[]> {
   try {

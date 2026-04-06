@@ -19,8 +19,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 const router = Router();
 
 const MANAGEMENT_ROLES: UserRole[] = [
-  "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
-  "OFFICE_MANAGER", "SAFETY_MANAGER",
+  "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR",
 ];
 
 const VALID_HANDOVER_STATUSES = ["PENDING", "COMPLETE", "NOT_APPLICABLE"] as const;

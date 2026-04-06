@@ -33,7 +33,7 @@ const router = Router();
 
 function canAccessCostLedger(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" ||
-    role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "HUSTLER";
+    role === "ESTIMATOR" || role === "MANAGER" || role === "HUSTLER";
 }
 
 function canEditBudgetLines(role?: string): boolean {

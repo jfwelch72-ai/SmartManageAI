@@ -178,14 +178,14 @@ export default function CompanySettings() {
   const canViewUsers = isOrgAdmin;
   const canViewIntegrations = isOrgAdmin;
   const canViewWebsite = isOrgAdmin || featurePerms?.canManageWebsite === true;
-  const canViewOverhead = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "OFFICE_MANAGER";
-  const canViewProductionRates = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT" || user.role === "OFFICE_MANAGER" || featurePerms?.canAccessReports === true;
+  const canViewOverhead = user.role === "ADMIN" || user.role === "MANAGER";
+  const canViewProductionRates = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT" || featurePerms?.canAccessReports === true;
   const canViewReportLocks = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
   const canViewScopeSettings = isOrgAdmin || user.role === "MANAGER" || user.role === "ESTIMATOR";
   const canViewWorkflows = isOrgAdmin;
   const canViewAISettings = isOrgAdmin;
   const canViewAIGovernance = isOrgAdmin;
-  const canViewLeaveTypes = isOrgAdmin || user.role === "MANAGER" || user.role === "HR_MANAGER";
+  const canViewLeaveTypes = isOrgAdmin || user.role === "MANAGER";
 
   const tabPermissions: Record<string, boolean> = {
     trade: canViewCoreTabs, branding: canViewCoreTabs, insurance: canViewCoreTabs,

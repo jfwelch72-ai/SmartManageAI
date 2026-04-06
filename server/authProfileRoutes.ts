@@ -783,7 +783,7 @@ const upload = multer({
 
     try {
       const { role } = req.body;
-      const validRoles = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR", "HUSTLER", "SALES", "MARKETING", "SAFETY_MANAGER", "HR_MANAGER", "EQUIPMENT_MANAGER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER", "DISPATCHER"];
+      const validRoles = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
       
       if (!role || !validRoles.includes(role)) {
         res.status(400).json({ error: "Invalid role", validRoles });
@@ -1379,7 +1379,7 @@ const upload = multer({
         .where(and(
           eq(users.organizationId, orgId),
           eq(users.isActive, true),
-          inArray(users.role, ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"])
+          inArray(users.role, ["SUPERINTENDENT", "MANAGER", "ADMIN"])
         ));
 
       if (managers.length === 0) {
@@ -1474,7 +1474,7 @@ const upload = multer({
       const userRole = req.user?.role;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const allowedRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"];
+      const allowedRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
       if (!userRole || !allowedRoles.includes(userRole)) {
         res.status(403).json({ error: "Only managers, superintendents, office managers, and admins can approve verifications" });
         return;
@@ -1830,7 +1830,7 @@ const upload = multer({
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "ADMIN"];
       if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can log attendance" }); return; }
       const schema = z.object({
         userId: z.string(),
@@ -1869,7 +1869,7 @@ const upload = multer({
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "ADMIN"];
       if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can log safety incidents" }); return; }
       const schema = z.object({
         userId: z.string(),
@@ -1923,7 +1923,7 @@ const upload = multer({
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "ADMIN"];
       if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can log quality issues" }); return; }
       const schema = z.object({
         userId: z.string(),
@@ -1963,7 +1963,7 @@ const upload = multer({
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "ADMIN"];
       if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can create reviews" }); return; }
       const schema = z.object({
         userId: z.string(),
@@ -2013,7 +2013,7 @@ const upload = multer({
       const userRole = req.user?.role;
       const orgId = req.user?.organizationId;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "ADMIN"];
       if (!userRole || !managerRoles.includes(userRole)) { res.status(403).json({ error: "Only managers can add supervisor notes" }); return; }
       const schema = z.object({
         userId: z.string().min(1),

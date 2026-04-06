@@ -291,7 +291,7 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response) => {
           firstName,
           lastName,
           passwordHash: "",
-          role: "HOURLY_EMPLOYEE",
+          role: "FIELD_WORKER",
           organizationId: org.id,
           isActive: true,
         })

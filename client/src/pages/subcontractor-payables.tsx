@@ -60,7 +60,7 @@ export default function SubcontractorPayablesPage() {
     !!user &&
     (user.role === "ADMIN" ||
       user.role === "MANAGER" ||
-      user.role === "OFFICE_MANAGER" ||
+      user.role === "MANAGER" ||
       hasFinancialsPermission);
 
   const { data: payables = [], isLoading } = useQuery<Payable[]>({
