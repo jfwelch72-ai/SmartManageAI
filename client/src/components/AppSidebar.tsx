@@ -405,13 +405,13 @@ export function AppSidebar() {
                                     <SidebarMenuSubButton asChild isActive={isActive(item.href) || (isMessages && isActive("/portal-chat"))}>
                                       <Link href={item.href} data-testid={item.testId}>
                                         {item.label}
+                                        {isMessages && unreadMessageCount > 0 && (
+                                          <Badge variant="default" className="h-5 min-w-5 flex items-center justify-center rounded-full px-1.5 py-0 text-xs ml-1.5" data-testid="badge-unread-messages">
+                                            {unreadMessageCount}
+                                          </Badge>
+                                        )}
                                       </Link>
                                     </SidebarMenuSubButton>
-                                    {isMessages && unreadMessageCount > 0 && (
-                                      <Badge variant="default" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs ml-auto">
-                                        {unreadMessageCount}
-                                      </Badge>
-                                    )}
                                   </SidebarMenuSubItem>
                                 );
                               })}
