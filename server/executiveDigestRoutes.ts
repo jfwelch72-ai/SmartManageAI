@@ -146,9 +146,9 @@ router.post("/api/executive/digest/generate", requireAuth, requireRole("ADMIN", 
 
     const projectsList = await db
       .select({
-        name: projects.projectName,
+        name: projects.name,
         status: projects.status,
-        contractValue: projects.contractValue,
+        contractAmount: projects.contractAmount,
       })
       .from(projects)
       .where(eq(projects.gcOrganizationId, orgId))
@@ -172,7 +172,7 @@ Bids:
 - Open/Draft bids: ${openBids}
 
 Recent Projects:
-${projectsList.map((p) => `- ${p.name} (${p.status}) - Contract: $${p.contractValue || "N/A"}`).join("\n")}
+${projectsList.map((p) => `- ${p.name} (${p.status}) - Contract: $${p.contractAmount || "N/A"}`).join("\n")}
 `;
 
     const systemPrompt = `You are an executive business intelligence analyst for a construction company. Generate a comprehensive ${period} executive digest based on the organization's data.
@@ -229,7 +229,6 @@ Requirements:
             { role: "system", content: systemPrompt },
             { role: "user", content: dataContext },
           ],
-          temperature: 0.7,
           response_format: { type: "json_object" },
         });
 
