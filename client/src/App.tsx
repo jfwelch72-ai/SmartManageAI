@@ -120,7 +120,6 @@ const WhatIfSimulatorPage = lazy(() => import("@/pages/what-if-simulator"));
 const CalculatorPage = lazy(() => import("@/pages/calculator"));
 const ManageWorkersPage = lazy(() => import("@/pages/manage-workers"));
 const WorkerDetailPage = lazy(() => import("@/pages/worker-detail"));
-const RateCoworkersPage = lazy(() => import("@/pages/rate-coworkers"));
 const PayrollManagementPage = lazy(() => import("@/pages/payroll-management"));
 const OvertimeRulesPage = lazy(() => import("@/pages/overtime-rules"));
 const ApprovalsPage = lazy(() => import("@/pages/approvals"));
@@ -356,7 +355,6 @@ function Router() {
       <Route path="/reports" component={() => <ProtectedRoute component={ReportsPage} permission={RoutePermissions.REPORTS} featurePerm="canAccessReports" />} />
       <Route path="/manage-workers/:id" component={() => <ProtectedRoute component={WorkerDetailPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
-      <Route path="/rate-coworkers" component={() => <ProtectedRoute component={RateCoworkersPage} permission={RoutePermissions.RATE_COWORKERS} />} />
       <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} permission={RoutePermissions.SAFETY_TRAINING} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/overtime-rules" component={() => <ProtectedRoute component={OvertimeRulesPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />

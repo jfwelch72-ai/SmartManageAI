@@ -318,7 +318,6 @@ export const RoutePermissions = {
   EMAIL_ASSISTANT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessEmailAssistant : hasManagementAccess(role),
   TASKS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTasks : hasContractorAccess(role),
   HISTORICAL_COSTS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessHistoricalCosts : canAccessBids(role) || hasFinancialAccess(role),
-  RATE_COWORKERS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canSubmitPeerRatings : hasContractorAccess(role),
   SAFETY_TRAINING: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms),
   LEAVE_MANAGEMENT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role),
   MARKETPLACE: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role),
@@ -583,12 +582,6 @@ export const NavigationConfig = {
       label: "Workforce Management",
       testId: "nav-manage-workers",
       visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/rate-coworkers",
-      label: "Rate Coworkers",
-      testId: "nav-rate-coworkers",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canSubmitPeerRatings : hasContractorAccess(role),
     },
     {
       href: "/payroll-management",

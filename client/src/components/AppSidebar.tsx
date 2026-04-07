@@ -312,7 +312,6 @@ export function AppSidebar() {
       { href: "/tasks", label: "Tasks", testId: "nav-tasks", icon: Briefcase, visible: NavigationConfig.projectsMenu.find(i => i.href === "/tasks")?.visible },
       { href: "/calendar", label: "Calendar", testId: "nav-calendar", icon: Briefcase, visible: NavigationConfig.projectsMenu.find(i => i.href === "/calendar")?.visible },
       { href: "/leave-management", label: "Leave Management", testId: "nav-leave-management", icon: Clock, visible: NavigationConfig.workforceMenu.find(i => i.href === "/leave-management")?.visible },
-      { href: "/rate-coworkers", label: "Rate Coworkers", testId: "nav-rate-coworkers", icon: Users, visible: NavigationConfig.workforceMenu.find(i => i.href === "/rate-coworkers")?.visible },
       { href: "/dashboard", label: "Dashboard", testId: "sidebar-dashboard", icon: LayoutDashboard, visible: NavigationConfig.mainNav.find(i => i.href === "/dashboard")?.visible },
       { href: "/communications", label: "Bulletins", testId: "sidebar-bulletins", icon: MessageSquare, visible: NavigationConfig.mainNav.find(i => i.href === "/communications")?.visible },
       { href: "/calculator", label: "Calculator", testId: "nav-calculator", icon: Wrench, visible: NavigationConfig.toolsMenu.find(i => i.href === "/calculator")?.visible },
