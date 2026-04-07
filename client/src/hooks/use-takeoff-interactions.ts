@@ -105,9 +105,19 @@ function inverseRotatePoint(
 export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const { toast } = useToast();
 
-  const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null);
+  const [mouseDownPosition, _setMouseDownPosition] = useState<{ x: number; y: number } | null>(null);
+  const mouseDownPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const setMouseDownPosition = useCallback((pos: { x: number; y: number } | null) => {
+    mouseDownPositionRef.current = pos;
+    _setMouseDownPosition(pos);
+  }, []);
   const CLICK_DRAG_THRESHOLD = 5;
-  const [isDraggingStage, setIsDraggingStage] = useState(false);
+  const [isDraggingStage, _setIsDraggingStage] = useState(false);
+  const isDraggingStageRef = useRef(false);
+  const setIsDraggingStage = useCallback((v: boolean) => {
+    isDraggingStageRef.current = v;
+    _setIsDraggingStage(v);
+  }, []);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [orthoLock, setOrthoLock] = useState(false);
   const [currentSnap, setCurrentSnap] = useState<SnapResult | null>(null);
@@ -482,19 +492,20 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       if (lastInputTypeRef.current === "touch" && now - lastInputTimeRef.current < 500) return;
       lastInputTypeRef.current = "mouse";
     }
-    if (!mouseDownPosition) return;
+    const mdp = mouseDownPositionRef.current;
+    if (!mdp) return;
     const stage = e.target.getStage();
     const pointerPosition = stage.getPointerPosition();
     setMouseDownPosition(null);
     if (!pointerPosition) return;
-    if (isDraggingStage) return;
-    const deltaX = pointerPosition.x - mouseDownPosition.x;
-    const deltaY = pointerPosition.y - mouseDownPosition.y;
+    if (isDraggingStageRef.current) return;
+    const deltaX = pointerPosition.x - mdp.x;
+    const deltaY = pointerPosition.y - mdp.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     if (distance < CLICK_DRAG_THRESHOLD) {
       handleStageClick(e);
     }
-  }, [mouseDownPosition, isDraggingStage, handleStageClick]);
+  }, [handleStageClick, setMouseDownPosition]);
 
   const handleStageDragStart = useCallback(() => { setIsDraggingStage(true); }, []);
 

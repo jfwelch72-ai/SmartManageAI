@@ -1512,6 +1512,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           }}
           onClick={() => { if (contextMenuPos) setContextMenuPos(null); if (measurementContextMenu) setMeasurementContextMenu(null); }}
         >
+          {calibrationMode !== "idle" && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 pointer-events-none" data-testid="calibration-mode-banner">
+              <span className="inline-block w-2 h-2 rounded-full bg-primary-foreground animate-pulse" />
+              {calibrationMode === "first-point" ? "Click first point on a known distance" : "Click second point to complete"}
+            </div>
+          )}
           {selectedSheet ? (
             <Stage
               ref={stageRef}
@@ -3369,6 +3375,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           setCalibrationPoints([]);
           setCalibrationDistance("");
           setActiveTool("calibrate");
+          toast({
+            title: "Calibration Mode",
+            description: "Click two points on a known distance to calibrate scale",
+          });
         }}
         currentScalePxPerFoot={currentSheet?.scalePxPerFoot ?? null}
       />
