@@ -275,7 +275,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   const { data: usersWithPermissions = [], isLoading: permissionsLoading } =
     useQuery<UserWithPermissions[]>({
       queryKey: ["/api/dashboard/permissions"],
-      enabled: user?.role === "ADMIN",
+      enabled: user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" || user?.role === "HUSTLER",
     });
 
   // Filtered users
@@ -362,7 +362,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
 
   const { data: presets = [] } = useQuery<PresetData[]>({
     queryKey: ['/api/dashboard/permission-presets'],
-    enabled: user?.role === "ADMIN",
+    enabled: user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" || user?.role === "HUSTLER",
   });
 
   const applyPresetMutation = useMutation({
@@ -520,7 +520,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     return null;
   }
 
-  if (!embedded && user.role !== "ADMIN") {
+  if (!embedded && user.role !== "ADMIN" && user.role !== "SUPER_ADMIN" && user.role !== "HUSTLER") {
     return (
       <div className="min-h-screen bg-background">
         <main className="mx-auto max-w-full px-6 py-8">

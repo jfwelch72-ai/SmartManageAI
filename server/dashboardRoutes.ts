@@ -190,7 +190,7 @@ import { db } from "./db";
 import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets, hustlerOrganizations } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens } from "./auth";
 import type { UserRole } from "@shared/schema";
-import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
+import { eq, and, sql, gte, lte, desc, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { KNOWN_WIDGET_TYPES, migrateV2ToV3, getDefaultLayoutForRole, PRESET_PALETTES } from "./dashboardDefaults";
 import { sensitiveLimiter } from "./rateLimiter";
@@ -403,7 +403,7 @@ export function mergePermissions(roleDefaults: PermissionSet, dbPerms: Partial<P
   return result;
 }
 
-router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) {
@@ -431,7 +431,7 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
         and(
           eq(hustlerOrganizations.organizationId, orgId),
           eq(hustlerOrganizations.isActive, true),
-          sql`${hustlerOrganizations.userId} = ANY(${hustlerUserIds})`
+          inArray(hustlerOrganizations.userId, hustlerUserIds)
         )
       );
     }
@@ -471,7 +471,7 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
   }
 });
 
-router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const orgId = req.user!.organizationId;
@@ -937,7 +937,7 @@ async function seedBuiltInPresets() {
 
 export { seedBuiltInPresets };
 
-router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
   try {
     const orgId = req.user!.organizationId;
     const role = (req.query.role as string) || '';
@@ -965,7 +965,7 @@ router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN'
   }
 });
 
-router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) {
@@ -1002,7 +1002,7 @@ router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN
   }
 });
 
-router.delete('/api/dashboard/permission-presets/:id', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+router.delete('/api/dashboard/permission-presets/:id', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.user!.organizationId;
@@ -1034,7 +1034,7 @@ router.delete('/api/dashboard/permission-presets/:id', requireAuth, requireRole(
   }
 });
 
-router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const orgId = req.user!.organizationId;
