@@ -91,7 +91,7 @@ import { Router, type Response , NextFunction } from "express";
 import { db } from "./db";
 import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprovals, changeOrderComments, tmTickets, rfis, scheduleOfValues, sovLineItems, orgCostCodes } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { type AuthRequest, requireAuth, requireRole, requireRoleOrFeature } from "./auth";
 import { logAudit } from "./auditLogger";
 import { logError } from "./utils/logger";
 import { verifyOrgAccess } from "./orgFilter";
@@ -99,7 +99,7 @@ import { isValidTransition, getChangeOrderById, checkOrgAccess, notifyStatusChan
 
 const router = Router();
 
-router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/:id/add-to-sov", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next) => {
   try {
     const [co] = await db.select().from(changeOrders).where(eq(changeOrders.id, req.params.id)).limit(1);
     if (!co) return res.status(404).json({ error: "Change order not found" });
@@ -189,7 +189,7 @@ router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER"), asy
   }
 });
 
-router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.post("/bulk-submit", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -386,7 +386,7 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
   }
 });
 
-router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
+router.get("/project/:projectId/bulk-pdf", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessProjects"), async (req: AuthRequest, res: Response, next) => {
   try {
     const projectId = req.params.projectId;
 

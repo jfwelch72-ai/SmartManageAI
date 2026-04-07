@@ -347,7 +347,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canManageScheduling: true, canAccessKPIs: true, canLockDailyReports: true,
     canManageEquipment: true, canManageProcurement: true,
     canAccessCRM: true, canCreateCRMContacts: true,
-    canAccessCompanySettings: true, canAccessApprovals: true, canAccessReports: true,
+    canAccessApprovals: true, canAccessReports: true,
     canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
     canCreateChangeOrders: true,
@@ -366,7 +366,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessTimeClock: true,
     canAccessCRM: true, canCreateCRMContacts: true,
     canUseAiFeatures: true,
-    canAccessCompanySettings: true, canAccessReports: true,
+    canAccessReports: true,
     canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
     canSubmitPeerRatings: true, canViewPeerRatings: true,
@@ -502,6 +502,16 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
         eq(userDashboardPermissions.userId, userId)
       ));
 
+    const oldPermissions: Record<string, boolean> = {};
+    if (existing.length > 0) {
+      for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+        const val = (existing[0] as Record<string, unknown>)[key];
+        if (typeof val === 'boolean') {
+          oldPermissions[key] = val;
+        }
+      }
+    }
+
     if (existing.length > 0) {
       await db.update(userDashboardPermissions)
         .set({
@@ -520,6 +530,24 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
         grantedAt: new Date(),
       });
     }
+
+    const changedPermissions: Record<string, { old: boolean; new: boolean }> = {};
+    for (const key of Object.keys(data) as string[]) {
+      const oldVal = oldPermissions[key] ?? false;
+      const newVal = (data as Record<string, boolean>)[key];
+      if (oldVal !== newVal) {
+        changedPermissions[key] = { old: oldVal, new: newVal };
+      }
+    }
+
+    await logAudit({
+      userId: adminId,
+      entityType: "userPermissions",
+      entityId: userId,
+      action: existing.length > 0 ? "UPDATE" : "CREATE",
+      oldValue: existing.length > 0 ? JSON.stringify(oldPermissions) : null,
+      newValue: JSON.stringify({ targetUserId: userId, targetUserEmail: targetUser.email, changed: changedPermissions, fullNewPermissions: data }),
+    }, req);
 
     res.json({ success: true });
   } catch (error) {

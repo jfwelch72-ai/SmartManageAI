@@ -261,7 +261,7 @@ export const RoutePermissions = {
   COST_RATES: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCostRates : isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "HUSTLER",
   CREWS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageCrews : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
   SUBCONTRACTOR_PAYABLES: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessSubcontracts : isOrganizationAdmin(role) || role === "HUSTLER",
-  COMPANY_SETTINGS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
+  COMPANY_SETTINGS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER",
 
   BIDS: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms),
   BID_DETAIL: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms),
@@ -702,7 +702,7 @@ export const NavigationConfig = {
       href: "/company-settings",
       label: "Company Settings",
       testId: "nav-company-settings",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER",
     },
     {
       href: "/scope-settings",
@@ -715,6 +715,24 @@ export const NavigationConfig = {
       label: "AI Settings",
       testId: "nav-ai-settings",
       visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageAISettings : isOrganizationAdmin(role) || role === "HUSTLER",
+    },
+    {
+      href: "/audit-logs",
+      label: "Audit Logs",
+      testId: "nav-audit-logs",
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessAuditLogs : isOrganizationAdmin(role) || role === "HUSTLER",
+    },
+    {
+      href: "/reports",
+      label: "Reports",
+      testId: "nav-reports",
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessReports : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
+    },
+    {
+      href: "/approvals",
+      label: "Approvals",
+      testId: "nav-approvals",
+      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessApprovals : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
     },
   ],
 
@@ -741,6 +759,9 @@ export const DEFAULT_SECTION_ORDER: SidebarSection[] = [
 ];
 
 export const ROLE_SECTION_ORDER: Partial<Record<string, SidebarSection[]>> = {
+  ADMIN: ['dashboard', 'administration', 'financials', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'tools', 'bulletins'],
+  MANAGER: ['dashboard', 'projects', 'operations', 'workforce', 'financials', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'administration', 'tools', 'bulletins'],
+  HUSTLER: ['portfolio', 'dashboard', 'financials', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'administration', 'tools', 'bulletins'],
   FIELD_WORKER: ['dashboard', 'workforce', 'projects', 'bulletins'],
   SUPERINTENDENT: ['operations', 'workforce', 'dashboard', 'bulletins', 'projects', 'preconstruction', 'financials', 'administration'],
   ESTIMATOR: ['preconstruction', 'operations', 'dashboard', 'bulletins', 'financials', 'projects', 'crm', 'marketplace', 'administration'],
