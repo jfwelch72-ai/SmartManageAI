@@ -108,27 +108,10 @@ function VisualComparePanel({ rev1Id, rev2Id, comparison }: { rev1Id: string; re
   const sliderRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
-  const { data: url1Data, isLoading: loading1 } = useQuery<{ url: string }>({
-    queryKey: ["/api/documents/revisions", rev1Id, "preview-url"],
-    queryFn: async () => {
-      const res = await fetch(`/api/documents/revisions/${rev1Id}/preview-url`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to get preview URL");
-      return res.json();
-    },
-    enabled: !!rev1Id && !!comparison.revision1.storageKey,
-    staleTime: 50 * 60 * 1000,
-  });
-
-  const { data: url2Data, isLoading: loading2 } = useQuery<{ url: string }>({
-    queryKey: ["/api/documents/revisions", rev2Id, "preview-url"],
-    queryFn: async () => {
-      const res = await fetch(`/api/documents/revisions/${rev2Id}/preview-url`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to get preview URL");
-      return res.json();
-    },
-    enabled: !!rev2Id && !!comparison.revision2.storageKey,
-    staleTime: 50 * 60 * 1000,
-  });
+  const url1Data = rev1Id && comparison.revision1.storageKey ? { url: `/api/documents/revisions/${rev1Id}/preview-url` } : undefined;
+  const loading1 = false;
+  const url2Data = rev2Id && comparison.revision2.storageKey ? { url: `/api/documents/revisions/${rev2Id}/preview-url` } : undefined;
+  const loading2 = false;
 
   const bothHaveFiles = comparison.revision1.storageKey && comparison.revision2.storageKey;
 

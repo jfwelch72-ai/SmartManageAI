@@ -140,14 +140,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     setBimExtractionResult(null);
 
     try {
-      const previewRes = await fetch(`/api/bids/${bidCode}/documents/${doc.id}/preview-url`, { credentials: "include" });
-      let fileUrl = doc.fileUrl;
-      if (previewRes.ok) {
-        const data = await previewRes.json();
-        fileUrl = data.url;
-      }
+      const fileUrl = `/api/bids/${bidCode}/documents/${doc.id}/stream`;
 
-      const response = await fetch(fileUrl);
+      const response = await fetch(fileUrl, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch IFC file");
       const arrayBuffer = await response.arrayBuffer();
 
@@ -209,16 +204,8 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     };
   }, []);
 
-  const { data: previewUrlData, isLoading: previewUrlLoading } = useQuery<{ url: string }>({
-    queryKey: ["/api/bids", bidCode, "documents", previewDocId, "preview-url"],
-    queryFn: async () => {
-      const res = await fetch(`/api/bids/${bidCode}/documents/${previewDocId}/preview-url`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to get preview URL");
-      return res.json();
-    },
-    enabled: !!previewDocId,
-    staleTime: 50 * 60 * 1000,
-  });
+  const previewUrlData = previewDocId ? { url: `/api/bids/${bidCode}/documents/${previewDocId}/stream` } : undefined;
+  const previewUrlLoading = false;
 
   const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents", "BIM"];
 
@@ -498,18 +485,8 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
 
   const selectedDoc = documents.find((d) => d.id === selectedDocId);
 
-  const handleOpenFile = async (docId: string, fallbackUrl: string) => {
-    try {
-      const res = await fetch(`/api/bids/${bidCode}/documents/${docId}/preview-url`, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        window.open(data.url, "_blank");
-      } else {
-        window.open(fallbackUrl, "_blank");
-      }
-    } catch {
-      window.open(fallbackUrl, "_blank");
-    }
+  const handleOpenFile = async (docId: string, _fallbackUrl: string) => {
+    window.open(`/api/bids/${bidCode}/documents/${docId}/stream`, "_blank");
   };
 
   const handleUploadComplete = (result: any) => {
@@ -603,16 +580,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
 
   const splitBimDoc = splitBimDocId ? documents.find(d => d.id === splitBimDocId) : bimDocuments[0] || null;
 
-  const { data: splitBimUrl } = useQuery<{ url: string }>({
-    queryKey: ["/api/bids", bidCode, "documents", splitBimDoc?.id, "preview-url"],
-    queryFn: async () => {
-      const res = await fetch(`/api/bids/${bidCode}/documents/${splitBimDoc!.id}/preview-url`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to get preview URL");
-      return res.json();
-    },
-    enabled: !!splitBimDoc && splitViewMode,
-    staleTime: 50 * 60 * 1000,
-  });
+  const splitBimUrl = splitBimDoc ? { url: `/api/bids/${bidCode}/documents/${splitBimDoc.id}/stream` } : undefined;
 
   const handleBimElementSelect = useCallback((elements: BimSelectedElement[]) => {
     setBimSelectedElements(elements);

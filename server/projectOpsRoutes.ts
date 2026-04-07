@@ -238,15 +238,12 @@ router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, asyn
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
-    const [signedUrl] = await objectFile.getSignedUrl({
-      version: 'v4',
-      action: 'read',
-      expires: Date.now() + 60 * 60 * 1000,
-    });
-    res.json({ url: signedUrl });
+    await objectStorageService.downloadObject(objectFile, res, 3600);
   } catch (error) {
     logError("Project document preview-url error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate preview URL" });
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to generate preview URL" });
+    }
   }
 });
 

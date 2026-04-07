@@ -552,20 +552,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   useEffect(() => {
     Object.entries(addendaOverlays).forEach(([addendumId, overlay]) => {
       if (overlay.visible && !addendaImages[addendumId] && !overlay.imageUrl) {
-        fetch(`/api/addenda/${addendumId}/preview-url`, { credentials: "include" })
-          .then(r => r.ok ? r.json() : null)
-          .then(data => {
-            if (data?.url) {
-              setAddendaOverlays(prev => ({ ...prev, [addendumId]: { ...prev[addendumId], imageUrl: data.url } }));
-              const img = new window.Image();
-              img.crossOrigin = "anonymous";
-              img.onload = () => {
-                setAddendaImages(prev => ({ ...prev, [addendumId]: img }));
-              };
-              img.src = data.url;
-            }
-          })
-          .catch(() => {});
+        const imageUrl = `/api/addenda/${addendumId}/preview-url`;
+        setAddendaOverlays(prev => ({ ...prev, [addendumId]: { ...prev[addendumId], imageUrl } }));
+        const img = new window.Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          setAddendaImages(prev => ({ ...prev, [addendumId]: img }));
+        };
+        img.src = imageUrl;
       }
     });
   }, [addendaOverlays, addendaImages]);

@@ -251,25 +251,19 @@ router.get("/addenda/:id/preview-url", requireAuth, async (req, res) => {
       ));
     if (!addendum) return res.status(404).json({ error: "Addendum not found" });
 
-    if (!addendum.storageKey) {
-      if (addendum.fileUrl) return res.json({ url: addendum.fileUrl });
-      return res.status(404).json({ error: "No file associated with this addendum" });
-    }
+    const storageKey = addendum.storageKey || addendum.fileUrl;
+    if (!storageKey) return res.status(404).json({ error: "No file associated with this addendum" });
 
     try {
       const { ObjectStorageService } = await import("./objectStorage");
       const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(addendum.storageKey);
-      const [signedUrl] = await objectFile.getSignedUrl({
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + 60 * 60 * 1000,
-      });
-      res.json({ url: signedUrl });
+      const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+      await objectStorageService.downloadObject(objectFile, res, 3600);
     } catch {
       logWarn("Non-critical operation failed");
-      if (addendum.fileUrl) return res.json({ url: addendum.fileUrl });
-      res.status(500).json({ error: "Failed to generate preview URL" });
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to stream addendum file" });
+      }
     }
   } catch (err) {
     res.status(500).json({ error: "Failed to get addendum preview URL" });

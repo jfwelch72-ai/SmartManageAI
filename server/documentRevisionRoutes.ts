@@ -79,18 +79,17 @@ router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, r
       const { ObjectStorageService } = await import("./objectStorage");
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(revision.storageKey);
-      const [signedUrl] = await objectFile.getSignedUrl({
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + 60 * 60 * 1000,
-      });
-      res.json({ url: signedUrl });
+      await objectStorageService.downloadObject(objectFile, res, 3600);
     } catch {
       logWarn("Non-critical operation failed");
-      res.status(500).json({ error: "Failed to generate preview URL" });
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to stream revision file" });
+      }
     }
   } catch (err) {
-    res.status(500).json({ error: "Failed to get preview URL" });
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to get preview URL" });
+    }
   }
 });
 
