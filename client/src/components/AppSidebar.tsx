@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
-import { PlatformAdminNavConfig, VendorPortalNavConfig, isSuperAdmin, isVendor, isFieldWorker, type FeaturePerms, type SidebarSection, getWorkflowGroups, getVisibleGroupItems } from "@/lib/rbac";
+import { PlatformAdminNavConfig, VendorPortalNavConfig, isSuperAdmin, isVendor, isFieldWorker, type FeaturePerms, type SidebarSection, getWorkflowGroups, getVisibleGroupItems, NavItems } from "@/lib/rbac";
 import { useDashboardCustomizationSafe } from "@/hooks/use-dashboard-customization";
 import { useTour } from "@/components/TourProvider";
 import {
@@ -60,7 +60,7 @@ import {
   Info,
   type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -172,6 +172,28 @@ export function AppSidebar() {
   
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
+  const userRole = user?.effectiveRole || user?.role;
+  
+  useEffect(() => {
+    if (!tour.isTourActive || !tour.currentTourTarget || !userRole) return;
+    
+    const match = tour.currentTourTarget.match(/data-testid="([^"]+)"/);
+    if (!match) return;
+    const targetTestId = match[1];
+    
+    const targetNavItem = Object.values(NavItems).find(item => item.testId === targetTestId);
+    if (!targetNavItem) return;
+    
+    const groups = getWorkflowGroups(userRole);
+    const targetGroup = groups.find(group => group.itemHrefs.includes(targetNavItem.href));
+    if (targetGroup && targetGroup.key !== 'portfolio') {
+      setOpenGroups(prev => {
+        if (prev[targetGroup.key]) return prev;
+        return { ...prev, [targetGroup.key]: true };
+      });
+    }
+  }, [tour.isTourActive, tour.currentTourTarget, userRole]);
+
   const { data: walkthroughStatus } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
     enabled: !!user,
@@ -188,7 +210,6 @@ export function AppSidebar() {
 
   if (!user) return null;
 
-  const userRole = user.effectiveRole || user.role;
   const displayName = organizationName || "SmartManageAI";
   const unreadMessageCount = (messageCountData.unreadCount || 0) + (portalChatUnreadData?.unreadCount || 0);
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import Joyride, { CallBackProps, STATUS, EVENTS, ACTIONS, Step } from "react-joyride";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -19,6 +19,7 @@ interface TourContextType {
   skipTour: () => void;
   isTourActive: boolean;
   currentStep: number;
+  currentTourTarget: string | null;
 }
 
 const TourContext = createContext<TourContextType | null>(null);
@@ -33,7 +34,7 @@ export function useTour() {
 
 const adminTourSteps: TourStep[] = [
   {
-    target: '[data-testid="sidebar-dashboard"]',
+    target: '[data-testid="nav-dashboard"]',
     title: "Your Command Center",
     content: "The dashboard gives you a real-time view of your entire operation - active projects, pending bids, crew utilization, and key financial metrics.",
     profitabilityTip: "Quick visibility means faster decisions and less money left on the table.",
@@ -41,7 +42,7 @@ const adminTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-projects"]',
+    target: '[data-testid="nav-projects"]',
     title: "Project Management",
     content: "Track every project from start to finish. Monitor progress, manage change orders, and keep all project documents in one place.",
     profitabilityTip: "Organized projects mean fewer delays and cost overruns.",
@@ -49,7 +50,7 @@ const adminTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-bids"]',
+    target: '[data-testid="nav-bids"]',
     title: "Bid Pipeline",
     content: "Manage your entire bid process - from initial leads to awarded contracts. Never miss a deadline or opportunity.",
     profitabilityTip: "A structured bid process improves win rates and helps you focus on profitable work.",
@@ -57,7 +58,7 @@ const adminTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-my-time-clock"]',
+    target: '[data-testid="nav-my-time-clock"]',
     title: "Time Tracking",
     content: "GPS-verified time clock captures labor hours automatically. Crew members clock in/out from their phones.",
     profitabilityTip: "Accurate time tracking means accurate job costing and no payroll disputes.",
@@ -73,19 +74,11 @@ const adminTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-crm"]',
+    target: '[data-testid="nav-crm"]',
     title: "Customer & Vendor Management",
     content: "Manage all your business relationships - clients, subcontractors, suppliers, and vendors with pricing catalogs.",
     profitabilityTip: "Strong vendor relationships and negotiated pricing directly impact your bottom line.",
     path: "/dashboard",
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="nav-ai-pm"]',
-    title: "AI Project Manager",
-    content: "Your AI assistant analyzes project data, identifies risks, and provides scheduling recommendations.",
-    profitabilityTip: "AI catches issues early before they become expensive problems.",
-    path: "/ai-pm",
     disableBeacon: true,
   },
   {
@@ -108,7 +101,7 @@ const hustlerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-dashboard"]',
+    target: '[data-testid="nav-dashboard"]',
     title: "Executive Dashboard",
     content: "See aggregated metrics across all your organizations - total revenue, project counts, and performance comparisons.",
     profitabilityTip: "Portfolio-wide visibility helps you allocate resources to your highest-performing companies.",
@@ -116,15 +109,15 @@ const hustlerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-cfo"]',
+    target: '[data-testid="nav-cfo-dashboard"]',
     title: "CFO Analytics",
     content: "Deep financial analysis across your portfolio - cash flow, profitability trends, and financial forecasting.",
     profitabilityTip: "Data-driven decisions about where to invest and where to cut.",
-    path: "/cfo",
+    path: "/cfo-dashboard",
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-users"]',
+    target: '[data-testid="nav-users"]',
     title: "COO Delegation",
     content: "Assign COO-level access to trusted managers who can help oversee operations across organizations.",
     profitabilityTip: "Scale your oversight without being in every meeting.",
@@ -135,7 +128,7 @@ const hustlerTourSteps: TourStep[] = [
 
 const managerTourSteps: TourStep[] = [
   {
-    target: '[data-testid="sidebar-dashboard"]',
+    target: '[data-testid="nav-dashboard"]',
     title: "Your Dashboard",
     content: "See the projects and bids you're responsible for, upcoming deadlines, and crew assignments at a glance.",
     profitabilityTip: "Stay on top of everything without searching through emails.",
@@ -143,7 +136,7 @@ const managerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-projects"]',
+    target: '[data-testid="nav-projects"]',
     title: "Project Tracking",
     content: "Monitor project progress, manage schedules, and track change orders for your assigned projects.",
     profitabilityTip: "Proactive management prevents costly delays.",
@@ -151,7 +144,7 @@ const managerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-bids"]',
+    target: '[data-testid="nav-bids"]',
     title: "Bid Management",
     content: "Create and track bids, collaborate with estimators, and manage the proposal process.",
     profitabilityTip: "Organized bid tracking improves your win rate.",
@@ -159,7 +152,7 @@ const managerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-time-clock-manager"]',
+    target: '[data-testid="nav-manage-time-clock"]',
     title: "Time Approval",
     content: "Review and approve crew time entries. Ensure accurate labor tracking for job costing.",
     profitabilityTip: "Catch time discrepancies before they hit payroll.",
@@ -167,7 +160,7 @@ const managerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-crews"]',
+    target: '[data-testid="nav-crews"]',
     title: "Crew Management",
     content: "Organize your workforce into crews, assign foremen, and track who's working where.",
     profitabilityTip: "Right crew on the right job maximizes productivity.",
@@ -178,7 +171,7 @@ const managerTourSteps: TourStep[] = [
 
 const estimatorTourSteps: TourStep[] = [
   {
-    target: '[data-testid="sidebar-dashboard"]',
+    target: '[data-testid="nav-dashboard"]',
     title: "Estimator Dashboard",
     content: "View bids requiring estimates, track your workload, and see upcoming bid deadlines.",
     profitabilityTip: "Never miss a bid deadline with clear visibility.",
@@ -186,7 +179,7 @@ const estimatorTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-bids"]',
+    target: '[data-testid="nav-bids"]',
     title: "Bid Pipeline",
     content: "Access all active bids. Start new estimates or continue working on existing ones.",
     profitabilityTip: "Organized workflow means more bids completed on time.",
@@ -194,7 +187,7 @@ const estimatorTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-scope-settings"]',
+    target: '[data-testid="nav-scope-settings"]',
     title: "Scope of Work Library",
     content: "Your trade-specific scope items with standard units, labor rates, and material costs. Build estimates faster.",
     profitabilityTip: "Standardized scope items ensure consistent, profitable pricing.",
@@ -202,7 +195,7 @@ const estimatorTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-production-rates"]',
+    target: '[data-testid="nav-production-rates"]',
     title: "Historical Production Data",
     content: "See actual production rates from completed work. Know exactly how long tasks really take.",
     profitabilityTip: "Real data beats guesswork - price with confidence.",
@@ -210,18 +203,18 @@ const estimatorTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-vendor-pricing"]',
-    title: "Vendor Pricing",
-    content: "Access current material pricing from your vendors. Keep estimates accurate and competitive.",
+    target: '[data-testid="nav-cost-rates"]',
+    title: "Cost Rates",
+    content: "Access current cost rates for labor and materials. Keep estimates accurate and competitive.",
     profitabilityTip: "Up-to-date pricing prevents costly estimating errors.",
-    path: "/vendor-pricing",
+    path: "/cost-rates",
     disableBeacon: true,
   },
 ];
 
 const crewTourSteps: TourStep[] = [
   {
-    target: '[data-testid="sidebar-dashboard"]',
+    target: '[data-testid="nav-dashboard"]',
     title: "Your Dashboard",
     content: "See your assigned tasks, today's schedule, and important announcements from the office.",
     profitabilityTip: "Know what you need to do without waiting for instructions.",
@@ -229,7 +222,7 @@ const crewTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-time-clock"]',
+    target: '[data-testid="nav-my-time-clock"]',
     title: "Time Clock",
     content: "Clock in and out for each shift. Your location is captured to verify jobsite attendance.",
     profitabilityTip: "Easy time tracking means you get paid accurately.",
@@ -237,7 +230,7 @@ const crewTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-tasks"]',
+    target: '[data-testid="nav-tasks"]',
     title: "Your Tasks",
     content: "View tasks assigned to you, mark them complete, and add notes about your work.",
     profitabilityTip: "Clear task lists keep the job moving forward.",
@@ -245,18 +238,18 @@ const crewTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-messages"]',
-    title: "Team Messages",
-    content: "Communicate with your foreman, office staff, and other crew members securely.",
-    profitabilityTip: "Quick communication solves problems before they grow.",
-    path: "/messages",
+    target: '[data-testid="nav-calendar"]',
+    title: "Calendar",
+    content: "View your schedule and upcoming assignments at a glance.",
+    profitabilityTip: "Quick access to your calendar keeps the job moving forward.",
+    path: "/calendar",
     disableBeacon: true,
   },
 ];
 
 const vendorTourSteps: TourStep[] = [
   {
-    target: '[data-testid="sidebar-vendor-dashboard"]',
+    target: '[data-testid="nav-vendor-dashboard"]',
     title: "Vendor Portal",
     content: "Welcome to your vendor portal. Manage your relationship with construction companies using SmartManage.",
     profitabilityTip: "Direct access to your customers streamlines communication.",
@@ -264,7 +257,7 @@ const vendorTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-vendor-pricing"]',
+    target: '[data-testid="nav-vendor-pricing"]',
     title: "Your Pricing",
     content: "Update your material pricing. Contractors see your current prices when building estimates.",
     profitabilityTip: "Current pricing means fewer price disputes and faster approvals.",
@@ -272,7 +265,7 @@ const vendorTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-vendor-clients"]',
+    target: '[data-testid="nav-vendor-clients"]',
     title: "Your Clients",
     content: "See which contractors are using your pricing and manage your relationships.",
     profitabilityTip: "Know your customers to provide better service.",
@@ -361,12 +354,24 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [showCompletion, setShowCompletion] = useState(false);
   const [tourSteps, setTourSteps] = useState<Step[]>([]);
   const [pendingNavigation, setPendingNavigation] = useState<{ path: string; targetStep: number } | null>(null);
+  const skipCheckRef = useRef(false);
   
-  const role = user?.role || "FIELD_WORKER";
+  const role = user?.effectiveRole || user?.role || "FIELD_WORKER";
+  
+  const roleStepsRef = useRef<TourStep[]>([]);
+  useEffect(() => {
+    if (role) {
+      roleStepsRef.current = getTourStepsForRole(role);
+    }
+  }, [role]);
+  
+  const currentTourTarget = isTourActive && roleStepsRef.current[currentStep]
+    ? roleStepsRef.current[currentStep].target
+    : null;
   
   useEffect(() => {
-    if (user?.role) {
-      const roleSteps = getTourStepsForRole(user.role);
+    if (role) {
+      const roleSteps = getTourStepsForRole(role);
       const formattedSteps: Step[] = roleSteps.map((step) => ({
         target: step.target,
         title: step.title,
@@ -390,7 +395,39 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       }));
       setTourSteps(formattedSteps);
     }
-  }, [user?.role]);
+  }, [role]);
+  
+  useEffect(() => {
+    if (!isTourActive || pendingNavigation || skipCheckRef.current) return;
+    
+    const checkTarget = setTimeout(() => {
+      const roleSteps = roleStepsRef.current;
+      if (currentStep >= roleSteps.length) return;
+      
+      const targetSelector = roleSteps[currentStep].target;
+      const targetEl = document.querySelector(targetSelector);
+      
+      if (!targetEl) {
+        skipCheckRef.current = true;
+        const nextStep = currentStep + 1;
+        if (nextStep >= roleSteps.length) {
+          setIsTourActive(false);
+          setShowCompletion(true);
+        } else {
+          const nextRoleStep = roleSteps[nextStep];
+          if (nextRoleStep?.path && nextRoleStep.path !== location) {
+            setPendingNavigation({ path: nextRoleStep.path, targetStep: nextStep });
+            setLocation(nextRoleStep.path);
+          } else {
+            setCurrentStep(nextStep);
+          }
+        }
+        setTimeout(() => { skipCheckRef.current = false; }, 100);
+      }
+    }, 800);
+    
+    return () => clearTimeout(checkTarget);
+  }, [isTourActive, currentStep, pendingNavigation, location, setLocation]);
   
   useEffect(() => {
     if (pendingNavigation && location === pendingNavigation.path) {
@@ -418,9 +455,9 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   }, [location, pendingNavigation]);
   
   const startTour = useCallback(async () => {
-    if (!user?.role) return;
+    if (!role) return;
     
-    const roleSteps = getTourStepsForRole(user.role);
+    const roleSteps = getTourStepsForRole(role);
     if (roleSteps.length === 0) {
       toast({
         title: "No tour available",
@@ -447,7 +484,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Failed to update walkthrough status:", error);
     }
-  }, [user?.role, location, setLocation, toast]);
+  }, [role, location, setLocation, toast]);
   
   const skipTour = useCallback(async () => {
     setIsTourActive(false);
@@ -556,7 +593,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   }, []);
   
   return (
-    <TourContext.Provider value={{ startTour, skipTour, isTourActive, currentStep }}>
+    <TourContext.Provider value={{ startTour, skipTour, isTourActive, currentStep, currentTourTarget }}>
       {children}
       
       {isTourActive && tourSteps.length > 0 && (
