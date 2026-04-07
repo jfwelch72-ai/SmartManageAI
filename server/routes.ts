@@ -82,6 +82,7 @@ import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
 import aiOnboardingRoutes from "./aiOnboardingRoutes";
 import scheduleRoutes from "./scheduleRoutes";
 import notesRoutes from "./notesRoutes";
+import projectNotePagesRoutes from "./projectNotePagesRoutes";
 import taskRoutes from "./taskRoutes";
 import estimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmRoutes";
@@ -256,6 +257,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register daily notes routes
   app.use("/api", notesRoutes);
+
+  // Register project note pages routes (Notion-style notes)
+  app.use("/api", projectNotePagesRoutes);
 
   // Register task management routes
   app.use(taskRoutes);

@@ -13,6 +13,7 @@ export const estimateLineItemSourceEnum = pgEnum("estimate_line_item_source", ["
 export const procurementStatusEnum = pgEnum("procurement_status", ["PLANNED", "QUOTED", "APPROVED", "ORDERED", "DELIVERED"]);
 export const documentTypeEnum = pgEnum("document_type", ["PLANS", "SPECS", "TAKEOFF", "OTHER", "BIM"]);
 export const noteTypeEnum = pgEnum("note_type", ["GENERAL", "FIELD_NOTE", "SAFETY", "CLIENT_MEETING"]);
+export const noteBlockTypeEnum = pgEnum("note_block_type", ["HEADING1", "HEADING2", "HEADING3", "PARAGRAPH", "BULLETED_LIST", "NUMBERED_LIST", "TODO", "DIVIDER"]);
 export const mediaTypeEnum = pgEnum("media_type", ["IMAGE", "VIDEO"]);
 export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_TO_BILL", "BILLED"]);
 export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED", "PCO", "PRICING_REVIEW", "VOIDED"]);

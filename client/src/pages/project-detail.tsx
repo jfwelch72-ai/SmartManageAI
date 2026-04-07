@@ -65,6 +65,7 @@ import {
   Pin,
   Star,
   ScanLine,
+  StickyNote,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -120,6 +121,7 @@ import RisksTab from "@/components/project-tabs/RisksTab";
 import LocationManagerTab from "@/components/project-tabs/LocationManagerTab";
 import FieldTakeoffTab from "@/components/project-tabs/FieldTakeoffTab";
 import LidarTab from "@/components/project-tabs/LidarTab";
+import ProjectNotesTab from "@/components/project-tabs/ProjectNotesTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
 import type { LucideIcon } from "lucide-react";
@@ -438,6 +440,13 @@ function buildTabConfigs(
       icon: Package,
       visible: true,
       group: "Financial",
+    },
+    {
+      value: "project-notes",
+      label: "Project Notes",
+      icon: StickyNote,
+      visible: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole || ""),
+      group: "Documents & Communication",
     },
     {
       value: "portal-access",
@@ -1132,6 +1141,10 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="daily-notes">
             <DailyNoteFeed projectId={project.id} projectCode={projectCode} availableUsers={allUsers} />
+          </TabsContent>
+
+          <TabsContent value="project-notes">
+            <ProjectNotesTab projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="media">
