@@ -894,7 +894,7 @@ async function extractThemeFromWebsite(organizationId: string, websiteUrl: strin
             }],
             response_format: { type: "json_object" },
             temperature: 0.3,
-            max_tokens: 100,
+            max_completion_tokens: 100,
           });
           return { result: colorAnalysis.choices[0]?.message?.content || '{}', completion: colorAnalysis };
         },
@@ -1049,7 +1049,7 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: Au
           model: 'gpt-4o-mini',
           messages,
           temperature: 0.7,
-          max_tokens: 800,
+          max_completion_tokens: 800,
           response_format: { type: "json_object" },
         });
         return { result: completion.choices[0]?.message?.content, completion };

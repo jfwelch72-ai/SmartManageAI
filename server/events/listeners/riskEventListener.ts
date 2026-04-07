@@ -233,7 +233,7 @@ ${project.locationAddress ? `Location: ${project.locationAddress}` : ""}${histor
       ],
       response_format: { type: "json_object" },
       temperature: 0.7,
-      max_tokens: 1500,
+      max_completion_tokens: 1500,
     });
 
     const content = completion.choices[0]?.message?.content;

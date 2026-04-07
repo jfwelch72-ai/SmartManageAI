@@ -67,7 +67,8 @@ export const auditActionEnum = pgEnum("audit_action", [
   "payroll.run.completed",
   "hiring.job_published", "hiring.candidate_applied",
   "hiring.candidate_stage_changed", "hiring.candidate_hired",
-  "hiring.interview_scheduled", "hiring.integration_connected"
+  "hiring.interview_scheduled", "hiring.integration_connected",
+  "OVERTIME_REQUEST_CREATED", "OVERTIME_REQUEST_APPROVED", "OVERTIME_REQUEST_REJECTED"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);

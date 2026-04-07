@@ -996,7 +996,7 @@ Return a JSON object with:
             { role: "system", content: "You are a social media marketing expert for the construction industry." },
             { role: "user", content: prompt },
           ],
-          max_tokens: 1000,
+          max_completion_tokens: 1000,
           response_format: { type: "json_object" },
         });
         return {

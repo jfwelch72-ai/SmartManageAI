@@ -226,7 +226,7 @@ Return JSON: { "trade": "TRADE_TYPE", "confidence": number (0-100), "reasoning":
               ]
             }
           ],
-          max_tokens: 256,
+          max_completion_tokens: 256,
           temperature: 0.1,
           response_format: { type: "json_object" },
         });
@@ -453,7 +453,7 @@ Return your analysis as JSON with this exact structure:
                   ]
                 }
               ],
-              max_tokens: 8192,
+              max_completion_tokens: 8192,
               temperature: 0.2,
               response_format: { type: "json_object" },
             });
@@ -542,7 +542,7 @@ Return JSON with:
                       ]
                     }
                   ],
-                  max_tokens: 8192,
+                  max_completion_tokens: 8192,
                   temperature: 0.1,
                   response_format: { type: "json_object" },
                 });

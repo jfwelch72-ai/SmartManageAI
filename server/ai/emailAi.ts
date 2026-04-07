@@ -183,7 +183,7 @@ Return JSON with:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.3,
-      max_tokens: 1000,
+      max_completion_tokens: 1000,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -237,7 +237,7 @@ ${m.bodyText?.substring(0, 1500) || '(No content)'}
       ],
       response_format: { type: 'json_object' },
       temperature: 0.4,
-      max_tokens: 1000,
+      max_completion_tokens: 1000,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -287,7 +287,7 @@ Return JSON with subject and body fields.` }
         ],
         response_format: { type: 'json_object' },
         temperature: 0.6,
-        max_tokens: 800,
+        max_completion_tokens: 800,
       });
 
       const content = completion.choices[0]?.message?.content;
@@ -357,7 +357,7 @@ Return JSON with:
         ],
         response_format: { type: 'json_object' },
         temperature: 0.5,
-        max_tokens: 1500,
+        max_completion_tokens: 1500,
       });
 
     const content = completion.choices[0]?.message?.content;

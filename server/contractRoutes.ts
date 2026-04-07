@@ -1258,7 +1258,7 @@ Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope
           ],
           response_format: { type: "json_object" },
           temperature: 0.3,
-          max_tokens: 4096,
+          max_completion_tokens: 4096,
         });
         const content = completion.choices[0]?.message?.content;
         if (!content) throw new Error("No response from AI");

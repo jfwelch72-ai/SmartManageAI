@@ -171,7 +171,7 @@ Respond with JSON in this format:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -296,7 +296,7 @@ Respond with JSON in this format:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -440,7 +440,7 @@ Respond with JSON in this format:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -570,7 +570,7 @@ Respond with JSON in this format:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -703,7 +703,7 @@ Respond with JSON in this format:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -834,7 +834,7 @@ Respond with JSON in this format:
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;

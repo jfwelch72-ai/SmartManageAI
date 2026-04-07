@@ -90,7 +90,7 @@ Be helpful, professional, and focused on helping contractors present themselves 
             { role: "system", content: systemPrompt },
             { role: "user", content: message },
           ],
-          max_tokens: 1500,
+          max_completion_tokens: 1500,
         });
         return {
           result: completion.choices[0]?.message?.content || "I couldn't generate a response.",
@@ -178,7 +178,7 @@ Include: Contact form, phone/email, business hours, service area map, FAQ.`,
             },
             { role: "user", content: prompt },
           ],
-          max_tokens: 3000,
+          max_completion_tokens: 3000,
           response_format: { type: "json_object" },
         });
         return {
@@ -254,7 +254,7 @@ Consider:
             { role: "system", content: "You are a professional brand designer specializing in construction company branding." },
             { role: "user", content: prompt },
           ],
-          max_tokens: 500,
+          max_completion_tokens: 500,
           response_format: { type: "json_object" },
         });
         return {
@@ -420,7 +420,7 @@ Generate optimized SEO content. Return JSON:
             { role: "system", content: "You are an SEO expert specializing in local business and construction company websites." },
             { role: "user", content: prompt },
           ],
-          max_tokens: 1500,
+          max_completion_tokens: 1500,
           response_format: { type: "json_object" },
         });
         return {
@@ -772,7 +772,7 @@ ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
           ],
           response_format: { type: "json_object" },
           temperature: 0.7,
-          max_tokens: 8000,
+          max_completion_tokens: 8000,
         });
 
         const content = completion.choices[0]?.message?.content;

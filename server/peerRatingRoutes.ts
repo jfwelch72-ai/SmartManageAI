@@ -179,7 +179,7 @@ export function registerPeerRatingRoutes(app: Express) {
         and(
           eq(users.organizationId, orgId),
           eq(users.isActive, true),
-          sql`${users.id} = ANY(${ids})`
+          inArray(users.id, ids)
         )
       );
 
@@ -202,6 +202,7 @@ export function registerPeerRatingRoutes(app: Express) {
 
       res.json(result);
     } catch (err) {
+      console.error("[ERROR] rateable-coworkers:", err);
       res.status(500).json({ error: "Failed to fetch rateable coworkers" });
     }
   });

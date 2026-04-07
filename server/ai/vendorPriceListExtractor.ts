@@ -96,7 +96,7 @@ Return a JSON array of items. Be thorough and extract ALL pricing items visible 
             }
           ],
           response_format: { type: "json_object" },
-          max_tokens: 4096,
+          max_completion_tokens: 4096,
         });
         return {
           result: visionResponse.choices[0]?.message?.content || "{}",
@@ -170,7 +170,7 @@ Units: ${UNIT_TYPES.slice(0, 10).join(", ")}`
         }
       ],
       response_format: { type: "json_object" },
-      max_tokens: 2048,
+      max_completion_tokens: 2048,
     });
     return {
       result: response.choices[0]?.message?.content || "{}",

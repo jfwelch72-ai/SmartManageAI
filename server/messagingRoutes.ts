@@ -3094,7 +3094,7 @@ const messagingSetup = (async () => {
             },
           ],
           temperature: 0.5,
-          max_tokens: 1024,
+          max_completion_tokens: 1024,
         });
       } catch (aiError) {
         logError("OpenAI summarize error:", {}, aiError instanceof Error ? aiError : new Error(String(aiError)));

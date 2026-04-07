@@ -334,7 +334,7 @@ Provide a concise explanation focusing on what's driving the score ${previousSco
         { role: "user", content: prompt },
       ],
       temperature: 0.5,
-      max_tokens: 200,
+      max_completion_tokens: 200,
     });
 
     return completion.choices[0]?.message?.content?.trim() || null;

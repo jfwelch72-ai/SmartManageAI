@@ -355,7 +355,7 @@ Example of a correct response:
           messages: sqlGenMessages,
           response_format: { type: 'json_object' },
           temperature: 0.1,
-          max_tokens: 1000,
+          max_completion_tokens: 1000,
         });
         const content = c.choices[0]?.message?.content;
         if (!content) throw new Error('No response from AI');
@@ -434,7 +434,7 @@ Example of a correct response:
           },
         ],
         temperature: 0.3,
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
       });
       const r = c.choices[0]?.message?.content;
       return { result: r, completion: c };
@@ -2154,7 +2154,7 @@ Example of a correct response:
             messages: sqlGenMessages,
             response_format: { type: 'json_object' },
             temperature: 0.1,
-            max_tokens: 1000,
+            max_completion_tokens: 1000,
           });
           const content = c.choices[0]?.message?.content;
           if (!content) throw new Error('No response from AI');
@@ -2251,7 +2251,7 @@ Example of a correct response:
             },
           ],
           temperature: 0.3,
-          max_tokens: 1000,
+          max_completion_tokens: 1000,
         });
         const r = c.choices[0]?.message?.content;
         return { result: r, completion: c };

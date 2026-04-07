@@ -202,7 +202,7 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
         ],
         response_format: { type: 'json_object' },
         temperature: 0.3,
-        max_tokens: 2048,
+        max_completion_tokens: 2048,
       });
       return {
         result: completion.choices[0]?.message?.content,

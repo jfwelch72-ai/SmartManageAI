@@ -197,7 +197,7 @@ Respond with JSON in this format:
             messages,
             response_format: { type: 'json_object' },
             temperature: 0.3,
-            max_tokens: 4096,
+            max_completion_tokens: 4096,
           });
           const content = completion.choices[0]?.message?.content;
           if (!content) throw new Error('No response from OpenAI');
@@ -215,7 +215,7 @@ Respond with JSON in this format:
       messages,
       response_format: { type: 'json_object' },
       temperature: 0.3,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -1177,7 +1177,7 @@ Be thorough in extracting scope items. Include quantities and units when availab
             model: AI_MODEL_GPT5,
             messages,
             temperature: 0.3,
-            max_tokens: 4096,
+            max_completion_tokens: 4096,
             response_format: { type: "json_object" },
           });
           const content = completion.choices[0]?.message?.content;
@@ -1325,7 +1325,7 @@ Be thorough in suggesting scope items based on the project type described. Inclu
               { role: 'user', content: userPrompt },
             ],
             temperature: 0.3,
-            max_tokens: 4096,
+            max_completion_tokens: 4096,
             response_format: { type: "json_object" },
           });
           const content = completion.choices[0]?.message?.content;
@@ -1564,7 +1564,7 @@ Analyze the document and return the structured JSON with all contract details.`;
             messages,
             response_format: { type: 'json_object' },
             temperature: 0.3,
-            max_tokens: 6000,
+            max_completion_tokens: 6000,
           });
 
           const content = completion.choices[0]?.message?.content;
@@ -1590,7 +1590,7 @@ Analyze the document and return the structured JSON with all contract details.`;
       messages,
       response_format: { type: 'json_object' },
       temperature: 0.3,
-      max_tokens: 6000,
+      max_completion_tokens: 6000,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -3261,7 +3261,7 @@ Generate a realistic schedule that:
             { role: "user", content: userPrompt }
           ],
           response_format: { type: "json_object" },
-          max_tokens: 4000,
+          max_completion_tokens: 4000,
         });
         const result = completion.choices[0]?.message?.content;
         return { result, completion };
@@ -3936,7 +3936,7 @@ Analyze and suggest the properly formatted SOW item.`;
           ],
           response_format: { type: 'json_object' },
           temperature: 0.3,
-          max_tokens: 1000,
+          max_completion_tokens: 1000,
         });
 
         const content = completion.choices[0]?.message?.content;
@@ -4131,7 +4131,7 @@ Analyze and suggest the properly formatted UOM, or explain if a similar one alre
           ],
           response_format: { type: 'json_object' },
           temperature: 0.2,
-          max_tokens: 500,
+          max_completion_tokens: 500,
         });
 
         const content = completion.choices[0]?.message?.content;

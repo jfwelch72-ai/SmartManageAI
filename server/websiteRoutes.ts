@@ -1624,7 +1624,7 @@ Return a JSON object with:
             { role: "system", content: "You are a professional construction project portfolio writer." },
             { role: "user", content: prompt },
           ],
-          max_tokens: 1000,
+          max_completion_tokens: 1000,
           response_format: { type: "json_object" },
         });
         return {
@@ -1768,7 +1768,7 @@ Return a JSON object with:
             },
             { role: "user", content: prompt },
           ],
-          max_tokens: 1000,
+          max_completion_tokens: 1000,
           response_format: { type: "json_object" },
         });
         return {
@@ -3218,7 +3218,7 @@ Return a JSON object with:
             },
             { role: "user", content: prompt },
           ],
-          max_tokens: 2500,
+          max_completion_tokens: 2500,
           response_format: { type: "json_object" },
         });
         return {

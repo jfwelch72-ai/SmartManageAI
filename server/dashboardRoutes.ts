@@ -3881,7 +3881,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
       const laborResult = await db.execute(sql`
         SELECT COALESCE(SUM(
           (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
-          COALESCE(u."cost_rate"::numeric, 50)
+          COALESCE(u."cost_rate_regular"::numeric, 50)
         ), 0) as labor_cost
         FROM "time_entries" te
         JOIN "users" u ON te."user_id" = u."id"
@@ -4071,8 +4071,8 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
           : sql``;
 
         const budgetGroupExpr = groupByDivision
-          ? sql`COALESCE('Division ' || SPLIT_PART(SPLIT_PART(COALESCE(NULLIF(TRIM(eli."work_type_code"), ''), NULLIF(TRIM(eli."category"), ''), ''), ' - ', 1), '-', 1), 'Unassigned')`
-          : sql`COALESCE(UPPER(TRIM(SPLIT_PART(COALESCE(NULLIF(TRIM(eli."work_type_code"), ''), NULLIF(TRIM(eli."category"), '')), ' - ', 1))), 'Unassigned')`;
+          ? sql`COALESCE('Division ' || SPLIT_PART(SPLIT_PART(COALESCE(NULLIF(TRIM(eli."work_type_code"), ''), NULLIF(TRIM(eli."category"::text), ''), ''), ' - ', 1), '-', 1), 'Unassigned')`
+          : sql`COALESCE(UPPER(TRIM(SPLIT_PART(COALESCE(NULLIF(TRIM(eli."work_type_code"), ''), NULLIF(TRIM(eli."category"::text), '')), ' - ', 1))), 'Unassigned')`;
 
         const budgetResult = await db.execute(sql`
           SELECT

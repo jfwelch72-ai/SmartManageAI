@@ -132,7 +132,7 @@ export async function callOpenAIForAnalysis(
     ],
     response_format: { type: 'json_object' },
     temperature: 0.7,
-    max_tokens: 4096,
+    max_completion_tokens: 4096,
   });
 
   const content = completion.choices[0]?.message?.content;
@@ -260,7 +260,7 @@ If this is a very specialized or niche trade, do your best to provide relevant i
       ],
       response_format: { type: 'json_object' },
       temperature: 0.5,
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     const content = completion.choices[0]?.message?.content;
