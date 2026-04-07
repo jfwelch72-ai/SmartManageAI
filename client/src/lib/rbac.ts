@@ -749,6 +749,12 @@ export const NavigationConfig = {
       testId: "nav-social-media",
       visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canPostSocialMedia : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
     },
+    {
+      href: "/calculator",
+      label: "Calculator",
+      testId: "nav-calculator",
+      visible: () => true,
+    },
   ],
 };
 
@@ -762,9 +768,9 @@ export const ROLE_SECTION_ORDER: Partial<Record<string, SidebarSection[]>> = {
   ADMIN: ['dashboard', 'administration', 'financials', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'tools', 'bulletins'],
   MANAGER: ['dashboard', 'projects', 'operations', 'workforce', 'financials', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'administration', 'tools', 'bulletins'],
   HUSTLER: ['portfolio', 'dashboard', 'financials', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'administration', 'tools', 'bulletins'],
-  FIELD_WORKER: ['dashboard', 'workforce', 'projects', 'bulletins'],
-  SUPERINTENDENT: ['operations', 'workforce', 'dashboard', 'bulletins', 'projects', 'preconstruction', 'financials', 'administration'],
-  ESTIMATOR: ['preconstruction', 'operations', 'dashboard', 'bulletins', 'financials', 'projects', 'crm', 'marketplace', 'administration'],
+  FIELD_WORKER: ['dashboard', 'workforce', 'projects', 'tools', 'bulletins'],
+  SUPERINTENDENT: ['operations', 'workforce', 'dashboard', 'bulletins', 'projects', 'preconstruction', 'financials', 'administration', 'tools'],
+  ESTIMATOR: ['preconstruction', 'operations', 'dashboard', 'bulletins', 'financials', 'projects', 'crm', 'marketplace', 'administration', 'tools'],
 };
 
 export function getSidebarSectionOrder(role?: string): SidebarSection[] {

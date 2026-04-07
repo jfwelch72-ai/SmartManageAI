@@ -315,6 +315,7 @@ export function AppSidebar() {
       { href: "/rate-coworkers", label: "Rate Coworkers", testId: "nav-rate-coworkers", icon: Users, visible: NavigationConfig.workforceMenu.find(i => i.href === "/rate-coworkers")?.visible },
       { href: "/dashboard", label: "Dashboard", testId: "sidebar-dashboard", icon: LayoutDashboard, visible: NavigationConfig.mainNav.find(i => i.href === "/dashboard")?.visible },
       { href: "/communications", label: "Bulletins", testId: "sidebar-bulletins", icon: MessageSquare, visible: NavigationConfig.mainNav.find(i => i.href === "/communications")?.visible },
+      { href: "/calculator", label: "Calculator", testId: "nav-calculator", icon: Wrench, visible: NavigationConfig.toolsMenu.find(i => i.href === "/calculator")?.visible },
     ];
     const fieldWorkerItems = fieldWorkerCandidates.filter(item => !item.visible || item.visible(userRole, perms));
 
