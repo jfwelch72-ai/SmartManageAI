@@ -775,7 +775,9 @@ export const ROLE_SECTION_ORDER: Partial<Record<string, SidebarSection[]>> = {
 
 export function getSidebarSectionOrder(role?: string): SidebarSection[] {
   if (role && ROLE_SECTION_ORDER[role]) {
-    return ROLE_SECTION_ORDER[role]!;
+    const roleOrder = ROLE_SECTION_ORDER[role]!;
+    const unlisted = DEFAULT_SECTION_ORDER.filter(s => !roleOrder.includes(s));
+    return [...roleOrder, ...unlisted];
   }
   return DEFAULT_SECTION_ORDER;
 }
