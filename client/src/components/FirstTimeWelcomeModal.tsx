@@ -11,7 +11,8 @@ import {
   Target,
   Clock,
   Shield,
-  AlertCircle
+  AlertCircle,
+  Store
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -100,6 +101,26 @@ const roleFeatures: Record<string, { icon: any; features: string[]; intro: strin
       "Viewing analytics and usage insights",
       "Helping users when they need support",
       "Managing platform-wide settings",
+    ],
+  },
+  HUSTLER: {
+    icon: Target,
+    intro: "As a Hustler, you manage multiple organizations from one account. Here's what you'll master:",
+    features: [
+      "Switching between your linked organizations instantly",
+      "Viewing your portfolio and cross-company performance",
+      "Accessing CFO-level financial analytics across companies",
+      "Delegating management to trusted team members",
+    ],
+  },
+  VENDOR: {
+    icon: Store,
+    intro: "As a Vendor Partner, you have a direct line to your contractor clients. Let me show you:",
+    features: [
+      "Keeping your product pricing current for contractors",
+      "Managing your enrolled client relationships",
+      "Communicating directly with contractor partners",
+      "Receiving and responding to bid invitations",
     ],
   },
 };

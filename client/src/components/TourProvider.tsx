@@ -32,6 +32,41 @@ export function useTour() {
   return context;
 }
 
+const superAdminTourSteps: TourStep[] = [
+  {
+    target: '[data-testid="nav-admin-dashboard"]',
+    title: "Platform Command Center",
+    content: "Your dashboard shows platform health, active organizations, user activity, and anything that needs attention from one central place.",
+    profitabilityTip: "Full platform visibility lets you spot and resolve issues before they escalate.",
+    path: "/admin",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-admin-organizations"]',
+    title: "Organization Management",
+    content: "See all contractors using the platform. Monitor onboarding progress, activity levels, and jump in to help when needed.",
+    profitabilityTip: "Proactive organization support drives adoption and retention.",
+    path: "/admin",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-admin-analytics"]',
+    title: "Platform Analytics",
+    content: "Charts, trends, and feature adoption across the platform. See what's popular, what's underused, and overall performance.",
+    profitabilityTip: "Data-driven insights help you prioritize improvements that matter most.",
+    path: "/admin",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-admin-tools"]',
+    title: "Support Tools",
+    content: "Manage platform-wide settings, update trade templates, handle integrations, and support users who need help.",
+    profitabilityTip: "Centralized tools keep platform operations smooth and efficient.",
+    path: "/admin",
+    disableBeacon: true,
+  },
+];
+
 const adminTourSteps: TourStep[] = [
   {
     target: '[data-testid="nav-dashboard"]',
@@ -58,6 +93,22 @@ const adminTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
+    target: '[data-testid="nav-equipment"]',
+    title: "Equipment Tracking",
+    content: "Track trucks, tools, and heavy equipment. Assign them to projects, schedule maintenance, and know where everything is.",
+    profitabilityTip: "Proper equipment tracking prevents costly downtime and lost assets.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-procurement"]',
+    title: "Procurement",
+    content: "Manage purchase orders, material requests, and vendor quotes. Streamline your procurement process from request to delivery.",
+    profitabilityTip: "Centralized procurement reduces waste and gets you better pricing.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
     target: '[data-testid="nav-my-time-clock"]',
     title: "Time Tracking",
     content: "GPS-verified time clock captures labor hours automatically. Crew members clock in/out from their phones.",
@@ -66,11 +117,11 @@ const adminTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="nav-production-rates"]',
-    title: "Production Analytics",
-    content: "See your actual cost per unit completed across all scope items. Compare estimated vs actual performance.",
-    profitabilityTip: "Know your true costs to price future work more accurately and increase margins.",
-    path: "/production-rates",
+    target: '[data-testid="nav-cfo-dashboard"]',
+    title: "CFO Dashboard",
+    content: "Deep financial analysis — cash flow, profitability trends, job costing breakdowns, and financial forecasting all in one place.",
+    profitabilityTip: "Financial clarity drives better business decisions and higher margins.",
+    path: "/dashboard",
     disableBeacon: true,
   },
   {
@@ -78,6 +129,14 @@ const adminTourSteps: TourStep[] = [
     title: "Customer & Vendor Management",
     content: "Manage all your business relationships - clients, subcontractors, suppliers, and vendors with pricing catalogs.",
     profitabilityTip: "Strong vendor relationships and negotiated pricing directly impact your bottom line.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-messages"]',
+    title: "Messages",
+    content: "Keep all work communication in one place. No more scattered texts and emails — everything is secure and searchable.",
+    profitabilityTip: "Centralized communication eliminates miscommunication and costly mistakes.",
     path: "/dashboard",
     disableBeacon: true,
   },
@@ -93,9 +152,9 @@ const adminTourSteps: TourStep[] = [
 
 const hustlerTourSteps: TourStep[] = [
   {
-    target: '[data-testid="org-switcher"]',
-    title: "Organization Switcher",
-    content: "As a business owner with multiple companies, quickly switch between organizations to manage each one.",
+    target: '[data-testid="sidebar-portfolio"]',
+    title: "Your Portfolio",
+    content: "See all your linked organizations at a glance. Switch between companies and manage your entire business portfolio from one account.",
     profitabilityTip: "One login to manage your entire portfolio of businesses.",
     path: "/dashboard",
     disableBeacon: true,
@@ -114,6 +173,14 @@ const hustlerTourSteps: TourStep[] = [
     content: "Deep financial analysis across your portfolio - cash flow, profitability trends, and financial forecasting.",
     profitabilityTip: "Data-driven decisions about where to invest and where to cut.",
     path: "/cfo-dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-projects"]',
+    title: "Cross-Org Projects",
+    content: "View projects across all your organizations. Track work happening across your entire portfolio and spot patterns.",
+    profitabilityTip: "Cross-company visibility reveals optimization opportunities.",
+    path: "/dashboard",
     disableBeacon: true,
   },
   {
@@ -152,6 +219,14 @@ const managerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
+    target: '[data-testid="nav-crm"]',
+    title: "CRM & Vendors",
+    content: "Manage your business relationships — clients, subcontractors, and suppliers with contact info and pricing.",
+    profitabilityTip: "Organized vendor relationships lead to better pricing and faster responses.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
     target: '[data-testid="nav-manage-time-clock"]',
     title: "Time Approval",
     content: "Review and approve crew time entries. Ensure accurate labor tracking for job costing.",
@@ -160,11 +235,86 @@ const managerTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
+    target: '[data-testid="nav-cfo-dashboard"]',
+    title: "CFO Dashboard",
+    content: "Financial analysis at your fingertips — cash flow, profitability trends, and job costing breakdowns.",
+    profitabilityTip: "Financial insight helps you keep projects profitable.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-messages"]',
+    title: "Messages",
+    content: "Keep your team communication organized. Share updates, coordinate with estimators, supers, and crews all in one place.",
+    profitabilityTip: "Clear communication prevents costly miscommunication.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
     target: '[data-testid="nav-crews"]',
     title: "Crew Management",
     content: "Organize your workforce into crews, assign foremen, and track who's working where.",
     profitabilityTip: "Right crew on the right job maximizes productivity.",
     path: "/crews",
+    disableBeacon: true,
+  },
+];
+
+const superintendentTourSteps: TourStep[] = [
+  {
+    target: '[data-testid="nav-my-time-clock"]',
+    title: "Your Time Clock",
+    content: "Clock in and out each day. Your location is captured to verify jobsite attendance.",
+    profitabilityTip: "Leading by example — accurate time tracking starts with you.",
+    path: "/time-clock",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-dashboard"]',
+    title: "Your Dashboard",
+    content: "See all the projects you're supervising, their timelines, crew assignments, and what needs your attention today.",
+    profitabilityTip: "Start each day knowing exactly what needs your focus.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-manage-time-clock"]',
+    title: "Manage Crew Time",
+    content: "Review and approve your crew's time entries. GPS-tracked hours linked to the right projects for accurate job costing.",
+    profitabilityTip: "Catching time issues early prevents payroll headaches.",
+    path: "/time-clock-manager",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-projects"]',
+    title: "Project Management",
+    content: "Track progress on your assigned projects — schedules, daily reports, budgets, and change orders all in one place.",
+    profitabilityTip: "Proactive field management prevents costly delays and rework.",
+    path: "/projects",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-approvals"]',
+    title: "Approvals",
+    content: "Review and approve daily reports, time entries, and change orders that need your sign-off.",
+    profitabilityTip: "Quick approvals keep the project moving and the team productive.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-equipment"]',
+    title: "Equipment",
+    content: "See which equipment is assigned to your jobsites, check availability, and request what you need.",
+    profitabilityTip: "Having the right equipment on site keeps production on track.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-procurement"]',
+    title: "Procurement",
+    content: "Submit material requests and track purchase orders for your projects. Get what you need without delays.",
+    profitabilityTip: "Streamlined procurement means materials arrive when you need them.",
+    path: "/dashboard",
     disableBeacon: true,
   },
 ];
@@ -184,6 +334,14 @@ const estimatorTourSteps: TourStep[] = [
     content: "Access all active bids. Start new estimates or continue working on existing ones.",
     profitabilityTip: "Organized workflow means more bids completed on time.",
     path: "/bids",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-bid-network"]',
+    title: "Bid Network",
+    content: "Find and connect with subcontractors for your bids. Send bid invitations and receive competitive quotes.",
+    profitabilityTip: "More competitive sub quotes mean better margins on your estimates.",
+    path: "/dashboard",
     disableBeacon: true,
   },
   {
@@ -210,17 +368,17 @@ const estimatorTourSteps: TourStep[] = [
     path: "/cost-rates",
     disableBeacon: true,
   },
-];
-
-const crewTourSteps: TourStep[] = [
   {
-    target: '[data-testid="nav-dashboard"]',
-    title: "Your Dashboard",
-    content: "See your assigned tasks, today's schedule, and important announcements from the office.",
-    profitabilityTip: "Know what you need to do without waiting for instructions.",
+    target: '[data-testid="nav-calculator"]',
+    title: "Trade Calculator",
+    content: "Built-in calculators for your trade with waste factors included. Punch in dimensions and get accurate quantities.",
+    profitabilityTip: "Precise quantities mean accurate bids — no guesswork needed.",
     path: "/dashboard",
     disableBeacon: true,
   },
+];
+
+const crewTourSteps: TourStep[] = [
   {
     target: '[data-testid="nav-my-time-clock"]',
     title: "Time Clock",
@@ -243,6 +401,22 @@ const crewTourSteps: TourStep[] = [
     content: "View your schedule and upcoming assignments at a glance.",
     profitabilityTip: "Quick access to your calendar keeps the job moving forward.",
     path: "/calendar",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-bulletins"]',
+    title: "Bulletins & Communications",
+    content: "Stay in the loop with company announcements, safety updates, and important notices from the office.",
+    profitabilityTip: "Staying informed keeps you safe and productive on the job.",
+    path: "/dashboard",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-dashboard"]',
+    title: "Your Dashboard",
+    content: "See your assigned projects, today's schedule, and important announcements from the office.",
+    profitabilityTip: "Know what you need to do without waiting for instructions.",
+    path: "/dashboard",
     disableBeacon: true,
   },
 ];
@@ -272,18 +446,36 @@ const vendorTourSteps: TourStep[] = [
     path: "/vendor/clients",
     disableBeacon: true,
   },
+  {
+    target: '[data-testid="nav-vendor-messages"]',
+    title: "Messages",
+    content: "Communicate directly with your contractor partners. Answer questions, send quotes, and coordinate deliveries.",
+    profitabilityTip: "Quick responses to contractor inquiries build stronger partnerships.",
+    path: "/vendor",
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="nav-vendor-bid-inbox"]',
+    title: "Bid Inbox",
+    content: "Receive bid invitations from contractors. Review project details and submit your competitive quotes.",
+    profitabilityTip: "More bid opportunities means more business — respond quickly to win.",
+    path: "/vendor",
+    disableBeacon: true,
+  },
 ];
 
 function getTourStepsForRole(role: string): TourStep[] {
   switch (role) {
     case "SUPER_ADMIN":
+      return superAdminTourSteps;
     case "ADMIN":
       return adminTourSteps;
     case "HUSTLER":
       return hustlerTourSteps;
     case "MANAGER":
-    case "SUPERINTENDENT":
       return managerTourSteps;
+    case "SUPERINTENDENT":
+      return superintendentTourSteps;
     case "ESTIMATOR":
       return estimatorTourSteps;
     case "FIELD_WORKER":

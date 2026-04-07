@@ -33,10 +33,10 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     steps: [
       {
         stepNumber: 1,
-        title: "Your Command Center",
+        title: "Platform Command Center",
         description: "{{firstName}}, this is your dashboard — think of it as mission control. You can see all organizations, user activity, and any issues that need attention from one central place.",
         action: "Take a look around! You'll see platform health metrics, active organizations, and anything flagged for your attention.",
-        targetPage: "/dashboard",
+        targetPage: "/admin",
         tips: [
           "Keep an eye on the key metrics — they tell you how the platform is doing",
           "Organizations that might need help will stand out here",
@@ -46,7 +46,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       },
       {
         stepNumber: 2,
-        title: "Managing Organizations",
+        title: "Organization Management",
         description: "Here's where you can see all the contractors using the platform. Each one has their own setup, trade type, and team.",
         action: "Click through to the organization list — you'll see who's onboarded, who might need help, and how active each company is.",
         targetPage: "/admin/organizations",
@@ -59,19 +59,6 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       },
       {
         stepNumber: 3,
-        title: "Helping Users Out",
-        description: "Sometimes users have questions I can't fully answer — that's when they come to you. This is where you'll see those escalated requests.",
-        action: "Check out the support section to see how user issues are tracked and resolved.",
-        targetPage: "/admin/support",
-        tips: [
-          "Issues I escalate will show up here automatically",
-          "You can view things from a user's perspective if you need to troubleshoot",
-          "Keep notes on common issues — they help everyone!"
-        ],
-        encouragement: "Perfect, {{firstName}}! You're all set to help users when they need that human touch."
-      },
-      {
-        stepNumber: 4,
         title: "Platform Analytics",
         description: "Want to see how people are actually using the platform? This is the place. Charts, trends, feature adoption — it's all here.",
         action: "Explore the analytics dashboard. It'll show you what's popular, what's not getting much love, and overall trends.",
@@ -84,15 +71,15 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         encouragement: "Awesome! Data nerd or not, these insights are super useful."
       },
       {
-        stepNumber: 5,
-        title: "System Settings",
-        description: "Last stop! Here you can tweak platform-wide settings, update trade templates, and manage integrations.",
-        action: "Take a peek at the settings. You probably won't change things often, but it's good to know where everything lives.",
-        targetPage: "/admin/settings",
+        stepNumber: 4,
+        title: "Support Tools",
+        description: "Last stop! Here you can manage platform-wide settings, update trade templates, handle integrations, and support users who need help.",
+        action: "Take a peek at the support tools. You probably won't change things often, but it's good to know where everything lives.",
+        targetPage: "/admin/tools",
         tips: [
+          "Issues I escalate will show up here automatically",
           "Trade templates can be updated as industry needs change",
-          "Default settings affect all new organizations",
-          "Integrations are managed here too"
+          "Default settings affect all new organizations"
         ],
         encouragement: "And that's the grand tour, {{firstName}}! You're officially ready to run this place."
       }
@@ -163,6 +150,20 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       },
       {
         stepNumber: 5,
+        title: "Procurement",
+        description: "Manage purchase orders, material requests, and vendor quotes, {{firstName}}. Streamline your procurement process from request to delivery.",
+        action: "Check out the Procurement module to see how material ordering works.",
+        targetPage: "/procurement-module",
+        tips: [
+          "Create purchase orders and track their status",
+          "Compare vendor quotes for the best pricing",
+          "Link material costs to specific projects",
+          "Keep a paper trail for every purchase"
+        ],
+        encouragement: "Procurement is under control! No more chasing receipts."
+      },
+      {
+        stepNumber: 6,
         title: "Create Your First Bid",
         description: "Alright {{firstName}}, here's where the magic happens! Bids are how you track potential work. Build detailed estimates with labor, materials, equipment, and overhead — I'll help you price it right.",
         action: "Head to Bids and click 'New Bid'. The Cost Builder will walk you through adding scope items and crunching the numbers.",
@@ -176,7 +177,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         encouragement: "Look at you go! You just learned the heart of the platform."
       },
       {
-        stepNumber: 6,
+        stepNumber: 7,
         title: "Managing Projects",
         description: "When you win a bid (and you will!), it becomes a project. Here's where you track progress, handle change orders, and make sure you stay profitable.",
         action: "Browse the Projects section to see how work flows from winning a bid all the way to completion.",
@@ -188,20 +189,6 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
           "Daily logs keep everyone on the same page"
         ],
         encouragement: "You're halfway through, {{firstName}}! The big stuff is covered."
-      },
-      {
-        stepNumber: 7,
-        title: "Organize Your Crews",
-        description: "Time to get organized! Group your field workers into crews, assign leaders, and know who's working where at all times.",
-        action: "Navigate to Crews and set up your first crew. Add members, pick a crew lead, and you're set.",
-        targetPage: "/crews",
-        tips: [
-          "Create crews based on how you actually work",
-          "Every crew needs a lead to manage things",
-          "Assign crews to specific projects",
-          "Track productivity over time"
-        ],
-        encouragement: "Nice job organizing! Your field teams are going to love this."
       },
       {
         stepNumber: 8,
@@ -219,6 +206,20 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       },
       {
         stepNumber: 9,
+        title: "CFO Dashboard",
+        description: "This is your financial command center, {{firstName}}. Cash flow analysis, profitability trends, job costing breakdowns, and forecasting — all in one place.",
+        action: "Head to the CFO Dashboard to see your financial analytics.",
+        targetPage: "/cfo-dashboard",
+        tips: [
+          "Track cash flow across all projects",
+          "Compare profitability by project or client",
+          "Spot financial trends before they become problems",
+          "Use forecasting to plan ahead"
+        ],
+        encouragement: "Now you've got the financial big picture!"
+      },
+      {
+        stepNumber: 10,
         title: "Stay Connected",
         description: "Keep all your work communication in one place, {{firstName}}. No more scattered texts and emails — everything's here, secure and searchable.",
         action: "Head to Messages and see how team communication works. It's way better than group texts!",
@@ -229,21 +230,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
           "Everything stays organized by conversation",
           "Messages are private to your organization"
         ],
-        encouragement: "Almost done! Just one more step to go."
-      },
-      {
-        stepNumber: 10,
-        title: "We're a Team!",
-        description: "Last thing, {{firstName}} — don't forget about me! I can help with tons of stuff: generating schedules, analyzing jobsite photos, creating change orders, answering questions. Just ask!",
-        action: "See that little icon in the bottom right? That's me! Click it anytime you need help with anything.",
-        targetPage: "/dashboard",
-        tips: [
-          "Ask me to generate project schedules",
-          "Upload photos and I'll analyze them",
-          "I can help draft change orders",
-          "Stuck on something? Just ask — I'm here to help!"
-        ],
-        encouragement: "You made it, {{firstName}}! You're officially ready to rock."
+        encouragement: "And you're all set, {{firstName}}! You know everything you need."
       }
     ],
     completionMessage: "You did it, {{firstName}}! Your platform is all set up and ready to go. Your team members will each get their own guided tour when they log in. Start by adding more people, creating your first bid, or just explore! And hey — I'm always here if you need anything. Just click my icon anytime. Let's build something great together!"
@@ -282,6 +269,19 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       },
       {
         stepNumber: 3,
+        title: "CRM & Vendors",
+        description: "Your vendors, clients, and subs are all here, {{firstName}}. Manage your business relationships with contact info and pricing catalogs.",
+        action: "Jump into the CRM to see your network of contacts and vendors.",
+        targetPage: "/crm",
+        tips: [
+          "Keep contact info and pricing current",
+          "Note preferred vendors for each material type",
+          "Track relationship history with each contact"
+        ],
+        encouragement: "Organized relationships make everything run smoother!"
+      },
+      {
+        stepNumber: 4,
         title: "Running Projects",
         description: "Here's where you track everything happening on active jobs, {{firstName}}. Progress, change orders, field reports, budgets — it's all here.",
         action: "Open up a project and explore. You'll see schedules, daily reports, and all the financials.",
@@ -294,28 +294,54 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         encouragement: "You've got a great view of what's happening in the field now!"
       },
       {
-        stepNumber: 4,
-        title: "Handling Changes",
-        description: "Scope changes happen, {{firstName}}. Here's where you manage them — additional work, billing adjustments, all the stuff that comes up mid-project.",
-        action: "Check out how change orders work. You can create, review, and approve them right here.",
-        targetPage: "/change-orders",
+        stepNumber: 5,
+        title: "Time Approval",
+        description: "Review and approve crew time entries, {{firstName}}. Ensure accurate labor tracking for job costing.",
+        action: "Head to Manage Time Clock to see how time approval works.",
+        targetPage: "/time-clock-manager",
         tips: [
-          "Document everything thoroughly — it protects you later",
-          "Attach photos and supporting docs",
-          "Track status from request to payment"
+          "Review entries before payroll runs",
+          "Catch discrepancies early",
+          "Hours are automatically linked to projects"
         ],
-        encouragement: "Almost done! Just one more thing to show you."
+        encouragement: "Accurate time = accurate job costing. Nice work!"
       },
       {
-        stepNumber: 5,
-        title: "Staying Connected",
-        description: "Last one, {{firstName}}! Keep your whole team on the same page with the messaging system. Way better than a million text threads.",
+        stepNumber: 6,
+        title: "CFO Dashboard",
+        description: "Financial analysis at your fingertips, {{firstName}} — cash flow, profitability trends, and job costing breakdowns.",
+        action: "Check out the CFO Dashboard for your financial overview.",
+        targetPage: "/cfo-dashboard",
+        tips: [
+          "Track cash flow across your projects",
+          "Compare profitability by project or client",
+          "Use financial insights to make better decisions"
+        ],
+        encouragement: "Now you've got the financial big picture!"
+      },
+      {
+        stepNumber: 7,
+        title: "Messages",
+        description: "Keep your whole team on the same page, {{firstName}}. Way better than a million text threads.",
         action: "Check out Messages and see how you can communicate with estimators, supers, and crews.",
         targetPage: "/messages",
         tips: [
-          "Set up project-specific channels",
           "Share documents and photos right in the conversation",
+          "Coordinate with your entire team in one place",
           "The company channel is great for announcements"
+        ],
+        encouragement: "Almost done! Just one more to go."
+      },
+      {
+        stepNumber: 8,
+        title: "Crew Management",
+        description: "Last one, {{firstName}}! Organize your workforce into crews, assign foremen, and track who's working where.",
+        action: "Navigate to Crews to see how team organization works.",
+        targetPage: "/crews",
+        tips: [
+          "Create crews based on how you actually work",
+          "Every crew needs a lead to manage things",
+          "Assign crews to specific projects"
         ],
         encouragement: "And that's a wrap! You're ready to manage like a pro."
       }
@@ -330,9 +356,22 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     steps: [
       {
         stepNumber: 1,
-        title: "Building Your First Bid",
-        description: "Alright {{firstName}}, let's dive in! Creating bids is what you do best, and this is where it all happens. You can build from scratch or let AI help analyze documents.",
-        action: "Head to Bids and click 'New Bid'. Start with project details and scope of work — I'll help you along the way!",
+        title: "Estimator Dashboard",
+        description: "{{firstName}}, this is your home base. You'll see bids requiring estimates, your workload, and upcoming bid deadlines at a glance.",
+        action: "Take a look around your dashboard to see what needs your attention.",
+        targetPage: "/dashboard",
+        tips: [
+          "Never miss a bid deadline with clear visibility",
+          "See which bids need your estimates",
+          "Track your workload and priorities"
+        ],
+        encouragement: "Nice! This will be your go-to spot every morning."
+      },
+      {
+        stepNumber: 2,
+        title: "Bid Pipeline",
+        description: "Alright {{firstName}}, let's dive in! Creating bids is what you do best, and this is where it all happens. Access all active bids, start new estimates, or continue working on existing ones.",
+        action: "Head to Bids and check out the pipeline. You can build from scratch or let AI help analyze documents!",
         targetPage: "/bids",
         tips: [
           "Start with the basics: project name, client, location",
@@ -342,72 +381,72 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         encouragement: "Nice start, {{firstName}}! Bid creation is the heart of what we do here."
       },
       {
-        stepNumber: 2,
-        title: "Takeoffs Made Easy",
-        description: "{{firstName}}, this is where it gets fun! Upload drawings and measure right on screen. Linear, area, count — whatever you need.",
-        action: "Open a bid or project and navigate to the 'Plans & Takeoff' tab. Upload a PDF and start measuring!",
-        targetPage: "/bids",
-        tips: [
-          "Drop in PDF drawings and they're ready to measure",
-          "Use linear for lengths, area for surfaces, count for items",
-          "All your takeoff data flows right into your bid"
-        ],
-        encouragement: "You've got the measuring tools down! This is going to save you so much time."
-      },
-      {
         stepNumber: 3,
-        title: "Pricing It Right",
-        description: "Now for the important part, {{firstName}} — getting the numbers right. Material costs, labor rates, overhead, profit. Let's make sure your bids are accurate AND profitable.",
-        action: "Learn how to set unit prices and hourly rates. You can pull from vendor catalogs or set your own.",
-        targetPage: "/bids",
+        title: "Bid Network",
+        description: "Find and connect with subcontractors for your bids, {{firstName}}. Send bid invitations and receive competitive quotes from your network.",
+        action: "Check out the Bid Network to see how sub bidding works.",
+        targetPage: "/bid-network",
         tips: [
-          "Use vendor catalog pricing — it's already in the system",
-          "Factor in realistic production rates",
-          "Don't forget overhead and profit margins!"
+          "Send bid invitations to multiple subs at once",
+          "Compare quotes side-by-side",
+          "Build a network of reliable subcontractors"
         ],
-        encouragement: "Now we're cooking! Accurate pricing = winning bids."
+        encouragement: "More competitive sub quotes mean better margins on your estimates!"
       },
       {
         stepNumber: 4,
-        title: "Your Vendor Network",
-        description: "{{firstName}}, your vendors are gold. Let's get their pricing in here so you can pull it right into your estimates.",
-        action: "Pop into the CRM and add a vendor. Include their catalog and current pricing.",
-        targetPage: "/crm",
+        title: "Scope of Work Library",
+        description: "{{firstName}}, your trade-specific scope items live here — standard units, labor rates, and material costs. This is how you build estimates faster.",
+        action: "Check out Scope Settings to see your scope item library.",
+        targetPage: "/scope-settings",
         tips: [
-          "Add contact info so you can reach them fast",
-          "Input material pricing with unit costs",
-          "Keep it updated — pricing changes!"
+          "Standardized scope items ensure consistent pricing",
+          "Reuse scope items across multiple bids",
+          "Keep your library updated as rates change"
         ],
-        encouragement: "Having vendor pricing at your fingertips is a game-changer."
+        encouragement: "Having a solid scope library is a game-changer for speed!"
       },
       {
         stepNumber: 5,
-        title: "Calculator Magic",
-        description: "Why do the math yourself when we've got calculators, {{firstName}}? Built-in calculators for your trade that already include waste factors.",
-        action: "Try the material calculators. Punch in dimensions and watch the quantities appear.",
+        title: "Historical Production Data",
+        description: "Want to know how long things really take, {{firstName}}? See actual production rates from completed work right here.",
+        action: "Check out Production Rates to see real-world performance data.",
+        targetPage: "/production-rates",
+        tips: [
+          "Compare estimated vs actual performance",
+          "Use real data to price future work accurately",
+          "Spot trends in productivity over time"
+        ],
+        encouragement: "Real data beats guesswork — price with confidence!"
+      },
+      {
+        stepNumber: 6,
+        title: "Cost Rates",
+        description: "Access current cost rates for labor and materials, {{firstName}}. Keeping these up to date is key to accurate estimates.",
+        action: "Check out Cost Rates to see your current pricing.",
+        targetPage: "/cost-rates",
+        tips: [
+          "Update rates regularly for accurate bids",
+          "Track how costs change over time",
+          "Up-to-date pricing prevents costly estimating errors"
+        ],
+        encouragement: "Almost there! One more thing to show you."
+      },
+      {
+        stepNumber: 7,
+        title: "Trade Calculator",
+        description: "Last step, {{firstName}}! Built-in calculators for your trade with waste factors already included. Punch in dimensions and get accurate quantities.",
+        action: "Try the material calculators. Enter dimensions and watch the quantities appear.",
         targetPage: "/calculator",
         tips: [
           "Just enter dimensions — the calculator handles the rest",
           "Waste factors are already built in",
           "Add results straight to your bid"
         ],
-        encouragement: "Almost there! One more thing to show you."
-      },
-      {
-        stepNumber: 6,
-        title: "Looking Professional",
-        description: "Last step, {{firstName}}! When your bid is ready, generate a slick PDF quote to send to the client. Internal version or client-facing — you choose.",
-        action: "Generate a quote document from a completed bid. It's just a click away!",
-        targetPage: "/bids",
-        tips: [
-          "Always double-check before generating",
-          "Pick internal summary or customer quote format",
-          "Quotes are saved so you can find them later"
-        ],
         encouragement: "And that's how you become an estimating machine, {{firstName}}!"
       }
     ],
-    completionMessage: "You crushed it, {{firstName}}! You know how to create bids, do takeoffs, set pricing, and generate quotes. The estimating world is your oyster! I'm here whenever you need a hand — just click my icon. Now go win some bids!"
+    completionMessage: "You crushed it, {{firstName}}! You know how to navigate bids, use the bid network, scope library, production data, cost rates, and calculators. The estimating world is your oyster! I'm here whenever you need a hand — just click my icon. Now go win some bids!"
   },
 
   SUPERINTENDENT: {
@@ -417,7 +456,20 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     steps: [
       {
         stepNumber: 1,
-        title: "Your Projects",
+        title: "Your Time Clock",
+        description: "First thing every day, {{firstName}} — clock in! It tracks your hours automatically and shows you're on the jobsite.",
+        action: "Check out the time clock. When you arrive on site, hit that clock-in button.",
+        targetPage: "/time-clock",
+        tips: [
+          "Clock in when you get to the job site",
+          "Make sure your GPS/location is on",
+          "Leading by example sets the standard for your crew"
+        ],
+        encouragement: "Easy right? Leading by example starts with clocking in!"
+      },
+      {
+        stepNumber: 2,
+        title: "Your Dashboard",
         description: "{{firstName}}, this is your home base. You'll see all the projects you're supervising, their timelines, and where things stand.",
         action: "Check out your dashboard. You'll see your assigned projects and their current status at a glance.",
         targetPage: "/dashboard",
@@ -429,54 +481,67 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         encouragement: "Looking good! You've got a bird's eye view of everything you're running."
       },
       {
-        stepNumber: 2,
-        title: "Daily Reports",
-        description: "This is where you document what's happening in the field, {{firstName}}. Work completed, weather, issues — it all goes here.",
-        action: "Learn how to create a daily field report. It's quick and keeps everyone in the loop.",
-        targetPage: "/daily-reports",
-        tips: [
-          "Start with weather conditions",
-          "Log what each crew accomplished",
-          "Attach photos of progress and any issues"
-        ],
-        encouragement: "Daily documentation is key! The office will love having this info."
-      },
-      {
         stepNumber: 3,
-        title: "T&M Work",
-        description: "Extra work comes up, {{firstName}} — that's just construction. Here's where you track time and materials beyond the original scope.",
-        action: "See how to log T&M work. Hours, materials, client signatures — it's all here.",
-        targetPage: "/t-and-m",
-        tips: [
-          "Log employee hours with what they worked on",
-          "Add material costs with receipts",
-          "Get that client signature for approval"
-        ],
-        encouragement: "Nice! Getting T&M documented right means you get paid for extra work."
-      },
-      {
-        stepNumber: 4,
-        title: "Documenting Delays",
-        description: "Delays happen, {{firstName}}. The key is documenting them properly so the company can recover costs. This is where you do that.",
-        action: "Learn how to create a delay report with photos and evidence.",
-        targetPage: "/delays",
-        tips: [
-          "Pick the right reason for the delay",
-          "Upload photos, emails, anything that supports it",
-          "Link delays to change orders for cost recovery"
-        ],
-        encouragement: "Solid documentation protects the company. Good stuff!"
-      },
-      {
-        stepNumber: 5,
-        title: "Crew Time",
-        description: "Last one, {{firstName}}! Here's where you manage your crew's clock-in and clock-out. GPS-tracked, easy to review.",
-        action: "Check out the timeclock system to see how crew hours are tracked.",
-        targetPage: "/time-clock",
+        title: "Manage Crew Time",
+        description: "Here's where you manage your crew's clock-in and clock-out, {{firstName}}. GPS-tracked hours linked to the right projects for accurate job costing.",
+        action: "Check out the Manage Time Clock to see how crew hour approval works.",
+        targetPage: "/time-clock-manager",
         tips: [
           "GPS location is captured automatically at clock-in",
           "Review and approve timesheets each week",
           "Flag anything that looks off"
+        ],
+        encouragement: "Catching time issues early prevents payroll headaches!"
+      },
+      {
+        stepNumber: 4,
+        title: "Project Management",
+        description: "Track everything happening on your active jobs, {{firstName}}. Progress, daily reports, change orders, budgets — it's all here.",
+        action: "Open up a project and explore. You'll see schedules, daily reports, and scope details.",
+        targetPage: "/projects",
+        tips: [
+          "Log daily field reports to keep the office informed",
+          "Track crew accomplishments and any issues",
+          "Don't let change orders sit — process them quickly"
+        ],
+        encouragement: "You've got a great view of what's happening in the field now!"
+      },
+      {
+        stepNumber: 5,
+        title: "Approvals",
+        description: "Review and approve daily reports, time entries, and change orders that need your sign-off, {{firstName}}.",
+        action: "Check out the Approvals section to see what needs your attention.",
+        targetPage: "/approvals",
+        tips: [
+          "Stay on top of pending approvals",
+          "Quick approvals keep the project moving",
+          "Document your decisions for the record"
+        ],
+        encouragement: "Nice! Keeping approvals current keeps the project on track."
+      },
+      {
+        stepNumber: 6,
+        title: "Equipment",
+        description: "See which equipment is assigned to your jobsites, check availability, and request what you need, {{firstName}}.",
+        action: "Check out the Equipment section to see what's available.",
+        targetPage: "/equipment",
+        tips: [
+          "See what's assigned to your projects",
+          "Request equipment you need for upcoming work",
+          "Report any equipment issues right away"
+        ],
+        encouragement: "Having the right equipment on site keeps production on track!"
+      },
+      {
+        stepNumber: 7,
+        title: "Procurement",
+        description: "Last one, {{firstName}}! Submit material requests and track purchase orders for your projects. Get what you need without delays.",
+        action: "Check out Procurement to see how material ordering works.",
+        targetPage: "/procurement-module",
+        tips: [
+          "Submit material requests for your projects",
+          "Track order status from request to delivery",
+          "Keep a paper trail for every purchase"
         ],
         encouragement: "And you're all set, {{firstName}}! You've got the field covered."
       }
@@ -565,10 +630,23 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       },
       {
         stepNumber: 2,
+        title: "Your Tasks",
+        description: "View tasks assigned to you, {{firstName}}. Mark them complete and add notes about your work.",
+        action: "Check out the Tasks section to see what's been assigned to you.",
+        targetPage: "/tasks",
+        tips: [
+          "Check your tasks at the start of each day",
+          "Mark tasks complete when you finish them",
+          "Add notes if there's anything to report"
+        ],
+        encouragement: "Clear task lists keep the job moving forward!"
+      },
+      {
+        stepNumber: 3,
         title: "Your Schedule",
-        description: "Want to know where you're working, {{firstName}}? Your dashboard shows you exactly what's coming up.",
-        action: "Check out your dashboard to see today's assignment and what's ahead.",
-        targetPage: "/dashboard",
+        description: "Want to know where you're working, {{firstName}}? Your calendar shows you exactly what's coming up.",
+        action: "Check out the calendar to see today's assignment and what's ahead.",
+        targetPage: "/calendar",
         tips: [
           "Today's assignment is right there",
           "Check the calendar for upcoming days",
@@ -577,20 +655,33 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         encouragement: "Nice! Now you always know where you need to be."
       },
       {
-        stepNumber: 3,
-        title: "Clocking Out",
-        description: "End of the day, {{firstName}}! Clock out before you leave so your hours get counted correctly.",
-        action: "Head back to the timeclock at the end of your shift and hit clock-out.",
-        targetPage: "/time-clock",
+        stepNumber: 4,
+        title: "Bulletins & Communications",
+        description: "Stay in the loop, {{firstName}}! Company announcements, safety updates, and important notices from the office all show up here.",
+        action: "Check out the Bulletins section for the latest company news.",
+        targetPage: "/communications",
         tips: [
-          "Clock out before leaving the site",
-          "Double-check your hours look right",
+          "Read safety bulletins — they keep you safe on the job",
+          "Check for schedule or policy updates",
+          "Important announcements are highlighted"
+        ],
+        encouragement: "Staying informed is key to being a great team member!"
+      },
+      {
+        stepNumber: 5,
+        title: "Your Dashboard",
+        description: "Last one, {{firstName}}! Your dashboard shows your assigned projects and important info at a glance.",
+        action: "Check out your dashboard to see the big picture.",
+        targetPage: "/dashboard",
+        tips: [
+          "Your assigned projects are listed here",
+          "Check for any updates or announcements",
           "If something's off, let your foreman know"
         ],
         encouragement: "And that's it! You're officially a pro at this, {{firstName}}!"
       }
     ],
-    completionMessage: "Welcome to the team, {{firstName}}! You've got the basics down — clock in, check your schedule, clock out. Simple as that! If you ever have questions, I'm right here. Just click my icon. Now go do great work!"
+    completionMessage: "Welcome to the team, {{firstName}}! You've got the basics down — clock in, check your tasks and schedule, stay informed with bulletins. Simple as that! If you ever have questions, I'm right here. Just click my icon. Now go do great work!"
   },
 
   _MAINTENANCE_MANAGER_LEGACY: {
@@ -677,7 +768,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         title: "Your Dashboard",
         description: "{{firstName}}, this is your home base. You'll see your partnership status, recent orders, and anything that needs your attention.",
         action: "Take a look around! Check out your active partnerships and recent activity.",
-        targetPage: "/dashboard",
+        targetPage: "/vendor",
         tips: [
           "Recent transactions are right at the top",
           "Watch for pending quote requests",
@@ -690,7 +781,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         title: "Your Product Catalog",
         description: "This is the good stuff, {{firstName}} — your products and pricing. Contractors see this when they're building estimates.",
         action: "Head to your catalog and make sure your products and prices are current.",
-        targetPage: "/vendor/catalog",
+        targetPage: "/vendor/pricing",
         tips: [
           "Keep pricing updated — contractors rely on it for accurate bids",
           "Add new products when they become available",
@@ -700,19 +791,45 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       },
       {
         stepNumber: 3,
-        title: "Stay Connected",
-        description: "Last thing, {{firstName}} — the messaging system keeps you in touch with your contractor partners. Quote requests, questions, delivery updates — it all flows through here.",
+        title: "Your Clients",
+        description: "See which contractors are using your pricing and manage your relationships, {{firstName}}.",
+        action: "Check out the Clients section to see your enrolled contractor partners.",
+        targetPage: "/vendor/clients",
+        tips: [
+          "See which contractors have enrolled for your pricing",
+          "Track your active relationships",
+          "Know your customers to provide better service"
+        ],
+        encouragement: "Great partnerships are built on knowing your customers!"
+      },
+      {
+        stepNumber: 4,
+        title: "Messages",
+        description: "Communicate directly with your contractor partners, {{firstName}}. Answer questions, send quotes, and coordinate deliveries.",
         action: "Check out Messages to see how you'll communicate with contractors.",
-        targetPage: "/messages",
+        targetPage: "/vendor/messages",
         tips: [
           "Quick responses to quote requests = happy contractors",
           "Answer pricing or availability questions here",
           "Keep them updated on delivery schedules"
         ],
+        encouragement: "Fast communication builds trust with your partners!"
+      },
+      {
+        stepNumber: 5,
+        title: "Bid Inbox",
+        description: "Last one, {{firstName}}! Receive bid invitations from contractors. Review project details and submit your competitive quotes.",
+        action: "Check out the Bid Inbox to see incoming bid requests.",
+        targetPage: "/bid-network-inbox",
+        tips: [
+          "Respond quickly to bid invitations",
+          "Review project scope before quoting",
+          "More bids = more business opportunities"
+        ],
         encouragement: "And you're all set! You're ready to rock as a Vendor Partner."
       }
     ],
-    completionMessage: "You did it, {{firstName}}! Catalog management, communication, orders — you've got the tools to succeed. I'm here if you need anything. Just click my icon. Here's to a great partnership!"
+    completionMessage: "You did it, {{firstName}}! Pricing, client management, messages, and bid invitations — you've got all the tools to succeed. I'm here if you need anything. Just click my icon. Here's to a great partnership!"
   },
 
   HUSTLER: {
@@ -722,32 +839,45 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     steps: [
       {
         stepNumber: 1,
-        title: "Your Command Center",
-        description: "{{firstName}}, this is where you see the big picture. Your dashboard shows activity across all your linked organizations — switch between them anytime.",
-        action: "Check out your dashboard and see how organization switching works.",
-        targetPage: "/dashboard",
+        title: "Your Portfolio",
+        description: "{{firstName}}, this is where you see all your linked organizations at a glance. Switch between companies and manage your entire business portfolio.",
+        action: "Check out the Portfolio section in the sidebar to see your companies.",
+        targetPage: "/hustler",
         tips: [
-          "Use the organization switcher in the header to jump between companies",
-          "Your current organization is always visible at the top",
-          "Dashboard stats reflect the organization you're currently viewing"
+          "See all your linked organizations in one view",
+          "Switch between companies with one click",
+          "Track performance across your entire portfolio"
         ],
-        encouragement: "Nice! You're already getting the hang of managing multiple orgs!"
+        encouragement: "Nice! You've got the keys to your entire empire right here."
       },
       {
         stepNumber: 2,
-        title: "Organization Management",
-        description: "This is where the magic happens, {{firstName}} — see all your linked organizations, switch contexts, and manage your access across companies.",
-        action: "Head to the Hustler dashboard to see your organization portfolio.",
-        targetPage: "/hustler",
+        title: "Executive Dashboard",
+        description: "This is your command center, {{firstName}}. See aggregated metrics across all your organizations — performance comparisons and key numbers.",
+        action: "Check out your dashboard and see the big picture.",
+        targetPage: "/dashboard",
         tips: [
-          "Link new organizations you've been invited to",
-          "Each org can have different role permissions for you",
-          "You can unlink organizations you no longer need access to"
+          "Dashboard stats reflect the organization you're currently viewing",
+          "Use the organization switcher to jump between companies",
+          "Keep an eye on key metrics across all your businesses"
         ],
-        encouragement: "You're a true multi-tasker! Keep those organizations in check."
+        encouragement: "You're already getting the hang of managing multiple orgs!"
       },
       {
         stepNumber: 3,
+        title: "CFO Analytics",
+        description: "Deep financial analysis across your portfolio, {{firstName}} — cash flow, profitability trends, and financial forecasting.",
+        action: "Head to the CFO Dashboard for your financial overview.",
+        targetPage: "/cfo-dashboard",
+        tips: [
+          "Track cash flow across all your companies",
+          "Compare profitability by organization",
+          "Use forecasting to plan strategic investments"
+        ],
+        encouragement: "Data-driven decisions about where to invest and where to cut!"
+      },
+      {
+        stepNumber: 4,
         title: "Cross-Org Projects",
         description: "{{firstName}}, you can view projects across all your organizations. This helps you track work happening across your entire portfolio.",
         action: "Check out the Projects section to see work across your organizations.",
@@ -760,15 +890,15 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         encouragement: "Great overview! You're seeing the bigger picture."
       },
       {
-        stepNumber: 4,
-        title: "Stay Connected",
-        description: "Last thing, {{firstName}} — Messages keeps you in touch with teams across all your organizations. Important updates, questions, coordination — it all flows here.",
-        action: "Check out Messages to see how cross-org communication works.",
-        targetPage: "/messages",
+        stepNumber: 5,
+        title: "COO Delegation",
+        description: "Last thing, {{firstName}} — assign COO-level access to trusted managers who can help oversee operations across organizations.",
+        action: "Head to User Management to see how delegation works.",
+        targetPage: "/users",
         tips: [
-          "Messages are organization-specific — switch orgs to see each team",
-          "Respond promptly to keep all your teams moving",
-          "Use messages for quick coordination between companies"
+          "Assign trusted managers to help oversee operations",
+          "Scale your oversight without being in every meeting",
+          "Each person gets role-appropriate access"
         ],
         encouragement: "And you're ready to hustle! Multiple orgs, one powerful account."
       }
