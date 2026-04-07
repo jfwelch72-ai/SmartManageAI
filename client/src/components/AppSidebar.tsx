@@ -58,6 +58,66 @@ import {
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function SidebarSkeleton() {
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="border-b">
+        <div className="flex items-center gap-2 px-2 py-2">
+          <Skeleton className="w-6 h-6 rounded shrink-0" />
+          <Skeleton className="h-5 w-32 group-data-[collapsible=icon]:hidden" />
+        </div>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <div className="flex flex-col gap-1 px-2">
+              <Skeleton className="h-8 w-full rounded-md" />
+              <Skeleton className="h-8 w-full rounded-md" />
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <div className="flex flex-col gap-1 px-2">
+              <Skeleton className="h-8 w-full rounded-md" />
+              <Skeleton className="h-8 w-3/4 rounded-md" />
+              <Skeleton className="h-8 w-full rounded-md" />
+              <Skeleton className="h-8 w-5/6 rounded-md" />
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <div className="flex flex-col gap-1 px-2">
+              <Skeleton className="h-8 w-full rounded-md" />
+              <Skeleton className="h-8 w-2/3 rounded-md" />
+              <Skeleton className="h-8 w-full rounded-md" />
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <div className="flex flex-col gap-1 px-2">
+              <Skeleton className="h-8 w-full rounded-md" />
+              <Skeleton className="h-8 w-3/4 rounded-md" />
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter className="border-t">
+        <div className="flex items-center gap-2 px-2 py-2">
+          <Skeleton className="w-8 h-8 rounded-full shrink-0" />
+          <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
+            <Skeleton className="h-4 w-24 mb-1" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+        </div>
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
 
 interface WalkthroughStatus {
   walkthroughCompleted: boolean;
@@ -99,7 +159,7 @@ export function AppSidebar() {
   });
   
   const { entitlements } = useEntitlements();
-  const { permissions: featurePerms } = useDashboardCustomization();
+  const { permissions: featurePerms, isLoadingPermissions } = useDashboardCustomization();
 
   const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
     (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);
@@ -118,32 +178,6 @@ export function AppSidebar() {
   const initials = user.firstName && user.lastName
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
     : user.email?.substring(0, 2).toUpperCase() || "U";
-
-  const perms: FeaturePerms = featurePerms;
-
-  const visibleProjectsItems = NavigationConfig.projectsMenu.filter(item => item.visible(userRole, perms));
-  const visibleOperationsItems = NavigationConfig.operationsMenu.filter(item => item.visible(userRole, perms));
-  const visibleWorkforceItems = NavigationConfig.workforceMenu.filter(item => item.visible(userRole, perms));
-  const visiblePreconstructionItems = NavigationConfig.preconstructionMenu.filter(item => item.visible(userRole, perms));
-  const visibleFinancialsItems = NavigationConfig.financialsMenu.filter(item => item.visible(userRole, perms));
-  const visibleMarketplaceItems = NavigationConfig.marketplaceMenu.filter(item => item.visible(userRole, perms));
-  const visibleCrmItems = NavigationConfig.crmMenu.filter(item => item.visible(userRole, perms));
-  const visibleInsightsItems = NavigationConfig.insightsMenu.filter(item => item.visible(userRole, perms));
-  const visibleAdministrationItems = NavigationConfig.administrationMenu.filter(item => item.visible(userRole, perms));
-  const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole, perms));
-  const visibleHiringItems = NavigationConfig.hiringMenu.filter(item => item.visible(userRole, perms));
-
-  const hasProjectsMenu = visibleProjectsItems.length > 0;
-  const hasOperationsMenu = visibleOperationsItems.length > 0;
-  const hasWorkforceMenu = visibleWorkforceItems.length > 0;
-  const hasPreconstructionMenu = visiblePreconstructionItems.length > 0;
-  const hasFinancialsMenu = visibleFinancialsItems.length > 0;
-  const hasMarketplace = visibleMarketplaceItems.length > 0;
-  const hasCrm = visibleCrmItems.length > 0;
-  const hasInsightsMenu = visibleInsightsItems.length > 0;
-  const hasAdministrationMenu = visibleAdministrationItems.length > 0;
-  const hasToolsMenu = visibleToolsItems.length > 0;
-  const hasHiringMenu = visibleHiringItems.length > 0;
 
   const handleLogout = async () => {
     await logout();
@@ -193,6 +227,83 @@ export function AppSidebar() {
       </Sidebar>
     );
   }
+
+  if (isVendor(userRole)) {
+    return (
+      <Sidebar collapsible="icon">
+        <SidebarHeader className="border-b">
+          <div className="flex items-center gap-2 px-2 py-2">
+            <Store className="w-6 h-6 text-primary shrink-0" />
+            <span className="font-bold text-lg group-data-[collapsible=icon]:hidden">Vendor</span>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Portal</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {VendorPortalNavConfig.mainNav.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.label}>
+                      <Link href={item.href} data-testid={item.testId}>
+                        {item.href === "/vendor" && <LayoutDashboard className="w-4 h-4" />}
+                        {item.href === "/vendor/pricing" && <Package className="w-4 h-4" />}
+                        {item.href === "/vendor/clients" && <Store className="w-4 h-4" />}
+                        {item.href === "/vendor/messages" && <MessageSquare className="w-4 h-4" />}
+                        {item.href === "/vendor/documents" && <FileSearch className="w-4 h-4" />}
+                        {item.href === "/bid-network-inbox" && <Inbox className="w-4 h-4" />}
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter className="border-t">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={handleLogout} className="text-destructive hover:text-destructive" data-testid="sidebar-logout">
+                <LogOut className="w-4 h-4" />
+                <span>Logout</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      </Sidebar>
+    );
+  }
+
+  if (isLoadingPermissions) {
+    return <SidebarSkeleton />;
+  }
+
+  const perms: FeaturePerms = featurePerms;
+
+  const visibleProjectsItems = NavigationConfig.projectsMenu.filter(item => item.visible(userRole, perms));
+  const visibleOperationsItems = NavigationConfig.operationsMenu.filter(item => item.visible(userRole, perms));
+  const visibleWorkforceItems = NavigationConfig.workforceMenu.filter(item => item.visible(userRole, perms));
+  const visiblePreconstructionItems = NavigationConfig.preconstructionMenu.filter(item => item.visible(userRole, perms));
+  const visibleFinancialsItems = NavigationConfig.financialsMenu.filter(item => item.visible(userRole, perms));
+  const visibleMarketplaceItems = NavigationConfig.marketplaceMenu.filter(item => item.visible(userRole, perms));
+  const visibleCrmItems = NavigationConfig.crmMenu.filter(item => item.visible(userRole, perms));
+  const visibleInsightsItems = NavigationConfig.insightsMenu.filter(item => item.visible(userRole, perms));
+  const visibleAdministrationItems = NavigationConfig.administrationMenu.filter(item => item.visible(userRole, perms));
+  const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole, perms));
+  const visibleHiringItems = NavigationConfig.hiringMenu.filter(item => item.visible(userRole, perms));
+
+  const hasProjectsMenu = visibleProjectsItems.length > 0;
+  const hasOperationsMenu = visibleOperationsItems.length > 0;
+  const hasWorkforceMenu = visibleWorkforceItems.length > 0;
+  const hasPreconstructionMenu = visiblePreconstructionItems.length > 0;
+  const hasFinancialsMenu = visibleFinancialsItems.length > 0;
+  const hasMarketplace = visibleMarketplaceItems.length > 0;
+  const hasCrm = visibleCrmItems.length > 0;
+  const hasInsightsMenu = visibleInsightsItems.length > 0;
+  const hasAdministrationMenu = visibleAdministrationItems.length > 0;
+  const hasToolsMenu = visibleToolsItems.length > 0;
+  const hasHiringMenu = visibleHiringItems.length > 0;
 
   if (isFieldWorker(userRole)) {
     const fieldWorkerCandidates = [
@@ -251,53 +362,6 @@ export function AppSidebar() {
                 </div>
               </div>
             </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleLogout} className="text-destructive hover:text-destructive" data-testid="sidebar-logout">
-                <LogOut className="w-4 h-4" />
-                <span>Logout</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-      </Sidebar>
-    );
-  }
-
-  if (isVendor(userRole)) {
-    return (
-      <Sidebar collapsible="icon">
-        <SidebarHeader className="border-b">
-          <div className="flex items-center gap-2 px-2 py-2">
-            <Store className="w-6 h-6 text-primary shrink-0" />
-            <span className="font-bold text-lg group-data-[collapsible=icon]:hidden">Vendor</span>
-          </div>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Portal</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {VendorPortalNavConfig.mainNav.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.label}>
-                      <Link href={item.href} data-testid={item.testId}>
-                        {item.href === "/vendor" && <LayoutDashboard className="w-4 h-4" />}
-                        {item.href === "/vendor/pricing" && <Package className="w-4 h-4" />}
-                        {item.href === "/vendor/clients" && <Store className="w-4 h-4" />}
-                        {item.href === "/vendor/messages" && <MessageSquare className="w-4 h-4" />}
-                        {item.href === "/vendor/documents" && <FileSearch className="w-4 h-4" />}
-                        {item.href === "/bid-network-inbox" && <Inbox className="w-4 h-4" />}
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarFooter className="border-t">
-          <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton onClick={handleLogout} className="text-destructive hover:text-destructive" data-testid="sidebar-logout">
                 <LogOut className="w-4 h-4" />
