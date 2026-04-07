@@ -364,6 +364,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessCostRates: true, canAccessProductionRates: true,
     canAccessTimeClock: true,
     canAccessCRM: true, canCreateCRMContacts: true,
+    canAccessMarketplace: true,
+    canManageEquipment: true, canManageProcurement: true,
     canUseAiFeatures: true,
     canAccessReports: true,
     canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,

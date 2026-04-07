@@ -298,7 +298,7 @@ export function AppSidebar() {
     return <SidebarSkeleton />;
   }
 
-  const perms: FeaturePerms = featurePerms;
+  const perms: FeaturePerms | undefined = featurePerms;
   const workflowGroups = getWorkflowGroups(userRole);
   const isFieldWorkerUser = isFieldWorker(userRole);
   const isHustlerUser = userRole === "HUSTLER";

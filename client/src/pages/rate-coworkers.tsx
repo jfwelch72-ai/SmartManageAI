@@ -346,11 +346,17 @@ export default function RateCoworkersPage() {
           )}
         </TabsContent>
 
+<<<<<<< HEAD
         {canViewScores && (
           <TabsContent value="scores" className="mt-4">
             <MyScoresTab />
           </TabsContent>
         )}
+=======
+        <TabsContent value="scores" className="mt-4">
+          <MyScoresTab />
+        </TabsContent>
+>>>>>>> fd04d986 (Saved your changes before starting work)
       </Tabs>
     </div>
   );

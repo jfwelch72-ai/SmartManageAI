@@ -4,6 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getWidgetDefinition } from "@/components/dashboard-widgets/WidgetRegistry";
+import type { FeaturePerms } from "@/lib/rbac";
 
 export interface DashboardWidget {
   id: string;
@@ -34,29 +35,7 @@ export interface DashboardLayoutConfig {
   version: number;
 }
 
-interface UserPermissions {
-  canViewFinancials: boolean;
-  canEditFinancials: boolean;
-  canManagePayroll: boolean;
-  canAccessReports: boolean;
-  canUseAiFeatures: boolean;
-  canPostSocialMedia: boolean;
-  canManageWebsite: boolean;
-  canManageEquipment: boolean;
-  canManageProcurement: boolean;
-  canManageContracts: boolean;
-  canManageHiring: boolean;
-  canManageSafety: boolean;
-  canViewSafety: boolean;
-  canViewAiSummaries: boolean;
-  canManageScheduling: boolean;
-  canAccessBidNetworkGC: boolean;
-  canAccessBidNetworkInbox: boolean;
-  canManageLeave: boolean;
-  canAccessTimeMaterial: boolean;
-  canSubmitPeerRatings: boolean;
-  canViewPeerRatings: boolean;
-}
+type UserPermissions = FeaturePerms;
 
 interface ColorPalette {
   id?: string;
@@ -102,6 +81,7 @@ interface DashboardCustomizationContextType {
   toggleEditMode: () => void;
   permissions: UserPermissions;
   isLoadingPermissions: boolean;
+  isPermissionsError: boolean;
   layout: DashboardLayoutConfig | null;
   localLayout: DashboardLayoutConfig | null;
   isLoadingLayout: boolean;
@@ -150,10 +130,12 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
 
   const { user: authUser } = useAuth();
 
-  const { data: permissions = { canViewFinancials: false, canEditFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false, canManageContracts: false, canManageHiring: false, canManageSafety: false, canViewSafety: false, canViewAiSummaries: false, canManageScheduling: false, canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false, canManageLeave: false, canAccessTimeMaterial: false, canSubmitPeerRatings: false, canViewPeerRatings: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
+  const { data: permissionsData, isLoading: isLoadingPermissions, isError: isPermissionsError } = useQuery<UserPermissions>({
     queryKey: ["/api/dashboard/my-permissions"],
     enabled: !!authUser,
   });
+
+  const permissions: UserPermissions = permissionsData ?? EMPTY_PERMISSIONS;
 
   const { data: layoutData, isLoading: isLoadingLayout } = useQuery<{ layout: DashboardLayoutConfig; isCustom: boolean }>({
     queryKey: ["/api/dashboard/layout"],
@@ -603,6 +585,7 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     toggleEditMode,
     permissions,
     isLoadingPermissions,
+    isPermissionsError,
     layout: layoutData?.layout || null,
     localLayout,
     isLoadingLayout,
@@ -658,21 +641,51 @@ export function useDashboardCustomization() {
 }
 
 const EMPTY_PERMISSIONS: UserPermissions = {
-  canViewFinancials: false, canEditFinancials: false, canManagePayroll: false,
-  canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false,
-  canManageWebsite: false, canManageEquipment: false, canManageProcurement: false,
-  canManageContracts: false, canManageHiring: false, canManageSafety: false,
-  canViewSafety: false, canViewAiSummaries: false, canManageScheduling: false,
-  canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false, canManageLeave: false,
-  canAccessTimeMaterial: false, canSubmitPeerRatings: false, canViewPeerRatings: false,
-} as UserPermissions;
+  canAccessDashboard: false, canAccessProjects: false, canCreateProjects: false,
+  canEditProjects: false, canAccessCalendar: false, canAccessTasks: false,
+  canAccessMessages: false, canAccessBulletins: false, canAccessEmailAssistant: false,
+  canViewBids: false, canEditBids: false, canDeleteBids: false,
+  canGenerateBidPDFs: false, canConvertBidToProject: false,
+  canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false,
+  canManageBidResponses: false, canDeleteBidRequests: false,
+  canAccessHistoricalCosts: false, canAccessScopeSettings: false,
+  canUseAiBidAnalysis: false, canUseAiContractAnalysis: false,
+  canViewFinancials: false, canEditFinancials: false,
+  canAccessCostRates: false, canAccessCFODashboard: false,
+  canAccessTMBilling: false, canAccessProgressBilling: false,
+  canManageContracts: false, canAccessSubcontracts: false,
+  canAccessOverheadCosts: false, canAccessProductionRates: false,
+  canAccessVendorPricing: false, canAccessTimeClock: false,
+  canManageTimeClock: false, canApproveTime: false, canAccessTMDaily: false,
+  canManagePayroll: false, canManageCrews: false, canManageWorkforce: false,
+  canManageLeave: false, canManageSafety: false, canManageScheduling: false,
+  canAccessKPIs: false, canLockDailyReports: false,
+  canManageEquipment: false, canManageProcurement: false,
+  canAccessCRM: false, canCreateCRMContacts: false, canAccessMarketplace: false,
+  canManageHiring: false, canAccessHiringInterviews: false,
+  canManageHiringSettings: false, canPostSocialMedia: false,
+  canManageWebsite: false, canAccessExecutiveDigest: false,
+  canUseAiFeatures: false, canViewSafety: false, canViewAiSummaries: false,
+  canAccessCompanySettings: false, canManageUsers: false,
+  canAccessApprovals: false, canAccessAuditLogs: false,
+  canAccessReports: false, canAccessEnterpriseSettings: false,
+  canManageAISettings: false, canViewProjectBudget: false,
+  canViewProjectEstimates: false, canViewProjectProcurement: false,
+  canViewProjectReceipts: false, canViewProjectTimeEntries: false,
+  canViewProjectSubcontractors: false, canCreateChangeOrders: false,
+  canDeleteScopeItems: false, canEditProjectHandoff: false,
+  canSubmitPeerRatings: false, canViewPeerRatings: false,
+};
 
 export function useDashboardCustomizationSafe() {
   const context = useContext(DashboardCustomizationContext);
   if (!context) {
-    return { permissions: EMPTY_PERMISSIONS, isLoadingPermissions: true };
+    return { permissions: undefined as UserPermissions | undefined, isLoadingPermissions: false, isPermissionsError: true };
   }
-  return { permissions: context.permissions, isLoadingPermissions: context.isLoadingPermissions };
+  if (context.isPermissionsError) {
+    return { permissions: undefined as UserPermissions | undefined, isLoadingPermissions: false, isPermissionsError: true };
+  }
+  return { permissions: context.permissions, isLoadingPermissions: context.isLoadingPermissions, isPermissionsError: false };
 }
 
 export type FeaturePermissionKey = keyof UserPermissions;
