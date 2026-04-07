@@ -16,9 +16,12 @@ import {
   FileText,
   Trash2,
   ChevronRight,
+  ChevronDown,
   File,
   Image,
   FileSpreadsheet,
+  Folder,
+  FolderOpen,
 } from "lucide-react";
 
 interface BidPlansStepProps {
@@ -61,10 +64,67 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
+function getFileGroupKey(fileName: string): string {
+  const base = fileName.replace(/\.[^/.]+$/, "");
+  const cleaned = base
+    .replace(/[-_\s]+/g, " ")
+    .replace(/\s*(v?\d+|sheet\s*\d+|page\s*\d+|rev\s*[a-z0-9]+)$/i, "")
+    .replace(/\s+\d+$/, "")
+    .replace(/\s*[(\[][^)\]]*[)\]]$/, "")
+    .trim();
+  return cleaned.toLowerCase() || base.toLowerCase();
+}
+
+interface FileGroup {
+  key: string;
+  label: string;
+  docs: BidDocument[];
+}
+
+function groupDocsByName(docs: BidDocument[]): FileGroup[] {
+  const groups = new Map<string, BidDocument[]>();
+  const groupLabels = new Map<string, string>();
+
+  docs.forEach((doc) => {
+    const key = getFileGroupKey(doc.fileName);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      const base = doc.fileName.replace(/\.[^/.]+$/, "");
+      const label = base
+        .replace(/[-_\s]+/g, " ")
+        .replace(/\s*(v?\d+|sheet\s*\d+|page\s*\d+|rev\s*[a-z0-9]+)$/i, "")
+        .replace(/\s+\d+$/, "")
+        .replace(/\s*[(\[][^)\]]*[)\]]$/, "")
+        .trim();
+      groupLabels.set(key, label || base);
+    }
+    groups.get(key)!.push(doc);
+  });
+
+  const result: FileGroup[] = [];
+  groups.forEach((groupDocs, key) => {
+    result.push({ key, label: groupLabels.get(key) || key, docs: groupDocs });
+  });
+  return result;
+}
+
 export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: BidPlansStepProps) {
   const { toast } = useToast();
   const [docType, setDocType] = useState<string>("PLANS");
   const [docTitle, setDocTitle] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (groupKey: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  };
 
   const { data: documents = [], isLoading } = useQuery<BidDocument[]>({
     queryKey: ["/api/bids", bidCode, "documents"],
@@ -82,8 +142,6 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "documents"] });
-      setDocTitle("");
-      toast({ title: "Document uploaded", description: "Plan document has been added to this bid." });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to save document", variant: "destructive" });
@@ -109,19 +167,28 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
       toast({ title: "Error", description: "No file uploaded", variant: "destructive" });
       return;
     }
-    const uploaded = result.successful[0];
-    const file = uploaded.data as File;
-    const fileUrl = uploaded.uploadURL?.split("?")[0] || "";
-    const title = docTitle.trim() || file.name.replace(/\.[^/.]+$/, "");
+    const isSingle = result.successful.length === 1;
+    result.successful.forEach((uploaded) => {
+      const file = uploaded.data as File;
+      const fileUrl = uploaded.uploadURL?.split("?")[0] || "";
+      const baseName = file.name.replace(/\.[^/.]+$/, "");
+      const title = isSingle && docTitle.trim() ? docTitle.trim() : baseName;
 
-    createDocMutation.mutate({
-      title,
-      fileName: file.name,
-      fileUrl,
-      fileSize: file.size,
-      mimeType: file.type,
-      type: docType,
+      createDocMutation.mutate({
+        title,
+        fileName: file.name,
+        fileUrl,
+        fileSize: file.size,
+        mimeType: file.type,
+        type: docType,
+      });
     });
+    setDocTitle("");
+    if (isSingle) {
+      toast({ title: "Document uploaded", description: "Plan document has been added to this bid." });
+    } else {
+      toast({ title: `${result.successful.length} files uploaded`, description: "All documents have been added to this bid." });
+    }
   };
 
   const plansDocs = documents.filter(d => d.type === "PLANS");
@@ -140,7 +207,7 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
                 Step 1: Plans & Takeoff
               </CardTitle>
               <CardDescription>
-                Upload all project plans, specifications, and takeoff files needed for this bid
+                Upload project plans, specifications, and takeoff files needed for this bid. You can select multiple files at once.
               </CardDescription>
             </div>
             <Badge variant="outline" data-testid="badge-doc-count">{documents.length} file{documents.length !== 1 ? "s" : ""}</Badge>
@@ -175,7 +242,7 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
                 </div>
               </div>
               <ObjectUploader
-                maxNumberOfFiles={1}
+                maxNumberOfFiles={20}
                 maxFileSize={104857600}
                 allowedFileTypes={[".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
                 fileType="DOCUMENT"
@@ -184,8 +251,9 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
               >
                 <Button variant="outline" className="w-full" disabled={createDocMutation.isPending} data-testid="button-upload-plan">
                   <Upload className="w-4 h-4 mr-2" />
-                  {createDocMutation.isPending ? "Saving..." : "Upload Document"}
+                  {createDocMutation.isPending ? "Saving..." : "Upload Documents"}
                 </Button>
+                <p className="text-xs text-muted-foreground mt-1">Select multiple files at once</p>
               </ObjectUploader>
             </div>
           )}
@@ -209,57 +277,136 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
                 { label: "Specifications", docs: specsDocs, type: "SPECS" },
                 { label: "Takeoff Files", docs: takeoffDocs, type: "TAKEOFF" },
                 { label: "Other Documents", docs: otherDocs, type: "OTHER" },
-              ].filter(group => group.docs.length > 0).map(group => (
-                <div key={group.type}>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">{group.label}</h4>
-                  <div className="space-y-2">
-                    {group.docs.map(doc => {
-                      const DocIcon = getFileIcon(doc.mimeType);
-                      return (
-                        <div
-                          key={doc.id}
-                          className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
-                          data-testid={`doc-item-${doc.id}`}
-                        >
-                          <DocIcon className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate" data-testid={`doc-title-${doc.id}`}>{doc.title}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {doc.fileName} • {formatFileSize(doc.fileSize)}
-                            </p>
+              ].filter(group => group.docs.length > 0).map(group => {
+                const fileGroups = groupDocsByName(group.docs);
+                return (
+                  <div key={group.type}>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-2">{group.label}</h4>
+                    <div className="space-y-2">
+                      {fileGroups.map((fg) => {
+                        const compositeKey = `${group.type}-${fg.key}`;
+                        if (fg.docs.length === 1) {
+                          const doc = fg.docs[0];
+                          const DocIcon = getFileIcon(doc.mimeType);
+                          return (
+                            <div
+                              key={doc.id}
+                              className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
+                              data-testid={`doc-item-${doc.id}`}
+                            >
+                              <DocIcon className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate" data-testid={`doc-title-${doc.id}`}>{doc.title}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {doc.fileName} • {formatFileSize(doc.fileSize)}
+                                </p>
+                              </div>
+                              <Badge variant="secondary" className="text-xs flex-shrink-0">
+                                {DOC_TYPE_LABELS[doc.type] || doc.type}
+                              </Badge>
+                              {doc.fileUrl && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 flex-shrink-0"
+                                  onClick={() => window.open(doc.fileUrl, "_blank")}
+                                  data-testid={`button-view-doc-${doc.id}`}
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive flex-shrink-0"
+                                  onClick={() => deleteDocMutation.mutate(doc.id)}
+                                  disabled={deleteDocMutation.isPending}
+                                  data-testid={`button-delete-doc-${doc.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        const isExpanded = expandedGroups.has(compositeKey);
+                        return (
+                          <div key={compositeKey} className="rounded-lg border bg-card" data-testid={`folder-group-${compositeKey}`}>
+                            <button
+                              type="button"
+                              className="flex items-center gap-3 p-3 w-full text-left hover:bg-muted/50 transition-colors rounded-lg"
+                              onClick={() => toggleGroup(compositeKey)}
+                              data-testid={`button-toggle-folder-${compositeKey}`}
+                            >
+                              {isExpanded ? (
+                                <FolderOpen className="w-5 h-5 text-primary flex-shrink-0" />
+                              ) : (
+                                <Folder className="w-5 h-5 text-primary flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{fg.label}</p>
+                                <p className="text-xs text-muted-foreground">{fg.docs.length} files</p>
+                              </div>
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                              )}
+                            </button>
+                            {isExpanded && (
+                              <div className="border-t pl-4 space-y-1 py-1">
+                                {fg.docs.map((doc) => {
+                                  const DocIcon = getFileIcon(doc.mimeType);
+                                  return (
+                                    <div
+                                      key={doc.id}
+                                      className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors"
+                                      data-testid={`doc-item-${doc.id}`}
+                                    >
+                                      <DocIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate" data-testid={`doc-title-${doc.id}`}>{doc.title}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {doc.fileName} • {formatFileSize(doc.fileSize)}
+                                        </p>
+                                      </div>
+                                      {doc.fileUrl && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 flex-shrink-0"
+                                          onClick={() => window.open(doc.fileUrl, "_blank")}
+                                          data-testid={`button-view-doc-${doc.id}`}
+                                        >
+                                          <FileText className="w-3.5 h-3.5" />
+                                        </Button>
+                                      )}
+                                      {canEdit && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-destructive hover:text-destructive flex-shrink-0"
+                                          onClick={() => deleteDocMutation.mutate(doc.id)}
+                                          disabled={deleteDocMutation.isPending}
+                                          data-testid={`button-delete-doc-${doc.id}`}
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                          <Badge variant="secondary" className="text-xs flex-shrink-0">
-                            {DOC_TYPE_LABELS[doc.type] || doc.type}
-                          </Badge>
-                          {doc.fileUrl && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 flex-shrink-0"
-                              onClick={() => window.open(doc.fileUrl, "_blank")}
-                              data-testid={`button-view-doc-${doc.id}`}
-                            >
-                              <FileText className="w-4 h-4" />
-                            </Button>
-                          )}
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive flex-shrink-0"
-                              onClick={() => deleteDocMutation.mutate(doc.id)}
-                              disabled={deleteDocMutation.isPending}
-                              data-testid={`button-delete-doc-${doc.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
