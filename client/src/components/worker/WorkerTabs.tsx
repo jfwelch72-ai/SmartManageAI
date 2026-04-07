@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import {
   ArrowUp,
   ArrowDown,
@@ -26,6 +30,8 @@ import {
   Loader2,
   Star,
   Users,
+  TrendingUp,
+  MessageSquare,
 } from "lucide-react";
 import { type WorkerData, RatingStars, getCertStatus } from "./types";
 
@@ -359,7 +365,270 @@ export function PerformanceTab({
       )}
 
       <PeerRatingsSection userId={user.id} />
+      <RateThisWorkerSection userId={user.id} firstName={user.firstName} lastName={user.lastName} role={user.role} />
+      <MyPeerScoresSection userId={user.id} />
     </div>
+  );
+}
+
+const RATING_CATEGORIES = [
+  { key: "teamwork", label: "Teamwork", icon: Users, color: "text-blue-500" },
+  { key: "reliability", label: "Reliability", icon: CheckCircle, color: "text-green-500" },
+  { key: "communication", label: "Communication", icon: MessageSquare, color: "text-purple-500" },
+  { key: "helpfulness", label: "Helpfulness", icon: TrendingUp, color: "text-orange-500" },
+] as const;
+
+function InlineStarRating({ value, onChange, readonly = false, size = "md" }: {
+  value: number;
+  onChange?: (v: number) => void;
+  readonly?: boolean;
+  size?: "sm" | "md";
+}) {
+  const [hover, setHover] = useState(0);
+  const sizeClass = size === "sm" ? "w-4 h-4" : "w-6 h-6";
+
+  return (
+    <div className="flex gap-0.5" data-testid="star-rating">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          disabled={readonly}
+          className={`${readonly ? "cursor-default" : "cursor-pointer hover:scale-110"} transition-transform`}
+          onMouseEnter={() => !readonly && setHover(star)}
+          onMouseLeave={() => !readonly && setHover(0)}
+          onClick={() => onChange?.(star)}
+          data-testid={`star-${star}`}
+        >
+          <Star
+            className={`${sizeClass} ${
+              star <= (hover || value)
+                ? "fill-yellow-400 text-yellow-400"
+                : "text-muted-foreground/30"
+            } transition-colors`}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RateThisWorkerSection({ userId, firstName, lastName, role }: { userId: string; firstName: string; lastName: string; role: string }) {
+  const { user: authUser } = useAuth();
+  const canSubmit = useFeaturePermission("canSubmitPeerRatings");
+  const { toast } = useToast();
+  const [ratings, setRatings] = useState({ teamwork: 0, reliability: 0, communication: 0, helpfulness: 0 });
+  const [comment, setComment] = useState("");
+
+  const { data: rateableCoworkers } = useQuery<Array<{ id: string; alreadyRated: boolean }>>({
+    queryKey: ["/api/peer-ratings/rateable-coworkers"],
+    enabled: canSubmit && !!authUser && authUser.id !== userId,
+  });
+
+  const alreadyRated = rateableCoworkers?.find(c => c.id === userId)?.alreadyRated ?? false;
+  const isRateable = rateableCoworkers?.some(c => c.id === userId) ?? false;
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/peer-ratings", {
+        rateeId: userId,
+        ...ratings,
+        comment: comment.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Rating submitted", description: `Your rating for ${firstName} has been recorded.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/peer-ratings/rateable-coworkers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/peer-ratings/user", userId, "scores"] });
+      setRatings({ teamwork: 0, reliability: 0, communication: 0, helpfulness: 0 });
+      setComment("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (!canSubmit || !authUser || authUser.id === userId) return null;
+
+  if (!isRateable) return null;
+
+  const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase();
+  const allRated = Object.values(ratings).every((v) => v > 0);
+
+  if (alreadyRated) {
+    return (
+      <Card data-testid="rate-worker-already-rated">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Star className="h-4 w-4" />
+            Rate This Worker
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="h-4 w-4 text-green-500" />
+            <span data-testid="text-already-rated">You have already rated {firstName} this period.</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card data-testid="rate-worker-form-card">
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <Avatar className="h-10 w-10">
+            <AvatarFallback className="bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
+          </Avatar>
+          <div>
+            <CardTitle className="text-base" data-testid="text-rate-worker-name">Rate {firstName} {lastName}</CardTitle>
+            <CardDescription>{role?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {RATING_CATEGORIES.map(({ key, label, icon: Icon, color }) => (
+          <div key={key} className="flex items-center justify-between" data-testid={`rating-category-${key}`}>
+            <div className="flex items-center gap-2">
+              <Icon className={`w-5 h-5 ${color}`} />
+              <span className="font-medium text-sm">{label}</span>
+            </div>
+            <InlineStarRating
+              value={ratings[key as keyof typeof ratings]}
+              onChange={(v) => setRatings((prev) => ({ ...prev, [key]: v }))}
+            />
+          </div>
+        ))}
+
+        <Separator />
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Comment (optional)</label>
+          <Textarea
+            placeholder="Share any additional feedback..."
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={3}
+            data-testid="input-rating-comment"
+          />
+        </div>
+
+        <Button
+          className="w-full"
+          disabled={!allRated || submitMutation.isPending}
+          onClick={() => submitMutation.mutate()}
+          data-testid="button-submit-rating"
+        >
+          {submitMutation.isPending ? "Submitting..." : "Submit Rating"}
+        </Button>
+        {!allRated && (
+          <p className="text-xs text-muted-foreground text-center">Please rate all four categories to submit.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MyPeerScoresSection({ userId }: { userId: string }) {
+  const { user: authUser } = useAuth();
+  const canView = useFeaturePermission("canViewPeerRatings");
+
+  const isOwnProfile = authUser?.id === userId;
+
+  const { data: scores, isLoading } = useQuery<{
+    avgTeamwork: number | null;
+    avgReliability: number | null;
+    avgCommunication: number | null;
+    avgHelpfulness: number | null;
+    totalRatings: number;
+  }>({
+    queryKey: ["/api/peer-ratings/my-scores"],
+    enabled: canView && isOwnProfile,
+  });
+
+  if (!canView || !isOwnProfile) return null;
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Star className="h-4 w-4" />
+            My Peer Scores
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {RATING_CATEGORIES.map(({ key }) => (
+              <div key={key} className="h-16 bg-muted rounded animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!scores || scores.totalRatings === 0) {
+    return (
+      <Card data-testid="my-peer-scores-empty">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Star className="h-4 w-4" />
+            My Peer Scores
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-4">
+            <Star className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
+            <p className="text-sm text-muted-foreground" data-testid="text-no-my-scores">No ratings received yet</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Your coworkers haven't rated you this period.</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const scoreMap: Record<string, number | null> = {
+    teamwork: scores.avgTeamwork,
+    reliability: scores.avgReliability,
+    communication: scores.avgCommunication,
+    helpfulness: scores.avgHelpfulness,
+  };
+
+  return (
+    <Card data-testid="my-peer-scores-section">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Star className="h-4 w-4" />
+          My Peer Scores
+          <Badge variant="secondary" className="ml-auto" data-testid="badge-my-total-ratings">
+            {scores.totalRatings} rating{scores.totalRatings !== 1 ? "s" : ""}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {RATING_CATEGORIES.map(({ key, label, icon: Icon, color }) => {
+            const avg = scoreMap[key];
+            return (
+              <div key={key} className="p-3 bg-muted/50 rounded-lg" data-testid={`my-score-card-${key}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon className={`w-4 h-4 ${color}`} />
+                  <span className="font-medium text-sm">{label}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-bold" data-testid={`text-my-score-${key}`}>
+                    {avg != null ? avg.toFixed(1) : "—"}
+                  </span>
+                  <InlineStarRating value={Math.round(avg || 0)} readonly size="sm" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

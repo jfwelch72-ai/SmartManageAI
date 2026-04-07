@@ -6,13 +6,15 @@ import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { AIDashboardPanel } from "@/components/AIDashboardPanel";
 import { AIFeatureTrigger } from "@/components/AIFeatureDialog";
-import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
-import { Plus, Sun, Moon, Sunset, ChevronDown, Sparkles, Brain, DollarSign, Mic } from "lucide-react";
+import { useDashboardCustomization, useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import { Plus, Sun, Moon, Sunset, ChevronDown, Sparkles, Brain, DollarSign, Mic, Star, Users, CheckCircle, TrendingUp, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +24,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AIFeatureDialog } from "@/components/AIFeatureDialog";
 import { useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { hasManagementAccess, isSuperAdmin, isHustler } from "@/lib/rbac";
 import { format } from "date-fns";
 import { Redirect } from "wouter";
@@ -110,6 +115,286 @@ function DashboardSkeleton() {
           </CardContent>
         </Card>
       ))}
+    </div>
+  );
+}
+
+const PEER_CATEGORIES = [
+  { key: "teamwork", label: "Teamwork", icon: Users, color: "text-blue-500" },
+  { key: "reliability", label: "Reliability", icon: CheckCircle, color: "text-green-500" },
+  { key: "communication", label: "Communication", icon: MessageSquare, color: "text-purple-500" },
+  { key: "helpfulness", label: "Helpfulness", icon: TrendingUp, color: "text-orange-500" },
+] as const;
+
+interface RateableCoworker {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  alreadyRated: boolean;
+}
+
+interface MyScores {
+  avgTeamwork: number | null;
+  avgReliability: number | null;
+  avgCommunication: number | null;
+  avgHelpfulness: number | null;
+  totalRatings: number;
+}
+
+function DashboardStarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div className="flex gap-0.5" data-testid="star-rating">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          className="cursor-pointer hover:scale-110 transition-transform"
+          onMouseEnter={() => setHover(star)}
+          onMouseLeave={() => setHover(0)}
+          onClick={() => onChange(star)}
+          data-testid={`star-${star}`}
+        >
+          <Star
+            className={`w-5 h-5 ${
+              star <= (hover || value)
+                ? "fill-yellow-400 text-yellow-400"
+                : "text-muted-foreground/30"
+            } transition-colors`}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PeerRatingDashboardCard() {
+  const canSubmit = useFeaturePermission("canSubmitPeerRatings");
+  const canView = useFeaturePermission("canViewPeerRatings");
+  const { toast } = useToast();
+  const [selectedCoworker, setSelectedCoworker] = useState<RateableCoworker | null>(null);
+  const [ratings, setRatings] = useState({ teamwork: 0, reliability: 0, communication: 0, helpfulness: 0 });
+  const [comment, setComment] = useState("");
+
+  const { data: coworkers, isLoading: coworkersLoading } = useQuery<RateableCoworker[]>({
+    queryKey: ["/api/peer-ratings/rateable-coworkers"],
+    enabled: canSubmit,
+  });
+
+  const { data: myScores, isLoading: scoresLoading } = useQuery<MyScores>({
+    queryKey: ["/api/peer-ratings/my-scores"],
+    enabled: canView,
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/peer-ratings", {
+        rateeId: selectedCoworker!.id,
+        ...ratings,
+        comment: comment.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Rating submitted", description: `Your rating for ${selectedCoworker!.firstName} has been recorded.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/peer-ratings/rateable-coworkers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/peer-ratings/my-scores"] });
+      setSelectedCoworker(null);
+      setRatings({ teamwork: 0, reliability: 0, communication: 0, helpfulness: 0 });
+      setComment("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (!canSubmit && !canView) return null;
+
+  const unrated = coworkers?.filter(c => !c.alreadyRated) || [];
+  const rated = coworkers?.filter(c => c.alreadyRated) || [];
+  const allRated = Object.values(ratings).every(v => v > 0);
+
+  if (selectedCoworker) {
+    const initials = `${selectedCoworker.firstName?.[0] || ""}${selectedCoworker.lastName?.[0] || ""}`.toUpperCase();
+    return (
+      <Card data-testid="dashboard-rating-form">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
+            </Avatar>
+            <div>
+              <CardTitle className="text-base" data-testid="text-ratee-name">Rate {selectedCoworker.firstName} {selectedCoworker.lastName}</CardTitle>
+              <CardDescription>{selectedCoworker.role}</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {PEER_CATEGORIES.map(({ key, label, icon: Icon, color }) => (
+            <div key={key} className="flex items-center justify-between" data-testid={`rating-category-${key}`}>
+              <div className="flex items-center gap-2">
+                <Icon className={`w-5 h-5 ${color}`} />
+                <span className="font-medium text-sm">{label}</span>
+              </div>
+              <DashboardStarRating
+                value={ratings[key as keyof typeof ratings]}
+                onChange={(v) => setRatings(prev => ({ ...prev, [key]: v }))}
+              />
+            </div>
+          ))}
+          <Separator />
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Comment (optional)</label>
+            <Textarea
+              placeholder="Share any additional feedback..."
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={2}
+              data-testid="input-rating-comment"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => { setSelectedCoworker(null); setRatings({ teamwork: 0, reliability: 0, communication: 0, helpfulness: 0 }); setComment(""); }}
+              data-testid="button-cancel-rating"
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={!allRated || submitMutation.isPending}
+              onClick={() => submitMutation.mutate()}
+              data-testid="button-submit-rating"
+            >
+              {submitMutation.isPending ? "Submitting..." : "Submit Rating"}
+            </Button>
+          </div>
+          {!allRated && (
+            <p className="text-xs text-muted-foreground text-center">Please rate all four categories to submit.</p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="dashboard-peer-ratings">
+      {canSubmit && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Star className="h-4 w-4" />
+              Rate Coworkers
+              {unrated.length > 0 && (
+                <Badge variant="secondary" className="ml-auto" data-testid="badge-unrated-count">
+                  {unrated.length} to rate
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {coworkersLoading ? (
+              <div className="space-y-2">
+                {[1, 2].map(i => <div key={i} className="h-10 bg-muted rounded animate-pulse" />)}
+              </div>
+            ) : unrated.length === 0 && rated.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-coworkers">No coworkers to rate right now.</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {unrated.map(cw => {
+                  const initials = `${cw.firstName?.[0] || ""}${cw.lastName?.[0] || ""}`.toUpperCase();
+                  return (
+                    <div key={cw.id} className="flex items-center justify-between py-1.5" data-testid={`coworker-row-${cw.id}`}>
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-7 w-7">
+                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-medium">{cw.firstName} {cw.lastName}</p>
+                          <p className="text-xs text-muted-foreground">{cw.role}</p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => setSelectedCoworker(cw)} data-testid={`button-rate-${cw.id}`}>
+                        Rate
+                      </Button>
+                    </div>
+                  );
+                })}
+                {rated.length > 0 && (
+                  <div className="pt-2 border-t">
+                    <p className="text-xs text-muted-foreground mb-1">{rated.length} already rated</p>
+                    {rated.map(cw => {
+                      const initials = `${cw.firstName?.[0] || ""}${cw.lastName?.[0] || ""}`.toUpperCase();
+                      return (
+                        <div key={cw.id} className="flex items-center justify-between py-1 opacity-60" data-testid={`coworker-rated-${cw.id}`}>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-7 w-7">
+                              <AvatarFallback className="bg-muted text-muted-foreground text-xs">{initials}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">{cw.firstName} {cw.lastName}</span>
+                          </div>
+                          <Badge variant="secondary" className="gap-1 text-xs">
+                            <CheckCircle className="w-3 h-3" /> Rated
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {canView && (
+        <Card data-testid="dashboard-my-scores">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Star className="h-4 w-4" />
+              My Peer Scores
+              {myScores && myScores.totalRatings > 0 && (
+                <Badge variant="secondary" className="ml-auto" data-testid="badge-my-ratings-count">
+                  {myScores.totalRatings} rating{myScores.totalRatings !== 1 ? "s" : ""}
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {scoresLoading ? (
+              <div className="grid gap-3 grid-cols-2">
+                {PEER_CATEGORIES.map(({ key }) => <div key={key} className="h-14 bg-muted rounded animate-pulse" />)}
+              </div>
+            ) : !myScores || myScores.totalRatings === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-scores">No ratings received yet this period.</p>
+            ) : (
+              <div className="grid gap-3 grid-cols-2">
+                {PEER_CATEGORIES.map(({ key, label, icon: Icon, color }) => {
+                  const scoreMap: Record<string, number | null> = {
+                    teamwork: myScores.avgTeamwork,
+                    reliability: myScores.avgReliability,
+                    communication: myScores.avgCommunication,
+                    helpfulness: myScores.avgHelpfulness,
+                  };
+                  const avg = scoreMap[key];
+                  return (
+                    <div key={key} className="p-2.5 bg-muted/50 rounded-lg" data-testid={`dashboard-score-${key}`}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Icon className={`w-3.5 h-3.5 ${color}`} />
+                        <span className="text-xs font-medium">{label}</span>
+                      </div>
+                      <span className="text-lg font-bold">{avg != null ? avg.toFixed(1) : "—"}</span>
+                      <span className="text-xs text-muted-foreground ml-1">/5</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -256,6 +541,10 @@ export default function DashboardPage() {
         ) : (
           <DashboardGrid onAddWidgetToSection={handleAddWidgetToSection} />
         )}
+
+        <div className="mt-6">
+          <PeerRatingDashboardCard />
+        </div>
 
         <WidgetLibrary open={widgetLibraryOpen} onOpenChange={handleWidgetLibraryOpenChange} defaultSectionId={widgetLibraryTargetSection} />
       </main>

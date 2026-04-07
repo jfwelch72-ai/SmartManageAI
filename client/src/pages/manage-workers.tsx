@@ -3,6 +3,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -570,8 +571,14 @@ function WorkerCardSkeleton() {
   );
 }
 
+interface RateableCoworker {
+  id: string;
+  alreadyRated: boolean;
+}
+
 function WorkersTab() {
   const { user } = useAuth();
+  const canSubmitRatings = useFeaturePermission("canSubmitPeerRatings");
   const [searchTerm, setSearchTerm] = useState("");
   const [tradeFilter, setTradeFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
@@ -591,6 +598,16 @@ function WorkersTab() {
   const { data: kpiData, isLoading: kpiLoading } = useQuery<KpiDashboardData>({
     queryKey: ["/api/auth/manage-workers/kpi-dashboard"],
   });
+
+  const { data: rateableCoworkers } = useQuery<RateableCoworker[]>({
+    queryKey: ["/api/peer-ratings/rateable-coworkers"],
+    enabled: canSubmitRatings,
+  });
+
+  const unratedSet = useMemo(() => {
+    if (!rateableCoworkers) return new Set<string>();
+    return new Set(rateableCoworkers.filter(c => !c.alreadyRated).map(c => c.id));
+  }, [rateableCoworkers]);
 
   const filteredWorkers = searchTerm
     ? workers.filter((w) => {
@@ -739,6 +756,12 @@ function WorkersTab() {
                   {worker.employmentType && (
                     <Badge variant="secondary" data-testid={`badge-employment-${worker.id}`}>
                       {worker.employmentType}
+                    </Badge>
+                  )}
+                  {unratedSet.has(worker.id) && (
+                    <Badge variant="outline" className="gap-1 text-orange-600 border-orange-300 bg-orange-50 dark:bg-orange-950/30 dark:border-orange-700 dark:text-orange-400" data-testid={`badge-unrated-${worker.id}`}>
+                      <Star className="w-3 h-3" />
+                      Not Rated
                     </Badge>
                   )}
                 </div>

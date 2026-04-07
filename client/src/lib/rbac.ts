@@ -320,7 +320,6 @@ export const RoutePermissions = {
   HISTORICAL_COSTS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessHistoricalCosts : canAccessBids(role) || hasFinancialAccess(role),
   SAFETY_TRAINING: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms),
   LEAVE_MANAGEMENT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role),
-  RATE_COWORKERS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canSubmitPeerRatings : role !== "VENDOR",
   MARKETPLACE: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role),
   EXECUTIVE_DIGEST: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER",
 };
@@ -487,7 +486,6 @@ export const NavItems: Record<string, NavItem> = {
   '/hiring': { href: '/hiring', label: 'Hiring', testId: 'nav-hiring', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageHiring : role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" },
   '/payroll-management': { href: '/payroll-management', label: 'Payroll Management', testId: 'nav-payroll-management', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManagePayroll : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER" },
   '/leave-management': { href: '/leave-management', label: 'Leave Management', testId: 'nav-leave-management', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role) },
-  '/rate-coworkers': { href: '/rate-coworkers', label: 'Rate Coworkers', testId: 'nav-rate-coworkers', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canSubmitPeerRatings : role !== "VENDOR" },
   '/safety-training': { href: '/safety-training', label: 'Safety Training', testId: 'nav-safety-training', visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms) },
   '/time-clock': { href: '/time-clock', label: 'My Time Clock', testId: 'nav-my-time-clock', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTimeClock : hasContractorAccess(role) },
   '/time-clock-manager': { href: '/time-clock-manager', label: 'Manage Time Clock', testId: 'nav-manage-time-clock', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
@@ -544,7 +542,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/executive-digest'] },
   { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
-  { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/rate-coworkers', '/safety-training'] },
+  { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals'] },
@@ -563,7 +561,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/bids', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
-  { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/rate-coworkers', '/safety-training'] },
+  { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/production-rates', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/reports'] },
@@ -573,7 +571,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
 
 const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/dashboard'] },
-  { key: 'crew', label: 'Crew', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management', '/rate-coworkers', '/safety-training'] },
+  { key: 'crew', label: 'Crew', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management', '/safety-training'] },
   { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module'] },
   { key: 'review', label: 'Review', itemHrefs: ['/approvals', '/reports'] },
   { key: 'reference', label: 'Reference', itemHrefs: ['/bids', '/production-rates', '/scope-settings', '/communications'] },
@@ -593,7 +591,7 @@ const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
 const FIELD_WORKER_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/tasks', '/calendar'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/dashboard'] },
-  { key: 'info', label: 'Info', itemHrefs: ['/leave-management', '/rate-coworkers', '/communications'] },
+  { key: 'info', label: 'Info', itemHrefs: ['/leave-management', '/communications'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
 
