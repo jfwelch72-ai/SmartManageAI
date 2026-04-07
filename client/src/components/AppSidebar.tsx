@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
 import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, isSuperAdmin, isVendor, isHustler, isFieldWorker, type FeaturePerms, getSidebarSectionOrder, type SidebarSection } from "@/lib/rbac";
-import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
+import { useDashboardCustomizationSafe } from "@/hooks/use-dashboard-customization";
 import { useTour } from "@/components/TourProvider";
 import {
   Sidebar,
@@ -159,7 +159,7 @@ export function AppSidebar() {
   });
   
   const { entitlements } = useEntitlements();
-  const { permissions: featurePerms, isLoadingPermissions } = useDashboardCustomization();
+  const { permissions: featurePerms, isLoadingPermissions } = useDashboardCustomizationSafe();
 
   const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
     (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);

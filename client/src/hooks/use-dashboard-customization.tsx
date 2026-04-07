@@ -655,6 +655,24 @@ export function useDashboardCustomization() {
   return context;
 }
 
+const EMPTY_PERMISSIONS: UserPermissions = {
+  canViewFinancials: false, canEditFinancials: false, canManagePayroll: false,
+  canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false,
+  canManageWebsite: false, canManageEquipment: false, canManageProcurement: false,
+  canManageContracts: false, canManageHiring: false, canManageSafety: false,
+  canViewSafety: false, canViewAiSummaries: false, canManageScheduling: false,
+  canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false, canManageLeave: false,
+  canAccessTimeMaterial: false,
+} as UserPermissions;
+
+export function useDashboardCustomizationSafe() {
+  const context = useContext(DashboardCustomizationContext);
+  if (!context) {
+    return { permissions: EMPTY_PERMISSIONS, isLoadingPermissions: true };
+  }
+  return { permissions: context.permissions, isLoadingPermissions: context.isLoadingPermissions };
+}
+
 export type FeaturePermissionKey = keyof UserPermissions;
 
 export function useFeaturePermission(permissionKey: FeaturePermissionKey): boolean {
