@@ -501,11 +501,24 @@ router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ES
 
     if (!verifyOrgAccess(req, res, existingBid.gcOrganizationId)) return;
 
+    const ALLOWED_UPDATE_FIELDS = new Set([
+      "name", "clientName", "clientContactName", "clientContactEmail", "clientContactPhone",
+      "bidAmount", "dueDate", "locationAddress", "city", "state", "description",
+      "estimatorId", "ownerRepOrganizationId", "status",
+      "crmOpportunityId", "aiWinProbability", "force",
+    ]);
+    const filteredBody: Record<string, any> = {};
+    for (const [key, value] of Object.entries(req.body)) {
+      if (ALLOWED_UPDATE_FIELDS.has(key)) {
+        filteredBody[key] = value;
+      }
+    }
+
     const sanitizedBody = {
-      ...req.body,
-      name: req.body.name ? sanitizeShortText(req.body.name) : undefined,
-      clientName: req.body.clientName ? sanitizeShortText(req.body.clientName) : undefined,
-      description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      ...filteredBody,
+      name: filteredBody.name ? sanitizeShortText(filteredBody.name) : undefined,
+      clientName: filteredBody.clientName ? sanitizeShortText(filteredBody.clientName) : undefined,
+      description: filteredBody.description ? sanitizeText(filteredBody.description) : undefined,
     };
 
     const validationResult = updateBidSchema.safeParse(sanitizedBody);
@@ -527,7 +540,7 @@ router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ES
     if (newStatus && newStatus !== existingBid.status) {
       const allowed = BID_STATUS_TRANSITIONS[existingBid.status] || [];
       if (!allowed.includes(newStatus)) {
-        const forceFlag = req.body.force === true;
+        const forceFlag = filteredBody.force === true;
         const isAdmin = req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
         const forceAllowed = BID_ADMIN_FORCE_TRANSITIONS[existingBid.status] || [];
         if (!(forceFlag && isAdmin && forceAllowed.includes(newStatus))) {
@@ -540,8 +553,12 @@ router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ES
       }
     }
 
-    const updateData: any = { ...validationResult.data, updatedAt: new Date() };
-    delete updateData.force;
+    const updateData: any = { updatedAt: new Date() };
+    for (const [key, value] of Object.entries(validationResult.data)) {
+      if (key !== "force" && value !== undefined) {
+        updateData[key] = value;
+      }
+    }
     
     const [updatedBid] = await db
       .update(bids)
@@ -792,7 +809,7 @@ router.post("/api/bids/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER
   }
 });
 
-router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     
@@ -876,8 +893,19 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         }
       }
     }
+
+    const { projectMaterialBudgets, budgetLineItems, projectLaborRates, jobClassifications,
+      bidSubcontractorQuotes: subQuotesTable, bidMaterialQuotes: matQuotesTable,
+      procurementItems, handoffPackets: handoffTable,
+      bidEquipmentSelections: equipSelectionsTable, projectEquipmentPlans: equipPlansTable,
+      planDocuments, takeoffSheets, takeoffMeasurements, quantityCategories,
+      takeoffMeasurementGroups, takeoffVersions,
+      contracts: contractsTable, contractVersions: contractVersionsTable,
+      notifications: notificationsTable } = await import("@shared/schema");
+
+    const newProject = await db.transaction(async (tx) => {
     
-    const [newProject] = await db.insert(projects).values({
+    const [createdProject] = await tx.insert(projects).values({
       name: bid.name,
       code: bid.code,
       clientName: bid.clientName,
@@ -900,28 +928,26 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
     }).returning();
 
     for (const estimate of bidEstimates) {
-      await db
+      await tx
         .update(estimates)
-        .set({ projectId: newProject.id })
+        .set({ projectId: createdProject.id })
         .where(eq(estimates.id, estimate.id));
 
-      const lineItems = await db
+      const lineItems = await tx
         .select()
         .from(estimateLineItems)
         .where(eq(estimateLineItems.estimateId, estimate.id));
 
       console.log(`[Bid Conversion] Syncing ${lineItems.length} line items to scope of work`);
 
-      const { projectMaterialBudgets } = await import("@shared/schema");
-      
       for (const lineItem of lineItems) {
-        const existingScopeItem = await db.query.scopeItems.findFirst({
+        const existingScopeItem = await tx.query.scopeItems.findFirst({
           where: eq(scopeItems.estimateLineItemId, lineItem.id),
         });
 
         if (!existingScopeItem) {
-          const [newScopeItem] = await db.insert(scopeItems).values({
-            projectId: newProject.id,
+          const [newScopeItem] = await tx.insert(scopeItems).values({
+            projectId: createdProject.id,
             estimateLineItemId: lineItem.id,
             organizationSowItemId: lineItem.organizationSowItemId || null,
             subcontractorQuoteId: lineItem.subcontractorQuoteId || null,
@@ -942,8 +968,8 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
           
           if (materialCost > 0 && quantity > 0) {
             const unitCost = materialCost / quantity;
-            await db.insert(projectMaterialBudgets).values({
-              projectId: newProject.id,
+            await tx.insert(projectMaterialBudgets).values({
+              projectId: createdProject.id,
               scopeItemId: newScopeItem.id,
               estimateLineItemId: lineItem.id,
               description: lineItem.description,
@@ -956,18 +982,18 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         }
       }
       
-      console.log(`[Bid Conversion] Created material budgets for project ${newProject.code}`);
+      console.log(`[Bid Conversion] Created material budgets for project ${createdProject.code}`);
     }
 
     // Seed SOV from estimate line items
     if (sovSeedLineItems.length > 0) {
       const sovContractValue = contractAmount && parseFloat(contractAmount) > 0 ? contractAmount : "0";
       const totalScheduled = sovSeedLineItems.reduce((sum, li) => sum + Number(li.totalCost || 0), 0);
-      const [newSov] = await db.insert(scheduleOfValues).values({
+      const [newSov] = await tx.insert(scheduleOfValues).values({
         organizationId: bid.gcOrganizationId,
-        projectId: newProject.id,
-        sovNumber: `SOV-${newProject.code}-001`,
-        title: `${newProject.name} — Initial Contract`,
+        projectId: createdProject.id,
+        sovNumber: `SOV-${createdProject.code}-001`,
+        title: `${createdProject.name} — Initial Contract`,
         contractValue: sovContractValue,
         totalScheduledValue: totalScheduled.toFixed(2),
         createdById: req.user?.id || null,
@@ -976,7 +1002,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       for (let i = 0; i < sovSeedLineItems.length; i++) {
         const li = sovSeedLineItems[i];
         const scheduledValue = Number(li.totalCost || 0);
-        await db.insert(sovLineItems).values({
+        await tx.insert(sovLineItems).values({
           sovId: newSov.id,
           lineNumber: i + 1,
           itemCode: li.workTypeCode || null,
@@ -987,15 +1013,13 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
           balanceToFinish: scheduledValue.toFixed(2),
         });
       }
-      console.log(`[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${newProject.code}`);
+      console.log(`[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${createdProject.code}`);
     }
 
     // Seed budget line items from individual estimate line items, preserving each
     // line item's specific cost code (workTypeCode, CSI division, category) rather
     // than collapsing into generic Division 01 buckets.
     if (sovSeedLineItems.length > 0) {
-      const { budgetLineItems } = await import("@shared/schema");
-
       const seededAt = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       const budgetSeedRows: { projectId: string; costCode: string; description: string; division: string; laborBudget: string; materialBudget: string; subcontractorBudget: string; equipmentBudget: string; otherBudget: string; totalBudget: string }[] = [];
 
@@ -1035,7 +1059,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         usedCostCodes.add(costCode);
 
         budgetSeedRows.push({
-          projectId: newProject.id,
+          projectId: createdProject.id,
           costCode,
           description: `${li.description || `Line Item ${i + 1}`} — Seeded from estimate on ${seededAt}`,
           division,
@@ -1049,15 +1073,13 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       }
 
       if (budgetSeedRows.length > 0) {
-        await db.insert(budgetLineItems).values(budgetSeedRows);
-        console.log(`[Bid Conversion] Seeded ${budgetSeedRows.length} granular budget line(s) for project ${newProject.code}`);
+        await tx.insert(budgetLineItems).values(budgetSeedRows);
+        console.log(`[Bid Conversion] Seeded ${budgetSeedRows.length} granular budget line(s) for project ${createdProject.code}`);
       }
     }
 
     // Seed project labor rates from job classifications used in estimate line items
     if (sovSeedLineItems.length > 0) {
-      const { projectLaborRates, jobClassifications } = await import("@shared/schema");
-
       const classificationIds = new Set<string>();
       for (const li of sovSeedLineItems) {
         if (li.jobClassificationId) {
@@ -1066,16 +1088,16 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       }
 
       if (classificationIds.size > 0) {
-        const classifications = await db
+        const classifications = await tx
           .select()
           .from(jobClassifications)
           .where(inArray(jobClassifications.id, Array.from(classificationIds)));
 
         if (classifications.length > 0) {
-          const [existingRate] = await db
+          const [existingRate] = await tx
             .select()
             .from(projectLaborRates)
-            .where(eq(projectLaborRates.projectId, newProject.id))
+            .where(eq(projectLaborRates.projectId, createdProject.id))
             .limit(1);
 
           if (!existingRate) {
@@ -1088,8 +1110,8 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
               return `${c.name}: $${reg}/hr reg, $${ot}/hr OT`;
             }).join("; ");
 
-            await db.insert(projectLaborRates).values({
-              projectId: newProject.id,
+            await tx.insert(projectLaborRates).values({
+              projectId: createdProject.id,
               defaultRegularRate: regularRate,
               defaultOvertimeRate: overtimeRate,
               burdenMultiplier: "1.0000",
@@ -1101,17 +1123,15 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       }
     }
 
-    const { bidSubcontractorQuotes: subQuotesTable } = await import("@shared/schema");
-    
-    const allSubQuotes = await db
+    const allSubQuotes = await tx
       .select()
       .from(subQuotesTable)
       .where(eq(subQuotesTable.bidId, bid.id));
     
     if (allSubQuotes.length > 0) {
-      await db
+      await tx
         .update(subQuotesTable)
-        .set({ projectId: newProject.id })
+        .set({ projectId: createdProject.id })
         .where(eq(subQuotesTable.bidId, bid.id));
     }
     
@@ -1131,7 +1151,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
           contactConditions.push(eq(subcontractors.phone, quote.contactPhone));
         }
         
-        subcontractor = await db.query.subcontractors.findFirst({
+        subcontractor = await tx.query.subcontractors.findFirst({
           where: and(
             eq(subcontractors.companyName, quote.subcontractorName),
             or(...contactConditions)
@@ -1140,13 +1160,13 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       }
       
       if (!subcontractor) {
-        subcontractor = await db.query.subcontractors.findFirst({
+        subcontractor = await tx.query.subcontractors.findFirst({
           where: eq(subcontractors.companyName, quote.subcontractorName),
         });
       }
 
       if (!subcontractor) {
-        [subcontractor] = await db.insert(subcontractors).values({
+        [subcontractor] = await tx.insert(subcontractors).values({
           companyName: quote.subcontractorName,
           contactName: quote.contactName || null,
           email: quote.contactEmail || null,
@@ -1156,7 +1176,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         }).returning();
       }
 
-      const contractNumber = `SC-${newProject.code}-${String(subQuotes.indexOf(quote) + 1).padStart(3, '0')}`;
+      const contractNumber = `SC-${createdProject.code}-${String(subQuotes.indexOf(quote) + 1).padStart(3, '0')}`;
       const paymentTerms = quote.leadTime ? `Lead Time: ${quote.leadTime}`.substring(0, 500) : null;
       
       const notesParts: string[] = [];
@@ -1169,9 +1189,9 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       
       const notes = notesParts.length > 0 ? notesParts.join('\n').substring(0, 1000) : null;
       
-      await db.insert(subcontractorContracts).values({
+      await tx.insert(subcontractorContracts).values({
         subcontractorId: subcontractor.id,
-        projectId: newProject.id,
+        projectId: createdProject.id,
         contractNumber,
         scopeOfWork: quote.scopeOfWork,
         contractAmount: quote.quoteAmount,
@@ -1182,18 +1202,15 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       });
     }
 
-    const { bidMaterialQuotes: matQuotesTable } = await import("@shared/schema");
-    const { procurementItems } = await import("@shared/schema");
-    
-    const allMatQuotes = await db
+    const allMatQuotes = await tx
       .select()
       .from(matQuotesTable)
       .where(eq(matQuotesTable.bidId, bid.id));
     
     if (allMatQuotes.length > 0) {
-      await db
+      await tx
         .update(matQuotesTable)
-        .set({ projectId: newProject.id })
+        .set({ projectId: createdProject.id })
         .where(eq(matQuotesTable.bidId, bid.id));
     }
     
@@ -1215,8 +1232,8 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         fullDescription += `\n\n[Quote Details]\n${additionalInfo.join('\n')}`;
       }
       
-      await db.insert(procurementItems).values({
-        projectId: newProject.id,
+      await tx.insert(procurementItems).values({
+        projectId: createdProject.id,
         description: fullDescription,
         vendor: quote.supplierName || null,
         quantity: "1",
@@ -1227,18 +1244,17 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       });
     }
 
-    const { handoffPackets: handoffTable } = await import("@shared/schema");
-    const [existingPacket] = await db
+    const [existingPacket] = await tx
       .select()
       .from(handoffTable)
       .where(eq(handoffTable.bidId, bid.id))
       .limit(1);
     
     if (existingPacket) {
-      await db
+      await tx
         .update(handoffTable)
         .set({ 
-          projectId: newProject.id,
+          projectId: createdProject.id,
           awardDate: new Date().toISOString().split('T')[0],
           updatedAt: new Date()
         })
@@ -1247,17 +1263,15 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       console.log(`[Bid Conversion] Transferred handoff packet to project`);
     }
 
-    const { bidEquipmentSelections: equipSelectionsTable, projectEquipmentPlans: equipPlansTable } = await import("@shared/schema");
-    
-    const bidEquipSelections = await db
+    const bidEquipSelections = await tx
       .select()
       .from(equipSelectionsTable)
       .where(eq(equipSelectionsTable.bidId, bid.id));
     
     if (bidEquipSelections.length > 0) {
       for (const selection of bidEquipSelections) {
-        await db.insert(equipPlansTable).values({
-          projectId: newProject.id,
+        await tx.insert(equipPlansTable).values({
+          projectId: createdProject.id,
           bidEquipmentSelectionId: selection.id,
           source: selection.source,
           status: "PLANNED",
@@ -1280,16 +1294,15 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       console.log(`[Bid Conversion] Transferred ${bidEquipSelections.length} equipment selections to project equipment plans`);
     }
 
-    const { planDocuments } = await import("@shared/schema");
-    const bidDocs = await db
+    const bidDocs = await tx
       .select()
       .from(bidDocuments)
       .where(eq(bidDocuments.bidId, bid.id));
 
     if (bidDocs.length > 0) {
       for (const doc of bidDocs) {
-        await db.insert(planDocuments).values({
-          projectId: newProject.id,
+        await tx.insert(planDocuments).values({
+          projectId: createdProject.id,
           type: doc.type,
           title: doc.title,
           fileName: doc.fileName,
@@ -1304,16 +1317,14 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
     }
 
     // Duplicate takeoff sheets, measurements, categories, and groups into new project
-    const { takeoffSheets, takeoffMeasurements, quantityCategories, takeoffMeasurementGroups, takeoffVersions } = await import("@shared/schema");
-
-    const bidSheets = await db.select().from(takeoffSheets).where(eq(takeoffSheets.bidId, bid.id));
-    const bidCategories = await db.select().from(quantityCategories).where(eq(quantityCategories.bidId, bid.id));
-    const bidGroups = await db.select().from(takeoffMeasurementGroups).where(eq(takeoffMeasurementGroups.bidId, bid.id));
+    const bidSheets = await tx.select().from(takeoffSheets).where(eq(takeoffSheets.bidId, bid.id));
+    const bidCategories = await tx.select().from(quantityCategories).where(eq(quantityCategories.bidId, bid.id));
+    const bidGroups = await tx.select().from(takeoffMeasurementGroups).where(eq(takeoffMeasurementGroups.bidId, bid.id));
 
     const categoryIdMap = new Map<string, string>();
     for (const cat of bidCategories) {
-      const [newCat] = await db.insert(quantityCategories).values({
-        projectId: newProject.id,
+      const [newCat] = await tx.insert(quantityCategories).values({
+        projectId: createdProject.id,
         name: cat.name,
         color: cat.color,
         lineStyle: cat.lineStyle,
@@ -1327,8 +1338,8 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 
     const sheetIdMap = new Map<string, string>();
     for (const sheet of bidSheets) {
-      const [newSheet] = await db.insert(takeoffSheets).values({
-        projectId: newProject.id,
+      const [newSheet] = await tx.insert(takeoffSheets).values({
+        projectId: createdProject.id,
         imageUrl: sheet.imageUrl,
         sheetIndex: sheet.sheetIndex,
         sheetName: sheet.sheetName,
@@ -1345,9 +1356,9 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
     const groupIdMap = new Map<string, string>();
     for (const group of bidGroups) {
       const newSheetId = group.sheetId ? sheetIdMap.get(group.sheetId) || null : null;
-      const [newGroup] = await db.insert(takeoffMeasurementGroups).values({
+      const [newGroup] = await tx.insert(takeoffMeasurementGroups).values({
         name: group.name,
-        projectId: newProject.id,
+        projectId: createdProject.id,
         sheetId: newSheetId,
         sortOrder: group.sortOrder,
         color: group.color,
@@ -1357,29 +1368,29 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 
     let measurementsCopied = 0;
     for (const [oldSheetId, newSheetId] of sheetIdMap) {
-      const sheetVersions = await db.select().from(takeoffVersions)
+      const sheetVersions = await tx.select().from(takeoffVersions)
         .where(eq(takeoffVersions.sheetId, oldSheetId))
         .orderBy(takeoffVersions.versionNumber);
       const latestVersion = sheetVersions.length > 0 ? sheetVersions[sheetVersions.length - 1] : null;
 
       if (latestVersion) {
-        const orphaned = await db.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
+        const orphaned = await tx.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
           .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), sql`takeoff_measurements.takeoff_version_id IS NULL`));
         for (const m of orphaned) {
-          await db.update(takeoffMeasurements)
+          await tx.update(takeoffMeasurements)
             .set({ takeoffVersionId: latestVersion.id })
             .where(eq(takeoffMeasurements.id, m.id));
         }
       }
 
       const bidMeasurements = latestVersion
-        ? await db.select().from(takeoffMeasurements)
+        ? await tx.select().from(takeoffMeasurements)
             .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), eq(takeoffMeasurements.takeoffVersionId, latestVersion.id)))
-        : await db.select().from(takeoffMeasurements)
+        : await tx.select().from(takeoffMeasurements)
             .where(eq(takeoffMeasurements.sheetId, oldSheetId));
 
-      const [projectVersion] = await db.insert(takeoffVersions).values({
-        projectId: newProject.id,
+      const [projectVersion] = await tx.insert(takeoffVersions).values({
+        projectId: createdProject.id,
         sheetId: newSheetId,
         versionNumber: 1,
         status: "DRAFT",
@@ -1421,29 +1432,29 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
           locationTag: m.locationTag,
           installationStatus: m.installationStatus,
         }));
-        await db.insert(takeoffMeasurements).values(clonedMeasurements);
+        await tx.insert(takeoffMeasurements).values(clonedMeasurements);
         measurementsCopied += clonedMeasurements.length;
       }
 
       // Lock bid takeoff versions and handle unversioned measurements
-      const bidVersions = await db.select().from(takeoffVersions)
+      const bidVersions = await tx.select().from(takeoffVersions)
         .where(eq(takeoffVersions.sheetId, oldSheetId));
       if (bidVersions.length > 0) {
         const latestBidVersion = bidVersions[bidVersions.length - 1];
-        const orphanedMeasurements = await db.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
+        const orphanedMeasurements = await tx.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
           .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), sql`takeoff_measurements.takeoff_version_id IS NULL`));
         for (const m of orphanedMeasurements) {
-          await db.update(takeoffMeasurements)
+          await tx.update(takeoffMeasurements)
             .set({ takeoffVersionId: latestBidVersion.id })
             .where(eq(takeoffMeasurements.id, m.id));
         }
         for (const bv of bidVersions) {
-          await db.update(takeoffVersions)
+          await tx.update(takeoffVersions)
             .set({ status: "LOCKED" })
             .where(eq(takeoffVersions.id, bv.id));
         }
       } else {
-        const [lockedBidVersion] = await db.insert(takeoffVersions).values({
+        const [lockedBidVersion] = await tx.insert(takeoffVersions).values({
           bidId: bid.id,
           sheetId: oldSheetId,
           versionNumber: 1,
@@ -1451,10 +1462,10 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
           createdById: req.user!.id,
           label: "Bid Takeoff (Locked)",
         }).returning();
-        const unversioned = await db.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
+        const unversioned = await tx.select({ id: takeoffMeasurements.id }).from(takeoffMeasurements)
           .where(and(eq(takeoffMeasurements.sheetId, oldSheetId), sql`takeoff_measurements.takeoff_version_id IS NULL`));
         for (const m of unversioned) {
-          await db.update(takeoffMeasurements)
+          await tx.update(takeoffMeasurements)
             .set({ takeoffVersionId: lockedBidVersion.id })
             .where(eq(takeoffMeasurements.id, m.id));
         }
@@ -1462,21 +1473,23 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
     }
     console.log(`[Bid Conversion] Duplicated ${bidSheets.length} takeoff sheets with ${measurementsCopied} measurements, ${bidCategories.length} categories, ${bidGroups.length} groups to project`);
 
-    await db.update(bids)
+    await tx.update(bids)
       .set({
         status: "AWARDED",
-        convertedToProjectId: newProject.id,
+        convertedToProjectId: createdProject.id,
         awardedAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(bids.code, req.params.code));
 
-    const { contracts: contractsTable, contractVersions: contractVersionsTable } = await import("@shared/schema");
+    return createdProject;
+    }); // end db.transaction
+
     try {
       const contractNum = `CTR-${newProject.code}-001`;
       const partiesStr = [bid.clientName].filter(Boolean).join(", ");
       const [newContract] = await db.insert(contractsTable).values({
-        organizationId: newProject.organizationId,
+        organizationId: newProject.gcOrganizationId,
         projectId: newProject.id,
         bidId: bid.id,
         contractNumber: contractNum,
@@ -1502,8 +1515,6 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       logError(`[Bid Conversion] Failed to auto-create contract: ${errMsg}`);
     }
 
-    const { notifications: notificationsTable } = await import("@shared/schema");
-    
     if (superintendentId) {
       await db.insert(notificationsTable).values({
         userId: superintendentId,
@@ -1557,7 +1568,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       action: "CREATE",
       entityType: "project",
       entityId: newProject.id,
-      newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} selected subcontractor quotes, ${matQuotes.length} selected material quotes, and ${bidEquipSelections.length} equipment plans`,
+      newValue: `Converted bid ${bid.code} to project ${newProject.code} with ${bidEstimates.length} estimates`,
     }, req);
 
     await eventBus.emit({
