@@ -131,11 +131,15 @@ export function BidPipelineWidget() {
     },
   ];
 
+  const winRateWidth = Math.min(Math.max(d.winRate, 0), 100);
+
   return (
-    <Card data-testid="bid-pipeline-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="bid-pipeline-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center gap-2">
-          <Briefcase className="w-4 h-4 text-muted-foreground" />
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500/15 to-blue-600/5 flex items-center justify-center">
+            <Briefcase className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+          </div>
           <CardTitle className="text-sm font-medium">Bid Pipeline</CardTitle>
         </div>
       </CardHeader>
@@ -146,17 +150,31 @@ export function BidPipelineWidget() {
             return (
               <div
                 key={metric.key}
-                className={cn("rounded-lg p-3 transition-colors", metric.bg)}
+                className={cn("rounded-xl p-3 transition-all duration-200 hover:scale-[1.02]", metric.bg)}
                 data-testid={`bid-metric-${metric.key}`}
               >
                 <div className="flex items-center gap-1.5 mb-1">
-                  <Icon className={cn("w-3.5 h-3.5", metric.iconColor)} />
+                  <div className="w-6 h-6 rounded-md bg-white/60 dark:bg-white/10 flex items-center justify-center">
+                    <Icon className={cn("w-3 h-3", metric.iconColor)} />
+                  </div>
                   <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{metric.label}</span>
                 </div>
                 <p className={cn("text-xl font-bold tabular-nums", metric.iconColor)}>
                   {metric.value}
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{metric.subtitle}</p>
+                {metric.key === "winrate" ? (
+                  <div className="mt-1.5">
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-600 transition-all duration-700"
+                        style={{ width: `${winRateWidth}%` }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{metric.subtitle}</p>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{metric.subtitle}</p>
+                )}
               </div>
             );
           })}

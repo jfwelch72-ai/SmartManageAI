@@ -151,26 +151,43 @@ export function WorkforceSnapshotWidget() {
     },
   ];
 
+  const activeRatio = snapshot.totalWorkers > 0 ? (snapshot.activeWorkers / snapshot.totalWorkers) * 100 : 0;
+
   return (
-    <Card data-testid="workforce-snapshot-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="workforce-snapshot-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center gap-2">
-          <HardHat className="w-4 h-4 text-muted-foreground" />
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/15 to-amber-600/5 flex items-center justify-center">
+            <HardHat className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+          </div>
           <CardTitle className="text-sm font-medium">Workforce Snapshot</CardTitle>
+          {snapshot.totalWorkers > 0 && (
+            <span className="text-[10px] text-muted-foreground ml-auto">{Math.round(activeRatio)}% active</span>
+          )}
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4">
+        {snapshot.totalWorkers > 0 && (
+          <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-700"
+              style={{ width: `${activeRatio}%` }}
+            />
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           {metrics.map((metric) => {
             const Icon = metric.icon;
             return (
               <div
                 key={metric.key}
-                className={cn("rounded-lg p-3 transition-colors", metric.bg)}
+                className={cn("rounded-xl p-3 transition-all duration-200 hover:scale-[1.02]", metric.bg)}
                 data-testid={`metric-${metric.key}`}
               >
                 <div className="flex items-center gap-1.5 mb-1">
-                  <Icon className={cn("w-3.5 h-3.5", metric.iconColor)} />
+                  <div className="w-6 h-6 rounded-md bg-white/60 dark:bg-white/10 flex items-center justify-center">
+                    <Icon className={cn("w-3 h-3", metric.iconColor)} />
+                  </div>
                   <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{metric.label}</span>
                 </div>
                 <p className={cn("text-xl font-bold tabular-nums", metric.iconColor)}>

@@ -27,7 +27,6 @@ import {
   type WidgetCategory,
 } from "@/components/dashboard-widgets/WidgetRegistry";
 import { useAuth } from "@/hooks/use-auth";
-import { hasManagementAccess } from "@/lib/rbac";
 
 interface WidgetLibraryProps {
   open: boolean;
@@ -51,16 +50,19 @@ function isWidgetAvailableForRole(
   userRole?: string,
   userPermissions?: Record<FeaturePermissionKey, boolean>
 ): boolean {
-  const roleOk = !widget.roleGate
-    || (widget.roleGate === "management" && hasManagementAccess(userRole))
-    || (widget.roleGate === "superintendent" && userRole === "SUPERINTENDENT")
-    || (!["management", "superintendent"].includes(widget.roleGate));
+  const hasAllowedRole = widget.allowedRoles
+    ? widget.allowedRoles.includes(userRole || "")
+    : true;
+  const hasFeaturePerm = widget.featurePerm
+    ? (userPermissions?.[widget.featurePerm] ?? false)
+    : true;
 
-  if (!widget.featurePerm) return roleOk;
-
-  const hasFeaturePerm = userPermissions?.[widget.featurePerm] ?? false;
-
-  return roleOk || hasFeaturePerm;
+  if (widget.allowedRoles && widget.featurePerm) {
+    return hasAllowedRole && hasFeaturePerm;
+  }
+  if (widget.allowedRoles) return hasAllowedRole;
+  if (widget.featurePerm) return hasFeaturePerm;
+  return true;
 }
 
 function WidgetPreview({ widget }: { widget: WidgetDefinition }) {
@@ -259,16 +261,12 @@ export function WidgetLibrary({ open, onOpenChange, defaultSectionId }: WidgetLi
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium text-sm">{widget.label}</p>
-                                {widget.roleGate && (
+                                {widget.allowedRoles && (
                                   <Badge
                                     variant="outline"
                                     className="text-[10px] px-1"
                                   >
-                                    {widget.roleGate === "management"
-                                      ? "Mgmt"
-                                      : widget.roleGate === "superintendent"
-                                        ? "Supt"
-                                        : widget.roleGate}
+                                    {widget.allowedRoles.length <= 4 ? "Restricted" : "Internal"}
                                   </Badge>
                                 )}
                               </div>

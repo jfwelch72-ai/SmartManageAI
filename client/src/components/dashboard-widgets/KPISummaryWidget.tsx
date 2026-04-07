@@ -5,6 +5,34 @@ import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useState, useEffect, useRef } from "react";
+
+function useAnimatedValue(target: number, duration = 800) {
+  const [value, setValue] = useState(0);
+  const prevRef = useRef(0);
+  const rafRef = useRef<number>(0);
+  useEffect(() => {
+    const start = prevRef.current;
+    const diff = target - start;
+    if (diff === 0) return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(start + diff * eased);
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(step);
+      } else {
+        prevRef.current = target;
+      }
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [target, duration]);
+  return value;
+}
 
 export interface KPIConfig {
   metric?: string;
@@ -115,22 +143,40 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
   const isNegative = changePercent < 0;
   const isNeutral = changePercent === 0;
 
+  const animatedValue = useAnimatedValue(data?.value || 0);
+
+  const MiniSparkline = () => {
+    const points = isPositive ? "2,14 6,10 10,12 14,6 18,8 22,2" : isNegative ? "2,2 6,6 10,4 14,10 18,8 22,14" : "2,8 6,8 10,8 14,8 18,8 22,8";
+    return (
+      <svg width="24" height="16" viewBox="0 0 24 16" className="opacity-60">
+        <polyline
+          points={points}
+          fill="none"
+          stroke={isPositive ? "#22c55e" : isNegative ? "#ef4444" : "#94a3b8"}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  };
+
   return (
-    <Card data-testid="kpi-summary-card">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="kpi-summary-card">
       <CardContent className="py-4 px-4 sm:px-6">
         <div className="flex items-start justify-between">
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground truncate">{data?.label || metricDef.label}</p>
             <p className="text-2xl sm:text-3xl font-bold mt-1 truncate">
-              {data ? formatValue(data.value, metricDef.format) : "--"}
+              {data ? formatValue(Math.round(animatedValue), metricDef.format) : "--"}
             </p>
             <div className="flex items-center gap-2 mt-2">
               <Badge
                 variant="secondary"
                 className={cn(
                   "text-xs gap-1",
-                  isPositive && "bg-green-500/10 text-green-600",
-                  isNegative && "bg-red-500/10 text-red-600",
+                  isPositive && "bg-green-500/10 text-green-600 dark:text-green-400",
+                  isNegative && "bg-red-500/10 text-red-600 dark:text-red-400",
                   isNeutral && "bg-muted text-muted-foreground"
                 )}
               >
@@ -139,6 +185,7 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
                 {isNeutral && <Minus className="w-3 h-3" />}
                 {isPositive ? "+" : ""}{changePercent}%
               </Badge>
+              <MiniSparkline />
               <span className="text-[11px] text-muted-foreground">{comparisonLabel}</span>
             </div>
             {data?.isEstimated && (

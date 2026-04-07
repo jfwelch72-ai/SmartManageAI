@@ -120,11 +120,13 @@ export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
     : 0;
 
   return (
-    <Card data-testid="project-health-summary-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="project-health-summary-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <HeartPulse className="w-4 h-4 text-muted-foreground" />
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-pink-500/15 to-pink-600/5 flex items-center justify-center">
+              <HeartPulse className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
+            </div>
             <CardTitle className="text-sm font-medium">Portfolio Health</CardTitle>
           </div>
           {allProjects.length > 0 && (

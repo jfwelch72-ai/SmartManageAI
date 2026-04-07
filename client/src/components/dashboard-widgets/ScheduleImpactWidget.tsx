@@ -104,38 +104,40 @@ export function ScheduleImpactWidget() {
   const isEmpty = dailyAllocation.every(d => d.assignedWorkers === 0) && projectForecast.length === 0;
 
   return (
-    <Card data-testid="schedule-impact-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="schedule-impact-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center gap-2">
-          <CalendarDays className="w-4 h-4 text-muted-foreground" />
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500/15 to-blue-600/5 flex items-center justify-center">
+            <CalendarDays className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+          </div>
           <CardTitle className="text-sm font-medium">Schedule Impact</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-4">
         <div className="grid grid-cols-3 gap-2" data-testid="schedule-impact-summary">
-          <div className="text-center p-2 bg-muted/30 rounded-lg">
+          <div className="text-center p-2 bg-blue-500/10 rounded-xl transition-all duration-200 hover:scale-[1.03]">
             <div className="flex items-center justify-center gap-1 mb-0.5">
               <Users className="w-3 h-3 text-blue-500" />
               <span className="text-xs text-muted-foreground">Total 7D</span>
             </div>
-            <p className="text-lg font-semibold" data-testid="text-total-assigned">{summary.totalAssignedNext7Days}</p>
+            <p className="text-lg font-semibold text-blue-600 dark:text-blue-400" data-testid="text-total-assigned">{summary.totalAssignedNext7Days}</p>
           </div>
-          <div className="text-center p-2 bg-muted/30 rounded-lg">
+          <div className="text-center p-2 bg-green-500/10 rounded-xl transition-all duration-200 hover:scale-[1.03]">
             <div className="flex items-center justify-center gap-1 mb-0.5">
               <TrendingUp className="w-3 h-3 text-green-500" />
               <span className="text-xs text-muted-foreground">Peak</span>
             </div>
-            <p className="text-lg font-semibold" data-testid="text-peak-day">
+            <p className="text-lg font-semibold text-green-600 dark:text-green-400" data-testid="text-peak-day">
               {summary.peakDay || "—"}
             </p>
             <p className="text-[10px] text-muted-foreground">{summary.peakWorkers} workers</p>
           </div>
-          <div className="text-center p-2 bg-muted/30 rounded-lg">
+          <div className={`text-center p-2 rounded-xl transition-all duration-200 hover:scale-[1.03] ${summary.conflictCount > 0 ? "bg-amber-500/10" : "bg-muted/30"}`}>
             <div className="flex items-center justify-center gap-1 mb-0.5">
               <AlertTriangle className={`w-3 h-3 ${summary.conflictCount > 0 ? "text-amber-500" : "text-green-500"}`} />
               <span className="text-xs text-muted-foreground">Conflicts</span>
             </div>
-            <p className={`text-lg font-semibold ${summary.conflictCount > 0 ? "text-amber-600" : ""}`} data-testid="text-conflict-count">
+            <p className={`text-lg font-semibold ${summary.conflictCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`} data-testid="text-conflict-count">
               {summary.conflictCount}
             </p>
           </div>

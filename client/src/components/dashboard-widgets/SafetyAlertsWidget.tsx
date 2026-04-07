@@ -133,11 +133,13 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
   });
 
   return (
-    <Card data-testid="safety-alerts-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="safety-alerts-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-red-500/15 to-red-600/5 flex items-center justify-center">
+              <ShieldCheck className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+            </div>
             <CardTitle className="text-sm font-medium">Safety Training</CardTitle>
           </div>
           {d.overdueCount > 0 && (

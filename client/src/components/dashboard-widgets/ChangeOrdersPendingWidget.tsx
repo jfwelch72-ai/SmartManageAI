@@ -120,11 +120,13 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
   const d = data || { count: 0, totalValue: 0, items: [] };
 
   return (
-    <Card data-testid="change-orders-pending-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="change-orders-pending-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <FileEdit className="w-4 h-4 text-muted-foreground" />
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500/15 to-purple-600/5 flex items-center justify-center">
+              <FileEdit className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+            </div>
             <CardTitle className="text-sm font-medium">Change Orders Pending</CardTitle>
           </div>
           {d.count > 0 && (

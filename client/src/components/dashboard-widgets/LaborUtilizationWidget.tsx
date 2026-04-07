@@ -121,11 +121,13 @@ export function LaborUtilizationWidget({ config }: WidgetComponentProps) {
   const dateRangeLabel = DATE_RANGE_LABELS[cfg.dateRange || "today"] || "Today";
 
   return (
-    <Card data-testid="labor-utilization-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="labor-utilization-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-muted-foreground" />
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/15 to-amber-600/5 flex items-center justify-center">
+              <Activity className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            </div>
             <CardTitle className="text-sm font-medium">Labor Utilization</CardTitle>
           </div>
           <span className={cn("text-xs font-semibold", getUtilizationColor(d.utilizedPercent, cfg))} data-testid="utilization-badge">

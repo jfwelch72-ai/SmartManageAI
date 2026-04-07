@@ -167,11 +167,13 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
   const ChartIcon = merged.chartType === "bar" ? BarChart3 : TrendingUp;
 
   return (
-    <Card data-testid="trend-chart-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="trend-chart-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ChartIcon className="w-4 h-4 text-muted-foreground" />
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/15 to-violet-600/5 flex items-center justify-center">
+              <ChartIcon className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+            </div>
             <CardTitle className="text-sm font-medium">{metricDef.label}</CardTitle>
           </div>
           <div className="flex items-center gap-1">
@@ -189,30 +191,45 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
       <CardContent className="px-4 pb-4">
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center h-48 text-muted-foreground" data-testid="trend-chart-empty">
-            <AlertTriangle className="w-8 h-8 mb-2 opacity-50" />
-            <p className="text-sm">No data available for this period</p>
+            <div className="w-14 h-14 rounded-full bg-muted/60 flex items-center justify-center mb-3">
+              <AlertTriangle className="w-7 h-7 opacity-40" />
+            </div>
+            <p className="text-sm font-medium">No data available</p>
+            <p className="text-xs text-muted-foreground/70 mt-0.5">Try adjusting the period or metric</p>
           </div>
         ) : (
           <div className="h-56 w-full" data-testid="trend-chart-container">
             <ResponsiveContainer width="100%" height="100%">
               {merged.chartType === "bar" ? (
                 <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <defs>
+                    {seriesKeys.map((key, i) => (
+                      <linearGradient key={`grad-${key}`} id={`bar-gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.9} />
+                        <stop offset="100%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.6} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-20" vertical={false} />
                   <XAxis
                     dataKey="date"
                     tick={{ fontSize: 11 }}
                     tickFormatter={formatDateLabel}
                     interval="preserveStartEnd"
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
                     tick={{ fontSize: 11 }}
                     tickFormatter={(v) => formatMetricValue(v, merged.metric!)}
                     width={60}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <Tooltip
                     formatter={(value: number) => formatMetricValue(value, merged.metric!)}
                     labelFormatter={formatDateLabel}
-                    contentStyle={{ fontSize: 12 }}
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                   />
                   {seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
                   {seriesKeys.map((key, i) => (
@@ -220,29 +237,43 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
                       key={key}
                       dataKey={key}
                       name={key === "value" ? metricDef.label : key}
-                      fill={CHART_COLORS[i % CHART_COLORS.length]}
-                      radius={[2, 2, 0, 0]}
+                      fill={`url(#bar-gradient-${i})`}
+                      radius={[4, 4, 0, 0]}
+                      animationDuration={800}
+                      animationEasing="ease-out"
                     />
                   ))}
                 </BarChart>
               ) : (
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <defs>
+                    {seriesKeys.map((key, i) => (
+                      <linearGradient key={`area-${key}`} id={`line-gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.15} />
+                        <stop offset="100%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-20" vertical={false} />
                   <XAxis
                     dataKey="date"
                     tick={{ fontSize: 11 }}
                     tickFormatter={formatDateLabel}
                     interval="preserveStartEnd"
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
                     tick={{ fontSize: 11 }}
                     tickFormatter={(v) => formatMetricValue(v, merged.metric!)}
                     width={60}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <Tooltip
                     formatter={(value: number) => formatMetricValue(value, merged.metric!)}
                     labelFormatter={formatDateLabel}
-                    contentStyle={{ fontSize: 12 }}
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                   />
                   {seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
                   {seriesKeys.map((key, i) => (
@@ -252,9 +283,11 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
                       dataKey={key}
                       name={key === "value" ? metricDef.label : key}
                       stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
+                      strokeWidth={2.5}
+                      dot={{ r: 3, strokeWidth: 2, fill: 'var(--background)' }}
+                      activeDot={{ r: 6, strokeWidth: 2, fill: CHART_COLORS[i % CHART_COLORS.length] }}
+                      animationDuration={800}
+                      animationEasing="ease-out"
                     />
                   ))}
                 </LineChart>

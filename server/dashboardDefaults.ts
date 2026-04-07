@@ -21,7 +21,7 @@ export function migrateV2ToV3(config: any): DashboardLayoutConfig {
   };
 }
 
-const EXECUTIVE_TIER: DashboardLayoutConfig = {
+const ADMIN_LAYOUT: DashboardLayoutConfig = {
   sections: [
     {
       id: 'section-overview',
@@ -29,7 +29,7 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'exec-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+        { id: 'admin-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
       ],
     },
     {
@@ -38,7 +38,7 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'exec-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+        { id: 'admin-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
       ],
     },
     {
@@ -47,8 +47,8 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'exec-revenue-month', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'REVENUE_THIS_MONTH', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
-        { id: 'exec-gross-margin', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+        { id: 'admin-revenue-month', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'REVENUE_THIS_MONTH', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+        { id: 'admin-gross-margin', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
       ],
     },
     {
@@ -57,8 +57,8 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'exec-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
-        { id: 'exec-workforce', type: 'WORKFORCE_SNAPSHOT', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'admin-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'admin-workforce', type: 'WORKFORCE_SNAPSHOT', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
       ],
     },
     {
@@ -67,8 +67,8 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'exec-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
-        { id: 'exec-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'admin-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'admin-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
     {
@@ -77,9 +77,9 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 3,
       collapsed: false,
       widgets: [
-        { id: 'exec-outstanding', type: 'OUTSTANDING_ITEMS', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'exec-alerts', type: 'ALERTS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
-        { id: 'exec-ai-insights', type: 'AI_INSIGHTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 8 },
+        { id: 'admin-outstanding', type: 'OUTSTANDING_ITEMS', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'admin-alerts', type: 'ALERTS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'admin-ai-insights', type: 'AI_INSIGHTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 8 },
       ],
     },
     {
@@ -88,8 +88,8 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'exec-revenue-trend', type: 'TREND_CHART', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { metric: 'REVENUE', chartType: 'line', period: '90D', groupBy: 'none' } },
-        { id: 'exec-cost-code', type: 'COST_CODE_BREAKDOWN', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { mode: 'budget_vs_actual' } },
+        { id: 'admin-revenue-trend', type: 'TREND_CHART', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { metric: 'REVENUE', chartType: 'line', period: '90D', groupBy: 'none' } },
+        { id: 'admin-cost-code', type: 'COST_CODE_BREAKDOWN', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { mode: 'budget_vs_actual' } },
       ],
     },
     {
@@ -98,9 +98,9 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 3,
       collapsed: false,
       widgets: [
-        { id: 'exec-project-health', type: 'PROJECT_HEALTH_SUMMARY', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
-        { id: 'exec-change-orders', type: 'CHANGE_ORDERS_PENDING', x: 4, y: 0, w: 4, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
-        { id: 'exec-rfi-status', type: 'RFI_STATUS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'admin-project-health', type: 'PROJECT_HEALTH_SUMMARY', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'admin-change-orders', type: 'CHANGE_ORDERS_PENDING', x: 4, y: 0, w: 4, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'admin-rfi-status', type: 'RFI_STATUS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
       ],
     },
     {
@@ -109,8 +109,8 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'exec-labor-util', type: 'LABOR_UTILIZATION', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 7 },
-        { id: 'exec-safety-alerts', type: 'SAFETY_ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'admin-labor-util', type: 'LABOR_UTILIZATION', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 7 },
+        { id: 'admin-safety-alerts', type: 'SAFETY_ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
       ],
     },
     {
@@ -119,9 +119,9 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       columns: 3,
       collapsed: false,
       widgets: [
-        { id: 'exec-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'exec-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'exec-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'admin-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'admin-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'admin-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
   ],
@@ -129,7 +129,7 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
   version: 3,
 };
 
-const OPERATIONS_TIER: DashboardLayoutConfig = {
+const HUSTLER_LAYOUT: DashboardLayoutConfig = {
   sections: [
     {
       id: 'section-overview',
@@ -137,7 +137,7 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
       columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'ops-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+        { id: 'hustler-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
       ],
     },
     {
@@ -146,37 +146,27 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
       columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'ops-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+        { id: 'hustler-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-financial-kpis',
+      title: 'Financial KPIs',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'hustler-revenue', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'REVENUE_THIS_MONTH', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+        { id: 'hustler-margin', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
       ],
     },
     {
       id: 'section-pipeline',
-      title: 'Pipeline & Estimating',
+      title: 'Pipeline & Projects',
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'ops-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
-        { id: 'ops-active-bids', type: 'ACTIVE_BIDS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
-      ],
-    },
-    {
-      id: 'section-projects-schedule',
-      title: 'Projects & Schedule',
-      columns: 2,
-      collapsed: false,
-      widgets: [
-        { id: 'ops-active-projects', type: 'ACTIVE_PROJECTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'ops-schedule', type: 'SCHEDULE_IMPACT', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
-      ],
-    },
-    {
-      id: 'section-insights-alerts',
-      title: 'Insights & Alerts',
-      columns: 2,
-      collapsed: false,
-      widgets: [
-        { id: 'ops-alerts', type: 'ALERTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
-        { id: 'ops-outstanding', type: 'OUTSTANDING_ITEMS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'hustler-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'hustler-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
     {
@@ -185,39 +175,18 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'ops-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
-        { id: 'ops-cost-code', type: 'COST_CODE_BREAKDOWN', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { mode: 'budget_vs_actual' } },
+        { id: 'hustler-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'hustler-revenue-trend', type: 'TREND_CHART', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { metric: 'REVENUE', chartType: 'line', period: '90D', groupBy: 'none' } },
       ],
     },
     {
-      id: 'section-workforce',
-      title: 'Workforce',
+      id: 'section-operations',
+      title: 'Operations',
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'ops-workforce', type: 'WORKFORCE_SNAPSHOT', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
-        { id: 'ops-crew', type: 'CREW_OVERVIEW', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 6, maxH: 8 },
-      ],
-    },
-    {
-      id: 'section-project-intelligence',
-      title: 'Project Intelligence',
-      columns: 3,
-      collapsed: false,
-      widgets: [
-        { id: 'ops-project-health', type: 'PROJECT_HEALTH_SUMMARY', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
-        { id: 'ops-rfi-status', type: 'RFI_STATUS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
-        { id: 'ops-change-orders', type: 'CHANGE_ORDERS_PENDING', x: 8, y: 0, w: 4, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
-      ],
-    },
-    {
-      id: 'section-labor-safety',
-      title: 'Labor & Safety',
-      columns: 2,
-      collapsed: false,
-      widgets: [
-        { id: 'ops-labor-util', type: 'LABOR_UTILIZATION', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 7 },
-        { id: 'ops-safety-alerts', type: 'SAFETY_ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'hustler-outstanding', type: 'OUTSTANDING_ITEMS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'hustler-alerts', type: 'ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
       ],
     },
     {
@@ -226,8 +195,8 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'ops-ai-insights', type: 'AI_INSIGHTS', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 8 },
-        { id: 'ops-ai-tasks', type: 'AI_TASKS', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 8, maxH: 8 },
+        { id: 'hustler-ai-insights', type: 'AI_INSIGHTS', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 8 },
+        { id: 'hustler-ai-tasks', type: 'AI_TASKS', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 8, maxH: 8 },
       ],
     },
     {
@@ -236,9 +205,9 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
       columns: 3,
       collapsed: false,
       widgets: [
-        { id: 'ops-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'ops-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'ops-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'hustler-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'hustler-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'hustler-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
   ],
@@ -246,16 +215,274 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
   version: 3,
 };
 
-const FIELD_TIER: DashboardLayoutConfig = {
+const MANAGER_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-overview',
+      title: 'Overview',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-quick-actions',
+      title: 'Quick Actions',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-pipeline',
+      title: 'Pipeline & Estimating',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'mgr-active-bids', type: 'ACTIVE_BIDS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-projects-schedule',
+      title: 'Projects & Schedule',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-active-projects', type: 'ACTIVE_PROJECTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'mgr-schedule', type: 'SCHEDULE_IMPACT', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-insights-alerts',
+      title: 'Insights & Alerts',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-alerts', type: 'ALERTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'mgr-outstanding', type: 'OUTSTANDING_ITEMS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-financial',
+      title: 'Financial',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'mgr-cost-code', type: 'COST_CODE_BREAKDOWN', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { mode: 'budget_vs_actual' } },
+      ],
+    },
+    {
+      id: 'section-workforce',
+      title: 'Workforce',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-workforce', type: 'WORKFORCE_SNAPSHOT', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'mgr-crew', type: 'CREW_OVERVIEW', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 6, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-project-intelligence',
+      title: 'Project Intelligence',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-project-health', type: 'PROJECT_HEALTH_SUMMARY', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'mgr-rfi-status', type: 'RFI_STATUS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'mgr-change-orders', type: 'CHANGE_ORDERS_PENDING', x: 8, y: 0, w: 4, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-labor-safety',
+      title: 'Labor & Safety',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-labor-util', type: 'LABOR_UTILIZATION', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 7 },
+        { id: 'mgr-safety-alerts', type: 'SAFETY_ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-ai',
+      title: 'AI',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-ai-insights', type: 'AI_INSIGHTS', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 8 },
+        { id: 'mgr-ai-tasks', type: 'AI_TASKS', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 8, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-communications',
+      title: 'Communications',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'mgr-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'mgr-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'mgr-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const SUPERINTENDENT_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-today',
+      title: 'Today',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'super-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-quick-actions',
+      title: 'Quick Actions',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'super-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-crew',
+      title: 'Crew Management',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'super-crew', type: 'CREW_OVERVIEW', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 6, maxH: 8 },
+        { id: 'super-workforce', type: 'WORKFORCE_SNAPSHOT', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+    {
+      id: 'section-jobsite',
+      title: 'Jobsite & Schedule',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'super-schedule', type: 'SCHEDULE_IMPACT', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'super-active-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-labor-safety',
+      title: 'Labor & Safety',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'super-labor-util', type: 'LABOR_UTILIZATION', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 7 },
+        { id: 'super-safety-alerts', type: 'SAFETY_ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-review',
+      title: 'Review & Alerts',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'super-alerts', type: 'ALERTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'super-project-health', type: 'PROJECT_HEALTH_SUMMARY', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-communications',
+      title: 'Communications',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'super-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'super-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'super-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const ESTIMATOR_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-overview',
+      title: 'Overview',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'est-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-quick-actions',
+      title: 'Quick Actions',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'est-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-bids',
+      title: 'Bids & Pipeline',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'est-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'est-active-bids', type: 'ACTIVE_BIDS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-projects',
+      title: 'Projects',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'est-active-projects', type: 'ACTIVE_PROJECTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'est-assignments', type: 'PROJECT_ASSIGNMENTS', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+    {
+      id: 'section-ai',
+      title: 'AI',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'est-ai-tasks', type: 'AI_TASKS', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 8, maxH: 8 },
+        { id: 'est-weather', type: 'WEATHER', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+    {
+      id: 'section-communications',
+      title: 'Communications',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'est-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'est-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'est-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const FIELD_WORKER_LAYOUT: DashboardLayoutConfig = {
   sections: [
     {
       id: 'section-my-work',
       title: 'My Work',
-      columns: 2,
+      columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'field-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 6, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4, config: { showActiveBids: false } },
-        { id: 'field-labor-kpi', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'TOTAL_LABOR_COST', dateRange: 'THIS_WEEK', comparison: 'LAST_WEEK' } },
+        { id: 'field-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4, config: { showActiveBids: false } },
       ],
     },
     {
@@ -273,37 +500,17 @@ const FIELD_TIER: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'field-schedule', type: 'SCHEDULE_IMPACT', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
-        { id: 'field-assignments', type: 'PROJECT_ASSIGNMENTS', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'field-assignments', type: 'PROJECT_ASSIGNMENTS', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'field-active-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
     {
-      id: 'section-safety-alerts',
-      title: 'Safety & Alerts',
+      id: 'section-weather',
+      title: 'Weather',
       columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'field-alerts', type: 'ALERTS', x: 0, y: 0, w: 12, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
-      ],
-    },
-    {
-      id: 'section-financial',
-      title: 'Financial',
-      columns: 2,
-      collapsed: false,
-      widgets: [
-        { id: 'field-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
-        { id: 'field-cost-code', type: 'COST_CODE_BREAKDOWN', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { mode: 'labor' } },
-      ],
-    },
-    {
-      id: 'section-ai',
-      title: 'AI',
-      columns: 2,
-      collapsed: false,
-      widgets: [
-        { id: 'field-ai-insights', type: 'AI_INSIGHTS', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 8 },
-        { id: 'field-ai-tasks', type: 'AI_TASKS', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 8, maxH: 8 },
+        { id: 'field-weather', type: 'WEATHER', x: 0, y: 0, w: 12, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
       ],
     },
     {
@@ -315,6 +522,41 @@ const FIELD_TIER: DashboardLayoutConfig = {
         { id: 'field-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
         { id: 'field-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
         { id: 'field-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const VENDOR_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-overview',
+      title: 'Overview',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'vendor-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4, config: { showActiveBids: false, showActiveProjects: false } },
+      ],
+    },
+    {
+      id: 'section-quick-actions',
+      title: 'Quick Actions',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'vendor-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-communications',
+      title: 'Communications',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'vendor-messages', type: 'MESSAGES', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'vendor-notifications', type: 'NOTIFICATIONS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
   ],
@@ -540,15 +782,19 @@ export function getDefaultLayoutForRole(role: string): DashboardLayoutConfig {
   switch (role) {
     case 'SUPER_ADMIN':
     case 'ADMIN':
+      return ADMIN_LAYOUT;
     case 'HUSTLER':
-      return EXECUTIVE_TIER;
+      return HUSTLER_LAYOUT;
     case 'MANAGER':
+      return MANAGER_LAYOUT;
     case 'SUPERINTENDENT':
+      return SUPERINTENDENT_LAYOUT;
     case 'ESTIMATOR':
-      return OPERATIONS_TIER;
+      return ESTIMATOR_LAYOUT;
     case 'FIELD_WORKER':
+      return FIELD_WORKER_LAYOUT;
     case 'VENDOR':
-      return FIELD_TIER;
+      return VENDOR_LAYOUT;
     default:
       return BASIC_TIER;
   }

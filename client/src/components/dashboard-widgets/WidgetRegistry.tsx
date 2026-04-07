@@ -82,11 +82,15 @@ export interface WidgetDefinition {
   maxW: number;
   maxH: number;
   singleton: boolean;
-  roleGate?: string;
+  allowedRoles?: string[];
   featurePerm?: FeaturePermissionKey;
   hasSettings?: boolean;
   queryKeys?: string[];
 }
+
+export const MANAGEMENT_ROLES = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER"];
+export const MANAGEMENT_AND_SUPER_ROLES = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT"];
+export const ALL_INTERNAL_ROLES = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"];
 
 export function getSizeLabel(defaultW: number): string {
   if (defaultW >= 12) return "Full width";
@@ -155,6 +159,8 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 6,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
+    featurePerm: "canViewFinancials",
     hasSettings: true,
     queryKeys: ["/api/dashboard/kpi"],
   },
@@ -172,6 +178,8 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 10,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
+    featurePerm: "canViewFinancials",
     hasSettings: true,
     queryKeys: ["/api/dashboard/trend"],
   },
@@ -189,6 +197,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 12,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     hasSettings: true,
     queryKeys: ["/api/dashboard/list"],
   },
@@ -206,6 +215,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 12,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     hasSettings: false,
     queryKeys: ["/api/dashboard/alerts"],
   },
@@ -223,6 +233,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 6,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     featurePerm: "canManagePayroll",
     hasSettings: false,
     queryKeys: ["/api/dashboard/workforce-snapshot"],
@@ -241,6 +252,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 6,
     singleton: false,
+    allowedRoles: MANAGEMENT_ROLES,
     featurePerm: "canViewFinancials",
     hasSettings: false,
     queryKeys: ["/api/dashboard/cash-position"],
@@ -259,6 +271,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 8,
     singleton: false,
+    allowedRoles: MANAGEMENT_ROLES,
     featurePerm: "canViewFinancials",
     hasSettings: false,
     queryKeys: ["/api/dashboard/sov-progress"],
@@ -277,6 +290,8 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 6,
     singleton: false,
+    allowedRoles: [...MANAGEMENT_ROLES, "ESTIMATOR"],
+    featurePerm: "canViewFinancials",
     hasSettings: false,
     queryKeys: ["/api/dashboard/bid-pipeline"],
   },
@@ -294,6 +309,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 8,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     featurePerm: "canViewFinancials",
     hasSettings: true,
     queryKeys: ["/api/dashboard/cost-code-breakdown"],
@@ -312,6 +328,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 8,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     hasSettings: false,
     queryKeys: ["/api/dashboard/schedule-impact"],
   },
@@ -344,7 +361,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 8,
     singleton: true,
-    roleGate: "management",
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     featurePerm: "canUseAiFeatures",
     queryKeys: ["/api/ai-insights"],
   },
@@ -430,7 +447,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: true,
     hasSettings: true,
-    roleGate: "management",
+    allowedRoles: MANAGEMENT_ROLES,
     featurePerm: "canViewFinancials",
     queryKeys: ["/api/dashboard/stats", "/api/projects"],
   },
@@ -448,6 +465,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 10,
     singleton: false,
+    allowedRoles: ALL_INTERNAL_ROLES,
     hasSettings: true,
     queryKeys: ["/api/projects"],
   },
@@ -466,7 +484,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: false,
     hasSettings: true,
-    roleGate: "management",
+    allowedRoles: [...MANAGEMENT_ROLES, "ESTIMATOR"],
     queryKeys: ["/api/bids"],
   },
   {
@@ -483,7 +501,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 6,
     maxH: 8,
     singleton: true,
-    roleGate: "superintendent",
+    allowedRoles: [...MANAGEMENT_ROLES, "SUPERINTENDENT"],
     queryKeys: ["/api/crew-assignments", "/api/crews"],
   },
   {
@@ -531,6 +549,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 7,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     featurePerm: "canManagePayroll",
     hasSettings: true,
     queryKeys: ["/api/dashboard/labor-utilization"],
@@ -549,7 +568,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 10,
     singleton: false,
-    roleGate: "management",
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     hasSettings: true,
     queryKeys: ["/api/project-health/overview"],
   },
@@ -567,7 +586,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 10,
     singleton: false,
-    roleGate: "management",
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     hasSettings: true,
     queryKeys: ["/api/rfi"],
   },
@@ -585,6 +604,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 8,
     singleton: false,
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
     featurePerm: "canViewFinancials",
     hasSettings: true,
     queryKeys: ["/api/dashboard/change-orders-pending"],
@@ -603,7 +623,8 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 10,
     singleton: false,
-    roleGate: "management",
+    allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
+    featurePerm: "canManageSafety",
     hasSettings: true,
     queryKeys: ["/api/dashboard/safety-summary", "/api/toolbox-talks/summary", "/api/safety-checklists/summary", "/api/osha-incidents/summary"],
   },

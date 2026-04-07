@@ -58,29 +58,34 @@ export function CrewOverviewWidget() {
     );
   }
 
+  const assignedCount = crewAssignments.filter((a: any) => a.project?.status === "ACTIVE").length;
+  const needCrewsCount = activeProjects.filter((p: any) => !crewAssignments.some((a: any) => a.project?.id === p.id)).length;
+
   return (
-    <Card className="h-full" data-testid="card-crew-overview">
+    <Card className="h-full transition-all duration-200 hover:shadow-md" data-testid="card-crew-overview">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          <Users className="w-4 h-4" />
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-500/15 to-orange-600/5 flex items-center justify-center">
+            <Users className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
+          </div>
           Crew Overview
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-4">
-          <div className="text-center p-1.5 sm:p-2 bg-muted rounded-md">
-            <div className="text-base sm:text-lg font-bold">{crews.length}</div>
+          <div className="text-center p-1.5 sm:p-2 bg-blue-500/10 rounded-xl transition-all duration-200 hover:scale-[1.03]">
+            <div className="text-base sm:text-lg font-bold text-blue-600 dark:text-blue-400">{crews.length}</div>
             <div className="text-[10px] sm:text-xs text-muted-foreground">Total</div>
           </div>
-          <div className="text-center p-1.5 sm:p-2 bg-muted rounded-md">
-            <div className="text-base sm:text-lg font-bold">
-              {crewAssignments.filter((a: any) => a.project?.status === "ACTIVE").length}
+          <div className="text-center p-1.5 sm:p-2 bg-green-500/10 rounded-xl transition-all duration-200 hover:scale-[1.03]">
+            <div className="text-base sm:text-lg font-bold text-green-600 dark:text-green-400">
+              {assignedCount}
             </div>
             <div className="text-[10px] sm:text-xs text-muted-foreground">Assigned</div>
           </div>
-          <div className="text-center p-1.5 sm:p-2 bg-muted rounded-md">
-            <div className="text-base sm:text-lg font-bold">
-              {activeProjects.filter((p: any) => !crewAssignments.some((a: any) => a.project?.id === p.id)).length}
+          <div className={`text-center p-1.5 sm:p-2 rounded-xl transition-all duration-200 hover:scale-[1.03] ${needCrewsCount > 0 ? 'bg-amber-500/10' : 'bg-muted'}`}>
+            <div className={`text-base sm:text-lg font-bold ${needCrewsCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+              {needCrewsCount}
             </div>
             <div className="text-[10px] sm:text-xs text-muted-foreground">Need Crews</div>
           </div>

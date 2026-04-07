@@ -27,6 +27,7 @@ import { hasManagementAccess, isSuperAdmin, isHustler } from "@/lib/rbac";
 import { format } from "date-fns";
 import { Redirect } from "wouter";
 import { useState } from "react";
+import { useDashboardStats, useBids } from "@/hooks/use-data";
 
 function getTimeGreeting(): { greeting: string; icon: typeof Sun } {
   const hour = new Date().getHours();
@@ -36,24 +37,66 @@ function getTimeGreeting(): { greeting: string; icon: typeof Sun } {
   return { greeting: "Good night", icon: Moon };
 }
 
+function useRoleSubtitle(role?: string): string {
+  const { data: stats } = useDashboardStats();
+  const { data: bids } = useBids();
+
+  const projects = stats?.activeProjectsCount ?? 0;
+  const activeBids = bids?.length ?? 0;
+  const delays = stats?.activeDelaysCount ?? 0;
+
+  switch (role) {
+    case 'ADMIN':
+    case 'SUPER_ADMIN': {
+      const parts: string[] = [];
+      if (projects > 0) parts.push(`${projects} active project${projects !== 1 ? 's' : ''}`);
+      if (delays > 0) parts.push(`${delays} delay${delays !== 1 ? 's' : ''} to review`);
+      return parts.length > 0 ? parts.join(' · ') : "Here's your company overview";
+    }
+    case 'HUSTLER': {
+      const parts: string[] = [];
+      if (projects > 0) parts.push(`${projects} project${projects !== 1 ? 's' : ''} in portfolio`);
+      if (activeBids > 0) parts.push(`${activeBids} bid${activeBids !== 1 ? 's' : ''} in pipeline`);
+      return parts.length > 0 ? parts.join(' · ') : "Your portfolio at a glance";
+    }
+    case 'MANAGER': {
+      const parts: string[] = [];
+      if (projects > 0) parts.push(`${projects} active project${projects !== 1 ? 's' : ''}`);
+      if (delays > 0) parts.push(`${delays} delay${delays !== 1 ? 's' : ''} flagged`);
+      return parts.length > 0 ? parts.join(' · ') : "Your projects and team status";
+    }
+    case 'SUPERINTENDENT':
+      return delays > 0 ? `${delays} delay${delays !== 1 ? 's' : ''} on your jobsites` : "Today's crew and jobsite status";
+    case 'ESTIMATOR':
+      return activeBids > 0 ? `${activeBids} active bid${activeBids !== 1 ? 's' : ''} in pipeline` : "Your bids and pipeline";
+    case 'FIELD_WORKER':
+      return projects > 0 ? `Assigned to ${projects} project${projects !== 1 ? 's' : ''}` : "Your tasks and schedule";
+    case 'VENDOR':
+      return "Your messages and updates";
+    default:
+      return "Here's what's happening today";
+  }
+}
+
 function DashboardSkeleton() {
   return (
     <div className="space-y-4" data-testid="dashboard-skeleton">
       {[1, 2, 3].map((sectionIdx) => (
-        <Card key={sectionIdx}>
+        <Card key={sectionIdx} className="overflow-hidden">
           <CardHeader className="py-2 px-3 sm:py-3 sm:px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-2.5 w-2.5 rounded-full" />
                 <Skeleton className="h-4 w-32" />
               </div>
-              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-5 w-8 rounded-full" />
             </div>
           </CardHeader>
           <CardContent className="pt-0 px-2 pb-2">
             <div className={`grid ${sectionIdx === 1 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'} gap-3`}>
               {Array.from({ length: sectionIdx === 1 ? 4 : 3 }).map((_, i) => (
-                <div key={i} className="rounded-lg border p-4 space-y-3">
+                <div key={i} className="rounded-lg border p-4 space-y-3 relative overflow-hidden">
+                  <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-foreground/5 to-transparent" />
                   <div className="flex items-center justify-between">
                     <Skeleton className="h-4 w-24" />
                     <Skeleton className="h-4 w-4 rounded-full" />
@@ -75,6 +118,7 @@ export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { isEditMode, isLoadingLayout } = useDashboardCustomization();
+  const roleSubtitle = useRoleSubtitle(user?.role);
   const [widgetLibraryOpen, setWidgetLibraryOpen] = useState(false);
   const [widgetLibraryTargetSection, setWidgetLibraryTargetSection] = useState<string | undefined>(undefined);
   const [mobileFeatureOpen, setMobileFeatureOpen] = useState<"ai-pm" | "cfo" | "voice-logs" | null>(null);
@@ -103,10 +147,10 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-full px-3 sm:px-6 py-4 sm:py-8">
-        <div className="mb-6 sm:mb-8" data-testid="welcome-section">
+        <div className="mb-6 sm:mb-8 rounded-xl bg-gradient-to-br from-primary/5 via-primary/3 to-transparent dark:from-primary/10 dark:via-primary/5 dark:to-transparent border border-border/50 p-4 sm:p-6" data-testid="welcome-section">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="flex items-center gap-3 sm:gap-4">
-              <Avatar className="h-12 w-12 sm:h-16 sm:w-16">
+              <Avatar className="h-12 w-12 sm:h-16 sm:w-16 ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
                 {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={`${user.firstName} ${user.lastName}`} />}
                 <AvatarFallback className="text-base sm:text-lg bg-primary text-primary-foreground">
                   {user?.firstName?.[0]}{user?.lastName?.[0]}
@@ -119,12 +163,17 @@ export default function DashboardPage() {
                     {greeting}, {firstName}!
                   </h1>
                 </div>
-                <p className="text-muted-foreground mt-1 text-sm sm:text-base">
-                  {format(new Date(), "EEEE, MMMM d, yyyy")}
+                <p className="text-muted-foreground mt-0.5 text-sm sm:text-base" data-testid="text-role-subtitle">
+                  {roleSubtitle}
                 </p>
-                <Badge variant="secondary" className="mt-2">
-                  {user?.role?.replace(/_/g, ' ')}
-                </Badge>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <Badge variant="secondary" className="text-xs">
+                    {user?.role?.replace(/_/g, ' ')}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(), "EEEE, MMMM d, yyyy")}
+                  </span>
+                </div>
               </div>
             </div>
             

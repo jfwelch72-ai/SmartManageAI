@@ -134,10 +134,12 @@ export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps
   const isLaborMode = merged.mode !== "budget_vs_actual";
 
   return (
-    <Card data-testid="cost-code-breakdown-widget">
+    <Card className="transition-all duration-200 hover:shadow-md" data-testid="cost-code-breakdown-widget">
       <CardHeader className="pb-2 px-4 pt-4">
         <div className="flex items-center gap-2">
-          <PieChartIcon className="w-4 h-4 text-muted-foreground" />
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500/15 to-emerald-600/5 flex items-center justify-center">
+            <PieChartIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          </div>
           <CardTitle className="text-sm font-medium">
             {isLaborMode ? "Labor by Cost Code" : "Budget vs Actual"}
           </CardTitle>

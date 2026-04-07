@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useDashboardCustomization, type DashboardSection as DashboardSectionType } from "@/hooks/use-dashboard-customization";
-import { getWidgetDefinition, getWidgetComponent } from "@/components/dashboard-widgets/WidgetRegistry";
-import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList, Settings2, Copy, Plus, RefreshCw } from "lucide-react";
+import { getWidgetDefinition, getWidgetComponent, type WidgetCategory } from "@/components/dashboard-widgets/WidgetRegistry";
+import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList, Settings2, Copy, Plus, RefreshCw, PackageOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { WidgetSettingsDialog, WIDGETS_WITH_SETTINGS } from "@/components/WidgetSettingsDialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { hasManagementAccess } from "@/lib/rbac";
 import { queryClient } from "@/lib/queryClient";
 
 interface DashboardSectionProps {
@@ -28,6 +27,24 @@ const GRID_CLASSES: Record<number, string> = {
   2: "grid grid-cols-1 sm:grid-cols-2 gap-3",
   3: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3",
   4: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3",
+};
+
+const CATEGORY_DOT_COLORS: Record<WidgetCategory, string> = {
+  Financial: "bg-emerald-500",
+  Operational: "bg-blue-500",
+  Workforce: "bg-amber-500",
+  Communication: "bg-violet-500",
+  AI: "bg-purple-500",
+  General: "bg-slate-400",
+};
+
+const CATEGORY_ACCENT_COLORS: Record<WidgetCategory, string> = {
+  Financial: "border-t-emerald-500/60",
+  Operational: "border-t-blue-500/60",
+  Workforce: "border-t-amber-500/60",
+  Communication: "border-t-violet-500/60",
+  AI: "border-t-purple-500/60",
+  General: "border-t-slate-400/60",
 };
 
 export function DashboardSectionComponent({ section, sectionIndex, totalSections, onAddWidget }: DashboardSectionProps) {
@@ -61,17 +78,36 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
       if (!w.visible || !getWidgetComponent(w.type)) return false;
       const def = getWidgetDefinition(w.type);
       if (!def) return false;
-      if (def.roleGate) {
-        const roleOk = def.roleGate === "management" ? hasManagementAccess(user?.role) :
-          def.roleGate === "superintendent" ? user?.role === "SUPERINTENDENT" : true;
-        const hasFeaturePerm = def.featurePerm ? (permissions[def.featurePerm] ?? false) : false;
-        if (!roleOk && !hasFeaturePerm) return false;
+      const hasAllowedRole = def.allowedRoles
+        ? def.allowedRoles.includes(user?.role || "")
+        : true;
+      const hasFeaturePerm = def.featurePerm
+        ? (permissions[def.featurePerm] ?? false)
+        : true;
+      if (def.allowedRoles && def.featurePerm) {
+        if (!hasAllowedRole || !hasFeaturePerm) return false;
+      } else if (def.allowedRoles) {
+        if (!hasAllowedRole) return false;
       } else if (def.featurePerm) {
-        if (!permissions[def.featurePerm]) return false;
+        if (!hasFeaturePerm) return false;
       }
       return true;
     });
   }, [section.widgets, permissions, user?.role]);
+
+  const dominantCategory = useMemo((): WidgetCategory => {
+    const counts: Partial<Record<WidgetCategory, number>> = {};
+    for (const w of visibleWidgets) {
+      const def = getWidgetDefinition(w.type);
+      if (def) counts[def.category] = (counts[def.category] || 0) + 1;
+    }
+    let max: WidgetCategory = "General";
+    let maxCount = 0;
+    for (const [cat, count] of Object.entries(counts)) {
+      if (count > maxCount) { max = cat as WidgetCategory; maxCount = count; }
+    }
+    return max;
+  }, [visibleWidgets]);
 
   const handleSaveTitle = () => {
     if (titleDraft.trim()) {
@@ -122,6 +158,8 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                 <GripVertical className="w-4 h-4" />
               </div>
             )}
+
+            <div className={cn("w-2 h-2 rounded-full shrink-0", CATEGORY_DOT_COLORS[dominantCategory])} />
 
             <button
               onClick={() => toggleSectionCollapse(section.id)}
@@ -264,10 +302,18 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
       {shouldRender && (
         <CardContent className="pt-0 px-2 pb-2">
           {visibleWidgets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground border-2 border-dashed rounded-lg gap-2">
-              <p className="text-sm">
-                {isEditMode ? "No widgets in this section" : "No widgets in this section"}
-              </p>
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground border-2 border-dashed rounded-lg gap-3 bg-muted/20">
+              <div className="w-12 h-12 rounded-full bg-muted/60 flex items-center justify-center">
+                <PackageOpen className="w-6 h-6 text-muted-foreground/60" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium">
+                  {isEditMode ? "This section is empty" : "No widgets to display"}
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
+                  {isEditMode ? "Add widgets to populate this section" : "Widgets may be hidden based on your role"}
+                </p>
+              </div>
               {isEditMode && (
                 <Button variant="outline" size="sm" onClick={() => onAddWidget?.(section.id)} data-testid={`button-add-widget-empty-${section.id}`}>
                   <Plus className="w-3.5 h-3.5 mr-1.5" />
@@ -288,8 +334,9 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                   <div
                     key={widget.id}
                     className={cn(
-                      "relative group",
-                      isEditMode && "ring-1 ring-dashed ring-primary/25 rounded-lg hover:ring-primary/50 hover:shadow-sm transition-all"
+                      "relative group rounded-lg border-t-2 transition-all",
+                      CATEGORY_ACCENT_COLORS[widgetDef?.category || "General"],
+                      isEditMode && "ring-1 ring-dashed ring-primary/25 hover:ring-primary/50 hover:shadow-sm"
                     )}
                     data-testid={`widget-container-${widget.id}`}
                   >
