@@ -268,7 +268,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
     }
   });
 
-  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {

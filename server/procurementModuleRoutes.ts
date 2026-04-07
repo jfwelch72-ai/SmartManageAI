@@ -386,7 +386,7 @@ import { verifyOrgAccess } from "./orgFilter";
 import type { Response } from "express";
 
 const router = Router();
-const ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT"] as const;
+const ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"] as const;
 const APPROVE_ROLES = ["ADMIN", "MANAGER"] as const;
 
 async function verifyProjectAssignment(req: AuthRequest, res: Response, projectId: string): Promise<boolean> {
