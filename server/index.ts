@@ -24,6 +24,7 @@ import { ensureTakeoffEnhancements } from "./utils/ensureTakeoffEnhancements";
 import { ensureFieldWorkerPermColumns } from "./utils/ensureFieldWorkerPermColumns";
 import { ensurePeerRatingColumns } from "./utils/ensurePeerRatingColumns";
 import { ensurePermissionPresetsTable } from "./utils/ensurePermissionPresetsTable";
+import { ensureLidarTables } from "./utils/ensureLidarTables";
 import { seedBuiltInPresets } from "./dashboardRoutes";
 
 const app = express();
@@ -191,6 +192,7 @@ app.use((req, res, next) => {
   await ensureFieldWorkerPermColumns();
   await ensurePeerRatingColumns();
   await ensurePermissionPresetsTable();
+  await ensureLidarTables();
   await seedBuiltInPresets();
   await backfillMissingFeatureFlags();
 

@@ -67,6 +67,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Risk Management Module**: Full risk register per project with category/probability/impact scoring, risk matrix heat map visualization, lifecycle tracking, and AI-powered risk suggestions.
 *   **Location-Based Takeoff & Field Integration**: Hierarchical location system for organizing takeoff measurements, field takeoff tab for mobile progress tracking, and location cost breakdown.
 *   **BIM Viewer**: IFC file upload and 3D viewer with element tree, properties, measurement tools, and split-view.
+*   **LiDAR Scanner Module**: Upload, view, and analyze 3D point cloud scans (LAS/LAZ/PLY, E57 requires conversion). Three.js-based PointCloudViewer with orbit controls, distance/area/volume measurement tools with annotation persistence, color modes (RGB/Elevation/Intensity), scan-vs-scan comparison (overlay + side-by-side), and BIM/IFC overlay with green/yellow/red deviation coloring. Gated behind `LIDAR_SCANNER` feature flag (disabled by default). RBAC: Admins/Managers full access; Field Workers can upload; Estimators/Superintendents can view. Schema: `lidar_scans`, `lidar_annotations`, `lidar_comparisons` tables. Routes: `server/lidarRoutes.ts`. Frontend: `client/src/pages/lidar-scans.tsx`, `client/src/components/lidar/PointCloudViewer.tsx`. Runtime migration: `server/utils/ensureLidarTables.ts`. LAZ decompression uses `laz-perf` library.
 *   **Contractor Marketplace Directory**: Searchable public directory of organizations.
 *   **Leave Management Module**: Employee self-service and manager/HR views for leave management.
 *   **No-Code Workflow Builder**: Visual pipeline editor for custom approval chains, status pipelines, and notification triggers.
@@ -83,7 +84,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Uppy**
 *   **node-cron**
 *   **react-konva, konva, pdfjs-dist, xlsx**
-*   **three, web-ifc**
+*   **three, web-ifc, laz-perf**
 *   **Recharts**
 *   **react-grid-layout**
 *   **QuickBooks Online**

@@ -322,6 +322,7 @@ export const RoutePermissions = {
   LEAVE_MANAGEMENT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role),
   MARKETPLACE: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role),
   EXECUTIVE_DIGEST: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER",
+  LIDAR_SCANS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "FIELD_WORKER" || role === "HUSTLER",
 };
 
 export const FeaturePermissions = {
@@ -508,6 +509,7 @@ export const NavItems: Record<string, NavItem> = {
   '/website-builder': { href: '/website-builder', label: 'Website Builder', testId: 'nav-website-builder', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWebsite : isOrganizationAdmin(role) || role === "HUSTLER" },
   '/social-media': { href: '/social-media', label: 'Social Media', testId: 'nav-social-media', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canPostSocialMedia : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
   '/calculator': { href: '/calculator', label: 'Calculator', testId: 'nav-calculator', visible: () => true },
+  '/lidar-scans': { href: '/lidar-scans', label: 'LiDAR Scans', testId: 'nav-lidar-scans', visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "FIELD_WORKER" || role === "HUSTLER" },
 };
 
 export const NavigationConfig = {
@@ -545,7 +547,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals', '/lidar-scans'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
@@ -563,7 +565,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/production-rates', '/overhead-costs'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals', '/lidar-scans'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
@@ -583,7 +585,7 @@ const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
   { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];

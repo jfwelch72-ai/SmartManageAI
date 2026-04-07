@@ -74,7 +74,8 @@ export type FeatureKey =
   | "WARRANTY_MODULE"
   | "RISK_MANAGEMENT"
   | "ASSET_MANAGEMENT"
-  | "ENTERPRISE_NOTIFICATIONS";
+  | "ENTERPRISE_NOTIFICATIONS"
+  | "LIDAR_SCANNER";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
@@ -140,6 +141,7 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "DASHBOARD_CUSTOMIZATION",
     "CPM_SCHEDULING",
     "BIM_VIEWER",
+    "LIDAR_SCANNER",
     "WORKFLOW_BUILDER",
     "RISK_MANAGEMENT",
     "ASSET_MANAGEMENT",
@@ -495,6 +497,10 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   ENTERPRISE_NOTIFICATIONS: {
     name: "Enterprise Notifications",
     description: "SMS, Microsoft Teams, and Slack notification channels",
+  },
+  LIDAR_SCANNER: {
+    name: "LiDAR Scanner",
+    description: "3D point cloud scanning, measurement, and comparison tools",
   },
 };
 

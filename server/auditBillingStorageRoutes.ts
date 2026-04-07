@@ -148,7 +148,7 @@ const objectAclPromise = import("./objectAcl").then(m => ({
 const uploadRequestSchema = z.object({
   contentType: z.string().min(1),
   fileSize: z.number().int().positive(),
-  fileType: z.enum(["MEDIA", "DOCUMENT", "RECEIPT", "BIM"]).optional(),
+  fileType: z.enum(["MEDIA", "DOCUMENT", "RECEIPT", "BIM", "LIDAR"]).optional(),
 });
 
 router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res) => {

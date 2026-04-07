@@ -2,7 +2,7 @@ import { db } from "./db";
 import { media, planDocuments, receipts } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
-export type FileType = "MEDIA" | "DOCUMENT" | "RECEIPT" | "BIM";
+export type FileType = "MEDIA" | "DOCUMENT" | "RECEIPT" | "BIM" | "LIDAR";
 
 export async function validateFileExists(fileId: string, fileType: FileType): Promise<boolean> {
   let exists = false;
@@ -50,6 +50,15 @@ export const ALLOWED_BIM_TYPES = [
   "model/ifc",
 ];
 
+export const ALLOWED_LIDAR_TYPES = [
+  "application/octet-stream",
+  "application/x-las",
+  "application/x-laz",
+  "application/x-e57",
+  "application/x-ply",
+  "model/x-pointcloud",
+];
+
 export const ALLOWED_RECEIPT_TYPES = [
   "image/jpeg",
   "image/jpg",
@@ -63,6 +72,7 @@ export const MAX_MEDIA_SIZE = 100 * 1024 * 1024; // 100MB
 export const MAX_DOCUMENT_SIZE = 50 * 1024 * 1024; // 50MB
 export const MAX_RECEIPT_SIZE = 10 * 1024 * 1024; // 10MB
 export const MAX_BIM_SIZE = 200 * 1024 * 1024; // 200MB
+export const MAX_LIDAR_SIZE = 500 * 1024 * 1024; // 500MB
 
 export function validateMimeType(mimeType: string, fileType: FileType): boolean {
   if (fileType === "MEDIA") {
@@ -73,6 +83,8 @@ export function validateMimeType(mimeType: string, fileType: FileType): boolean 
     return ALLOWED_RECEIPT_TYPES.includes(mimeType);
   } else if (fileType === "BIM") {
     return ALLOWED_BIM_TYPES.includes(mimeType);
+  } else if (fileType === "LIDAR") {
+    return ALLOWED_LIDAR_TYPES.includes(mimeType);
   }
   return false;
 }
@@ -86,6 +98,8 @@ export function validateFileSize(fileSize: number, fileType: FileType): boolean 
     return fileSize <= MAX_RECEIPT_SIZE;
   } else if (fileType === "BIM") {
     return fileSize <= MAX_BIM_SIZE;
+  } else if (fileType === "LIDAR") {
+    return fileSize <= MAX_LIDAR_SIZE;
   }
   return false;
 }
@@ -95,6 +109,7 @@ export function getMaxFileSize(fileType: FileType): number {
   if (fileType === "DOCUMENT") return MAX_DOCUMENT_SIZE;
   if (fileType === "RECEIPT") return MAX_RECEIPT_SIZE;
   if (fileType === "BIM") return MAX_BIM_SIZE;
+  if (fileType === "LIDAR") return MAX_LIDAR_SIZE;
   return 0;
 }
 
@@ -103,5 +118,6 @@ export function getAllowedMimeTypes(fileType: FileType): string[] {
   if (fileType === "DOCUMENT") return ALLOWED_DOCUMENT_TYPES;
   if (fileType === "RECEIPT") return ALLOWED_RECEIPT_TYPES;
   if (fileType === "BIM") return ALLOWED_BIM_TYPES;
+  if (fileType === "LIDAR") return ALLOWED_LIDAR_TYPES;
   return [];
 }

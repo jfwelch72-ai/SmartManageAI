@@ -19,7 +19,7 @@ interface ObjectUploaderProps {
   maxNumberOfFiles?: number;
   maxFileSize?: number;
   allowedFileTypes?: string[];
-  fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT" | "BIM";
+  fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT" | "BIM" | "LIDAR";
   onGetUploadParameters?: (file: { name: string; type: string; size: number }) => Promise<UploadParams>;
   onComplete?: (
     result: UploadResult<Record<string, unknown>, Record<string, unknown>>

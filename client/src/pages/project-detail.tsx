@@ -64,6 +64,7 @@ import {
   Search,
   Pin,
   Star,
+  ScanLine,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -118,6 +119,7 @@ import ProjectVaultTab from "@/components/project-tabs/ProjectVaultTab";
 import RisksTab from "@/components/project-tabs/RisksTab";
 import LocationManagerTab from "@/components/project-tabs/LocationManagerTab";
 import FieldTakeoffTab from "@/components/project-tabs/FieldTakeoffTab";
+import LidarTab from "@/components/project-tabs/LidarTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
 import type { LucideIcon } from "lucide-react";
@@ -450,6 +452,13 @@ function buildTabConfigs(
       icon: Bot,
       visible: hasManagementAccess(userRole),
       group: "AI",
+    },
+    {
+      value: "lidar-scans",
+      label: "LiDAR Scans",
+      icon: ScanLine,
+      visible: ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "HUSTLER"].includes(userRole || ""),
+      group: "Field Operations",
     },
   ];
 }
@@ -1306,6 +1315,14 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="safety-training">
             <SafetyTrainingTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
+            />
+          </TabsContent>
+
+          <TabsContent value="lidar-scans">
+            <LidarTab
               projectId={project.id}
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}
