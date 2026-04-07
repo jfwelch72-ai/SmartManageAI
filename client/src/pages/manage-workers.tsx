@@ -152,7 +152,6 @@ const ROLE_OPTIONS = [
   { value: "ESTIMATOR", label: "Estimator" },
   { value: "FIELD_WORKER", label: "Field Worker" },
   { value: "VENDOR", label: "Vendor" },
-  { value: "HUSTLER", label: "Hustler" },
 ];
 
 const EMPLOYMENT_TYPE_OPTIONS = [
