@@ -355,6 +355,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [tourSteps, setTourSteps] = useState<Step[]>([]);
   const [pendingNavigation, setPendingNavigation] = useState<{ path: string; targetStep: number } | null>(null);
   const skipCheckRef = useRef(false);
+  const [targetReady, setTargetReady] = useState(false);
   
   const role = user?.effectiveRole || user?.role || "FIELD_WORKER";
   
@@ -398,16 +399,32 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   }, [role]);
   
   useEffect(() => {
-    if (!isTourActive || pendingNavigation || skipCheckRef.current) return;
+    if (!isTourActive || pendingNavigation) {
+      setTargetReady(false);
+      return;
+    }
     
-    const checkTarget = setTimeout(() => {
-      const roleSteps = roleStepsRef.current;
-      if (currentStep >= roleSteps.length) return;
-      
-      const targetSelector = roleSteps[currentStep].target;
+    const roleSteps = roleStepsRef.current;
+    if (currentStep >= roleSteps.length) return;
+    
+    const targetSelector = roleSteps[currentStep].target;
+    setTargetReady(false);
+    
+    let attempts = 0;
+    const maxAttempts = 20;
+    
+    const poll = setInterval(() => {
+      attempts++;
       const targetEl = document.querySelector(targetSelector);
       
-      if (!targetEl) {
+      if (targetEl) {
+        clearInterval(poll);
+        setTargetReady(true);
+        return;
+      }
+      
+      if (attempts >= maxAttempts) {
+        clearInterval(poll);
         skipCheckRef.current = true;
         const nextStep = currentStep + 1;
         if (nextStep >= roleSteps.length) {
@@ -424,9 +441,9 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         }
         setTimeout(() => { skipCheckRef.current = false; }, 100);
       }
-    }, 800);
+    }, 100);
     
-    return () => clearTimeout(checkTarget);
+    return () => clearInterval(poll);
   }, [isTourActive, currentStep, pendingNavigation, location, setLocation]);
   
   useEffect(() => {
@@ -600,7 +617,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         <Joyride
           steps={tourSteps}
           stepIndex={currentStep}
-          run={isTourActive}
+          run={isTourActive && targetReady}
           continuous
           showProgress
           showSkipButton

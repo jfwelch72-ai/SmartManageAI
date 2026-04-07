@@ -194,6 +194,16 @@ export function AppSidebar() {
     }
   }, [tour.isTourActive, tour.currentTourTarget, userRole]);
 
+  useEffect(() => {
+    if (!tour.isTourActive || !userRole) return;
+    const groups = getWorkflowGroups(userRole);
+    const expandAll: Record<string, boolean> = {};
+    groups.forEach(g => {
+      if (g.key !== 'portfolio') expandAll[g.key] = true;
+    });
+    setOpenGroups(prev => ({ ...prev, ...expandAll }));
+  }, [tour.isTourActive, userRole]);
+
   const { data: walkthroughStatus } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
     enabled: !!user,
@@ -203,8 +213,7 @@ export function AppSidebar() {
   const { entitlements } = useEntitlements();
   const { permissions: featurePerms, isLoadingPermissions } = useDashboardCustomizationSafe();
 
-  const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
-    (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);
+  const showTutorialButton = !!walkthroughStatus;
   const isInWalkthrough = tour.isTourActive;
   const showUpgradeButton = entitlements?.planTier === "free" && user?.role !== "SUPER_ADMIN";
 
