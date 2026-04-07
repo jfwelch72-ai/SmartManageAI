@@ -129,7 +129,7 @@ export function isAdminOrManager(role?: string, perms?: FeaturePerms): boolean {
 }
 
 export function hasFinancialAccess(role?: string, perms?: FeaturePerms): boolean {
-  if (perms) return !!perms.canViewFinancials || !!perms.canAccessFinancials;
+  if (perms) return !!perms.canViewFinancials;
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" ||
          role === "ESTIMATOR" || role === "HUSTLER";
 }
@@ -402,7 +402,6 @@ export interface FeaturePerms {
   canAccessScopeSettings?: boolean;
   canUseAiBidAnalysis?: boolean;
   canUseAiContractAnalysis?: boolean;
-  canAccessFinancials?: boolean;
   canViewFinancials?: boolean;
   canEditFinancials?: boolean;
   canAccessCostRates?: boolean;

@@ -241,7 +241,7 @@ export type FeaturePermissionKey =
   | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
   | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
   | 'canAccessHistoricalCosts' | 'canAccessScopeSettings' | 'canUseAiBidAnalysis' | 'canUseAiContractAnalysis'
-  | 'canAccessFinancials' | 'canViewFinancials' | 'canEditFinancials'
+  | 'canViewFinancials' | 'canEditFinancials'
   | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
   | 'canManageContracts' | 'canAccessSubcontracts' | 'canAccessOverheadCosts' | 'canAccessProductionRates' | 'canAccessVendorPricing'
   | 'canAccessTimeClock' | 'canManageTimeClock' | 'canApproveTime' | 'canAccessTMDaily'
@@ -272,14 +272,22 @@ export async function getEffectivePermissions(userId: string, orgId: string | nu
     if (!perm) return roleDefaults;
     const dbPerms: Partial<Record<string, boolean>> = {};
     for (const key of Object.keys(roleDefaults)) {
+      if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
       const val = (perm as Record<string, unknown>)[key];
       if (typeof val === 'boolean') {
         dbPerms[key] = val;
       }
     }
-    if ((perm as Record<string, unknown>).canAccessFinancials === true) {
+    const financialsAccess = (perm as Record<string, unknown>).financialsAccess as string | undefined;
+    if (financialsAccess === 'manage') {
       dbPerms.canViewFinancials = true;
       dbPerms.canEditFinancials = true;
+    } else if (financialsAccess === 'view') {
+      dbPerms.canViewFinancials = true;
+      dbPerms.canEditFinancials = false;
+    } else if (financialsAccess === 'none') {
+      dbPerms.canViewFinancials = false;
+      dbPerms.canEditFinancials = false;
     }
     return mergePermissions(roleDefaults, dbPerms);
   } catch (error) {

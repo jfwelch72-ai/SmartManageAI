@@ -4436,9 +4436,7 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canUseAiContractAnalysis: boolean("can_use_ai_contract_analysis").notNull().default(false),
 
   // Category 3: Financial Management (24-35)
-  canAccessFinancials: boolean("can_access_financials").notNull().default(false),
-  canViewFinancials: boolean("can_view_financials").notNull().default(false),
-  canEditFinancials: boolean("can_edit_financials").notNull().default(false),
+  financialsAccess: text("financials_access").notNull().default("none"),
   canAccessCostRates: boolean("can_access_cost_rates").notNull().default(false),
   canAccessCFODashboard: boolean("can_access_cfo_dashboard").notNull().default(false),
   canAccessTMBilling: boolean("can_access_tm_billing").notNull().default(false),
@@ -4748,7 +4746,7 @@ export const hustlerDelegates = pgTable("hustler_delegates", {
   // Permissions - what the delegate can do
   canCreateOrganizations: boolean("can_create_organizations").notNull().default(true),
   canManageAllOrganizations: boolean("can_manage_all_organizations").notNull().default(true),
-  canViewFinancials: boolean("can_view_financials").notNull().default(true),
+  financialsAccess: text("financials_access").notNull().default("view"),
   canInviteOtherDelegates: boolean("can_invite_other_delegates").notNull().default(false),
   // Timestamps
   expiresAt: timestamp("expires_at"),

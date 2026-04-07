@@ -27,7 +27,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canManageBidResponses: true, canDeleteBidRequests: true,
     canAccessHistoricalCosts: true, canAccessScopeSettings: true,
     canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
-    canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+    canViewFinancials: true, canEditFinancials: true,
     canAccessCostRates: true, canAccessCFODashboard: true,
     canAccessTMBilling: true, canAccessProgressBilling: true,
     canManageContracts: true, canAccessSubcontracts: true, canAccessOverheadCosts: true,
@@ -58,7 +58,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canManageBidResponses: true, canDeleteBidRequests: true,
     canAccessHistoricalCosts: true, canAccessScopeSettings: true,
     canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
-    canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+    canViewFinancials: true, canEditFinancials: false,
     canAccessCFODashboard: true,
     canAccessTMBilling: true, canAccessProgressBilling: true,
     canManageContracts: true, canAccessSubcontracts: true, canAccessOverheadCosts: true,
@@ -82,7 +82,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
     canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
     canViewBids: true, canAccessHistoricalCosts: true,
-    canAccessFinancials: true, canViewFinancials: true,
+    canViewFinancials: true,
     canAccessCFODashboard: true, canManageContracts: true, canAccessSubcontracts: true,
     canAccessProductionRates: true,
     canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
@@ -102,7 +102,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
     canAccessHistoricalCosts: true, canAccessScopeSettings: true, canUseAiBidAnalysis: true,
     canCreateProjects: true,
-    canAccessFinancials: true, canViewFinancials: true,
+    canViewFinancials: true,
     canEditProjects: true, canAccessCostRates: true, canAccessProductionRates: true,
     canAccessTimeClock: true,
     canAccessCRM: true, canCreateCRMContacts: true,
@@ -120,7 +120,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
   HUSTLER: {
     canAccessDashboard: true, canAccessProjects: true, canAccessMessages: true,
     canAccessCalendar: true, canManageUsers: true,
-    canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+    canViewFinancials: true, canEditFinancials: true,
     canAccessKPIs: true, canAccessCFODashboard: true,
     canManageHiring: true, canAccessHiringInterviews: true,
     canAccessReports: true, canManagePayroll: true,
@@ -227,7 +227,7 @@ interface Delegate {
   status: string;
   canCreateOrganizations: boolean;
   canManageAllOrganizations: boolean;
-  canViewFinancials: boolean;
+  financialsAccess: string;
   canInviteOtherDelegates: boolean;
   expiresAt: string | null;
   acceptedAt: string | null;
@@ -1091,9 +1091,9 @@ export default function HustlerDashboard() {
                       Can create organizations
                     </p>
                     <p className="flex items-center gap-1">
-                      {delegate.canViewFinancials && <Check className="h-3 w-3 text-green-500" />}
-                      {!delegate.canViewFinancials && <X className="h-3 w-3 text-red-500" />}
-                      Can view financials
+                      {delegate.financialsAccess !== "none" && <Check className="h-3 w-3 text-green-500" />}
+                      {delegate.financialsAccess === "none" && <X className="h-3 w-3 text-red-500" />}
+                      Financials: {delegate.financialsAccess === "manage" ? "Manage" : delegate.financialsAccess === "view" ? "View" : "None"}
                     </p>
                   </div>
                   {delegate.status !== "REVOKED" && (

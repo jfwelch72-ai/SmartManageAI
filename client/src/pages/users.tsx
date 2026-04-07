@@ -89,7 +89,6 @@ import {
 import type { SelectUser } from "@shared/schema";
 
 interface PermissionSet {
-  canAccessFinancials: boolean;
   canViewFinancials: boolean;
   canEditFinancials: boolean;
   canManagePayroll: boolean;
@@ -110,7 +109,6 @@ interface PermissionSet {
 }
 
 interface UserWithPermissions extends SelectUser {
-  canAccessFinancials?: boolean;
   canViewFinancials?: boolean;
   canEditFinancials?: boolean;
   canManagePayroll?: boolean;
@@ -175,7 +173,6 @@ const STATUS_FILTERS = [
 ];
 
 const HUSTLER_BASE_PERMISSIONS = new Set([
-  "canAccessFinancials",
   "canViewFinancials",
   "canEditFinancials",
   "canAccessKPIs",
@@ -409,13 +406,12 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     },
   });
 
-  const PERMISSION_GROUPS = [
+  type PermissionItem = { key: string; label: string; icon: typeof DollarSign; description: string; isFinancialsDropdown?: boolean };
+  const PERMISSION_GROUPS: { label: string; permissions: PermissionItem[] }[] = [
     {
       label: "Financial",
       permissions: [
-        { key: "canAccessFinancials" as const, label: "Financials Access (Legacy)", icon: DollarSign, description: "Legacy financial access flag — use View/Edit Financials instead" },
-        { key: "canViewFinancials" as const, label: "View Financials", icon: DollarSign, description: "View financial dashboards, reports, and budgets (read-only)" },
-        { key: "canEditFinancials" as const, label: "Edit Financials", icon: CreditCard, description: "Create and modify transactions, billing, and budgets" },
+        { key: "canViewFinancials" as const, label: "Financials Access", icon: DollarSign, description: "Controls financial access level: None, View (read-only), or Manage (full access)", isFinancialsDropdown: true },
         { key: "canManagePayroll" as const, label: "Payroll Management", icon: CreditCard, description: "Manage payroll, pay runs, and deductions" },
       ],
     },
@@ -465,7 +461,13 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     },
   ];
 
-  const ALL_PERM_KEYS = PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key));
+  const ALL_PERM_KEYS = [...PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)), "canEditFinancials" as const];
+
+  const buildCurrentPermissions = (userPerms: UserWithPermissions): Record<string, boolean> => {
+    const currentPermissions: Record<string, boolean> = {};
+    ALL_PERM_KEYS.forEach(k => { currentPermissions[k] = !!(userPerms[k as keyof UserWithPermissions]); });
+    return currentPermissions;
+  };
 
   const updatePermissionsMutation = useMutation({
     mutationFn: async ({ userId, permissions }: { userId: string; permissions: Record<string, boolean> }) => {
@@ -481,8 +483,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   });
 
   const handleTogglePermission = async (userId: string, permKey: string, currentValue: boolean, userPerms: UserWithPermissions) => {
-    const currentPermissions: Record<string, boolean> = {};
-    ALL_PERM_KEYS.forEach(k => { currentPermissions[k] = !!(userPerms as any)[k]; });
+    const currentPermissions = buildCurrentPermissions(userPerms);
     currentPermissions[permKey] = !currentValue;
     await updatePermissionsMutation.mutateAsync({ userId, permissions: currentPermissions });
   };
@@ -1025,7 +1026,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                       const isAdmin = u.role === "ADMIN";
                       const isExpanded = expandedUsers.has(u.id) || isMobile;
                       const effectivePerms = u.effective;
-                      const grantedCount = isAdmin ? ALL_PERM_KEYS.length : effectivePerms ? ALL_PERM_KEYS.filter(k => effectivePerms[k]).length : ALL_PERM_KEYS.filter(k => !!(u as any)[k]).length;
+                      const grantedCount = isAdmin ? ALL_PERM_KEYS.length : effectivePerms ? ALL_PERM_KEYS.filter(k => effectivePerms[k]).length : ALL_PERM_KEYS.filter(k => !!(u[k as keyof UserWithPermissions])).length;
 
                       return (
                         <Card key={u.id} data-testid={`row-permission-${u.id}`} className="overflow-hidden">
@@ -1191,12 +1192,60 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                       {group.permissions.map((perm) => {
                                         const Icon = perm.icon;
                                         const isRoleDefault = u.roleDefaults?.[perm.key] ?? false;
-                                        const dbValue = !!(u as any)[perm.key];
+                                        const dbValue = !!(u[perm.key as keyof UserWithPermissions]);
                                         const effectiveValue = isAdmin ? true : (isRoleDefault || dbValue);
                                         const isHustler = u.role === "HUSTLER";
                                         const isHustlerBase = isHustler && HUSTLER_BASE_PERMISSIONS.has(perm.key);
                                         const isInheritedFromRole = isHustler && !isHustlerBase && isRoleDefault;
                                         const inheritedRoleName = isInheritedFromRole ? (ROLE_LABELS[u.effectiveRole || "ADMIN"] || u.effectiveRole || "Admin") : null;
+
+                                        if (perm.isFinancialsDropdown) {
+                                          const viewVal = !!u.canViewFinancials || u.roleDefaults?.canViewFinancials;
+                                          const editVal = !!u.canEditFinancials || u.roleDefaults?.canEditFinancials;
+                                          let currentLevel = "none";
+                                          if (isAdmin) currentLevel = "manage";
+                                          else if (editVal) currentLevel = "manage";
+                                          else if (viewVal) currentLevel = "view";
+
+                                          return (
+                                            <div
+                                              key={perm.key}
+                                              className="flex items-center justify-between gap-3 py-2 px-2 rounded-md hover:bg-muted/30 transition-colors"
+                                              style={{ minHeight: "44px" }}
+                                            >
+                                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                                                <div className="min-w-0">
+                                                  <span className="text-sm font-medium leading-tight">{perm.label}</span>
+                                                  <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
+                                                </div>
+                                              </div>
+                                              <Select
+                                                value={currentLevel}
+                                                onValueChange={(val) => {
+                                                  const newView = val === "view" || val === "manage";
+                                                  const newEdit = val === "manage";
+                                                  const currentPerms = buildCurrentPermissions(u);
+                                                  updatePermissionsMutation.mutate({
+                                                    userId: u.id,
+                                                    permissions: { ...currentPerms, canViewFinancials: newView, canEditFinancials: newEdit },
+                                                  });
+                                                }}
+                                                disabled={isAdmin || updatePermissionsMutation.isPending}
+                                              >
+                                                <SelectTrigger className="w-[120px] h-8 text-xs" data-testid={`select-financials-access-${u.id}`}>
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="none">None</SelectItem>
+                                                  <SelectItem value="view">View</SelectItem>
+                                                  <SelectItem value="manage">Manage</SelectItem>
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                          );
+                                        }
+
                                         return (
                                           <div
                                             key={perm.key}

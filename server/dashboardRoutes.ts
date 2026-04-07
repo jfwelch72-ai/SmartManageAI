@@ -211,7 +211,7 @@ type FeaturePermissionKeys =
   | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
   | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
   | 'canAccessHistoricalCosts' | 'canAccessScopeSettings' | 'canUseAiBidAnalysis' | 'canUseAiContractAnalysis'
-  | 'canAccessFinancials' | 'canViewFinancials' | 'canEditFinancials'
+  | 'canViewFinancials' | 'canEditFinancials'
   | 'canAccessCostRates' | 'canAccessCFODashboard' | 'canAccessTMBilling' | 'canAccessProgressBilling'
   | 'canManageContracts' | 'canAccessSubcontracts' | 'canAccessOverheadCosts' | 'canAccessProductionRates' | 'canAccessVendorPricing'
   | 'canAccessTimeClock' | 'canManageTimeClock' | 'canApproveTime' | 'canAccessTMDaily'
@@ -239,7 +239,7 @@ const ALL_FALSE: PermissionSet = {
   canConvertBidToProject: false, canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false,
   canManageBidResponses: false, canDeleteBidRequests: false, canAccessHistoricalCosts: false,
   canAccessScopeSettings: false, canUseAiBidAnalysis: false, canUseAiContractAnalysis: false,
-  canAccessFinancials: false, canViewFinancials: false, canEditFinancials: false,
+  canViewFinancials: false, canEditFinancials: false,
   canAccessCostRates: false, canAccessCFODashboard: false,
   canAccessTMBilling: false, canAccessProgressBilling: false, canManageContracts: false,
   canAccessSubcontracts: false, canAccessOverheadCosts: false, canAccessProductionRates: false,
@@ -269,7 +269,7 @@ const ALL_TRUE: PermissionSet = {
   canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
   canManageBidResponses: true, canDeleteBidRequests: true, canAccessHistoricalCosts: true,
   canAccessScopeSettings: true, canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
-  canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+  canViewFinancials: true, canEditFinancials: true,
   canAccessCostRates: true, canAccessCFODashboard: true,
   canAccessTMBilling: true, canAccessProgressBilling: true, canManageContracts: true,
   canAccessSubcontracts: true, canAccessOverheadCosts: true, canAccessProductionRates: true,
@@ -326,6 +326,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   MANAGER: {
     ...ALL_TRUE,
     canAccessActiveProjectsOnly: false,
+    canEditFinancials: false,
     canAccessCostRates: false,
     canManageWebsite: false,
     canManageAISettings: false,
@@ -338,7 +339,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
     canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
     canViewBids: true, canAccessHistoricalCosts: true,
-    canAccessFinancials: true, canViewFinancials: true, canEditFinancials: false,
+    canViewFinancials: true, canEditFinancials: false,
     canManageContracts: true, canAccessSubcontracts: true,
     canAccessProductionRates: true,
     canAccessCFODashboard: true,
@@ -361,7 +362,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
     canAccessHistoricalCosts: true, canAccessScopeSettings: true, canUseAiBidAnalysis: true,
     canCreateProjects: true, canEditProjects: true,
-    canAccessFinancials: true, canViewFinancials: true, canEditFinancials: false,
+    canViewFinancials: true, canEditFinancials: false,
     canAccessCostRates: true, canAccessProductionRates: true,
     canAccessTimeClock: true,
     canAccessCRM: true, canCreateCRMContacts: true,
@@ -447,10 +448,16 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
       const dbPerms: Partial<PermissionSet> = {};
       if (perm) {
         for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+          if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
           const val = (perm as Record<string, unknown>)[key];
           if (typeof val === 'boolean') {
             dbPerms[key] = val;
           }
+        }
+        const fa = (perm as Record<string, unknown>).financialsAccess as string | undefined;
+        if (fa) {
+          dbPerms.canViewFinancials = fa === 'view' || fa === 'manage';
+          dbPerms.canEditFinancials = fa === 'manage';
         }
       }
       const effective = mergePermissions(roleDefaults, perm ? dbPerms : null);
@@ -489,6 +496,12 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
 
     const data = schema.parse(req.body);
 
+    const { canViewFinancials: viewFin, canEditFinancials: editFin, ...restData } = data as Record<string, boolean>;
+    let financialsAccess = "none";
+    if (editFin) financialsAccess = "manage";
+    else if (viewFin) financialsAccess = "view";
+    const dbData = { ...restData, financialsAccess };
+
     const [targetUser] = await db.select().from(users)
       .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
 
@@ -505,17 +518,21 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
     const oldPermissions: Record<string, boolean> = {};
     if (existing.length > 0) {
       for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+        if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
         const val = (existing[0] as Record<string, unknown>)[key];
         if (typeof val === 'boolean') {
           oldPermissions[key] = val;
         }
       }
+      const oldFa = (existing[0] as Record<string, unknown>).financialsAccess as string | undefined;
+      oldPermissions.canViewFinancials = oldFa === 'view' || oldFa === 'manage';
+      oldPermissions.canEditFinancials = oldFa === 'manage';
     }
 
     if (existing.length > 0) {
       await db.update(userDashboardPermissions)
         .set({
-          ...data,
+          ...dbData,
           grantedByUserId: adminId,
           grantedAt: new Date(),
           updatedAt: new Date(),
@@ -525,7 +542,7 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
       await db.insert(userDashboardPermissions).values({
         organizationId: orgId,
         userId,
-        ...data,
+        ...dbData,
         grantedByUserId: adminId,
         grantedAt: new Date(),
       });
@@ -603,7 +620,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       ...ALL_FALSE,
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
-      canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+      canViewFinancials: true, canEditFinancials: true,
       canAccessCFODashboard: true, canManagePayroll: true,
       canManageContracts: true, canAccessSubcontracts: true, canAccessOverheadCosts: true,
       canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
@@ -622,7 +639,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canViewFinancials: true,
+      canViewFinancials: true,
       canAccessReports: true, canAccessKPIs: true,
       canAccessTimeClock: true, canAccessTMDaily: true,
       canAccessCRM: true, canAccessCompanySettings: true,
@@ -668,7 +685,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       ...ALL_FALSE,
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
-      canAccessFinancials: true, canViewFinancials: true, canEditFinancials: true,
+      canViewFinancials: true, canEditFinancials: true,
       canAccessCostRates: true, canAccessCFODashboard: true,
       canAccessTMBilling: true, canAccessProgressBilling: true,
       canManagePayroll: true, canAccessOverheadCosts: true, canAccessProductionRates: true,
@@ -762,7 +779,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canViewFinancials: true,
+      canViewFinancials: true,
       canManageContracts: true, canAccessSubcontracts: true,
       canAccessProductionRates: true,
       canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
@@ -785,7 +802,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canViewFinancials: true,
+      canViewFinancials: true,
       canAccessProductionRates: true,
       canAccessTimeClock: true, canManageTimeClock: true, canAccessTMDaily: true,
       canManageWorkforce: true, canManageSafety: true,
@@ -852,7 +869,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
       canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
       canViewBids: true, canAccessHistoricalCosts: true,
-      canAccessFinancials: true, canViewFinancials: true,
+      canViewFinancials: true,
       canAccessProductionRates: true,
       canAccessTimeClock: true,
       canAccessCRM: true,
@@ -873,7 +890,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
       canManageBidResponses: true, canAccessHistoricalCosts: true, canAccessScopeSettings: true,
       canUseAiBidAnalysis: true, canCreateProjects: true,
-      canAccessFinancials: true, canViewFinancials: true,
+      canViewFinancials: true,
       canAccessCostRates: true, canAccessProductionRates: true,
       canAccessTimeClock: true,
       canAccessCRM: true, canCreateCRMContacts: true,
@@ -896,7 +913,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canManageBidResponses: true, canDeleteBidRequests: true,
       canAccessHistoricalCosts: true, canAccessScopeSettings: true,
       canUseAiBidAnalysis: true, canUseAiContractAnalysis: true, canCreateProjects: true,
-      canAccessFinancials: true, canViewFinancials: true,
+      canViewFinancials: true,
       canAccessCostRates: true, canAccessProductionRates: true,
       canAccessTimeClock: true,
       canAccessCRM: true, canCreateCRMContacts: true,
@@ -1114,10 +1131,16 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
       }
     }
 
+    const { canViewFinancials: pViewFin, canEditFinancials: pEditFin, ...pRestData } = fullPermSet;
+    let pFinancialsAccess = "none";
+    if (pEditFin) pFinancialsAccess = "manage";
+    else if (pViewFin) pFinancialsAccess = "view";
+    const presetDbData = { ...pRestData, financialsAccess: pFinancialsAccess };
+
     if (existing.length > 0) {
       await db.update(userDashboardPermissions)
         .set({
-          ...fullPermSet,
+          ...presetDbData,
           grantedByUserId: adminId,
           grantedAt: new Date(),
           updatedAt: new Date(),
@@ -1127,7 +1150,7 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
       await db.insert(userDashboardPermissions).values({
         organizationId: orgId,
         userId,
-        ...fullPermSet,
+        ...presetDbData,
         grantedByUserId: adminId,
         grantedAt: new Date(),
       });
@@ -1169,10 +1192,22 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
     const dbPerms: Partial<PermissionSet> | null = permission ? (() => {
       const perms: Partial<PermissionSet> = {};
       for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+        if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
         const val = (permission as Record<string, unknown>)[key];
         if (typeof val === 'boolean') {
           perms[key] = val;
         }
+      }
+      const fa = (permission as Record<string, unknown>).financialsAccess as string | undefined;
+      if (fa === 'manage') {
+        perms.canViewFinancials = true;
+        perms.canEditFinancials = true;
+      } else if (fa === 'view') {
+        perms.canViewFinancials = true;
+        perms.canEditFinancials = false;
+      } else if (fa === 'none') {
+        perms.canViewFinancials = false;
+        perms.canEditFinancials = false;
       }
       return perms;
     })() : null;

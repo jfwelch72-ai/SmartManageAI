@@ -1176,7 +1176,7 @@ const inviteDelegateSchema = z.object({
   delegateRole: z.enum(["COO", "CFO", "OPERATIONS_MANAGER"]).default("COO"),
   canCreateOrganizations: z.boolean().default(true),
   canManageAllOrganizations: z.boolean().default(true),
-  canViewFinancials: z.boolean().default(true),
+  financialsAccess: z.enum(["none", "view", "manage"]).default("view"),
   canInviteOtherDelegates: z.boolean().default(false),
 });
 
@@ -1195,7 +1195,7 @@ router.get("/hustler/delegates", requireAuth, requireRole("HUSTLER"), async (req
         status: hustlerDelegates.status,
         canCreateOrganizations: hustlerDelegates.canCreateOrganizations,
         canManageAllOrganizations: hustlerDelegates.canManageAllOrganizations,
-        canViewFinancials: hustlerDelegates.canViewFinancials,
+        financialsAccess: hustlerDelegates.financialsAccess,
         canInviteOtherDelegates: hustlerDelegates.canInviteOtherDelegates,
         expiresAt: hustlerDelegates.expiresAt,
         acceptedAt: hustlerDelegates.acceptedAt,
@@ -1232,7 +1232,7 @@ router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), as
       return res.status(400).json({ error: "Invalid input", details: validationResult.error.issues });
     }
 
-    const { email, delegateRole, canCreateOrganizations, canManageAllOrganizations, canViewFinancials, canInviteOtherDelegates } = validationResult.data;
+    const { email, delegateRole, canCreateOrganizations, canManageAllOrganizations, financialsAccess, canInviteOtherDelegates } = validationResult.data;
 
     // Check if already invited
     const [existing] = await db
@@ -1272,7 +1272,7 @@ router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), as
       status: "PENDING",
       canCreateOrganizations,
       canManageAllOrganizations,
-      canViewFinancials,
+      financialsAccess,
       canInviteOtherDelegates,
       expiresAt,
     });
@@ -1304,7 +1304,7 @@ router.get("/hustler/delegates/invites", requireAuth, async (req: AuthRequest, r
         status: hustlerDelegates.status,
         canCreateOrganizations: hustlerDelegates.canCreateOrganizations,
         canManageAllOrganizations: hustlerDelegates.canManageAllOrganizations,
-        canViewFinancials: hustlerDelegates.canViewFinancials,
+        financialsAccess: hustlerDelegates.financialsAccess,
         canInviteOtherDelegates: hustlerDelegates.canInviteOtherDelegates,
         expiresAt: hustlerDelegates.expiresAt,
         createdAt: hustlerDelegates.createdAt,

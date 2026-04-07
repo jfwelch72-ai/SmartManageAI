@@ -5,8 +5,6 @@ export async function ensureFieldWorkerPermColumns(): Promise<void> {
   const columns = [
     { name: "can_view_safety", table: "user_dashboard_permissions" },
     { name: "can_view_ai_summaries", table: "user_dashboard_permissions" },
-    { name: "can_view_financials", table: "user_dashboard_permissions" },
-    { name: "can_edit_financials", table: "user_dashboard_permissions" },
   ];
 
   for (const col of columns) {
@@ -32,29 +30,66 @@ export async function ensureFieldWorkerPermColumns(): Promise<void> {
     }
   }
 
-  await backfillFinancialPermissionsSplit();
+  await ensureFinancialsAccessColumn("user_dashboard_permissions", "none");
+  await ensureFinancialsAccessColumn("hustler_delegates", "view");
 }
 
-async function backfillFinancialPermissionsSplit(): Promise<void> {
+async function ensureFinancialsAccessColumn(table: string, defaultVal: string): Promise<void> {
   try {
-    const viewResult = await db.execute(sql`
-      UPDATE user_dashboard_permissions
-      SET can_view_financials = true
-      WHERE can_access_financials = true
-        AND can_view_financials = false
+    const colCheck = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = ${table} AND column_name = 'financials_access'
+      )::boolean AS col_exists
     `);
-    const viewRows = viewResult && typeof viewResult === 'object' && 'rowCount' in viewResult ? viewResult.rowCount : 0;
-    console.log(`[migration] backfill can_view_financials from can_access_financials — ${viewRows || 0} rows updated`);
+    const exists = colCheck.rows[0]?.col_exists === true;
 
-    const editResult = await db.execute(sql`
-      UPDATE user_dashboard_permissions
-      SET can_edit_financials = true
-      WHERE can_access_financials = true
-        AND can_edit_financials = false
-    `);
-    const editRows = editResult && typeof editResult === 'object' && 'rowCount' in editResult ? editResult.rowCount : 0;
-    console.log(`[migration] backfill can_edit_financials from can_access_financials — ${editRows || 0} rows updated`);
+    if (!exists) {
+      await db.execute(sql.raw(
+        `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "financials_access" text NOT NULL DEFAULT '${defaultVal}'`
+      ));
+
+      const hasLegacyView = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = ${table} AND column_name = 'can_view_financials'
+        )::boolean AS col_exists
+      `);
+      if (hasLegacyView.rows[0]?.col_exists === true) {
+        if (table === "user_dashboard_permissions") {
+          await db.execute(sql.raw(`
+            UPDATE "${table}" SET financials_access = CASE
+              WHEN can_edit_financials = true THEN 'manage'
+              WHEN can_view_financials = true OR can_access_financials = true THEN 'view'
+              ELSE 'none'
+            END
+          `));
+        } else {
+          await db.execute(sql.raw(`
+            UPDATE "${table}" SET financials_access = CASE
+              WHEN can_view_financials = true THEN 'view'
+              ELSE 'none'
+            END
+          `));
+        }
+      }
+      console.log(`[migration] ${table}.financials_access — applied`);
+    } else {
+      console.log(`[migration] ${table}.financials_access — already present, skipped`);
+    }
+
+    await db.execute(sql.raw(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.check_constraints
+          WHERE constraint_name = '${table}_financials_access_check'
+        ) THEN
+          ALTER TABLE "${table}" ADD CONSTRAINT "${table}_financials_access_check"
+            CHECK (financials_access IN ('none', 'view', 'manage'));
+        END IF;
+      END $$;
+    `));
   } catch (err) {
-    console.error(`[migration] Failed to backfill financial permissions split:`, err);
+    console.error(`[migration] Failed to ensure ${table}.financials_access:`, err);
   }
 }
