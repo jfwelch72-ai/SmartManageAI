@@ -5,8 +5,9 @@ import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
 import { sanitizeShortText } from "./sanitization";
-import { createArcSegment } from "@shared/utils/geometry";
-import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
+import { createArcSegment, computeDistanceInFeet, computePolygonAreaInFt2, computeVolumeInCY, computePitchedAreaFt2 } from "@shared/utils/geometry";
+import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, getDefaultVersionIdsBatch, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
+import { logCreate, logUpdate, logDelete } from "./auditLogger";
 
 const router = Router();
 
@@ -55,16 +56,17 @@ router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, asy
       return;
     }
 
+    const versionMap = await getDefaultVersionIdsBatch(sheetIds);
     const versionedSheetIds: string[] = [];
     const unversionedSheetIds: string[] = [];
     const defaultVersionIds: string[] = [];
-    for (const s of projectSheets) {
-      const vId = await getDefaultVersionId(s.id);
+    for (const sid of sheetIds) {
+      const vId = versionMap.get(sid);
       if (vId) {
-        versionedSheetIds.push(s.id);
+        versionedSheetIds.push(sid);
         defaultVersionIds.push(vId);
       } else {
-        unversionedSheetIds.push(s.id);
+        unversionedSheetIds.push(sid);
       }
     }
 
@@ -92,11 +94,10 @@ router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, asy
 
     res.json(parsedMeasurements);
   } catch (error) {
-  next(error);
+    next(error);
   }
 });
 
-// Get all measurements across all sheets for a bid
 router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { bidId } = req.params;
@@ -129,16 +130,17 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
       return;
     }
 
+    const versionMap = await getDefaultVersionIdsBatch(sheetIds);
     const versionedSheetIds: string[] = [];
     const unversionedSheetIds: string[] = [];
     const defaultVersionIds: string[] = [];
-    for (const s of bidSheets) {
-      const vId = await getDefaultVersionId(s.id);
+    for (const sid of sheetIds) {
+      const vId = versionMap.get(sid);
       if (vId) {
-        versionedSheetIds.push(s.id);
+        versionedSheetIds.push(sid);
         defaultVersionIds.push(vId);
       } else {
-        unversionedSheetIds.push(s.id);
+        unversionedSheetIds.push(sid);
       }
     }
 
@@ -166,7 +168,7 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
 
     res.json(parsedMeasurements);
   } catch (error) {
-  next(error);
+    next(error);
   }
 });
 
@@ -216,7 +218,58 @@ router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req:
   }
 });
 
-// Create a new measurement
+async function computeMeasurementGeometry(
+  validated: Record<string, unknown>,
+  scalePxPerFoot: number | null,
+): Promise<Record<string, unknown>> {
+  const finalValues = { ...validated };
+  if (!scalePxPerFoot) return finalValues;
+
+  const points = safeParsePoints(validated.points);
+  if (!points || points.length === 0) return finalValues;
+
+  const mType = validated.type as string;
+
+  if (mType === "LINEAR" && points.length === 3) {
+    try {
+      const [start, middle, end] = points;
+      const arcSegment = createArcSegment(start, end, middle, scalePxPerFoot);
+      if (arcSegment) {
+        finalValues.computedLengthFt = arcSegment.arcLength;
+      }
+    } catch (e) { console.error("Error computing arc length:", e); }
+  } else if (mType === "LINEAR" && points.length >= 2 && !finalValues.computedLengthFt) {
+    try {
+      finalValues.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
+    } catch (e) { console.error("Error computing linear distance:", e); }
+  }
+
+  if ((mType === "AREA" || mType === "PITCHED_AREA" || mType === "SURFACE_AREA") && points.length >= 3 && !finalValues.computedAreaFt2) {
+    try {
+      let areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+      if (mType === "PITCHED_AREA" && validated.pitchRatio) {
+        areaFt2 = computePitchedAreaFt2(areaFt2, validated.pitchRatio as string);
+      }
+      finalValues.computedAreaFt2 = areaFt2;
+      if (mType === "SURFACE_AREA") {
+        finalValues.computedSurfaceAreaFt2 = areaFt2;
+      }
+    } catch (e) { console.error("Error computing area:", e); }
+  }
+
+  if (mType === "VOLUME" && points.length >= 3 && !finalValues.computedVolumeCy) {
+    try {
+      const areaFt2 = (finalValues.computedAreaFt2 as number) || computePolygonAreaInFt2(points, scalePxPerFoot);
+      if (!finalValues.computedAreaFt2) finalValues.computedAreaFt2 = areaFt2;
+      if (validated.depthFeet) {
+        finalValues.computedVolumeCy = computeVolumeInCY(areaFt2, validated.depthFeet as number);
+      }
+    } catch (e) { console.error("Error computing volume:", e); }
+  }
+
+  return finalValues;
+}
+
 router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
@@ -234,6 +287,7 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
     const sanitizedBody = {
       ...req.body,
       label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
+      points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
     const validated = insertTakeoffMeasurementSchema.parse({
@@ -242,27 +296,31 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
       takeoffVersionId: draftVersionId || undefined,
     });
 
-    const [measurement] = await db.insert(takeoffMeasurements).values(validated).returning();
+    const [sheet] = await db
+      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, sheetId))
+      .limit(1);
+
+    const finalValues = await computeMeasurementGeometry(validated, sheet?.scalePxPerFoot ?? null);
+
+    const [measurement] = await db.insert(takeoffMeasurements).values(finalValues).returning();
+
+    await logCreate(req.user!.id, "takeoff_measurement", measurement.id, { type: measurement.type, sheetId, label: measurement.label }, req);
 
     res.status(201).json(measurement);
   } catch (error) {
-    console.error("Error creating measurement:", error);
-    if (error.name === "ZodError") {
-      res.status(400).json({ error: "Invalid measurement data", details: error.errors });
-    } else {
-      res.status(500).json({ error: "Internal server error" });
-    }
+    next(error);
   }
 });
 
-// Update a measurement
 router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffMeasurements, takeoffSheets, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
     const [existingMeasurement] = await db
-      .select({ sheetId: takeoffMeasurements.sheetId })
+      .select({ sheetId: takeoffMeasurements.sheetId, type: takeoffMeasurements.type })
       .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.id, id))
       .limit(1);
@@ -277,37 +335,47 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
     const sanitizedBody = {
       ...req.body,
       label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
+      points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
     const validated = insertTakeoffMeasurementSchema.partial().parse(sanitizedBody);
 
-    let finalValues = { ...validated };
-    if (validated.points && validated.type === "LINEAR") {
-      const sheet = await db
+    const effectiveType = (validated.type || existingMeasurement.type) as string;
+    let finalValues: Record<string, unknown> = { ...validated };
+
+    const needsRecompute = validated.points || validated.type || validated.pitchRatio !== undefined || validated.depthFeet !== undefined;
+
+    if (needsRecompute) {
+      const [sheet] = await db
         .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
         .from(takeoffSheets)
         .where(eq(takeoffSheets.id, existingMeasurement.sheetId))
         .limit(1);
 
-      if (sheet && sheet.length > 0 && sheet[0].scalePxPerFoot) {
-        const points = safeParsePoints(validated.points);
-        
-        if (points && points.length === 3) {
-          try {
-            const [start, middle, end] = points;
-            const arcSegment = createArcSegment(start, end, middle, sheet[0].scalePxPerFoot);
-            
-            if (arcSegment) {
-              finalValues = {
-                ...validated,
-                computedLengthFt: arcSegment.arcLength,
-              };
-              console.log(`[Arc Measurement Update] Recomputed arc length: ${arcSegment.arcLength.toFixed(2)} LF`);
-            }
-          } catch (error) {
-            console.error("Error computing arc length during update:", error);
+      if (sheet?.scalePxPerFoot) {
+        let pointsForCompute = validated.points;
+        if (!pointsForCompute) {
+          const [full] = await db
+            .select({ points: takeoffMeasurements.points, depthFeet: takeoffMeasurements.depthFeet, pitchRatio: takeoffMeasurements.pitchRatio })
+            .from(takeoffMeasurements)
+            .where(eq(takeoffMeasurements.id, id))
+            .limit(1);
+          if (full) {
+            pointsForCompute = full.points;
+            if (validated.depthFeet === undefined && full.depthFeet) finalValues.depthFeet = full.depthFeet;
+            if (validated.pitchRatio === undefined && full.pitchRatio) finalValues.pitchRatio = full.pitchRatio;
           }
         }
+
+        finalValues.computedLengthFt = undefined;
+        finalValues.computedAreaFt2 = undefined;
+        finalValues.computedVolumeCy = undefined;
+        finalValues.computedSurfaceAreaFt2 = undefined;
+
+        finalValues = await computeMeasurementGeometry(
+          { ...finalValues, points: pointsForCompute, type: effectiveType },
+          sheet.scalePxPerFoot,
+        );
       }
     }
 
@@ -317,174 +385,71 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       .where(eq(takeoffMeasurements.id, id))
       .returning();
 
+    await logUpdate(req.user!.id, "takeoff_measurement", id, { type: existingMeasurement.type }, { type: effectiveType, label: updated.label }, req);
+
     res.json(updated);
   } catch (error) {
-    console.error("Error updating measurement:", error);
-    if (error.name === "ZodError") {
-      res.status(400).json({ error: "Invalid measurement data", details: error.errors });
-    } else {
-      res.status(500).json({ error: "Internal server error" });
-    }
+    next(error);
   }
 });
 
-// Create a new measurement (with sheetId in body)
 router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const { takeoffMeasurements, takeoffSheets, projects, bids, crewProjectAssignments, crewMembers, insertTakeoffMeasurementSchema } = await import("@shared/schema");
+    const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
-    // SECURITY: Sanitize text inputs for data integrity
     const sanitizedBody = {
       ...req.body,
       label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
+      points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
-    // Convert points array to JSON string if it's an array
-    const bodyWithStringifiedPoints = {
-      ...sanitizedBody,
-      points: Array.isArray(sanitizedBody.points) ? JSON.stringify(sanitizedBody.points) : sanitizedBody.points,
-    };
+    if (!sanitizedBody.sheetId) {
+      res.status(400).json({ error: "sheetId is required" });
+      return;
+    }
 
-    const draftVersionId = await getActiveDraftVersionId(bodyWithStringifiedPoints.sheetId);
-    if (!draftVersionId && await hasAnyVersions(bodyWithStringifiedPoints.sheetId)) {
+    const access = await verifySheetAccess(sanitizedBody.sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" });
+      return;
+    }
+
+    const draftVersionId = await getActiveDraftVersionId(sanitizedBody.sheetId);
+    if (!draftVersionId && await hasAnyVersions(sanitizedBody.sheetId)) {
       res.status(403).json({ error: "Sheet is locked. Create a new version to add measurements." });
       return;
     }
+
     const validated = insertTakeoffMeasurementSchema.parse({
-      ...bodyWithStringifiedPoints,
+      ...sanitizedBody,
       takeoffVersionId: draftVersionId || undefined,
     });
 
-    // Validate that the sheet exists (supports both project-based and bid-based sheets)
-    const sheetWithProject = await db
-      .select({
-        sheetId: takeoffSheets.id,
-        projectId: takeoffSheets.projectId,
-        bidId: takeoffSheets.bidId,
-        scalePxPerFoot: takeoffSheets.scalePxPerFoot,
-      })
+    const [sheet] = await db
+      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
       .from(takeoffSheets)
       .where(eq(takeoffSheets.id, validated.sheetId))
       .limit(1);
 
-    if (!sheetWithProject || sheetWithProject.length === 0) {
-      res.status(404).json({ error: "Sheet not found" });
-      return;
-    }
-
-    const sheet = sheetWithProject[0];
-    const orgId = req.user!.organizationId;
-    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
-
-    if (!isSuperAdmin) {
-      if (sheet.projectId) {
-        const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
-          .from(projects).where(eq(projects.id, sheet.projectId)).limit(1);
-        if (!project || project.gcOrganizationId !== orgId) {
-          res.status(403).json({ error: "Access denied" });
-          return;
-        }
-      } else if (sheet.bidId) {
-        const [bid] = await db.select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
-          .from(bids).where(eq(bids.id, sheet.bidId)).limit(1);
-        if (!bid || bid.gcOrganizationId !== orgId) {
-          res.status(403).json({ error: "Access denied" });
-          return;
-        }
-      } else {
-        res.status(404).json({ error: "Sheet has no parent project or bid" });
-        return;
-      }
-    }
-
-    // Additional authorization for non-admin/manager on project-based sheets
-    const userRole = req.user!.role;
-    if (sheet.projectId && userRole !== "ADMIN" && userRole !== "MANAGER") {
-      const userAssignment = await db
-        .select({ id: crewProjectAssignments.id })
-        .from(crewProjectAssignments)
-        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
-        .where(
-          and(
-            eq(crewProjectAssignments.projectId, sheet.projectId),
-            eq(crewMembers.userId, req.user!.id)
-          )
-        )
-        .limit(1);
-
-      if (!userAssignment || userAssignment.length === 0) {
-        res.status(403).json({ error: "You do not have access to this project" });
-        return;
-      }
-    }
-
-    let finalValues = { ...validated };
-    if (sheet.scalePxPerFoot) {
-      const points = safeParsePoints(validated.points);
-
-      if (validated.type === "LINEAR" && points && points.length === 3) {
-        try {
-          const [start, middle, end] = points;
-          const arcSegment = createArcSegment(start, end, middle, sheet.scalePxPerFoot);
-          if (arcSegment) {
-            finalValues.computedLengthFt = arcSegment.arcLength;
-          }
-        } catch (error) {
-          console.error("Error computing arc length:", error);
-        }
-      } else if (validated.type === "LINEAR" && points && points.length >= 2 && !finalValues.computedLengthFt) {
-        try {
-          const { computeDistanceInFeet } = await import("@shared/utils/geometry");
-          finalValues.computedLengthFt = computeDistanceInFeet(points, sheet.scalePxPerFoot);
-        } catch (error) {
-          console.error("Error computing linear length:", error);
-        }
-      }
-
-      if ((validated.type === "AREA" || validated.type === "PITCHED_AREA" || validated.type === "SURFACE_AREA") && points && points.length >= 3 && !finalValues.computedAreaFt2) {
-        try {
-          const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
-          finalValues.computedAreaFt2 = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
-        } catch (error) {
-          console.error("Error computing area:", error);
-        }
-      }
-
-      if (validated.type === "VOLUME" && points && points.length >= 3 && !finalValues.computedVolumeCy) {
-        try {
-          const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
-          const areaFt2 = finalValues.computedAreaFt2 || computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
-          if (!finalValues.computedAreaFt2) finalValues.computedAreaFt2 = areaFt2;
-          if (validated.depthFeet) {
-            finalValues.computedVolumeCy = computeVolumeInCY(areaFt2, validated.depthFeet);
-          }
-        } catch (error) {
-          console.error("Error computing volume:", error);
-        }
-      }
-    }
+    const finalValues = await computeMeasurementGeometry(validated, sheet?.scalePxPerFoot ?? null);
 
     const [measurement] = await db.insert(takeoffMeasurements).values(finalValues).returning();
 
+    await logCreate(req.user!.id, "takeoff_measurement", measurement.id, { type: measurement.type, sheetId: validated.sheetId, label: measurement.label }, req);
+
     res.status(201).json(measurement);
   } catch (error) {
-    console.error("Error creating measurement:", error);
-    if (error.name === "ZodError") {
-      res.status(400).json({ error: "Invalid measurement data", details: error.errors });
-    } else {
-      res.status(500).json({ error: "Internal server error" });
-    }
+    next(error);
   }
 });
 
-// Delete a measurement
 router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffMeasurements } = await import("@shared/schema");
 
     const [existing] = await db
-      .select({ sheetId: takeoffMeasurements.sheetId })
+      .select({ sheetId: takeoffMeasurements.sheetId, type: takeoffMeasurements.type, label: takeoffMeasurements.label })
       .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.id, id))
       .limit(1);
@@ -498,9 +463,11 @@ router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequ
 
     await db.delete(takeoffMeasurements).where(eq(takeoffMeasurements.id, id));
 
+    await logDelete(req.user!.id, "takeoff_measurement", id, { type: existing.type, sheetId: existing.sheetId, label: existing.label }, req);
+
     res.json({ success: true });
   } catch (error) {
-  next(error);
+    next(error);
   }
 });
 
@@ -646,18 +613,11 @@ router.patch("/api/takeoff/groups/:id/visibility", requireAuth, async (req: Auth
   }
 });
 
-// Update sheet calibration
 router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { scalePxPerFoot, units } = req.body;
-    const { takeoffSheets, takeoffMeasurements, projects, crewProjectAssignments, crewMembers } = await import("@shared/schema");
-    const { 
-      computeDistanceInFeet, 
-      computePolygonAreaInFt2, 
-      computeVolumeInCY, 
-      inchesToFeet 
-    } = await import("@shared/utils/geometry");
+    const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
 
     if (!scalePxPerFoot || !Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
       res.status(400).json({ error: "Valid scale is required" });
@@ -670,7 +630,6 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       return;
     }
 
-    // Update the calibration
     const [updated] = await db
       .update(takeoffSheets)
       .set({ 
@@ -681,59 +640,62 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       .where(eq(takeoffSheets.id, id))
       .returning();
 
-    // Recompute all measurements for this sheet with the new scale
     const measurements = await db
       .select()
       .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.sheetId, id));
 
-    console.log(`Recalculating ${measurements.length} measurements with new scale: ${scalePxPerFoot} px/ft`);
-
     for (const measurement of measurements) {
-      if (!measurement.points) {
-        continue;
-      }
+      if (!measurement.points) continue;
 
-      // Parse points from JSON string (Drizzle may auto-parse or leave as string)
-      let points: Array<{ x: number; y: number }>;
-      try {
-        points = typeof measurement.points === 'string' 
-          ? JSON.parse(measurement.points) 
-          : measurement.points as any;
-      } catch (parseError) {
-        console.error(`Error parsing points for measurement ${measurement.id}:`, parseError);
-        continue;
-      }
+      const points = safeParsePoints(measurement.points);
+      if (!points || points.length === 0) continue;
 
-      // Skip measurements with no points
-      if (!points || points.length === 0) {
-        continue;
-      }
-
-      const updates: any = {};
+      const updates: Partial<typeof takeoffMeasurements.$inferInsert> = {};
 
       try {
         switch (measurement.type) {
           case "LINEAR":
-            if (points.length >= 2) {
-              const lengthFt = computeDistanceInFeet(points, scalePxPerFoot);
-              updates.computedLengthFt = lengthFt;
+            if (points.length === 3) {
+              const [start, middle, end] = points;
+              const arcSegment = createArcSegment(start, end, middle, scalePxPerFoot);
+              if (arcSegment) {
+                updates.computedLengthFt = arcSegment.arcLength;
+              }
+            } else if (points.length >= 2) {
+              updates.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
             }
             break;
 
           case "AREA":
             if (points.length >= 3) {
-              const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+              updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+            }
+            break;
+
+          case "PITCHED_AREA":
+            if (points.length >= 3) {
+              let areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+              if (measurement.pitchRatio) {
+                areaFt2 = computePitchedAreaFt2(areaFt2, measurement.pitchRatio);
+              }
               updates.computedAreaFt2 = areaFt2;
+            }
+            break;
+
+          case "SURFACE_AREA":
+            if (points.length >= 3) {
+              const surfArea = computePolygonAreaInFt2(points, scalePxPerFoot);
+              updates.computedAreaFt2 = surfArea;
+              updates.computedSurfaceAreaFt2 = surfArea;
             }
             break;
 
           case "VOLUME":
             if (points.length >= 3 && measurement.depthFeet) {
               const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
-              const volumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
               updates.computedAreaFt2 = areaFt2;
-              updates.computedVolumeCy = volumeCy;
+              updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
             }
             break;
 
@@ -746,9 +708,6 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
               updates.computedLengthFt = totalLen;
             }
             break;
-
-          default:
-            break;
         }
 
         if (Object.keys(updates).length > 0) {
@@ -759,27 +718,19 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
         }
       } catch (error) {
         console.error(`Error recalculating measurement ${measurement.id}:`, error);
-        // Continue with other measurements even if one fails
       }
     }
 
-    console.log(`Successfully recalculated ${measurements.length} measurements`);
     res.json(updated);
   } catch (error) {
-  next(error);
+    next(error);
   }
 });
 
-// Batch update calibration for multiple sheets
 router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetIds, scalePxPerFoot, units } = req.body;
-    const { takeoffSheets, takeoffMeasurements, projects } = await import("@shared/schema");
-    const {
-      computeDistanceInFeet,
-      computePolygonAreaInFt2,
-      computeVolumeInCY,
-    } = await import("@shared/utils/geometry");
+    const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
 
     if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
       res.status(400).json({ error: "sheetIds array is required" });
@@ -798,7 +749,7 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
       if (access.allowed) allowedSheetIds.push(sheetId);
     }
 
-    const results: any[] = [];
+    const results: (typeof takeoffSheets.$inferSelect)[] = [];
     let updatedCount = 0;
     let skippedCount = 0;
 
@@ -841,17 +792,37 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
             const points = safeParsePoints(measurement.points);
             if (!points || points.length === 0) continue;
 
-            const updates: any = {};
+            const updates: Partial<typeof takeoffMeasurements.$inferInsert> = {};
             try {
               switch (measurement.type) {
                 case "LINEAR":
-                  if (points.length >= 2) {
+                  if (points.length === 3) {
+                    const [start, middle, end] = points;
+                    const arcSegment = createArcSegment(start, end, middle, scalePxPerFoot);
+                    if (arcSegment) updates.computedLengthFt = arcSegment.arcLength;
+                  } else if (points.length >= 2) {
                     updates.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
                   }
                   break;
                 case "AREA":
                   if (points.length >= 3) {
                     updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                  }
+                  break;
+                case "PITCHED_AREA":
+                  if (points.length >= 3) {
+                    let areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                    if (measurement.pitchRatio) {
+                      areaFt2 = computePitchedAreaFt2(areaFt2, measurement.pitchRatio);
+                    }
+                    updates.computedAreaFt2 = areaFt2;
+                  }
+                  break;
+                case "SURFACE_AREA":
+                  if (points.length >= 3) {
+                    const surfArea = computePolygonAreaInFt2(points, scalePxPerFoot);
+                    updates.computedAreaFt2 = surfArea;
+                    updates.computedSurfaceAreaFt2 = surfArea;
                   }
                   break;
                 case "VOLUME":
@@ -885,10 +856,9 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
       }
     });
 
-    console.log(`Batch calibration: updated ${updatedCount}/${sheetIds.length} sheets, skipped ${skippedCount} already calibrated`);
     res.json({ updated: updatedCount, skipped: skippedCount, sheets: results });
   } catch (error) {
-  next(error);
+    next(error);
   }
 });
 

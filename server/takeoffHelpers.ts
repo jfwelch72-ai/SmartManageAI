@@ -1,9 +1,29 @@
 import { db } from "./db";
 import { logWarn } from "./utils/logger";
-import { takeoffSheets, projects, bids, takeoffMeasurementGroups } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { takeoffSheets, projects, bids, takeoffMeasurementGroups, takeoffVersions } from "@shared/schema";
+import { eq, and, desc, inArray } from "drizzle-orm";
 
-export function safeParsePoints(raw: any): any[] | null {
+export interface SheetAccessInfo {
+  id: string;
+  projectId: string | null;
+  bidId: string | null;
+}
+
+export interface SheetAccessResult {
+  allowed: boolean;
+  sheet: SheetAccessInfo | null;
+  reason?: string;
+}
+
+export type GroupRow = typeof takeoffMeasurementGroups.$inferSelect;
+
+export interface GroupAccessResult {
+  allowed: boolean;
+  group: GroupRow | null;
+  reason?: string;
+}
+
+export function safeParsePoints(raw: unknown): Array<{ x: number; y: number }> | null {
   if (Array.isArray(raw)) return raw;
   if (typeof raw !== "string") return null;
   try {
@@ -15,7 +35,7 @@ export function safeParsePoints(raw: any): any[] | null {
   }
 }
 
-export async function verifySheetAccess(sheetId: string, user: { id: string; organizationId: string | null; role: string }): Promise<{ allowed: boolean; sheet: any | null; reason?: string }> {
+export async function verifySheetAccess(sheetId: string, user: { id: string; organizationId: string | null; role: string }): Promise<SheetAccessResult> {
   const [sheet] = await db
     .select({
       id: takeoffSheets.id,
@@ -70,7 +90,7 @@ export async function verifySheetAccess(sheetId: string, user: { id: string; org
   return { allowed: false, sheet, reason: "Sheet has no parent" };
 }
 
-export async function verifyGroupAccess(groupId: string, user: { id: string; organizationId: string | null; role: string }): Promise<{ allowed: boolean; group: any | null; reason?: string }> {
+export async function verifyGroupAccess(groupId: string, user: { id: string; organizationId: string | null; role: string }): Promise<GroupAccessResult> {
   const [group] = await db.select().from(takeoffMeasurementGroups).where(eq(takeoffMeasurementGroups.id, groupId)).limit(1);
   if (!group) return { allowed: false, group: null, reason: "Group not found" };
   if (!group.sheetId) return { allowed: false, group, reason: "Group has no sheet" };
@@ -79,7 +99,6 @@ export async function verifyGroupAccess(groupId: string, user: { id: string; org
 }
 
 export async function getActiveDraftVersionId(sheetId: string): Promise<string | null> {
-  const { takeoffVersions } = await import("@shared/schema");
   const [draft] = await db.select({ id: takeoffVersions.id })
     .from(takeoffVersions)
     .where(and(eq(takeoffVersions.sheetId, sheetId), eq(takeoffVersions.status, "DRAFT")))
@@ -88,7 +107,6 @@ export async function getActiveDraftVersionId(sheetId: string): Promise<string |
 }
 
 export async function getDefaultVersionId(sheetId: string): Promise<string | null> {
-  const { takeoffVersions } = await import("@shared/schema");
   const [draft] = await db.select({ id: takeoffVersions.id })
     .from(takeoffVersions)
     .where(and(eq(takeoffVersions.sheetId, sheetId), eq(takeoffVersions.status, "DRAFT")))
@@ -102,8 +120,36 @@ export async function getDefaultVersionId(sheetId: string): Promise<string | nul
   return latest?.id || null;
 }
 
+export async function getDefaultVersionIdsBatch(sheetIds: string[]): Promise<Map<string, string>> {
+  if (sheetIds.length === 0) return new Map();
+
+  const allVersions = await db
+    .select({
+      id: takeoffVersions.id,
+      sheetId: takeoffVersions.sheetId,
+      status: takeoffVersions.status,
+      versionNumber: takeoffVersions.versionNumber,
+    })
+    .from(takeoffVersions)
+    .where(inArray(takeoffVersions.sheetId, sheetIds))
+    .orderBy(desc(takeoffVersions.versionNumber));
+
+  const result = new Map<string, string>();
+
+  for (const sid of sheetIds) {
+    const sheetVersions = allVersions.filter(v => v.sheetId === sid);
+    const draft = sheetVersions.find(v => v.status === "DRAFT");
+    if (draft) {
+      result.set(sid, draft.id);
+    } else if (sheetVersions.length > 0) {
+      result.set(sid, sheetVersions[0].id);
+    }
+  }
+
+  return result;
+}
+
 export async function hasAnyVersions(sheetId: string): Promise<boolean> {
-  const { takeoffVersions } = await import("@shared/schema");
   const [v] = await db.select({ id: takeoffVersions.id })
     .from(takeoffVersions)
     .where(eq(takeoffVersions.sheetId, sheetId))
@@ -112,7 +158,7 @@ export async function hasAnyVersions(sheetId: string): Promise<boolean> {
 }
 
 export async function isMeasurementLocked(measurementId: string): Promise<boolean> {
-  const { takeoffMeasurements, takeoffVersions } = await import("@shared/schema");
+  const { takeoffMeasurements } = await import("@shared/schema");
   const [m] = await db.select({ takeoffVersionId: takeoffMeasurements.takeoffVersionId })
     .from(takeoffMeasurements)
     .where(eq(takeoffMeasurements.id, measurementId))

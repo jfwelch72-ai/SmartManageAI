@@ -288,7 +288,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
 
   const deleteSheetMutation = useMutation({
     mutationFn: async (sheetId: string) => {
-      await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}`);
+      await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}?confirm=true`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "takeoff", "sheets"] });

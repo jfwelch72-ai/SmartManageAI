@@ -360,7 +360,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
 
   const deleteSheetMutation = useMutation({
     mutationFn: async (sheetId: string) => {
-      await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}`);
+      await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}?confirm=true`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });

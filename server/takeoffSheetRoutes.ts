@@ -1055,11 +1055,10 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
   }
 });
 
-// Delete a sheet and its measurements
 router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
-    const { takeoffSheets } = await import("@shared/schema");
+    const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
 
     const access = await verifySheetAccess(id, req.user!);
     if (!access.allowed) {
@@ -1067,11 +1066,38 @@ router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, r
       return;
     }
 
+    const confirm = req.query.confirm === "true";
+
+    const measurements = await db
+      .select({ id: takeoffMeasurements.id })
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.sheetId, id));
+
+    if (measurements.length > 0 && !confirm) {
+      res.status(409).json({
+        error: "Sheet has measurements that will be deleted",
+        measurementCount: measurements.length,
+        hint: "Add ?confirm=true to proceed with deletion",
+      });
+      return;
+    }
+
+    const [sheet] = await db.select({ sheetName: takeoffSheets.sheetName }).from(takeoffSheets).where(eq(takeoffSheets.id, id)).limit(1);
+
     await db.delete(takeoffSheets).where(eq(takeoffSheets.id, id));
 
-    res.json({ success: true });
+    await logAudit({
+      userId: req.user!.id,
+      action: "DELETE",
+      entityType: "takeoff_sheet",
+      entityId: id,
+      oldValue: JSON.stringify({ sheetName: sheet?.sheetName, measurementsDeleted: measurements.length }),
+      newValue: null,
+    }, req);
+
+    res.json({ success: true, measurementsDeleted: measurements.length });
   } catch (error) {
-  next(error);
+    next(error);
   }
 });
 

@@ -383,7 +383,7 @@ export function useTakeoffData({
 
   const deleteSheetMutation = useMutation({
     mutationFn: async (sheetId: string) => {
-      return await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}`);
+      return await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}?confirm=true`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
