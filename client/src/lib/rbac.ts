@@ -466,312 +466,155 @@ export interface NavItem {
   visible: (role?: string, perms?: FeaturePerms) => boolean;
 }
 
-export const NavigationConfig = {
-  mainNav: [
-    {
-      href: "/dashboard",
-      label: "Dashboard",
-      testId: "nav-dashboard",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessDashboard : hasVendorOrContractorAccess(role),
-    },
-    {
-      href: "/communications",
-      label: "Bulletins",
-      testId: "nav-bulletins",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessBulletins : hasContractorAccess(role),
-    },
-  ],
-
-  projectsMenu: [
-    {
-      href: "/calendar",
-      label: "Calendar",
-      testId: "nav-calendar",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCalendar : hasContractorAccess(role),
-    },
-    {
-      href: "/email-assistant",
-      label: "Email Assistant",
-      testId: "nav-email-assistant",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessEmailAssistant : hasManagementAccess(role),
-    },
-    {
-      href: "/projects",
-      label: "Projects",
-      testId: "nav-projects",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProjects : hasContractorAccess(role),
-    },
-    {
-      href: "/tasks",
-      label: "Tasks",
-      testId: "nav-tasks",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTasks : hasContractorAccess(role),
-    },
-    {
-      href: "/messages",
-      label: "Messages",
-      testId: "nav-messages",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMessages : hasContractorAccess(role),
-    },
-  ],
-
-  preconstructionMenu: [
-    {
-      href: "/bids",
-      label: "Bids",
-      testId: "nav-bids",
-      visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms),
-    },
-    {
-      href: "/bid-network",
-      label: "Bid Network",
-      testId: "nav-bid-network",
-      visible: (role?: string, perms?: FeaturePerms) => canAccessBidNetworkAsGC(role, perms),
-    },
-    {
-      href: "/historical-costs",
-      label: "Historical Costs",
-      testId: "nav-historical-costs",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessHistoricalCosts : canAccessBids(role) || hasFinancialAccess(role),
-    },
-  ],
-
-  operationsMenu: [
-    {
-      href: "/equipment",
-      label: "Equipment",
-      testId: "nav-equipment",
-      visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role, perms),
-    },
-    {
-      href: "/procurement-module",
-      label: "Procurement",
-      testId: "nav-procurement",
-      visible: (role?: string, perms?: FeaturePerms) => hasProcurementAccess(role, perms),
-    },
-  ],
-
-  workforceMenu: [
-    {
-      href: "/time-clock",
-      label: "My Time Clock",
-      testId: "nav-my-time-clock",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTimeClock : hasContractorAccess(role),
-    },
-    {
-      href: "/time-clock-manager",
-      label: "Manage Time Clock",
-      testId: "nav-manage-time-clock",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/tm-daily",
-      label: "T&M Daily Sheets",
-      testId: "nav-tm-daily",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/crews",
-      label: "Crews & Skills",
-      testId: "nav-crews",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageCrews : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
-    },
-    {
-      href: "/manage-workers",
-      label: "Workforce Management",
-      testId: "nav-manage-workers",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/payroll-management",
-      label: "Payroll Management",
-      testId: "nav-payroll-management",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManagePayroll : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER",
-    },
-    {
-      href: "/safety-training",
-      label: "Safety Training",
-      testId: "nav-safety-training",
-      visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms),
-    },
-    {
-      href: "/leave-management",
-      label: "Leave Management",
-      testId: "nav-leave-management",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role),
-    },
-  ],
-
-  financialsMenu: [
-    {
-      href: "/cfo-dashboard",
-      label: "CFO Dashboard",
-      testId: "nav-cfo-dashboard",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCFODashboard : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/tm-billing",
-      label: "T&M Billing",
-      testId: "nav-tm-billing",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
-    },
-    {
-      href: "/progress-billing",
-      label: "AIA / Progress Billing",
-      testId: "nav-progress-billing",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProgressBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
-    },
-    {
-      href: "/cost-rates",
-      label: "Cost Rates",
-      testId: "nav-cost-rates",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCostRates : isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "HUSTLER",
-    },
-    {
-      href: "/production-rates",
-      label: "Production Rates",
-      testId: "nav-production-rates",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProductionRates : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/subcontractor-payables",
-      label: "Subcontractor Payables",
-      testId: "nav-subcontractor-payables",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessSubcontracts : isOrganizationAdmin(role) || role === "HUSTLER",
-    },
-    {
-      href: "/overhead-costs",
-      label: "Overhead Costs",
-      testId: "nav-overhead-costs",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessOverheadCosts : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
-    },
-  ],
-
-  crmMenu: [
-    {
-      href: "/crm",
-      label: "CRM",
-      testId: "nav-crm",
-      visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms),
-    },
-  ],
-
-  marketplaceMenu: [
-    {
-      href: "/marketplace",
-      label: "Marketplace",
-      testId: "nav-marketplace",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role),
-    },
-  ],
-
-  hiringMenu: [
-    {
-      href: "/hiring",
-      label: "Hiring",
-      testId: "nav-hiring",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageHiring : role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
-    },
-  ],
-
-  insightsMenu: [
-    {
-      href: "/executive-digest",
-      label: "Executive Digest",
-      testId: "nav-executive-digest",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER",
-    },
-  ],
-
-  administrationMenu: [
-    {
-      href: "/users",
-      label: "User Management",
-      testId: "nav-users",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageUsers : isOrganizationAdmin(role) || role === "HUSTLER",
-    },
-    {
-      href: "/company-settings",
-      label: "Company Settings",
-      testId: "nav-company-settings",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER",
-    },
-    {
-      href: "/scope-settings",
-      label: "Scope Settings",
-      testId: "nav-scope-settings",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessScopeSettings : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/ai-settings",
-      label: "AI Settings",
-      testId: "nav-ai-settings",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageAISettings : isOrganizationAdmin(role) || role === "HUSTLER",
-    },
-    {
-      href: "/audit-logs",
-      label: "Audit Logs",
-      testId: "nav-audit-logs",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessAuditLogs : isOrganizationAdmin(role) || role === "HUSTLER",
-    },
-    {
-      href: "/reports",
-      label: "Reports",
-      testId: "nav-reports",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessReports : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-    {
-      href: "/approvals",
-      label: "Approvals",
-      testId: "nav-approvals",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessApprovals : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
-    },
-  ],
-
-  toolsMenu: [
-    {
-      href: "/website-builder",
-      label: "Website Builder",
-      testId: "nav-website-builder",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWebsite : isOrganizationAdmin(role) || role === "HUSTLER",
-    },
-    {
-      href: "/social-media",
-      label: "Social Media",
-      testId: "nav-social-media",
-      visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canPostSocialMedia : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
-    },
-    {
-      href: "/calculator",
-      label: "Calculator",
-      testId: "nav-calculator",
-      visible: () => true,
-    },
-  ],
+export const NavItems: Record<string, NavItem> = {
+  '/dashboard': { href: '/dashboard', label: 'Dashboard', testId: 'nav-dashboard', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessDashboard : hasVendorOrContractorAccess(role) },
+  '/communications': { href: '/communications', label: 'Bulletins', testId: 'nav-bulletins', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessBulletins : hasContractorAccess(role) },
+  '/executive-digest': { href: '/executive-digest', label: 'Executive Digest', testId: 'nav-executive-digest', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER" },
+  '/crm': { href: '/crm', label: 'CRM', testId: 'nav-crm', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
+  '/bids': { href: '/bids', label: 'Bids', testId: 'nav-bids', visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms) },
+  '/bid-network': { href: '/bid-network', label: 'Bid Network', testId: 'nav-bid-network', visible: (role?: string, perms?: FeaturePerms) => canAccessBidNetworkAsGC(role, perms) },
+  '/historical-costs': { href: '/historical-costs', label: 'Historical Costs', testId: 'nav-historical-costs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessHistoricalCosts : canAccessBids(role) || hasFinancialAccess(role) },
+  '/marketplace': { href: '/marketplace', label: 'Marketplace', testId: 'nav-marketplace', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role) },
+  '/projects': { href: '/projects', label: 'Projects', testId: 'nav-projects', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProjects : hasContractorAccess(role) },
+  '/calendar': { href: '/calendar', label: 'Calendar', testId: 'nav-calendar', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCalendar : hasContractorAccess(role) },
+  '/tasks': { href: '/tasks', label: 'Tasks', testId: 'nav-tasks', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTasks : hasContractorAccess(role) },
+  '/messages': { href: '/messages', label: 'Messages', testId: 'nav-messages', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMessages : hasContractorAccess(role) },
+  '/email-assistant': { href: '/email-assistant', label: 'Email Assistant', testId: 'nav-email-assistant', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessEmailAssistant : hasManagementAccess(role) },
+  '/users': { href: '/users', label: 'User Management', testId: 'nav-users', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageUsers : isOrganizationAdmin(role) || role === "HUSTLER" },
+  '/manage-workers': { href: '/manage-workers', label: 'Workforce Management', testId: 'nav-manage-workers', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/crews': { href: '/crews', label: 'Crews & Skills', testId: 'nav-crews', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageCrews : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
+  '/hiring': { href: '/hiring', label: 'Hiring', testId: 'nav-hiring', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageHiring : role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" },
+  '/payroll-management': { href: '/payroll-management', label: 'Payroll Management', testId: 'nav-payroll-management', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManagePayroll : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER" },
+  '/leave-management': { href: '/leave-management', label: 'Leave Management', testId: 'nav-leave-management', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role) },
+  '/safety-training': { href: '/safety-training', label: 'Safety Training', testId: 'nav-safety-training', visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms) },
+  '/time-clock': { href: '/time-clock', label: 'My Time Clock', testId: 'nav-my-time-clock', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTimeClock : hasContractorAccess(role) },
+  '/time-clock-manager': { href: '/time-clock-manager', label: 'Manage Time Clock', testId: 'nav-manage-time-clock', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/tm-daily': { href: '/tm-daily', label: 'T&M Daily Sheets', testId: 'nav-tm-daily', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/cfo-dashboard': { href: '/cfo-dashboard', label: 'CFO Dashboard', testId: 'nav-cfo-dashboard', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCFODashboard : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/tm-billing': { href: '/tm-billing', label: 'T&M Billing', testId: 'nav-tm-billing', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
+  '/progress-billing': { href: '/progress-billing', label: 'AIA / Progress Billing', testId: 'nav-progress-billing', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProgressBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
+  '/cost-rates': { href: '/cost-rates', label: 'Cost Rates', testId: 'nav-cost-rates', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCostRates : isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/production-rates': { href: '/production-rates', label: 'Production Rates', testId: 'nav-production-rates', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProductionRates : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/subcontractor-payables': { href: '/subcontractor-payables', label: 'Subcontractor Payables', testId: 'nav-subcontractor-payables', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessSubcontracts : isOrganizationAdmin(role) || role === "HUSTLER" },
+  '/overhead-costs': { href: '/overhead-costs', label: 'Overhead Costs', testId: 'nav-overhead-costs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessOverheadCosts : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
+  '/equipment': { href: '/equipment', label: 'Equipment', testId: 'nav-equipment', visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role, perms) },
+  '/procurement-module': { href: '/procurement-module', label: 'Procurement', testId: 'nav-procurement', visible: (role?: string, perms?: FeaturePerms) => hasProcurementAccess(role, perms) },
+  '/approvals': { href: '/approvals', label: 'Approvals', testId: 'nav-approvals', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessApprovals : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/company-settings': { href: '/company-settings', label: 'Company Settings', testId: 'nav-company-settings', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER" },
+  '/scope-settings': { href: '/scope-settings', label: 'Scope Settings', testId: 'nav-scope-settings', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessScopeSettings : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/ai-settings': { href: '/ai-settings', label: 'AI Settings', testId: 'nav-ai-settings', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageAISettings : isOrganizationAdmin(role) || role === "HUSTLER" },
+  '/audit-logs': { href: '/audit-logs', label: 'Audit Logs', testId: 'nav-audit-logs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessAuditLogs : isOrganizationAdmin(role) || role === "HUSTLER" },
+  '/reports': { href: '/reports', label: 'Reports', testId: 'nav-reports', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessReports : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/website-builder': { href: '/website-builder', label: 'Website Builder', testId: 'nav-website-builder', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWebsite : isOrganizationAdmin(role) || role === "HUSTLER" },
+  '/social-media': { href: '/social-media', label: 'Social Media', testId: 'nav-social-media', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canPostSocialMedia : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
+  '/calculator': { href: '/calculator', label: 'Calculator', testId: 'nav-calculator', visible: () => true },
 };
 
-export type SidebarSection = 'portfolio' | 'dashboard' | 'bulletins' | 'projects' | 'operations' | 'workforce' | 'preconstruction' | 'marketplace' | 'crm' | 'financials' | 'insights' | 'hiring' | 'administration' | 'tools';
+export const NavigationConfig = {
+  mainNav: [NavItems['/dashboard'], NavItems['/communications']],
+  projectsMenu: [NavItems['/calendar'], NavItems['/email-assistant'], NavItems['/projects'], NavItems['/tasks'], NavItems['/messages']],
+  preconstructionMenu: [NavItems['/bids'], NavItems['/bid-network'], NavItems['/historical-costs']],
+  operationsMenu: [NavItems['/equipment'], NavItems['/procurement-module']],
+  workforceMenu: [NavItems['/time-clock'], NavItems['/time-clock-manager'], NavItems['/tm-daily'], NavItems['/crews'], NavItems['/manage-workers'], NavItems['/payroll-management'], NavItems['/safety-training'], NavItems['/leave-management']],
+  financialsMenu: [NavItems['/cfo-dashboard'], NavItems['/tm-billing'], NavItems['/progress-billing'], NavItems['/cost-rates'], NavItems['/production-rates'], NavItems['/subcontractor-payables'], NavItems['/overhead-costs']],
+  crmMenu: [NavItems['/crm']],
+  marketplaceMenu: [NavItems['/marketplace']],
+  hiringMenu: [NavItems['/hiring']],
+  insightsMenu: [NavItems['/executive-digest']],
+  administrationMenu: [NavItems['/users'], NavItems['/company-settings'], NavItems['/scope-settings'], NavItems['/ai-settings'], NavItems['/audit-logs'], NavItems['/reports'], NavItems['/approvals']],
+  toolsMenu: [NavItems['/website-builder'], NavItems['/social-media'], NavItems['/calculator']],
+  timeClockMenu: [NavItems['/time-clock'], NavItems['/time-clock-manager'], NavItems['/tm-daily']],
+};
 
-export const DEFAULT_SECTION_ORDER: SidebarSection[] = [
-  'portfolio', 'dashboard', 'bulletins', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'financials', 'insights', 'hiring', 'administration', 'tools'
+export type SidebarSection =
+  | 'portfolio' | 'home' | 'sales' | 'projects' | 'team' | 'time' | 'finance'
+  | 'field_ops' | 'settings' | 'marketing' | 'tools'
+  | 'today' | 'crew' | 'jobsite' | 'review' | 'reference'
+  | 'bids' | 'costs' | 'reports' | 'info';
+
+export interface WorkflowGroup {
+  key: SidebarSection;
+  label: string;
+  itemHrefs: string[];
+}
+
+const ADMIN_WORKFLOW: WorkflowGroup[] = [
+  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/executive-digest'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
+  { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
+  { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
+  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals'] },
+  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports'] },
+  { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
 
-export const ROLE_SECTION_ORDER: Partial<Record<string, SidebarSection[]>> = {
-  ADMIN: ['dashboard', 'administration', 'financials', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'tools', 'bulletins'],
-  MANAGER: ['dashboard', 'projects', 'operations', 'workforce', 'financials', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'administration', 'tools', 'bulletins'],
-  HUSTLER: ['portfolio', 'dashboard', 'financials', 'projects', 'operations', 'workforce', 'preconstruction', 'marketplace', 'crm', 'insights', 'hiring', 'administration', 'tools', 'bulletins'],
-  FIELD_WORKER: ['dashboard', 'workforce', 'projects', 'tools', 'bulletins'],
-  SUPERINTENDENT: ['operations', 'workforce', 'dashboard', 'bulletins', 'projects', 'preconstruction', 'financials', 'administration', 'tools'],
-  ESTIMATOR: ['preconstruction', 'operations', 'dashboard', 'bulletins', 'financials', 'projects', 'crm', 'marketplace', 'administration', 'tools'],
+const HUSTLER_WORKFLOW: WorkflowGroup[] = [
+  { key: 'portfolio', label: 'Portfolio', itemHrefs: [] },
+  ...ADMIN_WORKFLOW,
+];
+
+const MANAGER_WORKFLOW: WorkflowGroup[] = [
+  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/bids', '/marketplace'] },
+  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
+  { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
+  { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
+  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/production-rates', '/overhead-costs'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals'] },
+  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/reports'] },
+  { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
+];
+
+const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
+  { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/dashboard'] },
+  { key: 'crew', label: 'Crew', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management', '/safety-training'] },
+  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module'] },
+  { key: 'review', label: 'Review', itemHrefs: ['/approvals', '/reports'] },
+  { key: 'reference', label: 'Reference', itemHrefs: ['/bids', '/production-rates', '/scope-settings', '/communications'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
+];
+
+const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
+  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
+  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/production-rates', '/scope-settings'] },
+  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module'] },
+  { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
+];
+
+const FIELD_WORKER_WORKFLOW: WorkflowGroup[] = [
+  { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/tasks', '/calendar'] },
+  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/dashboard'] },
+  { key: 'info', label: 'Info', itemHrefs: ['/leave-management', '/communications'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
+];
+
+const ROLE_WORKFLOW_GROUPS: Record<string, WorkflowGroup[]> = {
+  ADMIN: ADMIN_WORKFLOW,
+  HUSTLER: HUSTLER_WORKFLOW,
+  MANAGER: MANAGER_WORKFLOW,
+  SUPERINTENDENT: SUPERINTENDENT_WORKFLOW,
+  ESTIMATOR: ESTIMATOR_WORKFLOW,
+  FIELD_WORKER: FIELD_WORKER_WORKFLOW,
 };
 
-export function getSidebarSectionOrder(role?: string): SidebarSection[] {
-  if (role && ROLE_SECTION_ORDER[role]) {
-    const roleOrder = ROLE_SECTION_ORDER[role]!;
-    const unlisted = DEFAULT_SECTION_ORDER.filter(s => !roleOrder.includes(s));
-    return [...roleOrder, ...unlisted];
+export function getWorkflowGroups(role?: string): WorkflowGroup[] {
+  if (role && ROLE_WORKFLOW_GROUPS[role]) {
+    return ROLE_WORKFLOW_GROUPS[role];
   }
-  return DEFAULT_SECTION_ORDER;
+  return ADMIN_WORKFLOW;
+}
+
+export function getVisibleGroupItems(group: WorkflowGroup, role?: string, perms?: FeaturePerms): NavItem[] {
+  return group.itemHrefs
+    .map(href => NavItems[href])
+    .filter(item => item && item.visible(role, perms));
 }
 
 export const PlatformAdminNavConfig = {
