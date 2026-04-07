@@ -586,8 +586,8 @@ router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => 
 // ============================================================================
 
 const GMAIL_CONFIG = {
-  clientId: process.env.GOOGLE_CLIENT_ID || "",
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+  get clientId() { return process.env.GOOGLE_CLIENT_ID || ""; },
+  get clientSecret() { return process.env.GOOGLE_CLIENT_SECRET || ""; },
   scopes: [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
@@ -597,8 +597,8 @@ const GMAIL_CONFIG = {
 };
 
 const OUTLOOK_CONFIG = {
-  clientId: process.env.MICROSOFT_CLIENT_ID || "",
-  clientSecret: process.env.MICROSOFT_CLIENT_SECRET || "",
+  get clientId() { return process.env.MICROSOFT_CLIENT_ID || ""; },
+  get clientSecret() { return process.env.MICROSOFT_CLIENT_SECRET || ""; },
   scopes: [
     "https://graph.microsoft.com/Mail.Read",
     "https://graph.microsoft.com/Mail.Send",

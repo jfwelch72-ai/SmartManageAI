@@ -41,8 +41,9 @@ export function isRedirectUriValid(uri: string): boolean {
 export function logOAuthRedirectUris(): void {
   const base = getCanonicalBaseUrl();
   console.log("[OAuth] Resolved base URL:", base);
-  console.log("[OAuth] Gmail redirect URI:", `${base}/api/email/oauth/gmail/callback`);
-  console.log("[OAuth] Outlook redirect URI:", `${base}/api/email/oauth/outlook/callback`);
+  console.log("[OAuth] Gmail redirect URI:", process.env.GOOGLE_REDIRECT_URI ? `${process.env.GOOGLE_REDIRECT_URI} (env)` : `${base}/api/email/oauth/gmail/callback (auto)`);
+  console.log("[OAuth] Outlook redirect URI:", process.env.MICROSOFT_REDIRECT_URI ? `${process.env.MICROSOFT_REDIRECT_URI} (env)` : `${base}/api/email/oauth/outlook/callback (auto)`);
+  console.log("[OAuth] Outlook config:", (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) ? "configured" : "NOT configured");
   console.log("[OAuth] Google login redirect URI:", `${base}/api/auth/google/callback`);
   console.log("[OAuth] Google integration redirect URI:", `${base}/api/integrations/connections/:id/callback`);
 }
