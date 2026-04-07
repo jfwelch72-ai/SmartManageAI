@@ -149,6 +149,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              autoComplete="email"
               data-testid="input-email"
             />
           </div>
@@ -165,6 +166,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              autoComplete="current-password"
               data-testid="input-password"
             />
           </div>

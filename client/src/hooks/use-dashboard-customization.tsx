@@ -54,6 +54,8 @@ interface UserPermissions {
   canAccessBidNetworkInbox: boolean;
   canManageLeave: boolean;
   canAccessTimeMaterial: boolean;
+  canSubmitPeerRatings: boolean;
+  canViewPeerRatings: boolean;
 }
 
 interface ColorPalette {
@@ -148,7 +150,7 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
 
   const { user: authUser } = useAuth();
 
-  const { data: permissions = { canViewFinancials: false, canEditFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false, canManageContracts: false, canManageHiring: false, canManageSafety: false, canViewSafety: false, canViewAiSummaries: false, canManageScheduling: false, canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false, canManageLeave: false, canAccessTimeMaterial: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
+  const { data: permissions = { canViewFinancials: false, canEditFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false, canManageContracts: false, canManageHiring: false, canManageSafety: false, canViewSafety: false, canViewAiSummaries: false, canManageScheduling: false, canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false, canManageLeave: false, canAccessTimeMaterial: false, canSubmitPeerRatings: false, canViewPeerRatings: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
     queryKey: ["/api/dashboard/my-permissions"],
     enabled: !!authUser,
   });
@@ -662,7 +664,7 @@ const EMPTY_PERMISSIONS: UserPermissions = {
   canManageContracts: false, canManageHiring: false, canManageSafety: false,
   canViewSafety: false, canViewAiSummaries: false, canManageScheduling: false,
   canAccessBidNetworkGC: false, canAccessBidNetworkInbox: false, canManageLeave: false,
-  canAccessTimeMaterial: false,
+  canAccessTimeMaterial: false, canSubmitPeerRatings: false, canViewPeerRatings: false,
 } as UserPermissions;
 
 export function useDashboardCustomizationSafe() {

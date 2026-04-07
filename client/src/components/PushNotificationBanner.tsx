@@ -35,7 +35,8 @@ export default function PushNotificationBanner() {
     if (dismissed) return;
     const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
     if (!vapidPublicKey) return;
-    setVisible(true);
+    const timer = setTimeout(() => setVisible(true), 30000);
+    return () => clearTimeout(timer);
   }, []);
 
   function dismiss() {
