@@ -1,4 +1,4 @@
-import { Fragment, useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -389,7 +389,7 @@ export function TakeoffToolbar({
         {TOOL_CONFIG.map((tool) => {
           const Icon = tool.icon;
           return (
-            <Fragment key={tool.id}>
+            <div key={tool.id} className="contents">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant={activeTool === tool.id ? tool.color as any : "ghost"} size="icon" onClick={() => onToolSelect(tool.id as Tool)} data-testid={`button-tool-mobile-${tool.id}`} className="h-8 w-8 shrink-0">
@@ -418,7 +418,7 @@ export function TakeoffToolbar({
                   </Tooltip>
                 </>
               )}
-            </Fragment>
+            </div>
           );
         })}
         <Separator orientation="vertical" className="h-6 mx-0.5" />
