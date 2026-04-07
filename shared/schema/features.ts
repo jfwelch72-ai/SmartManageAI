@@ -4411,7 +4411,7 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   // Category 1: Core Pages & Navigation (1-10)
   canAccessDashboard: boolean("can_access_dashboard").notNull().default(false),
   canAccessProjects: boolean("can_access_projects").notNull().default(false),
-  canAccessActiveProjectsOnly: boolean("can_access_active_projects_only").notNull().default(false),
+  projectScope: text("project_scope").notNull().default("ALL"),
   canCreateProjects: boolean("can_create_projects").notNull().default(false),
   canEditProjects: boolean("can_edit_projects").notNull().default(false),
   canAccessCalendar: boolean("can_access_calendar").notNull().default(false),

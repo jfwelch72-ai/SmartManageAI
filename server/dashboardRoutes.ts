@@ -206,7 +206,7 @@ const router = Router();
 // ========================================
 
 type FeaturePermissionKeys =
-  | 'canAccessDashboard' | 'canAccessProjects' | 'canAccessActiveProjectsOnly' | 'canCreateProjects' | 'canEditProjects'
+  | 'canAccessDashboard' | 'canAccessProjects' | 'canCreateProjects' | 'canEditProjects'
   | 'canAccessCalendar' | 'canAccessTasks' | 'canAccessMessages' | 'canAccessBulletins' | 'canAccessEmailAssistant'
   | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
   | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
@@ -229,10 +229,10 @@ type FeaturePermissionKeys =
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
   | 'canSubmitPeerRatings' | 'canViewPeerRatings';
 
-type PermissionSet = Record<FeaturePermissionKeys, boolean>;
+type PermissionSet = Record<FeaturePermissionKeys, boolean> & { projectScope: "ALL" | "ACTIVE_ONLY" };
 
 const ALL_FALSE: PermissionSet = {
-  canAccessDashboard: false, canAccessProjects: false, canAccessActiveProjectsOnly: false,
+  canAccessDashboard: false, canAccessProjects: false, projectScope: "ALL" as const,
   canCreateProjects: false, canEditProjects: false, canAccessCalendar: false,
   canAccessTasks: false, canAccessMessages: false, canAccessBulletins: false, canAccessEmailAssistant: false,
   canViewBids: false, canEditBids: false, canDeleteBids: false, canGenerateBidPDFs: false,
@@ -262,7 +262,7 @@ const ALL_FALSE: PermissionSet = {
 };
 
 const ALL_TRUE: PermissionSet = {
-  canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: false,
+  canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL" as const,
   canCreateProjects: true, canEditProjects: true, canAccessCalendar: true,
   canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true, canAccessEmailAssistant: true,
   canViewBids: true, canEditBids: true, canDeleteBids: true, canGenerateBidPDFs: true,
@@ -319,13 +319,11 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   SUPER_ADMIN: { ...ALL_TRUE },
   HUSTLER: {
     ...ALL_TRUE,
-    canAccessActiveProjectsOnly: false,
     canAccessEnterpriseSettings: false,
     canManageHiringSettings: false,
   },
   MANAGER: {
     ...ALL_TRUE,
-    canAccessActiveProjectsOnly: false,
     canEditFinancials: false,
     canAccessCostRates: false,
     canManageWebsite: false,
@@ -374,7 +372,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   },
   FIELD_WORKER: {
     ...ALL_FALSE,
-    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: true,
+    canAccessDashboard: true, canAccessProjects: true, projectScope: "ACTIVE_ONLY" as const,
     canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
     canAccessBulletins: true, canAccessTimeClock: true, canManageLeave: true,
     canViewProjectTimeEntries: true, canViewSafety: true, canViewAiSummaries: true,
@@ -396,9 +394,16 @@ export function getRoleDefaults(role?: string | null): PermissionSet {
 export function mergePermissions(roleDefaults: PermissionSet, dbPerms: Partial<PermissionSet> | null): PermissionSet {
   if (!dbPerms) return { ...roleDefaults };
   const result = { ...roleDefaults };
-  for (const key of Object.keys(result) as FeaturePermissionKeys[]) {
-    if (key in dbPerms && typeof dbPerms[key] === 'boolean') {
-      result[key] = dbPerms[key]!;
+  for (const key of Object.keys(result)) {
+    if (key === 'projectScope') {
+      if (key in dbPerms && (dbPerms[key] === 'ALL' || dbPerms[key] === 'ACTIVE_ONLY')) {
+        result.projectScope = dbPerms[key]!;
+      }
+    } else {
+      const k = key as FeaturePermissionKeys;
+      if (k in dbPerms && typeof dbPerms[k] === 'boolean') {
+        result[k] = dbPerms[k]!;
+      }
     }
   }
   return result;
@@ -447,11 +452,20 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
       const roleDefaults = getRoleDefaults(effectiveRole || user.role);
       const dbPerms: Partial<PermissionSet> = {};
       if (perm) {
-        for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+        const permRecord = perm as Record<string, unknown>;
+        const dbPermsRecord = dbPerms as Record<string, boolean | string>;
+        for (const key of Object.keys(ALL_FALSE)) {
           if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
-          const val = (perm as Record<string, unknown>)[key];
+          if (key === 'projectScope') {
+            const val = permRecord[key];
+            if (val === 'ALL' || val === 'ACTIVE_ONLY') {
+              dbPermsRecord.projectScope = val;
+            }
+            continue;
+          }
+          const val = permRecord[key];
           if (typeof val === 'boolean') {
-            dbPerms[key] = val;
+            dbPermsRecord[key] = val;
           }
         }
         const fa = (perm as Record<string, unknown>).financialsAccess as string | undefined;
@@ -488,15 +502,19 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
       return res.status(403).json({ error: 'Organization required' });
     }
 
-    const schemaShape: Record<string, z.ZodBoolean> = {};
+    const schemaShape: Record<string, z.ZodTypeAny> = {};
     for (const key of Object.keys(ALL_FALSE)) {
-      schemaShape[key] = z.boolean();
+      if (key === 'projectScope') {
+        schemaShape[key] = z.enum(["ALL", "ACTIVE_ONLY"]);
+      } else {
+        schemaShape[key] = z.boolean();
+      }
     }
     const schema = z.object(schemaShape);
 
     const data = schema.parse(req.body);
 
-    const { canViewFinancials: viewFin, canEditFinancials: editFin, ...restData } = data as Record<string, boolean>;
+    const { canViewFinancials: viewFin, canEditFinancials: editFin, ...restData } = data as Record<string, boolean | string>;
     let financialsAccess = "none";
     if (editFin) financialsAccess = "manage";
     else if (viewFin) financialsAccess = "view";
@@ -515,10 +533,17 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
         eq(userDashboardPermissions.userId, userId)
       ));
 
-    const oldPermissions: Record<string, boolean> = {};
+    const oldPermissions: Record<string, boolean | string> = {};
     if (existing.length > 0) {
-      for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+      for (const key of Object.keys(ALL_FALSE)) {
         if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
+        if (key === 'projectScope') {
+          const val = (existing[0] as Record<string, unknown>)[key];
+          if (val === 'ALL' || val === 'ACTIVE_ONLY') {
+            oldPermissions[key] = val;
+          }
+          continue;
+        }
         const val = (existing[0] as Record<string, unknown>)[key];
         if (typeof val === 'boolean') {
           oldPermissions[key] = val;
@@ -548,10 +573,10 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
       });
     }
 
-    const changedPermissions: Record<string, { old: boolean; new: boolean }> = {};
+    const changedPermissions: Record<string, { old: boolean | string; new: boolean | string }> = {};
     for (const key of Object.keys(data) as string[]) {
-      const oldVal = oldPermissions[key] ?? false;
-      const newVal = (data as Record<string, boolean>)[key];
+      const oldVal = oldPermissions[key] ?? (key === 'projectScope' ? 'ALL' : false);
+      const newVal = (data as Record<string, boolean | string>)[key];
       if (oldVal !== newVal) {
         changedPermissions[key] = { old: oldVal, new: newVal };
       }
@@ -573,14 +598,13 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
   }
 });
 
-const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: string; permissions: Record<string, boolean> }> = [
+const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: string; permissions: Record<string, boolean | string> }> = [
   {
     name: "Project Manager (PM)",
     description: "Full project lifecycle, scheduling, budgets, change orders",
     targetRole: "MANAGER",
     permissions: {
       ...ALL_TRUE,
-      canAccessActiveProjectsOnly: false,
       canManageCrews: false,
       canAccessCostRates: false,
       canManageWebsite: false,
@@ -1021,7 +1045,15 @@ router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN
       name: z.string().min(1).max(255),
       description: z.string().optional(),
       targetRole: z.enum(['MANAGER', 'SUPERINTENDENT', 'ESTIMATOR', 'VENDOR']),
-      permissions: z.record(z.enum(Object.keys(ALL_FALSE) as [string, ...string[]]), z.boolean()),
+      permissions: z.object(
+        Object.fromEntries(
+          Object.keys(ALL_FALSE).map(k =>
+            k === 'projectScope'
+              ? [k, z.enum(["ALL", "ACTIVE_ONLY"])]
+              : [k, z.boolean()]
+          )
+        )
+      ),
     });
 
     let data;
@@ -1105,7 +1137,7 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
       return res.status(403).json({ error: 'Cannot use presets from other organizations' });
     }
 
-    const permSet: Record<string, boolean> = JSON.parse(preset.permissions);
+    const permSet: Record<string, boolean | string> = JSON.parse(preset.permissions);
 
     const [targetUser] = await db.select().from(users)
       .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
@@ -1124,7 +1156,7 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
         eq(userDashboardPermissions.userId, userId)
       ));
 
-    const fullPermSet: Record<string, boolean> = { ...ALL_FALSE };
+    const fullPermSet: Record<string, boolean | string> = { ...ALL_FALSE };
     for (const key of Object.keys(permSet)) {
       if (key in fullPermSet) {
         fullPermSet[key] = permSet[key];
@@ -1191,11 +1223,20 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
 
     const dbPerms: Partial<PermissionSet> | null = permission ? (() => {
       const perms: Partial<PermissionSet> = {};
-      for (const key of Object.keys(ALL_FALSE) as FeaturePermissionKeys[]) {
+      const permRecord = permission as Record<string, unknown>;
+      const permsRecord = perms as Record<string, boolean | string>;
+      for (const key of Object.keys(ALL_FALSE)) {
         if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
-        const val = (permission as Record<string, unknown>)[key];
+        if (key === 'projectScope') {
+          const val = permRecord[key];
+          if (val === 'ALL' || val === 'ACTIVE_ONLY') {
+            permsRecord.projectScope = val;
+          }
+          continue;
+        }
+        const val = permRecord[key];
         if (typeof val === 'boolean') {
-          perms[key] = val;
+          permsRecord[key] = val;
         }
       }
       const fa = (permission as Record<string, unknown>).financialsAccess as string | undefined;

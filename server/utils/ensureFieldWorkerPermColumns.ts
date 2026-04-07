@@ -30,8 +30,53 @@ export async function ensureFieldWorkerPermColumns(): Promise<void> {
     }
   }
 
+  await ensureProjectScopeColumn();
+
   await ensureFinancialsAccessColumn("user_dashboard_permissions", "none");
   await ensureFinancialsAccessColumn("hustler_delegates", "view");
+}
+
+async function ensureProjectScopeColumn(): Promise<void> {
+  const table = "user_dashboard_permissions";
+  try {
+    const newColCheck = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = ${table} AND column_name = 'project_scope'
+      )::boolean AS col_exists
+    `);
+    const newColExists = newColCheck.rows[0]?.col_exists === true;
+
+    if (!newColExists) {
+      await db.execute(sql.raw(
+        `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "project_scope" text NOT NULL DEFAULT 'ALL'`
+      ));
+      console.log(`[migration] ${table}.project_scope — column added`);
+    }
+
+    const oldColCheck = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = ${table} AND column_name = 'can_access_active_projects_only'
+      )::boolean AS col_exists
+    `);
+    if (oldColCheck.rows[0]?.col_exists === true) {
+      await db.execute(sql.raw(`
+        UPDATE "${table}" SET project_scope = 'ACTIVE_ONLY'
+        WHERE can_access_active_projects_only = true AND project_scope = 'ALL'
+      `));
+      await db.execute(sql.raw(
+        `ALTER TABLE "${table}" DROP COLUMN "can_access_active_projects_only"`
+      ));
+      console.log(`[migration] ${table}.project_scope — backfilled and dropped legacy column`);
+    } else if (!newColExists) {
+      console.log(`[migration] ${table}.project_scope — applied`);
+    } else {
+      console.log(`[migration] ${table}.project_scope — already present, skipped`);
+    }
+  } catch (err) {
+    console.error(`[migration] Failed to ensure ${table}.project_scope:`, err);
+  }
 }
 
 async function ensureFinancialsAccessColumn(table: string, defaultVal: string): Promise<void> {

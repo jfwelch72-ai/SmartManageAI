@@ -41,12 +41,12 @@ Source of truth: `ROLE_DEFAULT_PERMISSIONS` in `server/dashboardRoutes.ts`.
 
 The code currently defines **79 feature permission keys** (the original task brief referenced 73; the count has grown as features were added). All 79 are covered in the tables below.
 
-- ADMIN = `ALL_TRUE` (every flag true, `canAccessActiveProjectsOnly` = false)
+- ADMIN = `ALL_TRUE` (every boolean flag true, `projectScope` = `"ALL"`)
 - SUPER_ADMIN = `ALL_TRUE` (copy of ADMIN)
-- HUSTLER = `ALL_TRUE` minus `canAccessActiveProjectsOnly`, `canAccessEnterpriseSettings`, `canManageHiringSettings`
-- MANAGER = `ALL_TRUE` minus `canAccessActiveProjectsOnly`, `canAccessCostRates`, `canManageWebsite`, `canManageAISettings`, `canAccessEnterpriseSettings`, `canManageHiringSettings`, `canManageUsers`
+- HUSTLER = `ALL_TRUE` minus `canAccessEnterpriseSettings`, `canManageHiringSettings`
+- MANAGER = `ALL_TRUE` minus `canAccessCostRates`, `canManageWebsite`, `canManageAISettings`, `canAccessEnterpriseSettings`, `canManageHiringSettings`, `canManageUsers`
 
-Key: ✅ = true, ❌ = false. `canAccessActiveProjectsOnly` marked with ⚠️ where true (restricts to ACTIVE projects only).
+Key: ✅ = true, ❌ = false. `projectScope` is an enum field (`"ALL"` or `"ACTIVE_ONLY"`) — not a boolean.
 
 ### Dashboard & Core
 
@@ -54,7 +54,7 @@ Key: ✅ = true, ❌ = false. `canAccessActiveProjectsOnly` marked with ⚠️ w
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | canAccessDashboard | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | canAccessProjects | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| canAccessActiveProjectsOnly | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ ✅ | ❌ |
+| projectScope | ALL | ALL | ALL | ALL | ALL | ALL | ACTIVE_ONLY | ALL |
 | canCreateProjects | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | canEditProjects | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | canAccessCalendar | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
@@ -474,9 +474,9 @@ The VENDOR role is well-isolated: it has its own dedicated sidebar (`VendorPorta
 
 SUPER_ADMIN's server-side permission set is a copy of `ALL_TRUE` (identical to ADMIN). However, the sidebar renders a completely separate admin panel (`PlatformAdminNavConfig`) with only 4 items. SUPER_ADMIN would pass any `requireFeaturePermission` check, but they don't see any org-level sidebar items. This is intentional — SUPER_ADMIN is meant for platform management, not org operations.
 
-### 6.5 `canAccessActiveProjectsOnly` Is Not a True Permission
+### 6.5 `projectScope` Enum Field
 
-This flag is unique: setting it to `true` **restricts** access (limits to ACTIVE projects only), unlike every other flag which **grants** access. It is set to `true` only for FIELD_WORKER. In `ALL_TRUE` it is explicitly set to `false` (meaning no restriction). This inverted semantics could be confusing for admins configuring overrides.
+The `projectScope` field uses an enum (`"ALL"` | `"ACTIVE_ONLY"`) instead of a boolean to clearly communicate intent. When set to `"ACTIVE_ONLY"`, the user can only see projects with an ACTIVE status. This replaces the former `canAccessActiveProjectsOnly` boolean whose inverted semantics were confusing. Only FIELD_WORKER defaults to `"ACTIVE_ONLY"`; all other roles default to `"ALL"`.
 
 ### 6.6 `canAccessFinancials` Auto-Expansion in DB Overrides
 

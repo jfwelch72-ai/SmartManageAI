@@ -236,7 +236,7 @@ export function getEffectiveRole(user: SanitizedUser): UserRole {
 }
 
 export type FeaturePermissionKey =
-  | 'canAccessDashboard' | 'canAccessProjects' | 'canAccessActiveProjectsOnly' | 'canCreateProjects' | 'canEditProjects'
+  | 'canAccessDashboard' | 'canAccessProjects' | 'canCreateProjects' | 'canEditProjects'
   | 'canAccessCalendar' | 'canAccessTasks' | 'canAccessMessages' | 'canAccessBulletins' | 'canAccessEmailAssistant'
   | 'canViewBids' | 'canEditBids' | 'canDeleteBids' | 'canGenerateBidPDFs' | 'canConvertBidToProject'
   | 'canAccessBidNetworkGC' | 'canAccessBidNetworkInbox' | 'canManageBidResponses' | 'canDeleteBidRequests'
@@ -259,7 +259,7 @@ export type FeaturePermissionKey =
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
   | 'canSubmitPeerRatings' | 'canViewPeerRatings';
 
-export async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean>> {
+export async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean | string>> {
   if (role === "SUPER_ADMIN") return getRoleDefaults("SUPER_ADMIN");
   const roleDefaults = getRoleDefaults(role);
   if (!orgId) return roleDefaults;
@@ -270,9 +270,16 @@ export async function getEffectivePermissions(userId: string, orgId: string | nu
         eq(userDashboardPermissions.userId, userId)
       ));
     if (!perm) return roleDefaults;
-    const dbPerms: Partial<Record<string, boolean>> = {};
+    const dbPerms: Partial<Record<string, boolean | string>> = {};
     for (const key of Object.keys(roleDefaults)) {
       if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
+      if (key === 'projectScope') {
+        const val = (perm as Record<string, unknown>)[key];
+        if (val === 'ALL' || val === 'ACTIVE_ONLY') {
+          dbPerms[key] = val;
+        }
+        continue;
+      }
       const val = (perm as Record<string, unknown>)[key];
       if (typeof val === 'boolean') {
         dbPerms[key] = val;

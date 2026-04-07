@@ -114,7 +114,7 @@ export function hasVendorOrContractorAccess(role?: string, perms?: FeaturePerms)
 }
 
 export function hasManagementAccess(role?: string, perms?: FeaturePerms): boolean {
-  if (perms) return !!perms.canAccessProjects && !perms.canAccessActiveProjectsOnly;
+  if (perms) return !!perms.canAccessProjects && perms.projectScope !== "ACTIVE_ONLY";
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" ||
          role === "ESTIMATOR" || role === "HUSTLER";
 }
@@ -364,7 +364,7 @@ export function getAllowedProjectStatuses(role?: string, perms?: FeaturePerms): 
   if (isSuperAdmin(role)) {
     return [];
   }
-  if (perms?.canAccessActiveProjectsOnly) {
+  if (perms?.projectScope === "ACTIVE_ONLY") {
     return ["ACTIVE"];
   }
   if (!perms && isFieldWorker(role)) {
@@ -381,7 +381,7 @@ export function canViewProjectStatus(role?: string, status?: string, perms?: Fea
 export interface FeaturePerms {
   canAccessDashboard?: boolean;
   canAccessProjects?: boolean;
-  canAccessActiveProjectsOnly?: boolean;
+  projectScope?: "ALL" | "ACTIVE_ONLY";
   canCreateProjects?: boolean;
   canEditProjects?: boolean;
   canAccessCalendar?: boolean;

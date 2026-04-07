@@ -16,9 +16,9 @@ import { Link, useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { getRoleDisplayName } from "@/lib/rbac";
 
-const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
+const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean | string>> = {
   ADMIN: {
-    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: false,
+    canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL",
     canCreateProjects: true, canEditProjects: true, canAccessCalendar: true,
     canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
     canAccessEmailAssistant: true, canViewBids: true, canEditBids: true,
@@ -49,7 +49,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
   },
   MANAGER: {
-    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: false,
+    canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL",
     canCreateProjects: true, canEditProjects: true, canAccessCalendar: true,
     canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
     canAccessEmailAssistant: true, canViewBids: true, canEditBids: true,
@@ -79,7 +79,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
   },
   SUPERINTENDENT: {
-    canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+    canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL", canAccessCalendar: true,
     canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
     canViewBids: true, canAccessHistoricalCosts: true,
     canViewFinancials: true,
@@ -96,7 +96,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canCreateChangeOrders: true,
   },
   ESTIMATOR: {
-    canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+    canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL", canAccessCalendar: true,
     canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
     canViewBids: true, canEditBids: true, canGenerateBidPDFs: true,
     canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
@@ -112,13 +112,13 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
   },
   FIELD_WORKER: {
-    canAccessDashboard: true, canAccessProjects: true, canAccessActiveProjectsOnly: true,
+    canAccessDashboard: true, canAccessProjects: true, projectScope: "ACTIVE_ONLY",
     canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
     canAccessBulletins: true, canAccessTimeClock: true, canManageLeave: true,
     canViewProjectTimeEntries: true,
   },
   HUSTLER: {
-    canAccessDashboard: true, canAccessProjects: true, canAccessMessages: true,
+    canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL", canAccessMessages: true,
     canAccessCalendar: true, canManageUsers: true,
     canViewFinancials: true, canEditFinancials: true,
     canAccessKPIs: true, canAccessCFODashboard: true,
@@ -127,7 +127,7 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, Record<string, boolean>> = {
     canUseAiFeatures: true, canAccessAuditLogs: true,
   },
   VENDOR: {
-    canAccessDashboard: true, canAccessMessages: true,
+    canAccessDashboard: true, projectScope: "ALL", canAccessMessages: true,
     canAccessBidNetworkInbox: true,
   },
 };

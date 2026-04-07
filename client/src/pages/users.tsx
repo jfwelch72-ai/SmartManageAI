@@ -85,10 +85,12 @@ import {
   Save,
   Trash2,
   PackageOpen,
+  FolderOpen,
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
 interface PermissionSet {
+  projectScope: "ALL" | "ACTIVE_ONLY";
   canViewFinancials: boolean;
   canEditFinancials: boolean;
   canManagePayroll: boolean;
@@ -126,6 +128,7 @@ interface UserWithPermissions extends SelectUser {
   canAccessBidNetworkInbox?: boolean;
   canManageLeave?: boolean;
   canAccessTimeMaterial?: boolean;
+  projectScope?: "ALL" | "ACTIVE_ONLY";
   roleDefaults?: PermissionSet;
   effective?: PermissionSet;
   effectiveRole?: string;
@@ -346,13 +349,13 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     name: string;
     description: string | null;
     targetRole: string;
-    permissions: Record<string, boolean>;
+    permissions: Record<string, boolean | string>;
     isBuiltIn: boolean;
     organizationId: string | null;
   }
 
   const [presetConfirm, setPresetConfirm] = useState<{ userId: string; preset: PresetData } | null>(null);
-  const [showSavePreset, setShowSavePreset] = useState<{ userId: string; role: string; permissions: Record<string, boolean> } | null>(null);
+  const [showSavePreset, setShowSavePreset] = useState<{ userId: string; role: string; permissions: Record<string, boolean | string> } | null>(null);
   const [savePresetName, setSavePresetName] = useState("");
   const [savePresetDesc, setSavePresetDesc] = useState("");
   const [deletePresetConfirm, setDeletePresetConfirm] = useState<PresetData | null>(null);
@@ -406,8 +409,14 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     },
   });
 
-  type PermissionItem = { key: string; label: string; icon: typeof DollarSign; description: string; isFinancialsDropdown?: boolean };
+  type PermissionItem = { key: string; label: string; icon: typeof DollarSign; description: string; isFinancialsDropdown?: boolean; isProjectScopeDropdown?: boolean };
   const PERMISSION_GROUPS: { label: string; permissions: PermissionItem[] }[] = [
+    {
+      label: "Projects",
+      permissions: [
+        { key: "projectScope" as const, label: "Project Scope", icon: FolderOpen, description: "Controls which projects are visible: All projects or Active projects only", isProjectScopeDropdown: true },
+      ],
+    },
     {
       label: "Financial",
       permissions: [
@@ -461,16 +470,17 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     },
   ];
 
-  const ALL_PERM_KEYS = [...PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)), "canEditFinancials" as const];
+  const ALL_PERM_KEYS = [...PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)).filter(k => k !== 'projectScope'), "canEditFinancials" as const];
 
-  const buildCurrentPermissions = (userPerms: UserWithPermissions): Record<string, boolean> => {
-    const currentPermissions: Record<string, boolean> = {};
+  const buildCurrentPermissions = (userPerms: UserWithPermissions): Record<string, boolean | string> => {
+    const currentPermissions: Record<string, boolean | string> = {};
     ALL_PERM_KEYS.forEach(k => { currentPermissions[k] = !!(userPerms[k as keyof UserWithPermissions]); });
+    currentPermissions.projectScope = userPerms.projectScope || userPerms.effective?.projectScope || "ALL";
     return currentPermissions;
   };
 
   const updatePermissionsMutation = useMutation({
-    mutationFn: async ({ userId, permissions }: { userId: string; permissions: Record<string, boolean> }) => {
+    mutationFn: async ({ userId, permissions }: { userId: string; permissions: Record<string, boolean | string> }) => {
       return await apiRequest("PUT", `/api/dashboard/permissions/${userId}`, permissions);
     },
     onSuccess: () => {
@@ -489,14 +499,16 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   };
 
   const handleGrantAll = async (userId: string) => {
-    const allGranted: Record<string, boolean> = {};
+    const allGranted: Record<string, boolean | string> = {};
     ALL_PERM_KEYS.forEach(k => { allGranted[k] = true; });
+    allGranted.projectScope = "ALL";
     await updatePermissionsMutation.mutateAsync({ userId, permissions: allGranted });
   };
 
   const handleRevokeAll = async (userId: string, roleDefaults?: PermissionSet) => {
-    const revoked: Record<string, boolean> = {};
-    ALL_PERM_KEYS.forEach(k => { revoked[k] = roleDefaults?.[k] ? true : false; });
+    const revoked: Record<string, boolean | string> = {};
+    ALL_PERM_KEYS.forEach(k => { revoked[k] = roleDefaults?.[k as keyof PermissionSet] ? true : false; });
+    revoked.projectScope = roleDefaults?.projectScope || "ALL";
     await updatePermissionsMutation.mutateAsync({ userId, permissions: revoked });
   };
 
@@ -1157,15 +1169,20 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                     variant="outline"
                                     className="flex-1 sm:flex-none"
                                     onClick={() => {
-                                      const currentPerms: Record<string, boolean> = {};
+                                      const currentPerms: Record<string, boolean | string> = {};
                                       if (u.effective) {
-                                        const eff = u.effective as Record<string, boolean>;
+                                        const eff = u.effective;
                                         Object.keys(eff).forEach(k => {
-                                          currentPerms[k] = !!eff[k];
+                                          if (k === 'projectScope') {
+                                            currentPerms[k] = (eff as Record<string, unknown>)[k] as string || "ALL";
+                                          } else {
+                                            currentPerms[k] = !!(eff as Record<string, unknown>)[k];
+                                          }
                                         });
                                       } else {
                                         const uRecord = u as unknown as Record<string, unknown>;
                                         ALL_PERM_KEYS.forEach(k => { currentPerms[k] = !!uRecord[k]; });
+                                        currentPerms.projectScope = u.projectScope || "ALL";
                                       }
                                       setShowSavePreset({ userId: u.id, role: u.role, permissions: currentPerms });
                                       setSavePresetName("");
@@ -1198,6 +1215,45 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                         const isHustlerBase = isHustler && HUSTLER_BASE_PERMISSIONS.has(perm.key);
                                         const isInheritedFromRole = isHustler && !isHustlerBase && isRoleDefault;
                                         const inheritedRoleName = isInheritedFromRole ? (ROLE_LABELS[u.effectiveRole || "ADMIN"] || u.effectiveRole || "Admin") : null;
+
+                                        if (perm.isProjectScopeDropdown) {
+                                          const currentScope = u.effective?.projectScope || u.projectScope || "ALL";
+
+                                          return (
+                                            <div
+                                              key={perm.key}
+                                              className="flex items-center justify-between gap-3 py-2 px-2 rounded-md hover:bg-muted/30 transition-colors"
+                                              style={{ minHeight: "44px" }}
+                                            >
+                                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                                                <div className="min-w-0">
+                                                  <span className="text-sm font-medium leading-tight">{perm.label}</span>
+                                                  <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
+                                                </div>
+                                              </div>
+                                              <Select
+                                                value={currentScope}
+                                                onValueChange={(val) => {
+                                                  const currentPerms = buildCurrentPermissions(u);
+                                                  updatePermissionsMutation.mutate({
+                                                    userId: u.id,
+                                                    permissions: { ...currentPerms, projectScope: val },
+                                                  });
+                                                }}
+                                                disabled={isAdmin || updatePermissionsMutation.isPending}
+                                              >
+                                                <SelectTrigger className="w-[140px] h-8 text-xs" data-testid={`select-project-scope-${u.id}`}>
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="ALL">All Projects</SelectItem>
+                                                  <SelectItem value="ACTIVE_ONLY">Active Only</SelectItem>
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                          );
+                                        }
 
                                         if (perm.isFinancialsDropdown) {
                                           const viewVal = !!u.canViewFinancials || u.roleDefaults?.canViewFinancials;
