@@ -385,4 +385,127 @@ router.post(
   }
 );
 
+router.get("/api/auth/microsoft", (req: Request, res: Response) => {
+  const clientId = process.env.MICROSOFT_CLIENT_ID;
+  if (!clientId || clientId === "REPLACE_WITH_YOUR_MICROSOFT_CLIENT_ID") {
+    res.redirect("/login?error=microsoft_not_configured");
+    return;
+  }
+
+  const state = generateState();
+  setStateCookie(res, state, "microsoft");
+
+  const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/microsoft/callback`;
+  const scope = encodeURIComponent("openid email profile");
+  const authUrl =
+    `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
+    `client_id=${clientId}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&response_type=code` +
+    `&scope=${scope}` +
+    `&response_mode=query` +
+    `&state=${state}`;
+
+  res.redirect(authUrl);
+});
+
+router.get(
+  "/api/auth/microsoft/callback",
+  async (req: Request, res: Response) => {
+    try {
+      if (!validateState(req, "microsoft")) {
+        logError("Microsoft OAuth state mismatch — possible CSRF");
+        res.redirect("/login?error=microsoft_failed");
+        return;
+      }
+      clearStateCookie(res, "microsoft");
+
+      const { code } = req.query;
+      if (!code || typeof code !== "string") {
+        res.redirect("/login?error=microsoft_failed");
+        return;
+      }
+
+      const clientId = process.env.MICROSOFT_CLIENT_ID;
+      const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+      if (!clientId || !clientSecret) {
+        res.redirect("/login?error=microsoft_not_configured");
+        return;
+      }
+
+      const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/microsoft/callback`;
+
+      const tokenRes = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: "authorization_code",
+        }),
+      });
+
+      const tokenData = await tokenRes.json();
+      if (!tokenData.id_token) {
+        logError("Microsoft token exchange failed:", {}, tokenData instanceof Error ? tokenData : new Error(String(JSON.stringify(tokenData))));
+        res.redirect("/login?error=microsoft_failed");
+        return;
+      }
+
+      const parts = tokenData.id_token.split(".");
+      if (parts.length !== 3) {
+        res.redirect("/login?error=microsoft_failed");
+        return;
+      }
+
+      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+
+      const email = payload.email || payload.preferred_username;
+      const sub = payload.sub || payload.oid;
+
+      if (!email) {
+        res.redirect("/login?error=microsoft_no_email");
+        return;
+      }
+
+      const emailVerified = true;
+
+      const nameParts = (payload.name || "User").split(" ");
+      const firstName = payload.given_name || nameParts[0] || "User";
+      const lastName = payload.family_name || nameParts.slice(1).join(" ") || "";
+
+      const user = await findOrCreateOAuthUser(
+        "microsoft",
+        sub,
+        email,
+        firstName,
+        lastName,
+        emailVerified
+      );
+
+      if (!user) {
+        res.redirect("/login?error=microsoft_no_email");
+        return;
+      }
+
+      if (user.role !== "SUPER_ADMIN" && user.organizationId) {
+        const [org] = await db.select().from(organizations).where(eq(organizations.id, user.organizationId)).limit(1);
+        if (org && !org.isActive) {
+          res.redirect("/login?error=org_suspended");
+          return;
+        }
+      }
+
+      const token = generateToken(user.id, user.tokenVersion ?? 0);
+      setAuthCookie(res, token);
+      res.redirect(getRedirectPath(user));
+    } catch (error) {
+      logError("Microsoft OAuth error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.redirect("/login?error=microsoft_failed");
+    }
+  }
+);
+
 export default router;

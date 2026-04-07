@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
 import { SiGoogle, SiApple } from "react-icons/si";
+import { BsMicrosoft } from "react-icons/bs";
 import { Fingerprint, Loader2 } from "lucide-react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useToast } from "@/hooks/use-toast";
@@ -113,6 +114,15 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
           >
             <SiApple className="w-4 h-4 mr-2" />
             Continue with Apple
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => { window.location.href = "/api/auth/microsoft"; }}
+            data-testid="button-login-microsoft"
+          >
+            <BsMicrosoft className="w-4 h-4 mr-2" />
+            Continue with Microsoft
           </Button>
           <Button
             variant="outline"
