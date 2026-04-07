@@ -111,6 +111,8 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
 
   const comparisonLabel = KPI_COMPARISONS.find(c => c.value === merged.comparison)?.label || "vs previous";
 
+  const animatedValue = useAnimatedValue(data?.value || 0);
+
   if (isLoading) {
     return (
       <Card data-testid="kpi-summary-loading">
@@ -142,8 +144,6 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
   const isPositive = changePercent > 0;
   const isNegative = changePercent < 0;
   const isNeutral = changePercent === 0;
-
-  const animatedValue = useAnimatedValue(data?.value || 0);
 
   const MiniSparkline = () => {
     const points = isPositive ? "2,14 6,10 10,12 14,6 18,8 22,2" : isNegative ? "2,2 6,6 10,4 14,10 18,8 22,14" : "2,8 6,8 10,8 14,8 18,8 22,8";
