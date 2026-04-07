@@ -2428,7 +2428,7 @@ const updateUserSchema = insertUserSchema.omit({ passwordHash: true }).partial()
 });
 
 // Get all users (Admin/Manager/Office Manager)
-router.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/users", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     // Organization filtering: SUPER_ADMIN sees all users, others see only their org's users
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);

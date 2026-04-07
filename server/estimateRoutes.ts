@@ -195,12 +195,12 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
 
 // Helper to check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
 function hasEstimateAccess(role: string): boolean {
-  return ["ADMIN", "MANAGER", "ESTIMATOR"].includes(role);
+  return ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"].includes(role);
 }
 
 // Helper to check if user has general management access (includes SUPERINTENDENT for read-only)
 function hasManagementAccess(role: string): boolean {
-  return ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"].includes(role);
+  return ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"].includes(role);
 }
 
 // Create a snapshot of current estimate line items and store in estimate_versions
@@ -3210,7 +3210,7 @@ router.get("/api/historical-costs/aggregated", requireAuth, async (req: AuthRequ
   }
 });
 
-router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -3231,7 +3231,7 @@ router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.delete("/api/historical-costs/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.delete("/api/historical-costs/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });

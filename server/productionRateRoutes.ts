@@ -11,7 +11,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
-router.get("/api/production-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { startDate, endDate, projectCode, unit } = req.query;
     
@@ -153,7 +153,7 @@ router.get("/api/production-rates", requireAuth, requireRole("ADMIN", "MANAGER",
   }
 });
 
-router.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { description, unit, startDate, endDate } = req.query;
     
@@ -279,7 +279,7 @@ router.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "MA
   }
 });
 
-router.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { startDate, endDate, projectCode, source } = req.query;
     
@@ -557,7 +557,7 @@ router.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-router.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { description, unit, startDate, endDate, projectCode, minQuantity, maxQuantity } = req.query;
     
@@ -789,7 +789,7 @@ router.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-router.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { description, unit, quantity } = req.query;
     

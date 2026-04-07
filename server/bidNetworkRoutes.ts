@@ -32,7 +32,7 @@ router.use(requireAuth, requireAnyFeaturePermission('canAccessBidNetworkGC', 'ca
 
 // Get organization's network settings
 // Restricted to ADMIN, MANAGER, ESTIMATOR (roles that can use bid network) + SUPER_ADMIN for platform admin
-router.get("/settings/:organizationId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/settings/:organizationId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const { organizationId } = req.params;
     const user = req.user!;
@@ -134,7 +134,7 @@ router.post("/settings", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async
 
 // List bid requests for an organization (as GC)
 // Restricted to roles that can manage bids
-router.get("/requests", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { status, projectId } = req.query;
@@ -172,7 +172,7 @@ router.get("/requests", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"
 
 // Get single bid request with invitations and responses
 // Restricted to roles that can manage bids
-router.get("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -230,7 +230,7 @@ router.get("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMA
 
 // Create a new bid request
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.post("/requests", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const data = req.body;
@@ -271,7 +271,7 @@ router.post("/requests", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR
 
 // Update a bid request
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.patch("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -366,7 +366,7 @@ router.delete("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER"), asy
 
 // Find subcontractors matching trade requirements
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.get("/match-subs", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/match-subs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { trades } = req.query;
@@ -435,7 +435,7 @@ router.get("/match-subs", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
 
 // Send invitations to subcontractors
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.post("/invitations/send", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/invitations/send", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { bidRequestId, invitees, personalMessage } = req.body;
@@ -549,7 +549,7 @@ router.post("/invitations/send", requireAuth, requireRole("ADMIN", "MANAGER", "E
 
 // List invitations received by subcontractor
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR (roles that handle bid responses)
-router.get("/inbox", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.get("/inbox", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { status } = req.query;
@@ -596,7 +596,7 @@ router.get("/inbox", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "
 
 // View invitation details (marks as viewed)
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.get("/inbox/:invitationId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.get("/inbox/:invitationId", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { invitationId } = req.params;
@@ -680,7 +680,7 @@ router.get("/inbox/:invitationId", requireAuth, requireRole("ADMIN", "MANAGER", 
 
 // Decline invitation
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.post("/inbox/:invitationId/decline", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.post("/inbox/:invitationId/decline", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { invitationId } = req.params;
@@ -719,7 +719,7 @@ router.post("/inbox/:invitationId/decline", requireAuth, requireRole("ADMIN", "M
 
 // Create/update response
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.post("/responses", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const data = req.body;
@@ -976,7 +976,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
 
 // Get response by ID
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.get("/responses/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.get("/responses/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -1117,7 +1117,7 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
 
 // Ask a clarification question
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.post("/clarifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.post("/clarifications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { bidRequestId, question } = req.body;
@@ -1186,7 +1186,7 @@ router.post("/clarifications", requireAuth, requireRole("ADMIN", "MANAGER", "EST
 
 // Answer a clarification (GC only)
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -1258,7 +1258,7 @@ router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "MA
 
 // Get clarifications for a request (GC view)
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.get("/requests/:requestId/clarifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/requests/:requestId/clarifications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { requestId } = req.params;
@@ -1303,7 +1303,7 @@ router.get("/requests/:requestId/clarifications", requireAuth, requireRole("ADMI
 // Get bid network stats for organization
 // Get bid network statistics
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.get("/stats", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/stats", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     
