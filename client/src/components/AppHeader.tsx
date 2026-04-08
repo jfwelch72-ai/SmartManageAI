@@ -22,7 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw, Package, Store, ExternalLink } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw, Package, Store, ExternalLink, BarChart3 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
 import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, hasEquipmentAccess, isSuperAdmin, hasContractorAccess, isVendor, getRoleDisplayName } from "@/lib/rbac";
@@ -146,7 +146,8 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
 
   // Mobile navigation items for vendors
   const vendorMobileNavItems = [
-    { href: "/vendor", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/vendor/analytics", icon: BarChart3, label: "Analytics" },
     { href: "/vendor/pricing", icon: Package, label: "My Pricing" },
     { href: "/vendor/clients", icon: Store, label: "Enrolled Clients" },
   ];
@@ -364,7 +365,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
         </Sheet>
 
         {/* Logo - simplified on mobile */}
-        <Link href={isSuperAdmin(userRole) ? "/admin" : isVendor(userRole) ? "/vendor" : "/dashboard"} data-testid="link-dashboard">
+        <Link href={isSuperAdmin(userRole) ? "/admin" : "/dashboard"} data-testid="link-dashboard">
           <div className="flex items-center gap-2 md:gap-3 cursor-pointer hover-elevate active-elevate-2 rounded-md pl-1 md:pl-2 pr-2 md:pr-3 py-2">
             <Building2 className="w-7 h-7 md:w-8 md:h-8 text-primary" />
             <div className="hidden sm:block">
@@ -415,7 +416,8 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                   data-testid={item.testId}
                 >
                   <Link href={item.href}>
-                    {item.href === "/vendor" && <LayoutDashboard className="w-4 h-4" />}
+                    {item.href === "/dashboard" && <LayoutDashboard className="w-4 h-4" />}
+                    {item.href === "/vendor/analytics" && <BarChart3 className="w-4 h-4" />}
                     {item.href === "/vendor/pricing" && <Package className="w-4 h-4" />}
                     {item.href === "/vendor/clients" && <Store className="w-4 h-4" />}
                     {item.label}

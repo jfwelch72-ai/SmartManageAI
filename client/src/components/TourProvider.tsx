@@ -424,10 +424,10 @@ const crewTourSteps: TourStep[] = [
 const vendorTourSteps: TourStep[] = [
   {
     target: '[data-testid="nav-vendor-dashboard"]',
-    title: "Vendor Portal",
-    content: "Welcome to your vendor portal. Manage your relationship with construction companies using SmartManage.",
+    title: "Dashboard",
+    content: "Welcome to your dashboard. Get an overview of messages, events, and quick actions.",
     profitabilityTip: "Direct access to your customers streamlines communication.",
-    path: "/vendor",
+    path: "/dashboard",
     disableBeacon: true,
   },
   {
@@ -451,7 +451,7 @@ const vendorTourSteps: TourStep[] = [
     title: "Messages",
     content: "Communicate directly with your contractor partners. Answer questions, send quotes, and coordinate deliveries.",
     profitabilityTip: "Quick responses to contractor inquiries build stronger partnerships.",
-    path: "/vendor",
+    path: "/dashboard",
     disableBeacon: true,
   },
   {
@@ -459,7 +459,7 @@ const vendorTourSteps: TourStep[] = [
     title: "Bid Inbox",
     content: "Receive bid invitations from contractors. Review project details and submit your competitive quotes.",
     profitabilityTip: "More bid opportunities means more business — respond quickly to win.",
-    path: "/vendor",
+    path: "/dashboard",
     disableBeacon: true,
   },
 ];

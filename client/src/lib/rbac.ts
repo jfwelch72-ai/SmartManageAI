@@ -632,7 +632,8 @@ export const PlatformAdminNavConfig = {
 
 export const VendorPortalNavConfig = {
   mainNav: [
-    { href: "/vendor", label: "Dashboard", testId: "nav-vendor-dashboard", visible: () => true },
+    { href: "/dashboard", label: "Dashboard", testId: "nav-vendor-dashboard", visible: () => true },
+    { href: "/vendor/analytics", label: "Analytics", testId: "nav-vendor-analytics", visible: () => true },
     { href: "/vendor/pricing", label: "Pricing", testId: "nav-vendor-pricing", visible: () => true },
     { href: "/vendor/clients", label: "Clients", testId: "nav-vendor-clients", visible: () => true },
     { href: "/vendor/messages", label: "Messages", testId: "nav-vendor-messages", visible: () => true },
@@ -642,6 +643,7 @@ export const VendorPortalNavConfig = {
 
 export const VendorRoutePermissions = {
   VENDOR_DASHBOARD: (role: string) => role === "VENDOR",
+  VENDOR_ANALYTICS: (role: string) => role === "VENDOR",
   VENDOR_PRICING: (role: string) => role === "VENDOR",
   VENDOR_CLIENTS: (role: string) => role === "VENDOR",
   VENDOR_MESSAGES: (role: string) => role === "VENDOR",

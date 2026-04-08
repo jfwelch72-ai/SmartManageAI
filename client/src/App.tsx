@@ -150,7 +150,7 @@ const PlatformTools = lazy(() => import("@/pages/PlatformTools"));
 const VendorPricingPage = lazy(() => import("@/pages/vendor-pricing"));
 const MobileSyncPage = lazy(() => import("@/pages/mobile-sync"));
 const CompanySettingsPage = lazy(() => import("@/pages/company-settings"));
-const VendorDashboard = lazy(() => import("@/pages/vendor/index"));
+const VendorAnalytics = lazy(() => import("@/pages/vendor/index"));
 const VendorPortalPricing = lazy(() => import("@/pages/vendor/pricing"));
 const VendorClients = lazy(() => import("@/pages/vendor/clients"));
 const VendorMessages = lazy(() => import("@/pages/vendor/messages"));
@@ -462,7 +462,8 @@ function Router() {
       <Route path="/vendor/clients" component={() => <ProtectedRoute component={VendorClients} permission={VendorRoutePermissions.VENDOR_CLIENTS} />} />
       <Route path="/vendor/messages" component={() => <ProtectedRoute component={VendorMessages} permission={VendorRoutePermissions.VENDOR_MESSAGES} />} />
       <Route path="/vendor/documents" component={() => <ProtectedRoute component={VendorDocuments} permission={VendorRoutePermissions.VENDOR_DOCUMENTS} />} />
-      <Route path="/vendor" component={() => <ProtectedRoute component={VendorDashboard} permission={VendorRoutePermissions.VENDOR_DASHBOARD} />} />
+      <Route path="/vendor/analytics" component={() => <ProtectedRoute component={VendorAnalytics} permission={VendorRoutePermissions.VENDOR_ANALYTICS} />} />
+      <Route path="/vendor" component={() => <Redirect to="/vendor/analytics" />} />
       
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

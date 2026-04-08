@@ -288,14 +288,15 @@ export function AppSidebar() {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Portal</SidebarGroupLabel>
+            <SidebarGroupLabel>Navigation</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {VendorPortalNavConfig.mainNav.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.label}>
                       <Link href={item.href} data-testid={item.testId}>
-                        {item.href === "/vendor" && <LayoutDashboard className="w-4 h-4" />}
+                        {item.href === "/dashboard" && <LayoutDashboard className="w-4 h-4" />}
+                        {item.href === "/vendor/analytics" && <BarChart3 className="w-4 h-4" />}
                         {item.href === "/vendor/pricing" && <Package className="w-4 h-4" />}
                         {item.href === "/vendor/clients" && <Store className="w-4 h-4" />}
                         {item.href === "/vendor/messages" && <MessageSquare className="w-4 h-4" />}

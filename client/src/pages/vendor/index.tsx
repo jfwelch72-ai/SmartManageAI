@@ -29,7 +29,7 @@ interface VendorPricingItem {
   createdAt: string;
 }
 
-export default function VendorDashboard() {
+export default function VendorAnalytics() {
   const { user, logout, organizationName } = useAuth();
 
   if (!isVendor(user?.role)) {
@@ -52,11 +52,11 @@ export default function VendorDashboard() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground" data-testid="text-vendor-dashboard-title">
-            Dashboard
+          <h1 className="text-2xl font-bold text-foreground" data-testid="text-vendor-analytics-title">
+            Analytics
           </h1>
           <p className="text-muted-foreground">
-            Welcome back! Manage your pricing and view enrolled contractor clients.
+            Monitor your pricing performance, client enrollments, and business activity.
           </p>
         </div>
 
