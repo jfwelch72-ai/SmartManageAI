@@ -983,6 +983,18 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canAccessTimeClock: true,
     },
   },
+  {
+    name: "Rental Vendor",
+    description: "Equipment rental pricing, equipment view, messaging, bid network access",
+    targetRole: "VENDOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessBidNetworkInbox: true,
+      canAccessVendorPricing: true,
+      canManageEquipment: true,
+      canAccessMessages: true,
+    },
+  },
 ];
 
 async function seedBuiltInPresets() {
