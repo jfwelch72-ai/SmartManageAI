@@ -29,7 +29,24 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction): v
     return next();
   }
 
-  if (req.path === "/api/auth/login" || req.path === "/api/auth/register" || req.path === "/api/auth/forgot-password" || req.path === "/api/auth/reset-password" || req.path.startsWith("/api/webhooks") || req.path === "/api/stripe/webhook") {
+  const exempt = [
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+    "/api/stripe/webhook",
+  ];
+  if (
+    exempt.includes(req.path) ||
+    req.path.startsWith("/api/webhooks") ||
+    req.path.startsWith("/api/dev/") ||
+    req.path.startsWith("/api/auth/google") ||
+    req.path.startsWith("/api/auth/apple") ||
+    req.path.startsWith("/api/auth/passkey") ||
+    req.path.startsWith("/api/email/oauth") ||
+    req.path.startsWith("/api/integrations/connections") ||
+    req.path.startsWith("/api/portal/auth")
+  ) {
     return next();
   }
 
