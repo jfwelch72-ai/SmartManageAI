@@ -133,6 +133,7 @@ interface UserWithPermissions extends SelectUser {
   effective?: PermissionSet;
   effectiveRole?: string;
   grantedAt?: string;
+  appliedPresetId?: string | null;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -1053,18 +1054,24 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                   <span className="font-medium truncate" data-testid={`text-perm-name-${u.id}`}>
                                     {u.firstName} {u.lastName}
                                   </span>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Badge variant={ROLE_COLORS[u.role] || "secondary"} className="shrink-0">
-                                        {ROLE_LABELS[u.role] || u.role}
-                                      </Badge>
-                                    </TooltipTrigger>
-                                    {ROLE_SUBTITLES[u.role] && (
-                                      <TooltipContent>
-                                        <p>{ROLE_SUBTITLES[u.role]}</p>
-                                      </TooltipContent>
-                                    )}
-                                  </Tooltip>
+                                  {(() => {
+                                    const appliedPreset = u.appliedPresetId ? presets.find(p => p.id === u.appliedPresetId) : null;
+                                    const badgeLabel = appliedPreset
+                                      ? `${ROLE_LABELS[u.role] || u.role} - ${appliedPreset.name}`
+                                      : ROLE_LABELS[u.role] || u.role;
+                                    return (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Badge variant={ROLE_COLORS[u.role] || "secondary"} className="shrink-0" data-testid={`badge-role-${u.id}`}>
+                                            {badgeLabel}
+                                          </Badge>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{appliedPreset ? appliedPreset.description : (ROLE_SUBTITLES[u.role] || `Role: ${ROLE_LABELS[u.role] || u.role}`)}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="text-sm text-muted-foreground truncate" data-testid={`text-perm-email-${u.id}`}>
                                   {u.email}

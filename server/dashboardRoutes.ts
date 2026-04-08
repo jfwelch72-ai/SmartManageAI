@@ -484,6 +484,7 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
         effective,
         effectiveRole,
         grantedAt: perm?.grantedAt,
+        appliedPresetId: perm?.appliedPresetId || null,
       };
     });
 
@@ -560,6 +561,7 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
       await db.update(userDashboardPermissions)
         .set({
           ...dbData,
+          appliedPresetId: null,
           grantedByUserId: adminId,
           grantedAt: new Date(),
           updatedAt: new Date(),
@@ -1175,6 +1177,7 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
       await db.update(userDashboardPermissions)
         .set({
           ...presetDbData,
+          appliedPresetId: presetId,
           grantedByUserId: adminId,
           grantedAt: new Date(),
           updatedAt: new Date(),
@@ -1185,12 +1188,13 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
         organizationId: orgId,
         userId,
         ...presetDbData,
+        appliedPresetId: presetId,
         grantedByUserId: adminId,
         grantedAt: new Date(),
       });
     }
 
-    res.json({ success: true, permissions: fullPermSet });
+    res.json({ success: true, permissions: fullPermSet, appliedPresetId: presetId });
   } catch (error) {
     logError('Error applying permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to apply permission preset' });

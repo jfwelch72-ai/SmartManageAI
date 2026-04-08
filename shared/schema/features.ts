@@ -4519,6 +4519,8 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
   grantedAt: timestamp("granted_at"),
 
+  appliedPresetId: varchar("applied_preset_id").references(() => permissionPresets.id, { onDelete: "set null" }),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
