@@ -1,23 +1,21 @@
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { useTheme } from "@/hooks/use-theme";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const { theme, setTheme } = useTheme();
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
-    setTheme(initialTheme);
-    document.documentElement.classList.toggle("dark", initialTheme === "dark");
-  }, []);
+  const resolved = theme === "system"
+    ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : theme;
 
   const toggleTheme = () => {
-    const newTheme = theme === "light" ? "dark" : "light";
+    const newTheme = resolved === "light" ? "dark" : "light";
     setTheme(newTheme);
-    localStorage.setItem("theme", newTheme);
-    document.documentElement.classList.toggle("dark", newTheme === "dark");
+    apiRequest("PATCH", "/api/user-settings", { themePreference: newTheme })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["/api/user-settings"] }))
+      .catch(() => {});
   };
 
   return (
@@ -27,7 +25,7 @@ export default function ThemeToggle() {
       onClick={toggleTheme}
       data-testid="button-theme-toggle"
     >
-      {theme === "light" ? (
+      {resolved === "light" ? (
         <Moon className="w-5 h-5" />
       ) : (
         <Sun className="w-5 h-5" />
