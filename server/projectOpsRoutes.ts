@@ -1636,12 +1636,15 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
       .orderBy(calendarEvents.startDate);
 
     if (userRole === "VENDOR") {
-      const vendorEvents = await getVendorCalendarEvents(
-        req.user!.id,
-        isVendorEventTypeFilter ? (eventType as string) : undefined,
-        startDate as string | undefined,
-        endDate as string | undefined,
-      );
+      const shouldIncludeVendorEvents = !eventType || isVendorEventTypeFilter;
+      const vendorEvents = shouldIncludeVendorEvents
+        ? await getVendorCalendarEvents(
+            req.user!.id,
+            isVendorEventTypeFilter ? (eventType as string) : undefined,
+            startDate as string | undefined,
+            endDate as string | undefined,
+          )
+        : [];
       const merged = [...eventsWithUser, ...vendorEvents];
       merged.sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
       return res.json(merged);
@@ -1719,6 +1722,11 @@ async function getVendorCalendarEvents(userId: string, filterEventType?: string,
     })
     .from(purchaseOrders)
     .innerJoin(organizations, eq(purchaseOrders.orgId, organizations.id))
+    .innerJoin(vendorEnrollments, and(
+      eq(vendorEnrollments.vendorCrmOrgId, crmOrgId),
+      eq(vendorEnrollments.contractorOrgId, purchaseOrders.orgId),
+      eq(vendorEnrollments.status, "ACTIVE"),
+    ))
     .where(and(
       eq(purchaseOrders.vendorId, crmOrgId),
       sql`${purchaseOrders.neededByDate} IS NOT NULL`,
@@ -1753,6 +1761,7 @@ async function getVendorCalendarEvents(userId: string, filterEventType?: string,
       equipmentType: rentalEquipmentUsages.equipmentType,
       startDate: rentalEquipmentUsages.startDate,
       expectedEndDate: rentalEquipmentUsages.expectedEndDate,
+      actualEndDate: rentalEquipmentUsages.actualEndDate,
       status: rentalEquipmentUsages.status,
       dailyRate: rentalEquipmentUsages.dailyRate,
     })
@@ -1760,18 +1769,19 @@ async function getVendorCalendarEvents(userId: string, filterEventType?: string,
     .innerJoin(rentalVendors, eq(rentalEquipmentUsages.vendorId, rentalVendors.id))
     .where(and(
       eq(rentalVendors.crmOrganisationId, crmOrgId),
-      sql`${rentalEquipmentUsages.status} IN ('BOOKED', 'ACTIVE', 'EXTENDED')`
+      sql`${rentalEquipmentUsages.status} IN ('ACTIVE', 'EXTENDED', 'COMPLETED')`
     ));
 
   for (const r of rentalEvents) {
     if (!filterEventType || filterEventType === "VENDOR_RENTAL_PERIOD") {
+      const endDate = r.actualEndDate || r.expectedEndDate;
       syntheticEvents.push({
         id: `vre-${r.id}`,
         eventType: "VENDOR_RENTAL_PERIOD",
         title: `Rental: ${r.equipmentName}`,
         description: `${r.equipmentType} rental period. Status: ${r.status}. Rate: $${r.dailyRate}/day`,
         startDate: r.startDate,
-        endDate: r.expectedEndDate,
+        endDate: endDate,
         allDay: true,
         userId: null,
         projectId: null,
