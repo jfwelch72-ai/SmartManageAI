@@ -90,6 +90,7 @@ export default function SubcontractorPortalManager({
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [selectedTokenName, setSelectedTokenName] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyingLinkId, setCopyingLinkId] = useState<string | null>(null);
   const [portalLinkResult, setPortalLinkResult] = useState<string | null>(null);
 
   const [inviteForm, setInviteForm] = useState({
@@ -197,6 +198,22 @@ export default function SubcontractorPortalManager({
       toast({ title: "Copied to clipboard" });
       setTimeout(() => setCopiedId(null), 2000);
     });
+  };
+
+  const handleCopyTokenLink = async (tokenId: string) => {
+    setCopyingLinkId(tokenId);
+    try {
+      const res = await apiRequest("POST", `/api/portal/manage/link/${tokenId}`);
+      const data = await res.json();
+      await navigator.clipboard.writeText(data.portalLink);
+      setCopiedId(tokenId);
+      toast({ title: "Link Copied", description: "Portal link has been copied to clipboard" });
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast({ title: "Error", description: "Failed to copy portal link", variant: "destructive" });
+    } finally {
+      setCopyingLinkId(null);
+    }
   };
 
   const togglePermission = (perm: string, checked: boolean) => {
@@ -326,6 +343,23 @@ export default function SubcontractorPortalManager({
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
+                        {token.status === "active" && new Date(token.expiresAt) > new Date() && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleCopyTokenLink(token.id)}
+                            disabled={copyingLinkId === token.id}
+                            data-testid={`button-copy-link-${token.id}`}
+                          >
+                            {copiedId === token.id ? (
+                              <Check className="w-4 h-4 text-green-500" />
+                            ) : copyingLinkId === token.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           size="icon"
                           variant="ghost"

@@ -1395,4 +1395,52 @@ router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_AD
   }
 });
 
+router.post("/portal/manage/link/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { tokenId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select()
+      .from(subcontractorPortalTokens)
+      .where(eq(subcontractorPortalTokens.id, tokenId))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+
+    if (shouldFilter && orgId && existing.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (existing.status !== "active") {
+      return res.status(400).json({ error: "Token is not active" });
+    }
+
+    if (existing.expiresAt && new Date(existing.expiresAt) <= new Date()) {
+      return res.status(400).json({ error: "Token has expired" });
+    }
+
+    const rawToken = generatePortalToken();
+    const tokenHash = await hashPortalToken(rawToken);
+
+    await db
+      .update(subcontractorPortalTokens)
+      .set({ tokenHash })
+      .where(eq(subcontractorPortalTokens.id, tokenId));
+
+    const baseUrl = process.env.REPLIT_DOMAINS
+      ? `https://${process.env.REPLIT_DOMAINS}`
+      : process.env.APP_URL || "http://localhost:5000";
+    const portalLink = `${baseUrl}/sub-portal?token=${rawToken}`;
+
+    res.json({ portalLink });
+  } catch (error) {
+    logError("Get portal link error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
