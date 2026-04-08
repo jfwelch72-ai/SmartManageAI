@@ -86,6 +86,7 @@ import {
   Trash2,
   PackageOpen,
   FolderOpen,
+  UserCog,
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
@@ -360,6 +361,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   const [savePresetName, setSavePresetName] = useState("");
   const [savePresetDesc, setSavePresetDesc] = useState("");
   const [deletePresetConfirm, setDeletePresetConfirm] = useState<PresetData | null>(null);
+  const [roleChangeConfirm, setRoleChangeConfirm] = useState<{ userId: string; userName: string; currentRole: string; newRole: string } | null>(null);
 
   const { data: presets = [] } = useQuery<PresetData[]>({
     queryKey: ['/api/dashboard/permission-presets'],
@@ -1090,6 +1092,40 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
 
                           {isExpanded && (
                             <div className="border-t px-4 pb-4 pt-3 space-y-4">
+                              {(user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" || user?.role === "HUSTLER") && u.id !== user?.id && u.role !== "SUPER_ADMIN" && (
+                                <div className="flex items-center gap-2 flex-wrap" data-testid={`section-role-change-${u.id}`}>
+                                  <UserCog className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Role</span>
+                                  <Select
+                                    value={u.role}
+                                    disabled={updateUserMutation.isPending}
+                                    onValueChange={(newRole) => {
+                                      if (newRole !== u.role) {
+                                        setRoleChangeConfirm({
+                                          userId: u.id,
+                                          userName: `${u.firstName} ${u.lastName}`,
+                                          currentRole: u.role,
+                                          newRole,
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <SelectTrigger className="w-[180px] h-8 text-sm" data-testid={`select-role-change-${u.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {(user?.role === "SUPER_ADMIN"
+                                        ? [["SUPER_ADMIN", "Super Admin"] as const, ...Object.entries(ASSIGNABLE_ROLE_LABELS)]
+                                        : Object.entries(ASSIGNABLE_ROLE_LABELS)
+                                      ).map(([value, label]) => (
+                                        <SelectItem key={value} value={value} data-testid={`option-role-${value}-${u.id}`}>
+                                          {label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              )}
                               {!isAdmin && (() => {
                                 const userPresets = presets.filter(p => p.targetRole === u.role);
                                 return userPresets.length > 0 ? (
@@ -1365,6 +1401,38 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <AlertDialog open={!!roleChangeConfirm} onOpenChange={(open) => !open && setRoleChangeConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Change User Role</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to change {roleChangeConfirm?.userName}'s role from{" "}
+                <strong>{roleChangeConfirm ? (ROLE_LABELS[roleChangeConfirm.currentRole] || roleChangeConfirm.currentRole) : ""}</strong> to{" "}
+                <strong>{roleChangeConfirm ? (ROLE_LABELS[roleChangeConfirm.newRole] || roleChangeConfirm.newRole) : ""}</strong>?
+                {" "}This will update their default permissions to match the new role.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-role-change">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                data-testid="button-confirm-role-change"
+                onClick={async () => {
+                  if (roleChangeConfirm) {
+                    try {
+                      await handleRoleChange(roleChangeConfirm.userId, roleChangeConfirm.newRole);
+                      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permissions"] });
+                    } finally {
+                      setRoleChangeConfirm(null);
+                    }
+                  }
+                }}
+              >
+                Change Role
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <AlertDialog open={!!presetConfirm} onOpenChange={(open) => !open && setPresetConfirm(null)}>
           <AlertDialogContent>
