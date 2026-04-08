@@ -33,6 +33,7 @@ function handleGlobal401(url: string) {
       !window.location.pathname.startsWith("/register") &&
       !window.location.pathname.startsWith("/forgot-password") &&
       !window.location.pathname.startsWith("/reset-password") &&
+      window.location.pathname !== "/portal" &&
       !window.location.pathname.startsWith("/portal/") &&
       !window.location.pathname.startsWith("/sub-portal")) {
     window.location.href = "/login";

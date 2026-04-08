@@ -1,11 +1,87 @@
 import { Router, Request, Response } from "express";
 import { db } from "./db";
-import { clientPortalAccess, projects, organizations, subcontractorPortalTokens, vendorUsers, crmOrganisations } from "@shared/schema";
+import { clientPortalAccess, projects, organizations, subcontractorPortalTokens, vendorUsers, crmOrganisations, organizationDocuments } from "@shared/schema";
 import { eq, and, gt } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { logError } from "./utils/logger";
 
 const router = Router();
+
+router.get("/portal/branding", async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.query;
+    if (!projectId || typeof projectId !== "string") {
+      return res.json({
+        organizationName: null,
+        logoUrl: null,
+        primaryColor: null,
+        accentColor: null,
+      });
+    }
+
+    const [project] = await db
+      .select({ organizationId: projects.gcOrganizationId })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+
+    if (!project?.organizationId) {
+      return res.json({
+        organizationName: null,
+        logoUrl: null,
+        primaryColor: null,
+        accentColor: null,
+      });
+    }
+
+    const [org] = await db
+      .select({
+        name: organizations.name,
+        logoUrl: organizations.logoUrl,
+        primaryColor: organizations.primaryColor,
+        accentColor: organizations.accentColor,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, project.organizationId))
+      .limit(1);
+
+    if (!org) {
+      return res.json({
+        organizationName: null,
+        logoUrl: null,
+        primaryColor: null,
+        accentColor: null,
+      });
+    }
+
+    const [primaryLogoDoc] = await db
+      .select({ fileUrl: organizationDocuments.fileUrl })
+      .from(organizationDocuments)
+      .where(
+        and(
+          eq(organizationDocuments.organizationId, project.organizationId),
+          eq(organizationDocuments.type, "LOGO_PRIMARY" as any),
+          eq(organizationDocuments.isActive, true)
+        )
+      )
+      .limit(1);
+
+    return res.json({
+      organizationName: org.name || null,
+      logoUrl: primaryLogoDoc?.fileUrl || org.logoUrl || null,
+      primaryColor: org.primaryColor || null,
+      accentColor: org.accentColor || null,
+    });
+  } catch (error) {
+    logError("Portal branding fetch error:", {}, error instanceof Error ? error : new Error(String(error)));
+    return res.json({
+      organizationName: null,
+      logoUrl: null,
+      primaryColor: null,
+      accentColor: null,
+    });
+  }
+});
 
 function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
   if (!json) return fallback;
@@ -89,6 +165,30 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
         .where(eq(crmOrganisations.id, matchedToken.crmOrganisationId))
         .limit(1);
 
+      let branding: { organizationName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null } = {
+        organizationName: null, logoUrl: null, primaryColor: null, accentColor: null,
+      };
+      if (matchedToken.organizationId) {
+        const [org] = await db
+          .select({ name: organizations.name, logoUrl: organizations.logoUrl, primaryColor: organizations.primaryColor, accentColor: organizations.accentColor })
+          .from(organizations)
+          .where(eq(organizations.id, matchedToken.organizationId))
+          .limit(1);
+        if (org) {
+          const activeDocs = await db
+            .select({ type: organizationDocuments.type, fileUrl: organizationDocuments.fileUrl })
+            .from(organizationDocuments)
+            .where(and(eq(organizationDocuments.organizationId, matchedToken.organizationId), eq(organizationDocuments.isActive, true)));
+          const primaryLogo = activeDocs.find(d => d.type === "LOGO_PRIMARY");
+          branding = {
+            organizationName: org.name || null,
+            logoUrl: primaryLogo?.fileUrl || org.logoUrl || null,
+            primaryColor: org.primaryColor || null,
+            accentColor: org.accentColor || null,
+          };
+        }
+      }
+
       return res.json({
         role: "subcontractor",
         data: {
@@ -100,6 +200,7 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
           tokenId: matchedToken.id,
           organizationId: matchedToken.organizationId,
           projectId: matchedToken.projectId,
+          branding,
         },
       });
     }
@@ -115,6 +216,10 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
           projectName: projects.name,
           projectStatus: projects.status,
           orgName: organizations.name,
+          orgLogoUrl: organizations.logoUrl,
+          orgPrimaryColor: organizations.primaryColor,
+          orgAccentColor: organizations.accentColor,
+          orgId: organizations.id,
         })
         .from(clientPortalAccess)
         .leftJoin(projects, eq(clientPortalAccess.projectId, projects.id))
@@ -153,6 +258,23 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
         .set({ lastAccessedAt: new Date() })
         .where(eq(clientPortalAccess.id, access.access.id));
 
+      let clientBranding: { organizationName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null } = {
+        organizationName: access.orgName || null,
+        logoUrl: access.orgLogoUrl || null,
+        primaryColor: access.orgPrimaryColor || null,
+        accentColor: access.orgAccentColor || null,
+      };
+      if (access.orgId) {
+        const activeDocs = await db
+          .select({ type: organizationDocuments.type, fileUrl: organizationDocuments.fileUrl })
+          .from(organizationDocuments)
+          .where(and(eq(organizationDocuments.organizationId, access.orgId), eq(organizationDocuments.isActive, true)));
+        const primaryLogo = activeDocs.find(d => d.type === "LOGO_PRIMARY");
+        if (primaryLogo?.fileUrl) {
+          clientBranding.logoUrl = primaryLogo.fileUrl;
+        }
+      }
+
       return res.json({
         role: "client",
         data: {
@@ -166,6 +288,7 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
           permissions,
           projectId,
           email: email.trim().toLowerCase(),
+          branding: clientBranding,
         },
       });
     }

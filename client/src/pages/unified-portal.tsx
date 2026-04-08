@@ -88,6 +88,24 @@ export default function UnifiedPortal() {
   const [clientEmail, setClientEmail] = useState("");
   const [clientVerifying, setClientVerifying] = useState(false);
 
+  const brandingProjectId = projectId || null;
+  const { data: portalBranding } = useQuery<{
+    organizationName: string | null;
+    logoUrl: string | null;
+    primaryColor: string | null;
+    accentColor: string | null;
+  }>({
+    queryKey: ["/api/portal/branding", brandingProjectId],
+    queryFn: async () => {
+      if (!brandingProjectId) return { organizationName: null, logoUrl: null, primaryColor: null, accentColor: null };
+      const res = await fetch(`/api/portal/branding?projectId=${encodeURIComponent(brandingProjectId)}`);
+      if (!res.ok) return { organizationName: null, logoUrl: null, primaryColor: null, accentColor: null };
+      return res.json();
+    },
+    enabled: !!brandingProjectId,
+    staleTime: 5 * 60 * 1000,
+  });
+
   if (isLoading) return <LoadingFallback />;
 
   if (tab && !user && !token && !projectId) {
@@ -126,6 +144,7 @@ export default function UnifiedPortal() {
         setEmail={setClientEmail}
         verifying={clientVerifying}
         error={authError}
+        branding={portalBranding || null}
         onSubmit={async () => {
           if (!clientEmail.trim()) return;
           setClientVerifying(true);
@@ -185,6 +204,7 @@ function PortalHeader({ session, onLogout }: { session: PortalSession; onLogout?
   };
 
   const RoleIcon = roleIcons[session.role];
+  const sessionBranding: PortalBranding | null = session.data.branding || null;
 
   let subtitle = "";
   let userName = "";
@@ -199,18 +219,29 @@ function PortalHeader({ session, onLogout }: { session: PortalSession; onLogout?
     userName = session.data.fullName || "";
   }
 
+  const headerOrgName = sessionBranding?.organizationName || subtitle;
+
   return (
     <header className="bg-card border-b sticky top-0 z-50" data-testid="header-portal">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <RoleIcon className="w-5 h-5 text-primary" />
-          </div>
+          {sessionBranding?.logoUrl ? (
+            <img
+              src={sessionBranding.logoUrl}
+              alt={headerOrgName || "Organization"}
+              className="h-8 max-w-[120px] object-contain"
+              data-testid="img-portal-header-logo"
+            />
+          ) : (
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <RoleIcon className="w-5 h-5 text-primary" />
+            </div>
+          )}
           <div>
             <h1 className="font-semibold text-lg leading-tight" data-testid="text-portal-title">
-              External Portal
+              {headerOrgName || "External Portal"}
             </h1>
-            {subtitle && (
+            {subtitle && subtitle !== headerOrgName && (
               <p className="text-sm text-muted-foreground" data-testid="text-portal-subtitle">
                 {subtitle}
               </p>
@@ -679,6 +710,48 @@ function VendorPortalAuth({
   return <LoadingFallback />;
 }
 
+interface PortalBranding {
+  organizationName: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  accentColor: string | null;
+}
+
+function PortalBrandingHeader({ branding, fallbackTitle }: { branding: PortalBranding | null; fallbackTitle: string }) {
+  const hasLogo = branding?.logoUrl;
+  const orgName = branding?.organizationName;
+
+  return (
+    <>
+      {hasLogo ? (
+        <div className="mx-auto mb-3 flex items-center justify-center">
+          <img
+            src={branding.logoUrl!}
+            alt={orgName || "Organization Logo"}
+            className="max-h-16 max-w-[200px] object-contain"
+            data-testid="img-portal-org-logo"
+          />
+        </div>
+      ) : (
+        <div
+          className="mx-auto w-12 h-12 rounded-lg flex items-center justify-center mb-3"
+          style={{ backgroundColor: branding?.primaryColor ? `${branding.primaryColor}15` : undefined }}
+          data-testid="icon-portal-fallback"
+        >
+          <Shield
+            className="w-6 h-6"
+            style={{ color: branding?.primaryColor || undefined }}
+          />
+        </div>
+      )}
+      {orgName && (
+        <p className="text-sm font-medium text-muted-foreground mb-1" data-testid="text-portal-org-name">{orgName}</p>
+      )}
+      <CardTitle className="text-xl" data-testid="text-client-login-title">{fallbackTitle}</CardTitle>
+    </>
+  );
+}
+
 function ClientPortalAuth({
   projectId,
   email,
@@ -686,6 +759,7 @@ function ClientPortalAuth({
   verifying,
   error,
   onSubmit,
+  branding,
 }: {
   projectId: string;
   email: string;
@@ -693,15 +767,15 @@ function ClientPortalAuth({
   verifying: boolean;
   error: string | null;
   onSubmit: () => void;
+  branding: PortalBranding | null;
 }) {
+  const accentColor = branding?.accentColor || branding?.primaryColor || null;
+
   return (
     <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4" data-testid="container-client-login">
       <Card className="max-w-md w-full">
         <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-3">
-            <Shield className="w-6 h-6 text-primary" />
-          </div>
-          <CardTitle className="text-xl" data-testid="text-client-login-title">Client Portal</CardTitle>
+          <PortalBrandingHeader branding={branding} fallbackTitle="Client Portal" />
           <CardDescription>Enter your email address to access project information</CardDescription>
         </CardHeader>
         <CardContent>
@@ -733,7 +807,13 @@ function ClientPortalAuth({
                 {error}
               </p>
             )}
-            <Button type="submit" className="w-full" disabled={verifying || !email.trim()} data-testid="button-access-portal">
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={verifying || !email.trim()}
+              style={accentColor ? { backgroundColor: accentColor, borderColor: accentColor } : undefined}
+              data-testid="button-access-portal"
+            >
               {verifying ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
