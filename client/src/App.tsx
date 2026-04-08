@@ -457,12 +457,12 @@ function Router() {
       {/* Overhead & Fixed Costs Manager */}
       <Route path="/overhead-costs" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=overhead-costs" />} permission={RoutePermissions.OVERHEAD_COSTS} />} />
       
-      {/* Vendor Portal routes redirect to unified portal */}
-      <Route path="/vendor/pricing" component={() => <Redirect to="/portal?tab=pricing" />} />
-      <Route path="/vendor/clients" component={() => <Redirect to="/portal?tab=clients" />} />
-      <Route path="/vendor/messages" component={() => <Redirect to="/portal?tab=messages" />} />
-      <Route path="/vendor/documents" component={() => <Redirect to="/portal?tab=documents" />} />
-      <Route path="/vendor" component={() => <Redirect to="/portal" />} />
+      {/* Vendor internal routes */}
+      <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} />} />
+      <Route path="/vendor/clients" component={() => <ProtectedRoute component={VendorClients} permission={VendorRoutePermissions.VENDOR_CLIENTS} />} />
+      <Route path="/vendor/messages" component={() => <ProtectedRoute component={VendorMessages} permission={VendorRoutePermissions.VENDOR_MESSAGES} />} />
+      <Route path="/vendor/documents" component={() => <ProtectedRoute component={VendorDocuments} permission={VendorRoutePermissions.VENDOR_DOCUMENTS} />} />
+      <Route path="/vendor" component={() => <ProtectedRoute component={VendorDashboard} permission={VendorRoutePermissions.VENDOR_DASHBOARD} />} />
       
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

@@ -645,5 +645,6 @@ export const VendorRoutePermissions = {
   VENDOR_PRICING: (role: string) => role === "VENDOR",
   VENDOR_CLIENTS: (role: string) => role === "VENDOR",
   VENDOR_MESSAGES: (role: string) => role === "VENDOR",
+  VENDOR_DOCUMENTS: (role: string) => role === "VENDOR",
   BID_INBOX: (role: string) => role === "VENDOR",
 };
