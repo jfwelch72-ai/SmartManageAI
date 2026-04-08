@@ -533,24 +533,31 @@ router.get("/api/organization-documents/:id/download", requireAuth, async (req: 
 
     if (!doc || !doc.fileUrl) return res.status(404).json({ error: "Document not found" });
 
-    const gcsPrefix = "https://storage.googleapis.com/";
-    let bucketName: string;
-    let objectName: string;
+    let objectFile;
 
-    if (doc.fileUrl.startsWith(gcsPrefix)) {
-      const pathAfterPrefix = doc.fileUrl.slice(gcsPrefix.length);
-      const slashIdx = pathAfterPrefix.indexOf("/");
-      bucketName = pathAfterPrefix.slice(0, slashIdx);
-      objectName = pathAfterPrefix.slice(slashIdx + 1);
+    if (doc.fileUrl.startsWith("/objects/")) {
+      objectFile = await objectStorage.getObjectEntityFile(doc.fileUrl);
     } else {
-      const parts = doc.fileUrl.startsWith("/") ? doc.fileUrl.slice(1).split("/") : doc.fileUrl.split("/");
-      bucketName = parts[0];
-      objectName = parts.slice(1).join("/");
+      const gcsPrefix = "https://storage.googleapis.com/";
+      let bucketName: string;
+      let objectName: string;
+
+      if (doc.fileUrl.startsWith(gcsPrefix)) {
+        const pathAfterPrefix = doc.fileUrl.slice(gcsPrefix.length);
+        const slashIdx = pathAfterPrefix.indexOf("/");
+        bucketName = pathAfterPrefix.slice(0, slashIdx);
+        objectName = pathAfterPrefix.slice(slashIdx + 1);
+      } else {
+        const parts = doc.fileUrl.startsWith("/") ? doc.fileUrl.slice(1).split("/") : doc.fileUrl.split("/");
+        bucketName = parts[0];
+        objectName = parts.slice(1).join("/");
+      }
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const bucket = objectStorageClient.bucket(bucketName);
+      objectFile = bucket.file(objectName);
     }
 
-    const { objectStorageClient } = await import("./objectStorage");
-    const bucket = objectStorageClient.bucket(bucketName);
-    const objectFile = bucket.file(objectName);
     await objectStorage.downloadObject(objectFile, res, 3600);
   } catch (error) {
     logError("Download organization document error:", {}, error instanceof Error ? error : new Error(String(error)));

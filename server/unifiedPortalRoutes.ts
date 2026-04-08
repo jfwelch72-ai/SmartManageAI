@@ -308,7 +308,7 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/portal/org-logo/:orgId", async (req: Request, res: Response) => {
+router.get("/portal/org-logo/:orgId", async (req: Request, res: Response) => {
   try {
     const { orgId } = req.params;
 
@@ -337,23 +337,30 @@ router.get("/api/portal/org-logo/:orgId", async (req: Request, res: Response) =>
 
     if (!fileUrl) return res.status(404).json({ error: "Logo not found" });
 
-    const gcsPrefix = "https://storage.googleapis.com/";
-    let bucketName: string;
-    let objectName: string;
+    let objectFile;
 
-    if (fileUrl.startsWith(gcsPrefix)) {
-      const pathAfterPrefix = fileUrl.slice(gcsPrefix.length);
-      const slashIdx = pathAfterPrefix.indexOf("/");
-      bucketName = pathAfterPrefix.slice(0, slashIdx);
-      objectName = pathAfterPrefix.slice(slashIdx + 1);
+    if (fileUrl.startsWith("/objects/")) {
+      objectFile = await portalObjectStorage.getObjectEntityFile(fileUrl);
     } else {
-      const parts = fileUrl.startsWith("/") ? fileUrl.slice(1).split("/") : fileUrl.split("/");
-      bucketName = parts[0];
-      objectName = parts.slice(1).join("/");
+      const gcsPrefix = "https://storage.googleapis.com/";
+      let bucketName: string;
+      let objectName: string;
+
+      if (fileUrl.startsWith(gcsPrefix)) {
+        const pathAfterPrefix = fileUrl.slice(gcsPrefix.length);
+        const slashIdx = pathAfterPrefix.indexOf("/");
+        bucketName = pathAfterPrefix.slice(0, slashIdx);
+        objectName = pathAfterPrefix.slice(slashIdx + 1);
+      } else {
+        const parts = fileUrl.startsWith("/") ? fileUrl.slice(1).split("/") : fileUrl.split("/");
+        bucketName = parts[0];
+        objectName = parts.slice(1).join("/");
+      }
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      objectFile = bucket.file(objectName);
     }
 
-    const bucket = objectStorageClient.bucket(bucketName);
-    const objectFile = bucket.file(objectName);
     await portalObjectStorage.downloadObject(objectFile, res, 86400);
   } catch (error) {
     logError("Portal org logo proxy error:", {}, error instanceof Error ? error : new Error(String(error)));
