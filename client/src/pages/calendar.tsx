@@ -73,12 +73,6 @@ function getEventLabel(eventType: string): string {
   return EVENT_TYPE_LABELS[eventType] || eventType.replace(/_/g, " ");
 }
 
-function getVendorBadgeClasses(eventType: string): string {
-  const colors = VENDOR_EVENT_COLORS[eventType];
-  if (!colors) return "";
-  return `${colors.bg} ${colors.text} ${colors.border} border`;
-}
-
 export default function CalendarPage() {
   const { user } = useAuth();
   const { toast } = useToast();

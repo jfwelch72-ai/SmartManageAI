@@ -1593,9 +1593,10 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
     if (endDate) {
       conditions.push(sql`${calendarEvents.endDate} <= ${endDate as string}`);
     }
-    const isVendorEventTypeFilter = eventType && (eventType as string).startsWith("VENDOR_");
-    if (eventType && !isVendorEventTypeFilter) {
-      conditions.push(eq(calendarEvents.eventType, eventType as any));
+    const eventTypeStr = Array.isArray(eventType) ? eventType[0] : eventType as string | undefined;
+    const isVendorEventTypeFilter = eventTypeStr && eventTypeStr.startsWith("VENDOR_");
+    if (eventTypeStr && !isVendorEventTypeFilter) {
+      conditions.push(eq(calendarEvents.eventType, eventTypeStr as any));
     }
     const creatorUsers = db
       .select({
@@ -1636,11 +1637,11 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
       .orderBy(calendarEvents.startDate);
 
     if (userRole === "VENDOR") {
-      const shouldIncludeVendorEvents = !eventType || isVendorEventTypeFilter;
+      const shouldIncludeVendorEvents = !eventTypeStr || isVendorEventTypeFilter;
       const vendorEvents = shouldIncludeVendorEvents
         ? await getVendorCalendarEvents(
             req.user!.id,
-            isVendorEventTypeFilter ? (eventType as string) : undefined,
+            isVendorEventTypeFilter ? eventTypeStr : undefined,
             startDate as string | undefined,
             endDate as string | undefined,
           )
