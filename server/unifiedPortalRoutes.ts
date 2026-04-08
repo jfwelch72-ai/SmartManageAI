@@ -4,8 +4,11 @@ import { clientPortalAccess, projects, organizations, subcontractorPortalTokens,
 import { eq, and, gt } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { logError } from "./utils/logger";
+import { objectStorageClient } from "./objectStorage";
+import { ObjectStorageService } from "./objectStorage";
 
 const router = Router();
+const portalObjectStorage = new ObjectStorageService();
 
 router.get("/portal/branding", async (req: Request, res: Response) => {
   try {
@@ -66,9 +69,12 @@ router.get("/portal/branding", async (req: Request, res: Response) => {
       )
       .limit(1);
 
+    const hasLogo = !!(primaryLogoDoc?.fileUrl || org.logoUrl);
+    const logoProxyUrl = hasLogo ? `/api/portal/org-logo/${project.organizationId}` : null;
+
     return res.json({
       organizationName: org.name || null,
-      logoUrl: primaryLogoDoc?.fileUrl || org.logoUrl || null,
+      logoUrl: logoProxyUrl,
       primaryColor: org.primaryColor || null,
       accentColor: org.accentColor || null,
     });
@@ -180,9 +186,10 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
             .from(organizationDocuments)
             .where(and(eq(organizationDocuments.organizationId, matchedToken.organizationId), eq(organizationDocuments.isActive, true)));
           const primaryLogo = activeDocs.find(d => d.type === "LOGO_PRIMARY");
+          const hasLogo = !!(primaryLogo?.fileUrl || org.logoUrl);
           branding = {
             organizationName: org.name || null,
-            logoUrl: primaryLogo?.fileUrl || org.logoUrl || null,
+            logoUrl: hasLogo ? `/api/portal/org-logo/${matchedToken.organizationId}` : null,
             primaryColor: org.primaryColor || null,
             accentColor: org.accentColor || null,
           };
@@ -260,7 +267,7 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
 
       let clientBranding: { organizationName: string | null; logoUrl: string | null; primaryColor: string | null; accentColor: string | null } = {
         organizationName: access.orgName || null,
-        logoUrl: access.orgLogoUrl || null,
+        logoUrl: null,
         primaryColor: access.orgPrimaryColor || null,
         accentColor: access.orgAccentColor || null,
       };
@@ -270,8 +277,9 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
           .from(organizationDocuments)
           .where(and(eq(organizationDocuments.organizationId, access.orgId), eq(organizationDocuments.isActive, true)));
         const primaryLogo = activeDocs.find(d => d.type === "LOGO_PRIMARY");
-        if (primaryLogo?.fileUrl) {
-          clientBranding.logoUrl = primaryLogo.fileUrl;
+        const hasClientLogo = !!(primaryLogo?.fileUrl || access.orgLogoUrl);
+        if (hasClientLogo) {
+          clientBranding.logoUrl = `/api/portal/org-logo/${access.orgId}`;
         }
       }
 
@@ -297,6 +305,59 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
   } catch (error) {
     logError("Portal auth resolve error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Portal authentication failed" });
+  }
+});
+
+router.get("/api/portal/org-logo/:orgId", async (req: Request, res: Response) => {
+  try {
+    const { orgId } = req.params;
+
+    const [logoDoc] = await db
+      .select({ fileUrl: organizationDocuments.fileUrl })
+      .from(organizationDocuments)
+      .where(
+        and(
+          eq(organizationDocuments.organizationId, orgId),
+          eq(organizationDocuments.type, "LOGO_PRIMARY" as any),
+          eq(organizationDocuments.isActive, true)
+        )
+      )
+      .limit(1);
+
+    let fileUrl = logoDoc?.fileUrl;
+
+    if (!fileUrl) {
+      const [org] = await db
+        .select({ logoUrl: organizations.logoUrl })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+      fileUrl = org?.logoUrl || null;
+    }
+
+    if (!fileUrl) return res.status(404).json({ error: "Logo not found" });
+
+    const gcsPrefix = "https://storage.googleapis.com/";
+    let bucketName: string;
+    let objectName: string;
+
+    if (fileUrl.startsWith(gcsPrefix)) {
+      const pathAfterPrefix = fileUrl.slice(gcsPrefix.length);
+      const slashIdx = pathAfterPrefix.indexOf("/");
+      bucketName = pathAfterPrefix.slice(0, slashIdx);
+      objectName = pathAfterPrefix.slice(slashIdx + 1);
+    } else {
+      const parts = fileUrl.startsWith("/") ? fileUrl.slice(1).split("/") : fileUrl.split("/");
+      bucketName = parts[0];
+      objectName = parts.slice(1).join("/");
+    }
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const objectFile = bucket.file(objectName);
+    await portalObjectStorage.downloadObject(objectFile, res, 86400);
+  } catch (error) {
+    logError("Portal org logo proxy error:", {}, error instanceof Error ? error : new Error(String(error)));
+    if (!res.headersSent) res.status(500).json({ error: "Failed to load logo" });
   }
 });
 
