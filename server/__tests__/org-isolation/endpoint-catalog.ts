@@ -385,6 +385,80 @@ export const ORG_SCOPED_ENDPOINTS: EndpointEntry[] = [
     path: "/api/subcontracts",
     description: "List subcontracts",
   },
+
+  // ── Procurement ──
+  {
+    method: "GET",
+    path: "/api/procurement-module/requests",
+    description: "List purchase requests",
+  },
+  {
+    method: "GET",
+    path: "/api/procurement-module/orders",
+    description: "List purchase orders",
+  },
+  {
+    method: "GET",
+    path: "/api/procurement-module/receipts",
+    description: "List receipts",
+  },
+  {
+    method: "GET",
+    path: "/api/procurement-module/invoices",
+    description: "List vendor invoices",
+  },
+  {
+    method: "GET",
+    path: "/api/procurement-module/summary",
+    description: "Procurement summary",
+  },
+
+  // ── Conversations / Messaging ──
+  {
+    method: "GET",
+    path: "/api/conversations",
+    description: "List conversations",
+  },
+  {
+    method: "GET",
+    path: "/api/messages/unread-count",
+    description: "Unread message count",
+  },
+
+  // ── Dashboard / Financials ──
+  {
+    method: "GET",
+    path: "/api/dashboard/stats",
+    description: "Dashboard stats",
+  },
+  {
+    method: "GET",
+    path: "/api/dashboard/kpi",
+    description: "Dashboard KPI",
+  },
+  {
+    method: "GET",
+    path: "/api/dashboard/snapshot",
+    description: "Dashboard snapshot",
+  },
+  {
+    method: "GET",
+    path: "/api/dashboard/bid-pipeline",
+    description: "Dashboard bid pipeline",
+  },
+  {
+    method: "GET",
+    path: "/api/dashboard/sov-progress",
+    description: "Dashboard SOV progress",
+  },
+
+  // ── Project Scope Items (alternate path) ──
+  {
+    method: "GET",
+    path: "/api/projects/:code/scope-items",
+    description: "Get project scope items via scope-items path",
+    paramResolver: (r) => ({ code: r.projectCode }),
+  },
 ];
 
 export function resolveEndpointPath(
