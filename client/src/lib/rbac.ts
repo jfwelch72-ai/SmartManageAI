@@ -593,7 +593,9 @@ const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
 const FIELD_WORKER_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/tasks', '/calendar'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/dashboard'] },
-  { key: 'info', label: 'Info', itemHrefs: ['/leave-management', '/communications'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/safety-training', '/procurement-module', '/tm-daily', '/reports', '/lidar-scans'] },
+  { key: 'crew', label: 'Crew', itemHrefs: ['/manage-workers', '/crews'] },
+  { key: 'info', label: 'Info', itemHrefs: ['/leave-management', '/communications', '/messages'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
 
