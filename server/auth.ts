@@ -215,13 +215,9 @@ export function requireRole(...roles: UserRole[]) {
       return;
     }
 
-    // For HUSTLER users, use effectiveRole if set (owner-level access to linked organizations)
-    const roleToCheck = req.user.effectiveRole || req.user.role;
-    const originalRole = req.user.role;
+    const roleToCheck = (req.user.effectiveRole || req.user.role) as UserRole;
     
-    // Check if either the effective role OR the original role matches
-    // This allows HUSTLER users to access HUSTLER endpoints even when their effectiveRole is ADMIN
-    if (!roles.includes(roleToCheck as UserRole) && !roles.includes(originalRole as UserRole)) {
+    if (!roles.includes(roleToCheck)) {
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }

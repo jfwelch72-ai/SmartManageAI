@@ -1673,6 +1673,23 @@ router.post("/api/bids/:code/quotes", requireAuth, requireRole("ADMIN", "MANAGER
   }
 });
 
+const updateSubQuoteSchema = z.object({
+  subcontractorName: z.string().max(500).optional(),
+  scopeOfWork: z.string().max(5000).optional(),
+  notes: z.string().max(5000).optional(),
+  contactName: z.string().max(200).optional(),
+  contactEmail: z.string().max(320).optional(),
+  contactPhone: z.string().max(50).optional(),
+  leadTime: z.string().max(200).nullable().optional(),
+  estimatedCompletionTime: z.string().max(200).nullable().optional(),
+  quoteAmount: z.union([z.string(), z.number()]).nullable().optional(),
+  fileUrl: z.string().max(2000).nullable().optional(),
+  fileName: z.string().max(500).nullable().optional(),
+  inclusions: z.string().max(5000).nullable().optional(),
+  exclusions: z.string().max(5000).nullable().optional(),
+  isSelected: z.boolean().optional(),
+});
+
 router.patch("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
@@ -1685,24 +1702,38 @@ router.patch("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN"
 
     const { bidSubcontractorQuotes } = await import("@shared/schema");
 
+    const zodResult = updateSubQuoteSchema.safeParse(req.body);
+    if (!zodResult.success) {
+      res.status(400).json({ error: "Invalid quote data", details: zodResult.error.errors });
+      return;
+    }
+
+    if (zodResult.data.quoteAmount !== undefined && zodResult.data.quoteAmount !== null) {
+      const amountCheck = validateMonetaryAmount(zodResult.data.quoteAmount, "Quote amount");
+      if (!amountCheck.valid) {
+        res.status(400).json({ error: amountCheck.error });
+        return;
+      }
+    }
+
     const sanitizedBody: any = {
-      subcontractorName: req.body.subcontractorName ? sanitizeShortText(req.body.subcontractorName) : undefined,
-      scopeOfWork: req.body.scopeOfWork ? sanitizeText(req.body.scopeOfWork) : undefined,
-      notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
-      contactName: req.body.contactName ? sanitizeShortText(req.body.contactName) : undefined,
-      contactEmail: req.body.contactEmail ? sanitizeEmail(req.body.contactEmail) : undefined,
-      contactPhone: req.body.contactPhone ? sanitizePhone(req.body.contactPhone) : undefined,
-      leadTime: req.body.leadTime !== undefined ? req.body.leadTime : undefined,
-      estimatedCompletionTime: req.body.estimatedCompletionTime !== undefined ? req.body.estimatedCompletionTime : undefined,
-      quoteAmount: req.body.quoteAmount !== undefined ? req.body.quoteAmount : undefined,
-      fileUrl: req.body.fileUrl !== undefined ? req.body.fileUrl : undefined,
-      fileName: req.body.fileName !== undefined ? req.body.fileName : undefined,
-      inclusions: req.body.inclusions !== undefined ? sanitizeText(req.body.inclusions) : undefined,
-      exclusions: req.body.exclusions !== undefined ? sanitizeText(req.body.exclusions) : undefined,
+      subcontractorName: zodResult.data.subcontractorName ? sanitizeShortText(zodResult.data.subcontractorName) : undefined,
+      scopeOfWork: zodResult.data.scopeOfWork ? sanitizeText(zodResult.data.scopeOfWork) : undefined,
+      notes: zodResult.data.notes ? sanitizeText(zodResult.data.notes) : undefined,
+      contactName: zodResult.data.contactName ? sanitizeShortText(zodResult.data.contactName) : undefined,
+      contactEmail: zodResult.data.contactEmail ? sanitizeEmail(zodResult.data.contactEmail) : undefined,
+      contactPhone: zodResult.data.contactPhone ? sanitizePhone(zodResult.data.contactPhone) : undefined,
+      leadTime: zodResult.data.leadTime,
+      estimatedCompletionTime: zodResult.data.estimatedCompletionTime,
+      quoteAmount: zodResult.data.quoteAmount,
+      fileUrl: zodResult.data.fileUrl,
+      fileName: zodResult.data.fileName,
+      inclusions: zodResult.data.inclusions !== undefined ? sanitizeText(zodResult.data.inclusions || "") : undefined,
+      exclusions: zodResult.data.exclusions !== undefined ? sanitizeText(zodResult.data.exclusions || "") : undefined,
     };
     
-    if (typeof req.body.isSelected === 'boolean') {
-      sanitizedBody.isSelected = req.body.isSelected;
+    if (zodResult.data.isSelected !== undefined) {
+      sanitizedBody.isSelected = zodResult.data.isSelected;
     }
     
     Object.keys(sanitizedBody).forEach(key => {
@@ -1960,6 +1991,20 @@ router.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN",
   }
 });
 
+const updateMaterialQuoteSchema = z.object({
+  materialName: z.string().max(500).optional(),
+  description: z.string().max(5000).optional(),
+  specs: z.string().max(5000).optional(),
+  leadTime: z.string().max(200).optional(),
+  supplierName: z.string().max(500).optional(),
+  supplierContact: z.string().max(500).optional(),
+  supplierEmail: z.string().max(320).optional(),
+  cost: z.union([z.string(), z.number()]).nullable().optional(),
+  fileUrl: z.string().max(2000).nullable().optional(),
+  fileName: z.string().max(500).nullable().optional(),
+  isSelected: z.boolean().optional(),
+});
+
 router.patch("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
@@ -1972,21 +2017,35 @@ router.patch("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRol
 
     const { bidMaterialQuotes } = await import("@shared/schema");
 
+    const zodResult = updateMaterialQuoteSchema.safeParse(req.body);
+    if (!zodResult.success) {
+      res.status(400).json({ error: "Invalid material quote data", details: zodResult.error.errors });
+      return;
+    }
+
+    if (zodResult.data.cost !== undefined && zodResult.data.cost !== null) {
+      const costCheck = validateMonetaryAmount(zodResult.data.cost, "Material cost");
+      if (!costCheck.valid) {
+        res.status(400).json({ error: costCheck.error });
+        return;
+      }
+    }
+
     const sanitizedBody: any = {
-      materialName: req.body.materialName ? sanitizeShortText(req.body.materialName) : undefined,
-      description: req.body.description ? sanitizeText(req.body.description) : undefined,
-      specs: req.body.specs ? sanitizeText(req.body.specs) : undefined,
-      leadTime: req.body.leadTime ? sanitizeShortText(req.body.leadTime) : undefined,
-      supplierName: req.body.supplierName ? sanitizeShortText(req.body.supplierName) : undefined,
-      supplierContact: req.body.supplierContact ? sanitizeText(req.body.supplierContact) : undefined,
-      supplierEmail: req.body.supplierEmail ? sanitizeEmail(req.body.supplierEmail) : undefined,
-      cost: req.body.cost !== undefined ? req.body.cost : undefined,
-      fileUrl: req.body.fileUrl !== undefined ? req.body.fileUrl : undefined,
-      fileName: req.body.fileName !== undefined ? req.body.fileName : undefined,
+      materialName: zodResult.data.materialName ? sanitizeShortText(zodResult.data.materialName) : undefined,
+      description: zodResult.data.description ? sanitizeText(zodResult.data.description) : undefined,
+      specs: zodResult.data.specs ? sanitizeText(zodResult.data.specs) : undefined,
+      leadTime: zodResult.data.leadTime ? sanitizeShortText(zodResult.data.leadTime) : undefined,
+      supplierName: zodResult.data.supplierName ? sanitizeShortText(zodResult.data.supplierName) : undefined,
+      supplierContact: zodResult.data.supplierContact ? sanitizeText(zodResult.data.supplierContact) : undefined,
+      supplierEmail: zodResult.data.supplierEmail ? sanitizeEmail(zodResult.data.supplierEmail) : undefined,
+      cost: zodResult.data.cost,
+      fileUrl: zodResult.data.fileUrl,
+      fileName: zodResult.data.fileName,
     };
     
-    if (typeof req.body.isSelected === 'boolean') {
-      sanitizedBody.isSelected = req.body.isSelected;
+    if (zodResult.data.isSelected !== undefined) {
+      sanitizedBody.isSelected = zodResult.data.isSelected;
     }
     
     Object.keys(sanitizedBody).forEach(key => {

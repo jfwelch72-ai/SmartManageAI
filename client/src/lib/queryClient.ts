@@ -20,14 +20,64 @@ function handleGlobal401(url: string) {
   }
 }
 
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function isSameOriginApiRequest(input: RequestInfo | URL): boolean {
+  if (typeof input === "string") {
+    if (input.startsWith("/api/") || input.startsWith("/api")) return true;
+    try {
+      const url = new URL(input, window.location.origin);
+      return url.origin === window.location.origin && url.pathname.startsWith("/api");
+    } catch {
+      return false;
+    }
+  }
+  if (input instanceof URL) {
+    return input.origin === window.location.origin && input.pathname.startsWith("/api");
+  }
+  if (input instanceof Request) {
+    try {
+      const url = new URL(input.url);
+      return url.origin === window.location.origin && url.pathname.startsWith("/api");
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+const originalFetch = window.fetch.bind(window);
+window.fetch = function csrfFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const method = (init?.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && isSameOriginApiRequest(input)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      const headers = new Headers(init?.headers);
+      if (!headers.has("x-csrf-token")) {
+        headers.set("x-csrf-token", csrfToken);
+      }
+      init = { ...init, headers };
+    }
+  }
+  return originalFetch(input, init);
+};
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (data) headers["Content-Type"] = "application/json";
+  const csrfToken = getCsrfToken();
+  if (csrfToken) headers["x-csrf-token"] = csrfToken;
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });

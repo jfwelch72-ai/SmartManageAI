@@ -26,7 +26,18 @@ router.get("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
     const projectIdFilter = req.query.projectId as string | undefined;
     const statusFilter = req.query.status as string | undefined;
 
-    const allTransmittals = await db
+    const conditions: any[] = [];
+    if (shouldFilter && orgId && !isSuperAdmin) {
+      conditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+    if (projectIdFilter) {
+      conditions.push(eq(documentTransmittals.projectId, projectIdFilter));
+    }
+    if (statusFilter) {
+      conditions.push(eq(documentTransmittals.status, statusFilter));
+    }
+
+    const filtered = await db
       .select({
         transmittal: documentTransmittals,
         project: {
@@ -38,21 +49,8 @@ router.get("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
       })
       .from(documentTransmittals)
       .leftJoin(projects, eq(documentTransmittals.projectId, projects.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(documentTransmittals.createdAt));
-
-    let filtered = allTransmittals;
-
-    if (shouldFilter && orgId && !isSuperAdmin) {
-      filtered = filtered.filter(t => t.project?.gcOrganizationId === orgId);
-    }
-
-    if (projectIdFilter) {
-      filtered = filtered.filter(t => t.transmittal.projectId === projectIdFilter);
-    }
-
-    if (statusFilter) {
-      filtered = filtered.filter(t => t.transmittal.status === statusFilter);
-    }
 
     const result = filtered.map(t => ({
       ...t.transmittal,

@@ -171,7 +171,12 @@ router.get("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "A
       return res.json([]);
     }
 
-    const allContracts = await db
+    const conditions: any[] = [];
+    if (shouldFilter && orgId && !isSuperAdmin) {
+      conditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+
+    const filteredContracts = await db
       .select({
         contract: subcontractorContracts,
         project: {
@@ -188,12 +193,8 @@ router.get("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "A
       .from(subcontractorContracts)
       .leftJoin(projects, eq(subcontractorContracts.projectId, projects.id))
       .leftJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(subcontractorContracts.createdAt));
-
-    let filteredContracts = allContracts;
-    if (shouldFilter && orgId && !isSuperAdmin) {
-      filteredContracts = allContracts.filter(c => c.project?.gcOrganizationId === orgId);
-    }
 
     const result = filteredContracts.map(c => ({
       ...c.contract,

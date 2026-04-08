@@ -1028,6 +1028,10 @@ router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res) => {
 
     const conditions: SQL[] = [];
 
+    if (shouldFilter && orgId) {
+      conditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+
     if (status === "OVERDUE") {
       conditions.push(eq(changeOrders.status, "SUBMITTED"));
       conditions.push(lt(changeOrders.clientResponseDueDate, sql`NOW()`));
@@ -1042,7 +1046,7 @@ router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res) => {
       conditions.push(eq(changeOrders.projectId, projectId));
     }
 
-    let query = db
+    const rows = await db
       .select({
         order: changeOrders,
         project: {
@@ -1053,18 +1057,11 @@ router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res) => {
         },
       })
       .from(changeOrders)
-      .leftJoin(projects, eq(changeOrders.projectId, projects.id));
+      .leftJoin(projects, eq(changeOrders.projectId, projects.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(changeOrders.createdAt));
 
-    const rows = conditions.length > 0
-      ? await query.where(and(...conditions)).orderBy(desc(changeOrders.createdAt))
-      : await query.orderBy(desc(changeOrders.createdAt));
-
-    let result = rows;
-    if (shouldFilter && orgId) {
-      result = rows.filter(r => r.project?.gcOrganizationId === orgId);
-    }
-
-    res.json(result.map(r => ({ ...r.order, project: r.project })));
+    res.json(rows.map(r => ({ ...r.order, project: r.project })));
   } catch (error) {
     logError("List change orders error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });

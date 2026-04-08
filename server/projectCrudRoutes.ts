@@ -1314,11 +1314,23 @@ router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN",
   }
 });
 
+const updateFinancialsSchema = z.object({
+  budget: z.union([z.string(), z.number()]).nullable().optional(),
+  contractAmount: z.union([z.string(), z.number()]).nullable().optional(),
+  texturaDrawDate: z.string().nullable().optional(),
+  drawDayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+});
+
 router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const { budget, contractAmount, texturaDrawDate, drawDayOfMonth } = req.body;
+    const validation = updateFinancialsSchema.safeParse(req.body);
+    if (!validation.success) {
+      res.status(400).json({ error: "Invalid financial data", details: validation.error.errors });
+      return;
+    }
+    const { budget, contractAmount, texturaDrawDate, drawDayOfMonth } = validation.data;
 
-    if (budget !== undefined) {
+    if (budget !== undefined && budget !== null) {
       const budgetCheck = validateMonetaryAmount(budget, "Budget");
       if (!budgetCheck.valid) {
         res.status(400).json({ error: budgetCheck.error });
@@ -1326,7 +1338,7 @@ router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN")
       }
     }
 
-    if (contractAmount !== undefined) {
+    if (contractAmount !== undefined && contractAmount !== null) {
       const contractCheck = validateMonetaryAmount(contractAmount, "Contract amount");
       if (!contractCheck.valid) {
         res.status(400).json({ error: contractCheck.error });

@@ -104,10 +104,18 @@ router.get("/api/activity-log", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+const deactivationRequestSchema = z.object({
+  reason: z.string().max(1000).optional(),
+});
+
 router.post("/api/account/deactivation-request", requireAuth, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
-    const { reason } = req.body || {};
+    const parsed = deactivationRequestSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request data", details: parsed.error.errors });
+    }
+    const reason = parsed.data.reason;
 
     await db.insert(activityLog).values({
       userId,
@@ -337,10 +345,18 @@ router.post("/api/account/2fa/setup", requireAuth, async (req: AuthRequest, res)
   }
 });
 
+const totpVerifySchema = z.object({
+  token: z.string().min(1).max(10),
+});
+
 router.post("/api/account/2fa/verify", requireAuth, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
-    const { token } = req.body;
+    const validation = totpVerifySchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ error: "A valid verification token is required" });
+    }
+    const { token } = validation.data;
 
     const setup = pendingTotpSetups.get(userId);
     if (!setup) {
@@ -446,15 +462,19 @@ router.get("/api/account/api-keys", requireAuth, async (req: AuthRequest, res) =
   }
 });
 
+const apiKeyCreateSchema = z.object({
+  name: z.string().min(1).max(100),
+});
+
 router.post("/api/account/api-keys", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!requireAdminRole(req, res)) return;
     const userId = req.user!.id;
-    const { name } = req.body;
-
-    if (!name || typeof name !== "string" || name.length > 100) {
+    const validation = apiKeyCreateSchema.safeParse(req.body);
+    if (!validation.success) {
       return res.status(400).json({ error: "A valid key name is required (max 100 characters)" });
     }
+    const { name } = validation.data;
 
     const rawKey = `smak_${crypto.randomBytes(32).toString("hex")}`;
     const keyHashVal = hashValue(rawKey);

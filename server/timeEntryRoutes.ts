@@ -469,8 +469,9 @@ router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN",
       lte(timeClockShifts.clockIn, new Date(endDate as string)),
     ];
     if (projectId) shiftConditions.push(eq(timeClockShifts.projectId, projectId as string));
+    if (shouldFilter && orgId) shiftConditions.push(eq(projects.gcOrganizationId, orgId));
 
-    const shifts = await db
+    const filteredShifts = await db
       .select({
         projectId: timeClockShifts.projectId,
         projectName: projects.name,
@@ -483,16 +484,14 @@ router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN",
       .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
       .where(and(...shiftConditions));
 
-    const filteredShifts = shouldFilter && orgId
-      ? shifts.filter(s => s.gcOrganizationId === orgId) : shifts;
-
     const entryConditions: any[] = [
       gte(timeEntries.date, new Date(startDate as string)),
       lte(timeEntries.date, new Date(endDate as string)),
     ];
     if (projectId) entryConditions.push(eq(timeEntries.projectId, projectId as string));
+    if (shouldFilter && orgId) entryConditions.push(eq(projects.gcOrganizationId, orgId));
 
-    const entries = await db
+    const filteredEntries = await db
       .select({
         projectId: timeEntries.projectId,
         projectName: projects.name,
@@ -505,9 +504,6 @@ router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN",
       .from(timeEntries)
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .where(and(...entryConditions));
-
-    const filteredEntries = shouldFilter && orgId
-      ? entries.filter(e => e.gcOrganizationId === orgId) : entries;
 
     const shiftSummary = {
       pending: filteredShifts.filter(s => s.approvalStatus === "PENDING").length,

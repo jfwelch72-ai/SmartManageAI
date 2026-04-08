@@ -445,6 +445,7 @@ import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
 import { randomUUID } from "crypto";
+import { z } from "zod";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping, emitCallStarted, emitCallJoined, emitCallLeft, emitCallEnded } from "./messagingEvents";
 import { fileTypeFromBuffer } from "file-type";
@@ -609,14 +610,22 @@ const messagingSetup = (async () => {
     }
   });
 
-  // ── CHANNELS: create a named channel ──
+  const createChannelSchema = z.object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(1000).optional(),
+    topic: z.string().max(500).optional(),
+    slug: z.string().max(80).optional(),
+  });
+
   router.post("/api/channels", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
       if (!organizationId) return res.status(400).json({ error: "Organization required" });
 
-      const { name, description, topic, slug: rawSlug } = req.body;
+      const validation = createChannelSchema.safeParse(req.body);
+      if (!validation.success) return res.status(400).json({ error: "Invalid channel data", details: validation.error.errors });
+      const { name, description, topic, slug: rawSlug } = validation.data;
       if (!name?.trim()) return res.status(400).json({ error: "Channel name is required" });
 
       // Allow explicit slug; fall back to deriving from name
@@ -816,19 +825,27 @@ const messagingSetup = (async () => {
   });
 
   // Create a new conversation (direct message or group)
+  const createConversationSchema = z.object({
+    type: z.enum(["DIRECT", "GROUP"]),
+    name: z.string().max(200).optional(),
+    description: z.string().max(1000).optional(),
+    participantIds: z.array(z.string().uuid()).optional(),
+    projectId: z.string().uuid().optional(),
+  });
+
   router.post("/api/conversations", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
-      const { type, name, description, participantIds } = req.body;
+      const validation = createConversationSchema.safeParse(req.body);
+      if (!validation.success) {
+        res.status(400).json({ error: "Invalid conversation data", details: validation.error.errors });
+        return;
+      }
+      const { type, name, description, participantIds } = validation.data;
 
       if (!organizationId) {
         res.status(400).json({ error: "You must belong to an organization to create conversations" });
-        return;
-      }
-
-      if (!["DIRECT", "GROUP"].includes(type)) {
-        res.status(400).json({ error: "Invalid conversation type" });
         return;
       }
 
@@ -918,22 +935,27 @@ const messagingSetup = (async () => {
     }
   });
 
+  const addParticipantsSchema = z.object({
+    userIds: z.array(z.string().uuid()).min(1),
+  });
+
   router.post("/api/conversations/:id/participants", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
       const conversationId = req.params.id;
-      const { userIds } = req.body;
 
       if (!organizationId) {
         res.status(400).json({ error: "You must belong to an organization" });
         return;
       }
 
-      if (!Array.isArray(userIds) || userIds.length === 0) {
-        res.status(400).json({ error: "userIds must be a non-empty array" });
+      const validation = addParticipantsSchema.safeParse(req.body);
+      if (!validation.success) {
+        res.status(400).json({ error: "userIds must be a non-empty array of valid user IDs" });
         return;
       }
+      const { userIds } = validation.data;
 
       const dedupedUserIds = [...new Set(userIds as string[])];
 
@@ -1100,12 +1122,32 @@ const messagingSetup = (async () => {
   });
 
   // Send a message (supports file attachments, voice, and task mentions)
+  const sendMessageSchema = z.object({
+    content: z.string().max(10000).optional(),
+    attachmentUrl: z.string().max(2000).optional(),
+    attachmentName: z.string().max(500).optional(),
+    attachmentType: z.string().max(200).optional(),
+    attachmentSize: z.union([z.number(), z.string()]).optional(),
+    voiceUrl: z.string().max(2000).optional(),
+    voiceDurationSeconds: z.union([z.number(), z.string()]).optional(),
+    mentionedTaskIds: z.array(z.string()).optional().nullable(),
+    entityLinks: z.array(z.object({
+      entityType: z.string(),
+      entityId: z.string(),
+    })).optional(),
+  });
+
   router.post("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
       const conversationId = req.params.id;
-      const { content, attachmentUrl, attachmentName, attachmentType, attachmentSize, voiceUrl, voiceDurationSeconds, mentionedTaskIds, entityLinks } = req.body;
+      const validation = sendMessageSchema.safeParse(req.body);
+      if (!validation.success) {
+        res.status(400).json({ error: "Invalid message data", details: validation.error.errors });
+        return;
+      }
+      const { content, attachmentUrl, attachmentName, attachmentType, attachmentSize, voiceUrl, voiceDurationSeconds, mentionedTaskIds, entityLinks } = validation.data;
 
       if (!content?.trim() && !attachmentUrl && !voiceUrl) {
         res.status(400).json({ error: "Message content or attachment is required" });
@@ -1970,12 +2012,18 @@ const messagingSetup = (async () => {
   }
 
   // ── EDIT MESSAGE — sender or channel admin only ──
+  const editMessageSchema = z.object({
+    content: z.string().min(1).max(10000),
+  });
+
   router.patch("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
       const { msgId } = req.params;
-      const { content } = req.body;
+      const validation = editMessageSchema.safeParse(req.body);
+      if (!validation.success) return res.status(400).json({ error: "Content cannot be empty" });
+      const { content } = validation.data;
 
       if (!content?.trim()) return res.status(400).json({ error: "Content cannot be empty" });
 
@@ -2082,14 +2130,22 @@ const messagingSetup = (async () => {
   // ── TOGGLE REACTION — POST /api/messages/:msgId/reactions { emoji } ──
   // Adds the reaction if absent, removes it if already present (toggle).
   // Returns updated reaction counts for the message.
+  const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "🎉", "✅"] as const;
+  const reactionSchema = z.object({
+    emoji: z.enum(ALLOWED_EMOJIS),
+  });
+
   router.post("/api/messages/:msgId/reactions", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
       const { msgId } = req.params;
-      const { emoji } = req.body;
+      const reactionValidation = reactionSchema.safeParse(req.body);
+      if (!reactionValidation.success) {
+        return res.status(400).json({ error: "Invalid emoji. Allowed: " + ALLOWED_EMOJIS.join(" ") });
+      }
+      const { emoji } = reactionValidation.data;
 
-      const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "🎉", "✅"];
       if (!emoji || !ALLOWED_EMOJIS.includes(emoji)) {
         return res.status(400).json({ error: "Invalid emoji. Allowed: " + ALLOWED_EMOJIS.join(" ") });
       }
@@ -2318,15 +2374,22 @@ const messagingSetup = (async () => {
   });
 
   // ── ADD ENTITY LINKS to a message ──
+  const entityLinkSchema = z.object({
+    links: z.array(z.object({
+      entityType: z.enum(["RFI", "CHANGE_ORDER", "TASK"]),
+      entityId: z.string().min(1),
+    })).min(1),
+  });
+
   router.post("/api/messages/:msgId/entity-links", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const { msgId } = req.params;
-      const { links } = req.body;
-
-      if (!Array.isArray(links) || links.length === 0) {
+      const linkValidation = entityLinkSchema.safeParse(req.body);
+      if (!linkValidation.success) {
         return res.status(400).json({ error: "links array is required" });
       }
+      const { links } = linkValidation.data;
 
       const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
       if (!msg) return res.status(404).json({ error: "Message not found" });
@@ -2487,17 +2550,22 @@ const messagingSetup = (async () => {
     }
   });
 
+  const entityConversationSchema = z.object({
+    entityType: z.enum(["RFI", "CHANGE_ORDER", "TASK"]),
+    entityId: z.string().uuid(),
+  });
+
   router.post("/api/entity-conversation", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
       if (!orgId) return res.status(400).json({ error: "Organization required" });
 
-      const { entityType, entityId } = req.body;
-      const validTypes = ["RFI", "CHANGE_ORDER", "TASK"];
-      if (!validTypes.includes(entityType) || !entityId) {
+      const validation = entityConversationSchema.safeParse(req.body);
+      if (!validation.success) {
         return res.status(400).json({ error: "entityType and entityId are required" });
       }
+      const { entityType, entityId } = validation.data;
 
       const entityFieldCondition =
         entityType === "RFI" ? eq(conversations.rfiId, entityId) :
@@ -2990,13 +3058,17 @@ const messagingSetup = (async () => {
     }
   });
 
+  const callNotesSchema = z.object({
+    content: z.string().max(50000),
+  });
+
   router.put("/api/calls/:callId/notes", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
-      const { content } = req.body;
-
-      if (typeof content !== "string") return res.status(400).json({ error: "content required" });
+      const notesValidation = callNotesSchema.safeParse(req.body);
+      if (!notesValidation.success) return res.status(400).json({ error: "content required" });
+      const { content } = notesValidation.data;
 
       const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
       if (!call) return res.status(404).json({ error: "Call not found" });

@@ -445,7 +445,27 @@ router.get("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADM
 
     const { projectId, status, phase, submittalType, category } = req.query;
 
-    const allSubmittals = await db
+    const conditions: any[] = [];
+    if (shouldFilter && orgId) {
+      conditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+    if (projectId) {
+      conditions.push(eq(submittals.projectId, projectId as string));
+    }
+    if (status) {
+      conditions.push(eq(submittals.status, status as string));
+    }
+    if (phase) {
+      conditions.push(eq(submittals.phase, phase as string));
+    }
+    if (submittalType) {
+      conditions.push(eq(submittals.submittalType, submittalType as string));
+    }
+    if (category) {
+      conditions.push(eq(submittals.submittalCategory, category as string));
+    }
+
+    const filtered = await db
       .select({
         submittal: submittals,
         project: {
@@ -457,29 +477,8 @@ router.get("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADM
       })
       .from(submittals)
       .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(submittals.createdAt));
-
-    let filtered = allSubmittals;
-
-    if (shouldFilter && orgId) {
-      filtered = filtered.filter(s => s.project?.gcOrganizationId === orgId);
-    }
-
-    if (projectId) {
-      filtered = filtered.filter(s => s.submittal.projectId === projectId);
-    }
-    if (status) {
-      filtered = filtered.filter(s => s.submittal.status === status);
-    }
-    if (phase) {
-      filtered = filtered.filter(s => s.submittal.phase === phase);
-    }
-    if (submittalType) {
-      filtered = filtered.filter(s => s.submittal.submittalType === submittalType);
-    }
-    if (category) {
-      filtered = filtered.filter(s => s.submittal.submittalCategory === category);
-    }
 
     const result = filtered.map(s => ({
       ...s.submittal,

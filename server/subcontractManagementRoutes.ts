@@ -775,7 +775,12 @@ router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json({ totals: { totalRetentionHeld: "0.00", totalReleased: "0.00", balanceRemaining: "0.00" }, contracts: [] });
 
-    const allContracts = await db
+    const retentionConditions: any[] = [];
+    if (shouldFilter && orgId && !isSuperAdmin) {
+      retentionConditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+
+    const filteredContracts = await db
       .select({
         contract: subcontractorContracts,
         project: { id: projects.id, name: projects.name, code: projects.code, gcOrganizationId: projects.gcOrganizationId },
@@ -783,12 +788,8 @@ router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(
       })
       .from(subcontractorContracts)
       .innerJoin(projects, eq(subcontractorContracts.projectId, projects.id))
-      .innerJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id));
-
-    let filteredContracts = allContracts;
-    if (shouldFilter && orgId && !isSuperAdmin) {
-      filteredContracts = allContracts.filter(c => c.project.gcOrganizationId === orgId);
-    }
+      .innerJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id))
+      .where(retentionConditions.length > 0 ? and(...retentionConditions) : undefined);
 
     const summaries = [];
     for (const c of filteredContracts) {
@@ -1055,7 +1056,12 @@ router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeatur
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
 
-    const allContracts = await db
+    const perfConditions: any[] = [];
+    if (shouldFilter && orgId && !isSuperAdmin) {
+      perfConditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+
+    const filteredContracts = await db
       .select({
         contract: subcontractorContracts,
         project: { id: projects.id, name: projects.name, gcOrganizationId: projects.gcOrganizationId },
@@ -1063,12 +1069,8 @@ router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeatur
       })
       .from(subcontractorContracts)
       .innerJoin(projects, eq(subcontractorContracts.projectId, projects.id))
-      .innerJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id));
-
-    let filteredContracts = allContracts;
-    if (shouldFilter && orgId && !isSuperAdmin) {
-      filteredContracts = allContracts.filter(c => c.project.gcOrganizationId === orgId);
-    }
+      .innerJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id))
+      .where(perfConditions.length > 0 ? and(...perfConditions) : undefined);
 
     const summaries = [];
     for (const c of filteredContracts) {

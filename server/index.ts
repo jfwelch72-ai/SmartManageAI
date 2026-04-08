@@ -8,6 +8,7 @@ import { execSync } from "child_process";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { logOAuthRedirectUris } from "./utils/routeHelpers";
+import { setCsrfToken, validateCsrf } from "./csrf";
 import { initializeAIScheduler } from "./ai/scheduler";
 import { aiNotesScheduler } from "./aiNotesScheduler";
 import { initializeEventBus } from "./events";
@@ -68,6 +69,9 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
+app.use(setCsrfToken);
+app.use(validateCsrf);
+
 app.use((req, res, next) => {
   if (req.path === '/sw.js') {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -85,7 +89,7 @@ const SENSITIVE_KEYS = new Set([
 const PII_KEYS = new Set(['email', 'phone', 'recipientEmail']);
 
 function redactForLog(obj: any, depth = 0): any {
-  if (depth > 3 || obj === null || obj === undefined) return obj;
+  if (depth > 6 || obj === null || obj === undefined) return obj;
   if (typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.length > 3 ? `[Array(${obj.length})]` : obj.map(item => redactForLog(item, depth + 1));
   const result: Record<string, any> = {};
