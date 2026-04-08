@@ -11,6 +11,7 @@ import {
   tmTicketLaborEntries,
   tmTicketEquipmentEntries,
   tmTicketMaterialEntries,
+  tmTicketScopeModifiers,
   tmInvoices,
   projects,
   users,
@@ -23,6 +24,33 @@ import {
 
 function isTicketLocked(billingStatus: string): boolean {
   return billingStatus === "INVOICED" || billingStatus === "BILLED";
+}
+
+async function syncTicketScopeModifiers(
+  tx: typeof db,
+  ticketId: string,
+  scopeModifierIds: string | null | undefined,
+  scopeModifierNames: string | null | undefined,
+): Promise<void> {
+  await tx.delete(tmTicketScopeModifiers).where(eq(tmTicketScopeModifiers.ticketId, ticketId));
+
+  if (!scopeModifierIds) return;
+
+  let ids: string[];
+  try { ids = JSON.parse(scopeModifierIds); } catch { return; }
+  if (!Array.isArray(ids) || ids.length === 0) return;
+
+  let names: string[] = [];
+  try { names = scopeModifierNames ? JSON.parse(scopeModifierNames) : []; } catch { /* ignore */ }
+
+  await tx.insert(tmTicketScopeModifiers).values(
+    ids.map((modId, i) => ({
+      ticketId,
+      modifierId: modId,
+      modifierName: names[i] || modId,
+      sortOrder: i,
+    }))
+  );
 }
 
 // ========================================
@@ -1103,6 +1131,8 @@ export function registerTMTicketRoutes(app: Express) {
           status: "DRAFT",
         }).returning();
 
+        await syncTicketScopeModifiers(tx, ticket.id, scopeModifierIds, scopeModifierNames);
+
         if (laborEntries && laborEntries.length > 0) {
           await tx.insert(tmTicketLaborEntries).values(mapLaborEntries(laborEntries, ticket.id));
         }
@@ -1174,6 +1204,8 @@ export function registerTMTicketRoutes(app: Express) {
         })
         .where(eq(tmTickets.id, ticketId))
         .returning();
+
+      await syncTicketScopeModifiers(db, ticketId, ticketData.scopeModifierIds, ticketData.scopeModifierNames);
       
       await db.delete(tmTicketLaborEntries).where(eq(tmTicketLaborEntries.ticketId, ticketId));
       if (laborEntries && laborEntries.length > 0) {

@@ -128,6 +128,7 @@ import drawingSetRoutes from "./drawingSetRoutes";
 import addendaRoutes from "./addendaRoutes";
 import devSeedEnterpriseRoutes from "./devSeedEnterprise";
 import featureFlagRoutes from "./featureFlagRoutes";
+import { getIntegrationStatus } from "./services/integrationStatusService";
 import ssoRoutes from "./ssoRoutes";
 import auditExportRoutes from "./auditExportRoutes";
 import retentionRoutes from "./retentionRoutes";
@@ -344,6 +345,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", addendaRoutes);
 
   app.use("/api/feature-flags", featureFlagRoutes);
+
+  app.get("/api/integration-status", requireAuth, (_req, res) => {
+    res.json(getIntegrationStatus());
+  });
 
   app.use("/api/sso", ssoRoutes);
   app.use("/api/audit", auditExportRoutes);

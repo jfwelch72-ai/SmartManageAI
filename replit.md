@@ -33,6 +33,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Takeoff Data Engine & Versioning**: Rich linked data objects on measurements with full takeoff versioning and comparison views.
 *   **Website Builder System**: White-label website management with AI Website Wizard, page builder, publishing controls, and SEO support.
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, and feature flags.
+*   **Integration Gating**: Feature flags (`VIDEO_CALLS`, `SMS_NOTIFICATIONS`) gate unconfigured third-party services. `/api/integration-status` endpoint reports configuration state. Video call button disables when LiveKit is not configured. SMS silently skips when Twilio is not configured.
+*   **Structured Error Logging**: `error_logs` table captures production errors with stack trace, user context, route, and request ID. Global error handler and process-level uncaught exception/rejection handlers persist errors to the database.
 *   **Integration Hub**: Provider-agnostic framework for centralized connection management.
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, history, and comparisons.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs.

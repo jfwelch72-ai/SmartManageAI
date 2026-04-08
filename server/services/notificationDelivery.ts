@@ -8,6 +8,7 @@ import { sendTeamsMessage } from "./teamsService";
 import { sendSlackMessage } from "./slackService";
 import { logError } from "../utils/logger";
 import { hasFeature } from "./featureAccess";
+import { isFeatureEnabled } from "./featureFlagService";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -414,8 +415,14 @@ export async function deliverNotification(notification: NotificationRecord): Pro
       tasks.push(deliverEmail(userRow.email, notification));
     }
     if (prefs.smsEnabled && enterpriseNotifications) {
-      const smsPhone = prefs.smsPhoneNumber || userRow.phone || null;
-      deliverSms(smsPhone, notification);
+      let smsFeatureEnabled = true;
+      if (userRow.organizationId) {
+        smsFeatureEnabled = await isFeatureEnabled(userRow.organizationId, "SMS_NOTIFICATIONS");
+      }
+      if (smsFeatureEnabled) {
+        const smsPhone = prefs.smsPhoneNumber || userRow.phone || null;
+        deliverSms(smsPhone, notification);
+      }
     }
     if (prefs.pushEnabled) {
       tasks.push(deliverPush(notification.userId, notification));

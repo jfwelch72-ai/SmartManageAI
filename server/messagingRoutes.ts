@@ -440,6 +440,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { users, projects as projectsTable, aiTasks } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { isFeatureEnabled } from "./services/featureFlagService";
 import { eq, desc, sql, and, lt, inArray, or, isNotNull, ilike, isNull, type SQL } from "drizzle-orm";
 import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -2681,6 +2682,18 @@ const messagingSetup = (async () => {
       const userId = req.user!.id;
       const conversationId = req.params.id;
 
+      if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET || !process.env.LIVEKIT_URL) {
+        return res.status(503).json({ error: "Video calls are not available. LiveKit is not configured.", code: "LIVEKIT_NOT_CONFIGURED" });
+      }
+
+      const userOrg = req.user!.organizationId;
+      if (userOrg) {
+        const videoCallsEnabled = await isFeatureEnabled(userOrg, "VIDEO_CALLS");
+        if (!videoCallsEnabled) {
+          return res.status(403).json({ error: "Video calls are not enabled for your organization.", code: "VIDEO_CALLS_DISABLED" });
+        }
+      }
+
       const isParticipant = await ensureParticipant(conversationId, userId);
       if (!isParticipant) return res.status(403).json({ error: "Not a participant" });
 
@@ -3023,7 +3036,15 @@ const messagingSetup = (async () => {
       const livekitUrl = process.env.LIVEKIT_URL;
 
       if (!livekitApiKey || !livekitApiSecret || !livekitUrl) {
-        return res.status(500).json({ error: "LiveKit is not configured on the server" });
+        return res.status(503).json({ error: "Video calls are not available. LiveKit is not configured.", code: "LIVEKIT_NOT_CONFIGURED" });
+      }
+
+      const userOrg = req.user!.organizationId;
+      if (userOrg) {
+        const videoCallsEnabled = await isFeatureEnabled(userOrg, "VIDEO_CALLS");
+        if (!videoCallsEnabled) {
+          return res.status(403).json({ error: "Video calls are not enabled for your organization.", code: "VIDEO_CALLS_DISABLED" });
+        }
       }
 
       const { AccessToken } = await import("livekit-server-sdk");

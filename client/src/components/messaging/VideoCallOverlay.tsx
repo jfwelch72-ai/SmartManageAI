@@ -56,7 +56,13 @@ export function VideoCallOverlay({
         const res = await fetch(`/api/calls/${call.id}/livekit-token`, { credentials: "include" });
         if (!res.ok) {
           const errData = await res.json().catch(() => ({ error: "Failed to get token" }));
-          setTokenError(errData.error || "Failed to get call token");
+          if (res.status === 503) {
+            setTokenError("Video calling is not available — the service is not configured. Please contact your administrator.");
+          } else if (res.status === 403) {
+            setTokenError("Video calling is not enabled for your organization.");
+          } else {
+            setTokenError(errData.error || "Failed to get call token");
+          }
           return;
         }
         const data = await res.json();
@@ -64,7 +70,7 @@ export function VideoCallOverlay({
         setLivekitUrl(data.url);
       } catch (err) {
         console.error("[LiveKit] Failed to fetch token:", err);
-        setTokenError("Failed to connect to call server");
+        setTokenError("Failed to connect to call server. Please try again later.");
       }
     };
     fetchToken();

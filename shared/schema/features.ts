@@ -32,6 +32,8 @@ export const FEATURE_FLAG_KEYS = [
   "REVENUE_RECOGNITION",
   "WHATIF_SIMULATOR",
   "LIDAR_SCANNER",
+  "VIDEO_CALLS",
+  "SMS_NOTIFICATIONS",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -41,6 +43,8 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   "REVENUE_RECOGNITION",
   "WHATIF_SIMULATOR",
   "LIDAR_SCANNER",
+  "VIDEO_CALLS",
+  "SMS_NOTIFICATIONS",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {
@@ -8219,4 +8223,27 @@ export const executiveDigests = pgTable("executive_digests", {
   orgPeriodIdx: index("executive_digests_org_period_idx").on(table.organizationId, table.period),
   generatedAtIdx: index("executive_digests_generated_at_idx").on(table.generatedAt),
 }));
+
+export const errorLogs = pgTable("error_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  level: text("level").notNull().default("error"),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  method: text("method"),
+  path: text("path"),
+  statusCode: integer("status_code"),
+  userId: varchar("user_id"),
+  organizationId: varchar("organization_id"),
+  requestId: text("request_id"),
+  userAgent: text("user_agent"),
+  ip: text("ip"),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  createdAtIdx: index("error_logs_created_at_idx").on(table.createdAt),
+  levelIdx: index("error_logs_level_idx").on(table.level),
+  userIdIdx: index("error_logs_user_id_idx").on(table.userId),
+}));
+
+export type ErrorLog = typeof errorLogs.$inferSelect;
 

@@ -435,6 +435,30 @@ export const tmTickets = pgTable("tm_tickets", {
   billingStatusIdx: index("tm_tickets_billing_status_idx").on(table.billingStatus),
 }));
 
+export const tmTicketScopeModifiers = pgTable("tm_ticket_scope_modifiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").notNull().references(() => tmTickets.id, { onDelete: "cascade" }),
+  modifierId: varchar("modifier_id").notNull(),
+  modifierName: text("modifier_name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  ticketIdIdx: index("tm_ticket_scope_modifiers_ticket_id_idx").on(table.ticketId),
+  uniqueTicketModifier: unique("tm_ticket_scope_modifiers_ticket_modifier_uniq").on(table.ticketId, table.modifierId),
+}));
+
+export const changeOrderScopeModifiers = pgTable("change_order_scope_modifiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  modifierId: varchar("modifier_id").notNull(),
+  modifierName: text("modifier_name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  changeOrderIdIdx: index("change_order_scope_modifiers_co_id_idx").on(table.changeOrderId),
+  uniqueCoModifier: unique("change_order_scope_modifiers_co_modifier_uniq").on(table.changeOrderId, table.modifierId),
+}));
+
 // T&M Ticket Labor Entries
 export const tmTicketLaborEntries = pgTable("tm_ticket_labor_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

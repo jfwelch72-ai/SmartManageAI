@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
+import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, changeOrderScopeModifiers, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
 import { requireAuth, requireRole, requireRoleOrFeature, type AuthRequest, type UserRole } from "./auth";
 import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -1223,6 +1223,27 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       }
       throw err;
     }
+
+    if (scopeModifierIds && newOrder) {
+      try {
+        let ids: string[] = [];
+        try { ids = JSON.parse(scopeModifierIds); } catch { /* ignore */ }
+        let names: string[] = [];
+        try { names = scopeModifierNames ? JSON.parse(scopeModifierNames) : []; } catch { /* ignore */ }
+        if (Array.isArray(ids) && ids.length > 0) {
+          await db.insert(changeOrderScopeModifiers).values(
+            ids.map((modId: string, i: number) => ({
+              changeOrderId: newOrder.id,
+              modifierId: modId,
+              modifierName: names[i] || modId,
+              sortOrder: i,
+            }))
+          );
+        }
+      } catch (e) {
+        logError("Failed to sync change order scope modifiers", {}, e instanceof Error ? e : new Error(String(e)));
+      }
+    }
     
     const adminsAndManagers = await db
       .select()
@@ -1295,6 +1316,32 @@ router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN
     if (!updatedOrder) {
       res.status(404).json({ error: "Change order not found" });
       return;
+    }
+
+    if (req.body.scopeModifierIds !== undefined) {
+      try {
+        await db.delete(changeOrderScopeModifiers).where(eq(changeOrderScopeModifiers.changeOrderId, updatedOrder.id));
+        const modIds = req.body.scopeModifierIds;
+        const modNames = req.body.scopeModifierNames;
+        if (modIds) {
+          let ids: string[] = [];
+          try { ids = JSON.parse(modIds); } catch { /* ignore */ }
+          let names: string[] = [];
+          try { names = modNames ? JSON.parse(modNames) : []; } catch { /* ignore */ }
+          if (Array.isArray(ids) && ids.length > 0) {
+            await db.insert(changeOrderScopeModifiers).values(
+              ids.map((modId: string, i: number) => ({
+                changeOrderId: updatedOrder.id,
+                modifierId: modId,
+                modifierName: names[i] || modId,
+                sortOrder: i,
+              }))
+            );
+          }
+        }
+      } catch (e) {
+        logError("Failed to sync change order scope modifiers on update", {}, e instanceof Error ? e : new Error(String(e)));
+      }
     }
 
     if (updatedOrder.status === "APPROVED") {

@@ -26,7 +26,32 @@ import { ensureFieldWorkerPermColumns } from "./utils/ensureFieldWorkerPermColum
 import { ensurePeerRatingColumns } from "./utils/ensurePeerRatingColumns";
 import { ensurePermissionPresetsTable } from "./utils/ensurePermissionPresetsTable";
 import { ensureLidarTables } from "./utils/ensureLidarTables";
+import { ensureErrorLogsTable } from "./utils/ensureErrorLogsTable";
+import { ensureScopeModifierTables } from "./utils/ensureScopeModifierTables";
 import { seedBuiltInPresets } from "./dashboardRoutes";
+import { persistErrorLog } from "./services/errorLogService";
+import { getIntegrationStatus } from "./services/integrationStatusService";
+
+process.on("uncaughtException", (err) => {
+  logError("Uncaught exception", {}, err);
+  persistErrorLog({
+    level: "fatal",
+    message: err.message,
+    stack: err.stack,
+    metadata: { type: "uncaughtException" },
+  }).catch(() => {});
+});
+
+process.on("unhandledRejection", (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logError("Unhandled promise rejection", {}, err);
+  persistErrorLog({
+    level: "error",
+    message: err.message,
+    stack: err.stack,
+    metadata: { type: "unhandledRejection" },
+  }).catch(() => {});
+});
 
 const app = express();
 
@@ -151,12 +176,27 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const clientMessage = status >= 500 ? "Internal Server Error" : (err.message || "Internal Server Error");
     const requestId = (req as any).id || (req as any).requestId || undefined;
+    const authUser = (req as any).user;
 
     logError("Unhandled error in request", {
       method: req.method,
       path: req.path,
       requestId,
     }, err instanceof Error ? err : new Error(String(err)));
+
+    persistErrorLog({
+      level: status >= 500 ? "error" : "warn",
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      method: req.method,
+      path: req.path,
+      statusCode: status,
+      userId: authUser?.id,
+      organizationId: authUser?.organizationId,
+      requestId,
+      userAgent: req.headers["user-agent"],
+      ip: req.ip,
+    }).catch(() => {});
 
     if (!res.headersSent) {
       res.status(status).json({ error: clientMessage, ...(requestId ? { requestId } : {}) });
@@ -197,6 +237,8 @@ app.use((req, res, next) => {
   await ensurePeerRatingColumns();
   await ensurePermissionPresetsTable();
   await ensureLidarTables();
+  await ensureErrorLogsTable();
+  await ensureScopeModifierTables();
   await seedBuiltInPresets();
   await backfillMissingFeatureFlags();
 
@@ -222,6 +264,12 @@ app.use((req, res, next) => {
       process.exit(1);
     }
   });
+
+  const integrations = getIntegrationStatus();
+  const configuredList = Object.entries(integrations)
+    .map(([k, v]) => `${k}: ${v ? "configured" : "NOT configured"}`)
+    .join(", ");
+  log(`Integration status: ${configuredList}`);
 
   server.listen({
     port,
