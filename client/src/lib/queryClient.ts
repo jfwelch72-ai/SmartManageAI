@@ -3,7 +3,26 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let message = `${res.status}: ${res.statusText}`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error) {
+        message = parsed.error;
+        if (parsed.details && Array.isArray(parsed.details)) {
+          const fieldErrors = parsed.details
+            .map((d: any) => {
+              const path = d.path?.join?.(".") || "";
+              const msg = d.message || "Invalid value";
+              return path ? `${path}: ${msg}` : msg;
+            })
+            .join("; ");
+          if (fieldErrors) message += ` — ${fieldErrors}`;
+        }
+      }
+    } catch {
+      if (text) message = text;
+    }
+    throw new Error(message);
   }
 }
 

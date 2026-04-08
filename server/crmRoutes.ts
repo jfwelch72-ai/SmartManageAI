@@ -701,9 +701,18 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       if (mustDenyAccess || !orgId) {
         return res.status(403).json({ error: "Access denied - no organization" });
       }
+
+      const body = { ...req.body };
+      const dateFields = ["insuranceExpiration", "wcInsuranceExpiration", "licenseExpiration", "contractExpiration", "deletedAt"] as const;
+      for (const f of dateFields) {
+        if (body[f] && typeof body[f] === "string") {
+          const d = new Date(body[f]);
+          body[f] = isNaN(d.getTime()) ? undefined : d;
+        }
+      }
       
       const validationResult = insertCrmOrganisationSchema.safeParse({
-        ...req.body,
+        ...body,
         organizationId: orgId,
         createdById: req.user!.id,
       });
@@ -758,7 +767,16 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         return;
       }
       
-      const validationResult = insertCrmOrganisationSchema.partial().safeParse(req.body);
+      const updateBody = { ...req.body };
+      const dateFields = ["insuranceExpiration", "wcInsuranceExpiration", "licenseExpiration", "contractExpiration", "deletedAt"] as const;
+      for (const f of dateFields) {
+        if (updateBody[f] && typeof updateBody[f] === "string") {
+          const d = new Date(updateBody[f]);
+          updateBody[f] = isNaN(d.getTime()) ? undefined : d;
+        }
+      }
+
+      const validationResult = insertCrmOrganisationSchema.partial().safeParse(updateBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
