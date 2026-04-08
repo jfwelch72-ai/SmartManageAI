@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
-import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, changeOrderScopeModifiers, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
+import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, changeOrderScopeModifiers, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum, vendorUsers, vendorPricingCatalogs, vendorEnrollments, purchaseOrders, rentalEquipmentUsages, rentalVendors, subcontractorBidInvitations, subcontractorBidRequests, crmOrganisations, organizations } from "@shared/schema";
 import { requireAuth, requireRole, requireRoleOrFeature, type AuthRequest, type UserRole } from "./auth";
-import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
+import { eq, desc, sql, and, lt, gte, lte, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logDelete } from "./auditLogger";
 import { safeJsonParse } from "./responseHelper";
@@ -1581,9 +1581,15 @@ router.put("/api/change-orders/:id/line-items", requireAuth, requireRoleOrFeatur
 router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { startDate, endDate, eventType } = req.query;
+    const userRole = req.user?.role;
     
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
+
+    if (userRole === "VENDOR") {
+      const vendorEvents = await getVendorCalendarEvents(req.user!.id, eventType as string | undefined);
+      return res.json(vendorEvents);
+    }
 
     const conditions: SQL[] = [];
     if (startDate) {
@@ -1639,6 +1645,220 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+async function getVendorCalendarEvents(userId: string, filterEventType?: string) {
+  const [vendorUser] = await db.select().from(vendorUsers)
+    .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+    .limit(1);
+
+  if (!vendorUser) return [];
+
+  const crmOrgId = vendorUser.crmOrganisationId;
+
+  const [userRecord] = await db.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, userId)).limit(1);
+  const userOrgId = userRecord?.organizationId;
+  const syntheticEvents: any[] = [];
+
+  const pricingEvents = await db
+    .select({
+      id: vendorPricingCatalogs.id,
+      itemName: vendorPricingCatalogs.itemName,
+      category: vendorPricingCatalogs.category,
+      expirationDate: vendorPricingCatalogs.expirationDate,
+      effectiveDate: vendorPricingCatalogs.effectiveDate,
+      effectiveQuarter: vendorPricingCatalogs.effectiveQuarter,
+      unitPrice: vendorPricingCatalogs.unitPrice,
+      unit: vendorPricingCatalogs.unit,
+      contractorName: organizations.name,
+    })
+    .from(vendorPricingCatalogs)
+    .leftJoin(organizations, eq(vendorPricingCatalogs.organizationId, organizations.id))
+    .where(and(
+      eq(vendorPricingCatalogs.crmOrganisationId, crmOrgId),
+      eq(vendorPricingCatalogs.isActive, true),
+      sql`${vendorPricingCatalogs.expirationDate} IS NOT NULL`
+    ));
+
+  for (const p of pricingEvents) {
+    if (!filterEventType || filterEventType === "VENDOR_PRICING_EXPIRATION") {
+      syntheticEvents.push({
+        id: `vpe-${p.id}`,
+        eventType: "VENDOR_PRICING_EXPIRATION",
+        title: `Pricing Expires: ${p.itemName}`,
+        description: `${p.category} pricing (${p.effectiveQuarter}) for ${p.contractorName || "client"} expires. Unit: $${p.unitPrice}/${p.unit}`,
+        startDate: p.expirationDate,
+        endDate: p.expirationDate,
+        allDay: true,
+        userId: null,
+        projectId: null,
+        approvedById: null,
+        approvedAt: null,
+        createdById: null,
+        createdAt: p.effectiveDate,
+        vendorEventMeta: { category: p.category, quarter: p.effectiveQuarter, contractor: p.contractorName },
+      });
+    }
+  }
+
+  const poEvents = await db
+    .select({
+      id: purchaseOrders.id,
+      poNumber: purchaseOrders.poNumber,
+      neededByDate: purchaseOrders.neededByDate,
+      status: purchaseOrders.status,
+      totalCost: purchaseOrders.totalCost,
+      orgName: organizations.name,
+    })
+    .from(purchaseOrders)
+    .innerJoin(organizations, eq(purchaseOrders.orgId, organizations.id))
+    .where(and(
+      eq(purchaseOrders.vendorId, crmOrgId),
+      sql`${purchaseOrders.neededByDate} IS NOT NULL`,
+      sql`${purchaseOrders.status} NOT IN ('CANCELLED', 'CLOSED')`
+    ));
+
+  for (const po of poEvents) {
+    if (!filterEventType || filterEventType === "VENDOR_PO_DEADLINE") {
+      syntheticEvents.push({
+        id: `vpo-${po.id}`,
+        eventType: "VENDOR_PO_DEADLINE",
+        title: `PO Deadline: ${po.poNumber}`,
+        description: `Purchase order ${po.poNumber} for ${po.orgName} needed by this date. Status: ${po.status}${po.totalCost ? `. Total: $${po.totalCost}` : ""}`,
+        startDate: po.neededByDate,
+        endDate: po.neededByDate,
+        allDay: true,
+        userId: null,
+        projectId: null,
+        approvedById: null,
+        approvedAt: null,
+        createdById: null,
+        createdAt: po.neededByDate,
+        vendorEventMeta: { poNumber: po.poNumber, status: po.status, contractor: po.orgName },
+      });
+    }
+  }
+
+  const rentalEvents = await db
+    .select({
+      id: rentalEquipmentUsages.id,
+      equipmentName: rentalEquipmentUsages.equipmentName,
+      equipmentType: rentalEquipmentUsages.equipmentType,
+      startDate: rentalEquipmentUsages.startDate,
+      expectedEndDate: rentalEquipmentUsages.expectedEndDate,
+      status: rentalEquipmentUsages.status,
+      dailyRate: rentalEquipmentUsages.dailyRate,
+    })
+    .from(rentalEquipmentUsages)
+    .innerJoin(rentalVendors, eq(rentalEquipmentUsages.vendorId, rentalVendors.id))
+    .where(and(
+      eq(rentalVendors.crmOrganisationId, crmOrgId),
+      sql`${rentalEquipmentUsages.status} IN ('BOOKED', 'ACTIVE', 'EXTENDED')`
+    ));
+
+  for (const r of rentalEvents) {
+    if (!filterEventType || filterEventType === "VENDOR_RENTAL_PERIOD") {
+      syntheticEvents.push({
+        id: `vre-${r.id}`,
+        eventType: "VENDOR_RENTAL_PERIOD",
+        title: `Rental: ${r.equipmentName}`,
+        description: `${r.equipmentType} rental period. Status: ${r.status}. Rate: $${r.dailyRate}/day`,
+        startDate: r.startDate,
+        endDate: r.expectedEndDate,
+        allDay: true,
+        userId: null,
+        projectId: null,
+        approvedById: null,
+        approvedAt: null,
+        createdById: null,
+        createdAt: r.startDate,
+        vendorEventMeta: { equipmentType: r.equipmentType, status: r.status },
+      });
+    }
+  }
+
+  const bidConditions: SQL[] = [
+    sql`${subcontractorBidInvitations.status} IN ('PENDING', 'VIEWED', 'ACCEPTED')`,
+    sql`${subcontractorBidRequests.status} IN ('PUBLISHED', 'OPEN')`,
+  ];
+  if (userOrgId) {
+    bidConditions.push(eq(subcontractorBidInvitations.invitedOrganizationId, userOrgId));
+  }
+
+  const bidInvites = userOrgId ? await db
+    .select({
+      id: subcontractorBidInvitations.id,
+      status: subcontractorBidInvitations.status,
+      bidRequestId: subcontractorBidInvitations.bidRequestId,
+      requestTitle: subcontractorBidRequests.title,
+      bidDueDate: subcontractorBidRequests.bidDueDate,
+      projectCity: subcontractorBidRequests.projectCity,
+      projectState: subcontractorBidRequests.projectState,
+      gcOrgName: organizations.name,
+    })
+    .from(subcontractorBidInvitations)
+    .innerJoin(subcontractorBidRequests, eq(subcontractorBidInvitations.bidRequestId, subcontractorBidRequests.id))
+    .innerJoin(organizations, eq(subcontractorBidRequests.organizationId, organizations.id))
+    .where(and(...bidConditions)) : [];
+
+  for (const b of bidInvites) {
+    if (!filterEventType || filterEventType === "VENDOR_BID_DUE_DATE") {
+      const location = [b.projectCity, b.projectState].filter(Boolean).join(", ");
+      syntheticEvents.push({
+        id: `vbd-${b.id}`,
+        eventType: "VENDOR_BID_DUE_DATE",
+        title: `Bid Due: ${b.requestTitle}`,
+        description: `Bid invitation from ${b.gcOrgName}${location ? ` in ${location}` : ""}. Status: ${b.status}`,
+        startDate: b.bidDueDate,
+        endDate: b.bidDueDate,
+        allDay: true,
+        userId: null,
+        projectId: null,
+        approvedById: null,
+        approvedAt: null,
+        createdById: null,
+        createdAt: b.bidDueDate,
+        vendorEventMeta: { gcOrg: b.gcOrgName, bidStatus: b.status },
+      });
+    }
+  }
+
+  const enrollmentEvents = await db
+    .select({
+      id: vendorEnrollments.id,
+      status: vendorEnrollments.status,
+      invitedAt: vendorEnrollments.invitedAt,
+      enrolledAt: vendorEnrollments.enrolledAt,
+      contractorName: organizations.name,
+      enrolledCategories: vendorEnrollments.enrolledCategories,
+    })
+    .from(vendorEnrollments)
+    .innerJoin(organizations, eq(vendorEnrollments.contractorOrgId, organizations.id))
+    .where(eq(vendorEnrollments.vendorCrmOrgId, crmOrgId));
+
+  for (const e of enrollmentEvents) {
+    if (!filterEventType || filterEventType === "VENDOR_ENROLLMENT_CHANGE") {
+      syntheticEvents.push({
+        id: `vec-${e.id}`,
+        eventType: "VENDOR_ENROLLMENT_CHANGE",
+        title: `Enrollment: ${e.contractorName}`,
+        description: `Status: ${e.status}${e.enrolledCategories?.length ? `. Categories: ${e.enrolledCategories.join(", ")}` : ""}`,
+        startDate: e.enrolledAt || e.invitedAt,
+        endDate: e.enrolledAt || e.invitedAt,
+        allDay: true,
+        userId: null,
+        projectId: null,
+        approvedById: null,
+        approvedAt: null,
+        createdById: null,
+        createdAt: e.invitedAt,
+        vendorEventMeta: { contractor: e.contractorName, enrollmentStatus: e.status },
+      });
+    }
+  }
+
+  syntheticEvents.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  return syntheticEvents;
+}
 
 router.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res) => {
   try {
