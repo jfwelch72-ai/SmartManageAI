@@ -32,7 +32,7 @@ export function getNotificationDestination(notification: {
       return getProjectDestination();
 
     case "TIME_OFF_REQUEST":
-      return "/time-clock-manager";
+      return "/leave-management";
 
     case "MATERIAL_OVERAGE":
     case "PROJECT_ASSIGNMENT":
@@ -79,7 +79,7 @@ export function getNotificationDestination(notification: {
     case "OVERTIME_REQUESTED":
     case "OVERTIME_APPROVED":
     case "OVERTIME_REJECTED":
-      return "/time-clock-manager";
+      return "/time-clock-manager?tab=overtime";
 
     case "PAYABLE_SUBMITTED":
     case "PAYABLE_CREATED":
@@ -111,6 +111,20 @@ export function getNotificationDestination(notification: {
         return `/projects/${relatedEntityId}`;
       }
       return getProjectDestination();
+
+    case "BID_ASSIGNED":
+      if (relatedEntityType === "bid" && relatedEntityId) {
+        return `/bids/${relatedEntityId}`;
+      }
+      return "/bids";
+
+    case "BID_SUBMITTED":
+    case "BID_STATUS_CHANGED":
+    case "BID_DUE_DATE_APPROACHING":
+      if (relatedEntityType === "bid" && relatedEntityId) {
+        return `/bids/${relatedEntityId}`;
+      }
+      return "/bids";
 
     case "GENERAL":
     default:

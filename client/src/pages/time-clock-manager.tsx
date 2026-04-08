@@ -60,7 +60,8 @@ export default function TimeClockManagerPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState("live");
+  const urlTab = new URLSearchParams(window.location.search).get("tab");
+  const [activeTab, setActiveTab] = useState(urlTab || "live");
 
   // Filter state
   const [activeSearchTerm, setActiveSearchTerm] = useState("");
