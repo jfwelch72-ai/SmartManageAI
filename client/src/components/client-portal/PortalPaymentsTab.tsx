@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Receipt, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 
 interface PaymentItem {
   id: string;
@@ -25,10 +26,16 @@ interface PortalPaymentsTabProps {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  SENT:    { label: "Sent",    className: "bg-blue-100 text-blue-700" },
-  PAID:    { label: "Paid",    className: "bg-green-100 text-green-700" },
-  OVERDUE: { label: "Overdue", className: "bg-red-100 text-red-700" },
-  VOID:    { label: "Void",    className: "bg-gray-100 text-gray-500" },
+  SENT:    { label: "Sent",    className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+  PAID:    { label: "Paid",    className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
+  OVERDUE: { label: "Overdue", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+  VOID:    { label: "Void",    className: "bg-gray-100 text-gray-500 dark:bg-gray-800/30 dark:text-gray-400" },
+};
+
+const CHART_COLORS: Record<string, string> = {
+  paid: "#22c55e",
+  outstanding: "#3b82f6",
+  overdue: "#ef4444",
 };
 
 function fmtCurrency(amount: string | null | undefined): string {
@@ -49,8 +56,18 @@ export function PortalPaymentsTab({ payments }: PortalPaymentsTabProps) {
     .reduce((sum, p) => sum + parseFloat(p.total || "0"), 0) ?? 0;
 
   const totalOutstanding = payments
-    ?.filter((p) => p.status === "SENT" || p.status === "OVERDUE")
+    ?.filter((p) => p.status === "SENT")
     .reduce((sum, p) => sum + parseFloat(p.total || "0"), 0) ?? 0;
+
+  const totalOverdue = payments
+    ?.filter((p) => p.status === "OVERDUE")
+    .reduce((sum, p) => sum + parseFloat(p.total || "0"), 0) ?? 0;
+
+  const chartData = [
+    { name: "Paid", value: totalPaid, color: CHART_COLORS.paid },
+    { name: "Outstanding", value: totalOutstanding, color: CHART_COLORS.outstanding },
+    { name: "Overdue", value: totalOverdue, color: CHART_COLORS.overdue },
+  ].filter((d) => d.value > 0);
 
   return (
     <Card>
@@ -61,20 +78,66 @@ export function PortalPaymentsTab({ payments }: PortalPaymentsTabProps) {
       <CardContent className="space-y-4">
         {payments && payments.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground mb-1">Total Paid</p>
-                <p className="text-lg font-semibold text-green-600" data-testid="text-total-paid">
-                  {fmtCurrency(String(totalPaid))}
-                </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Total Paid</p>
+                  <p className="text-lg font-semibold text-green-600 dark:text-green-400" data-testid="text-total-paid">
+                    {fmtCurrency(String(totalPaid))}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Outstanding</p>
+                  <p className="text-lg font-semibold text-blue-600 dark:text-blue-400" data-testid="text-total-outstanding">
+                    {fmtCurrency(String(totalOutstanding))}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3 col-span-2">
+                  <p className="text-xs text-muted-foreground mb-1">Overdue</p>
+                  <p className="text-lg font-semibold text-red-600 dark:text-red-400" data-testid="text-total-overdue">
+                    {fmtCurrency(String(totalOverdue))}
+                  </p>
+                </div>
               </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground mb-1">Outstanding</p>
-                <p className="text-lg font-semibold text-orange-600" data-testid="text-total-outstanding">
-                  {fmtCurrency(String(totalOutstanding))}
-                </p>
-              </div>
+
+              {chartData.length > 0 && (
+                <div className="h-[180px]" data-testid="payments-pie-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={chartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={65}
+                        dataKey="value"
+                        paddingAngle={2}
+                        strokeWidth={0}
+                      >
+                        {chartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--card))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                          color: "hsl(var(--foreground))",
+                        }}
+                        formatter={(value: number) => [fmtCurrency(String(value))]}
+                      />
+                      <Legend
+                        formatter={(value: string) => (
+                          <span className="text-xs text-foreground">{value}</span>
+                        )}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
+
             <ScrollArea className="max-h-[420px]">
               <Table>
                 <TableHeader>

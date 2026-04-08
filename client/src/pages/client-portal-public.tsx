@@ -14,6 +14,8 @@ import { PortalChangeOrdersTab } from "@/components/client-portal/PortalChangeOr
 import { PortalPaymentsTab } from "@/components/client-portal/PortalPaymentsTab";
 import { PortalProjectInfo } from "@/components/client-portal/PortalProjectInfo";
 import { PortalChatTab, hasChatUnread, getChatUnreadCount } from "@/components/client-portal/PortalChatTab";
+import { PortalDashboardCards } from "@/components/client-portal/PortalDashboardCards";
+import { PortalActivityFeed } from "@/components/client-portal/PortalActivityFeed";
 
 interface PortalPermissions {
   viewProgress: boolean;
@@ -267,6 +269,26 @@ export default function ClientPortalPublic({ projectIdOverride }: { projectIdOve
 
       <main className="px-4 py-6 space-y-6">
         {project && <PortalProjectInfo project={project} />}
+
+        {project && portalData && (
+          <PortalDashboardCards
+            progress={portalData.progress}
+            project={project}
+            payments={portalData.payments}
+            showPayments={permissions.viewInvoices}
+            showProgress={permissions.viewProgress}
+          />
+        )}
+
+        {portalData && (
+          <PortalActivityFeed
+            progress={portalData.progress}
+            photos={portalData.photos}
+            documents={portalData.documents}
+            payments={portalData.payments}
+            chatThreads={chatThreads}
+          />
+        )}
 
         {availableTabs.length > 0 ? (
           <Tabs defaultValue={availableTabs[0]?.value} className="space-y-4">
