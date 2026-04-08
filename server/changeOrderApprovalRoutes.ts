@@ -600,7 +600,7 @@ router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async
           relatedEntityType: "changeOrder",
         }, req.user?.organizationId);
       } catch (e) {
-        console.error("Failed to notify RFI submitter:", e);
+        logError("Failed to notify RFI submitter", {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
 
@@ -753,14 +753,14 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response, n
       });
       if (!response.ok) {
         const errBody = await response.text().catch(() => "");
-        console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+        logError(`GCS sidecar upload failed (${response.status}): ${errBody}`);
         res.status(502).json({ error: "File storage upload failed" });
         return;
       }
       const data = await response.json() as { storageKey?: string };
       storageKey = data.storageKey || objectPath;
     } catch (sidecarErr) {
-      console.error("GCS sidecar unreachable:", sidecarErr);
+      logError("GCS sidecar unreachable", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
       res.status(502).json({ error: "File storage service unavailable" });
       return;
     }
@@ -854,7 +854,7 @@ router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response, ne
           });
           fileUrl = signedUrl;
         } catch (e) {
-          console.error(`Failed to get signed URL for attachment ${att.id}:`, e);
+          logError(`Failed to get signed URL for attachment ${att.id}`, {}, e instanceof Error ? e : new Error(String(e)));
         }
         return {
           id: att.id,
@@ -941,12 +941,12 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
         });
         if (!delResponse.ok) {
           const errBody = await delResponse.text().catch(() => "");
-          console.error(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
+          logError(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
           res.status(502).json({ error: "File storage deletion failed; attachment record not removed" });
           return;
         }
       } catch (sidecarErr) {
-        console.error("GCS sidecar unreachable during delete:", sidecarErr);
+        logError("GCS sidecar unreachable during delete", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
         res.status(502).json({ error: "File storage service unavailable; attachment record not removed" });
         return;
       }

@@ -84,7 +84,7 @@
  *     responses:
  *       201: { description: Certification added }
  */
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { Router } from "express";
 import crypto from "crypto";
 import { db } from "./db";
@@ -1069,7 +1069,7 @@ const router = Router();
         });
 
         if (emailSent) {
-          console.log(`Credential reset email sent successfully for: ${sanitizedEmail}`);
+          logInfo(`Credential reset email sent successfully for: ${sanitizedEmail}`);
         } else {
           // Log failure but don't expose to user (security: prevents email enumeration)
           logError(`CRITICAL: Credential reset email FAILED to send for: ${sanitizedEmail}`);
@@ -1143,7 +1143,7 @@ const router = Router();
       });
 
       const completedUserId = resetToken?.userId;
-      console.log(`Credential reset completed for user: ${completedUserId}`);
+      logInfo(`Credential reset completed for user: ${completedUserId}`);
       res.json({ message: "Password has been reset successfully. Please login with your new password." });
     } catch (error) {
       logError("Reset password error:", {}, error instanceof Error ? error : new Error(String(error)));

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 import { 
   Phone, 
   Mail, 
@@ -2854,7 +2855,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
           
           <div className="prose max-w-none">
             {selectedBlogPost.content_html ? (
-              <div dangerouslySetInnerHTML={{ __html: selectedBlogPost.content_html }} />
+              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedBlogPost.content_html) }} />
             ) : (
               <p className="text-lg leading-relaxed opacity-80">
                 {selectedBlogPost.excerpt || "Full blog post content will appear here when published."}

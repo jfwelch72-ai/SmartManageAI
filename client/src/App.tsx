@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, Component, type ErrorInfo, type ReactNode } from "react";
 import { Switch, Route, Redirect, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -10,6 +10,76 @@ import { DashboardCustomizationProvider, useDashboardCustomization, type Feature
 import { RoutePermissions } from "@/lib/rbac";
 import { useFeatureFlags as useFeatureFlagsHook } from "@/hooks/use-feature-flags";
 import type { FeatureFlagKey } from "@shared/schema";
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("ErrorBoundary caught a rendering error:", error, errorInfo);
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  handleGoHome = () => {
+    window.location.href = "/dashboard";
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4" data-testid="error-boundary-fallback">
+          <div className="text-center space-y-6 max-w-md">
+            <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">Something went wrong</h1>
+            <p className="text-muted-foreground">
+              An unexpected error occurred. Please try reloading the page.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={this.handleReload}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                data-testid="button-reload-page"
+              >
+                Reload Page
+              </button>
+              <button
+                onClick={this.handleGoHome}
+                className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90"
+                data-testid="button-go-dashboard"
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
@@ -581,27 +651,29 @@ function GlobalCallModalWrapper() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <GlobalSSEProvider>
-          <GlobalVideoCallProvider>
-            <TourProvider>
-              <DashboardCustomizationProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <ThemeInitializer />
-                  <AppContent />
-                  <FirstTimeWelcomeModal />
-                  <AuthGatedWidget />
-                  <GlobalCallModalWrapper />
-                  <GlobalVideoCallOverlay />
-                </TooltipProvider>
-              </DashboardCustomizationProvider>
-            </TourProvider>
-          </GlobalVideoCallProvider>
-        </GlobalSSEProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <GlobalSSEProvider>
+            <GlobalVideoCallProvider>
+              <TourProvider>
+                <DashboardCustomizationProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <ThemeInitializer />
+                    <AppContent />
+                    <FirstTimeWelcomeModal />
+                    <AuthGatedWidget />
+                    <GlobalCallModalWrapper />
+                    <GlobalVideoCallOverlay />
+                  </TooltipProvider>
+                </DashboardCustomizationProvider>
+              </TourProvider>
+            </GlobalVideoCallProvider>
+          </GlobalSSEProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

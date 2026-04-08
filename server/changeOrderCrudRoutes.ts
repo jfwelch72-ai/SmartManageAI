@@ -135,7 +135,7 @@
  *       200: { description: List of revisions }
  */
 import { Router, type Request, type Response, NextFunction } from "express";
-import { logError } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { eventBus } from "./events";
 import { db } from "./db";
 import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprovals, budgetLineItems, orgCostCodes } from "@shared/schema";
@@ -564,9 +564,9 @@ router.post("/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER
             changeNote: `Contract amended via approved CO #${updatedOrder.changeOrderNumber}: value ${currentValue} → ${newValue}`,
           });
 
-          console.log(`[CO Finalized] Updated contract ${linkedContract.contractNumber} and project value: ${currentValue} + ${coAmount} = ${newValue}`);
+          logInfo(`[CO Finalized] Updated contract ${linkedContract.contractNumber} and project value: ${currentValue} + ${coAmount} = ${newValue}`);
         } else {
-          console.warn(`[CO Finalized] Contract update returned no rows for ${updatedOrder.contractId}`);
+          logWarn(`[CO Finalized] Contract update returned no rows for ${updatedOrder.contractId}`);
         }
       }
     }

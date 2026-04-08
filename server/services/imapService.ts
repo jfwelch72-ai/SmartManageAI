@@ -76,7 +76,7 @@ export async function testImapConnection(account: EmailAccount): Promise<ImapTes
     await client.logout();
     return { success: true, message: "IMAP connection successful" };
   } catch (err: any) {
-    try { client.close(); } catch (_) {}
+    try { client.close(); } catch (closeErr) { logWarn("IMAP client close failed during error cleanup", { error: String(closeErr) }); }
     const errorMsg = parseConnectionError(err, "IMAP", account);
     return { success: false, message: "IMAP connection failed", error: errorMsg };
   }
@@ -207,11 +207,11 @@ export async function fetchImapMessages(
         lock.release();
       }
 
-      try { await client.logout(); } catch (_) {}
+      try { await client.logout(); } catch (logoutErr) { logWarn("IMAP client logout failed", { error: String(logoutErr) }); }
       return messages;
     } catch (err: any) {
       lastError = err;
-      try { client.close(); } catch (_) {}
+      try { client.close(); } catch (closeErr) { logWarn("IMAP client close failed during retry cleanup", { error: String(closeErr) }); }
 
       const errMsg = String(err?.message || err);
       const isTransient = errMsg.includes("ETIMEDOUT") ||

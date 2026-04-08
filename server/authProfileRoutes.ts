@@ -437,7 +437,7 @@
  *     responses:
  *       201: { description: Supervisor note created }
  */
-import {logError, logWarn } from "./utils/logger";
+import {logError, logInfo, logWarn } from "./utils/logger";
 import { Router } from "express";
 import multer from "multer";
 import { db } from "./db";
@@ -808,7 +808,7 @@ const upload = multer({
             isActive: true,
             onboardingStatus: "COMPLETED",
           }).returning();
-          console.log("[DEV] Created sandbox organization:", devOrg.id);
+          logInfo("[DEV] Created sandbox organization: " + devOrg.id);
         }
 
         // Always ensure all feature flags are enabled for the dev sandbox org
@@ -837,7 +837,7 @@ const upload = multer({
           passwordHash,
           organizationId: role === "SUPER_ADMIN" ? null : devOrg?.id,
         }).returning();
-        console.log(`[DEV] Created test user: ${testEmail} (${role})`);
+        logInfo(`[DEV] Created test user: ${testEmail} (${role})`);
       }
 
       const token = generateToken(testUser.id, testUser.tokenVersion);
@@ -893,7 +893,7 @@ const upload = multer({
         isActive: true,
         onboardingStatus: "NOT_STARTED", // Force AI wizard onboarding
       }).returning();
-      console.log("[DEV] Created fresh organization for onboarding:", newOrg.id);
+      logInfo("[DEV] Created fresh organization for onboarding: " + newOrg.id);
 
       // Create fresh admin user with walkthrough NOT complete
       const passwordHash = await hashPassword("test123");
@@ -909,7 +909,7 @@ const upload = multer({
         walkthroughStep: 0,
         walkthroughStartedAt: null,
       }).returning();
-      console.log(`[DEV] Created fresh admin: ${uniqueEmail}`);
+      logInfo(`[DEV] Created fresh admin: ${uniqueEmail}`);
 
       // Generate token and set cookie
       const token = generateToken(freshAdmin.id, freshAdmin.tokenVersion);

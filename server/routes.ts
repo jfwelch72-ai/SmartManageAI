@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupSwagger } from "./swagger";
@@ -668,5 +668,5 @@ async function checkCertificationExpiry() {
     }
   }
 
-  console.log(`[Cert Expiry] Checked ${allCerts.length} certifications`);
+  logInfo(`[Cert Expiry] Checked ${allCerts.length} certifications`);
 }

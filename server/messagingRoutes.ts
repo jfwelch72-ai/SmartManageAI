@@ -435,7 +435,7 @@
  *     responses:
  *       201: { description: Entity conversation created }
  */
-import {logError, logWarn } from "./utils/logger";
+import {logError, logInfo, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, projects as projectsTable, aiTasks } from "@shared/schema";
@@ -1526,7 +1526,7 @@ const messagingSetup = (async () => {
     const fileSize = Number(metadata.size || 0);
     const rawContentType = metadata.contentType || "audio/webm";
     const contentType = rawContentType === "video/webm" ? "audio/webm" : rawContentType;
-    console.log(`[Voice] Serving file: size=${fileSize}, contentType=${contentType} (raw: ${rawContentType}), range=${req.headers.range || "none"}`);
+    logInfo(`[Voice] Serving file: size=${fileSize}, contentType=${contentType} (raw: ${rawContentType}), range=${req.headers.range || "none"}`);
 
     res.set("Accept-Ranges", "bytes");
     res.set("Content-Type", contentType);
@@ -1563,10 +1563,10 @@ const messagingSetup = (async () => {
       const primaryPath = `messaging/${orgId}/${conversationId}/voice-${filename}`;
       let file = await objectStorage.searchPublicObject(primaryPath);
       if (!file) {
-        console.log(`[Voice] Primary path not found: ${primaryPath}, trying fallback`);
+        logInfo(`[Voice] Primary path not found: ${primaryPath}, trying fallback`);
         const fallbackPath = `messaging/${orgId}/${conversationId}/${filename}`;
         file = await objectStorage.searchPublicObject(fallbackPath);
-        if (!file) console.log(`[Voice] Fallback path also not found: ${fallbackPath}`);
+        if (!file) logInfo(`[Voice] Fallback path also not found: ${fallbackPath}`);
       }
       if (!file) return res.status(404).json({ error: "Voice file not found" });
 

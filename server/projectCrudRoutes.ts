@@ -171,6 +171,7 @@
  *     responses:
  *       201: { description: Scope item added }
  */
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
@@ -941,7 +942,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         const nextCode = await getNextBidCode();
-        console.log(`[Create Project] Auto-assigned code: ${nextCode} (attempt ${attempt + 1})`);
+        logInfo(`[Create Project] Auto-assigned code: ${nextCode} (attempt ${attempt + 1})`);
 
         const [newProject] = await db.insert(projects).values({
           ...validationResult.data,
@@ -1042,7 +1043,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
               await db.insert(conversationParticipants).values(toAdd).onConflictDoNothing();
             }
           } catch (channelErr) {
-            console.warn("Could not auto-create project channel:", channelErr);
+            logWarn("Could not auto-create project channel", { error: String(channelErr) });
           }
         }
 
@@ -1064,7 +1065,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
         return;
       } catch (insertError: any) {
         if (insertError.code === '23505' && attempt < MAX_RETRIES - 1) {
-          console.log(`[Create Project] Code conflict, retrying... (attempt ${attempt + 1})`);
+          logInfo(`[Create Project] Code conflict, retrying... (attempt ${attempt + 1})`);
           lastError = insertError;
           continue;
         }
@@ -1074,7 +1075,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
     
     throw lastError;
   } catch (error) {
-    console.error("Create project error:", error);
+    logError("Create project error", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.code === '23505') {
       res.status(409).json({ error: "Unable to generate unique project code - please try again" });
     } else {
@@ -1197,21 +1198,21 @@ router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN",
       for (const co of projectChangeOrders) {
         if (co.attachmentsJson) {
           let attachments: any[] = [];
-          try { attachments = JSON.parse(co.attachmentsJson); } catch (_) {}
+          try { attachments = JSON.parse(co.attachmentsJson); } catch (parseErr) { logError("Failed to parse change order attachments JSON", { entityId: co.attachmentsJson?.slice(0, 50) }, parseErr instanceof Error ? parseErr : new Error(String(parseErr))); }
           for (const att of attachments) {
             if (att.objectKey) {
               try {
                 const objectFile = await objectStorageService.getObjectEntityFile(att.objectKey);
                 await objectFile.delete();
               } catch (e) {
-                console.error("Error deleting change order attachment GCS object:", e);
+                logError("Error deleting change order attachment GCS object", {}, e instanceof Error ? e : new Error(String(e)));
               }
             }
           }
         }
       }
     } catch (e) {
-      console.error("Error during change order attachment GCS cleanup:", e);
+      logError("Error during change order attachment GCS cleanup", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(changeOrders).where(eq(changeOrders.projectId, project.id));
 
@@ -1226,12 +1227,12 @@ router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN",
             const objectFile = await objectStorageService.getObjectEntityFile(receipt.objectKey);
             await objectFile.delete();
           } catch (e) {
-            console.error("Error deleting receipt GCS object:", e);
+            logError("Error deleting receipt GCS object", {}, e instanceof Error ? e : new Error(String(e)));
           }
         }
       }
     } catch (e) {
-      console.error("Error during receipt GCS cleanup:", e);
+      logError("Error during receipt GCS cleanup", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(receipts).where(eq(receipts.projectId, project.id));
     await db.delete(procurementItems).where(eq(procurementItems.projectId, project.id));
@@ -1255,12 +1256,12 @@ router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN",
             const objectFile = await objectStorageService.getObjectEntityFile(doc.objectKey);
             await objectFile.delete();
           } catch (e) {
-            console.error("Error deleting plan document GCS object:", e);
+            logError("Error deleting plan document GCS object", {}, e instanceof Error ? e : new Error(String(e)));
           }
         }
       }
     } catch (e) {
-      console.error("Error during plan document GCS cleanup:", e);
+      logError("Error during plan document GCS cleanup", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(planDocuments).where(eq(planDocuments.projectId, project.id));
     
@@ -1279,12 +1280,12 @@ router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN",
             const objectFile = await objectStorageService.getObjectEntityFile(m.objectKey);
             await objectFile.delete();
           } catch (e) {
-            console.error("Error deleting media GCS object:", e);
+            logError("Error deleting media GCS object", {}, e instanceof Error ? e : new Error(String(e)));
           }
         }
       }
     } catch (e) {
-      console.error("Error during media GCS cleanup:", e);
+      logError("Error during media GCS cleanup", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(media).where(eq(media.projectId, project.id));
     

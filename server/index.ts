@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -254,7 +254,7 @@ app.use((req, res, next) => {
       logError(`Port ${port} is in use. Retry ${portRetryCount}/${MAX_PORT_RETRIES}...`);
       try {
         execSync(`fuser -k ${port}/tcp`, { stdio: "ignore" });
-      } catch (_) { /* ignore */ }
+      } catch (killErr) { logInfo(`fuser -k ${port}/tcp failed (expected if no process)`, { error: String(killErr) }); }
       setTimeout(() => {
         server.close();
         server.listen({ port, host: "0.0.0.0", reusePort: true });
@@ -291,7 +291,7 @@ app.use((req, res, next) => {
       // Initialize AI Notes Analysis scheduler (hourly + daily at 6 PM)
       try {
         aiNotesScheduler.start();
-        console.log('AI Notes Scheduler started successfully');
+        logInfo('AI Notes Scheduler started successfully');
       } catch (error) {
         logError('Failed to start AI Notes Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
@@ -310,11 +310,11 @@ app.use((req, res, next) => {
         logError('Failed to start background job runner:', {}, error instanceof Error ? error : new Error(String(error)));
       }
       
-      console.log('AI auto-scan schedulers ENABLED (production mode)');
+      logInfo('AI auto-scan schedulers ENABLED (production mode)');
     } else {
-      console.log('AI auto-scan schedulers are DISABLED (development mode)');
-      console.log('   Use the manual "Run AI Analysis" button to trigger scans');
-      console.log('   Set NODE_ENV=production to enable schedulers');
+      logInfo('AI auto-scan schedulers are DISABLED (development mode)');
+      logInfo('   Use the manual "Run AI Analysis" button to trigger scans');
+      logInfo('   Set NODE_ENV=production to enable schedulers');
     }
   });
 })();

@@ -310,7 +310,7 @@
  *     responses:
  *       200: { description: Current week summary }
  */
-import {logError, logWarn } from "./utils/logger";
+import {logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
@@ -528,7 +528,7 @@ async function postCostLedger(payRunId: string, txDb?: typeof db) {
     .where(eq(costLedgerPostings.payRunId, payRunId))
     .limit(1);
   if (existingPosting) {
-    console.log(`Cost ledger postings already exist for pay run ${payRunId}, skipping`);
+    logInfo(`Cost ledger postings already exist for pay run ${payRunId}, skipping`);
     return;
   }
 
