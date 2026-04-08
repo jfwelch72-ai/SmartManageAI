@@ -1586,11 +1586,6 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
 
-    if (userRole === "VENDOR") {
-      const vendorEvents = await getVendorCalendarEvents(req.user!.id, eventType as string | undefined);
-      return res.json(vendorEvents);
-    }
-
     const conditions: SQL[] = [];
     if (startDate) {
       conditions.push(sql`${calendarEvents.startDate} >= ${startDate as string}`);
@@ -1598,7 +1593,8 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
     if (endDate) {
       conditions.push(sql`${calendarEvents.endDate} <= ${endDate as string}`);
     }
-    if (eventType) {
+    const isVendorEventTypeFilter = eventType && (eventType as string).startsWith("VENDOR_");
+    if (eventType && !isVendorEventTypeFilter) {
       conditions.push(eq(calendarEvents.eventType, eventType as any));
     }
     const creatorUsers = db
@@ -1615,7 +1611,7 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
       );
     }
     
-    const eventsWithUser = await db
+    const eventsWithUser = isVendorEventTypeFilter ? [] : await db
       .select({
         id: calendarEvents.id,
         eventType: calendarEvents.eventType,
@@ -1639,6 +1635,18 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(calendarEvents.startDate);
 
+    if (userRole === "VENDOR") {
+      const vendorEvents = await getVendorCalendarEvents(
+        req.user!.id,
+        isVendorEventTypeFilter ? (eventType as string) : undefined,
+        startDate as string | undefined,
+        endDate as string | undefined,
+      );
+      const merged = [...eventsWithUser, ...vendorEvents];
+      merged.sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+      return res.json(merged);
+    }
+
     res.json(eventsWithUser);
   } catch (error) {
     logError("Get calendar events error:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -1646,7 +1654,7 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
   }
 });
 
-async function getVendorCalendarEvents(userId: string, filterEventType?: string) {
+async function getVendorCalendarEvents(userId: string, filterEventType?: string, filterStartDate?: string, filterEndDate?: string) {
   const [vendorUser] = await db.select().from(vendorUsers)
     .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
     .limit(1);
@@ -1856,8 +1864,18 @@ async function getVendorCalendarEvents(userId: string, filterEventType?: string)
     }
   }
 
-  syntheticEvents.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-  return syntheticEvents;
+  let filtered = syntheticEvents;
+  if (filterStartDate) {
+    const start = new Date(filterStartDate).getTime();
+    filtered = filtered.filter(e => new Date(e.startDate).getTime() >= start);
+  }
+  if (filterEndDate) {
+    const end = new Date(filterEndDate).getTime();
+    filtered = filtered.filter(e => new Date(e.endDate || e.startDate).getTime() <= end);
+  }
+
+  filtered.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  return filtered;
 }
 
 router.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res) => {

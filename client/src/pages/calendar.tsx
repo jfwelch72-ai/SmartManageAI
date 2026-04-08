@@ -318,14 +318,13 @@ export default function CalendarPage() {
               </Select>
             )}
 
-            {!userIsVendor && (
-              <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
-                <DialogTrigger asChild>
-                  <Button data-testid="button-new-event">
-                    <Plus className="w-4 h-4 mr-2" />
-                    New Event
-                  </Button>
-                </DialogTrigger>
+            <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-new-event">
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Event
+                </Button>
+              </DialogTrigger>
                 <DialogContent data-testid="dialog-create-event">
                   <DialogHeader>
                     <DialogTitle>Create Event</DialogTitle>
@@ -466,7 +465,6 @@ export default function CalendarPage() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
-            )}
           </div>
         </div>
 
