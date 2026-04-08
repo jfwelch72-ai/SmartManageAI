@@ -636,7 +636,7 @@ export const VendorPortalNavConfig = {
     { href: "/vendor/pricing", label: "Pricing", testId: "nav-vendor-pricing", visible: () => true },
     { href: "/vendor/clients", label: "Clients", testId: "nav-vendor-clients", visible: () => true },
     { href: "/vendor/messages", label: "Messages", testId: "nav-vendor-messages", visible: () => true },
-    { href: "/bid-network-inbox", label: "Bid Inbox", testId: "nav-vendor-bid-inbox", visible: () => true },
+    { href: "/bid-inbox", label: "Bid Inbox", testId: "nav-vendor-bid-inbox", visible: () => true },
   ],
 };
 

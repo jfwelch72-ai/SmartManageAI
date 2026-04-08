@@ -420,7 +420,7 @@ function Router() {
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BID_NETWORK_GC} />} />
       <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BID_NETWORK_GC} />} />
       <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BID_NETWORK_INBOX} />} />
-      <Route path="/bid-inbox" component={() => <ProtectedRoute component={() => <Redirect to="/bids?tab=inbox" />} permission={RoutePermissions.BID_NETWORK_INBOX} />} />
+      <Route path="/bid-inbox" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BID_NETWORK_INBOX} />} />
 
       {/* Tools routes */}
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
