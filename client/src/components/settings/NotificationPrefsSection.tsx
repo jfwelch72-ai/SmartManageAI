@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Bell, Loader2, Lock } from "lucide-react";
+import { Bell, Loader2, Lock, AlertCircle } from "lucide-react";
+import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 interface ChannelPrefsData {
   emailEnabled: boolean;
@@ -82,6 +83,8 @@ export default function NotificationPrefsSection() {
   const { toast } = useToast();
   const { can } = useEntitlements();
   const hasEnterpriseNotifications = can("ENTERPRISE_NOTIFICATIONS");
+  const { status: integrationStatus } = useIntegrationStatus();
+  const smsAvailable = integrationStatus.twilio;
 
   const { data: notifPrefs, isLoading: loadingNotifPrefs } = useQuery<{ channel: ChannelPrefsData; typeOverrides: TypeOverride[] }>({
     queryKey: ["/api/notifications/preferences"],
@@ -274,14 +277,30 @@ export default function NotificationPrefsSection() {
                           <p className="text-sm font-medium">SMS</p>
                           <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
                         </div>
-                        {!hasEnterpriseNotifications && (
+                        {!smsAvailable ? (
+                          <Badge variant="outline" className="text-xs gap-1 text-muted-foreground" data-testid="badge-unavailable-sms">
+                            <AlertCircle className="h-3 w-3" />
+                            Not configured
+                          </Badge>
+                        ) : !hasEnterpriseNotifications ? (
                           <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-sms">
                             <Lock className="h-3 w-3" />
                             Enterprise
                           </Badge>
-                        )}
+                        ) : null}
                       </div>
-                      {hasEnterpriseNotifications ? (
+                      {!smsAvailable ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0} className="inline-flex">
+                              <Switch checked={false} disabled data-testid="switch-pref-sms" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">
+                            SMS requires additional setup by your administrator.
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : hasEnterpriseNotifications ? (
                         <Switch checked={channelPrefs.smsEnabled} onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, smsEnabled: checked }))} data-testid="switch-pref-sms" />
                       ) : (
                         <Tooltip>
@@ -296,7 +315,7 @@ export default function NotificationPrefsSection() {
                         </Tooltip>
                       )}
                     </div>
-                    {hasEnterpriseNotifications && channelPrefs.smsEnabled && (
+                    {smsAvailable && hasEnterpriseNotifications && channelPrefs.smsEnabled && (
                       <div className="mt-2 space-y-1">
                         <Label htmlFor="sms-phone-input" className="text-xs text-muted-foreground">Mobile number (E.164 format)</Label>
                         <Input id="sms-phone-input" value={smsPhoneInput} onChange={(e) => setSmsPhoneInput(e.target.value)} placeholder="+15551234567" data-testid="input-sms-phone" />

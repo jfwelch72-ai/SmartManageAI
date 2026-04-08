@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Copy, ArrowRight, Settings2, Bell, ShieldCheck, ChevronDown, ChevronUp, Pencil, Power, PowerOff, GripVertical } from "lucide-react";
+import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 const ENTITY_TYPES = [
   { value: "CHANGE_ORDER", label: "Change Order" },
@@ -38,10 +39,10 @@ const STAGE_COLORS = [
   "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#6b7280",
 ];
 
-const CHANNELS = [
+const ALL_CHANNELS = [
   { value: "EMAIL", label: "Email" },
   { value: "PUSH", label: "Push Notification" },
-  { value: "SMS", label: "SMS" },
+  { value: "SMS", label: "SMS", requiresTwilio: true },
   { value: "SLACK", label: "Slack" },
   { value: "TEAMS", label: "Microsoft Teams" },
 ];
@@ -97,6 +98,8 @@ function defaultNotificationRule(): NotificationRuleForm {
 
 export default function WorkflowBuilderPage({ embedded }: { embedded?: boolean }) {
   const { toast } = useToast();
+  const { status: integrationStatus } = useIntegrationStatus();
+  const channels = ALL_CHANNELS.filter(c => !c.requiresTwilio || integrationStatus.twilio);
   const [showEditor, setShowEditor] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [templateName, setTemplateName] = useState("");
@@ -667,7 +670,7 @@ export default function WorkflowBuilderPage({ embedded }: { embedded?: boolean }
                                         <SelectValue placeholder="Channel" />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        {CHANNELS.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                                        {channels.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                                       </SelectContent>
                                     </Select>
                                     <Select

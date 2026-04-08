@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useRef, useCallback, useEffect, type ReactNode, type MutableRefObject } from "react";
+import { createContext, useContext, useState, useRef, useCallback, type ReactNode, type MutableRefObject } from "react";
 import type { VideoCallData, Conversation } from "@/components/messaging/types";
 import { apiRequest } from "@/lib/queryClient";
 import type { Room } from "livekit-client";
+import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 interface GlobalVideoCallContextType {
   activeCall: VideoCallData | null;
@@ -20,24 +21,10 @@ const GlobalVideoCallContext = createContext<GlobalVideoCallContextType | null>(
 export function GlobalVideoCallProvider({ children }: { children: ReactNode }) {
   const [activeCall, setActiveCall] = useState<VideoCallData | null>(null);
   const [activeCallConversation, setActiveCallConversation] = useState<Conversation | null>(null);
-  const [videoCallsAvailable, setVideoCallsAvailable] = useState(false);
+  const { status: integrationStatus } = useIntegrationStatus();
+  const videoCallsAvailable = integrationStatus.livekit;
   const activeCallRef = useRef<VideoCallData | null>(null);
   const roomRef = useRef<Room | null>(null);
-
-  useEffect(() => {
-    const checkAvailability = async () => {
-      try {
-        const res = await fetch("/api/integration-status", { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json();
-          setVideoCallsAvailable(data.livekit === true);
-        }
-      } catch {
-        setVideoCallsAvailable(false);
-      }
-    };
-    checkAvailability();
-  }, []);
 
   const updateActiveCallRef = (call: VideoCallData | null) => {
     activeCallRef.current = call;

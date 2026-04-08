@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 import { Sidebar } from "@/components/messaging/Sidebar";
 import { MessageList } from "@/components/messaging/MessageList";
@@ -232,13 +233,9 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   const [isMobileView, setIsMobileView] = useState(false);
   const { startGlobalCall, activeCall: globalActiveCall } = useGlobalVideoCall();
 
-  const { data: integrationStatus } = useQuery<{ livekit: boolean; twilio: boolean; openai: boolean; resend: boolean }>({
-    queryKey: ["/api/integration-status"],
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  });
+  const { status: integrationStatus } = useIntegrationStatus();
   const { isEnabled: isFlagEnabled } = useFeatureFlags();
-  const videoCallsAvailable = (integrationStatus?.livekit ?? false) && isFlagEnabled("VIDEO_CALLS");
+  const videoCallsAvailable = integrationStatus.livekit && isFlagEnabled("VIDEO_CALLS");
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -877,7 +874,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     const conv = conversations.find(c => c.id === selectedConversationId);
     if (!selectedConversationId || !conv || globalActiveCall || startingCall) return;
     if (!videoCallsAvailable) {
-      toast({ title: "Video Calls Not Available", description: "Video calling is not available. Contact your administrator.", variant: "destructive" });
+      toast({ title: "Video Calls Not Available", description: "Video calls require additional setup by your administrator.", variant: "destructive" });
       return;
     }
     setStartingCall(true);
@@ -891,7 +888,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
       let message: string;
       if (status === 503) {
-        message = "Video calls are not available. LiveKit is not configured.";
+        message = "Video calls require additional setup by your administrator.";
       } else if (status === 409) {
         message = "A call is already active in this conversation";
       } else {
@@ -1246,7 +1243,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                           {startingCall ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent style={{ zIndex: 10001 }}>{videoCallsAvailable ? "Start video call" : "Video calls not available"}</TooltipContent>
+                      <TooltipContent style={{ zIndex: 10001 }}>{videoCallsAvailable ? "Start video call" : "Video calls require additional setup by your administrator"}</TooltipContent>
                     </Tooltip>
                   </div>
                 </div>

@@ -12,15 +12,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle } from "lucide-react";
 import type { PayrollSettings } from "./types";
 import { DAYS_OF_WEEK } from "./types";
+import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 export function CompanyNotificationsTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { can } = useEntitlements();
   const hasEnterpriseNotifications = can("ENTERPRISE_NOTIFICATIONS");
+  const { status: integrationStatus } = useIntegrationStatus();
 
   const { data: payrollSettings, isLoading: loadingPayroll } = useQuery<PayrollSettings>({
     queryKey: ["/api/payroll/settings"],
@@ -221,7 +224,17 @@ export function CompanyNotificationsTab() {
                     <p className="text-sm font-medium">SMS</p>
                     <p className="text-xs text-muted-foreground">Text message alerts for critical notifications</p>
                   </div>
-                  {hasEnterpriseNotifications ? (
+                  {!integrationStatus.twilio ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="text-xs gap-1 text-muted-foreground" data-testid="badge-unavailable-sms">
+                          <AlertCircle className="h-3 w-3" />
+                          Not configured
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>SMS requires additional setup by your administrator</TooltipContent>
+                    </Tooltip>
+                  ) : hasEnterpriseNotifications ? (
                     <Badge variant="secondary" className="text-xs" data-testid="badge-available-sms">Available</Badge>
                   ) : (
                     <Badge variant="outline" className="text-xs gap-1" data-testid="badge-enterprise-sms">
