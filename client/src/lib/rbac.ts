@@ -288,7 +288,7 @@ export const RoutePermissions = {
   DASHBOARD: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessDashboard : hasVendorOrContractorAccess(role),
   PROJECTS: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProjects : hasContractorAccess(role),
   PROJECT_DETAIL: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProjects : hasContractorAccess(role),
-  CALENDAR: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCalendar : hasContractorAccess(role),
+  CALENDAR: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCalendar : hasVendorOrContractorAccess(role),
   TIME_CLOCK: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTimeClock : hasContractorAccess(role),
   MESSAGES: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMessages : hasVendorOrContractorAccess(role),
 
