@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -110,6 +110,12 @@ export default function ProfileEditSection() {
     }
   }, [toast]);
 
+  const { data: myPermissions } = useQuery<{ appliedPresetName?: string | null }>({
+    queryKey: ["/api/dashboard/my-permissions"],
+    staleTime: 60000,
+    enabled: !!user,
+  });
+
   if (!user) return null;
 
   const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase();
@@ -161,7 +167,12 @@ export default function ProfileEditSection() {
                 {`${user.firstName || ""} ${user.lastName || ""}`.trim() || "No name set"}
               </p>
               <p className="text-sm text-muted-foreground" data-testid="text-profile-email">{user.email}</p>
-              <Badge variant="secondary" className="mt-1" data-testid="badge-profile-role">{user.role}</Badge>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <Badge variant="secondary" data-testid="badge-profile-role">{user.role}</Badge>
+                {myPermissions?.appliedPresetName && (
+                  <Badge variant="outline" data-testid="badge-profile-preset">{myPermissions.appliedPresetName}</Badge>
+                )}
+              </div>
             </div>
           </div>
           <Separator className="my-4" />

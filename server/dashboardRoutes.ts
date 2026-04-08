@@ -1356,7 +1356,14 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
       return perms;
     })() : null;
 
-    res.json(mergePermissions(roleDefaults, dbPerms));
+    let presetName: string | null = null;
+    const presetId = (permission as Record<string, unknown> | undefined)?.appliedPresetId as string | null | undefined;
+    if (presetId) {
+      const [preset] = await db.select({ name: permissionPresets.name }).from(permissionPresets).where(eq(permissionPresets.id, presetId));
+      if (preset) presetName = preset.name;
+    }
+
+    res.json({ ...mergePermissions(roleDefaults, dbPerms), appliedPresetName: presetName });
   } catch (error) {
     logError('Error fetching user permissions:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to fetch permissions' });
