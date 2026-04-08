@@ -192,12 +192,26 @@ export default function SubcontractorPortalManager({
     }
   };
 
-  const handleCopyLink = (link: string, id: string) => {
-    navigator.clipboard.writeText(link).then(() => {
-      setCopiedId(id);
-      toast({ title: "Copied to clipboard" });
-      setTimeout(() => setCopiedId(null), 2000);
-    });
+  const copyToClipboard = async (text: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const handleCopyLink = async (link: string, id: string) => {
+    await copyToClipboard(link);
+    setCopiedId(id);
+    toast({ title: "Copied to clipboard" });
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleCopyTokenLink = async (tokenId: string) => {
@@ -205,7 +219,7 @@ export default function SubcontractorPortalManager({
     try {
       const res = await apiRequest("POST", `/api/portal/manage/link/${tokenId}`);
       const data = await res.json();
-      await navigator.clipboard.writeText(data.portalLink);
+      await copyToClipboard(data.portalLink);
       setCopiedId(tokenId);
       toast({ title: "Link Copied", description: "Portal link has been copied to clipboard" });
       setTimeout(() => setCopiedId(null), 2000);
