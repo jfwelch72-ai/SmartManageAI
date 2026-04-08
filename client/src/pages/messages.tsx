@@ -232,7 +232,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   const [isMobileView, setIsMobileView] = useState(false);
   const { startGlobalCall, activeCall: globalActiveCall } = useGlobalVideoCall();
 
-  const { data: integrationStatus } = useQuery<{ livekit: boolean; twilio: boolean; openai: boolean; sendgrid: boolean }>({
+  const { data: integrationStatus } = useQuery<{ livekit: boolean; twilio: boolean; openai: boolean; resend: boolean }>({
     queryKey: ["/api/integration-status"],
     staleTime: 5 * 60 * 1000,
     retry: 1,

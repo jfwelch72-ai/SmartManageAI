@@ -2,7 +2,7 @@ export interface IntegrationStatus {
   livekit: boolean;
   twilio: boolean;
   openai: boolean;
-  sendgrid: boolean;
+  resend: boolean;
 }
 
 export function getIntegrationStatus(): IntegrationStatus {
@@ -21,8 +21,8 @@ export function getIntegrationStatus(): IntegrationStatus {
       process.env.AI_INTEGRATIONS_OPENAI_API_KEY ||
       process.env.OPENAI_API_KEY
     ),
-    sendgrid: !!(
-      process.env.SENDGRID_API_KEY
+    resend: !!(
+      process.env.RESEND_API_KEY
     ),
   };
 }
