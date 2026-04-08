@@ -199,7 +199,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
             <SheetHeader className="p-4 border-b">
               <SheetTitle className="flex items-center gap-2">
                 <Building2 className="w-6 h-6 text-primary" />
-                <span>{isSuperAdmin(userRole) ? "SmartManageAI Admin" : isVendor(userRole) ? "Vendor Portal" : displayName}</span>
+                <span>{isSuperAdmin(userRole) ? "SmartManageAI Admin" : displayName}</span>
               </SheetTitle>
             </SheetHeader>
             <ScrollArea className="h-[calc(100vh-80px)]">
@@ -369,10 +369,10 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
             <Building2 className="w-7 h-7 md:w-8 md:h-8 text-primary" />
             <div className="hidden sm:block">
               <h1 className="text-lg md:text-xl font-bold text-foreground">
-                {isSuperAdmin(userRole) ? "SmartManageAI Admin" : isVendor(userRole) ? "Vendor Portal" : displayName}
+                {isSuperAdmin(userRole) ? "SmartManageAI Admin" : displayName}
               </h1>
               <p className="text-xs text-muted-foreground hidden md:block">
-                {isSuperAdmin(userRole) ? "Platform Administration" : isVendor(userRole) ? "Submit Pricing to Clients" : "Construction Management"}
+                {isSuperAdmin(userRole) ? "Platform Administration" : "Construction Management"}
               </p>
             </div>
           </div>

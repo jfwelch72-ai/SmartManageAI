@@ -53,7 +53,7 @@ export default function VendorDashboard() {
       <main className="container mx-auto px-4 py-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground" data-testid="text-vendor-dashboard-title">
-            Vendor Portal
+            Dashboard
           </h1>
           <p className="text-muted-foreground">
             Welcome back! Manage your pricing and view enrolled contractor clients.
