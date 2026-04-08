@@ -520,4 +520,42 @@ router.delete("/organization-documents/:id", requireAuth, requireRole("SUPER_ADM
   }
 });
 
+router.get("/api/organization-documents/:id/download", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = await getOrgIdForFilter(req);
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const [doc] = await db
+      .select({ fileUrl: organizationDocuments.fileUrl, name: organizationDocuments.name })
+      .from(organizationDocuments)
+      .where(and(eq(organizationDocuments.id, id), eq(organizationDocuments.organizationId, orgId)));
+
+    if (!doc || !doc.fileUrl) return res.status(404).json({ error: "Document not found" });
+
+    const gcsPrefix = "https://storage.googleapis.com/";
+    let bucketName: string;
+    let objectName: string;
+
+    if (doc.fileUrl.startsWith(gcsPrefix)) {
+      const pathAfterPrefix = doc.fileUrl.slice(gcsPrefix.length);
+      const slashIdx = pathAfterPrefix.indexOf("/");
+      bucketName = pathAfterPrefix.slice(0, slashIdx);
+      objectName = pathAfterPrefix.slice(slashIdx + 1);
+    } else {
+      const parts = doc.fileUrl.startsWith("/") ? doc.fileUrl.slice(1).split("/") : doc.fileUrl.split("/");
+      bucketName = parts[0];
+      objectName = parts.slice(1).join("/");
+    }
+
+    const { objectStorageClient } = await import("./objectStorage");
+    const bucket = objectStorageClient.bucket(bucketName);
+    const objectFile = bucket.file(objectName);
+    await objectStorage.downloadObject(objectFile, res, 3600);
+  } catch (error) {
+    logError("Download organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

@@ -101,7 +101,7 @@ export function CompanyProfileTab({ activeDocTab }: CompanyProfileTabProps) {
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => window.open(doc.fileUrl, "_blank")} data-testid={`button-view-${docType.value}`}>
+                <Button size="sm" variant="outline" onClick={() => window.open(`/api/organization-documents/${doc.id}/download`, "_blank")} data-testid={`button-view-${docType.value}`}>
                   <Eye className="h-3 w-3 mr-1" /> View
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => openUploadDialog(docType.value)} data-testid={`button-replace-${docType.value}`}>
