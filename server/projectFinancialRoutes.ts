@@ -387,6 +387,7 @@ router.get("/api/projects/:code/tm-sheets", requireAuth, async (req: AuthRequest
   }
 });
 
+/** @deprecated Legacy T&M daily sheet creation — use tmTickets endpoints instead. Retained for backward compatibility only. */
 router.post("/api/tm-sheets", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {

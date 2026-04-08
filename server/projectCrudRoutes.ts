@@ -681,6 +681,7 @@ router.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "
     const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
 
     const { tmDailySheets, tmTickets } = await import("@shared/schema");
+    /** @deprecated tmDailySheets is legacy — read-only for historical reporting. Use tmTickets for new T&M work. */
     const projectTMSheets = await db
       .select()
       .from(tmDailySheets)
@@ -1297,7 +1298,7 @@ router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN",
     }
     await db.delete(estimates).where(eq(estimates.projectId, project.id));
     
-    await db.delete(tmDailySheets).where(eq(tmDailySheets.projectId, project.id));
+    await db.delete(tmDailySheets).where(eq(tmDailySheets.projectId, project.id)); // legacy table cleanup on project delete
     
     await db.delete(timeEntries).where(eq(timeEntries.projectId, project.id));
 

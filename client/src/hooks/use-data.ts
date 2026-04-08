@@ -472,7 +472,7 @@ export function useDeleteTimeEntry() {
   });
 }
 
-// T&M Daily Sheets
+/** @deprecated Legacy T&M Daily Sheets — use T&M Tickets (tmTickets) instead. Retained for historical data viewing only. */
 export function useProjectTMSheets(code: string) {
   return useQuery<TMDailySheet[]>({
     queryKey: ["/api/projects", code, "tm-sheets"],
@@ -480,6 +480,7 @@ export function useProjectTMSheets(code: string) {
   });
 }
 
+/** @deprecated Legacy T&M Daily Sheet creation — use T&M Tickets instead. */
 export function useCreateTMSheet() {
   return useMutation({
     mutationFn: async (data: Partial<TMDailySheet> & { projectCode: string; projectId: string }) => {

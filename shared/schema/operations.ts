@@ -294,7 +294,14 @@ export const employeeCostAssignments = pgTable("employee_cost_assignments", {
   userIdIdx: index("employee_cost_assignments_user_id_idx").on(table.userId),
 }));
 
-// T&M Daily Sheets table (legacy - replaced by tmTickets)
+/**
+ * @deprecated LEGACY TABLE — replaced by `tmTickets`.
+ * Do NOT add new reads/writes against this table.
+ * Existing rows are kept for historical reporting only.
+ * Migration path: all new T&M work should use tmTickets + tmTicketLaborEntries/Equipment/Materials.
+ * This schema definition is retained solely so Drizzle migrations remain consistent;
+ * the table itself will be dropped in a future migration once data has been fully migrated.
+ */
 export const tmDailySheets = pgTable("tm_daily_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -1573,6 +1580,7 @@ export const insertPrevailingWageRateSchema = createInsertSchema(prevailingWageR
   updatedAt: true,
 });
 
+/** @deprecated Use insertTMTicketSchema instead. See tmDailySheets deprecation note. */
 export const insertTMDailySheetSchema = createInsertSchema(tmDailySheets).omit({
   id: true,
   createdAt: true,
@@ -1686,7 +1694,9 @@ export type BurdenRate = typeof burdenRates.$inferSelect;
 export type InsertEmployeeCostAssignment = z.infer<typeof insertEmployeeCostAssignmentSchema>;
 export type EmployeeCostAssignment = typeof employeeCostAssignments.$inferSelect;
 
+/** @deprecated Use InsertTMTicket instead. See tmDailySheets deprecation note. */
 export type InsertTMDailySheet = z.infer<typeof insertTMDailySheetSchema>;
+/** @deprecated Use TMTicket instead. See tmDailySheets deprecation note. */
 export type TMDailySheet = typeof tmDailySheets.$inferSelect;
 
 // T&M Invoice schemas and types
