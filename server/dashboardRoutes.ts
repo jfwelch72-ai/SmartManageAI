@@ -605,6 +605,63 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
 
 const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: string; permissions: Record<string, boolean | string> }> = [
   {
+    name: "Company Owner / Principal",
+    description: "Full unrestricted access to all platform features",
+    targetRole: "ADMIN",
+    permissions: {
+      ...ALL_TRUE,
+    },
+  },
+  {
+    name: "Office Administrator",
+    description: "Day-to-day company operations, users, payroll, CRM, hiring — no AI/enterprise settings",
+    targetRole: "ADMIN",
+    permissions: {
+      ...ALL_TRUE,
+      canManageAISettings: false,
+      canAccessEnterpriseSettings: false,
+    },
+  },
+  {
+    name: "IT / Systems Administrator",
+    description: "Integrations, AI settings, enterprise config, user management, audit logs",
+    targetRole: "ADMIN",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL" as const,
+      canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
+      canAccessBulletins: true, canAccessEmailAssistant: true,
+      canManageUsers: true, canAccessCompanySettings: true,
+      canManageAISettings: true, canAccessEnterpriseSettings: true,
+      canAccessAuditLogs: true, canAccessReports: true,
+      canManageWebsite: true, canAccessApprovals: true,
+      canUseAiFeatures: true, canViewAiSummaries: true,
+      canAccessExecutiveDigest: true,
+    },
+  },
+  {
+    name: "Financial Controller",
+    description: "Full financial access, payroll, cost rates, CFO dashboard, contracts, billing — no project ops",
+    targetRole: "ADMIN",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, projectScope: "ALL" as const,
+      canAccessCalendar: true, canAccessTasks: true, canAccessMessages: true,
+      canAccessBulletins: true,
+      canViewFinancials: true, canEditFinancials: true,
+      canAccessCostRates: true, canAccessCFODashboard: true,
+      canAccessTMBilling: true, canAccessProgressBilling: true,
+      canManagePayroll: true, canAccessOverheadCosts: true, canAccessProductionRates: true,
+      canManageContracts: true, canAccessSubcontracts: true, canAccessVendorPricing: true,
+      canAccessKPIs: true, canAccessReports: true, canAccessApprovals: true,
+      canAccessAuditLogs: true, canAccessExecutiveDigest: true,
+      canAccessCompanySettings: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+      canCreateChangeOrders: true,
+    },
+  },
+  {
     name: "Project Manager (PM)",
     description: "Full project lifecycle, scheduling, budgets, change orders",
     targetRole: "MANAGER",
