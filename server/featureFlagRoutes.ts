@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { requireAuth } from "./auth";
+import { requireAuth, requireRole } from "./auth";
 import { FEATURE_FLAG_KEYS, type FeatureFlagKey } from "@shared/schema";
 import * as flagService from "./services/featureFlagService";
 import { logError } from "./utils/logger";
 
 const router = Router();
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER"), async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user.organizationId) {

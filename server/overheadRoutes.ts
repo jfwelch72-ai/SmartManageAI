@@ -33,7 +33,8 @@ function toMonthly(amount: number, frequency: string, amortizationMonths?: numbe
 
 function requireOverheadRole(req: AuthRequest, res: Response): boolean {
   const role = req.user?.role;
-  if (role !== "ADMIN" && role !== "MANAGER") {
+  const allowed = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER"];
+  if (!role || !allowed.includes(role)) {
     res.status(403).json({ error: "Insufficient permissions" });
     return false;
   }
@@ -42,12 +43,11 @@ function requireOverheadRole(req: AuthRequest, res: Response): boolean {
 
 function canReadBidBenchmark(role?: string): boolean {
   return (
+    role === "SUPER_ADMIN" ||
     role === "ADMIN" ||
-    role === "MANAGER" ||
-    role === "MANAGER" ||
-    role === "ESTIMATOR" ||
-    role === "SUPERINTENDENT" ||
     role === "HUSTLER" ||
+    role === "MANAGER" ||
+    role === "SUPERINTENDENT" ||
     role === "ESTIMATOR"
   );
 }

@@ -17,9 +17,12 @@ import {
   type MaterialFamily, type TradeComponent, type Scope,
 } from "./data/onboarding/index";
 import { getLibraryTradeIdsForLegacy } from "../shared/tradeTypeUtils";
-import type { AuthRequest } from "./auth";
+import { requireRole, type AuthRequest } from "./auth";
+import type { UserRole } from "@shared/schema";
 
 const router = Router();
+
+const ESTIMATOR_PLUS: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"];
 
 function getOrgId(req: AuthRequest): string | null {
   return req.user?.organizationId || null;
@@ -27,6 +30,11 @@ function getOrgId(req: AuthRequest): string | null {
 
 function getUserId(req: AuthRequest): string | null {
   return req.user?.id || null;
+}
+
+function checkEstimatorPlus(req: AuthRequest): boolean {
+  const role = (req.user as any)?.effectiveRole || req.user?.role;
+  return !!role && ESTIMATOR_PLUS.includes(role as UserRole);
 }
 
 router.get("/api/custom-libraries", async (req: AuthRequest, res: Response) => {
@@ -39,6 +47,7 @@ router.get("/api/custom-libraries", async (req: AuthRequest, res: Response) => {
 router.post("/api/custom-libraries", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const data = insertCustomLibrarySchema.parse({ ...req.body, organizationId: orgId });
   const [result] = await db.insert(customLibraries).values(data).returning();
   res.json(result);
@@ -47,6 +56,7 @@ router.post("/api/custom-libraries", async (req: AuthRequest, res: Response) => 
 router.patch("/api/custom-libraries/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   const { name, description } = req.body;
   const [result] = await db.update(customLibraries)
@@ -60,6 +70,7 @@ router.patch("/api/custom-libraries/:id", async (req: AuthRequest, res: Response
 router.delete("/api/custom-libraries/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(customLibraries)
     .where(and(eq(customLibraries.id, id), eq(customLibraries.organizationId, orgId)));
@@ -85,6 +96,7 @@ router.get("/api/library-items", async (req: AuthRequest, res: Response) => {
 router.post("/api/library-items", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const data = insertLibraryItemSchema.parse({ ...req.body, organizationId: orgId });
   const [result] = await db.insert(libraryItems).values(data).returning();
   res.json(result);
@@ -93,6 +105,7 @@ router.post("/api/library-items", async (req: AuthRequest, res: Response) => {
 router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   const updateData = { ...req.body, updatedAt: new Date() };
   delete updateData.id;
@@ -109,6 +122,7 @@ router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response) =
 router.delete("/api/library-items/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(libraryItems)
     .where(and(eq(libraryItems.id, id), eq(libraryItems.organizationId, orgId)));
@@ -118,6 +132,7 @@ router.delete("/api/library-items/:id", async (req: AuthRequest, res: Response) 
 router.post("/api/library-items/import", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { items } = req.body;
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Items array is required" });
@@ -162,6 +177,7 @@ router.get("/api/library-assemblies", async (req: AuthRequest, res: Response) =>
 router.post("/api/library-assemblies", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { items: assemblyItems, groups: assemblyGroups, ...assemblyData } = req.body;
   const data = insertLibraryAssemblySchema.parse({ ...assemblyData, organizationId: orgId });
   const [assembly] = await db.insert(libraryAssemblies).values(data).returning();
@@ -199,6 +215,7 @@ router.post("/api/library-assemblies", async (req: AuthRequest, res: Response) =
 router.patch("/api/library-assemblies/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   const { items: assemblyItems, groups: assemblyGroups, ...updateData } = req.body;
   delete updateData.id;
@@ -245,6 +262,7 @@ router.patch("/api/library-assemblies/:id", async (req: AuthRequest, res: Respon
 router.delete("/api/library-assemblies/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(libraryAssemblies)
     .where(and(eq(libraryAssemblies.id, id), eq(libraryAssemblies.organizationId, orgId)));
@@ -266,6 +284,7 @@ router.get("/api/saved-takeoffs", async (req: AuthRequest, res: Response) => {
 router.post("/api/saved-takeoffs", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const data = insertSavedTakeoffSchema.parse({ ...req.body, organizationId: orgId });
   const [result] = await db.insert(savedTakeoffs).values(data).returning();
   res.json(result);
@@ -274,6 +293,7 @@ router.post("/api/saved-takeoffs", async (req: AuthRequest, res: Response) => {
 router.delete("/api/saved-takeoffs/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(savedTakeoffs)
     .where(and(eq(savedTakeoffs.id, id), eq(savedTakeoffs.organizationId, orgId)));
@@ -283,6 +303,7 @@ router.delete("/api/saved-takeoffs/:id", async (req: AuthRequest, res: Response)
 router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
 
   try {
     const existing = await db.select({ id: libraryItems.id }).from(libraryItems)

@@ -19,8 +19,8 @@ import {
 const router = Router();
 
 function canAccessCostEngine(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" ||
-    role === "ESTIMATOR" || role === "MANAGER" || role === "HUSTLER";
+  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "HUSTLER" ||
+    role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR";
 }
 
 async function getProjectByCode(code: string) {
@@ -113,7 +113,8 @@ const postTransactionSchema = z.object({
 
 router.post("/api/projects/:code/cost-transactions", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER") {
+    const writeRoles = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER"];
+    if (!writeRoles.includes(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     const project = await getProjectByCode(req.params.code);
@@ -141,7 +142,8 @@ router.post("/api/projects/:code/cost-transactions", requireAuth, async (req: Au
 
 router.patch("/api/projects/:code/cost-transactions/:transactionId/void", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER") {
+    const writeRoles = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER"];
+    if (!writeRoles.includes(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     const project = await getProjectByCode(req.params.code);

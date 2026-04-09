@@ -3,8 +3,11 @@ import { Router } from "express";
 import { db } from "./db";
 import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailTasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task } from "@shared/schema";
 import { eq, and, desc, gte, or, isNotNull, sql, inArray } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import type { UserRole } from "@shared/schema";
 import { logCreate, logUpdate, logDelete, logAudit } from "./auditLogger";
+
+const ALL_INTERNAL_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"];
 import { sanitizeEmail, sanitizeText, sanitizeShortText } from "./sanitization";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -24,6 +27,8 @@ import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { testFullConnection, fetchImapMessages, sendSmtpEmail } from "./services/imapService";
 
 const router = Router();
+
+const requireInternalRole = requireRole(...ALL_INTERNAL_ROLES);
 
 // ========================================
 // Routes from emailAccountRoutes.ts
@@ -70,7 +75,7 @@ function sanitizeAccountForResponse(account: EmailAccount): Omit<EmailAccount, '
 }
 
 // GET /api/email/accounts - List linked accounts for current user
-router.get("/accounts", requireAuth, async (req: AuthRequest, res) => {
+router.get("/accounts", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -103,7 +108,7 @@ router.get("/accounts", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // GET /api/email/accounts/:id - Get single account
-router.get("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -138,7 +143,7 @@ router.get("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // POST /api/email/accounts - Create/link a new email account
-router.post("/accounts", requireAuth, async (req: AuthRequest, res) => {
+router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -247,7 +252,7 @@ router.post("/accounts", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // PATCH /api/email/accounts/:id - Update an email account
-router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -311,7 +316,7 @@ router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // DELETE /api/email/accounts/:id - Remove an email account
-router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -508,7 +513,7 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
 
 // POST /api/email/accounts/:id/test - Test connection to an email account
 // Accepts optional body fields to override saved settings (for testing unsaved edits)
-router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => {
+router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -616,7 +621,7 @@ function getOutlookRedirectUri(req: import("express").Request): string {
 }
 
 // GET /api/email/oauth/gmail/initiate - Start Gmail OAuth flow
-router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) => {
+router.get("/oauth/gmail/initiate", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -778,7 +783,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
 });
 
 // GET /api/email/oauth/outlook/initiate - Start Outlook/Microsoft OAuth flow
-router.get("/oauth/outlook/initiate", requireAuth, async (req: AuthRequest, res) => {
+router.get("/oauth/outlook/initiate", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -960,7 +965,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
 });
 
 // GET /api/email/oauth/status - Check if OAuth providers are configured
-router.get("/oauth/status", requireAuth, async (req: AuthRequest, res) => {
+router.get("/oauth/status", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   return res.json({
     gmail: {
       configured: !!(GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret),
@@ -975,7 +980,7 @@ router.get("/oauth/status", requireAuth, async (req: AuthRequest, res) => {
 // Routes from emailAiRoutes.ts
 // ========================================
 
-router.get("/threads", requireAuth, async (req: AuthRequest, res) => {
+router.get("/threads", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1017,7 +1022,7 @@ router.get("/threads", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/threads/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1071,7 +1076,7 @@ router.get("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1184,7 +1189,7 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
+router.get("/messages", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1218,7 +1223,7 @@ router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2244,7 +2249,7 @@ export async function syncImapAccount(
   return result;
 }
 
-router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
+router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2336,7 +2341,7 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
 // Routes from emailAnalysisRoutes.ts
 // ========================================
 
-router.post("/messages/:id/analyze", requireAuth, async (req: AuthRequest, res) => {
+router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2455,7 +2460,7 @@ router.post("/messages/:id/analyze", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
-router.post("/messages/:id/suggest-reply", requireAuth, async (req: AuthRequest, res) => {
+router.post("/messages/:id/suggest-reply", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2532,7 +2537,7 @@ const sendEmailSchema = z.object({
   replyToMessageId: z.string().optional(),
 });
 
-router.post("/send", requireAuth, async (req: AuthRequest, res) => {
+router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2680,7 +2685,7 @@ router.post("/send", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/threads/:id/summarize", requireAuth, async (req: AuthRequest, res) => {
+router.post("/threads/:id/summarize", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2757,7 +2762,7 @@ router.post("/threads/:id/summarize", requireAuth, async (req: AuthRequest, res)
   }
 });
 
-router.post("/summary/daily", requireAuth, async (req: AuthRequest, res) => {
+router.post("/summary/daily", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2848,7 +2853,7 @@ router.post("/summary/daily", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/summary/weekly", requireAuth, async (req: AuthRequest, res) => {
+router.post("/summary/weekly", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2939,7 +2944,7 @@ router.post("/summary/weekly", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/summary/latest", requireAuth, async (req: AuthRequest, res) => {
+router.get("/summary/latest", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2973,7 +2978,7 @@ router.get("/summary/latest", requireAuth, async (req: AuthRequest, res) => {
 // Routes from emailTaskRoutes.ts
 // ========================================
 
-router.get("/tasks", requireAuth, async (req: AuthRequest, res) => {
+router.get("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3019,7 +3024,7 @@ router.get("/tasks", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/tasks", requireAuth, async (req: AuthRequest, res) => {
+router.post("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3080,7 +3085,7 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/tasks/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });

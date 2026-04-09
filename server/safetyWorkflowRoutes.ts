@@ -15,7 +15,7 @@ import type { AuthRequest } from "./auth";
 const router = Router();
 
 function isSafetyAdmin(role?: string): boolean {
-  return ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(role || "");
+  return ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT"].includes(role || "");
 }
 
 async function verifyOrgOwnership(

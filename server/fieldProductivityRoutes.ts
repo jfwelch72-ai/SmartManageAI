@@ -17,9 +17,19 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
+const ALL_INTERNAL_ROLES = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER"];
+
 function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user) {
     return res.status(401).json({ error: "Authentication required" });
+  }
+  next();
+}
+
+function requireInternalRole(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const role = (req as any).user?.effectiveRole || req.user?.role;
+  if (!role || !ALL_INTERNAL_ROLES.includes(role)) {
+    return res.status(403).json({ error: "Insufficient permissions" });
   }
   next();
 }
@@ -28,7 +38,7 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
 // VOICE LOGS ROUTES
 // ==========================================
 
-router.get("/voice-logs", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/voice-logs", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { projectId, status, limit = "50", offset = "0" } = req.query;
     const organizationId = req.user!.organizationId;
@@ -58,7 +68,7 @@ router.get("/voice-logs", requireAuth, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-router.get("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -79,7 +89,7 @@ router.get("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, res
   }
 });
 
-router.post("/voice-logs", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/voice-logs", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -111,7 +121,7 @@ const voiceLogUpdateSchema = z.object({
   aiSentiment: z.string().optional(),
 });
 
-router.patch("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -165,7 +175,7 @@ router.patch("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, r
   }
 });
 
-router.delete("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -191,7 +201,7 @@ router.delete("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, 
 // ISSUE CAPTURES ROUTES
 // ==========================================
 
-router.get("/issue-captures", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/issue-captures", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { projectId, status, severity, limit = "50", offset = "0" } = req.query;
     const organizationId = req.user!.organizationId;
@@ -225,7 +235,7 @@ router.get("/issue-captures", requireAuth, async (req: AuthenticatedRequest, res
   }
 });
 
-router.get("/issue-captures/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -246,7 +256,7 @@ router.get("/issue-captures/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 });
 
-router.post("/issue-captures", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/issue-captures", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     const createdById = req.user!.id;
@@ -287,7 +297,7 @@ const issueCaptureUpdateSchema = z.object({
   aiRecommendations: z.string().optional(),
 });
 
-router.patch("/issue-captures/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -343,7 +353,7 @@ router.patch("/issue-captures/:id", requireAuth, async (req: AuthenticatedReques
   }
 });
 
-router.delete("/issue-captures/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -366,7 +376,7 @@ router.delete("/issue-captures/:id", requireAuth, async (req: AuthenticatedReque
 });
 
 // Issue stats endpoint
-router.get("/issue-captures/stats/summary", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/issue-captures/stats/summary", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     const { projectId } = req.query;
@@ -650,7 +660,7 @@ const voiceLogParseSchema = z.object({
   projectId: z.string().optional(),
 });
 
-router.post("/voice-logs/parse", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/voice-logs/parse", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { transcription, outputType } = voiceLogParseSchema.parse(req.body);
 
@@ -706,7 +716,7 @@ Respond with valid JSON only.`;
 // PHOTO AUTO-TAGGING
 // ==========================================
 
-router.post("/photo-auto-tag", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/photo-auto-tag", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { mediaId, imageUrl } = req.body;
 

@@ -6,13 +6,45 @@ import {
   takeoffAssemblyItems,
   takeoffMeasurementAssemblies,
   takeoffMeasurements,
+  takeoffSheets,
+  bids,
+  projects,
 } from "@shared/schema";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { z } from "zod";
 import { computeAssemblyQuantity, type FormulaContext } from "@shared/utils/assemblyFormula";
+import type { UserRole } from "@shared/schema";
 
 const router = Router();
+
+const ESTIMATOR_PLUS: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"];
+
+async function verifyMeasurementOrg(measurementId: string, orgId: string): Promise<boolean> {
+  const [measurement] = await db
+    .select({ sheetId: takeoffMeasurements.sheetId })
+    .from(takeoffMeasurements)
+    .where(eq(takeoffMeasurements.id, measurementId))
+    .limit(1);
+  if (!measurement) return false;
+
+  const [sheet] = await db
+    .select({ bidId: takeoffSheets.bidId, projectId: takeoffSheets.projectId })
+    .from(takeoffSheets)
+    .where(eq(takeoffSheets.id, measurement.sheetId))
+    .limit(1);
+  if (!sheet) return false;
+
+  if (sheet.bidId) {
+    const [bid] = await db.select({ orgId: bids.gcOrganizationId }).from(bids).where(eq(bids.id, sheet.bidId)).limit(1);
+    return bid?.orgId === orgId;
+  }
+  if (sheet.projectId) {
+    const [project] = await db.select({ orgId: projects.gcOrganizationId }).from(projects).where(eq(projects.id, sheet.projectId)).limit(1);
+    return project?.orgId === orgId;
+  }
+  return false;
+}
 
 router.get("/api/assemblies", requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -77,7 +109,7 @@ const createAssemblySchema = z.object({
     .min(1),
 });
 
-router.post("/api/assemblies", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/assemblies", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -104,7 +136,7 @@ router.post("/api/assemblies", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -169,7 +201,7 @@ router.patch("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) =
   }
 });
 
-router.delete("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -189,13 +221,16 @@ router.delete("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
-router.post("/api/takeoff/measurements/:measurementId/assemblies", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/measurements/:measurementId/assemblies", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
 
     const { assemblyId } = req.body;
     if (!assemblyId) return res.status(400).json({ error: "assemblyId required" });
+
+    const measurementBelongs = await verifyMeasurementOrg(req.params.measurementId, orgId);
+    if (!measurementBelongs) return res.status(404).json({ error: "Measurement not found" });
 
     const [assembly] = await db
       .select()
@@ -216,8 +251,22 @@ router.post("/api/takeoff/measurements/:measurementId/assemblies", requireAuth, 
   }
 });
 
-router.delete("/api/takeoff/measurement-assemblies/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/measurement-assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) return res.status(403).json({ error: "No organization" });
+
+    const [link] = await db
+      .select({ measurementId: takeoffMeasurementAssemblies.measurementId })
+      .from(takeoffMeasurementAssemblies)
+      .where(eq(takeoffMeasurementAssemblies.id, req.params.id))
+      .limit(1);
+
+    if (!link) return res.status(404).json({ error: "Link not found" });
+
+    const measurementBelongs = await verifyMeasurementOrg(link.measurementId, orgId);
+    if (!measurementBelongs) return res.status(404).json({ error: "Link not found" });
+
     await db
       .delete(takeoffMeasurementAssemblies)
       .where(eq(takeoffMeasurementAssemblies.id, req.params.id));
@@ -231,6 +280,12 @@ router.delete("/api/takeoff/measurement-assemblies/:id", requireAuth, async (req
 
 router.get("/api/takeoff/measurements/:measurementId/assembly-quantities", requireAuth, async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) return res.status(403).json({ error: "No organization" });
+
+    const measurementBelongs = await verifyMeasurementOrg(req.params.measurementId, orgId);
+    if (!measurementBelongs) return res.status(404).json({ error: "Measurement not found" });
+
     const [measurement] = await db
       .select()
       .from(takeoffMeasurements)
