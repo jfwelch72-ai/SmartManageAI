@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
 import { requireAuth } from "./auth";
+import { exportLimiter } from "./rateLimiter";
 import {
   toolboxTalkTopics, toolboxTalkScheduled, toolboxTalkAttendance,
   safetyChecklistTemplates, safetyChecklistInstances,
@@ -655,7 +656,7 @@ router.get("/api/osha-incidents/300-log", requireAuth, async (req: AuthRequest, 
   }
 });
 
-router.get("/api/osha-incidents/300a-pdf", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/osha-incidents/300a-pdf", requireAuth, exportLimiter, async (req: AuthRequest, res: Response) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;

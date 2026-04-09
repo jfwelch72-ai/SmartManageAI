@@ -169,25 +169,26 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
       });
     }
 
-    await Promise.all(updates.map(async u => {
-      const hasVendorPrice = u.vendorPricingId !== null && u.unitPrice !== null && u.unitPrice > 0;
-
-      const setFields: Record<string, any> = {
-        vendorPricingId: u.vendorPricingId,
-        vendorMatchConfidence: u.vendorMatchConfidence,
-      };
-
-      if (hasVendorPrice) {
-        const materialCost = parseFloat((u.unitPrice! * u.quantity).toFixed(2));
-        const totalCost = parseFloat((materialCost + u.laborCost + u.equipmentCost + u.consumablesCost + u.subcontractCost).toFixed(2));
-        setFields.materialCost = materialCost.toFixed(2);
-        setFields.totalCost = totalCost.toFixed(2);
-      }
-
-      return db.update(estimateLineItems)
-        .set(setFields)
-        .where(eq(estimateLineItems.id, u.id));
-    }));
+    const batchSize = 50;
+    for (let i = 0; i < updates.length; i += batchSize) {
+      const batch = updates.slice(i, i + batchSize);
+      await Promise.all(batch.map(u => {
+        const hasVendorPrice = u.vendorPricingId !== null && u.unitPrice !== null && u.unitPrice > 0;
+        const setFields: Record<string, any> = {
+          vendorPricingId: u.vendorPricingId,
+          vendorMatchConfidence: u.vendorMatchConfidence,
+        };
+        if (hasVendorPrice) {
+          const materialCost = parseFloat((u.unitPrice! * u.quantity).toFixed(2));
+          const totalCost = parseFloat((materialCost + u.laborCost + u.equipmentCost + u.consumablesCost + u.subcontractCost).toFixed(2));
+          setFields.materialCost = materialCost.toFixed(2);
+          setFields.totalCost = totalCost.toFixed(2);
+        }
+        return db.update(estimateLineItems)
+          .set(setFields)
+          .where(eq(estimateLineItems.id, u.id));
+      }));
+    }
   } catch (err) {
     logError("[VendorMatch] Error matching vendor pricing:", {}, err instanceof Error ? err : new Error(String(err)));
   }

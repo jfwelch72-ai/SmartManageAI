@@ -1,5 +1,6 @@
 import { Router , NextFunction } from "express";
 import { db } from "./db";
+import { sensitiveLimiter } from "./rateLimiter";
 import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media } from "@shared/schema";
 import { eq, desc, and, sql, isNotNull } from "drizzle-orm";
 import { z } from "zod";
@@ -217,7 +218,7 @@ const jobsiteAnalysisSchema = z.object({
 });
 
 // POST /api/ai-features/jobsite/analyze - Create jobsite analysis batch
-router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;

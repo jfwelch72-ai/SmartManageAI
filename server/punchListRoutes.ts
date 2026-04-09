@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
+import { exportLimiter } from "./rateLimiter";
 import { db } from "./db";
 import {
   punchListItems, projects, projectInspections,
@@ -498,7 +499,7 @@ router.delete(
 );
 
 // ─── PDF EXPORT (browser-printable HTML — consistent with other modules) ──────
-router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/punch-list/export/pdf", requireAuth, exportLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });

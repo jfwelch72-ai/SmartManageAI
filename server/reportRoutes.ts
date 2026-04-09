@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
 import { Router } from "express";
+import { exportLimiter } from "./rateLimiter";
 import { db } from "./db";
 import {
   projects,
@@ -511,7 +512,7 @@ router.get("/api/reports/estimates/cost-breakdown", requireAuth, async (req: Aut
   }
 });
 
-router.get("/api/reports/export/csv", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/reports/export/csv", requireAuth, exportLimiter, async (req: AuthRequest, res) => {
   try {
     const reportType = req.query.type as string;
     const projectId = req.query.projectId as string | undefined;
@@ -591,7 +592,7 @@ router.get("/api/reports/export/csv", requireAuth, async (req: AuthRequest, res)
   }
 });
 
-router.get("/api/reports/export/pdf", requireAuth, async (_req: AuthRequest, res) => {
+router.get("/api/reports/export/pdf", requireAuth, exportLimiter, async (_req: AuthRequest, res) => {
   res.status(200).json({
     message: "PDF export is handled via browser print (window.print()). Use the Print button in the Reports UI.",
   });

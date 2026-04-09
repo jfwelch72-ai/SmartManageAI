@@ -1,5 +1,6 @@
 import { Router , NextFunction } from "express";
 import { db } from "./db";
+import { sensitiveLimiter } from "./rateLimiter";
 import { aiTakeoffAnalyses, organizations, takeoffSheets } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
@@ -26,7 +27,7 @@ const aiTakeoffAnalyzeSchema = z.object({
 });
 
 // POST /api/ai-features/takeoff/analyze - Trigger AI analysis
-router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;

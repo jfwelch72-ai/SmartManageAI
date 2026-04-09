@@ -73,6 +73,7 @@
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
+import { exportLimiter } from "./rateLimiter";
 import { 
   projectInspections, projects, users, notifications, organizations,
   insertProjectInspectionSchema, type ProjectInspection
@@ -604,7 +605,7 @@ router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), 
   }
 });
 
-router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 

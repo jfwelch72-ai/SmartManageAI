@@ -2,6 +2,7 @@ import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
+import { sensitiveLimiter } from "./rateLimiter";
 import { eq, and, desc, asc, sql, ilike } from "drizzle-orm";
 import { organizationWebsites, organizationWebsitePages, organizationSocialLinks, organizations, OrganizationWebsite, websiteDeployments, websiteProjects, websiteProjectImages, socialPostHistory, websiteContactSubmissions, crmOrganisations, crmContacts, pagePreviewLinks, pageVersions, websiteBlogPosts, hiringJobs, hiringCandidates, hiringCandidateDocuments, users } from "@shared/schema";
 import { requireAuth, AuthRequest, requireFeaturePermission } from "./auth";
@@ -1586,7 +1587,7 @@ router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: R
 });
 
 // POST /api/website/projects/generate-description - AI generate project description
-router.post("/projects/generate-description", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/generate-description", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1707,7 +1708,7 @@ router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/website/social/generate-post - AI generate social media post
-router.post("/social/generate-post", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/social/generate-post", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -3266,7 +3267,7 @@ Return a JSON object with:
 });
 
 // POST /api/website/blog/generate-image - AI-generate a featured image for a blog post
-router.post("/blog/generate-image", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {

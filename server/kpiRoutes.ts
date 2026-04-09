@@ -10,7 +10,7 @@ import {
   type KpiEntry,
 } from "@shared/schema";
 import { users } from "@shared/schema";
-import { eq, and, desc, asc, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, sql } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
 
@@ -52,10 +52,22 @@ router.get("/templates", requireAuth, async (req: AuthRequest, res: Response) =>
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
 
+    const hasPagination = req.query.page || req.query.limit;
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 100));
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const offset = (page - 1) * limit;
+
     const templates = await db.select().from(kpiTemplates)
       .where(eq(kpiTemplates.organizationId, orgId))
-      .orderBy(asc(kpiTemplates.name));
+      .orderBy(asc(kpiTemplates.name))
+      .limit(limit)
+      .offset(offset);
 
+    if (hasPagination) {
+      const countResult = await db.select({ count: sql<number>`count(*)` }).from(kpiTemplates).where(eq(kpiTemplates.organizationId, orgId));
+      const total = Number(countResult[0]?.count ?? 0);
+      return res.json({ data: templates, total, page, limit, totalPages: Math.ceil(total / limit) });
+    }
     return res.json(templates);
   } catch (error) {
     logError("Error fetching KPI templates:", {}, error instanceof Error ? error : new Error(String(error)));

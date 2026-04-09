@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { exportLimiter } from "./rateLimiter";
 import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, changeOrderScopeModifiers, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum, vendorUsers, vendorPricingCatalogs, vendorEnrollments, purchaseOrders, rentalEquipmentUsages, rentalVendors, subcontractorBidInvitations, subcontractorBidRequests, crmOrganisations, organizations } from "@shared/schema";
 import { requireAuth, requireRole, requireRoleOrFeature, type AuthRequest, type UserRole } from "./auth";
 import { eq, desc, sql, and, lt, gte, lte, or, type SQL } from "drizzle-orm";
@@ -2455,7 +2456,7 @@ const vaultExportSchema = z.object({
   documentIds: z.array(z.string()).min(1, "At least one document ID is required").max(500),
 });
 
-router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), exportLimiter, async (req: AuthRequest, res) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {

@@ -39,3 +39,12 @@ export const apiLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: getUserKeyOrIp,
 });
+
+export const exportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: "Too many export requests, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getUserKeyOrIp,
+});

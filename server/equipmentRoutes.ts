@@ -809,12 +809,23 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
           )
         );
       }
-      
-      const result = conditions.length > 0
-        ? await db.select().from(equipment).where(and(...conditions)).orderBy(equipment.name)
-        : await db.select().from(equipment).orderBy(equipment.name);
-      
-      res.json(result);
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const hasPagination = req.query.page || req.query.limit;
+      const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 100));
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const offset = (page - 1) * limit;
+
+      const query = db.select().from(equipment).where(whereClause).orderBy(equipment.name).limit(limit).offset(offset);
+      const result = await query;
+
+      if (hasPagination) {
+        const countResult = await db.select({ count: sql<number>`count(*)` }).from(equipment).where(whereClause);
+        const total = Number(countResult[0]?.count ?? 0);
+        res.json({ data: result, total, page, limit, totalPages: Math.ceil(total / limit) });
+      } else {
+        res.json(result);
+      }
     } catch (error) {
       logError("Get equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });

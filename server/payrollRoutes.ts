@@ -314,6 +314,7 @@ import {logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
+import { exportLimiter } from "./rateLimiter";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -2522,7 +2523,7 @@ router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", 
   }
 });
 
-router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), async (req, res) => {
+router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), exportLimiter, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);

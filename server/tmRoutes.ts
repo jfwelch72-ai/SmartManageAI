@@ -358,16 +358,22 @@ function registerTMInvoiceRoutes(app: Express) {
         });
       }
 
-      const enrichedTickets = await Promise.all(filteredTickets.map(async (ticket) => {
+      const userIdSet = new Set(filteredTickets.map(t => t.createdById));
+      const userIds = Array.from(userIdSet);
+      const usersData = userIds.length > 0
+        ? await db.query.users.findMany({ where: inArray(users.id, userIds) })
+        : [];
+      const userMap = new Map(usersData.map(u => [u.id, u]));
+
+      const enrichedTickets = filteredTickets.map(ticket => {
         const project = projectMap.get(ticket.projectId);
-        const createdBy = await db.query.users.findFirst({ where: eq(users.id, ticket.createdById) });
-        
+        const createdBy = userMap.get(ticket.createdById);
         return {
           ...ticket,
           project: project ? { id: project.id, name: project.name, clientName: project.clientName } : null,
           createdBy: createdBy ? { id: createdBy.id, firstName: createdBy.firstName, lastName: createdBy.lastName } : null,
         };
-      }));
+      });
 
       res.json(enrichedTickets);
     } catch (error) {

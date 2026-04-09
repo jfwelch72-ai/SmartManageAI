@@ -156,20 +156,49 @@ router.get("/api/library-assemblies", async (req: AuthRequest, res: Response) =>
     conditions.push(ilike(libraryAssemblies.name, `%${search}%`));
   }
   const assemblies = await db.select().from(libraryAssemblies).where(and(...conditions)).orderBy(libraryAssemblies.name);
-  const result = await Promise.all(assemblies.map(async (a) => {
-    const items = await db.select().from(libraryAssemblyItems)
-      .where(eq(libraryAssemblyItems.assemblyId, a.id))
-      .orderBy(libraryAssemblyItems.displayOrder);
-    const groups = await db.select().from(libraryAssemblyItemGroups)
-      .where(eq(libraryAssemblyItemGroups.assemblyId, a.id))
-      .orderBy(libraryAssemblyItemGroups.displayOrder);
-    const groupsWithMembers = await Promise.all(groups.map(async (g) => {
-      const members = await db.select().from(libraryAssemblyItemGroupMembers)
-        .where(eq(libraryAssemblyItemGroupMembers.groupId, g.id))
-        .orderBy(libraryAssemblyItemGroupMembers.displayOrder);
-      return { ...g, members };
-    }));
-    return { ...a, items, groups: groupsWithMembers };
+  if (assemblies.length === 0) return res.json([]);
+
+  const assemblyIds = assemblies.map(a => a.id);
+  const [allItems, allGroups] = await Promise.all([
+    db.select().from(libraryAssemblyItems)
+      .where(inArray(libraryAssemblyItems.assemblyId, assemblyIds))
+      .orderBy(libraryAssemblyItems.displayOrder),
+    db.select().from(libraryAssemblyItemGroups)
+      .where(inArray(libraryAssemblyItemGroups.assemblyId, assemblyIds))
+      .orderBy(libraryAssemblyItemGroups.displayOrder),
+  ]);
+
+  const groupIds = allGroups.map(g => g.id);
+  const allMembers = groupIds.length > 0
+    ? await db.select().from(libraryAssemblyItemGroupMembers)
+        .where(inArray(libraryAssemblyItemGroupMembers.groupId, groupIds))
+        .orderBy(libraryAssemblyItemGroupMembers.displayOrder)
+    : [];
+
+  const membersByGroup = new Map<string, typeof allMembers>();
+  for (const m of allMembers) {
+    const arr = membersByGroup.get(m.groupId) || [];
+    arr.push(m);
+    membersByGroup.set(m.groupId, arr);
+  }
+  const itemsByAssembly = new Map<string, typeof allItems>();
+  for (const item of allItems) {
+    const arr = itemsByAssembly.get(item.assemblyId) || [];
+    arr.push(item);
+    itemsByAssembly.set(item.assemblyId, arr);
+  }
+  const groupsByAssembly = new Map<string, any[]>();
+  for (const group of allGroups) {
+    const enriched = { ...group, members: membersByGroup.get(group.id) || [] };
+    const arr = groupsByAssembly.get(group.assemblyId) || [];
+    arr.push(enriched);
+    groupsByAssembly.set(group.assemblyId, arr);
+  }
+
+  const result = assemblies.map(a => ({
+    ...a,
+    items: itemsByAssembly.get(a.id) || [],
+    groups: groupsByAssembly.get(a.id) || [],
   }));
   res.json(result);
 });

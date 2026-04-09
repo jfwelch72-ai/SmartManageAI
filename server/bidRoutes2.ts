@@ -173,6 +173,7 @@ import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
+import { exportLimiter } from "./rateLimiter";
 import {
   bids, estimates, estimateLineItems, projects, users,
   insertBidSchema, scopeItems,
@@ -2458,7 +2459,7 @@ router.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN
 // Bid PDF Generation Routes
 // ====================
 
-router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2591,7 +2592,7 @@ router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADM
   }
 });
 
-router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {

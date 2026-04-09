@@ -91,3 +91,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Microsoft 365 (Mail, Calendar)**
 *   **DocuSign**
 *   **@node-saml/node-saml**
+
+## Performance & Security Patterns
+*   **Rate Limiting**: 4-tier system in `server/rateLimiter.ts`: `authLimiter` (15/15min), `sensitiveLimiter` (100/15min, user-keyed), `apiLimiter` (1000/15min, global), `exportLimiter` (20/15min, user-keyed for PDF/CSV exports). All AI analysis/generation endpoints use `sensitiveLimiter`. All export/PDF endpoints use `exportLimiter`.
+*   **Pagination**: List endpoints support opt-in pagination via `?page=N&limit=N` query params. When pagination params are provided, response is `{ data, total, page, limit, totalPages }`. Without params, returns plain array for backward compatibility. Applied to: equipment, warranty cases, KPI templates.
+*   **N+1 Query Prevention**: Workflow templates, library assemblies, and TM tickets use batch queries (IN clauses + Map-based assembly) instead of nested Promise.all loops. Vendor pricing matching uses batched updates (50 per batch).

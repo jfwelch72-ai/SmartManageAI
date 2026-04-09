@@ -2,7 +2,7 @@ import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { workflowTemplates, workflowStages, workflowApprovalSteps, workflowNotificationRules, workflowInstances } from "@shared/schema";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { z } from "zod";
@@ -66,25 +66,53 @@ router.get("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), asy
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(workflowTemplates.updatedAt));
 
-    const templatesWithStages = await Promise.all(
-      templates.map(async (template) => {
-        const stages = await db.select().from(workflowStages)
-          .where(eq(workflowStages.templateId, template.id))
-          .orderBy(asc(workflowStages.stageOrder));
+    if (templates.length === 0) return res.json([]);
 
-        const stagesWithDetails = await Promise.all(
-          stages.map(async (stage) => {
-            const approvalSteps = await db.select().from(workflowApprovalSteps)
-              .where(eq(workflowApprovalSteps.stageId, stage.id))
-              .orderBy(asc(workflowApprovalSteps.stepOrder));
-            const notificationRules = await db.select().from(workflowNotificationRules)
-              .where(eq(workflowNotificationRules.stageId, stage.id));
-            return { ...stage, approvalSteps, notificationRules };
-          })
-        );
-        return { ...template, stages: stagesWithDetails };
-      })
-    );
+    const templateIds = templates.map(t => t.id);
+    const allStages = await db.select().from(workflowStages)
+      .where(inArray(workflowStages.templateId, templateIds))
+      .orderBy(asc(workflowStages.stageOrder));
+
+    const stageIds = allStages.map(s => s.id);
+    const [allApprovalSteps, allNotificationRules] = stageIds.length > 0
+      ? await Promise.all([
+          db.select().from(workflowApprovalSteps)
+            .where(inArray(workflowApprovalSteps.stageId, stageIds))
+            .orderBy(asc(workflowApprovalSteps.stepOrder)),
+          db.select().from(workflowNotificationRules)
+            .where(inArray(workflowNotificationRules.stageId, stageIds)),
+        ])
+      : [[], []];
+
+    const stepsByStage = new Map<string, typeof allApprovalSteps>();
+    for (const step of allApprovalSteps) {
+      const arr = stepsByStage.get(step.stageId) || [];
+      arr.push(step);
+      stepsByStage.set(step.stageId, arr);
+    }
+    const rulesByStage = new Map<string, typeof allNotificationRules>();
+    for (const rule of allNotificationRules) {
+      const arr = rulesByStage.get(rule.stageId) || [];
+      arr.push(rule);
+      rulesByStage.set(rule.stageId, arr);
+    }
+
+    const stagesByTemplate = new Map<string, any[]>();
+    for (const stage of allStages) {
+      const enriched = {
+        ...stage,
+        approvalSteps: stepsByStage.get(stage.id) || [],
+        notificationRules: rulesByStage.get(stage.id) || [],
+      };
+      const arr = stagesByTemplate.get(stage.templateId) || [];
+      arr.push(enriched);
+      stagesByTemplate.set(stage.templateId, arr);
+    }
+
+    const templatesWithStages = templates.map(template => ({
+      ...template,
+      stages: stagesByTemplate.get(template.id) || [],
+    }));
 
     res.json(templatesWithStages);
   } catch (error) {
@@ -112,16 +140,35 @@ router.get("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), 
       .where(eq(workflowStages.templateId, template.id))
       .orderBy(asc(workflowStages.stageOrder));
 
-    const stagesWithDetails = await Promise.all(
-      stages.map(async (stage) => {
-        const approvalSteps = await db.select().from(workflowApprovalSteps)
-          .where(eq(workflowApprovalSteps.stageId, stage.id))
-          .orderBy(asc(workflowApprovalSteps.stepOrder));
-        const notificationRules = await db.select().from(workflowNotificationRules)
-          .where(eq(workflowNotificationRules.stageId, stage.id));
-        return { ...stage, approvalSteps, notificationRules };
-      })
-    );
+    const stageIds = stages.map(s => s.id);
+    const [approvalSteps, notifRules] = stageIds.length > 0
+      ? await Promise.all([
+          db.select().from(workflowApprovalSteps)
+            .where(inArray(workflowApprovalSteps.stageId, stageIds))
+            .orderBy(asc(workflowApprovalSteps.stepOrder)),
+          db.select().from(workflowNotificationRules)
+            .where(inArray(workflowNotificationRules.stageId, stageIds)),
+        ])
+      : [[], []];
+
+    const stepsByStage = new Map<string, typeof approvalSteps>();
+    for (const step of approvalSteps) {
+      const arr = stepsByStage.get(step.stageId) || [];
+      arr.push(step);
+      stepsByStage.set(step.stageId, arr);
+    }
+    const rulesByStage = new Map<string, typeof notifRules>();
+    for (const rule of notifRules) {
+      const arr = rulesByStage.get(rule.stageId) || [];
+      arr.push(rule);
+      rulesByStage.set(rule.stageId, arr);
+    }
+
+    const stagesWithDetails = stages.map(stage => ({
+      ...stage,
+      approvalSteps: stepsByStage.get(stage.id) || [],
+      notificationRules: rulesByStage.get(stage.id) || [],
+    }));
 
     res.json({ ...template, stages: stagesWithDetails });
   } catch (error) {

@@ -1,6 +1,7 @@
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
+import { sensitiveLimiter } from "./rateLimiter";
 import { eq, and, desc, gte, lte, ilike, sql, asc, or } from "drizzle-orm";
 import { socialAccounts, socialMediaPosts, organizations } from "@shared/schema";
 import { requireAuth, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -157,7 +158,7 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post("/posts/generate-image", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });

@@ -124,11 +124,18 @@ router.get("/projects/:code/warranty/cases", requireAuth, async (req: AuthReques
       conditions.push(eq(warrantyCases.priority, priority as WarrantyCase["priority"]));
     }
 
+    const hasPagination = req.query.page || req.query.limit;
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 100));
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const offset = (page - 1) * limit;
+
     let cases = await db
       .select()
       .from(warrantyCases)
       .where(and(...conditions))
-      .orderBy(desc(warrantyCases.createdAt));
+      .orderBy(desc(warrantyCases.createdAt))
+      .limit(limit)
+      .offset(offset);
 
     if (q && typeof q === "string" && q.trim()) {
       const lower = q.toLowerCase();
@@ -141,7 +148,13 @@ router.get("/projects/:code/warranty/cases", requireAuth, async (req: AuthReques
       );
     }
 
-    res.json(cases.map(enrichCase));
+    if (hasPagination) {
+      const countResult = await db.select({ count: sql<number>`count(*)` }).from(warrantyCases).where(and(...conditions));
+      const total = Number(countResult[0]?.count ?? 0);
+      res.json({ data: cases.map(enrichCase), total, page, limit, totalPages: Math.ceil(total / limit) });
+    } else {
+      res.json(cases.map(enrichCase));
+    }
   } catch (err) {
     logError("Error listing warranty cases:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch warranty cases" });

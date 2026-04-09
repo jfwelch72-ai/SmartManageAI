@@ -99,6 +99,7 @@
 import { Router, type Response, type NextFunction } from "express";
 import { db } from "./db";
 import { requireAuth, requireFeaturePermission, requireAnyFeaturePermission } from "./auth";
+import { exportLimiter } from "./rateLimiter";
 import { safetyTrainings, safetyTrainingAssignments, insertSafetyTrainingSchema, insertSafetyTrainingAssignmentSchema, users, organizations } from "@shared/schema";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -368,7 +369,7 @@ router.delete("/api/safety-training/assignments/:id", requireAuth, async (req: A
 });
 
 // GET /api/safety-training/export/pdf — PDF report
-router.get("/api/safety-training/export/pdf", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/safety-training/export/pdf", requireAuth, exportLimiter, async (req: AuthRequest, res) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });

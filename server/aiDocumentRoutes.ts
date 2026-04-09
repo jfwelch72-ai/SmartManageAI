@@ -364,7 +364,7 @@ router.get("/ai-bid-document", requireAuth, async (req: AuthRequest, res: Respon
 });
 
 // POST /api/ai-bid-document/analyze - Create new analysis (frontend endpoint)
-router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -469,7 +469,7 @@ router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIM
 });
 
 // POST /api/ai-bid-document/:id/reanalyze - Reanalyze (frontend endpoint)
-router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1055,7 +1055,7 @@ function isValidObjectStorageUrl(url: string): boolean {
   }
 }
 
-router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const validationResult = wizardAnalyzeSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -1227,7 +1227,7 @@ Be thorough in extracting scope items. Include quantities and units when availab
   }
 });
 
-router.post("/ai-bid-wizard/analyze-text", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/ai-bid-wizard/analyze-text", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { description } = req.body;
     if (!description || typeof description !== "string" || description.trim().length < 10) {
@@ -1764,7 +1764,7 @@ router.get("/ai-contract-document", requireAuth, async (req: AuthRequest, res: R
 });
 
 // POST /api/ai-contract-document/analyze - Create new analysis (frontend endpoint)
-router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -1884,7 +1884,7 @@ router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADM
 });
 
 // POST /api/ai-contract-document/:id/reanalyze - Reanalyze (frontend endpoint)
-router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -3840,7 +3840,7 @@ interface SimilarItem {
  * AI SOW Assistant - Analyzes user input and suggests properly formatted SOW item
  * POST /api/ai-assistant/sow/suggest
  */
-router.post("/ai-assistant/sow/suggest", async (req: AuthRequest, res) => {
+router.post("/ai-assistant/sow/suggest", sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -4056,7 +4056,7 @@ router.post("/ai-assistant/sow/add", async (req: AuthRequest, res) => {
  * AI UOM Assistant - Analyzes user input and suggests properly formatted UOM
  * POST /api/ai-assistant/uom/suggest
  */
-router.post("/ai-assistant/uom/suggest", async (req: AuthRequest, res) => {
+router.post("/ai-assistant/uom/suggest", sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
