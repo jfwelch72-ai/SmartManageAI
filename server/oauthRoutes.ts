@@ -258,7 +258,16 @@ function generateAppleClientSecret(): string {
   const clientId = process.env.APPLE_CLIENT_ID!;
   const teamId = process.env.APPLE_TEAM_ID!;
   const keyId = process.env.APPLE_KEY_ID!;
-  const privateKey = process.env.APPLE_PRIVATE_KEY!.replace(/\\n/g, "\n");
+  let privateKey = process.env.APPLE_PRIVATE_KEY!;
+  if (!privateKey.includes("\n") && privateKey.includes("\\n")) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
+  if (!privateKey.startsWith("-----BEGIN")) {
+    privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKey}\n-----END PRIVATE KEY-----`;
+  }
+  privateKey = privateKey.replace(/-----BEGIN PRIVATE KEY-----/, "-----BEGIN PRIVATE KEY-----\n")
+    .replace(/-----END PRIVATE KEY-----/, "\n-----END PRIVATE KEY-----")
+    .replace(/\n{2,}/g, "\n");
 
   const now = Math.floor(Date.now() / 1000);
   const payload = {
