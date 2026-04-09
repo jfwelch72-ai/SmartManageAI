@@ -194,7 +194,7 @@ import { eq, and, sql, gte, lte, desc, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { KNOWN_WIDGET_TYPES, migrateV2ToV3, getDefaultLayoutForRole, PRESET_PALETTES } from "./dashboardDefaults";
 import { sensitiveLimiter } from "./rateLimiter";
-import { logAudit } from "./auditLogger";
+import { logAudit, logUpdate } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyUserOrgAccess } from "./orgFilter";
 import { orgScopedCache } from "./cache";
@@ -2947,14 +2947,14 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
     }
 
     if (roleLabel !== undefined) {
-      await logAudit({
-        userId: req.user!.id,
-        entityType: "userRoleLabel",
-        entityId: req.params.id,
-        action: "UPDATE",
-        oldValue: JSON.stringify({ roleLabel: (targetUser as any).roleLabel || null }),
-        newValue: JSON.stringify({ roleLabel: roleLabel || null }),
-      }, req);
+      await logUpdate(
+        req.user!.id,
+        "userRoleLabel",
+        req.params.id,
+        { roleLabel: targetUser.roleLabel || null },
+        { roleLabel: roleLabel || null },
+        req
+      );
     }
 
     const { passwordHash, tokenVersion, ...userWithoutPassword } = updatedUser;

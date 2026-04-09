@@ -233,7 +233,7 @@ export default function TopHeader() {
                 </Avatar>
                 <div className="hidden md:block text-left">
                   <p className="text-sm font-medium">{userName}</p>
-                  <p className="text-xs text-muted-foreground">{getRoleDisplayName(userRole)}</p>
+                  <p className="text-xs text-muted-foreground">{getRoleDisplayName(userRole, false, user?.roleLabel)}</p>
                 </div>
               </Button>
             </DropdownMenuTrigger>

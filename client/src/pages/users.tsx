@@ -137,6 +137,7 @@ interface UserWithPermissions extends SelectUser {
   effectiveRole?: string;
   grantedAt?: string;
   appliedPresetId?: string | null;
+  roleLabel?: string | null;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -207,7 +208,7 @@ function RoleLabelEditor({ userId, currentLabel, role }: { userId: string; curre
       toast({ title: "Display title updated", description: value ? `Set to "${value}"` : "Cleared — using default role name" });
       setEditing(false);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to update display title", variant: "destructive" });
     },
   });
@@ -1145,7 +1146,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                   </span>
                                   {(() => {
                                     const appliedPreset = u.appliedPresetId ? presets.find(p => p.id === u.appliedPresetId) : null;
-                                    const roleDisplayName = (u as any).roleLabel || ROLE_LABELS[u.role] || u.role;
+                                    const roleDisplayName = u.roleLabel || ROLE_LABELS[u.role] || u.role;
                                     const badgeLabel = appliedPreset
                                       ? `${roleDisplayName} - ${appliedPreset.name}`
                                       : roleDisplayName;
@@ -1215,7 +1216,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                 </div>
                               )}
                               {(user?.role === "ADMIN" || user?.role === "HUSTLER") && u.id !== user?.id && u.role !== "SUPER_ADMIN" && (
-                                <RoleLabelEditor userId={u.id} currentLabel={(u as any).roleLabel || ""} role={u.role} />
+                                <RoleLabelEditor userId={u.id} currentLabel={u.roleLabel || ""} role={u.role} />
                               )}
                               {!isAdmin && (() => {
                                 const userPresets = presets.filter(p => p.targetRole === u.role);
