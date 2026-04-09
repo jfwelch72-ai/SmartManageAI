@@ -141,7 +141,7 @@ export function hasFinancialEditAccess(role?: string, perms?: FeaturePerms): boo
 
 export function hasEquipmentAccess(role?: string, perms?: FeaturePerms): boolean {
   if (perms) return !!perms.canManageEquipment;
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" || role === "ESTIMATOR";
 }
 
 export function hasSafetyAccess(role?: string, perms?: FeaturePerms): boolean {
