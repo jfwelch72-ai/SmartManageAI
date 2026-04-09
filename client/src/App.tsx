@@ -155,6 +155,9 @@ const VendorPortalPricing = lazy(() => import("@/pages/vendor/pricing"));
 const VendorClients = lazy(() => import("@/pages/vendor/clients"));
 const VendorMessages = lazy(() => import("@/pages/vendor/messages"));
 const VendorDocuments = lazy(() => import("@/pages/vendor/documents"));
+const VendorCompliance = lazy(() => import("@/pages/vendor/compliance"));
+const VendorPurchaseOrders = lazy(() => import("@/pages/vendor/purchase-orders"));
+const VendorSchedule = lazy(() => import("@/pages/vendor/schedule"));
 const ViewAsOrganization = lazy(() => import("@/pages/view-as-organization"));
 const SubcontractsPage = lazy(() => import("@/pages/subcontracts"));
 const SocialMediaPage = lazy(() => import("@/pages/social-media"));
@@ -462,6 +465,9 @@ function Router() {
       <Route path="/vendor/clients" component={() => <ProtectedRoute component={VendorClients} permission={VendorRoutePermissions.VENDOR_CLIENTS} />} />
       <Route path="/vendor/messages" component={() => <ProtectedRoute component={VendorMessages} permission={VendorRoutePermissions.VENDOR_MESSAGES} />} />
       <Route path="/vendor/documents" component={() => <ProtectedRoute component={VendorDocuments} permission={VendorRoutePermissions.VENDOR_DOCUMENTS} />} />
+      <Route path="/vendor/compliance" component={() => <ProtectedRoute component={VendorCompliance} permission={VendorRoutePermissions.VENDOR_COMPLIANCE} />} />
+      <Route path="/vendor/purchase-orders" component={() => <ProtectedRoute component={VendorPurchaseOrders} permission={VendorRoutePermissions.VENDOR_PURCHASE_ORDERS} />} />
+      <Route path="/vendor/schedule" component={() => <ProtectedRoute component={VendorSchedule} permission={VendorRoutePermissions.VENDOR_SCHEDULE} />} />
       <Route path="/vendor/analytics" component={() => <ProtectedRoute component={VendorAnalytics} permission={VendorRoutePermissions.VENDOR_ANALYTICS} />} />
       <Route path="/vendor" component={() => <Redirect to="/vendor/analytics" />} />
       

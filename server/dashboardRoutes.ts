@@ -1104,6 +1104,38 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
     },
   },
   {
+    name: "Chief Estimator",
+    description: "Full estimating authority plus financial oversight, contract analysis, hiring, and AI governance",
+    targetRole: "ESTIMATOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true, canAccessProjects: true, canAccessCalendar: true,
+      canAccessTasks: true, canAccessMessages: true, canAccessBulletins: true,
+      canViewBids: true, canEditBids: true, canDeleteBids: true, canGenerateBidPDFs: true,
+      canConvertBidToProject: true, canAccessBidNetworkGC: true, canAccessBidNetworkInbox: true,
+      canManageBidResponses: true, canDeleteBidRequests: true,
+      canAccessHistoricalCosts: true, canAccessScopeSettings: true,
+      canUseAiBidAnalysis: true, canUseAiContractAnalysis: true,
+      canCreateProjects: true, canEditProjects: true,
+      canViewFinancials: true, canEditFinancials: true,
+      canAccessCostRates: true, canAccessProductionRates: true,
+      canAccessCFODashboard: true, canAccessOverheadCosts: true,
+      canAccessTimeClock: true,
+      canAccessCRM: true, canCreateCRMContacts: true,
+      canAccessMarketplace: true,
+      canManageEquipment: true, canManageProcurement: true,
+      canManageContracts: true, canAccessSubcontracts: true, canAccessVendorPricing: true,
+      canUseAiFeatures: true, canViewAiSummaries: true,
+      canAccessKPIs: true, canAccessExecutiveDigest: true,
+      canAccessReports: true, canAccessApprovals: true, canAccessAuditLogs: true,
+      canManageHiring: true, canAccessHiringInterviews: true,
+      canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
+      canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
+      canCreateChangeOrders: true,
+      canSubmitPeerRatings: true, canViewPeerRatings: true,
+    },
+  },
+  {
     name: "Subcontractor",
     description: "Submit bids, view scopes, bid network, messaging, dashboard",
     targetRole: "VENDOR",
@@ -1456,10 +1488,65 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
       });
     }
 
+    await logAudit({
+      userId: adminId,
+      entityType: "userPermissions",
+      entityId: userId,
+      action: "UPDATE",
+      oldValue: existing.length > 0 ? JSON.stringify({ source: "manual", appliedPresetId: existing[0].appliedPresetId }) : null,
+      newValue: JSON.stringify({ source: "preset", presetId, presetName: preset.name, targetUserEmail: targetUser.email, permissions: fullPermSet }),
+    }, req);
+
     res.json({ success: true, permissions: fullPermSet, appliedPresetId: presetId });
   } catch (error) {
     logError('Error applying permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to apply permission preset' });
+  }
+});
+
+router.delete('/api/dashboard/permissions/:userId/reset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const orgId = req.user!.organizationId;
+    const adminId = req.user!.id;
+
+    if (!orgId) {
+      return res.status(403).json({ error: 'Organization required' });
+    }
+
+    const [targetUser] = await db.select().from(users)
+      .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found in your organization' });
+    }
+
+    const existing = await db.select().from(userDashboardPermissions)
+      .where(and(
+        eq(userDashboardPermissions.organizationId, orgId),
+        eq(userDashboardPermissions.userId, userId)
+      ));
+
+    if (existing.length > 0) {
+      await db.delete(userDashboardPermissions)
+        .where(eq(userDashboardPermissions.id, existing[0].id));
+    }
+
+    const roleDefaults = getRoleDefaults(targetUser.role);
+
+    await logAudit({
+      userId: adminId,
+      entityType: "userPermissions",
+      entityId: userId,
+      action: "DELETE",
+      oldValue: existing.length > 0 ? JSON.stringify({ source: existing[0].appliedPresetId ? "preset" : "manual" }) : null,
+      newValue: JSON.stringify({ source: "role_defaults_reset", targetUserEmail: targetUser.email, role: targetUser.role }),
+    }, req);
+
+    res.json({ success: true, permissions: roleDefaults, message: `Permissions reset to ${targetUser.role} role defaults` });
+  } catch (error) {
+    logError('Error resetting permissions:', {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: 'Failed to reset permissions' });
   }
 });
 

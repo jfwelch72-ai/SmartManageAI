@@ -87,6 +87,7 @@ import {
   PackageOpen,
   FolderOpen,
   UserCog,
+  RotateCcw,
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
@@ -379,6 +380,22 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to apply preset", variant: "destructive" });
+    },
+  });
+
+  const [resetConfirm, setResetConfirm] = useState<{ userId: string; userName: string; role: string } | null>(null);
+
+  const resetPermissionsMutation = useMutation({
+    mutationFn: async ({ userId }: { userId: string }) => {
+      return await apiRequest("DELETE", `/api/dashboard/permissions/${userId}/reset`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permissions"] });
+      toast({ title: "Permissions reset", description: "User permissions have been reset to role defaults" });
+      setResetConfirm(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to reset permissions", variant: "destructive" });
     },
   });
 
@@ -1237,6 +1254,17 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                     Save as Preset
                                   </Button>
                                   )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1 sm:flex-none text-amber-600 hover:text-amber-700 border-amber-200 hover:border-amber-300"
+                                    onClick={() => setResetConfirm({ userId: u.id, userName: u.firstName || u.email, role: u.role })}
+                                    disabled={resetPermissionsMutation.isPending}
+                                    data-testid={`button-reset-defaults-${u.id}`}
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                                    Reset to Defaults
+                                  </Button>
                                 </div>
                               )}
 
@@ -1453,6 +1481,31 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                 }}
               >
                 Apply Preset
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={!!resetConfirm} onOpenChange={(open) => !open && setResetConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reset Permissions to Role Defaults</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will remove all custom permission overrides for {resetConfirm?.userName} and reset their permissions to the standard {ROLE_LABELS[resetConfirm?.role || ""] || resetConfirm?.role} role defaults. Any previously applied presets will also be cleared.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-reset-defaults">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                data-testid="button-confirm-reset-defaults"
+                className="bg-amber-600 hover:bg-amber-700"
+                onClick={() => {
+                  if (resetConfirm) {
+                    resetPermissionsMutation.mutate({ userId: resetConfirm.userId });
+                  }
+                }}
+              >
+                Reset to Defaults
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

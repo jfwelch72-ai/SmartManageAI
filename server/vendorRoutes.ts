@@ -3604,4 +3604,31 @@ router.get("/api/vendor/documents", requireAuth, requireRole("VENDOR"), async (r
   }
 });
 
+router.get("/api/vendor/compliance-documents", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    res.json([]);
+  } catch (error) {
+    console.error("Get vendor compliance documents error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/purchase-orders", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    res.json([]);
+  } catch (error) {
+    console.error("Get vendor purchase orders error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/schedule", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    res.json([]);
+  } catch (error) {
+    console.error("Get vendor schedule error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

@@ -595,7 +595,7 @@ const FIELD_WORKER_WORKFLOW: WorkflowGroup[] = [
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/dashboard'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/safety-training', '/procurement-module', '/tm-daily', '/reports', '/lidar-scans'] },
   { key: 'crew', label: 'Crew', itemHrefs: ['/manage-workers', '/crews'] },
-  { key: 'info', label: 'Info', itemHrefs: ['/leave-management', '/communications', '/messages'] },
+  { key: 'info', label: 'Communication', itemHrefs: ['/leave-management', '/communications', '/messages'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
 
@@ -638,6 +638,9 @@ export const VendorPortalNavConfig = {
     { href: "/vendor/clients", label: "Clients", testId: "nav-vendor-clients", visible: () => true },
     { href: "/vendor/messages", label: "Messages", testId: "nav-vendor-messages", visible: () => true },
     { href: "/vendor/documents", label: "Documents", testId: "nav-vendor-documents", visible: () => true },
+    { href: "/vendor/compliance", label: "Compliance", testId: "nav-vendor-compliance", visible: () => true },
+    { href: "/vendor/purchase-orders", label: "Purchase Orders", testId: "nav-vendor-purchase-orders", visible: () => true },
+    { href: "/vendor/schedule", label: "Schedule", testId: "nav-vendor-schedule", visible: () => true },
     { href: "/bid-inbox", label: "Bid Inbox", testId: "nav-vendor-bid-inbox", visible: () => true },
   ],
 };
@@ -649,5 +652,8 @@ export const VendorRoutePermissions = {
   VENDOR_CLIENTS: (role: string) => role === "VENDOR",
   VENDOR_MESSAGES: (role: string) => role === "VENDOR",
   VENDOR_DOCUMENTS: (role: string) => role === "VENDOR",
+  VENDOR_COMPLIANCE: (role: string) => role === "VENDOR",
+  VENDOR_PURCHASE_ORDERS: (role: string) => role === "VENDOR",
+  VENDOR_SCHEDULE: (role: string) => role === "VENDOR",
   BID_INBOX: (role: string) => role === "VENDOR",
 };

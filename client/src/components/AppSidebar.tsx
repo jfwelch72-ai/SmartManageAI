@@ -58,6 +58,9 @@ import {
   BookOpen,
   FileText,
   Info,
+  ShieldCheck,
+  ShoppingCart,
+  CalendarRange,
   type LucideIcon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -301,6 +304,9 @@ export function AppSidebar() {
                         {item.href === "/vendor/clients" && <Store className="w-4 h-4" />}
                         {item.href === "/vendor/messages" && <MessageSquare className="w-4 h-4" />}
                         {item.href === "/vendor/documents" && <FileSearch className="w-4 h-4" />}
+                        {item.href === "/vendor/compliance" && <ShieldCheck className="w-4 h-4" />}
+                        {item.href === "/vendor/purchase-orders" && <ShoppingCart className="w-4 h-4" />}
+                        {item.href === "/vendor/schedule" && <CalendarRange className="w-4 h-4" />}
                         {item.href === "/bid-inbox" && <Inbox className="w-4 h-4" />}
                         <span>{item.label}</span>
                       </Link>

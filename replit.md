@@ -27,7 +27,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Subcontract Management**: Full subcontract lifecycle with SOV scope alignment, AIA G702/G703-style pay applications, and retention tracking.
 *   **Procurement Module**: Full procure-to-pay lifecycle with automated 3-Way Match and RBAC approvals.
 *   **Communication & Collaboration**: Unified Messaging System with Video Calling, Client Portal Chat, Subcontractor Portal System, and unified AI chat.
-*   **Unified External Portal**: Single entry point (`/portal`) for Client, Subcontractor, and Vendor access with role-based auto-detection.
+*   **Unified External Portal**: Single entry point (`/portal`) for Client, Subcontractor, and Vendor access with role-based auto-detection. Vendor portal includes Dashboard, Analytics, Pricing, Clients, Messages, Documents, Compliance (COI/W-9/License), Purchase Orders, Schedule, and Bid Inbox.
 *   **Takeoff Cross-Module Connections**: Convert takeoff measurements to purchase requests, auto-detect version deltas for PCOs, generate SOV line items, and provide cost lifecycle summaries.
 *   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets.
 *   **Takeoff Data Engine & Versioning**: Rich linked data objects on measurements with full takeoff versioning and comparison views.
@@ -46,7 +46,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Account Settings Hub**: Unified settings page (`/settings`) merging Profile and Settings, with URL-based sidebar routing for various sections.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
 *   **Platform Monitoring & Observability**: Super Admin dashboard with API usage tracking, AI usage analytics, object storage usage, platform integration health checks, and cross-organization audit log viewer.
-*   **Feature Permissions System**: Granular per-user feature access control via boolean flags and role-based defaults for 8 consolidated roles. Includes Permission Presets and financial access controls.
+*   **Feature Permissions System**: Granular per-user feature access control via boolean flags and role-based defaults for 8 consolidated roles. Includes Permission Presets (30+ built-in across all roles), financial access controls, "Reset to Role Defaults" button, and audit logging for all permission changes/preset applications.
 *   **Peer Coworker Ratings**: Anonymous peer rating system for field workers with configurable anonymity and scope modes.
 *   **RBAC (8-Role System)**: Consolidated role system including SUPER_ADMIN, ADMIN, HUSTLER, MANAGER, SUPERINTENDENT, ESTIMATOR, FIELD_WORKER, VENDOR with defined hierarchies and alternate labels.
 *   **Role-Based Sidebar Navigation**: Workflow-based sidebar grouping with unique group names and item assignments per role.
