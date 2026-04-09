@@ -509,7 +509,7 @@ export default function Tasks() {
           <Button
             variant={statusFilter === null ? "default" : "outline"}
             size="sm"
-            className="min-h-[40px] sm:min-h-0 shrink-0"
+            className="min-h-[44px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter(null)}
             data-testid="filter-all"
           >
@@ -518,7 +518,7 @@ export default function Tasks() {
           <Button
             variant={statusFilter === "PENDING" ? "default" : "outline"}
             size="sm"
-            className="min-h-[40px] sm:min-h-0 shrink-0"
+            className="min-h-[44px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter("PENDING")}
             data-testid="filter-pending"
           >
@@ -527,7 +527,7 @@ export default function Tasks() {
           <Button
             variant={statusFilter === "IN_PROGRESS" ? "default" : "outline"}
             size="sm"
-            className="min-h-[40px] sm:min-h-0 shrink-0"
+            className="min-h-[44px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter("IN_PROGRESS")}
             data-testid="filter-in-progress"
           >
@@ -536,7 +536,7 @@ export default function Tasks() {
           <Button
             variant={statusFilter === "COMPLETED" ? "default" : "outline"}
             size="sm"
-            className="min-h-[40px] sm:min-h-0 shrink-0"
+            className="min-h-[44px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter("COMPLETED")}
             data-testid="filter-completed"
           >

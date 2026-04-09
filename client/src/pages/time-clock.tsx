@@ -751,11 +751,14 @@ export default function TimeClockPage() {
                           {clockIn.isPending ? "Clocking In..." : "Clock In"}
                         </Button>
                         {clockInDisabledByGps && (
-                          <p className="text-xs text-muted-foreground text-center" data-testid="text-gps-required-message">
-                            {gpsAcquiring
-                              ? "GPS position is required for this project's geo-fence. Please wait for GPS to be acquired."
-                              : "GPS position is required to clock in on this project. Please retry GPS or enable location services."}
-                          </p>
+                          <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900" data-testid="text-gps-required-message">
+                            <ShieldAlert className="w-5 h-5 text-red-500 shrink-0" />
+                            <p className="text-sm text-red-700 dark:text-red-400">
+                              {gpsAcquiring
+                                ? "GPS position is required for this project's geo-fence. Please wait for GPS to be acquired."
+                                : "GPS position is required to clock in on this project. Please retry GPS or enable location services."}
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}

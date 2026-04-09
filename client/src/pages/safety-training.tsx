@@ -350,9 +350,9 @@ export default function SafetyTrainingPage() {
       {tab === "assignments" && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2 items-center">
-            <Input placeholder="Search employee or training..." value={searchQ} onChange={e => setSearchQ(e.target.value)} className="max-w-xs h-8 text-sm" data-testid="input-search-assignments" />
+            <Input placeholder="Search employee or training..." value={searchQ} onChange={e => setSearchQ(e.target.value)} className="max-w-xs min-h-[44px] sm:min-h-0 sm:h-8 text-sm" data-testid="input-search-assignments" />
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-36 h-8 text-sm" data-testid="select-status-filter"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-36 min-h-[44px] sm:min-h-0 sm:h-8 text-sm" data-testid="select-status-filter"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All Statuses</SelectItem>
                 <SelectItem value="PENDING">Pending</SelectItem>
@@ -362,7 +362,7 @@ export default function SafetyTrainingPage() {
             </Select>
             {isAdmin && uniqueEmployees.length > 0 && (
               <Select value={empFilter} onValueChange={setEmpFilter}>
-                <SelectTrigger className="w-44 h-8 text-sm" data-testid="select-employee-filter"><SelectValue placeholder="Employee" /></SelectTrigger>
+                <SelectTrigger className="w-44 min-h-[44px] sm:min-h-0 sm:h-8 text-sm" data-testid="select-employee-filter"><SelectValue placeholder="Employee" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Employees</SelectItem>
                   {uniqueEmployees.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
@@ -370,7 +370,7 @@ export default function SafetyTrainingPage() {
               </Select>
             )}
             {isAdmin && empFilter !== "ALL" && (
-              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => window.open(`/api/safety-training/export/pdf?employeeId=${empFilter}`, "_blank")} data-testid="button-export-employee">
+              <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-0 sm:h-8 text-xs" onClick={() => window.open(`/api/safety-training/export/pdf?employeeId=${empFilter}`, "_blank")} data-testid="button-export-employee">
                 <Download className="h-3.5 w-3.5 mr-1" /> Export Employee PDF
               </Button>
             )}
