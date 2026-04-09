@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
@@ -45,12 +45,93 @@ import {
   UserCheck,
   BriefcaseBusiness,
   ListChecks,
-  Award
+  Award,
+  Layers,
+  Lock,
+  FileSignature,
+  Eye,
+  Scan,
+  Box,
+  Workflow,
+  Smartphone,
+  Wifi,
+  Quote,
+  ArrowDown,
+  PenTool,
+  Gauge,
+  ShieldCheck,
+  Settings,
+  Plug,
+  CreditCard,
+  Handshake,
+  LayoutGrid,
+  Scale,
+  GanttChart,
+  Folder,
+  StickyNote
 } from "lucide-react";
 import heroImage from "../assets/images/landing/hero-construction.jpg";
 import teamImage from "../assets/images/landing/team-planning.jpg";
 import technologyImage from "../assets/images/landing/technology.jpg";
 import equipmentImage from "../assets/images/landing/equipment.jpg";
+
+function useScrollReveal() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setIsVisible(true); observer.unobserve(el); } },
+      { threshold: 0.1, rootMargin: "0px 0px -40px 0px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, className: isVisible ? "animate-fadeSlideUp" : "opacity-0 translate-y-8" };
+}
+
+function RevealSection({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const reveal = useScrollReveal();
+  return (
+    <div ref={reveal.ref} className={`transition-all duration-700 ease-out ${reveal.className} ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+const testimonials = [
+  {
+    name: "Marcus Rivera",
+    title: "Owner, Rivera Concrete Solutions",
+    trade: "Concrete",
+    quote: "We went from losing $10K per project on missed change orders to catching every single one. SmartManageAI paid for itself in the first month.",
+    rating: 5
+  },
+  {
+    name: "Sarah Chen",
+    title: "VP Operations, Chen Electrical Group",
+    trade: "Electrical",
+    quote: "The AI CFO dashboard alone is worth the subscription. We can see profitability in real-time instead of waiting until the project closes to learn we lost money.",
+    rating: 5
+  },
+  {
+    name: "James Whitfield",
+    title: "President, Whitfield General Contracting",
+    trade: "General Contractor",
+    quote: "Managing 40+ subcontractors used to be chaos. Now every pay app, lien waiver, and SOV is tracked in one place. Our admin time dropped by 60%.",
+    rating: 5
+  },
+  {
+    name: "Angela Torres",
+    title: "CEO, Torres HVAC Services",
+    trade: "HVAC",
+    quote: "The GPS time clock and production tracking completely changed how we bid. We finally have real data on crew productivity instead of guessing.",
+    rating: 5
+  }
+];
 
 const painPoints = [
   {
@@ -167,34 +248,89 @@ const features = [
   {
     category: "Project Lifecycle",
     items: [
-      { name: "Bid Management", description: "Track opportunities from lead to win", icon: Target },
-      { name: "Estimating Engine", description: "Build detailed estimates with production rates", icon: Calculator },
-      { name: "Project Dashboard", description: "Real-time status across all projects", icon: Building2 },
-      { name: "Change Orders", description: "Document and invoice scope changes", icon: FileText },
-      { name: "Schedule of Values", description: "Progress billing made simple", icon: DollarSign },
-      { name: "Daily Reports", description: "Field logs with photo documentation", icon: ClipboardList }
+      { name: "Bid Management", description: "Track opportunities from lead to win with 6-step workflow", icon: Target },
+      { name: "Estimating Engine", description: "Interactive takeoff, assembly expansion, and production rates", icon: Calculator },
+      { name: "Project Dashboard", description: "Real-time status, health scores, and KPIs across all projects", icon: Building2 },
+      { name: "Change Orders", description: "AI-suggested PCOs with revision history and multi-level approvals", icon: FileText },
+      { name: "Schedule of Values", description: "AIA progress billing and SOV scope alignment", icon: DollarSign },
+      { name: "Daily Reports", description: "Field logs with photo documentation and AI analysis", icon: ClipboardList }
+    ]
+  },
+  {
+    category: "Financial Management",
+    items: [
+      { name: "Budget vs. Actual", description: "Live cost tracking against estimates with variance alerts", icon: BarChart3 },
+      { name: "CFO Dashboard", description: "Cost forecasting, burn-rate trends, and margin tracking", icon: TrendingUp },
+      { name: "AIA Progress Billing", description: "G702/G703-style pay applications with retention tracking", icon: CreditCard },
+      { name: "Revenue Recognition", description: "WIP reporting and percentage-of-completion accounting", icon: DollarSign },
+      { name: "Cost Overrun Predictions", description: "AI-powered early warnings before budgets blow", icon: Gauge },
+      { name: "Profitability Tracking", description: "Real-time profit margins by project and portfolio", icon: TrendingUp }
+    ]
+  },
+  {
+    category: "Subcontracts & Procurement",
+    items: [
+      { name: "Subcontract Management", description: "Full lifecycle with SOV alignment and retention tracking", icon: Handshake },
+      { name: "Pay Applications", description: "AIA G702/G703-style sub pay apps with approval workflow", icon: FileSignature },
+      { name: "Procurement Module", description: "Procure-to-pay with automated 3-way match", icon: ClipboardList },
+      { name: "Purchase Orders", description: "Create, approve, and track POs with RBAC controls", icon: FileText },
+      { name: "Vendor Pricing", description: "Track material prices over time across vendors", icon: DollarSign },
+      { name: "Sub Recommendations", description: "AI-ranked subcontractors by composite performance score", icon: Star }
     ]
   },
   {
     category: "AI Automation",
     items: [
-      { name: "AI Project Manager", description: "Task generation and risk alerts", icon: Brain },
+      { name: "AI Project Manager", description: "Task generation, risk alerts, and daily summaries", icon: Brain },
       { name: "AI CFO", description: "Margin tracking and cashflow forecasting", icon: TrendingUp },
       { name: "AI Schedule Generator", description: "Realistic timelines from project data", icon: Calendar },
       { name: "AI Vision Takeoff", description: "Extract quantities from blueprints", icon: Camera, comingSoon: true },
-      { name: "AI Email Assistant", description: "Categorize emails, extract tasks", icon: Mail },
-      { name: "AI Change Detection", description: "Identify scope changes automatically", icon: Sparkles }
+      { name: "AI Email Assistant", description: "Categorize emails, extract action items", icon: Mail },
+      { name: "AI Contract Review", description: "Risk analysis and clause suggestions", icon: Shield }
+    ]
+  },
+  {
+    category: "Scheduling & Planning",
+    items: [
+      { name: "CPM Schedule Engine", description: "Critical path, forward/backward pass, and float calculation", icon: GanttChart },
+      { name: "Resource Loading", description: "Assign crews, equipment, and materials to schedule activities", icon: Users },
+      { name: "Gantt Charts", description: "Visual project timelines with drag-and-drop", icon: Calendar },
+      { name: "Dependency Mapping", description: "Define task relationships and critical path", icon: Network },
+      { name: "Milestone Tracking", description: "Track key dates and deliverables across projects", icon: Target },
+      { name: "AI Schedule Generation", description: "Generate realistic schedules from scope and crew data", icon: Sparkles }
     ]
   },
   {
     category: "Field Operations",
     items: [
-      { name: "GPS Time Clock", description: "Accurate time tracking with location", icon: MapPin },
+      { name: "GPS Time Clock", description: "Accurate time tracking with geofence verification", icon: MapPin },
       { name: "T&M Tickets", description: "Digital time & material documentation", icon: FileText },
-      { name: "Crew Management", description: "Assign crews to projects and tasks", icon: Users },
+      { name: "Crew Management", description: "Assign crews to projects, tasks, and cost codes", icon: Users },
       { name: "Production Tracking", description: "Measure actual vs. estimated productivity", icon: BarChart3 },
-      { name: "Daily Progress", description: "Track scope completion in real-time", icon: CheckCircle2 },
-      { name: "Manager Approvals", description: "Superintendent sign-off workflow", icon: Shield }
+      { name: "Manager Approvals", description: "Superintendent sign-off and overtime rules engine", icon: Shield },
+      { name: "Punch List", description: "Track deficiency items during project closeout", icon: ListChecks }
+    ]
+  },
+  {
+    category: "Contract Management",
+    items: [
+      { name: "Contract Lifecycle", description: "Draft, negotiate, execute, and track contracts", icon: FileSignature },
+      { name: "E-Signatures", description: "Integrated digital signature workflows", icon: PenTool },
+      { name: "AI Risk Analysis", description: "AI-powered contract risk scoring and alerts", icon: Shield },
+      { name: "Clause Library", description: "Reusable clauses and template builder", icon: Folder },
+      { name: "Addenda Tracking", description: "Track contract modifications and amendments", icon: FileText },
+      { name: "Approval Workflows", description: "Multi-level approval chains with audit trail", icon: CheckCircle2 }
+    ]
+  },
+  {
+    category: "Risk & Compliance",
+    items: [
+      { name: "Risk Register", description: "Category, probability, and impact scoring per project", icon: AlertTriangle },
+      { name: "Risk Matrix Heat Map", description: "Visual risk assessment across your portfolio", icon: LayoutGrid },
+      { name: "Document Control", description: "Versioning, revision tracking, and expiration alerts", icon: Folder },
+      { name: "Compliance Tracking", description: "Insurance, licenses, and certification monitoring", icon: ShieldCheck },
+      { name: "Audit Logging", description: "Complete activity trail for all platform actions", icon: Eye },
+      { name: "Certified Payroll", description: "Generate certified payroll reports for prevailing wage", icon: FileText }
     ]
   },
   {
@@ -205,41 +341,107 @@ const features = [
       { name: "Maintenance Scheduling", description: "Preventive maintenance alerts", icon: Calendar },
       { name: "Hour Logging", description: "Track equipment usage and fuel", icon: Clock },
       { name: "Repair Workflows", description: "Document and track repairs", icon: HardHat },
-      { name: "Cost Allocation", description: "Equipment costs by project", icon: DollarSign }
+      { name: "Cost Allocation", description: "Equipment costs by project with depreciation", icon: DollarSign }
     ]
   },
   {
-    category: "CRM & Vendors",
+    category: "BIM & Technology",
     items: [
-      { name: "Contact Management", description: "Customers, subs, and vendors", icon: Users },
-      { name: "Vendor Pricing", description: "Track material prices over time", icon: DollarSign },
-      { name: "Subcontractor Network", description: "Bid solicitation marketplace", icon: Network },
-      { name: "Rental Catalog", description: "Equipment rental tracking", icon: Truck },
-      { name: "Subcontract Management", description: "Scope assignment and billing", icon: FileText },
-      { name: "Payables Workflow", description: "Approve and track payments", icon: CheckCircle2 }
+      { name: "3D BIM Viewer", description: "Upload IFC files and view building models in 3D", icon: Box },
+      { name: "LiDAR Scanner", description: "View and analyze 3D point cloud scans", icon: Scan },
+      { name: "Takeoff Workspace", description: "Multi-page PDF rendering with measurement tools", icon: Layers },
+      { name: "Live Collaboration", description: "Real-time multi-user takeoff via WebSockets", icon: Users },
+      { name: "BIM Quantity Extraction", description: "Extract element quantities from IFC models", icon: Calculator },
+      { name: "Version Comparison", description: "Compare takeoff versions and detect deltas", icon: Eye }
+    ]
+  },
+  {
+    category: "CRM & Sales",
+    items: [
+      { name: "Contact Management", description: "Customers, subs, and vendors in one place", icon: Users },
+      { name: "7-Stage Pipeline", description: "Visual sales pipeline from lead to close", icon: Target },
+      { name: "Subcontractor Network", description: "Bid solicitation and contractor marketplace", icon: Network },
+      { name: "Rental Catalog", description: "Equipment rental tracking and pricing", icon: Truck },
+      { name: "Insurance Tracking", description: "COI, W-9, and license compliance monitoring", icon: ShieldCheck },
+      { name: "Social Media Manager", description: "AI content, scheduling, and multi-platform posting", icon: Globe }
+    ]
+  },
+  {
+    category: "Portals & Collaboration",
+    items: [
+      { name: "Client Portal", description: "Project visibility and approvals for your clients", icon: Users },
+      { name: "Subcontractor Portal", description: "Pay apps, documents, and scheduling for subs", icon: Handshake },
+      { name: "Vendor Portal", description: "POs, invoices, compliance, and bid inbox for vendors", icon: Truck },
+      { name: "Team Messaging", description: "Secure real-time chat with file sharing", icon: MessagesSquare },
+      { name: "Video Calling", description: "Built-in video meetings for remote collaboration", icon: Video },
+      { name: "Project Notes", description: "Notion-style block editor with auto-save", icon: StickyNote }
     ]
   },
   {
     category: "Communication & Docs",
     items: [
-      { name: "Team Messaging", description: "Secure internal communication", icon: MessagesSquare },
-      { name: "Document Storage", description: "Organized file management", icon: FileText },
-      { name: "Company Calendar", description: "Shared scheduling", icon: Calendar },
-      { name: "Notifications", description: "Real-time alerts and updates", icon: AlertTriangle },
-      { name: "Website Builder", description: "Professional company website", icon: Globe },
-      { name: "White-Label Branding", description: "Your brand throughout", icon: Building2 }
+      { name: "Document Storage", description: "Organized file management with version control", icon: FileText },
+      { name: "Company Calendar", description: "Shared scheduling across teams", icon: Calendar },
+      { name: "Multi-Channel Notifications", description: "Email, push, SMS, Slack, and Teams alerts", icon: Bell },
+      { name: "Website Builder", description: "Professional company website with SEO", icon: Globe },
+      { name: "White-Label Branding", description: "Your brand throughout the platform", icon: Building2 },
+      { name: "Leave Management", description: "Employee self-service and manager approval", icon: Calendar }
     ]
   },
   {
     category: "Hiring & Recruiting",
     items: [
       { name: "AI Job Posting", description: "Auto-generate and post job listings", icon: BriefcaseBusiness },
-      { name: "Candidate Pipeline Board", description: "Visual kanban for every applicant", icon: ListChecks },
-      { name: "AI Candidate Review", description: "Resume scoring and strengths/concerns", icon: Brain },
+      { name: "Candidate Pipeline", description: "Visual kanban for every applicant", icon: ListChecks },
+      { name: "AI Candidate Scoring", description: "Resume scoring with strengths and concerns", icon: Brain },
       { name: "Interview Scheduling", description: "Automated scheduling with calendar sync", icon: Calendar },
-      { name: "Hiring Analytics", description: "Track time-to-hire and pipeline metrics", icon: BarChart3 },
-      { name: "Offer Management", description: "Send and track offers digitally", icon: Award }
+      { name: "Talent Pool", description: "AI-powered skill matching from talent profiles", icon: UserCheck },
+      { name: "Hiring Analytics", description: "Track time-to-hire and pipeline metrics", icon: BarChart3 }
     ]
+  },
+  {
+    category: "Enterprise & Security",
+    items: [
+      { name: "SSO / SAML 2.0", description: "Single sign-on for enterprise organizations", icon: Lock },
+      { name: "8-Role RBAC", description: "Granular permissions with custom role labels", icon: Shield },
+      { name: "Feature Permissions", description: "Per-user access control with 30+ built-in presets", icon: Settings },
+      { name: "No-Code Workflows", description: "Visual pipeline editor for custom approval chains", icon: Workflow },
+      { name: "Data Retention & GDPR", description: "Configurable retention policies and compliance", icon: ShieldCheck },
+      { name: "PWA & Offline Sync", description: "Works offline with automatic data sync", icon: Smartphone }
+    ]
+  }
+];
+
+const integrations = [
+  {
+    name: "QuickBooks Online",
+    description: "Sync invoices, payments, and chart of accounts bidirectionally",
+    icon: "QB"
+  },
+  {
+    name: "Google Workspace",
+    description: "Gmail integration, Google Calendar sync, and Drive storage",
+    icon: "G"
+  },
+  {
+    name: "Microsoft 365",
+    description: "Outlook email, Teams notifications, and calendar sync",
+    icon: "M"
+  },
+  {
+    name: "DocuSign",
+    description: "E-signature workflows for contracts and change orders",
+    icon: "DS"
+  },
+  {
+    name: "Resend",
+    description: "Transactional email delivery for notifications and alerts",
+    icon: "RE"
+  },
+  {
+    name: "OpenAI",
+    description: "GPT-4o powering all AI features across the platform",
+    icon: "AI"
   }
 ];
 
@@ -251,9 +453,15 @@ const aiCapabilities = [
     image: teamImage
   },
   {
-    title: "AI CFO",
-    description: "Financial intelligence at your fingertips. Tracks margins in real-time, forecasts cashflow, and alerts you to profitability issues before they become problems.",
-    features: ["Margin Tracking", "Cashflow Forecasting", "Budget Variance Alerts", "Profitability Analysis"],
+    title: "AI CFO & Cost Predictor",
+    description: "Financial intelligence at your fingertips. Tracks margins in real-time, forecasts cashflow, predicts cost overruns before they happen, and alerts you to profitability issues with confidence-scored early warnings.",
+    features: ["Margin Tracking", "Cashflow Forecasting", "Cost Overrun Predictions", "Burn-Rate Analysis"],
+    image: null
+  },
+  {
+    title: "AI Contract Analyst",
+    description: "Scans contracts for risk clauses, suggests protective language, and scores contract risk levels. Paired with a clause library and template builder for rapid contract assembly.",
+    features: ["Risk Scoring", "Clause Suggestions", "Template Builder", "Compliance Checks"],
     image: null
   },
   {
@@ -265,14 +473,26 @@ const aiCapabilities = [
   },
   {
     title: "AI Schedule Generator",
-    description: "Analyzes your scope of work, crew availability, and historical production rates to generate realistic construction schedules. No more guessing at timelines.",
-    features: ["Automatic Scheduling", "Resource Optimization", "Dependency Mapping", "Timeline Predictions"],
+    description: "Analyzes your scope of work, crew availability, and historical production rates to generate realistic CPM schedules with critical path identification and resource loading.",
+    features: ["CPM Scheduling", "Resource Optimization", "Critical Path", "Timeline Predictions"],
     image: null
   },
   {
     title: "AI Hiring Assistant",
-    description: "Automates the entire recruiting workflow. AI writes and posts job listings, scores incoming resumes, highlights candidate strengths and concerns, and triggers stage-change automations so qualified workers move through your pipeline without manual effort.",
-    features: ["AI Job Posting", "Resume Scoring", "Strengths & Concerns Flags", "Stage Automation"],
+    description: "Automates the entire recruiting workflow. AI writes and posts job listings, scores incoming resumes, highlights candidate strengths and concerns, and triggers automations so qualified workers move through your pipeline.",
+    features: ["AI Job Posting", "Resume Scoring", "Strengths & Concerns", "Stage Automation"],
+    image: null
+  },
+  {
+    title: "AI Subcontractor Engine",
+    description: "Ranks subcontractors by a composite score built from performance history, vendor ratings, and contract track record. Get data-driven recommendations for every trade on every project.",
+    features: ["Performance Scoring", "Vendor Rankings", "Trade Matching", "History Analysis"],
+    image: null
+  },
+  {
+    title: "AI Change Detection",
+    description: "Monitors takeoff versions and daily reports to automatically detect scope changes. Generates draft PCOs from quantity deltas so nothing falls through the cracks.",
+    features: ["Scope Change Detection", "Auto PCO Drafting", "Delta Analysis", "Version Comparison"],
     image: null
   }
 ];
@@ -310,7 +530,7 @@ const plans = [
       "Everything in Starter",
       "Production rate tracking",
       "Budget vs. actuals",
-      "Vendor invites",
+      "Vendor & sub management",
       "Advanced reports",
       "Up to 50 projects",
       "Up to 25 users",
@@ -332,9 +552,9 @@ const plans = [
       "Everything in Growth",
       "Portfolio dashboards",
       "Bid Network access",
-      "Website builder (basic)",
-      "Unlimited projects",
-      "Unlimited users",
+      "Website builder",
+      "Client & sub portals",
+      "Unlimited projects & users",
       "Priority support",
       "Quarterly success review"
     ],
@@ -348,11 +568,11 @@ const plans = [
     revenueRange: "Multi-Company",
     description: "For owners running multiple businesses",
     features: [
-      "Multiple companies under one account",
+      "Multiple companies",
       "Cross-org analytics",
       "COO delegation mode",
+      "SSO / SAML 2.0",
       "White-glove onboarding",
-      "Priority roadmap input",
       "Dedicated success manager"
     ],
     notIncluded: [],
@@ -363,12 +583,13 @@ const plans = [
 
 const addons = [
   { name: "AI PM Pack", price: 39, description: "Task generation, risk alerts, daily summaries" },
-  { name: "AI CFO Pack", price: 59, description: "Margin tracking, cashflow forecasting, financial alerts" },
+  { name: "AI CFO Pack", price: 59, description: "Margin tracking, cashflow forecasting, cost overrun predictions" },
   { name: "AI Email Pack", price: 29, description: "Email categorization, task extraction, follow-ups" },
   { name: "AI Vision Pack", price: 79, description: "AI-powered plan takeoff and material estimation", comingSoon: true },
+  { name: "AI Contract Pack", price: 49, description: "Contract risk analysis, clause suggestions, template builder" },
   { name: "Website + SEO Pack", price: 39, description: "Website builder, SEO optimization, blog & gallery" },
   { name: "Bid Network Pack", price: 49, description: "Competitive vendor bidding marketplace" },
-  { name: "AI Hiring Pack", price: 49, description: "AI job posting, resume scoring, and candidate pipeline automation" }
+  { name: "AI Hiring Pack", price: 49, description: "AI job posting, resume scoring, candidate pipeline automation" }
 ];
 
 const tradeTypes = [
@@ -378,10 +599,39 @@ const tradeTypes = [
   "Steel", "Demolition", "Paving", "Utilities", "Fire Protection", "Elevator"
 ];
 
+const platformStats = [
+  { value: "500+", label: "Platform Features" },
+  { value: "23", label: "Trades Supported" },
+  { value: "8", label: "AI Assistants" },
+  { value: "99.9%", label: "Uptime SLA" }
+];
+
+const howItWorks = [
+  {
+    step: 1,
+    title: "Sign Up in Minutes",
+    description: "Create your account and select your trade. Our AI-driven onboarding customizes the platform for your specific business type.",
+    icon: UserCheck
+  },
+  {
+    step: 2,
+    title: "Configure Your Workspace",
+    description: "Import contacts, set up your crew, and configure cost codes. The platform adapts its navigation, dashboards, and features to your trade.",
+    icon: Settings
+  },
+  {
+    step: 3,
+    title: "Start Managing Profitably",
+    description: "Track projects, automate change orders, monitor costs in real-time, and let AI handle the busywork. See results from day one.",
+    icon: TrendingUp
+  }
+];
+
 export default function LandingPage() {
   const [showDemoModal, setShowDemoModal] = useState(false);
   const [notifyEmail, setNotifyEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
   const { toast } = useToast();
 
   const handleNotifySubmit = async () => {
@@ -391,7 +641,6 @@ export default function LandingPage() {
     }
     
     setIsSubmitting(true);
-    // Simulate submission - in production this would call an API
     await new Promise(resolve => setTimeout(resolve, 1000));
     setIsSubmitting(false);
     
@@ -403,9 +652,10 @@ export default function LandingPage() {
     setShowDemoModal(false);
   };
 
+  const visibleFeatures = showAllFeatures ? features : features.slice(0, 6);
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -417,6 +667,7 @@ export default function LandingPage() {
             </div>
             <div className="hidden md:flex items-center gap-8">
               <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-features">Features</a>
+              <a href="#integrations" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-integrations">Integrations</a>
               <a href="#ai" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-ai">AI Automation</a>
               <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-pricing">Pricing</a>
             </div>
@@ -436,7 +687,6 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* Hero Section */}
       <section className="relative pt-16 overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
@@ -449,17 +699,18 @@ export default function LandingPage() {
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32 lg:py-40">
           <div className="max-w-3xl">
             <Badge variant="secondary" className="mb-6 bg-primary/20 text-primary-foreground border-primary/30">
+              <Sparkles className="w-3 h-3 mr-1" />
               AI-Powered Construction Management
             </Badge>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-              Stop Losing Money on Every Project
+              The Only Platform Built to Run Your Entire Construction Business
             </h1>
             <p className="text-xl md:text-2xl text-gray-300 mb-8 leading-relaxed">
-              SmartManageAI replaces spreadsheets, sticky notes, and scattered tools with one AI-powered platform. Track production rates, automate change orders, and finally know where your money goes.
+              From bids to billing, crews to contracts, takeoffs to time clocks — SmartManageAI replaces 6+ scattered tools with one AI-powered platform. 500+ features purpose-built for 23 construction trades.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 mb-12">
               <Link href="/register">
-                <Button size="lg" className="w-full sm:w-auto" data-testid="button-hero-trial">
+                <Button size="lg" className="w-full sm:w-auto text-base px-8 py-6" data-testid="button-hero-trial">
                   Start Free 14-Day Trial
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
@@ -467,7 +718,7 @@ export default function LandingPage() {
               <Button 
                 size="lg" 
                 variant="secondary" 
-                className="w-full sm:w-auto bg-white/10 border-white/30 text-white" 
+                className="w-full sm:w-auto bg-white/10 border-white/30 text-white text-base px-8 py-6" 
                 onClick={() => setShowDemoModal(true)}
                 data-testid="button-hero-demo"
               >
@@ -488,342 +739,596 @@ export default function LandingPage() {
                 <CheckCircle2 className="w-5 h-5 text-green-400" />
                 <span>Cancel anytime</span>
               </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-400" />
+                <span>Works offline</span>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Trusted By / Trade Types */}
-      <section className="py-12 bg-muted/30 border-y">
+      <section className="py-16 bg-muted/30 border-y">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-muted-foreground mb-6">
-            PURPOSE-BUILT FOR 23 CONSTRUCTION TRADES
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+            {platformStats.map((stat) => (
+              <div key={stat.label} className="text-center" data-testid={`stat-${stat.label.toLowerCase().replace(/\s+/g, '-')}`}>
+                <div className="text-3xl md:text-4xl font-bold text-primary mb-1">{stat.value}</div>
+                <div className="text-sm text-muted-foreground">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-sm text-muted-foreground mb-6 uppercase tracking-wider font-medium">
+            Purpose-Built for 23 Construction Trades
           </p>
-          <div className="flex flex-wrap justify-center gap-3">
-            {tradeTypes.slice(0, 12).map((trade) => (
-              <Badge key={trade} variant="outline" className="px-3 py-1">
+          <div className="flex flex-wrap justify-center gap-2">
+            {tradeTypes.map((trade) => (
+              <Badge key={trade} variant="outline" className="px-3 py-1 text-xs" data-testid={`badge-trade-${trade.toLowerCase().replace(/\s+/g, '-')}`}>
                 {trade}
               </Badge>
             ))}
-            <Badge variant="secondary" className="px-3 py-1">
-              +11 more
-            </Badge>
           </div>
         </div>
       </section>
 
-      {/* Pain Points Section */}
-      <section className="py-20 md:py-28" id="problems">
+      <section className="py-20 md:py-28 bg-gradient-to-b from-background to-muted/20" data-testid="section-social-proof">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <Badge variant="destructive" className="mb-4">Sound Familiar?</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              The Hidden Costs Killing Your Profits
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Construction companies lose an average of 5-10% of revenue to inefficiencies. Here's where the money goes.
-            </p>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {painPoints.map((point, index) => (
-              <Card key={index} className="border-destructive/20 bg-destructive/5">
-                <CardHeader className="pb-2">
-                  <div className="w-12 h-12 rounded-lg bg-destructive/10 flex items-center justify-center mb-3">
-                    <point.icon className="w-6 h-6 text-destructive" />
-                  </div>
-                  <CardTitle className="text-lg">{point.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">{point.description}</p>
-                  <div className="pt-4 border-t">
-                    <span className="text-2xl font-bold text-destructive">{point.stat}</span>
-                    <span className="text-sm text-muted-foreground ml-2">{point.statLabel}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Solution Section */}
-      <section className="py-20 md:py-28 bg-muted/30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <Badge variant="default" className="mb-4">The SmartManageAI Solution</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              AI Automation That Actually Works
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Every pain point has a solution. Here's how SmartManageAI transforms your operations.
-            </p>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {solutions.map((solution, index) => (
-              <Card key={index} className="relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
-                <CardHeader>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <solution.icon className="w-5 h-5 text-primary" />
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge variant="secondary" className="mb-4">Trusted by Contractors</Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Contractors Who Stopped Guessing and Started Knowing
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                See how construction companies across every trade are using SmartManageAI to increase profitability and reduce chaos.
+              </p>
+            </div>
+          </RevealSection>
+          <div className="grid md:grid-cols-2 gap-6">
+            {testimonials.map((testimonial, index) => (
+              <RevealSection key={index}>
+                <Card className="h-full border-none shadow-md bg-card">
+                  <CardContent className="pt-6">
+                    <div className="flex gap-1 mb-4">
+                      {Array.from({ length: testimonial.rating }).map((_, i) => (
+                        <Star key={i} className="w-4 h-4 fill-primary text-primary" />
+                      ))}
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground line-through">{solution.problem}</p>
-                      <CardTitle className="text-lg">{solution.solution}</CardTitle>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">{solution.description}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section className="py-20 md:py-28" id="features">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <Badge variant="secondary" className="mb-4">Complete Platform</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Everything You Need to Run Your Business
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Replace 6+ apps with one integrated platform. From bids to billing, crews to change orders.
-            </p>
-          </div>
-          <div className="space-y-12">
-            {features.map((category, catIndex) => (
-              <div key={catIndex}>
-                <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-primary" />
-                  {category.category}
-                </h3>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {category.items.map((feature, featIndex) => (
-                    <div key={featIndex} className="flex items-start gap-3 p-4 rounded-lg border bg-card hover-elevate">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <feature.icon className="w-5 h-5 text-primary" />
+                    <blockquote className="text-base md:text-lg mb-6 leading-relaxed italic text-foreground/90">
+                      "{testimonial.quote}"
+                    </blockquote>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/60 to-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
+                        {testimonial.name.split(' ').map(n => n[0]).join('')}
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium">{feature.name}</h4>
-                          {(feature as any).comingSoon && (
-                            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
-                              Coming Soon
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">{feature.description}</p>
+                        <div className="font-semibold text-sm">{testimonial.name}</div>
+                        <div className="text-xs text-muted-foreground">{testimonial.title}</div>
                       </div>
+                      <Badge variant="outline" className="ml-auto text-xs">{testimonial.trade}</Badge>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </CardContent>
+                </Card>
+              </RevealSection>
             ))}
           </div>
         </div>
       </section>
 
-      {/* AI Deep Dive */}
-      <section className="py-20 md:py-28 bg-gradient-to-b from-primary/5 to-background" id="ai">
+      <section className="py-20 md:py-28" data-testid="section-how-it-works">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <Badge className="mb-4 bg-primary/20">
-              <Sparkles className="w-3 h-3 mr-1" />
-              Powered by AI
-            </Badge>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Your AI Construction Team
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Like having a senior PM, CFO, and estimator working around the clock. AI that understands construction.
-            </p>
-          </div>
-          <div className="space-y-12">
-            {aiCapabilities.map((capability, index) => (
-              <div key={index} className={`flex flex-col ${index % 2 === 0 ? 'lg:flex-row' : 'lg:flex-row-reverse'} gap-8 items-center`}>
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-4">
-                    <h3 className="text-2xl font-bold">{capability.title}</h3>
-                    {(capability as any).comingSoon && (
-                      <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
-                        Coming Soon
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-lg text-muted-foreground mb-6">{capability.description}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {capability.features.map((feature, featIndex) => (
-                      <Badge key={featIndex} variant="secondary" className="px-3 py-1">
-                        <Check className="w-3 h-3 mr-1" />
-                        {feature}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex-1 max-w-md">
-                  {capability.image ? (
-                    <img 
-                      src={capability.image} 
-                      alt={capability.title}
-                      className="rounded-lg shadow-xl"
-                    />
-                  ) : (
-                    <div className="aspect-video rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                      <Brain className="w-16 h-16 text-primary/40" />
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge variant="secondary" className="mb-4">Getting Started</Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Up and Running in Three Steps
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                No complicated setup. No month-long implementation. Start managing your projects profitably today.
+              </p>
+            </div>
+          </RevealSection>
+          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {howItWorks.map((step, index) => (
+              <RevealSection key={step.step}>
+                <div className="text-center relative">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 relative">
+                    <step.icon className="w-8 h-8 text-primary" />
+                    <div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
+                      {step.step}
                     </div>
+                  </div>
+                  {index < howItWorks.length - 1 && (
+                    <div className="hidden md:block absolute top-8 left-[calc(50%+40px)] w-[calc(100%-80px)] h-[2px] bg-gradient-to-r from-primary/30 to-primary/10" />
                   )}
+                  <h3 className="text-xl font-semibold mb-3">{step.title}</h3>
+                  <p className="text-muted-foreground leading-relaxed">{step.description}</p>
                 </div>
-              </div>
+              </RevealSection>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Technology Section */}
+      <section className="py-20 md:py-28 bg-muted/30" id="problems">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge variant="destructive" className="mb-4">Sound Familiar?</Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                The Hidden Costs Killing Your Profits
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Construction companies lose an average of 5-10% of revenue to inefficiencies. Here's where the money goes.
+              </p>
+            </div>
+          </RevealSection>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {painPoints.map((point, index) => (
+              <RevealSection key={index}>
+                <Card className="border-destructive/20 bg-destructive/5 h-full" data-testid={`card-pain-${index}`}>
+                  <CardHeader className="pb-2">
+                    <div className="w-12 h-12 rounded-lg bg-destructive/10 flex items-center justify-center mb-3">
+                      <point.icon className="w-6 h-6 text-destructive" />
+                    </div>
+                    <CardTitle className="text-lg">{point.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground mb-4">{point.description}</p>
+                    <div className="pt-4 border-t">
+                      <span className="text-2xl font-bold text-destructive">{point.stat}</span>
+                      <span className="text-sm text-muted-foreground ml-2">{point.statLabel}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </RevealSection>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="py-20 md:py-28">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <img 
-                src={technologyImage} 
-                alt="Construction technology"
-                className="rounded-lg shadow-xl"
-              />
-            </div>
-            <div>
-              <Badge variant="secondary" className="mb-4">Built for the Field</Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-6">
-                Technology That Works Where You Work
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge variant="default" className="mb-4">The SmartManageAI Solution</Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Every Problem Has a Solution Built In
               </h2>
-              <div className="space-y-6">
-                <div className="flex gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1">GPS Time Clock</h3>
-                    <p className="text-muted-foreground">Crews clock in from the jobsite. No more buddy punching or timesheet disputes.</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Camera className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1">Photo Documentation</h3>
-                    <p className="text-muted-foreground">Capture progress photos linked to daily reports. Build an automatic project record.</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Zap className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1">Offline Mode</h3>
-                    <p className="text-muted-foreground">Keep working without internet. Data syncs automatically when you're back online.</p>
-                  </div>
-                </div>
-              </div>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                We didn't just build features — we built answers to the real problems contractors face every day.
+              </p>
             </div>
+          </RevealSection>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {solutions.map((solution, index) => (
+              <RevealSection key={index}>
+                <Card className="relative overflow-hidden h-full" data-testid={`card-solution-${index}`}>
+                  <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
+                  <CardHeader>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <solution.icon className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground line-through">{solution.problem}</p>
+                        <CardTitle className="text-lg">{solution.solution}</CardTitle>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-muted-foreground">{solution.description}</p>
+                  </CardContent>
+                </Card>
+              </RevealSection>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section className="py-20 md:py-28 bg-muted/30" id="pricing">
+      <section className="py-20 md:py-28 bg-muted/30" id="features">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <Badge variant="secondary" className="mb-4">Simple Pricing</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Plans That Grow With You
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Start with what you need. Add AI capabilities as you grow. No long-term contracts.
-            </p>
-          </div>
-          
-          {/* Pricing Cards */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-            {plans.map((plan, index) => (
-              <Card key={index} className={`relative ${plan.popular ? 'border-primary shadow-lg scale-105' : ''}`}>
-                {plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-primary">Most Popular</Badge>
-                  </div>
-                )}
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-xl">{plan.name}</CardTitle>
-                  <CardDescription>{plan.revenueRange}</CardDescription>
-                  <div className="pt-4">
-                    <span className="text-4xl font-bold">${plan.price}</span>
-                    <span className="text-muted-foreground">/month</span>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-sm text-muted-foreground">{plan.description}</p>
-                  <div className="space-y-2">
-                    {plan.features.map((feature, featIndex) => (
-                      <div key={featIndex} className="flex items-start gap-2 text-sm">
-                        <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>{feature}</span>
-                      </div>
-                    ))}
-                    {plan.notIncluded.map((feature, featIndex) => (
-                      <div key={featIndex} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <X className="w-4 h-4 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
-                        <span>{feature}</span>
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge variant="secondary" className="mb-4">Complete Platform</Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Everything You Need — Nothing You Don't
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                {features.length} feature categories. 500+ individual capabilities. One platform that replaces your entire tool stack.
+              </p>
+            </div>
+          </RevealSection>
+          <div className="space-y-12">
+            {visibleFeatures.map((category, catIndex) => (
+              <RevealSection key={catIndex}>
+                <div>
+                  <h3 className="text-xl font-semibold mb-6 flex items-center gap-2" data-testid={`heading-feature-${category.category.toLowerCase().replace(/\s+/g, '-')}`}>
+                    <div className="w-2 h-2 rounded-full bg-primary" />
+                    {category.category}
+                  </h3>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {category.items.map((feature, featIndex) => (
+                      <div key={featIndex} className="flex items-start gap-3 p-4 rounded-lg border bg-card hover:shadow-md hover:border-primary/20 transition-all duration-200" data-testid={`feature-${feature.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <feature.icon className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium">{feature.name}</h4>
+                            {(feature as any).comingSoon && (
+                              <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+                                Coming Soon
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{feature.description}</p>
+                        </div>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-                <CardFooter>
-                  <Link href="/register" className="w-full">
-                    <Button 
-                      className="w-full" 
-                      variant={plan.popular ? "default" : "outline"}
-                      data-testid={`button-pricing-${plan.name.toLowerCase()}`}
-                    >
-                      {plan.cta}
-                    </Button>
-                  </Link>
-                </CardFooter>
-              </Card>
+                </div>
+              </RevealSection>
             ))}
           </div>
+          {!showAllFeatures && (
+            <div className="text-center mt-12">
+              <Button 
+                variant="outline" 
+                size="lg" 
+                onClick={() => setShowAllFeatures(true)}
+                data-testid="button-show-all-features"
+              >
+                Show All {features.length} Categories
+                <ArrowDown className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </section>
 
-          {/* Add-ons */}
-          <div className="mt-16">
-            <h3 className="text-2xl font-bold text-center mb-8">Power Up With AI Add-Ons</h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
-              {addons.map((addon, index) => (
-                <div key={index} className="flex items-center justify-between p-4 rounded-lg border bg-card">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-medium">{addon.name}</h4>
-                      {(addon as any).comingSoon && (
-                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+      <section className="py-20 md:py-28" id="integrations">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge variant="secondary" className="mb-4">
+                <Plug className="w-3 h-3 mr-1" />
+                Integrations
+              </Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Connects With the Tools You Already Use
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Seamless integrations with your accounting, email, calendar, and document systems. Plus an open Integration Hub for custom connections.
+              </p>
+            </div>
+          </RevealSection>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {integrations.map((integration, index) => (
+              <RevealSection key={index}>
+                <Card className="text-center h-full hover:shadow-md hover:border-primary/20 transition-all duration-200" data-testid={`card-integration-${integration.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                  <CardContent className="pt-6">
+                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto mb-4">
+                      <span className="text-lg font-bold text-primary">{integration.icon}</span>
+                    </div>
+                    <h3 className="font-semibold mb-2">{integration.name}</h3>
+                    <p className="text-sm text-muted-foreground">{integration.description}</p>
+                  </CardContent>
+                </Card>
+              </RevealSection>
+            ))}
+          </div>
+          <RevealSection>
+            <div className="text-center mt-10">
+              <p className="text-sm text-muted-foreground">
+                Plus a provider-agnostic <span className="font-semibold text-foreground">Integration Hub</span> for custom connections and webhook automations.
+              </p>
+            </div>
+          </RevealSection>
+        </div>
+      </section>
+
+      <section className="py-20 md:py-28 bg-gradient-to-b from-primary/5 to-background" id="ai">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge className="mb-4 bg-primary/20">
+                <Sparkles className="w-3 h-3 mr-1" />
+                Powered by AI
+              </Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Your AI Construction Team — 8 Assistants Working 24/7
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Like having a senior PM, CFO, estimator, contract analyst, and hiring manager working around the clock. AI that understands construction.
+              </p>
+            </div>
+          </RevealSection>
+          <div className="space-y-12">
+            {aiCapabilities.map((capability, index) => (
+              <RevealSection key={index}>
+                <div className={`flex flex-col ${index % 2 === 0 ? 'lg:flex-row' : 'lg:flex-row-reverse'} gap-8 items-center`} data-testid={`ai-capability-${index}`}>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-4">
+                      <h3 className="text-2xl font-bold">{capability.title}</h3>
+                      {(capability as any).comingSoon && (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
                           Coming Soon
                         </Badge>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">{addon.description}</p>
+                    <p className="text-lg text-muted-foreground mb-6">{capability.description}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {capability.features.map((feature, featIndex) => (
+                        <Badge key={featIndex} variant="secondary" className="px-3 py-1">
+                          <Check className="w-3 h-3 mr-1" />
+                          {feature}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                  <div className="text-right flex-shrink-0 ml-4">
-                    <span className="text-lg font-bold">+${addon.price}</span>
-                    <span className="text-sm text-muted-foreground">/mo</span>
+                  <div className="flex-1 max-w-md">
+                    {capability.image ? (
+                      <img 
+                        src={capability.image} 
+                        alt={capability.title}
+                        className="rounded-lg shadow-xl"
+                      />
+                    ) : (
+                      <div className="aspect-video rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/10">
+                        <Brain className="w-16 h-16 text-primary/40" />
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
+              </RevealSection>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Final CTA */}
+      <section className="py-20 md:py-28 bg-muted/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <RevealSection>
+            <div className="grid lg:grid-cols-2 gap-12 items-center">
+              <div>
+                <img 
+                  src={technologyImage} 
+                  alt="Construction technology"
+                  className="rounded-lg shadow-xl"
+                />
+              </div>
+              <div>
+                <Badge variant="secondary" className="mb-4">Built for the Field</Badge>
+                <h2 className="text-3xl md:text-4xl font-bold mb-6">
+                  Technology That Works Where You Work
+                </h2>
+                <div className="space-y-6">
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <MapPin className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold mb-1">GPS Time Clock & Geofencing</h3>
+                      <p className="text-muted-foreground">Crews clock in from the jobsite with location verification. No more buddy punching or timesheet disputes.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Users className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold mb-1">Live Collaboration</h3>
+                      <p className="text-muted-foreground">Real-time multi-user collaboration on takeoffs, documents, and project data via WebSockets. Everyone stays in sync.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Video className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold mb-1">Built-In Video Calling</h3>
+                      <p className="text-muted-foreground">Host video meetings directly in the platform. No need for separate Zoom or Teams accounts for project coordination.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Bell className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold mb-1">Multi-Channel Notifications</h3>
+                      <p className="text-muted-foreground">Get alerts via email, web push, SMS, Slack, or Microsoft Teams. Configure per-user preferences so nothing gets missed.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Smartphone className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold mb-1">PWA & Offline Mode</h3>
+                      <p className="text-muted-foreground">Install as a native app on any device. Keep working without internet — data syncs automatically when you're back online.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Camera className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold mb-1">Photo Documentation</h3>
+                      <p className="text-muted-foreground">Capture progress photos linked to daily reports. Build an automatic visual project record for clients and compliance.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </RevealSection>
+        </div>
+      </section>
+
+      <section className="py-20 md:py-28 bg-gradient-to-br from-primary/5 via-background to-primary/5" data-testid="section-replaces">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <RevealSection>
+            <div className="text-center mb-12">
+              <Badge variant="secondary" className="mb-4">Why Switch?</Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Replace 6+ Tools With One Platform
+              </h2>
+            </div>
+            <div className="grid md:grid-cols-2 gap-8">
+              <Card className="border-destructive/20 bg-destructive/5">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <X className="w-5 h-5 text-destructive" />
+                    Without SmartManageAI
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {[
+                    "Spreadsheets for estimating",
+                    "Separate time tracking app",
+                    "Paper or PDF change orders",
+                    "QuickBooks only for accounting",
+                    "Email chains for approvals",
+                    "WhatsApp for field communication",
+                    "Indeed for hiring",
+                    "Dropbox for documents"
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <X className="w-4 h-4 text-destructive/60 flex-shrink-0" />
+                      {item}
+                    </div>
+                  ))}
+                  <div className="pt-4 border-t mt-4">
+                    <div className="text-sm text-destructive font-semibold">$500-1,200+/mo across 6-8 apps</div>
+                    <div className="text-xs text-muted-foreground">Plus hours of manual data transfer between tools</div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-primary/30 bg-primary/5">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-primary" />
+                    With SmartManageAI
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {[
+                    "AI-powered estimating with takeoff workspace",
+                    "GPS time clock with production tracking",
+                    "Automated change order detection & billing",
+                    "QuickBooks, Google, Microsoft integrations",
+                    "Built-in approval workflows & e-signatures",
+                    "Real-time team messaging & video calls",
+                    "AI hiring assistant with candidate scoring",
+                    "Document control with versioning & compliance"
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
+                      {item}
+                    </div>
+                  ))}
+                  <div className="pt-4 border-t mt-4">
+                    <div className="text-sm text-primary font-semibold">Starting at $89/mo — everything in one place</div>
+                    <div className="text-xs text-muted-foreground">All data connected. Zero manual transfer. AI does the rest.</div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </RevealSection>
+        </div>
+      </section>
+
+      <section className="py-20 md:py-28 bg-muted/30" id="pricing">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <RevealSection>
+            <div className="text-center mb-16">
+              <Badge variant="secondary" className="mb-4">Simple Pricing</Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Plans That Grow With You
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Start with what you need. Add AI capabilities as you grow. No long-term contracts.
+              </p>
+            </div>
+          </RevealSection>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            {plans.map((plan, index) => (
+              <RevealSection key={index}>
+                <Card className={`relative h-full ${plan.popular ? 'border-primary shadow-lg ring-2 ring-primary/20' : ''}`}>
+                  {plan.popular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <Badge className="bg-primary">Most Popular</Badge>
+                    </div>
+                  )}
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-xl">{plan.name}</CardTitle>
+                    <CardDescription>{plan.revenueRange}</CardDescription>
+                    <div className="pt-4">
+                      <span className="text-4xl font-bold">${plan.price}</span>
+                      <span className="text-muted-foreground">/month</span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">{plan.description}</p>
+                    <div className="space-y-2">
+                      {plan.features.map((feature, featIndex) => (
+                        <div key={featIndex} className="flex items-start gap-2 text-sm">
+                          <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span>{feature}</span>
+                        </div>
+                      ))}
+                      {plan.notIncluded.map((feature, featIndex) => (
+                        <div key={featIndex} className="flex items-start gap-2 text-sm text-muted-foreground">
+                          <X className="w-4 h-4 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+                          <span>{feature}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                  <CardFooter>
+                    <Link href="/register" className="w-full">
+                      <Button 
+                        className="w-full" 
+                        variant={plan.popular ? "default" : "outline"}
+                        data-testid={`button-pricing-${plan.name.toLowerCase()}`}
+                      >
+                        {plan.cta}
+                      </Button>
+                    </Link>
+                  </CardFooter>
+                </Card>
+              </RevealSection>
+            ))}
+          </div>
+
+          <RevealSection>
+            <div className="mt-16">
+              <h3 className="text-2xl font-bold text-center mb-8">Power Up With AI Add-Ons</h3>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto">
+                {addons.map((addon, index) => (
+                  <div key={index} className="flex flex-col p-4 rounded-lg border bg-card hover:shadow-md hover:border-primary/20 transition-all duration-200" data-testid={`addon-${addon.name.toLowerCase().replace(/\s+/g, '-')}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-sm">{addon.name}</h4>
+                        {(addon as any).comingSoon && (
+                          <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">Soon</Badge>
+                        )}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className="text-lg font-bold">+${addon.price}</span>
+                        <span className="text-xs text-muted-foreground">/mo</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{addon.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </RevealSection>
+        </div>
+      </section>
+
       <section className="py-20 md:py-28 relative overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
@@ -837,24 +1342,32 @@ export default function LandingPage() {
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-6">
             Ready to Take Control of Your Projects?
           </h2>
-          <p className="text-xl text-gray-300 mb-8">
-            Join contractors who've stopped guessing and started knowing. 14-day free trial, no credit card required.
+          <p className="text-xl text-gray-300 mb-4">
+            Join contractors who've stopped guessing and started knowing.
+          </p>
+          <p className="text-lg text-gray-400 mb-8">
+            14-day free trial. No credit card required. Cancel anytime.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/register">
-              <Button size="lg" data-testid="button-cta-trial">
+              <Button size="lg" className="text-base px-8 py-6" data-testid="button-cta-trial">
                 Start Your Free Trial
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Button size="lg" variant="secondary" className="bg-white/10 border-white/30 text-white" data-testid="button-cta-demo">
+            <Button 
+              size="lg" 
+              variant="secondary" 
+              className="bg-white/10 border-white/30 text-white text-base px-8 py-6" 
+              onClick={() => setShowDemoModal(true)}
+              data-testid="button-cta-demo"
+            >
               Schedule a Demo
             </Button>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="py-12 border-t bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-4 gap-8 mb-8">
@@ -865,35 +1378,40 @@ export default function LandingPage() {
                 </div>
                 <span className="font-bold text-xl">SmartManageAI</span>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mb-4">
                 AI-powered construction management for contractors who want to build profitably.
               </p>
+              <div className="flex gap-3 text-muted-foreground">
+                <Badge variant="outline" className="text-xs">SOC 2</Badge>
+                <Badge variant="outline" className="text-xs">GDPR</Badge>
+                <Badge variant="outline" className="text-xs">99.9% SLA</Badge>
+              </div>
             </div>
             <div>
               <h4 className="font-semibold mb-4">Product</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#features" className="hover:text-foreground">Features</a></li>
-                <li><a href="#ai" className="hover:text-foreground">AI Automation</a></li>
-                <li><a href="#pricing" className="hover:text-foreground">Pricing</a></li>
-                <li><a href="#" className="hover:text-foreground">Integrations</a></li>
+                <li><a href="#features" className="hover:text-foreground transition-colors" data-testid="link-footer-features">Features</a></li>
+                <li><a href="#integrations" className="hover:text-foreground transition-colors" data-testid="link-footer-integrations">Integrations</a></li>
+                <li><a href="#ai" className="hover:text-foreground transition-colors" data-testid="link-footer-ai">AI Automation</a></li>
+                <li><a href="#pricing" className="hover:text-foreground transition-colors" data-testid="link-footer-pricing">Pricing</a></li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold mb-4">Trades</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground">Concrete</a></li>
-                <li><a href="#" className="hover:text-foreground">General Contractor</a></li>
-                <li><a href="#" className="hover:text-foreground">Electrical</a></li>
-                <li><a href="#" className="hover:text-foreground">All 23 Trades</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-concrete">Concrete</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-gc">General Contractor</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-electrical">Electrical</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-all-trades">All 23 Trades</a></li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold mb-4">Company</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground">About</a></li>
-                <li><a href="#" className="hover:text-foreground">Contact</a></li>
-                <li><a href="#" className="hover:text-foreground">Privacy Policy</a></li>
-                <li><a href="#" className="hover:text-foreground">Terms of Service</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-about">About</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-contact">Contact</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-privacy">Privacy Policy</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-terms">Terms of Service</a></li>
               </ul>
             </div>
           </div>
@@ -903,7 +1421,6 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      {/* Demo Coming Soon Modal */}
       <Dialog open={showDemoModal} onOpenChange={setShowDemoModal}>
         <DialogContent className="sm:max-w-md" data-testid="dialog-demo-coming-soon">
           <DialogHeader>
