@@ -1018,7 +1018,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
   },
   {
     name: "Foreman / Lead Hand",
-    description: "Crew oversight, time approval, daily report locking, equipment, scheduling, safety, workforce",
+    description: "Crew oversight, time approval, daily report locking, equipment, scheduling, safety, workforce, KPIs",
     targetRole: "FIELD_WORKER",
     permissions: {
       ...ALL_FALSE,
@@ -1030,16 +1030,21 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canApproveTime: true, canLockDailyReports: true, canManageEquipment: true,
       canManageScheduling: true, canManageSafety: true, canManageWorkforce: true,
       canManageCrews: true, canAccessTMDaily: true, canAccessReports: true,
+      canAccessKPIs: true,
+      canViewProjectBudget: true, canViewProjectSubcontractors: true,
     },
   },
   {
     name: "Apprentice / Laborer",
-    description: "Most locked-down: only time clock and messages",
+    description: "Entry-level: time clock, messages, calendar, safety bulletins",
     targetRole: "FIELD_WORKER",
     permissions: {
       ...ALL_FALSE,
       canAccessDashboard: true, canAccessProjects: true, projectScope: "ACTIVE_ONLY" as const,
       canAccessTimeClock: true, canAccessMessages: true,
+      canAccessBulletins: true, canAccessCalendar: true,
+      canViewSafety: true,
+      canSubmitPeerRatings: true,
     },
   },
   {
@@ -1058,7 +1063,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
   },
   {
     name: "Safety Lead / Safety Rep",
-    description: "Base field worker plus safety management, daily report locking, workforce view",
+    description: "Base field worker plus safety management, daily report locking, workforce view, reports",
     targetRole: "FIELD_WORKER",
     permissions: {
       ...ALL_FALSE,
@@ -1068,6 +1073,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canViewProjectTimeEntries: true, canViewSafety: true, canViewAiSummaries: true,
       canSubmitPeerRatings: true, canViewPeerRatings: true,
       canManageSafety: true, canLockDailyReports: true, canManageWorkforce: true,
+      canAccessReports: true,
     },
   },
   {
@@ -1099,6 +1105,7 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
       canLockDailyReports: true, canManageSafety: true,
       canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
       canViewProjectReceipts: true, canViewProjectSubcontractors: true,
+      canAccessReports: true,
     },
   },
 ];

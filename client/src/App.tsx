@@ -235,7 +235,7 @@ function ProtectedRoute({
   skipOnboardingCheck = false
 }: { 
   component: React.ComponentType;
-  permission?: (role?: string) => boolean;
+  permission?: (role?: string, perms?: Record<string, boolean>) => boolean;
   featurePerm?: FeaturePermissionKey | FeaturePermissionKey[];
   skipOnboardingCheck?: boolean;
 }) {
@@ -243,7 +243,7 @@ function ProtectedRoute({
   const [location] = useLocation();
   const { permissions, isLoadingPermissions } = useDashboardCustomization();
 
-  if (isLoading || (featurePerm && isLoadingPermissions)) {
+  if (isLoading || (featurePerm && isLoadingPermissions) || (permission && isLoadingPermissions)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-muted-foreground">Loading...</div>
@@ -264,7 +264,7 @@ function ProtectedRoute({
     }
   }
 
-  const roleAllowed = permission ? permission(user.role) : !featurePerm;
+  const roleAllowed = permission ? permission(user.role, permissions as Record<string, boolean>) : !featurePerm;
   const permKeys = featurePerm ? (Array.isArray(featurePerm) ? featurePerm : [featurePerm]) : [];
   const featureAllowed = permKeys.length > 0 ? permKeys.some(k => permissions[k]) : false;
   if ((permission || featurePerm) && !roleAllowed && !featureAllowed) {
