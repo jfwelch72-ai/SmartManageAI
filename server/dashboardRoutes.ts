@@ -479,11 +479,35 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
         }
       }
       const effective = mergePermissions(roleDefaults, perm ? dbPerms : null);
+
+      const overrides: Record<string, boolean> = {};
+      if (perm) {
+        for (const key of Object.keys(ALL_FALSE)) {
+          if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
+          const dbVal = (dbPerms as Record<string, unknown>)[key];
+          const defVal = (roleDefaults as Record<string, unknown>)[key];
+          if (typeof dbVal === 'boolean' && dbVal !== defVal) {
+            overrides[key] = true;
+          } else if (key === 'projectScope' && typeof dbVal === 'string' && dbVal !== defVal) {
+            overrides[key] = true;
+          }
+        }
+        if ('canViewFinancials' in dbPerms || 'canEditFinancials' in dbPerms) {
+          if (dbPerms.canViewFinancials !== roleDefaults.canViewFinancials) {
+            overrides.canViewFinancials = true;
+          }
+          if (dbPerms.canEditFinancials !== roleDefaults.canEditFinancials) {
+            overrides.canEditFinancials = true;
+          }
+        }
+      }
+
       return {
         ...user,
         ...dbPerms,
         roleDefaults,
         effective,
+        overrides,
         effectiveRole,
         grantedAt: perm?.grantedAt,
         appliedPresetId: perm?.appliedPresetId || null,

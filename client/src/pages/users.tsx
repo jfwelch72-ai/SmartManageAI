@@ -94,23 +94,7 @@ import type { SelectUser } from "@shared/schema";
 
 interface PermissionSet {
   projectScope: "ALL" | "ACTIVE_ONLY";
-  canViewFinancials: boolean;
-  canEditFinancials: boolean;
-  canManagePayroll: boolean;
-  canAccessReports: boolean;
-  canUseAiFeatures: boolean;
-  canPostSocialMedia: boolean;
-  canManageWebsite: boolean;
-  canManageEquipment: boolean;
-  canManageProcurement: boolean;
-  canManageContracts: boolean;
-  canManageHiring: boolean;
-  canManageSafety: boolean;
-  canManageScheduling: boolean;
-  canAccessBidNetworkGC: boolean;
-  canAccessBidNetworkInbox: boolean;
-  canManageLeave: boolean;
-  canAccessTimeMaterial: boolean;
+  [key: string]: boolean | string;
 }
 
 interface UserWithPermissions extends SelectUser {
@@ -138,6 +122,7 @@ interface UserWithPermissions extends SelectUser {
   grantedAt?: string;
   appliedPresetId?: string | null;
   roleLabel?: string | null;
+  overrides?: Record<string, boolean>;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -566,9 +551,23 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
 
   const buildCurrentPermissions = (userPerms: UserWithPermissions): Record<string, boolean | string> => {
     const currentPermissions: Record<string, boolean | string> = {};
-    ALL_PERM_KEYS.forEach(k => { currentPermissions[k] = !!(userPerms[k as keyof UserWithPermissions]); });
-    currentPermissions.projectScope = userPerms.projectScope || userPerms.effective?.projectScope || "ALL";
+    const eff = userPerms.effective;
+    if (eff) {
+      for (const k of Object.keys(eff)) {
+        if (k === 'projectScope') continue;
+        currentPermissions[k] = !!eff[k];
+      }
+    } else {
+      ALL_PERM_KEYS.forEach(k => {
+        currentPermissions[k] = !!(userPerms[k as keyof UserWithPermissions]);
+      });
+    }
+    currentPermissions.projectScope = eff?.projectScope || userPerms.projectScope || "ALL";
     return currentPermissions;
+  };
+
+  const isOverridden = (userPerms: UserWithPermissions, key: string): boolean => {
+    return !!userPerms.overrides?.[key];
   };
 
   const updatePermissionsMutation = useMutation({
@@ -590,18 +589,35 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
     await updatePermissionsMutation.mutateAsync({ userId, permissions: currentPermissions });
   };
 
-  const handleGrantAll = async (userId: string) => {
-    const allGranted: Record<string, boolean | string> = {};
-    ALL_PERM_KEYS.forEach(k => { allGranted[k] = true; });
-    allGranted.projectScope = "ALL";
-    await updatePermissionsMutation.mutateAsync({ userId, permissions: allGranted });
+  const handleResetFlag = async (userId: string, permKey: string, userPerms: UserWithPermissions) => {
+    const currentPermissions = buildCurrentPermissions(userPerms);
+    const defaultVal = userPerms.roleDefaults?.[permKey as keyof PermissionSet];
+    if (permKey === 'projectScope') {
+      currentPermissions[permKey] = typeof defaultVal === 'string' ? defaultVal : "ALL";
+    } else {
+      currentPermissions[permKey] = typeof defaultVal === 'boolean' ? defaultVal : false;
+    }
+    await updatePermissionsMutation.mutateAsync({ userId, permissions: currentPermissions });
   };
 
-  const handleRevokeAll = async (userId: string, roleDefaults?: PermissionSet) => {
-    const revoked: Record<string, boolean | string> = {};
-    ALL_PERM_KEYS.forEach(k => { revoked[k] = roleDefaults?.[k as keyof PermissionSet] ? true : false; });
-    revoked.projectScope = roleDefaults?.projectScope || "ALL";
-    await updatePermissionsMutation.mutateAsync({ userId, permissions: revoked });
+  const handleGrantAll = async (userId: string, userPerms?: UserWithPermissions) => {
+    const base = userPerms ? buildCurrentPermissions(userPerms) : {};
+    for (const k of Object.keys(base)) {
+      if (k !== 'projectScope') base[k] = true;
+    }
+    ALL_PERM_KEYS.forEach(k => { base[k] = true; });
+    base.projectScope = "ALL";
+    await updatePermissionsMutation.mutateAsync({ userId, permissions: base });
+  };
+
+  const handleRevokeAll = async (userId: string, roleDefaults?: PermissionSet, userPerms?: UserWithPermissions) => {
+    const base = userPerms ? buildCurrentPermissions(userPerms) : {};
+    for (const k of Object.keys(base)) {
+      if (k !== 'projectScope') base[k] = roleDefaults?.[k as keyof PermissionSet] ? true : false;
+    }
+    ALL_PERM_KEYS.forEach(k => { base[k] = roleDefaults?.[k as keyof PermissionSet] ? true : false; });
+    base.projectScope = roleDefaults?.projectScope || "ALL";
+    await updatePermissionsMutation.mutateAsync({ userId, permissions: base });
   };
 
   const toggleUserExpanded = (userId: string) => {
@@ -1281,7 +1297,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                     size="sm"
                                     variant="outline"
                                     className="flex-1 sm:flex-none"
-                                    onClick={() => handleGrantAll(u.id)}
+                                    onClick={() => handleGrantAll(u.id, u)}
                                     disabled={updatePermissionsMutation.isPending}
                                     data-testid={`button-grant-all-${u.id}`}
                                   >
@@ -1292,7 +1308,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                     size="sm"
                                     variant="outline"
                                     className="flex-1 sm:flex-none"
-                                    onClick={() => handleRevokeAll(u.id, u.roleDefaults)}
+                                    onClick={() => handleRevokeAll(u.id, u.roleDefaults, u)}
                                     disabled={updatePermissionsMutation.isPending}
                                     data-testid={`button-revoke-all-${u.id}`}
                                   >
@@ -1355,16 +1371,17 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                     <CardContent className="px-3 pb-3 pt-0 space-y-1">
                                       {group.permissions.map((perm) => {
                                         const Icon = perm.icon;
-                                        const isRoleDefault = u.roleDefaults?.[perm.key] ?? false;
-                                        const dbValue = !!(u[perm.key as keyof UserWithPermissions]);
-                                        const effectiveValue = isAdmin ? true : (isRoleDefault || dbValue);
+                                        const roleDefault = u.roleDefaults?.[perm.key] ?? false;
+                                        const effectiveValue = isAdmin ? true : !!(u.effective?.[perm.key as keyof PermissionSet] ?? roleDefault);
+                                        const flagOverridden = !isAdmin && isOverridden(u, perm.key);
                                         const isHustler = u.role === "HUSTLER";
                                         const isHustlerBase = isHustler && HUSTLER_BASE_PERMISSIONS.has(perm.key);
-                                        const isInheritedFromRole = isHustler && !isHustlerBase && isRoleDefault;
+                                        const isInheritedFromRole = isHustler && !isHustlerBase && roleDefault;
                                         const inheritedRoleName = isInheritedFromRole ? (ROLE_LABELS[u.effectiveRole || "ADMIN"] || u.effectiveRole || "Admin") : null;
 
                                         if (perm.isProjectScopeDropdown) {
                                           const currentScope = u.effective?.projectScope || u.projectScope || "ALL";
+                                          const scopeOverridden = isOverridden(u, "projectScope");
 
                                           return (
                                             <div
@@ -1375,40 +1392,58 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                                 <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                                 <div className="min-w-0">
-                                                  <span className="text-sm font-medium leading-tight">{perm.label}</span>
+                                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-sm font-medium leading-tight">{perm.label}</span>
+                                                    {scopeOverridden && (
+                                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" data-testid={`badge-customized-projectScope-${u.id}`}>Customized</span>
+                                                    )}
+                                                  </div>
                                                   <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
                                                 </div>
                                               </div>
-                                              <Select
-                                                value={currentScope}
-                                                onValueChange={(val) => {
-                                                  const currentPerms = buildCurrentPermissions(u);
-                                                  updatePermissionsMutation.mutate({
-                                                    userId: u.id,
-                                                    permissions: { ...currentPerms, projectScope: val },
-                                                  });
-                                                }}
-                                                disabled={isAdmin || updatePermissionsMutation.isPending}
-                                              >
-                                                <SelectTrigger className="w-[140px] h-8 text-xs" data-testid={`select-project-scope-${u.id}`}>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="ALL">All Projects</SelectItem>
-                                                  <SelectItem value="ACTIVE_ONLY">Active Only</SelectItem>
-                                                </SelectContent>
-                                              </Select>
+                                              <div className="flex items-center gap-1.5">
+                                                {scopeOverridden && (
+                                                  <button
+                                                    onClick={() => handleResetFlag(u.id, "projectScope", u)}
+                                                    className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                                                    title="Reset to role default"
+                                                    data-testid={`button-reset-flag-projectScope-${u.id}`}
+                                                  >
+                                                    <RotateCcw className="w-3 h-3" />
+                                                  </button>
+                                                )}
+                                                <Select
+                                                  value={currentScope}
+                                                  onValueChange={(val) => {
+                                                    const currentPerms = buildCurrentPermissions(u);
+                                                    updatePermissionsMutation.mutate({
+                                                      userId: u.id,
+                                                      permissions: { ...currentPerms, projectScope: val },
+                                                    });
+                                                  }}
+                                                  disabled={isAdmin || updatePermissionsMutation.isPending}
+                                                >
+                                                  <SelectTrigger className="w-[140px] h-8 text-xs" data-testid={`select-project-scope-${u.id}`}>
+                                                    <SelectValue />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    <SelectItem value="ALL">All Projects</SelectItem>
+                                                    <SelectItem value="ACTIVE_ONLY">Active Only</SelectItem>
+                                                  </SelectContent>
+                                                </Select>
+                                              </div>
                                             </div>
                                           );
                                         }
 
                                         if (perm.isFinancialsDropdown) {
-                                          const viewVal = !!u.canViewFinancials || u.roleDefaults?.canViewFinancials;
-                                          const editVal = !!u.canEditFinancials || u.roleDefaults?.canEditFinancials;
+                                          const viewVal = u.effective ? !!u.effective.canViewFinancials : (!!u.canViewFinancials || !!u.roleDefaults?.canViewFinancials);
+                                          const editVal = u.effective ? !!u.effective.canEditFinancials : (!!u.canEditFinancials || !!u.roleDefaults?.canEditFinancials);
                                           let currentLevel = "none";
                                           if (isAdmin) currentLevel = "manage";
                                           else if (editVal) currentLevel = "manage";
                                           else if (viewVal) currentLevel = "view";
+                                          const financialsOverridden = isOverridden(u, "canViewFinancials") || isOverridden(u, "canEditFinancials");
 
                                           return (
                                             <div
@@ -1419,32 +1454,60 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                                 <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                                 <div className="min-w-0">
-                                                  <span className="text-sm font-medium leading-tight">{perm.label}</span>
+                                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-sm font-medium leading-tight">{perm.label}</span>
+                                                    {financialsOverridden && (
+                                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" data-testid={`badge-customized-financials-${u.id}`}>Customized</span>
+                                                    )}
+                                                  </div>
                                                   <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
                                                 </div>
                                               </div>
-                                              <Select
-                                                value={currentLevel}
-                                                onValueChange={(val) => {
-                                                  const newView = val === "view" || val === "manage";
-                                                  const newEdit = val === "manage";
-                                                  const currentPerms = buildCurrentPermissions(u);
-                                                  updatePermissionsMutation.mutate({
-                                                    userId: u.id,
-                                                    permissions: { ...currentPerms, canViewFinancials: newView, canEditFinancials: newEdit },
-                                                  });
-                                                }}
-                                                disabled={isAdmin || updatePermissionsMutation.isPending}
-                                              >
-                                                <SelectTrigger className="w-[120px] h-8 text-xs" data-testid={`select-financials-access-${u.id}`}>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="none">None</SelectItem>
-                                                  <SelectItem value="view">View</SelectItem>
-                                                  <SelectItem value="manage">Manage</SelectItem>
-                                                </SelectContent>
-                                              </Select>
+                                              <div className="flex items-center gap-1.5">
+                                                {financialsOverridden && (
+                                                  <button
+                                                    onClick={() => {
+                                                      const defaults = u.roleDefaults || {};
+                                                      const currentPerms = buildCurrentPermissions(u);
+                                                      updatePermissionsMutation.mutate({
+                                                        userId: u.id,
+                                                        permissions: {
+                                                          ...currentPerms,
+                                                          canViewFinancials: !!defaults.canViewFinancials,
+                                                          canEditFinancials: !!defaults.canEditFinancials,
+                                                        },
+                                                      });
+                                                    }}
+                                                    className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                                                    title="Reset to role default"
+                                                    data-testid={`button-reset-flag-financials-${u.id}`}
+                                                  >
+                                                    <RotateCcw className="w-3 h-3" />
+                                                  </button>
+                                                )}
+                                                <Select
+                                                  value={currentLevel}
+                                                  onValueChange={(val) => {
+                                                    const newView = val === "view" || val === "manage";
+                                                    const newEdit = val === "manage";
+                                                    const currentPerms = buildCurrentPermissions(u);
+                                                    updatePermissionsMutation.mutate({
+                                                      userId: u.id,
+                                                      permissions: { ...currentPerms, canViewFinancials: newView, canEditFinancials: newEdit },
+                                                    });
+                                                  }}
+                                                  disabled={isAdmin || updatePermissionsMutation.isPending}
+                                                >
+                                                  <SelectTrigger className="w-[120px] h-8 text-xs" data-testid={`select-financials-access-${u.id}`}>
+                                                    <SelectValue />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    <SelectItem value="none">None</SelectItem>
+                                                    <SelectItem value="view">View</SelectItem>
+                                                    <SelectItem value="manage">Manage</SelectItem>
+                                                  </SelectContent>
+                                                </Select>
+                                              </div>
                                             </div>
                                           );
                                         }
@@ -1460,7 +1523,12 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                               <div className="min-w-0">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                   <span className="text-sm font-medium leading-tight">{perm.label}</span>
-                                                  {!isAdmin && isRoleDefault && !isInheritedFromRole && (
+                                                  {flagOverridden && (
+                                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-300 text-amber-600 dark:border-amber-600 dark:text-amber-400 shrink-0" data-testid={`badge-customized-${perm.key}-${u.id}`}>
+                                                      Customized
+                                                    </Badge>
+                                                  )}
+                                                  {!flagOverridden && !isAdmin && roleDefault && !isInheritedFromRole && (
                                                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-blue-300 text-blue-600 dark:border-blue-600 dark:text-blue-400 shrink-0">
                                                       Role default
                                                     </Badge>
@@ -1480,12 +1548,31 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                                 <span className="text-xs text-muted-foreground whitespace-nowrap">Always</span>
                                               </div>
                                             ) : (
-                                              <Switch
-                                                checked={effectiveValue}
-                                                onCheckedChange={() => handleTogglePermission(u.id, perm.key, dbValue, u)}
-                                                disabled={updatePermissionsMutation.isPending || isRoleDefault}
-                                                data-testid={`switch-${perm.key}-${u.id}`}
-                                              />
+                                              <div className="flex items-center gap-1.5 shrink-0">
+                                                <Switch
+                                                  checked={effectiveValue}
+                                                  onCheckedChange={() => handleTogglePermission(u.id, perm.key, effectiveValue, u)}
+                                                  disabled={updatePermissionsMutation.isPending}
+                                                  data-testid={`switch-${perm.key}-${u.id}`}
+                                                />
+                                                {flagOverridden && (
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-6 w-6 p-0 text-muted-foreground hover:text-amber-600"
+                                                        onClick={() => handleResetFlag(u.id, perm.key, u)}
+                                                        disabled={updatePermissionsMutation.isPending}
+                                                        data-testid={`button-reset-flag-${perm.key}-${u.id}`}
+                                                      >
+                                                        <RotateCcw className="w-3 h-3" />
+                                                      </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>Reset to role default</TooltipContent>
+                                                  </Tooltip>
+                                                )}
+                                              </div>
                                             )}
                                           </div>
                                         );
