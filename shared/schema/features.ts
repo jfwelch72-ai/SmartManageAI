@@ -2361,6 +2361,14 @@ export const rentalEquipmentCatalog = pgTable("rental_equipment_catalog", {
   // Availability
   minimumRentalDays: integer("minimum_rental_days").default(1),
   leadTimeDays: integer("lead_time_days").default(1), // Days notice needed
+
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  approvalStatus: pricingApprovalStatusEnum("rental_approval_status").default("AUTO_APPROVED"),
+  sourceType: pricingSourceTypeEnum("rental_source_type").notNull().default("MANUAL"),
+  effectiveQuarter: text("effective_quarter"),
+  effectiveDate: timestamp("effective_date"),
+  expirationDate: timestamp("expiration_date"),
+  submittedByVendorUserId: varchar("submitted_by_vendor_user_id").references(() => users.id),
   
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -2369,11 +2377,48 @@ export const rentalEquipmentCatalog = pgTable("rental_equipment_catalog", {
   vendorIdx: index("rental_equipment_catalog_vendor_idx").on(table.vendorId),
   crmOrgIdx: index("rental_equipment_catalog_crm_org_idx").on(table.crmOrganisationId),
   typeIdx: index("rental_equipment_catalog_type_idx").on(table.equipmentType),
+  orgIdx: index("rental_equipment_catalog_org_idx").on(table.organizationId),
 }));
 
 export const insertRentalEquipmentCatalogSchema = createInsertSchema(rentalEquipmentCatalog).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRentalEquipmentCatalog = z.infer<typeof insertRentalEquipmentCatalogSchema>;
 export type RentalEquipmentCatalog = typeof rentalEquipmentCatalog.$inferSelect;
+
+export const vendorServiceCatalog = pgTable("vendor_service_catalog", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+
+  serviceName: text("service_name").notNull(),
+  serviceCode: text("service_code"),
+  category: text("category").notNull(),
+  description: text("description"),
+  unit: text("unit").notNull(),
+  rate: decimal("rate", { precision: 12, scale: 4 }).notNull(),
+  minimumHours: decimal("minimum_hours", { precision: 10, scale: 2 }),
+  travelFee: decimal("travel_fee", { precision: 10, scale: 2 }),
+  leadTimeDays: integer("lead_time_days"),
+
+  approvalStatus: pricingApprovalStatusEnum("approval_status").default("AUTO_APPROVED"),
+  effectiveQuarter: text("effective_quarter").notNull(),
+  effectiveDate: timestamp("effective_date").notNull(),
+  expirationDate: timestamp("expiration_date"),
+  sourceType: pricingSourceTypeEnum("source_type").notNull().default("MANUAL"),
+  submittedByVendorUserId: varchar("submitted_by_vendor_user_id").references(() => users.id),
+
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  crmOrgIdx: index("vendor_service_catalog_crm_org_idx").on(table.crmOrganisationId),
+  orgIdx: index("vendor_service_catalog_org_idx").on(table.organizationId),
+  categoryIdx: index("vendor_service_catalog_category_idx").on(table.category),
+  activeIdx: index("vendor_service_catalog_active_idx").on(table.isActive),
+}));
+
+export const insertVendorServiceCatalogSchema = createInsertSchema(vendorServiceCatalog).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorServiceCatalog = z.infer<typeof insertVendorServiceCatalogSchema>;
+export type VendorServiceCatalog = typeof vendorServiceCatalog.$inferSelect;
 
 // Bid Equipment Selection Source Enum
 export const bidEquipmentSelections = pgTable("bid_equipment_selections", {

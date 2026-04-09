@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
 import { insertNotification } from "./services/notificationService";
-import { crmOrganisations, vendorEnrollments, vendorUsers, vendorPricingCatalogs, auditLog, users, organizations, notifications, pricebookImportJobs, insertVendorPricingCatalogSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, vendorPricebooks, vendorPricebookItems, conversations, conversationParticipants, messages, planDocuments, filePermissions } from "@shared/schema";
-import { eq, and, sql, desc, inArray } from "drizzle-orm";
+import { crmOrganisations, vendorEnrollments, vendorUsers, vendorPricingCatalogs, auditLog, users, organizations, notifications, pricebookImportJobs, insertVendorPricingCatalogSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, vendorPricebooks, vendorPricebookItems, conversations, conversationParticipants, messages, planDocuments, filePermissions, vendorServiceCatalog, insertVendorServiceCatalogSchema } from "@shared/schema";
+import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest, requireFeaturePermission } from "./auth";
 import { sendEmail } from "./email";
 import { logAudit } from "./auditLogger";
@@ -918,6 +918,573 @@ router.post("/api/vendor/pricing/bulk", requireAuth, requireRole("VENDOR"), asyn
     });
   } catch (error) {
     logError("Bulk upload vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "Vendor account not linked" });
+
+    const searchParam = typeof req.query.search === "string" ? req.query.search.toLowerCase() : "";
+    const categoryParam = typeof req.query.category === "string" && req.query.category !== "all" ? req.query.category : "";
+    const statusParam = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : "";
+
+    const exportConditions = [eq(vendorPricingCatalogs.crmOrganisationId, vendorUser.crmOrganisationId)];
+    if (categoryParam) exportConditions.push(eq(vendorPricingCatalogs.category, categoryParam));
+    if (statusParam) exportConditions.push(eq(vendorPricingCatalogs.approvalStatus, statusParam));
+
+    let items = await db.select().from(vendorPricingCatalogs)
+      .where(and(...exportConditions))
+      .orderBy(vendorPricingCatalogs.createdAt);
+
+    if (searchParam) {
+      items = items.filter(item =>
+        (item.itemName || "").toLowerCase().includes(searchParam) ||
+        (item.itemCode || "").toLowerCase().includes(searchParam)
+      );
+    }
+
+    const headers = ["itemName","itemCode","category","description","unit","unitPrice","minimumOrder","deliveryFee","leadTimeDays","approvalStatus","createdAt"];
+    const rows = items.map(item => [
+      `"${(item.itemName || "").replace(/"/g, '""')}"`,
+      `"${(item.itemCode || "").replace(/"/g, '""')}"`,
+      `"${(item.category || "").replace(/"/g, '""')}"`,
+      `"${(item.description || "").replace(/"/g, '""')}"`,
+      item.unit,
+      item.unitPrice,
+      item.minimumOrder || "",
+      item.deliveryFee || "",
+      item.leadTimeDays || "",
+      item.approvalStatus || "",
+      item.createdAt ? new Date(item.createdAt).toISOString() : "",
+    ].join(","));
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=material_pricing_export.csv");
+    res.send(csvContent);
+  } catch (error) {
+    logError("Export material pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "Vendor account not linked" });
+
+    const items = await db.select().from(rentalEquipmentCatalog)
+      .where(eq(rentalEquipmentCatalog.crmOrganisationId, vendorUser.crmOrganisationId))
+      .orderBy(rentalEquipmentCatalog.createdAt);
+
+    res.json(items);
+  } catch (error) {
+    logError("Get vendor rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true), eq(vendorUsers.canSubmitPricing, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "No permission to submit pricing" });
+
+    const { items, targetContractorOrgIds, contractorOrgIds } = req.body;
+    const clientIds = targetContractorOrgIds || contractorOrgIds;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "At least one rental pricing item is required" });
+    }
+
+    const conditions: SQL[] = [
+      eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+      eq(vendorEnrollments.status, "ACTIVE"),
+    ];
+    if (clientIds && clientIds.length > 0) {
+      conditions.push(sql`${vendorEnrollments.contractorOrgId} IN (${sql.join(clientIds.map((id: string) => sql`${id}`), sql`, `)})`);
+    }
+
+    const enrollments = await db.select().from(vendorEnrollments).where(and(...conditions));
+    if (enrollments.length === 0) {
+      return res.status(400).json({ error: "No active enrollments found for pricing submission" });
+    }
+
+    const now = new Date();
+    const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+    const insertedItems: (typeof rentalEquipmentCatalog.$inferSelect)[] = [];
+
+    for (const enrollment of enrollments) {
+      for (const item of items) {
+        const approvalStatus = enrollment.autoApproveNewPricing ? "AUTO_APPROVED" : "PENDING_REVIEW";
+
+        const [inserted] = await db.insert(rentalEquipmentCatalog).values({
+          crmOrganisationId: vendorUser.crmOrganisationId,
+          organizationId: enrollment.contractorOrgId,
+          name: item.name,
+          equipmentType: item.equipmentType,
+          make: item.make || null,
+          model: item.model || null,
+          description: item.description || null,
+          dailyRate: item.dailyRate || null,
+          weeklyRate: item.weeklyRate || null,
+          monthlyRate: item.monthlyRate || null,
+          deliveryFee: item.deliveryFee || null,
+          pickupFee: item.pickupFee || null,
+          minimumRentalDays: item.minimumRentalDays ? parseInt(item.minimumRentalDays) : 1,
+          leadTimeDays: item.leadTimeDays ? parseInt(item.leadTimeDays) : 1,
+          effectiveQuarter: currentQuarter,
+          effectiveDate: now,
+          sourceType: "VENDOR_PORTAL",
+          approvalStatus,
+          submittedByVendorUserId: userId,
+          isActive: approvalStatus === "AUTO_APPROVED",
+        }).returning();
+        insertedItems.push(inserted);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      itemsCreated: insertedItems.length,
+      enrollmentsServed: enrollments.length,
+    });
+  } catch (error) {
+    logError("Submit vendor rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/rental-pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const headers = ["name","equipmentType","make","model","description","dailyRate","weeklyRate","monthlyRate","deliveryFee","pickupFee","minimumRentalDays","leadTimeDays"];
+    const sampleRow = ["CAT 320 Excavator","HEAVY_EQUIPMENT","Caterpillar","320","Standard excavator","450.00","2250.00","7500.00","350.00","350.00","1","2"];
+    const csvContent = [headers.join(","), sampleRow.join(",")].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=rental_pricing_template.csv");
+    res.send(csvContent);
+  } catch (error) {
+    logError("Get rental CSV template error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/vendor/rental-pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true), eq(vendorUsers.canSubmitPricing, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "No permission to submit pricing" });
+
+    const { csvData, contractorOrgIds } = req.body;
+    if (!csvData || typeof csvData !== "string") return res.status(400).json({ error: "CSV data is required" });
+
+    const lines = csvData.trim().split("\n");
+    if (lines.length < 2) return res.status(400).json({ error: "EMPTY_FILE", message: "Empty file." });
+
+    const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ''));
+    const expectedHeaders = ["name","equipmentType","make","model","description","dailyRate","weeklyRate","monthlyRate","deliveryFee","pickupFee","minimumRentalDays","leadTimeDays"];
+    const missingHeaders = expectedHeaders.filter(h => !headers.includes(h));
+    if (missingHeaders.length > 0) {
+      return res.status(400).json({ error: "INVALID_FORMAT", message: "File does not match the required format.", details: `Missing headers: ${missingHeaders.join(", ")}` });
+    }
+
+    interface RentalCsvRow { name: string; equipmentType: string; make: string | null; model: string | null; description: string | null; dailyRate: string | null; weeklyRate: string | null; monthlyRate: string | null; deliveryFee: string | null; pickupFee: string | null; minimumRentalDays: number; leadTimeDays: number; }
+    const items: RentalCsvRow[] = [];
+    const errors: string[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const values: string[] = [];
+      let currentValue = ""; let insideQuotes = false;
+      for (const char of line) {
+        if (char === '"') { insideQuotes = !insideQuotes; }
+        else if (char === ',' && !insideQuotes) { values.push(currentValue.trim()); currentValue = ""; }
+        else { currentValue += char; }
+      }
+      values.push(currentValue.trim());
+
+      const rowData: Record<string, string | null> = {};
+      headers.forEach((header, index) => { rowData[header] = values[index]?.replace(/^"|"$/g, '') || null; });
+
+      if (!rowData.name || rowData.name.trim() === "") { errors.push(`Row ${i + 1}: name is required`); continue; }
+      if (!rowData.equipmentType || rowData.equipmentType.trim() === "") { errors.push(`Row ${i + 1}: equipmentType is required`); continue; }
+
+      items.push({
+        name: rowData.name.trim(),
+        equipmentType: rowData.equipmentType.trim(),
+        make: rowData.make?.trim() || null,
+        model: rowData.model?.trim() || null,
+        description: rowData.description?.trim() || null,
+        dailyRate: rowData.dailyRate?.trim() || null,
+        weeklyRate: rowData.weeklyRate?.trim() || null,
+        monthlyRate: rowData.monthlyRate?.trim() || null,
+        deliveryFee: rowData.deliveryFee?.trim() || null,
+        pickupFee: rowData.pickupFee?.trim() || null,
+        minimumRentalDays: rowData.minimumRentalDays ? parseInt(rowData.minimumRentalDays) : 1,
+        leadTimeDays: rowData.leadTimeDays ? parseInt(rowData.leadTimeDays) : 1,
+      });
+    }
+
+    if (items.length === 0) {
+      return res.status(400).json({ error: "EMPTY_FILE", message: "Empty file.", validationErrors: errors.length > 0 ? errors : undefined });
+    }
+
+    const enrollmentConditions: SQL[] = [eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId), eq(vendorEnrollments.status, "ACTIVE")];
+    if (contractorOrgIds && contractorOrgIds.length > 0) {
+      enrollmentConditions.push(sql`${vendorEnrollments.contractorOrgId} IN (${sql.join(contractorOrgIds.map((id: string) => sql`${id}`), sql`, `)})`);
+    }
+    const enrollments = await db.select().from(vendorEnrollments).where(and(...enrollmentConditions));
+    if (enrollments.length === 0) return res.status(400).json({ error: "No active enrollments found" });
+
+    const now = new Date();
+    const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+    const insertedItems: (typeof rentalEquipmentCatalog.$inferSelect)[] = [];
+
+    for (const enrollment of enrollments) {
+      for (const item of items) {
+        const approvalStatus = enrollment.autoApproveNewPricing ? "AUTO_APPROVED" : "PENDING_REVIEW";
+        const [inserted] = await db.insert(rentalEquipmentCatalog).values({
+          crmOrganisationId: vendorUser.crmOrganisationId,
+          organizationId: enrollment.contractorOrgId,
+          name: item.name, equipmentType: item.equipmentType, make: item.make, model: item.model,
+          description: item.description, dailyRate: item.dailyRate, weeklyRate: item.weeklyRate,
+          monthlyRate: item.monthlyRate, deliveryFee: item.deliveryFee, pickupFee: item.pickupFee,
+          minimumRentalDays: item.minimumRentalDays, leadTimeDays: item.leadTimeDays,
+          effectiveQuarter: currentQuarter, effectiveDate: now, sourceType: "VENDOR_PORTAL",
+          approvalStatus, submittedByVendorUserId: userId, isActive: approvalStatus === "AUTO_APPROVED",
+        }).returning();
+        insertedItems.push(inserted);
+      }
+    }
+
+    res.json({ success: true, message: "Items added successfully.", itemsCreated: items.length, totalRecords: insertedItems.length, enrollmentsServed: enrollments.length });
+  } catch (error) {
+    logError("Bulk upload rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/rental-pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "Vendor account not linked" });
+
+    const searchParam = typeof req.query.search === "string" ? req.query.search.toLowerCase() : "";
+    const typeParam = typeof req.query.type === "string" && req.query.type !== "all" ? req.query.type : "";
+    const statusParam = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : "";
+
+    const exportConditions = [eq(rentalEquipmentCatalog.crmOrganisationId, vendorUser.crmOrganisationId)];
+    if (typeParam) exportConditions.push(eq(rentalEquipmentCatalog.equipmentType, typeParam));
+    if (statusParam) exportConditions.push(eq(rentalEquipmentCatalog.approvalStatus, statusParam));
+
+    let items = await db.select().from(rentalEquipmentCatalog)
+      .where(and(...exportConditions))
+      .orderBy(rentalEquipmentCatalog.createdAt);
+
+    if (searchParam) {
+      items = items.filter(item =>
+        (item.name || "").toLowerCase().includes(searchParam) ||
+        (item.make || "").toLowerCase().includes(searchParam) ||
+        (item.model || "").toLowerCase().includes(searchParam)
+      );
+    }
+
+    const headers = ["name","equipmentType","make","model","dailyRate","weeklyRate","monthlyRate","deliveryFee","pickupFee","minimumRentalDays","leadTimeDays","approvalStatus","createdAt"];
+    const rows = items.map(item => [
+      `"${(item.name || "").replace(/"/g, '""')}"`,
+      item.equipmentType,
+      `"${(item.make || "").replace(/"/g, '""')}"`,
+      `"${(item.model || "").replace(/"/g, '""')}"`,
+      item.dailyRate || "", item.weeklyRate || "", item.monthlyRate || "",
+      item.deliveryFee || "", item.pickupFee || "",
+      item.minimumRentalDays || "", item.leadTimeDays || "",
+      item.approvalStatus || "", item.createdAt ? new Date(item.createdAt).toISOString() : "",
+    ].join(","));
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=rental_pricing_export.csv");
+    res.send(csvContent);
+  } catch (error) {
+    logError("Export rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "Vendor account not linked" });
+
+    const items = await db.select().from(vendorServiceCatalog)
+      .where(eq(vendorServiceCatalog.crmOrganisationId, vendorUser.crmOrganisationId))
+      .orderBy(vendorServiceCatalog.createdAt);
+
+    res.json(items);
+  } catch (error) {
+    logError("Get vendor service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true), eq(vendorUsers.canSubmitPricing, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "No permission to submit pricing" });
+
+    const { items, targetContractorOrgIds, contractorOrgIds } = req.body;
+    const clientIds = targetContractorOrgIds || contractorOrgIds;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "At least one service pricing item is required" });
+    }
+
+    const conditions: SQL[] = [
+      eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+      eq(vendorEnrollments.status, "ACTIVE"),
+    ];
+    if (clientIds && clientIds.length > 0) {
+      conditions.push(sql`${vendorEnrollments.contractorOrgId} IN (${sql.join(clientIds.map((id: string) => sql`${id}`), sql`, `)})`);
+    }
+
+    const enrollments = await db.select().from(vendorEnrollments).where(and(...conditions));
+    if (enrollments.length === 0) return res.status(400).json({ error: "No active enrollments found for pricing submission" });
+
+    const now = new Date();
+    const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+    const insertedItems: (typeof vendorServiceCatalog.$inferSelect)[] = [];
+
+    for (const enrollment of enrollments) {
+      for (const item of items) {
+        const approvalStatus = enrollment.autoApproveNewPricing ? "AUTO_APPROVED" : "PENDING_REVIEW";
+
+        const [inserted] = await db.insert(vendorServiceCatalog).values({
+          crmOrganisationId: vendorUser.crmOrganisationId,
+          organizationId: enrollment.contractorOrgId,
+          serviceName: item.serviceName,
+          serviceCode: item.serviceCode || null,
+          category: item.category,
+          description: item.description || null,
+          unit: item.unit,
+          rate: item.rate,
+          minimumHours: item.minimumHours || null,
+          travelFee: item.travelFee || null,
+          leadTimeDays: item.leadTimeDays ? parseInt(item.leadTimeDays) : null,
+          effectiveQuarter: currentQuarter,
+          effectiveDate: now,
+          sourceType: "VENDOR_PORTAL",
+          approvalStatus,
+          submittedByVendorUserId: userId,
+          isActive: approvalStatus === "AUTO_APPROVED",
+        }).returning();
+        insertedItems.push(inserted);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      itemsCreated: insertedItems.length,
+      enrollmentsServed: enrollments.length,
+    });
+  } catch (error) {
+    logError("Submit vendor service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/service-pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const headers = ["serviceName","serviceCode","category","description","unit","rate","minimumHours","travelFee","leadTimeDays"];
+    const sampleRow = ["Excavation Work","EXC-001","Excavation","Foundation excavation services","HR","125.00","4","75.00","3"];
+    const csvContent = [headers.join(","), sampleRow.join(",")].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=service_pricing_template.csv");
+    res.send(csvContent);
+  } catch (error) {
+    logError("Get service CSV template error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/vendor/service-pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true), eq(vendorUsers.canSubmitPricing, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "No permission to submit pricing" });
+
+    const { csvData, contractorOrgIds } = req.body;
+    if (!csvData || typeof csvData !== "string") return res.status(400).json({ error: "CSV data is required" });
+
+    const lines = csvData.trim().split("\n");
+    if (lines.length < 2) return res.status(400).json({ error: "EMPTY_FILE", message: "Empty file." });
+
+    const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ''));
+    const expectedHeaders = ["serviceName","serviceCode","category","description","unit","rate","minimumHours","travelFee","leadTimeDays"];
+    const missingHeaders = expectedHeaders.filter(h => !headers.includes(h));
+    if (missingHeaders.length > 0) {
+      return res.status(400).json({ error: "INVALID_FORMAT", message: "File does not match the required format.", details: `Missing headers: ${missingHeaders.join(", ")}` });
+    }
+
+    interface ServiceCsvRow { serviceName: string; serviceCode: string | null; category: string; description: string | null; unit: string; rate: string; minimumHours: string | null; travelFee: string | null; leadTimeDays: number | null; }
+    const items: ServiceCsvRow[] = [];
+    const errors: string[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const values: string[] = [];
+      let currentValue = ""; let insideQuotes = false;
+      for (const char of line) {
+        if (char === '"') { insideQuotes = !insideQuotes; }
+        else if (char === ',' && !insideQuotes) { values.push(currentValue.trim()); currentValue = ""; }
+        else { currentValue += char; }
+      }
+      values.push(currentValue.trim());
+
+      const rowData: Record<string, string | null> = {};
+      headers.forEach((header, index) => { rowData[header] = values[index]?.replace(/^"|"$/g, '') || null; });
+
+      if (!rowData.serviceName || rowData.serviceName.trim() === "") { errors.push(`Row ${i + 1}: serviceName is required`); continue; }
+      if (!rowData.rate || isNaN(parseFloat(rowData.rate))) { errors.push(`Row ${i + 1}: valid rate is required`); continue; }
+      if (!rowData.unit || rowData.unit.trim() === "") { errors.push(`Row ${i + 1}: unit is required`); continue; }
+      if (!rowData.category || rowData.category.trim() === "") { errors.push(`Row ${i + 1}: category is required`); continue; }
+
+      items.push({
+        serviceName: rowData.serviceName.trim(),
+        serviceCode: rowData.serviceCode?.trim() || null,
+        category: rowData.category.trim(),
+        description: rowData.description?.trim() || null,
+        unit: rowData.unit.trim(),
+        rate: rowData.rate.trim(),
+        minimumHours: rowData.minimumHours?.trim() || null,
+        travelFee: rowData.travelFee?.trim() || null,
+        leadTimeDays: rowData.leadTimeDays ? parseInt(rowData.leadTimeDays) : null,
+      });
+    }
+
+    if (items.length === 0) {
+      return res.status(400).json({ error: "EMPTY_FILE", message: "Empty file.", validationErrors: errors.length > 0 ? errors : undefined });
+    }
+
+    const enrollmentConditions: SQL[] = [eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId), eq(vendorEnrollments.status, "ACTIVE")];
+    if (contractorOrgIds && contractorOrgIds.length > 0) {
+      enrollmentConditions.push(sql`${vendorEnrollments.contractorOrgId} IN (${sql.join(contractorOrgIds.map((id: string) => sql`${id}`), sql`, `)})`);
+    }
+    const enrollments = await db.select().from(vendorEnrollments).where(and(...enrollmentConditions));
+    if (enrollments.length === 0) return res.status(400).json({ error: "No active enrollments found" });
+
+    const now = new Date();
+    const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+    const insertedItems: (typeof vendorServiceCatalog.$inferSelect)[] = [];
+
+    for (const enrollment of enrollments) {
+      for (const item of items) {
+        const approvalStatus = enrollment.autoApproveNewPricing ? "AUTO_APPROVED" : "PENDING_REVIEW";
+        const [inserted] = await db.insert(vendorServiceCatalog).values({
+          crmOrganisationId: vendorUser.crmOrganisationId,
+          organizationId: enrollment.contractorOrgId,
+          serviceName: item.serviceName, serviceCode: item.serviceCode, category: item.category,
+          description: item.description, unit: item.unit, rate: item.rate,
+          minimumHours: item.minimumHours, travelFee: item.travelFee, leadTimeDays: item.leadTimeDays,
+          effectiveQuarter: currentQuarter, effectiveDate: now, sourceType: "VENDOR_PORTAL",
+          approvalStatus, submittedByVendorUserId: userId, isActive: approvalStatus === "AUTO_APPROVED",
+        }).returning();
+        insertedItems.push(inserted);
+      }
+    }
+
+    res.json({ success: true, message: "Items added successfully.", itemsCreated: items.length, totalRecords: insertedItems.length, enrollmentsServed: enrollments.length });
+  } catch (error) {
+    logError("Bulk upload service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/service-pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "Vendor account not linked" });
+
+    const searchParam = typeof req.query.search === "string" ? req.query.search.toLowerCase() : "";
+    const categoryParam = typeof req.query.category === "string" && req.query.category !== "all" ? req.query.category : "";
+    const statusParam = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : "";
+
+    const exportConditions = [eq(vendorServiceCatalog.crmOrganisationId, vendorUser.crmOrganisationId)];
+    if (categoryParam) exportConditions.push(eq(vendorServiceCatalog.category, categoryParam));
+    if (statusParam) exportConditions.push(eq(vendorServiceCatalog.approvalStatus, statusParam));
+
+    let items = await db.select().from(vendorServiceCatalog)
+      .where(and(...exportConditions))
+      .orderBy(vendorServiceCatalog.createdAt);
+
+    if (searchParam) {
+      items = items.filter(item =>
+        (item.serviceName || "").toLowerCase().includes(searchParam) ||
+        (item.serviceCode || "").toLowerCase().includes(searchParam)
+      );
+    }
+
+    const headers = ["serviceName","serviceCode","category","description","unit","rate","minimumHours","travelFee","leadTimeDays","approvalStatus","createdAt"];
+    const rows = items.map(item => [
+      `"${(item.serviceName || "").replace(/"/g, '""')}"`,
+      `"${(item.serviceCode || "").replace(/"/g, '""')}"`,
+      `"${(item.category || "").replace(/"/g, '""')}"`,
+      `"${(item.description || "").replace(/"/g, '""')}"`,
+      item.unit, item.rate,
+      item.minimumHours || "", item.travelFee || "", item.leadTimeDays || "",
+      item.approvalStatus || "", item.createdAt ? new Date(item.createdAt).toISOString() : "",
+    ].join(","));
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=service_pricing_export.csv");
+    res.send(csvContent);
+  } catch (error) {
+    logError("Export service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
