@@ -974,31 +974,36 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
   },
   {
     name: "Subcontractor",
-    description: "Submit bids, view scopes, bid network access",
+    description: "Submit bids, view scopes, bid network, messaging, dashboard",
     targetRole: "VENDOR",
     permissions: {
       ...ALL_FALSE,
+      canAccessDashboard: true,
       canAccessBidNetworkInbox: true,
       canViewBids: true, canEditBids: true, canGenerateBidPDFs: true,
       canAccessMessages: true,
-    },
-  },
-  {
-    name: "Supplier",
-    description: "Pricing only, no project or bid access",
-    targetRole: "VENDOR",
-    permissions: {
-      ...ALL_FALSE,
-      canAccessBidNetworkInbox: true,
       canAccessVendorPricing: true,
     },
   },
   {
-    name: "Service Vendor",
-    description: "Limited project interaction, view assigned work",
+    name: "Supplier",
+    description: "Material pricing, messaging, dashboard",
     targetRole: "VENDOR",
     permissions: {
       ...ALL_FALSE,
+      canAccessDashboard: true,
+      canAccessBidNetworkInbox: true,
+      canAccessVendorPricing: true,
+      canAccessMessages: true,
+    },
+  },
+  {
+    name: "Service Vendor",
+    description: "Time tracking for on-site service, messaging, dashboard",
+    targetRole: "VENDOR",
+    permissions: {
+      ...ALL_FALSE,
+      canAccessDashboard: true,
       canAccessBidNetworkInbox: true,
       canAccessMessages: true,
       canAccessTimeClock: true,
@@ -1006,10 +1011,11 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
   },
   {
     name: "Rental Vendor",
-    description: "Equipment rental pricing, equipment view, messaging, bid network access",
+    description: "Equipment rental pricing, equipment view, messaging, dashboard",
     targetRole: "VENDOR",
     permissions: {
       ...ALL_FALSE,
+      canAccessDashboard: true,
       canAccessBidNetworkInbox: true,
       canAccessVendorPricing: true,
       canManageEquipment: true,
