@@ -139,7 +139,7 @@ async function processOfflineQueue() {
         try {
           const conflictData = await response.json();
           conflictMessage = 'Conflict: ' + (conflictData.error || 'server version is newer');
-        } catch (_e) {}
+        } catch (_e) { console.error('Failed to parse conflict response:', _e); }
         await updateQueueItem(item.id, {
           status: 'failed',
           retryable: false,
@@ -152,7 +152,7 @@ async function processOfflineQueue() {
         try {
           const errorData = await response.json();
           errorDetail = errorData.error || errorDetail;
-        } catch (_e) {}
+        } catch (_e) { console.error('Failed to parse error response:', _e); }
         await updateQueueItem(item.id, {
           status: 'failed',
           retryable: false,
@@ -289,7 +289,7 @@ self.addEventListener('fetch', (event) => {
         if ('sync' in self.registration) {
           try {
             await self.registration.sync.register('sync-offline-queue');
-          } catch (e) {}
+          } catch (e) { console.error('Failed to register background sync:', e); }
         }
 
         return new Response(JSON.stringify({

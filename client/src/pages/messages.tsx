@@ -810,6 +810,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       });
     } catch (err) {
       console.error("File upload failed:", err);
+      toast({ title: "Upload failed", description: "Could not upload file. Please try again.", variant: "destructive" });
     } finally {
       setUploadingFile(false);
       setUploadProgress(0);
@@ -834,6 +835,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       }, 1000);
     } catch (err) {
       console.error("Microphone access denied:", err);
+      toast({ title: "Microphone unavailable", description: "Could not access microphone. Please check permissions.", variant: "destructive" });
     }
   };
 
@@ -860,6 +862,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
           );
         } catch (err) {
           console.error("Voice upload failed:", err);
+          toast({ title: "Voice upload failed", description: "Could not send voice message. Please try again.", variant: "destructive" });
         } finally {
           setUploadingVoice(false);
         }

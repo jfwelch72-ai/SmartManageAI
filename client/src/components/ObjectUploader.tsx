@@ -5,6 +5,7 @@ import DashboardModal from "@uppy/react/dashboard-modal";
 import AwsS3 from "@uppy/aws-s3";
 import type { UploadResult } from "@uppy/core";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export const MULTIPART_THRESHOLD = 10 * 1024 * 1024;
 
@@ -71,6 +72,7 @@ export function ObjectUploader({
   children,
   testId,
 }: ObjectUploaderProps) {
+  const { toast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
@@ -197,6 +199,7 @@ export function ObjectUploader({
           });
         } catch (error) {
           console.warn("File add error:", error);
+          toast({ title: "File error", description: error instanceof Error ? error.message : "Could not add file.", variant: "destructive" });
         }
       });
 

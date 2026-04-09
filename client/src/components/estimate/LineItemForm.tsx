@@ -477,7 +477,7 @@ export function LineItemFormDialog({
       )}
       
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleSubmitWithFlush)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(handleSubmitWithFlush)} className="space-y-6" data-testid="form-line-item">
           {isAdd && useHierarchicalBuilder ? (
             <>
               <HierarchicalLineItemBuilder

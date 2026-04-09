@@ -74,7 +74,7 @@ export function BidEditDialog({ open, onOpenChange, form, onSubmit, isPending }:
           <DialogDescription>Update the bid details</DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" data-testid="form-edit-bid">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -193,10 +193,10 @@ export function BidEditDialog({ open, onOpenChange, form, onSubmit, isPending }:
               )}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-edit-bid">
                 Cancel
               </Button>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending} data-testid="button-submit-edit-bid">
                 {isPending ? "Saving..." : "Save Changes"}
               </Button>
             </DialogFooter>
@@ -254,7 +254,7 @@ export function SubcontractorQuoteDialog({
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" data-testid="form-subcontractor-quote">
             <div className="space-y-2">
               <Label>Select from CRM</Label>
               <CrmOrganizationSelector
@@ -447,10 +447,10 @@ export function SubcontractorQuoteDialog({
               )}
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { onOpenChange(false); onSetUploadedFileData(null); }}>
+              <Button type="button" variant="outline" onClick={() => { onOpenChange(false); onSetUploadedFileData(null); }} data-testid="button-cancel-sub-quote">
                 Cancel
               </Button>
-              <Button type="submit" disabled={createPending || updatePending || isUploadingFile}>
+              <Button type="submit" disabled={createPending || updatePending || isUploadingFile} data-testid="button-submit-sub-quote">
                 {editingQuote ? (updatePending ? "Saving..." : "Save Changes") : (createPending ? "Adding..." : "Add Quote")}
               </Button>
             </DialogFooter>
@@ -502,7 +502,7 @@ export function MaterialQuoteDialog({
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" data-testid="form-material-quote">
             <div className="space-y-2">
               <Label>Select Supplier from CRM</Label>
               <CrmOrganizationSelector
@@ -662,10 +662,10 @@ export function MaterialQuoteDialog({
               )}
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { onOpenChange(false); onSetUploadedFileData(null); }}>
+              <Button type="button" variant="outline" onClick={() => { onOpenChange(false); onSetUploadedFileData(null); }} data-testid="button-cancel-material-quote">
                 Cancel
               </Button>
-              <Button type="submit" disabled={createPending || updatePending || isUploadingFile}>
+              <Button type="submit" disabled={createPending || updatePending || isUploadingFile} data-testid="button-submit-material-quote">
                 {editingQuote ? (updatePending ? "Saving..." : "Save Changes") : (createPending ? "Adding..." : "Add Quote")}
               </Button>
             </DialogFooter>
@@ -717,7 +717,7 @@ export function EquipmentSelectionDialog({
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" data-testid="form-equipment-selection">
             <FormField
               control={form.control}
               name="source"

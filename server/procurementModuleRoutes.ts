@@ -389,6 +389,51 @@ const router = Router();
 const ROLES = ["ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"] as const;
 const APPROVE_ROLES = ["ADMIN", "MANAGER"] as const;
 
+const prUpdateSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  neededByDate: z.string().nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  items: z.array(z.object({
+    description: z.string().min(1),
+    category: z.string().nullable().optional(),
+    quantity: z.string().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    estimatedUnitCost: z.string().nullable().optional(),
+    costCode: z.string().nullable().optional(),
+  })).optional(),
+});
+
+const poUpdateSchema = z.object({
+  vendorId: z.string().uuid().nullable().optional(),
+  terms: z.string().max(2000).nullable().optional(),
+  deliveryAddress: z.string().max(500).nullable().optional(),
+  neededByDate: z.string().nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  items: z.array(z.object({
+    description: z.string().min(1),
+    quantity: z.string().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    unitCost: z.string().nullable().optional(),
+    costCode: z.string().nullable().optional(),
+    expectedDeliveryDate: z.string().nullable().optional(),
+  })).optional(),
+});
+
+const invoiceUpdateSchema = z.object({
+  invoiceNumber: z.string().min(1).max(100).optional(),
+  invoiceDate: z.string().optional(),
+  dueDate: z.string().nullable().optional(),
+  totalAmount: z.string().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  fileUrl: z.string().nullable().optional(),
+  items: z.array(z.object({
+    description: z.string().min(1),
+    quantity: z.string().nullable().optional(),
+    unitCost: z.string().nullable().optional(),
+    poItemId: z.string().uuid().nullable().optional(),
+  })).optional(),
+});
+
 async function verifyProjectAssignment(req: AuthRequest, res: Response, projectId: string): Promise<boolean> {
   if (req.user!.role === "ADMIN" || req.user!.role === "MANAGER") return true;
 
@@ -607,12 +652,15 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
 
     if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
 
-    const { items } = req.body;
+    const parsed = prUpdateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" }); return; }
+
+    const { items } = parsed.data;
     const setData: Record<string, unknown> = {};
     setData.updatedAt = new Date();
-    if (req.body.title !== undefined) setData.title = req.body.title;
-    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
-    if (req.body.notes !== undefined) setData.notes = req.body.notes;
+    if (parsed.data.title !== undefined) setData.title = parsed.data.title;
+    if (parsed.data.neededByDate !== undefined) setData.neededByDate = parsed.data.neededByDate ? new Date(parsed.data.neededByDate) : null;
+    if (parsed.data.notes !== undefined) setData.notes = parsed.data.notes;
 
     const updated = await db.transaction(async (tx) => {
       const [updatedPr] = await tx.update(purchaseRequests).set(setData)
@@ -1073,21 +1121,24 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
       res.status(400).json({ error: "Only DRAFT or PENDING_APPROVAL orders can be edited" }); return;
     }
 
-    const { items } = req.body;
+    const parsed = poUpdateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" }); return; }
+
+    const { items } = parsed.data;
     const setData: Record<string, unknown> = {};
     setData.updatedAt = new Date();
-    if (req.body.vendorId !== undefined) {
-      if (req.body.vendorId) {
+    if (parsed.data.vendorId !== undefined) {
+      if (parsed.data.vendorId) {
         const [vendorOwner] = await db.select({ id: crmOrganisations.id }).from(crmOrganisations)
-          .where(and(eq(crmOrganisations.id, req.body.vendorId), eq(crmOrganisations.organizationId, orgId))).limit(1);
+          .where(and(eq(crmOrganisations.id, parsed.data.vendorId), eq(crmOrganisations.organizationId, orgId))).limit(1);
         if (!vendorOwner) { res.status(400).json({ error: "Vendor not found in your organization" }); return; }
       }
-      setData.vendorId = req.body.vendorId || null;
+      setData.vendorId = parsed.data.vendorId || null;
     }
-    if (req.body.terms !== undefined) setData.terms = req.body.terms;
-    if (req.body.deliveryAddress !== undefined) setData.deliveryAddress = req.body.deliveryAddress;
-    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
-    if (req.body.notes !== undefined) setData.notes = req.body.notes;
+    if (parsed.data.terms !== undefined) setData.terms = parsed.data.terms;
+    if (parsed.data.deliveryAddress !== undefined) setData.deliveryAddress = parsed.data.deliveryAddress;
+    if (parsed.data.neededByDate !== undefined) setData.neededByDate = parsed.data.neededByDate ? new Date(parsed.data.neededByDate) : null;
+    if (parsed.data.notes !== undefined) setData.notes = parsed.data.notes;
 
     const updated = await db.transaction(async (tx) => {
       const [updatedPo] = await tx.update(purchaseOrders).set(setData)
@@ -1897,14 +1948,17 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
 
     if (existing.status !== "PENDING") { res.status(400).json({ error: "Only PENDING invoices can be edited" }); return; }
 
-    const { items } = req.body;
+    const parsed = invoiceUpdateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" }); return; }
+
+    const { items } = parsed.data;
     const setData: Record<string, unknown> = { updatedAt: new Date() };
-    if (req.body.invoiceNumber !== undefined) setData.invoiceNumber = req.body.invoiceNumber;
-    if (req.body.invoiceDate !== undefined) setData.invoiceDate = new Date(req.body.invoiceDate);
-    if (req.body.dueDate !== undefined) setData.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
-    if (req.body.totalAmount !== undefined) setData.totalAmount = req.body.totalAmount;
-    if (req.body.notes !== undefined) setData.notes = req.body.notes;
-    if (req.body.fileUrl !== undefined) setData.fileUrl = req.body.fileUrl;
+    if (parsed.data.invoiceNumber !== undefined) setData.invoiceNumber = parsed.data.invoiceNumber;
+    if (parsed.data.invoiceDate !== undefined) setData.invoiceDate = new Date(parsed.data.invoiceDate);
+    if (parsed.data.dueDate !== undefined) setData.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null;
+    if (parsed.data.totalAmount !== undefined) setData.totalAmount = parsed.data.totalAmount;
+    if (parsed.data.notes !== undefined) setData.notes = parsed.data.notes;
+    if (parsed.data.fileUrl !== undefined) setData.fileUrl = parsed.data.fileUrl;
 
     const validPoItemIds = new Set(
       (await db.select({ id: purchaseOrderItems.id }).from(purchaseOrderItems)

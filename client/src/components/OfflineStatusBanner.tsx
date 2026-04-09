@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { getPendingCount, processQueue } from "@/lib/offlineQueue";
+import { useToast } from "@/hooks/use-toast";
 
 export default function OfflineStatusBanner() {
+  const { toast } = useToast();
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -34,6 +36,7 @@ export default function OfflineStatusBanner() {
           setTimeout(() => setSyncResult(null), 5000);
         } catch (e) {
           console.error("Auto-sync on reconnect failed:", e);
+          toast({ title: "Sync failed", description: "Could not sync offline changes. Will retry automatically.", variant: "destructive" });
         } finally {
           setIsSyncing(false);
         }
@@ -64,6 +67,7 @@ export default function OfflineStatusBanner() {
           setTimeout(() => setSyncResult(null), 5000);
         } catch (e) {
           console.error("Background sync failed:", e);
+          toast({ title: "Sync failed", description: "Background sync encountered an error. Will retry.", variant: "destructive" });
         }
       }
     };
@@ -84,7 +88,10 @@ export default function OfflineStatusBanner() {
       setSyncResult(result);
       await refreshPendingCount();
       setTimeout(() => setSyncResult(null), 5000);
-    } catch {}
+    } catch (e) {
+      console.error("Manual sync failed:", e);
+      toast({ title: "Sync failed", description: "Could not sync offline changes. Please try again.", variant: "destructive" });
+    }
     setIsSyncing(false);
   };
 

@@ -145,10 +145,10 @@ export default function BidEquipmentStep({
                   </div>
                   {canEdit && (
                     <div className="flex gap-2 mt-2 sm:mt-0 sm:ml-4 self-end sm:self-start">
-                      <Button size="icon" variant="ghost" onClick={() => onEditEquipment(selection)}>
+                      <Button size="icon" variant="ghost" onClick={() => onEditEquipment(selection)} data-testid={`button-edit-equipment-${selection.id}`}>
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => onDeleteEquipment(selection.id)}>
+                      <Button size="icon" variant="ghost" onClick={() => onDeleteEquipment(selection.id)} data-testid={`button-delete-equipment-${selection.id}`}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>

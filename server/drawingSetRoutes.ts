@@ -5,6 +5,29 @@ import { drawingSets, drawingSetItems, takeoffSheets, projects } from "@shared/s
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { getOrgId, getUserOrThrow } from "./utils/routeHelpers";
 import { logError } from "./utils/logger";
+import { z } from "zod";
+
+const createDrawingSetSchema = z.object({
+  name: z.string().min(1, "name required").max(200),
+  description: z.string().max(1000).nullable().optional(),
+});
+
+const updateDrawingSetSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().max(1000).nullable().optional(),
+}).refine(d => d.name !== undefined || d.description !== undefined, { message: "No fields to update" });
+
+const addDrawingSetItemSchema = z.object({
+  sheetId: z.string().uuid("sheetId required"),
+  revisionId: z.string().uuid().optional(),
+});
+
+const bulkDrawingSetItemsSchema = z.object({
+  items: z.array(z.object({
+    sheetId: z.string().uuid(),
+    revisionId: z.string().uuid().optional(),
+  })).min(1, "items array required"),
+});
 
 const router = Router();
 
@@ -41,14 +64,14 @@ router.post("/:projectId/drawing-sets", requireAuth, requireRoleOrFeature(["SUPE
       .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, orgId)));
     if (!proj) return res.status(404).json({ error: "Project not found" });
 
-    const { name, description } = req.body;
-    if (!name) return res.status(400).json({ error: "name required" });
+    const parsed = createDrawingSetSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" });
 
     const [set] = await db.insert(drawingSets).values({
       projectId: req.params.projectId,
       organizationId: orgId,
-      name,
-      description: description || null,
+      name: parsed.data.name,
+      description: parsed.data.description || null,
       isPrimary: false,
       createdByUserId: user.id,
     }).returning();
@@ -63,12 +86,11 @@ router.patch("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_A
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
-    const { name, description } = req.body;
+    const parsed = updateDrawingSetSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" });
     const updates: Partial<{ name: string; description: string | null }> = {};
-    if (name !== undefined) updates.name = name;
-    if (description !== undefined) updates.description = description;
-
-    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
+    if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+    if (parsed.data.description !== undefined) updates.description = parsed.data.description;
 
     const [updated] = await db.update(drawingSets)
       .set(updates)
@@ -166,8 +188,9 @@ router.post("/drawing-sets/:setId/items", requireAuth, requireRoleOrFeature(["SU
       ));
     if (!set) return res.status(404).json({ error: "Drawing set not found" });
 
-    const { sheetId, revisionId } = req.body;
-    if (!sheetId) return res.status(400).json({ error: "sheetId required" });
+    const parsed = addDrawingSetItemSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" });
+    const { sheetId, revisionId } = parsed.data;
 
     const [sheet] = await db.select({ id: takeoffSheets.id }).from(takeoffSheets)
       .where(and(
@@ -203,10 +226,11 @@ router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRoleOrFeature
       ));
     if (!set) return res.status(404).json({ error: "Drawing set not found" });
 
-    const { items } = req.body;
-    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "items array required" });
+    const parsed = bulkDrawingSetItemsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" });
+    const { items } = parsed.data;
 
-    const sheetIds = items.map((i: { sheetId: string }) => i.sheetId);
+    const sheetIds = items.map((i) => i.sheetId);
     const validSheets = await db.select({ id: takeoffSheets.id }).from(takeoffSheets)
       .where(and(
         inArray(takeoffSheets.id, sheetIds),
