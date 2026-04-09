@@ -482,21 +482,28 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
 
       const overrides: Record<string, boolean> = {};
       if (perm) {
+        const permRecord = perm as Record<string, unknown>;
         for (const key of Object.keys(ALL_FALSE)) {
           if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
-          const dbVal = (dbPerms as Record<string, unknown>)[key];
+          const rawDbVal = permRecord[key];
+          if (rawDbVal === null || rawDbVal === undefined) continue;
           const defVal = (roleDefaults as Record<string, unknown>)[key];
-          if (typeof dbVal === 'boolean' && dbVal !== defVal) {
-            overrides[key] = true;
-          } else if (key === 'projectScope' && typeof dbVal === 'string' && dbVal !== defVal) {
+          if (key === 'projectScope') {
+            if (typeof rawDbVal === 'string' && rawDbVal !== defVal) {
+              overrides[key] = true;
+            }
+          } else if (typeof rawDbVal === 'boolean' && rawDbVal !== defVal) {
             overrides[key] = true;
           }
         }
-        if ('canViewFinancials' in dbPerms || 'canEditFinancials' in dbPerms) {
-          if (dbPerms.canViewFinancials !== roleDefaults.canViewFinancials) {
+        const fa = permRecord.financialsAccess;
+        if (fa !== null && fa !== undefined) {
+          const dbView = fa === 'view' || fa === 'manage';
+          const dbEdit = fa === 'manage';
+          if (dbView !== roleDefaults.canViewFinancials) {
             overrides.canViewFinancials = true;
           }
-          if (dbPerms.canEditFinancials !== roleDefaults.canEditFinancials) {
+          if (dbEdit !== roleDefaults.canEditFinancials) {
             overrides.canEditFinancials = true;
           }
         }
@@ -544,16 +551,47 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
     const data = schema.parse(req.body);
 
     const { canViewFinancials: viewFin, canEditFinancials: editFin, ...restData } = data as Record<string, boolean | string>;
-    let financialsAccess = "none";
+    let financialsAccess: string | null = "none";
     if (editFin) financialsAccess = "manage";
     else if (viewFin) financialsAccess = "view";
-    const dbData = { ...restData, financialsAccess };
 
     const [targetUser] = await db.select().from(users)
       .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
 
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found in your organization' });
+    }
+
+    let effectiveRole: string | undefined;
+    if (targetUser.role === 'HUSTLER') {
+      const [link] = await db.select({ roleOverride: hustlerOrganizations.roleOverride })
+        .from(hustlerOrganizations)
+        .where(and(
+          eq(hustlerOrganizations.organizationId, orgId),
+          eq(hustlerOrganizations.userId, userId),
+          eq(hustlerOrganizations.isActive, true),
+        ));
+      effectiveRole = link?.roleOverride || 'ADMIN';
+    }
+    const roleDefaults = getRoleDefaults(effectiveRole || targetUser.role);
+
+    const sparseData: Record<string, boolean | string | null> = {};
+    for (const key of Object.keys(restData)) {
+      if (key === 'canViewFinancials' || key === 'canEditFinancials') continue;
+      const incoming = restData[key];
+      const defaultVal = (roleDefaults as Record<string, unknown>)[key];
+      if (incoming === defaultVal) {
+        sparseData[key] = null;
+      } else {
+        sparseData[key] = incoming;
+      }
+    }
+
+    const defaultFa = roleDefaults.canEditFinancials ? "manage" : (roleDefaults.canViewFinancials ? "view" : "none");
+    if (financialsAccess === defaultFa) {
+      sparseData.financialsAccess = null;
+    } else {
+      sparseData.financialsAccess = financialsAccess;
     }
 
     const existing = await db.select().from(userDashboardPermissions)
@@ -586,7 +624,7 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
     if (existing.length > 0) {
       await db.update(userDashboardPermissions)
         .set({
-          ...dbData,
+          ...sparseData,
           appliedPresetId: null,
           grantedByUserId: adminId,
           grantedAt: new Date(),
@@ -597,7 +635,7 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
       await db.insert(userDashboardPermissions).values({
         organizationId: orgId,
         userId,
-        ...dbData,
+        ...sparseData,
         grantedByUserId: adminId,
         grantedAt: new Date(),
       });
