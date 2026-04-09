@@ -26,6 +26,7 @@ import { ensureFieldWorkerPermColumns } from "./utils/ensureFieldWorkerPermColum
 import { ensurePeerRatingColumns } from "./utils/ensurePeerRatingColumns";
 import { ensurePermissionPresetsTable } from "./utils/ensurePermissionPresetsTable";
 import { ensureLidarTables } from "./utils/ensureLidarTables";
+import { ensureNullablePermissions } from "./utils/ensureNullablePermissions";
 import { ensureErrorLogsTable } from "./utils/ensureErrorLogsTable";
 import { ensureScopeModifierTables } from "./utils/ensureScopeModifierTables";
 import { seedBuiltInPresets } from "./dashboardRoutes";
@@ -235,6 +236,7 @@ app.use((req, res, next) => {
   await ensureTakeoffEnhancements();
   await ensureFieldWorkerPermColumns();
   await ensurePeerRatingColumns();
+  await ensureNullablePermissions();
   await ensurePermissionPresetsTable();
   await ensureLidarTables();
   await ensureErrorLogsTable();
