@@ -46,7 +46,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Account Settings Hub**: Unified settings page (`/settings`) merging Profile and Settings, with URL-based sidebar routing for various sections.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
 *   **Platform Monitoring & Observability**: Super Admin dashboard with API usage tracking, AI usage analytics, object storage usage, platform integration health checks, and cross-organization audit log viewer.
-*   **Feature Permissions System**: Granular per-user feature access control via boolean flags and role-based defaults for 8 consolidated roles. Includes Permission Presets (30+ built-in across all roles), financial access controls, "Reset to Role Defaults" button, and audit logging for all permission changes/preset applications.
+*   **Feature Permissions System**: Granular per-user feature access control via boolean flags and role-based defaults for 8 consolidated roles. Includes Permission Presets (30+ built-in across all roles), financial access controls, "Reset to Role Defaults" button, audit logging for all permission changes/preset applications, and Custom Role Labels (per-user display titles that override default role names in the UI).
 *   **Peer Coworker Ratings**: Anonymous peer rating system for field workers with configurable anonymity and scope modes.
 *   **RBAC (8-Role System)**: Consolidated role system including SUPER_ADMIN, ADMIN, HUSTLER, MANAGER, SUPERINTENDENT, ESTIMATOR, FIELD_WORKER, VENDOR with defined hierarchies and alternate labels.
 *   **Role-Based Sidebar Navigation**: Workflow-based sidebar grouping with unique group names and item assignments per role.

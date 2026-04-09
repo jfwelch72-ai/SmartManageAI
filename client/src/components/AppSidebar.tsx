@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
-import { PlatformAdminNavConfig, VendorPortalNavConfig, isSuperAdmin, isVendor, isFieldWorker, type FeaturePerms, type SidebarSection, getWorkflowGroups, getVisibleGroupItems, NavItems } from "@/lib/rbac";
+import { PlatformAdminNavConfig, VendorPortalNavConfig, isSuperAdmin, isVendor, isFieldWorker, type FeaturePerms, type SidebarSection, getWorkflowGroups, getVisibleGroupItems, NavItems, ROLE_DISPLAY_NAMES } from "@/lib/rbac";
 import { useDashboardCustomizationSafe } from "@/hooks/use-dashboard-customization";
 import { useTour } from "@/components/TourProvider";
 import {
@@ -389,7 +389,7 @@ export function AppSidebar() {
                 </Avatar>
                 <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
                   <p className="text-sm font-medium truncate">{user.firstName} {user.lastName}</p>
-                  <p className="text-xs text-muted-foreground truncate">{userRole}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user.roleLabel || ROLE_DISPLAY_NAMES[userRole || ""] || userRole}</p>
                 </div>
               </div>
             </SidebarMenuItem>
@@ -549,7 +549,7 @@ export function AppSidebar() {
               </Avatar>
               <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
                 <p className="text-sm font-medium truncate">{user.firstName} {user.lastName}</p>
-                <p className="text-xs text-muted-foreground truncate">{userRole}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.roleLabel || ROLE_DISPLAY_NAMES[userRole || ""] || userRole}</p>
               </div>
             </div>
           </SidebarMenuItem>

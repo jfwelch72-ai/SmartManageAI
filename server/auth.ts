@@ -143,6 +143,7 @@ export async function authMiddleware(
       avatarUrl: user.avatarUrl,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      roleLabel: user.roleLabel,
       walkthroughCompleted: user.walkthroughCompleted,
       walkthroughStep: user.walkthroughStep,
       walkthroughStartedAt: user.walkthroughStartedAt,

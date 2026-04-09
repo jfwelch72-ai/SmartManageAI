@@ -316,6 +316,7 @@ export const users = pgTable("users", {
   emergencyContactPhone: text("emergency_contact_phone"),
   emergencyContactAddress: text("emergency_contact_address"),
   emergencyContactEmail: text("emergency_contact_email"),
+  roleLabel: text("role_label"),
   walkthroughCompleted: boolean("walkthrough_completed").notNull().default(false),
   walkthroughStep: integer("walkthrough_step").notNull().default(0),
   walkthroughStartedAt: timestamp("walkthrough_started_at"),

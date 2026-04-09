@@ -425,6 +425,7 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
       lastName: users.lastName,
       email: users.email,
       role: users.role,
+      roleLabel: users.roleLabel,
     }).from(users).where(and(eq(users.organizationId, orgId), sql`${users.role} != 'SUPER_ADMIN'`));
 
     const permissions = await db.select().from(userDashboardPermissions)
@@ -2889,7 +2890,7 @@ router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthReq
 // Update user (Admin only)
 router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
-    const [targetUser] = await db.select({ organizationId: users.organizationId, role: users.role }).from(users).where(eq(users.id, req.params.id)).limit(1);
+    const [targetUser] = await db.select({ organizationId: users.organizationId, role: users.role, roleLabel: users.roleLabel }).from(users).where(eq(users.id, req.params.id)).limit(1);
     if (!targetUser) { res.status(404).json({ error: "User not found" }); return; }
     if (targetUser.role === "SUPER_ADMIN" && req.user?.role !== "SUPER_ADMIN") {
       res.status(403).json({ error: "Cannot modify a Super Admin user" }); return;
@@ -2916,7 +2917,7 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
       return;
     }
 
-    const { firstName, lastName, email, phone, role, isActive, password } = validationResult.data;
+    const { firstName, lastName, email, phone, role, isActive, password, roleLabel } = validationResult.data;
     
     const updateData: any = {};
     if (firstName !== undefined) updateData.firstName = firstName;
@@ -2926,6 +2927,7 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
     if (role !== undefined) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (password !== undefined) updateData.passwordHash = await hashPassword(password);
+    if (roleLabel !== undefined) updateData.roleLabel = roleLabel || null;
 
     if (email !== undefined || password !== undefined || isActive === false) {
       updateData.tokenVersion = sql`COALESCE(${users.tokenVersion}, 0) + 1`;
@@ -2942,6 +2944,17 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
     if (!updatedUser) {
       res.status(404).json({ error: "User not found" });
       return;
+    }
+
+    if (roleLabel !== undefined) {
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "userRoleLabel",
+        entityId: req.params.id,
+        action: "UPDATE",
+        oldValue: JSON.stringify({ roleLabel: (targetUser as any).roleLabel || null }),
+        newValue: JSON.stringify({ roleLabel: roleLabel || null }),
+      }, req);
     }
 
     const { passwordHash, tokenVersion, ...userWithoutPassword } = updatedUser;

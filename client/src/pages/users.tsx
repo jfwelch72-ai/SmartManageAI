@@ -88,6 +88,7 @@ import {
   FolderOpen,
   UserCog,
   RotateCcw,
+  Pencil,
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
@@ -190,6 +191,75 @@ const HUSTLER_BASE_PERMISSIONS = new Set([
   "canAccessMessages",
   "canAccessCalendar",
 ]);
+
+function RoleLabelEditor({ userId, currentLabel, role }: { userId: string; currentLabel: string; role: string }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(currentLabel);
+  const { toast } = useToast();
+
+  const updateLabelMutation = useMutation({
+    mutationFn: async (roleLabel: string) => {
+      return await apiRequest("PATCH", `/api/users/${userId}`, { roleLabel: roleLabel || null });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permissions"] });
+      toast({ title: "Display title updated", description: value ? `Set to "${value}"` : "Cleared — using default role name" });
+      setEditing(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update display title", variant: "destructive" });
+    },
+  });
+
+  const handleSave = () => {
+    if (value !== currentLabel) {
+      updateLabelMutation.mutate(value);
+    } else {
+      setEditing(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap" data-testid={`section-role-label-${userId}`}>
+      <Pencil className="w-4 h-4 text-muted-foreground" />
+      <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Display Title</span>
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <Input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={ROLE_LABELS[role] || role}
+            className="h-8 w-[200px] text-sm"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSave();
+              if (e.key === "Escape") { setValue(currentLabel); setEditing(false); }
+            }}
+            data-testid={`input-role-label-${userId}`}
+          />
+          <Button size="sm" variant="outline" className="h-8 px-2" onClick={handleSave} disabled={updateLabelMutation.isPending} data-testid={`button-save-role-label-${userId}`}>
+            <Save className="w-3.5 h-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => { setValue(currentLabel); setEditing(false); }} data-testid={`button-cancel-role-label-${userId}`}>
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          {currentLabel ? (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-role-label-${userId}`}>{currentLabel}</Badge>
+          ) : (
+            <span className="text-sm text-muted-foreground italic" data-testid={`text-role-label-default-${userId}`}>Using default: {ROLE_LABELS[role] || role}</span>
+          )}
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setValue(currentLabel); setEditing(true); }} data-testid={`button-edit-role-label-${userId}`}>
+            <Pencil className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
@@ -1075,9 +1145,10 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                   </span>
                                   {(() => {
                                     const appliedPreset = u.appliedPresetId ? presets.find(p => p.id === u.appliedPresetId) : null;
+                                    const roleDisplayName = (u as any).roleLabel || ROLE_LABELS[u.role] || u.role;
                                     const badgeLabel = appliedPreset
-                                      ? `${ROLE_LABELS[u.role] || u.role} - ${appliedPreset.name}`
-                                      : ROLE_LABELS[u.role] || u.role;
+                                      ? `${roleDisplayName} - ${appliedPreset.name}`
+                                      : roleDisplayName;
                                     return (
                                       <Tooltip>
                                         <TooltipTrigger asChild>
@@ -1142,6 +1213,9 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                     </SelectContent>
                                   </Select>
                                 </div>
+                              )}
+                              {(user?.role === "ADMIN" || user?.role === "HUSTLER") && u.id !== user?.id && u.role !== "SUPER_ADMIN" && (
+                                <RoleLabelEditor userId={u.id} currentLabel={(u as any).roleLabel || ""} role={u.role} />
                               )}
                               {!isAdmin && (() => {
                                 const userPresets = presets.filter(p => p.targetRole === u.role);

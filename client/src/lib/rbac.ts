@@ -66,7 +66,8 @@ export const ROLE_ALTERNATE_LABELS: Record<string, string> = {
   MANAGER: "Project Manager",
 };
 
-export function getRoleDisplayName(role?: string, useAlternate?: boolean): string {
+export function getRoleDisplayName(role?: string, useAlternate?: boolean, roleLabel?: string | null): string {
+  if (roleLabel) return roleLabel;
   if (!role) return "Unknown";
   if (useAlternate && role in ROLE_ALTERNATE_LABELS) {
     return ROLE_ALTERNATE_LABELS[role];
