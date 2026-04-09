@@ -1,4 +1,5 @@
 import { logError, logInfo } from "./utils/logger";
+import { isDevSeedEnabled } from "./utils/devSeedFlag";
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -272,6 +273,8 @@ app.use((req, res, next) => {
     .map(([k, v]) => `${k}: ${v ? "configured" : "NOT configured"}`)
     .join(", ");
   log(`Integration status: ${configuredList}`);
+
+  log(`Dev seed routes: ${isDevSeedEnabled() ? "ENABLED" : "DISABLED"}`);
 
   server.listen({
     port,

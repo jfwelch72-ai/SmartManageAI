@@ -384,9 +384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use(executiveDigestRoutes);
 
-  if (process.env.NODE_ENV !== "production") {
-    app.use("/api/dev", devSeedEnterpriseRoutes);
-  }
+  app.use("/api/dev", devSeedEnterpriseRoutes);
 
   // Auth & Profile routes (extracted to authProfileRoutes.ts)
   app.use(authProfileRoutes);

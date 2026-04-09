@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { TradeCalculators } from './tradeCalculators';
 import { CALCULATION_VERIFICATION_SUITE, runAllVerificationTests, printVerificationReport } from './calculatorVerification';
 import { seedMasterCalculators } from './seedCalculators';
+import { requireDevSeed } from "./utils/devSeedFlag";
 
 const router = Router();
 
@@ -539,10 +540,10 @@ router.post('/lowvoltage', (req, res) => {
 // ============================================
 
 /**
- * Seed master calculators table
+ * Seed master calculators table (dev only)
  * POST /api/calculators/seed
  */
-router.post('/seed', async (req, res) => {
+router.post('/seed', requireDevSeed, async (req, res) => {
   try {
     await seedMasterCalculators();
     res.json({ 

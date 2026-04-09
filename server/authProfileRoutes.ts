@@ -463,6 +463,7 @@ import { sendEmail, getEmailVerificationHtml, getEmailVerificationText } from ".
 import { insertNotification } from "./services/notificationService";
 import { setAllFeatureFlags } from "./services/featureFlagService";
 import { FEATURE_FLAG_KEYS } from "@shared/schema";
+import { requireDevSeed } from "./utils/devSeedFlag";
 
 const router = Router();
 
@@ -773,13 +774,8 @@ const upload = multer({
     }
   });
 
-  // DEV ONLY: Quick test login for development
-  router.post("/api/dev/test-login", async (req: AuthRequest, res) => {
-    // SECURITY: Only available in development mode
-    if (process.env.NODE_ENV === 'production') {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+  // DEV ONLY: Quick test login for development (gated by ENABLE_DEV_SEED / NODE_ENV)
+  router.post("/api/dev/test-login", requireDevSeed, async (req: AuthRequest, res) => {
 
     try {
       const { role } = req.body;
@@ -871,13 +867,8 @@ const upload = multer({
     }
   });
 
-  // DEV ONLY: Create fresh admin for full onboarding experience
-  router.post("/api/dev/fresh-admin-login", async (req: AuthRequest, res) => {
-    // SECURITY: Only available in development mode
-    if (process.env.NODE_ENV === 'production') {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+  // DEV ONLY: Create fresh admin for full onboarding experience (gated by ENABLE_DEV_SEED / NODE_ENV)
+  router.post("/api/dev/fresh-admin-login", requireDevSeed, async (req: AuthRequest, res) => {
 
     try {
       const timestamp = Date.now();

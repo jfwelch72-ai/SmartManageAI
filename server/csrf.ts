@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
 import type { AuthRequest } from "./auth";
+import { isDevSeedEnabled } from "./utils/devSeedFlag";
 
 const CSRF_HEADER = "x-csrf-token";
 const CSRF_COOKIE = "csrf_token";
@@ -39,7 +40,7 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction): v
   if (
     exempt.includes(req.path) ||
     req.path.startsWith("/api/webhooks") ||
-    req.path.startsWith("/api/dev/") ||
+    (req.path.startsWith("/api/dev/") && isDevSeedEnabled()) ||
     req.path.startsWith("/api/auth/google") ||
     req.path.startsWith("/api/auth/apple") ||
     req.path.startsWith("/api/auth/passkey") ||

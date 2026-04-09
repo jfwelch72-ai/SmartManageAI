@@ -17,10 +17,11 @@ import { eq, and, sql } from "drizzle-orm";
 import { logInfo } from "./utils/logger";
 import { FEATURE_FLAG_KEYS } from "@shared/schema";
 import { setAllFeatureFlags } from "./services/featureFlagService";
+import { requireDevSeed } from "./utils/devSeedFlag";
 
 const router = Router();
 
-router.post("/seed-enterprise", requireAuth, async (req, res) => {
+router.post("/seed-enterprise", requireDevSeed, requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
