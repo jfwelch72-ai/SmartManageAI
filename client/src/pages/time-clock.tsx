@@ -554,7 +554,7 @@ export default function TimeClockPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 px-2 text-xs"
+                              className="min-h-[44px] sm:h-6 px-3 sm:px-2 text-xs shrink-0"
                               onClick={startGpsWatch}
                               data-testid="button-retry-gps-clockout"
                             >
