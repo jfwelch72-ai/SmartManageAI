@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { generateToken, setAuthCookie } from "./auth";
 import express from "express";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
+import jwt from "jsonwebtoken";
 
 const router = Router();
 
@@ -240,9 +241,42 @@ router.get(
   }
 );
 
-router.get("/api/auth/apple", (req: Request, res: Response) => {
+function isAppleConfigured(): boolean {
   const clientId = process.env.APPLE_CLIENT_ID;
-  if (!clientId || clientId === "REPLACE_WITH_YOUR_APPLE_CLIENT_ID") {
+  const teamId = process.env.APPLE_TEAM_ID;
+  const keyId = process.env.APPLE_KEY_ID;
+  const privateKey = process.env.APPLE_PRIVATE_KEY;
+  return !!(
+    clientId && clientId !== "REPLACE_WITH_YOUR_APPLE_CLIENT_ID" &&
+    teamId && teamId !== "REPLACE_WITH_YOUR_APPLE_TEAM_ID" &&
+    keyId && keyId !== "REPLACE_WITH_YOUR_APPLE_KEY_ID" &&
+    privateKey && privateKey !== "REPLACE_WITH_YOUR_APPLE_PRIVATE_KEY"
+  );
+}
+
+function generateAppleClientSecret(): string {
+  const clientId = process.env.APPLE_CLIENT_ID!;
+  const teamId = process.env.APPLE_TEAM_ID!;
+  const keyId = process.env.APPLE_KEY_ID!;
+  const privateKey = process.env.APPLE_PRIVATE_KEY!.replace(/\\n/g, "\n");
+
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    iss: teamId,
+    iat: now,
+    exp: now + 15777000,
+    aud: "https://appleid.apple.com",
+    sub: clientId,
+  };
+
+  return jwt.sign(payload, privateKey, {
+    algorithm: "ES256",
+    keyid: keyId,
+  });
+}
+
+router.get("/api/auth/apple", (req: Request, res: Response) => {
+  if (!isAppleConfigured()) {
     res.status(503).json({
       error:
         "Apple Sign-In is not configured yet. Please set APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, and APPLE_PRIVATE_KEY environment variables.",
@@ -250,6 +284,7 @@ router.get("/api/auth/apple", (req: Request, res: Response) => {
     return;
   }
 
+  const clientId = process.env.APPLE_CLIENT_ID!;
   const state = generateState();
   setStateCookie(res, state, "apple");
 
@@ -259,7 +294,7 @@ router.get("/api/auth/apple", (req: Request, res: Response) => {
     `https://appleid.apple.com/auth/authorize?` +
     `client_id=${clientId}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&response_type=code id_token` +
+    `&response_type=code` +
     `&scope=${scope}` +
     `&response_mode=form_post` +
     `&state=${state}`;
@@ -278,14 +313,47 @@ router.post(
       }
       clearStateCookie(res, "apple");
 
-      const { id_token, user: appleUserData } = req.body;
+      const { code, user: appleUserData } = req.body;
 
-      if (!id_token) {
+      if (!code) {
+        logError("Apple OAuth callback missing authorization code");
         res.redirect("/login?error=apple_failed");
         return;
       }
 
-      const parts = id_token.split(".");
+      const clientId = process.env.APPLE_CLIENT_ID!;
+      const clientSecret = generateAppleClientSecret();
+      const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/apple/callback`;
+
+      const tokenRes = await fetch("https://appleid.apple.com/auth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+          grant_type: "authorization_code",
+          redirect_uri: redirectUri,
+        }).toString(),
+      });
+
+      if (!tokenRes.ok) {
+        const errBody = await tokenRes.text();
+        logError("Apple token exchange failed", { status: tokenRes.status, body: errBody });
+        res.redirect("/login?error=apple_failed");
+        return;
+      }
+
+      const tokenData = await tokenRes.json();
+      const idToken = tokenData.id_token;
+
+      if (!idToken) {
+        logError("Apple token response missing id_token");
+        res.redirect("/login?error=apple_failed");
+        return;
+      }
+
+      const parts = idToken.split(".");
       if (parts.length !== 3) {
         res.redirect("/login?error=apple_failed");
         return;
@@ -296,7 +364,6 @@ router.post(
         Buffer.from(parts[1], "base64url").toString()
       );
 
-      const clientId = process.env.APPLE_CLIENT_ID;
       if (payload.iss !== "https://appleid.apple.com") {
         logError("Apple id_token issuer mismatch", { iss: payload.iss });
         res.redirect("/login?error=apple_failed");
