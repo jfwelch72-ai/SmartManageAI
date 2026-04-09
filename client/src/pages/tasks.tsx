@@ -51,6 +51,21 @@ const taskFormSchema = z.object({
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
 
+interface TaskItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: string;
+  category: string;
+  projectId?: string;
+  assignedToId?: string;
+  assignedToFirstName?: string;
+  assignedToLastName?: string;
+  dueDate?: string;
+  dismissReason?: string;
+}
+
 const PRIORITY_OPTIONS = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const CATEGORY_OPTIONS = [
   { value: "ALL", label: "All Categories" },
@@ -92,7 +107,7 @@ export default function Tasks() {
   });
 
   // Fetch tasks - use queryKey with params, default fetcher handles it
-  const {  data: tasks = [], isLoading } = useQuery({
+  const {  data: tasks = [], isLoading } = useQuery<TaskItem[]>({
     queryKey: statusFilter ? [`/api/tasks?status=${statusFilter}`] : ["/api/tasks"],
   });
 
@@ -101,7 +116,7 @@ export default function Tasks() {
     const params = new URLSearchParams(window.location.search);
     const deepLinkTaskId = params.get("taskId");
     if (deepLinkTaskId) {
-      const found = (tasks as Record<string, unknown>[]).find((t: Record<string, unknown>) => t.id === deepLinkTaskId);
+      const found = tasks.find((t) => t.id === deepLinkTaskId);
       if (found) {
         setSelectedTask(found);
         setIsDetailModalOpen(true);
@@ -229,7 +244,7 @@ export default function Tasks() {
   const STATUS_ORDER: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, COMPLETED: 2, DISMISSED: 3 };
 
   const filteredTasks = useMemo(() => {
-    const filtered = (tasks as any[]).filter(task => {
+    const filtered = tasks.filter(task => {
       const matchesSearch = 
         task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         task.description?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -473,7 +488,7 @@ export default function Tasks() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search tasks..."
-              className="pl-9"
+              className="pl-9 min-h-[44px] sm:min-h-0"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               data-testid="input-search-tasks"
@@ -481,7 +496,7 @@ export default function Tasks() {
           </div>
           
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-[140px]" data-testid="select-priority-filter">
+            <SelectTrigger className="w-[140px] min-h-[44px] sm:min-h-0" data-testid="select-priority-filter">
               <SelectValue placeholder="Priority" />
             </SelectTrigger>
             <SelectContent>
@@ -492,7 +507,7 @@ export default function Tasks() {
           </Select>
           
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="select-category-filter">
+            <SelectTrigger className="w-[180px] min-h-[44px] sm:min-h-0" data-testid="select-category-filter">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Category" />
             </SelectTrigger>
@@ -622,7 +637,7 @@ export default function Tasks() {
         <>
         {/* Mobile card view */}
         <div className="md:hidden space-y-3" data-testid="tasks-card-container">
-          {filteredTasks.map((task: any) => (
+          {filteredTasks.map((task) => (
             <Card
               key={task.id}
               className="cursor-pointer active:bg-muted/50 transition-colors"
@@ -756,7 +771,7 @@ export default function Tasks() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredTasks.map((task: any) => (
+              {filteredTasks.map((task) => (
                 <TableRow
                   key={task.id}
                   className="cursor-pointer hover:bg-muted/50"
