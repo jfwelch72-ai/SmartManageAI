@@ -103,7 +103,7 @@ export const aiTasks = pgTable("ai_tasks", {
 // AI Insight Module Types
 export const aiInsights = pgTable("ai_insights", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   module: aiInsightModuleEnum("module").notNull(),
   severity: aiInsightSeverityEnum("severity").notNull().default("INFO"),
@@ -464,7 +464,7 @@ export const takeoffMarkupToolEnum = pgEnum("takeoff_markup_tool", ["ARROW", "TE
 export const takeoffMarkups = pgTable("takeoff_markups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   createdBy: varchar("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
   tool: takeoffMarkupToolEnum("tool").notNull(),
   points: text("points").notNull(),
@@ -720,7 +720,7 @@ export type AIContractDocumentAnalysis = typeof aiContractDocumentAnalysis.$infe
 // Crews table
 export const crews = pgTable("crews", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   name: text("name").notNull(),
   description: text("description"),
   leadId: varchar("lead_id").references(() => users.id),
@@ -848,7 +848,7 @@ export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   
   // Multi-tenant isolation
-  organizationId: varchar("organization_id").references(() => organizations.id),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   
   // Identification
   name: text("name").notNull(), // Display name: "CAT 320 Excavator #1"
@@ -1265,7 +1265,7 @@ export type SovRevisionHistory = typeof sovRevisionHistory.$inferSelect;
 // CRM Organisations table - Companies (Contractors, Subcontractors, Suppliers, Vendors)
 export const crmOrganisations = pgTable("crm_organisations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   type: crmOrganisationTypeEnum("type").notNull(),
   name: text("name").notNull(),
   address: text("address"),
@@ -1316,7 +1316,7 @@ export type CrmOrganisation = typeof crmOrganisations.$inferSelect;
 // CRM Contacts table - People associated with organisations
 export const crmContacts = pgTable("crm_contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   organisationId: varchar("organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
@@ -1346,7 +1346,7 @@ export type CrmContact = typeof crmContacts.$inferSelect;
 // Auto-timestamps to track when managers contact organizations/people
 export const crmOrganisationNotes = pgTable("crm_organisation_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   organisationId: varchar("organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
   contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }), // Optional: link to specific contact
   noteType: crmNoteTypeEnum("note_type").notNull().default("GENERAL"),
@@ -1839,7 +1839,7 @@ export type MasterModifier = typeof masterModifiers.$inferSelect;
 // Conversations table (channels and direct messages)
 export const conversations = pgTable("conversations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   type: conversationTypeEnum("type").notNull(), // DIRECT, GROUP, COMPANY
   name: text("name"), // null for direct messages, required for groups/company
   description: text("description"),
@@ -2387,7 +2387,7 @@ export type RentalEquipmentCatalog = typeof rentalEquipmentCatalog.$inferSelect;
 export const vendorServiceCatalog = pgTable("vendor_service_catalog", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
 
   serviceName: text("service_name").notNull(),
   serviceCode: text("service_code"),
@@ -2585,7 +2585,7 @@ export type RentalEquipmentUsage = typeof rentalEquipmentUsages.$inferSelect;
 export const vendorPricingCatalogs = pgTable("vendor_pricing_catalogs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }), // Contractor receiving this pricing
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }), // Contractor receiving this pricing
   
   // Item Details
   itemName: text("item_name").notNull(), // "Ready Mix Concrete 4000 PSI"
@@ -5964,7 +5964,7 @@ export type PortalChatMessage = typeof portalChatMessages.$inferSelect;
 export const employeePerformanceProfiles = pgTable("employee_performance_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   experienceLevel: text("experience_level"),
   productivityTendencies: text("productivity_tendencies"),
   pastProjects: text("past_projects"),
@@ -5979,7 +5979,7 @@ export type EmployeePerformanceProfile = typeof employeePerformanceProfiles.$inf
 export const attendanceLogs = pgTable("attendance_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   status: text("status").notNull(),
   notes: text("notes"),
@@ -5994,7 +5994,7 @@ export type AttendanceLog = typeof attendanceLogs.$inferSelect;
 export const safetyIncidents = pgTable("safety_incidents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   severity: text("severity").notNull(),
   description: text("description").notNull(),
@@ -6010,7 +6010,7 @@ export type SafetyIncident = typeof safetyIncidents.$inferSelect;
 export const qualityIssues = pgTable("quality_issues", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   category: text("category").notNull(),
   description: text("description").notNull(),
@@ -6026,7 +6026,7 @@ export type QualityIssue = typeof qualityIssues.$inferSelect;
 export const performanceReviews = pgTable("performance_reviews", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   reviewDate: text("review_date").notNull(),
   reviewerName: text("reviewer_name").notNull(),
   overallRating: integer("overall_rating").notNull(),
@@ -6077,7 +6077,7 @@ export type PeerRating = typeof peerRatings.$inferSelect;
 export const supervisorNotes = pgTable("supervisor_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   note: text("note").notNull(),
   createdBy: varchar("created_by").references(() => users.id),
   createdByName: text("created_by_name").notNull(),
@@ -6091,7 +6091,7 @@ export type SupervisorNote = typeof supervisorNotes.$inferSelect;
 export const workerLogs = pgTable("worker_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   note: text("note").notNull(),
   category: text("category").notNull().default("GENERAL"),
@@ -7445,7 +7445,7 @@ export type BidModifierSelection = typeof bidModifierSelections.$inferSelect;
 export const talentProfiles = pgTable("talent_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "set null" }),
   bio: text("bio"),
   tradeSpecialization: text("trade_specialization"),
   yearsOfExperience: integer("years_of_experience"),
@@ -8068,7 +8068,7 @@ export type GlobalWorkflowTemplate = typeof globalWorkflowTemplates.$inferSelect
 export const userSettings = pgTable("user_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   themePreference: text("theme_preference").notNull().default("system"),
   defaultLandingPage: text("default_landing_page").notNull().default("/dashboard"),
   dateFormat: text("date_format").notNull().default("MM/DD/YYYY"),
@@ -8087,7 +8087,7 @@ export type UserSettings = typeof userSettings.$inferSelect;
 export const activityLog = pgTable("activity_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   action: text("action").notNull(),
   details: text("details"),
   ipAddress: text("ip_address"),
