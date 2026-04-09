@@ -2786,6 +2786,7 @@ const createUserSchema = insertUserSchema.omit({ passwordHash: true }).extend({
 // Update user schema
 const updateUserSchema = insertUserSchema.omit({ passwordHash: true }).partial().extend({
   password: z.string().min(8, "Password must be at least 8 characters").optional(),
+  roleLabel: z.string().max(100, "Display title must be 100 characters or less").optional().nullable(),
 });
 
 // Get all users (Admin/Manager/Office Manager)

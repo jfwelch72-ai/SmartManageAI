@@ -237,6 +237,7 @@ function RoleLabelEditor({ userId, currentLabel, role }: { userId: string; curre
               if (e.key === "Enter") handleSave();
               if (e.key === "Escape") { setValue(currentLabel); setEditing(false); }
             }}
+            maxLength={100}
             data-testid={`input-role-label-${userId}`}
           />
           <Button size="sm" variant="outline" className="h-8 px-2" onClick={handleSave} disabled={updateLabelMutation.isPending} data-testid={`button-save-role-label-${userId}`}>
