@@ -267,7 +267,7 @@ export default function SafetyTrainingPage() {
       </div>
 
       {/* Mobile: dropdown tab selector */}
-      <div className="sm:hidden">
+      <div className="md:hidden">
         <Select value={tab} onValueChange={(v) => setTab(v as MainTab)}>
           <SelectTrigger className="h-11" data-testid="select-tab-mobile">
             <SelectValue />
@@ -284,7 +284,7 @@ export default function SafetyTrainingPage() {
         </Select>
       </div>
       {/* Desktop: horizontal tabs */}
-      <div className="hidden sm:flex gap-1 border-b overflow-x-auto">
+      <div className="hidden md:flex gap-1 border-b overflow-x-auto">
         {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
