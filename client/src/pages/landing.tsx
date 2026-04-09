@@ -98,37 +98,6 @@ function RevealSection({ children, className = "" }: { children: React.ReactNode
   );
 }
 
-const testimonials = [
-  {
-    name: "Marcus Rivera",
-    title: "Owner, Rivera Concrete Solutions",
-    trade: "Concrete",
-    quote: "We went from losing $10K per project on missed change orders to catching every single one. SmartManageAI paid for itself in the first month.",
-    rating: 5
-  },
-  {
-    name: "Sarah Chen",
-    title: "VP Operations, Chen Electrical Group",
-    trade: "Electrical",
-    quote: "The AI CFO dashboard alone is worth the subscription. We can see profitability in real-time instead of waiting until the project closes to learn we lost money.",
-    rating: 5
-  },
-  {
-    name: "James Whitfield",
-    title: "President, Whitfield General Contracting",
-    trade: "General Contractor",
-    quote: "Managing 40+ subcontractors used to be chaos. Now every pay app, lien waiver, and SOV is tracked in one place. Our admin time dropped by 60%.",
-    rating: 5
-  },
-  {
-    name: "Angela Torres",
-    title: "CEO, Torres HVAC Services",
-    trade: "HVAC",
-    quote: "The GPS time clock and production tracking completely changed how we bid. We finally have real data on crew productivity instead of guessing.",
-    rating: 5
-  }
-];
-
 const painPoints = [
   {
     icon: DollarSign,
@@ -782,50 +751,6 @@ export default function LandingPage() {
               <Badge key={trade} variant="outline" className="px-3 py-1 text-xs" data-testid={`badge-trade-${trade.toLowerCase().replace(/\s+/g, '-')}`}>
                 {trade}
               </Badge>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-20 md:py-28 bg-gradient-to-b from-background to-muted/20" data-testid="section-social-proof">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <RevealSection>
-            <div className="text-center mb-16">
-              <Badge variant="secondary" className="mb-4">Trusted by Contractors</Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                Contractors Who Stopped Guessing and Started Knowing
-              </h2>
-              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                See how construction companies across every trade are using SmartManageAI to increase profitability and reduce chaos.
-              </p>
-            </div>
-          </RevealSection>
-          <div className="grid md:grid-cols-2 gap-6">
-            {testimonials.map((testimonial, index) => (
-              <RevealSection key={index}>
-                <Card className="h-full border-none shadow-md bg-card">
-                  <CardContent className="pt-6">
-                    <div className="flex gap-1 mb-4">
-                      {Array.from({ length: testimonial.rating }).map((_, i) => (
-                        <Star key={i} className="w-4 h-4 fill-primary text-primary" />
-                      ))}
-                    </div>
-                    <blockquote className="text-base md:text-lg mb-6 leading-relaxed italic text-foreground/90">
-                      "{testimonial.quote}"
-                    </blockquote>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/60 to-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-                        {testimonial.name.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-sm">{testimonial.name}</div>
-                        <div className="text-xs text-muted-foreground">{testimonial.title}</div>
-                      </div>
-                      <Badge variant="outline" className="ml-auto text-xs">{testimonial.trade}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              </RevealSection>
             ))}
           </div>
         </div>
