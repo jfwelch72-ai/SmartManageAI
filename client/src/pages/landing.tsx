@@ -434,14 +434,14 @@ const integrations = [
     icon: "DS"
   },
   {
-    name: "Resend",
-    description: "Transactional email delivery for notifications and alerts",
-    icon: "RE"
+    name: "Slack & Teams",
+    description: "Multi-channel notifications, alerts, and project updates",
+    icon: "ST"
   },
   {
-    name: "OpenAI",
-    description: "GPT-4o powering all AI features across the platform",
-    icon: "AI"
+    name: "Integration Hub",
+    description: "Provider-agnostic framework for custom connections and webhook automations",
+    icon: "HUB"
   }
 ];
 
@@ -633,6 +633,27 @@ export default function LandingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAllFeatures, setShowAllFeatures] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    document.title = "SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades";
+    const setMeta = (name: string, content: string, property?: boolean) => {
+      const attr = property ? "property" : "name";
+      let el = document.querySelector(`meta[${attr}="${name}"]`) as HTMLMetaElement | null;
+      if (!el) { el = document.createElement("meta"); el.setAttribute(attr, name); document.head.appendChild(el); }
+      el.setAttribute("content", content);
+    };
+    setMeta("description", "Stop losing money on every project. SmartManageAI is the complete AI-powered construction management platform with 500+ features for 23 trades. GPS time clock, estimating, change orders, subcontract management, BIM viewer, CPM scheduling, and 8 AI assistants — all in one platform.");
+    setMeta("og:title", "SmartManageAI - The Complete AI-Powered Construction Management Platform", true);
+    setMeta("og:description", "Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.", true);
+    setMeta("og:type", "website", true);
+    setMeta("og:url", "https://smartmanageai.com", true);
+    setMeta("og:image", "https://smartmanageai.com/og-image.png", true);
+    setMeta("twitter:card", "summary_large_image");
+    setMeta("twitter:title", "SmartManageAI - AI-Powered Construction Management");
+    setMeta("twitter:description", "The only platform built to run your entire construction business. 500+ features, 8 AI assistants, 23 trades.");
+    setMeta("keywords", "construction management software, AI construction, project management, GPS time clock, estimating software, change orders, subcontract management, BIM viewer, CPM scheduling, contractor software");
+    return () => { document.title = "SmartManageAI"; };
+  }, []);
 
   const handleNotifySubmit = async () => {
     if (!notifyEmail.trim()) {
@@ -1021,7 +1042,7 @@ export default function LandingPage() {
           <RevealSection>
             <div className="text-center mt-10">
               <p className="text-sm text-muted-foreground">
-                Plus a provider-agnostic <span className="font-semibold text-foreground">Integration Hub</span> for custom connections and webhook automations.
+                Plus dozens of additional connections available through our open <span className="font-semibold text-foreground">Integration Hub</span> API.
               </p>
             </div>
           </RevealSection>
