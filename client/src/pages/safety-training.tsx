@@ -266,7 +266,25 @@ export default function SafetyTrainingPage() {
         ))}
       </div>
 
-      <div className="flex gap-1 border-b overflow-x-auto">
+      {/* Mobile: dropdown tab selector */}
+      <div className="sm:hidden">
+        <Select value={tab} onValueChange={(v) => setTab(v as MainTab)}>
+          <SelectTrigger className="h-11" data-testid="select-tab-mobile">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {tabs.map(t => (
+              <SelectItem key={t.key} value={t.key} data-testid={`tab-option-${t.key}`}>
+                <span className="flex items-center gap-2">
+                  <t.icon className="h-4 w-4" /> {t.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {/* Desktop: horizontal tabs */}
+      <div className="hidden sm:flex gap-1 border-b overflow-x-auto">
         {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
@@ -366,7 +384,48 @@ export default function SafetyTrainingPage() {
               <p className="text-sm mt-1">Assign training programs to employees from the Programs tab.</p>
             </div>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
+            <>
+            {/* Mobile card view */}
+            <div className="md:hidden space-y-3" data-testid="assignments-cards">
+              {filteredAssignments.map(a => (
+                <Card key={a.id} className="p-4 space-y-3" data-testid={`card-assignment-${a.id}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-medium text-sm">{a.employeeFirstName} {a.employeeLastName}</div>
+                      <div className="text-xs text-muted-foreground">{a.trainingTitle}</div>
+                    </div>
+                    <StatusBadge status={a.status} />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline" className="text-xs">{a.trainingCategory}</Badge>
+                    {a.trainingDuration && <Badge variant="outline" className="text-xs">{a.trainingDuration} min</Badge>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <div><span className="font-medium">Assigned:</span> {fmtDate(a.assignedAt)}</div>
+                    <div><span className="font-medium">Due:</span> {a.dueDate ? fmtDate(a.dueDate) : "—"}</div>
+                    {a.completedAt && (
+                      <div className="col-span-2 text-green-700">
+                        Completed: {fmtDate(a.completedAt)}
+                        {a.completedByName && <span> by {a.completedByName}</span>}
+                      </div>
+                    )}
+                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-2 pt-1">
+                      {a.status !== "COMPLETED" && (
+                        <Button variant="outline" size="sm" className="flex-1 min-h-[44px] text-xs" onClick={() => { setCompletingAssignment(a); setShowCompleteDialog(true); }} data-testid={`button-mark-complete-${a.id}`}>
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Complete
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" className="min-h-[44px]" onClick={() => window.open(`/api/safety-training/export/pdf?employeeId=${a.employeeId}`, "_blank")} data-testid={`button-export-row-${a.id}`}><Download className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="sm" className="min-h-[44px] text-destructive hover:text-destructive" onClick={() => { if (confirm("Remove this assignment?")) removeAssignmentMutation.mutate(a.id); }} data-testid={`button-remove-assignment-${a.id}`}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+            {/* Desktop table view */}
+            <div className="hidden md:block rounded-lg border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="assignments-table">
                   <thead>
@@ -425,6 +484,7 @@ export default function SafetyTrainingPage() {
                 </table>
               </div>
             </div>
+            </>
           )}
         </div>
       )}

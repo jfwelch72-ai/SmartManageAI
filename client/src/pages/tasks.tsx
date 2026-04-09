@@ -505,10 +505,11 @@ export default function Tasks() {
         </div>
 
         {/* Status Filters */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           <Button
             variant={statusFilter === null ? "default" : "outline"}
             size="sm"
+            className="min-h-[40px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter(null)}
             data-testid="filter-all"
           >
@@ -517,6 +518,7 @@ export default function Tasks() {
           <Button
             variant={statusFilter === "PENDING" ? "default" : "outline"}
             size="sm"
+            className="min-h-[40px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter("PENDING")}
             data-testid="filter-pending"
           >
@@ -525,6 +527,7 @@ export default function Tasks() {
           <Button
             variant={statusFilter === "IN_PROGRESS" ? "default" : "outline"}
             size="sm"
+            className="min-h-[40px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter("IN_PROGRESS")}
             data-testid="filter-in-progress"
           >
@@ -533,6 +536,7 @@ export default function Tasks() {
           <Button
             variant={statusFilter === "COMPLETED" ? "default" : "outline"}
             size="sm"
+            className="min-h-[40px] sm:min-h-0 shrink-0"
             onClick={() => setStatusFilter("COMPLETED")}
             data-testid="filter-completed"
           >
@@ -615,7 +619,94 @@ export default function Tasks() {
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-md border overflow-x-auto" data-testid="tasks-table-container">
+        <>
+        {/* Mobile card view */}
+        <div className="md:hidden space-y-3" data-testid="tasks-card-container">
+          {filteredTasks.map((task: any) => (
+            <Card
+              key={task.id}
+              className="cursor-pointer active:bg-muted/50 transition-colors"
+              onClick={() => {
+                setSelectedTask(task);
+                setIsDetailModalOpen(true);
+              }}
+              data-testid={`task-card-${task.id}`}
+            >
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  {getStatusIcon(task.status)}
+                  <span className="font-medium text-sm flex-1 leading-snug" data-testid={`task-title-${task.id}`}>{task.title}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <span data-testid={`task-status-${task.id}`}>{getStatusBadge(task.status)}</span>
+                  <span data-testid={`task-priority-${task.id}`}>{getPriorityBadge(task.priority)}</span>
+                  <Badge variant="outline" className="text-xs" data-testid={`task-category-${task.id}`}>{getCategoryLabel(task.category)}</Badge>
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span data-testid={`task-assignee-${task.id}`}>
+                    {task.assignedToFirstName ? (
+                      <span className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {task.assignedToFirstName} {task.assignedToLastName}
+                      </span>
+                    ) : "Unassigned"}
+                  </span>
+                  <span data-testid={`task-due-date-${task.id}`}>
+                    {task.dueDate ? (
+                      <span className="flex items-center gap-1">
+                        <CalendarIcon className="h-3 w-3" />
+                        {new Date(task.dueDate).toLocaleDateString()}
+                      </span>
+                    ) : "No due date"}
+                  </span>
+                </div>
+                <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                  {task.status === "PENDING" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 min-h-[44px]"
+                      onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "IN_PROGRESS" })}
+                      disabled={updateStatusMutation.isPending}
+                      data-testid={`button-start-task-${task.id}`}
+                    >
+                      Start Working
+                    </Button>
+                  )}
+                  {task.status === "IN_PROGRESS" && (
+                    <>
+                      <Button
+                        size="sm"
+                        className="flex-1 min-h-[44px]"
+                        onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "COMPLETED" })}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid={`button-complete-task-${task.id}`}
+                      >
+                        Mark Complete
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="min-h-[44px]"
+                        onClick={() => {
+                          setDismissingTaskId(task.id);
+                          setDismissDialogOpen(true);
+                        }}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid={`button-dismiss-task-${task.id}`}
+                      >
+                        Dismiss
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Desktop table view */}
+        <div className="hidden md:block rounded-md border overflow-x-auto" data-testid="tasks-table-container">
           <Table>
             <TableHeader>
               <TableRow>
@@ -754,6 +845,7 @@ export default function Tasks() {
             </TableBody>
           </Table>
         </div>
+        </>
       )}
 
       {selectedTask && (

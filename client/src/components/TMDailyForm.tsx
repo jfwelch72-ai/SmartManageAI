@@ -154,7 +154,7 @@ const TMDailyForm = forwardRef<TMDailyFormRef, TMDailyFormProps>(({ projectName,
             </div>
           </div>
 
-          <Button type="submit" className="w-full" data-testid="button-submit-tm">
+          <Button type="submit" size="lg" className="w-full min-h-[48px]" data-testid="button-submit-tm">
             Submit Daily Sheet
           </Button>
         </form>

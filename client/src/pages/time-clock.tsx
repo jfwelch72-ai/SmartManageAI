@@ -399,9 +399,9 @@ export default function TimeClockPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-full px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground mb-1">
+      <main className="mx-auto max-w-full px-3 sm:px-6 py-4 sm:py-8">
+        <div className="mb-4 sm:mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
             Time Clock
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -422,7 +422,7 @@ export default function TimeClockPage() {
           </TabsList>
 
           <TabsContent value="clock" className="space-y-6 mt-0">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
               {shouldShowClockControls && (
                 <Card
                   className="lg:col-span-2"
@@ -441,7 +441,7 @@ export default function TimeClockPage() {
                       </div>
                     ) : isClockedIn ? (
                       <div className="space-y-6">
-                        <div className="flex items-center justify-between p-6 bg-accent/50 rounded-lg">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 sm:p-6 bg-accent/50 rounded-lg gap-3">
                           <div className="space-y-2">
                             <p className="text-sm text-muted-foreground">
                               Clocked in at
@@ -508,7 +508,7 @@ export default function TimeClockPage() {
                               });
                             }}
                           >
-                            <SelectTrigger className="w-[220px] h-8" data-testid="select-active-cost-code">
+                            <SelectTrigger className="w-full sm:w-[220px] h-11 sm:h-8" data-testid="select-active-cost-code">
                               <SelectValue placeholder="None" />
                             </SelectTrigger>
                             <SelectContent>
@@ -574,7 +574,7 @@ export default function TimeClockPage() {
                         <Button
                           size="lg"
                           variant="destructive"
-                          className="w-full"
+                          className="w-full min-h-[52px] text-base"
                           onClick={handleClockOut}
                           disabled={clockOut.isPending || clockOutBlockedByGeofence}
                           data-testid="button-clock-out"
@@ -593,7 +593,7 @@ export default function TimeClockPage() {
                             value={selectedProjectId}
                             onValueChange={setSelectedProjectId}
                           >
-                            <SelectTrigger data-testid="select-project">
+                            <SelectTrigger className="h-11 sm:h-10" data-testid="select-project">
                               <SelectValue placeholder="Choose a project..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -618,7 +618,7 @@ export default function TimeClockPage() {
                             value={selectedCostCode}
                             onValueChange={setSelectedCostCode}
                           >
-                            <SelectTrigger data-testid="select-cost-code">
+                            <SelectTrigger className="h-11 sm:h-10" data-testid="select-cost-code">
                               <SelectValue placeholder="Select cost code..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -707,15 +707,15 @@ export default function TimeClockPage() {
                         })()}
 
                         {gpsAcquiring && !coordinates && (
-                          <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400" data-testid="text-gps-acquiring">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Acquiring GPS...</span>
+                          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm text-blue-600 dark:text-blue-400" data-testid="text-gps-acquiring">
+                            <Loader2 className="w-5 h-5 animate-spin shrink-0" />
+                            <span>Acquiring GPS location...</span>
                           </div>
                         )}
 
                         {coordinates && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <MapPin className="w-4 h-4" />
+                          <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 text-sm text-green-700 dark:text-green-400">
+                            <MapPin className="w-5 h-5 shrink-0" />
                             <span data-testid="text-gps-coordinates">
                               GPS: {coordinates.latitude.toFixed(6)},{" "}
                               {coordinates.longitude.toFixed(6)}
@@ -724,13 +724,13 @@ export default function TimeClockPage() {
                         )}
 
                         {gpsError && (
-                          <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-                            <AlertCircle className="w-4 h-4" />
-                            <span data-testid="text-gps-error">{gpsError}</span>
+                          <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-600 dark:text-amber-400">
+                            <AlertCircle className="w-5 h-5 shrink-0" />
+                            <span data-testid="text-gps-error" className="flex-1">{gpsError}</span>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 px-2 text-xs"
+                              className="h-9 min-h-[44px] px-3 text-xs shrink-0"
                               onClick={startGpsWatch}
                               data-testid="button-retry-gps"
                             >
@@ -742,7 +742,7 @@ export default function TimeClockPage() {
 
                         <Button
                           size="lg"
-                          className="w-full"
+                          className="w-full min-h-[52px] text-base"
                           onClick={handleClockIn}
                           disabled={!selectedProjectId || clockIn.isPending || clockInDisabledByGps}
                           data-testid="button-clock-in"

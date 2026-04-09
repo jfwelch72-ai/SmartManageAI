@@ -81,9 +81,9 @@ export default function TMDailyPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-full px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground mb-1">
+      <main className="mx-auto max-w-full px-3 sm:px-6 py-4 sm:py-8">
+        <div className="mb-4 sm:mb-8">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
             Daily T&M Sheet
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -105,6 +105,7 @@ export default function TMDailyPage() {
                 >
                   <SelectTrigger
                     id="project-select"
+                    className="h-11 sm:h-10"
                     data-testid="select-tm-project"
                   >
                     <SelectValue placeholder="Select a project" />
@@ -147,12 +148,12 @@ export default function TMDailyPage() {
                       {tmSheets.map((sheet) => (
                         <div
                           key={sheet.id}
-                          className="flex items-start justify-between p-4 border rounded-md"
+                          className="flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 sm:p-4 border rounded-md gap-2"
                           data-testid={`tm-sheet-${sheet.id}`}
                         >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <FileText className="w-4 h-4 text-muted-foreground" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
                               <span
                                 className="font-medium text-sm"
                                 data-testid={`text-date-${sheet.id}`}
@@ -183,7 +184,7 @@ export default function TMDailyPage() {
                                 <strong>Weather:</strong> {sheet.weather}
                               </p>
                             )}
-                            <p className="text-sm mt-2">
+                            <p className="text-sm mt-2 line-clamp-3 sm:line-clamp-none">
                               {sheet.descriptionOfWork}
                             </p>
                           </div>
