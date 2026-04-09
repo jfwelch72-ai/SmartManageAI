@@ -1,5 +1,4 @@
 import { pool } from "../db";
-import { logInfo, logError } from "./logger";
 
 export async function ensureScopeModifierTables(): Promise<void> {
   try {
@@ -18,7 +17,7 @@ export async function ensureScopeModifierTables(): Promise<void> {
     const coExists = coRows[0].exists;
 
     if (tmExists && coExists) {
-      logInfo("[migration] scope modifier junction tables — already present, skipped");
+      console.log("[migration] scope modifier junction tables — already present, skipped");
       return;
     }
 
@@ -54,9 +53,9 @@ export async function ensureScopeModifierTables(): Promise<void> {
 
     await backfillScopeModifiers(!tmExists, !coExists);
 
-    logInfo("[migration] scope modifier junction tables — created and backfilled");
+    console.log("[migration] scope modifier junction tables — created and backfilled");
   } catch (err) {
-    logError("[migration] scope modifier junction tables — failed", {}, err instanceof Error ? err : new Error(String(err)));
+    console.error("[migration] scope modifier junction tables — failed:", err);
   }
 }
 
@@ -87,7 +86,7 @@ async function backfillScopeModifiers(backfillTickets: boolean, backfillCOs: boo
         );
         ticketCount++;
       } catch (e) {
-        logError(`[migration] scope modifier backfill failed for ticket ${ticket.id}`, {}, e instanceof Error ? e : new Error(String(e)));
+        console.error(`[migration] scope modifier backfill failed for ticket ${ticket.id}:`, e);
       }
     }
   }
@@ -115,10 +114,10 @@ async function backfillScopeModifiers(backfillTickets: boolean, backfillCOs: boo
         );
         coCount++;
       } catch (e) {
-        logError(`[migration] scope modifier backfill failed for change order ${co.id}`, {}, e instanceof Error ? e : new Error(String(e)));
+        console.error(`[migration] scope modifier backfill failed for change order ${co.id}:`, e);
       }
     }
   }
 
-  logInfo(`[migration] scope modifier backfill: ${ticketCount} tickets, ${coCount} change orders`);
+  console.log(`[migration] scope modifier backfill: ${ticketCount} tickets, ${coCount} change orders`);
 }

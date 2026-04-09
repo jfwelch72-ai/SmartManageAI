@@ -16,20 +16,7 @@ import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
 import { backfillMissingFeatureFlags } from "./services/featureFlagService";
-import { ensureVideoCallTables } from "./utils/ensureVideoCallTables";
-import { ensureEstimateSubcontractorTables } from "./utils/ensureEstimateSubcontractorTables";
-import { ensureEquipmentColumns } from "./utils/ensureEquipmentColumns";
-import { ensureMessageColumns } from "./utils/ensureMessageColumns";
-import { ensureNotificationEnumValues } from "./utils/ensureNotificationEnumValues";
-import { ensureEstimateCategoryEnumValues } from "./utils/ensureEstimateCategoryEnumValues";
-import { ensureTakeoffEnhancements } from "./utils/ensureTakeoffEnhancements";
-import { ensureFieldWorkerPermColumns } from "./utils/ensureFieldWorkerPermColumns";
-import { ensurePeerRatingColumns } from "./utils/ensurePeerRatingColumns";
-import { ensurePermissionPresetsTable } from "./utils/ensurePermissionPresetsTable";
-import { ensureLidarTables } from "./utils/ensureLidarTables";
-import { ensureNullablePermissions } from "./utils/ensureNullablePermissions";
-import { ensureErrorLogsTable } from "./utils/ensureErrorLogsTable";
-import { ensureScopeModifierTables } from "./utils/ensureScopeModifierTables";
+import { runStartupMigrations } from "./utils/runStartupMigrations";
 import { seedBuiltInPresets } from "./dashboardRoutes";
 import { persistErrorLog } from "./services/errorLogService";
 import { getIntegrationStatus } from "./services/integrationStatusService";
@@ -228,20 +215,7 @@ app.use((req, res, next) => {
   // gets the full all-enabled set. No-op once data is populated. Runs in all
   // environments so both dev and prod orgs are covered on first restart after
   // this fix was deployed.
-  await ensureVideoCallTables();
-  await ensureEstimateSubcontractorTables();
-  await ensureEquipmentColumns();
-  await ensureMessageColumns();
-  await ensureNotificationEnumValues();
-  await ensureEstimateCategoryEnumValues();
-  await ensureTakeoffEnhancements();
-  await ensureFieldWorkerPermColumns();
-  await ensurePeerRatingColumns();
-  await ensureNullablePermissions();
-  await ensurePermissionPresetsTable();
-  await ensureLidarTables();
-  await ensureErrorLogsTable();
-  await ensureScopeModifierTables();
+  await runStartupMigrations();
   await seedBuiltInPresets();
   await backfillMissingFeatureFlags();
 
