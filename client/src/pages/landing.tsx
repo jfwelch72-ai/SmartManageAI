@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
@@ -36,7 +36,6 @@ import {
   Globe,
   Network,
   Sparkles,
-  ChevronRight,
   Play,
   Star,
   CheckCircle2,
@@ -54,8 +53,6 @@ import {
   Box,
   Workflow,
   Smartphone,
-  Wifi,
-  Quote,
   ArrowDown,
   PenTool,
   Gauge,
@@ -65,7 +62,6 @@ import {
   CreditCard,
   Handshake,
   LayoutGrid,
-  Scale,
   GanttChart,
   Folder,
   StickyNote
@@ -647,7 +643,6 @@ export default function LandingPage() {
     setMeta("og:description", "Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.", true);
     setMeta("og:type", "website", true);
     setMeta("og:url", "https://smartmanageai.com", true);
-    setMeta("og:image", "https://smartmanageai.com/og-image.png", true);
     setMeta("twitter:card", "summary_large_image");
     setMeta("twitter:title", "SmartManageAI - AI-Powered Construction Management");
     setMeta("twitter:description", "The only platform built to run your entire construction business. 500+ features, 8 AI assistants, 23 trades.");
@@ -693,12 +688,12 @@ export default function LandingPage() {
               <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-pricing">Pricing</a>
             </div>
             <div className="flex items-center gap-3">
-              <Link href="/login">
+              <Link href="/login" data-testid="link-nav-login">
                 <Button variant="ghost" size="sm" data-testid="button-nav-login">
                   Log In
                 </Button>
               </Link>
-              <Link href="/register">
+              <Link href="/register" data-testid="link-nav-register">
                 <Button size="sm" data-testid="button-nav-register">
                   Start Free Trial
                 </Button>
@@ -730,7 +725,7 @@ export default function LandingPage() {
               From bids to billing, crews to contracts, takeoffs to time clocks — SmartManageAI replaces 6+ scattered tools with one AI-powered platform. 500+ features purpose-built for 23 construction trades.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 mb-12">
-              <Link href="/register">
+              <Link href="/register" data-testid="link-hero-register">
                 <Button size="lg" className="w-full sm:w-auto text-base px-8 py-6" data-testid="button-hero-trial">
                   Start Free 14-Day Trial
                   <ArrowRight className="ml-2 h-5 w-5" />
@@ -1308,7 +1303,7 @@ export default function LandingPage() {
                     </div>
                   </CardContent>
                   <CardFooter>
-                    <Link href="/register" className="w-full">
+                    <Link href="/register" className="w-full" data-testid={`link-pricing-${plan.name.toLowerCase()}`}>
                       <Button 
                         className="w-full" 
                         variant={plan.popular ? "default" : "outline"}
@@ -1370,7 +1365,7 @@ export default function LandingPage() {
             14-day free trial. No credit card required. Cancel anytime.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/register">
+            <Link href="/register" data-testid="link-cta-register">
               <Button size="lg" className="text-base px-8 py-6" data-testid="button-cta-trial">
                 Start Your Free Trial
                 <ArrowRight className="ml-2 h-5 w-5" />
