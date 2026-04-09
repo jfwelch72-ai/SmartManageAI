@@ -718,7 +718,7 @@ router.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "
           } else if (laborData.total) {
             tmLaborTotal += Number(laborData.total);
           }
-        } catch (e) { /* ignore invalid JSON */ }
+        } catch (e) { console.error(`[project] invalid laborSummaryJson for TM sheet ${sheet.id}:`, e); }
       }
       if (sheet.equipmentUsedJson) {
         try {
@@ -730,7 +730,7 @@ router.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "
           } else if (equipData.total) {
             tmEquipmentTotal += Number(equipData.total);
           }
-        } catch (e) { /* ignore invalid JSON */ }
+        } catch (e) { console.error(`[project] invalid equipmentUsedJson for TM sheet ${sheet.id}:`, e); }
       }
       if (sheet.materialsUsedJson) {
         try {
@@ -742,7 +742,7 @@ router.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "
           } else if (matData.total) {
             tmMaterialsTotal += Number(matData.total);
           }
-        } catch (e) { /* ignore invalid JSON */ }
+        } catch (e) { console.error(`[project] invalid materialsUsedJson for TM sheet ${sheet.id}:`, e); }
       }
     }
     

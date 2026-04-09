@@ -2486,29 +2486,47 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         return res.status(404).json({ error: "Project not found" });
       }
       
-      const { source, equipmentName, equipmentType } = req.body;
-      if (!source || !equipmentName || !equipmentType) {
-        return res.status(400).json({ error: "Source, equipment name, and type are required" });
+      const equipPlanCreateSchema = z.object({
+        source: z.string().min(1, "Source is required"),
+        equipmentName: z.string().min(1, "Equipment name is required"),
+        equipmentType: z.string().min(1, "Equipment type is required"),
+        equipmentId: z.string().nullish(),
+        rentalCatalogId: z.string().nullish(),
+        rentalVendorId: z.string().nullish(),
+        plannedHours: z.coerce.number().nullish(),
+        plannedDays: z.coerce.number().nullish(),
+        plannedStartDate: z.string().nullish(),
+        plannedEndDate: z.string().nullish(),
+        plannedCost: z.coerce.number().nullish(),
+        hourlyRate: z.coerce.number().nullish(),
+        dailyRate: z.coerce.number().nullish(),
+        notes: z.string().nullish(),
+        costCode: z.string().nullish(),
+      });
+      const parsed = equipPlanCreateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten() });
       }
+      const body = parsed.data;
       
       const [newPlan] = await db.insert(projectEquipmentPlans).values({
         projectId,
-        source: req.body.source,
+        source: body.source,
         status: "PLANNED" as const,
-        equipmentId: req.body.equipmentId || null,
-        rentalCatalogId: req.body.rentalCatalogId || null,
-        rentalVendorId: req.body.rentalVendorId || null,
-        equipmentName: req.body.equipmentName,
-        equipmentType: req.body.equipmentType,
-        plannedHours: req.body.plannedHours != null ? String(req.body.plannedHours) : null,
-        plannedDays: req.body.plannedDays != null ? Number(req.body.plannedDays) : null,
-        plannedStartDate: req.body.plannedStartDate ? new Date(req.body.plannedStartDate) : null,
-        plannedEndDate: req.body.plannedEndDate ? new Date(req.body.plannedEndDate) : null,
-        plannedCost: req.body.plannedCost != null ? String(req.body.plannedCost) : null,
-        hourlyRate: req.body.hourlyRate != null ? String(req.body.hourlyRate) : null,
-        dailyRate: req.body.dailyRate != null ? String(req.body.dailyRate) : null,
-        notes: req.body.notes || null,
-        costCode: req.body.costCode || null,
+        equipmentId: body.equipmentId || null,
+        rentalCatalogId: body.rentalCatalogId || null,
+        rentalVendorId: body.rentalVendorId || null,
+        equipmentName: body.equipmentName,
+        equipmentType: body.equipmentType,
+        plannedHours: body.plannedHours != null ? String(body.plannedHours) : null,
+        plannedDays: body.plannedDays != null ? Number(body.plannedDays) : null,
+        plannedStartDate: body.plannedStartDate ? new Date(body.plannedStartDate) : null,
+        plannedEndDate: body.plannedEndDate ? new Date(body.plannedEndDate) : null,
+        plannedCost: body.plannedCost != null ? String(body.plannedCost) : null,
+        hourlyRate: body.hourlyRate != null ? String(body.hourlyRate) : null,
+        dailyRate: body.dailyRate != null ? String(body.dailyRate) : null,
+        notes: body.notes || null,
+        costCode: body.costCode || null,
         createdById: userId!,
       }).returning();
       
@@ -2555,30 +2573,61 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         return res.status(404).json({ error: "Equipment plan not found" });
       }
       
+      const equipPlanUpdateSchema = z.object({
+        source: z.string().min(1).optional(),
+        status: z.string().optional(),
+        equipmentId: z.string().nullish(),
+        assignmentId: z.string().nullish(),
+        rentalCatalogId: z.string().nullish(),
+        rentalVendorId: z.string().nullish(),
+        equipmentName: z.string().min(1).optional(),
+        equipmentType: z.string().min(1).optional(),
+        plannedHours: z.coerce.number().nullish(),
+        plannedDays: z.coerce.number().nullish(),
+        plannedStartDate: z.string().nullish(),
+        plannedEndDate: z.string().nullish(),
+        plannedCost: z.coerce.number().nullish(),
+        actualHours: z.coerce.number().nullish(),
+        actualDays: z.coerce.number().nullish(),
+        actualStartDate: z.string().nullish(),
+        actualEndDate: z.string().nullish(),
+        actualCost: z.coerce.number().nullish(),
+        hourlyRate: z.coerce.number().nullish(),
+        dailyRate: z.coerce.number().nullish(),
+        rentalConfirmationNumber: z.string().nullish(),
+        notes: z.string().nullish(),
+        costCode: z.string().nullish(),
+      });
+      const parsed = equipPlanUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten() });
+      }
+      const body = parsed.data;
+
       const updateData: Record<string, any> = { updatedAt: new Date() };
-      if (req.body.source !== undefined) updateData.source = req.body.source;
-      if (req.body.status !== undefined) updateData.status = req.body.status;
-      if (req.body.equipmentId !== undefined) updateData.equipmentId = req.body.equipmentId || null;
-      if (req.body.assignmentId !== undefined) updateData.assignmentId = req.body.assignmentId || null;
-      if (req.body.rentalCatalogId !== undefined) updateData.rentalCatalogId = req.body.rentalCatalogId || null;
-      if (req.body.rentalVendorId !== undefined) updateData.rentalVendorId = req.body.rentalVendorId || null;
-      if (req.body.equipmentName !== undefined) updateData.equipmentName = req.body.equipmentName;
-      if (req.body.equipmentType !== undefined) updateData.equipmentType = req.body.equipmentType;
-      if (req.body.plannedHours !== undefined) updateData.plannedHours = req.body.plannedHours != null ? String(req.body.plannedHours) : null;
-      if (req.body.plannedDays !== undefined) updateData.plannedDays = req.body.plannedDays != null ? Number(req.body.plannedDays) : null;
-      if (req.body.plannedStartDate !== undefined) updateData.plannedStartDate = req.body.plannedStartDate ? new Date(req.body.plannedStartDate) : null;
-      if (req.body.plannedEndDate !== undefined) updateData.plannedEndDate = req.body.plannedEndDate ? new Date(req.body.plannedEndDate) : null;
-      if (req.body.plannedCost !== undefined) updateData.plannedCost = req.body.plannedCost != null ? String(req.body.plannedCost) : null;
-      if (req.body.actualHours !== undefined) updateData.actualHours = req.body.actualHours != null ? String(req.body.actualHours) : null;
-      if (req.body.actualDays !== undefined) updateData.actualDays = req.body.actualDays != null ? Number(req.body.actualDays) : null;
-      if (req.body.actualStartDate !== undefined) updateData.actualStartDate = req.body.actualStartDate ? new Date(req.body.actualStartDate) : null;
-      if (req.body.actualEndDate !== undefined) updateData.actualEndDate = req.body.actualEndDate ? new Date(req.body.actualEndDate) : null;
-      if (req.body.actualCost !== undefined) updateData.actualCost = req.body.actualCost != null ? String(req.body.actualCost) : null;
-      if (req.body.hourlyRate !== undefined) updateData.hourlyRate = req.body.hourlyRate != null ? String(req.body.hourlyRate) : null;
-      if (req.body.dailyRate !== undefined) updateData.dailyRate = req.body.dailyRate != null ? String(req.body.dailyRate) : null;
-      if (req.body.rentalConfirmationNumber !== undefined) updateData.rentalConfirmationNumber = req.body.rentalConfirmationNumber || null;
-      if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
-      if (req.body.costCode !== undefined) updateData.costCode = req.body.costCode || null;
+      if (body.source !== undefined) updateData.source = body.source;
+      if (body.status !== undefined) updateData.status = body.status;
+      if (body.equipmentId !== undefined) updateData.equipmentId = body.equipmentId || null;
+      if (body.assignmentId !== undefined) updateData.assignmentId = body.assignmentId || null;
+      if (body.rentalCatalogId !== undefined) updateData.rentalCatalogId = body.rentalCatalogId || null;
+      if (body.rentalVendorId !== undefined) updateData.rentalVendorId = body.rentalVendorId || null;
+      if (body.equipmentName !== undefined) updateData.equipmentName = body.equipmentName;
+      if (body.equipmentType !== undefined) updateData.equipmentType = body.equipmentType;
+      if (body.plannedHours !== undefined) updateData.plannedHours = body.plannedHours != null ? String(body.plannedHours) : null;
+      if (body.plannedDays !== undefined) updateData.plannedDays = body.plannedDays != null ? Number(body.plannedDays) : null;
+      if (body.plannedStartDate !== undefined) updateData.plannedStartDate = body.plannedStartDate ? new Date(body.plannedStartDate) : null;
+      if (body.plannedEndDate !== undefined) updateData.plannedEndDate = body.plannedEndDate ? new Date(body.plannedEndDate) : null;
+      if (body.plannedCost !== undefined) updateData.plannedCost = body.plannedCost != null ? String(body.plannedCost) : null;
+      if (body.actualHours !== undefined) updateData.actualHours = body.actualHours != null ? String(body.actualHours) : null;
+      if (body.actualDays !== undefined) updateData.actualDays = body.actualDays != null ? Number(body.actualDays) : null;
+      if (body.actualStartDate !== undefined) updateData.actualStartDate = body.actualStartDate ? new Date(body.actualStartDate) : null;
+      if (body.actualEndDate !== undefined) updateData.actualEndDate = body.actualEndDate ? new Date(body.actualEndDate) : null;
+      if (body.actualCost !== undefined) updateData.actualCost = body.actualCost != null ? String(body.actualCost) : null;
+      if (body.hourlyRate !== undefined) updateData.hourlyRate = body.hourlyRate != null ? String(body.hourlyRate) : null;
+      if (body.dailyRate !== undefined) updateData.dailyRate = body.dailyRate != null ? String(body.dailyRate) : null;
+      if (body.rentalConfirmationNumber !== undefined) updateData.rentalConfirmationNumber = body.rentalConfirmationNumber || null;
+      if (body.notes !== undefined) updateData.notes = body.notes || null;
+      if (body.costCode !== undefined) updateData.costCode = body.costCode || null;
       
       const [updated] = await db
         .update(projectEquipmentPlans)
@@ -2744,27 +2793,44 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
 
       if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
       
-      const { source, equipmentName, equipmentType } = req.body;
-      if (!source || !equipmentName || !equipmentType) {
-        return res.status(400).json({ error: "Source, equipment name, and type are required" });
+      const bidEquipCreateSchema = z.object({
+        source: z.string().min(1, "Source is required"),
+        equipmentName: z.string().min(1, "Equipment name is required"),
+        equipmentType: z.string().min(1, "Equipment type is required"),
+        equipmentId: z.string().nullish(),
+        rentalCatalogId: z.string().nullish(),
+        rentalVendorId: z.string().nullish(),
+        plannedHours: z.coerce.number().nullish(),
+        plannedDays: z.coerce.number().nullish(),
+        hourlyRate: z.coerce.number().nullish(),
+        dailyRate: z.coerce.number().nullish(),
+        weeklyRate: z.coerce.number().nullish(),
+        estimatedCost: z.coerce.number().nullish(),
+        deliveryFee: z.coerce.number().nullish(),
+        notes: z.string().nullish(),
+      });
+      const parsed = bidEquipCreateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten() });
       }
+      const body = parsed.data;
       
       const insertData = {
         bidId,
-        source: req.body.source,
-        equipmentId: req.body.equipmentId || null,
-        rentalCatalogId: req.body.rentalCatalogId || null,
-        rentalVendorId: req.body.rentalVendorId || null,
-        equipmentName: req.body.equipmentName,
-        equipmentType: req.body.equipmentType,
-        plannedHours: req.body.plannedHours != null ? String(req.body.plannedHours) : null,
-        plannedDays: req.body.plannedDays != null ? Number(req.body.plannedDays) : null,
-        hourlyRate: req.body.hourlyRate != null ? String(req.body.hourlyRate) : null,
-        dailyRate: req.body.dailyRate != null ? String(req.body.dailyRate) : null,
-        weeklyRate: req.body.weeklyRate != null ? String(req.body.weeklyRate) : null,
-        estimatedCost: req.body.estimatedCost != null ? String(req.body.estimatedCost) : null,
-        deliveryFee: req.body.deliveryFee != null ? String(req.body.deliveryFee) : null,
-        notes: req.body.notes || null,
+        source: body.source,
+        equipmentId: body.equipmentId || null,
+        rentalCatalogId: body.rentalCatalogId || null,
+        rentalVendorId: body.rentalVendorId || null,
+        equipmentName: body.equipmentName,
+        equipmentType: body.equipmentType,
+        plannedHours: body.plannedHours != null ? String(body.plannedHours) : null,
+        plannedDays: body.plannedDays != null ? Number(body.plannedDays) : null,
+        hourlyRate: body.hourlyRate != null ? String(body.hourlyRate) : null,
+        dailyRate: body.dailyRate != null ? String(body.dailyRate) : null,
+        weeklyRate: body.weeklyRate != null ? String(body.weeklyRate) : null,
+        estimatedCost: body.estimatedCost != null ? String(body.estimatedCost) : null,
+        deliveryFee: body.deliveryFee != null ? String(body.deliveryFee) : null,
+        notes: body.notes || null,
         createdById: userId,
       };
       
@@ -2804,21 +2870,43 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         return res.status(404).json({ error: "Equipment selection not found" });
       }
       
+      const bidEquipUpdateSchema = z.object({
+        source: z.string().min(1).optional(),
+        equipmentId: z.string().nullish(),
+        rentalCatalogId: z.string().nullish(),
+        rentalVendorId: z.string().nullish(),
+        equipmentName: z.string().min(1).optional(),
+        equipmentType: z.string().min(1).optional(),
+        plannedHours: z.coerce.number().nullish(),
+        plannedDays: z.coerce.number().nullish(),
+        hourlyRate: z.coerce.number().nullish(),
+        dailyRate: z.coerce.number().nullish(),
+        weeklyRate: z.coerce.number().nullish(),
+        estimatedCost: z.coerce.number().nullish(),
+        deliveryFee: z.coerce.number().nullish(),
+        notes: z.string().nullish(),
+      });
+      const parsed = bidEquipUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten() });
+      }
+      const body = parsed.data;
+
       const updateData: Record<string, any> = { updatedAt: new Date() };
-      if (req.body.source !== undefined) updateData.source = req.body.source;
-      if (req.body.equipmentId !== undefined) updateData.equipmentId = req.body.equipmentId || null;
-      if (req.body.rentalCatalogId !== undefined) updateData.rentalCatalogId = req.body.rentalCatalogId || null;
-      if (req.body.rentalVendorId !== undefined) updateData.rentalVendorId = req.body.rentalVendorId || null;
-      if (req.body.equipmentName !== undefined) updateData.equipmentName = req.body.equipmentName;
-      if (req.body.equipmentType !== undefined) updateData.equipmentType = req.body.equipmentType;
-      if (req.body.plannedHours !== undefined) updateData.plannedHours = req.body.plannedHours != null ? String(req.body.plannedHours) : null;
-      if (req.body.plannedDays !== undefined) updateData.plannedDays = req.body.plannedDays != null ? Number(req.body.plannedDays) : null;
-      if (req.body.hourlyRate !== undefined) updateData.hourlyRate = req.body.hourlyRate != null ? String(req.body.hourlyRate) : null;
-      if (req.body.dailyRate !== undefined) updateData.dailyRate = req.body.dailyRate != null ? String(req.body.dailyRate) : null;
-      if (req.body.weeklyRate !== undefined) updateData.weeklyRate = req.body.weeklyRate != null ? String(req.body.weeklyRate) : null;
-      if (req.body.estimatedCost !== undefined) updateData.estimatedCost = req.body.estimatedCost != null ? String(req.body.estimatedCost) : null;
-      if (req.body.deliveryFee !== undefined) updateData.deliveryFee = req.body.deliveryFee != null ? String(req.body.deliveryFee) : null;
-      if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
+      if (body.source !== undefined) updateData.source = body.source;
+      if (body.equipmentId !== undefined) updateData.equipmentId = body.equipmentId || null;
+      if (body.rentalCatalogId !== undefined) updateData.rentalCatalogId = body.rentalCatalogId || null;
+      if (body.rentalVendorId !== undefined) updateData.rentalVendorId = body.rentalVendorId || null;
+      if (body.equipmentName !== undefined) updateData.equipmentName = body.equipmentName;
+      if (body.equipmentType !== undefined) updateData.equipmentType = body.equipmentType;
+      if (body.plannedHours !== undefined) updateData.plannedHours = body.plannedHours != null ? String(body.plannedHours) : null;
+      if (body.plannedDays !== undefined) updateData.plannedDays = body.plannedDays != null ? Number(body.plannedDays) : null;
+      if (body.hourlyRate !== undefined) updateData.hourlyRate = body.hourlyRate != null ? String(body.hourlyRate) : null;
+      if (body.dailyRate !== undefined) updateData.dailyRate = body.dailyRate != null ? String(body.dailyRate) : null;
+      if (body.weeklyRate !== undefined) updateData.weeklyRate = body.weeklyRate != null ? String(body.weeklyRate) : null;
+      if (body.estimatedCost !== undefined) updateData.estimatedCost = body.estimatedCost != null ? String(body.estimatedCost) : null;
+      if (body.deliveryFee !== undefined) updateData.deliveryFee = body.deliveryFee != null ? String(body.deliveryFee) : null;
+      if (body.notes !== undefined) updateData.notes = body.notes || null;
       
       const [updated] = await db.update(bidEquipmentSelections)
         .set(updateData)

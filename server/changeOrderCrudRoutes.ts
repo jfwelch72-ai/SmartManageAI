@@ -236,7 +236,7 @@ router.post("/:id/request-approval", requireAuth, requireRoleOrFeature(["ADMIN",
             `Change order ${updatedOrder.changeOrderNumber} submitted for approval`
           );
         }
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[changeOrder] approval request failed:", e); }
     }
 
     res.json(updatedOrder);
@@ -353,7 +353,7 @@ router.post("/:id/submit", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"
           order.id,
           req.user!.id
         );
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[changeOrder] workflow start failed:", e); }
     }
 
     res.json(updatedOrder);
@@ -772,7 +772,7 @@ router.post("/:id/promote-to-review", requireAuth, requireRoleOrFeature(["ADMIN"
             relatedEntityType: "changeOrder" as const,
           })));
         }
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[changeOrder] pricing review notification failed:", e); }
     }
 
     res.json(updatedOrder);
@@ -847,7 +847,7 @@ router.post("/:id/approve-pricing", requireAuth, requireRoleOrFeature(["ADMIN", 
           relatedEntityId: updatedOrder.id,
           relatedEntityType: "changeOrder",
         }, orgId);
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[changeOrder] submitter notification failed:", e); }
     }
 
     // Also notify approvers (admins/managers in org)
@@ -1005,7 +1005,7 @@ router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequ
           relatedEntityId: updatedOrder.id,
           relatedEntityType: "changeOrder" as const,
         }]);
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[changeOrder] void notification failed:", e); }
     }
 
     res.json(updatedOrder);

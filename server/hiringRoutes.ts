@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "./db";
 import { requireAuth, requireRole, requireFeaturePermission } from "./auth";
 import type { AuthRequest } from "./auth";
@@ -222,10 +223,30 @@ async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<type
       .limit(1);
     if (!existing) { res.status(404).json({ error: "Job not found" }); return; }
 
-    const updates: Record<string, unknown> = { ...req.body, updatedByUserId: userId(req), updatedAt: new Date() };
-    delete updates["id"];
-    delete updates["organizationId"];
-    delete updates["createdAt"];
+    const jobUpdateSchema = z.object({
+      title: z.string().min(1).optional(),
+      description: z.string().optional(),
+      requirements: z.string().optional(),
+      employmentType: z.string().optional(),
+      location: z.string().optional(),
+      salaryMin: z.string().optional(),
+      salaryMax: z.string().optional(),
+      salaryCurrency: z.string().optional(),
+      department: z.string().optional(),
+      experienceLevel: z.string().optional(),
+      skills: z.any().optional(),
+      benefits: z.any().optional(),
+      status: z.string().optional(),
+      closedAt: z.string().nullish(),
+      closedReason: z.string().nullish(),
+      hiringManagerId: z.string().nullish(),
+      pipelineConfigId: z.string().nullish(),
+      customFields: z.any().optional(),
+    }).passthrough();
+    const parsed = jobUpdateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+    const { id: _id, organizationId: _oid, createdAt: _ca, ...safeFields } = parsed.data as Record<string, unknown>;
+    const updates = { ...safeFields, updatedByUserId: userId(req), updatedAt: new Date() };
 
     const [job] = await db
       .update(hiringJobs)
@@ -630,11 +651,23 @@ async function handleCandidateUpdate(req: AuthRequest, res: Parameters<Parameter
       .limit(1);
     if (!existing) { res.status(404).json({ error: "Candidate not found" }); return; }
 
-    const updates: Record<string, unknown> = { ...req.body, updatedAt: new Date() };
-    delete updates["id"];
-    delete updates["organizationId"];
-    delete updates["createdAt"];
-    delete updates["currentStage"];
+    const candidateUpdateSchema = z.object({
+      fullName: z.string().min(1).optional(),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      resumeUrl: z.string().nullish(),
+      resumeFilename: z.string().nullish(),
+      source: z.string().optional(),
+      jobId: z.string().nullish(),
+      rating: z.coerce.number().min(0).max(5).optional(),
+      notes: z.string().optional(),
+      tags: z.any().optional(),
+      customFields: z.any().optional(),
+    }).passthrough();
+    const parsed = candidateUpdateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+    const { id: _id, organizationId: _oid, createdAt: _ca, currentStage: _cs, ...safeFields } = parsed.data as Record<string, unknown>;
+    const updates = { ...safeFields, updatedAt: new Date() };
 
     const [candidate] = await db
       .update(hiringCandidates)
@@ -1083,10 +1116,25 @@ async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameter
       .limit(1);
     if (!existing) { res.status(404).json({ error: "Interview not found" }); return; }
 
-    const updates: Record<string, unknown> = { ...req.body, updatedByUserId: userId(req), updatedAt: new Date() };
-    delete updates["id"];
-    delete updates["organizationId"];
-    delete updates["createdAt"];
+    const interviewUpdateSchema = z.object({
+      candidateId: z.string().optional(),
+      jobId: z.string().nullish(),
+      interviewType: z.string().optional(),
+      startAt: z.string().optional(),
+      endAt: z.string().nullish(),
+      location: z.string().nullish(),
+      meetingLink: z.string().nullish(),
+      notes: z.string().optional(),
+      feedback: z.string().nullish(),
+      rating: z.coerce.number().min(0).max(5).optional(),
+      status: z.string().optional(),
+      interviewerIds: z.any().optional(),
+      customFields: z.any().optional(),
+    }).passthrough();
+    const parsed = interviewUpdateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+    const { id: _id, organizationId: _oid, createdAt: _ca, ...safeFields } = parsed.data as Record<string, unknown>;
+    const updates: Record<string, unknown> = { ...safeFields, updatedByUserId: userId(req), updatedAt: new Date() };
     if (updates["startAt"]) updates["startAt"] = new Date(updates["startAt"] as string);
     if (updates["endAt"]) updates["endAt"] = new Date(updates["endAt"] as string);
 

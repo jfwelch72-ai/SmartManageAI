@@ -380,7 +380,10 @@ router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN",
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const note = req.body.note || null;
+    const leaveActionSchema = z.object({ note: z.string().nullish() });
+    const parsed = leaveActionSchema.safeParse(req.body);
+    if (!parsed.success) { return res.status(400).json({ error: parsed.error.flatten() }); }
+    const note = parsed.data.note || null;
 
     const [request] = await db
       .select()
@@ -446,7 +449,10 @@ router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "M
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const note = req.body.note || null;
+    const leaveActionSchema = z.object({ note: z.string().nullish() });
+    const parsed = leaveActionSchema.safeParse(req.body);
+    if (!parsed.success) { return res.status(400).json({ error: parsed.error.flatten() }); }
+    const note = parsed.data.note || null;
 
     const [request] = await db
       .select()

@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
+import { z } from "zod";
 import { db } from "./db";
 import {
   assetHandoverItems, assetHandoverSignoffs, maintenanceLogs, maintenanceRecurringSchedules,
@@ -123,20 +124,33 @@ router.patch(
         .limit(1);
       if (!existing) return res.status(404).json({ error: "Handover item not found" });
 
-      if (req.body.status !== undefined && !isValidEnum(req.body.status, VALID_HANDOVER_STATUSES)) {
+      const handoverUpdateSchema = z.object({
+        title: z.string().min(1).optional(),
+        description: z.string().nullish(),
+        category: z.string().optional(),
+        documentUrl: z.string().nullish(),
+        documentFilename: z.string().nullish(),
+        sortOrder: z.coerce.number().optional(),
+        status: z.string().optional(),
+      });
+      const parsed = handoverUpdateSchema.safeParse(req.body);
+      if (!parsed.success) { return res.status(400).json({ error: parsed.error.flatten() }); }
+      const body = parsed.data;
+
+      if (body.status !== undefined && !isValidEnum(body.status, VALID_HANDOVER_STATUSES)) {
         return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_HANDOVER_STATUSES.join(", ")}` });
       }
 
       const update: Partial<typeof assetHandoverItems.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() };
-      if (req.body.title !== undefined) update.title = sanitizeShortText(req.body.title);
-      if (req.body.description !== undefined) update.description = req.body.description ? sanitizeText(req.body.description) : null;
-      if (req.body.category !== undefined) update.category = sanitizeShortText(req.body.category);
-      if (req.body.documentUrl !== undefined) update.documentUrl = req.body.documentUrl;
-      if (req.body.documentFilename !== undefined) update.documentFilename = req.body.documentFilename;
-      if (req.body.sortOrder !== undefined) update.sortOrder = req.body.sortOrder;
-      if (req.body.status !== undefined) {
-        update.status = req.body.status;
-        if (req.body.status === "COMPLETE") {
+      if (body.title !== undefined) update.title = sanitizeShortText(body.title);
+      if (body.description !== undefined) update.description = body.description ? sanitizeText(body.description) : null;
+      if (body.category !== undefined) update.category = sanitizeShortText(body.category);
+      if (body.documentUrl !== undefined) update.documentUrl = body.documentUrl;
+      if (body.documentFilename !== undefined) update.documentFilename = body.documentFilename;
+      if (body.sortOrder !== undefined) update.sortOrder = body.sortOrder;
+      if (body.status !== undefined) {
+        update.status = body.status;
+        if (body.status === "COMPLETE") {
           update.completedAt = new Date();
           update.completedById = req.user!.id;
         } else {
@@ -405,23 +419,38 @@ router.patch(
         .limit(1);
       if (!existing) return res.status(404).json({ error: "Maintenance log not found" });
 
-      if (req.body.type !== undefined && !isValidEnum(req.body.type, VALID_MAINTENANCE_TYPES)) {
+      const maintenanceUpdateSchema = z.object({
+        title: z.string().min(1).optional(),
+        description: z.string().nullish(),
+        type: z.string().optional(),
+        system: z.string().optional(),
+        date: z.string().optional(),
+        cost: z.string().optional(),
+        vendorName: z.string().nullish(),
+        documentUrl: z.string().nullish(),
+        documentFilename: z.string().nullish(),
+      });
+      const parsed = maintenanceUpdateSchema.safeParse(req.body);
+      if (!parsed.success) { return res.status(400).json({ error: parsed.error.flatten() }); }
+      const body = parsed.data;
+
+      if (body.type !== undefined && !isValidEnum(body.type, VALID_MAINTENANCE_TYPES)) {
         return res.status(400).json({ error: `Invalid type. Must be one of: ${VALID_MAINTENANCE_TYPES.join(", ")}` });
       }
-      if (req.body.system !== undefined && !isValidEnum(req.body.system, VALID_MAINTENANCE_SYSTEMS)) {
+      if (body.system !== undefined && !isValidEnum(body.system, VALID_MAINTENANCE_SYSTEMS)) {
         return res.status(400).json({ error: `Invalid system. Must be one of: ${VALID_MAINTENANCE_SYSTEMS.join(", ")}` });
       }
 
       const update: Partial<typeof maintenanceLogs.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() };
-      if (req.body.title !== undefined) update.title = sanitizeShortText(req.body.title);
-      if (req.body.description !== undefined) update.description = req.body.description ? sanitizeText(req.body.description) : null;
-      if (req.body.type !== undefined) update.type = req.body.type;
-      if (req.body.system !== undefined) update.system = req.body.system;
-      if (req.body.date !== undefined) update.date = new Date(req.body.date);
-      if (req.body.cost !== undefined) update.cost = req.body.cost;
-      if (req.body.vendorName !== undefined) update.vendorName = req.body.vendorName ? sanitizeShortText(req.body.vendorName) : null;
-      if (req.body.documentUrl !== undefined) update.documentUrl = req.body.documentUrl;
-      if (req.body.documentFilename !== undefined) update.documentFilename = req.body.documentFilename;
+      if (body.title !== undefined) update.title = sanitizeShortText(body.title);
+      if (body.description !== undefined) update.description = body.description ? sanitizeText(body.description) : null;
+      if (body.type !== undefined) update.type = body.type;
+      if (body.system !== undefined) update.system = body.system;
+      if (body.date !== undefined) update.date = new Date(body.date);
+      if (body.cost !== undefined) update.cost = body.cost;
+      if (body.vendorName !== undefined) update.vendorName = body.vendorName ? sanitizeShortText(body.vendorName) : null;
+      if (body.documentUrl !== undefined) update.documentUrl = body.documentUrl;
+      if (body.documentFilename !== undefined) update.documentFilename = body.documentFilename;
 
       const [updated] = await db.update(maintenanceLogs).set(update).where(eq(maintenanceLogs.id, req.params.id)).returning();
       await logAudit({ userId: req.user!.id, action: "UPDATE", entityType: "maintenanceLog", entityId: updated.id, newValue: JSON.stringify({ changes: Object.keys(update) }) }, req);

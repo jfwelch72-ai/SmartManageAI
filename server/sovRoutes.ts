@@ -672,7 +672,7 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
             `SOV/Pay App submitted for approval`
           );
         }
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[sov] approval request failed:", e); }
 
       try {
         await workflowEngine.startWorkflow(
@@ -681,7 +681,7 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
           id,
           req.user.id
         );
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[sov] workflow start failed:", e); }
     }
 
     res.json(updated);

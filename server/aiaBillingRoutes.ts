@@ -463,9 +463,9 @@ router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN"
               <p><strong>Amount Due:</strong> $${parseFloat(app.currentPaymentDue || "0").toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
               <p>Please log in to review and approve this application.</p>`,
             text: `Pay Application #${app.applicationNumber} for ${project.name || "project"} has been submitted for your review. Amount due: $${parseFloat(app.currentPaymentDue || "0").toFixed(2)}. Please log in to review.`,
-          }).catch(() => {});
+          }).catch(e => console.error("[aiaBilling] email send failed:", e));
         }
-      } catch (e) { /* non-blocking */ }
+      } catch (e) { console.error("[aiaBilling] client notification failed:", e); }
     }
 
     res.json(updated);

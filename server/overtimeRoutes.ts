@@ -167,17 +167,18 @@ router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequ
 
 router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"), async (req: AuthRequest, res) => {
   try {
-    const { shiftId, requestedHours, superintendentId, notes } = req.body;
-    if (!shiftId || !requestedHours || !superintendentId) {
-      res.status(400).json({ error: "shiftId, requestedHours, and superintendentId are required" });
+    const otCreateSchema = z.object({
+      shiftId: z.string().min(1, "shiftId is required"),
+      requestedHours: z.coerce.number().positive("requestedHours must be a positive number"),
+      superintendentId: z.string().min(1, "superintendentId is required"),
+      notes: z.string().nullish(),
+    });
+    const parsed = otCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-
-    const hours = parseFloat(requestedHours);
-    if (isNaN(hours) || hours <= 0) {
-      res.status(400).json({ error: "requestedHours must be a positive number" });
-      return;
-    }
+    const { shiftId, requestedHours: hours, superintendentId, notes } = parsed.data;
 
     const [shift] = await db.select().from(timeClockShifts).where(eq(timeClockShifts.id, shiftId));
     if (!shift) { res.status(404).json({ error: "Shift not found" }); return; }
@@ -257,13 +258,20 @@ router.get("/api/overtime-requests/my", requireAuth, async (req: AuthRequest, re
 
 router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
-    const { shiftIds } = req.body;
-    if (!shiftIds || !Array.isArray(shiftIds) || shiftIds.length === 0) {
+    const byShiftsSchema = z.object({
+      shiftIds: z.array(z.string().min(1)).min(1),
+    });
+    const parsed = byShiftsSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.json([]);
       return;
     }
+    const orgId = req.user!.organizationId;
     const requests = await db.select().from(overtimeRequests)
-      .where(sql`${overtimeRequests.shiftId} IN (${sql.join(shiftIds.map((id: string) => sql`${id}`), sql`, `)})`);
+      .where(and(
+        eq(overtimeRequests.organizationId, orgId),
+        sql`${overtimeRequests.shiftId} IN (${sql.join(parsed.data.shiftIds.map((id: string) => sql`${id}`), sql`, `)})`
+      ));
     res.json(requests);
   } catch (error) {
     logError("Get OT by shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -323,14 +331,18 @@ router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "
 router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { approvedHours } = req.body;
+    const otApproveSchema = z.object({
+      approvedHours: z.coerce.number().positive().optional(),
+    });
+    const parsed = otApproveSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
     const [otReq] = await db.select().from(overtimeRequests).where(eq(overtimeRequests.id, id));
     if (!otReq) { res.status(404).json({ error: "Overtime request not found" }); return; }
     if (otReq.organizationId !== req.user!.organizationId) { res.status(403).json({ error: "Access denied" }); return; }
     if (otReq.status !== "PENDING") { res.status(400).json({ error: "Request already processed" }); return; }
 
-    const hours = approvedHours ? parseFloat(approvedHours) : parseFloat(otReq.requestedHours);
+    const hours = parsed.data.approvedHours ?? parseFloat(otReq.requestedHours);
 
     const [updated] = await db.update(overtimeRequests)
       .set({
@@ -369,9 +381,12 @@ router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMI
 router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
-
-    if (!reason?.trim()) { res.status(400).json({ error: "Rejection reason is required" }); return; }
+    const otRejectSchema = z.object({
+      reason: z.string().min(1, "Rejection reason is required"),
+    });
+    const parsed = otRejectSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+    const { reason } = parsed.data;
 
     const [otReq] = await db.select().from(overtimeRequests).where(eq(overtimeRequests.id, id));
     if (!otReq) { res.status(404).json({ error: "Overtime request not found" }); return; }

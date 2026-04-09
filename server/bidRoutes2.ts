@@ -2972,7 +2972,7 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
         }
       }
     } catch (e) {
-      // fall through to defaults
+      console.error("[bid] scope of work fetch failed, using defaults:", e);
     }
 
     if (!scopeOfWorkHtml) {
