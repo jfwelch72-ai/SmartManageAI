@@ -85,17 +85,13 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
       markAsRead.mutate(notification.id);
     }
     
-    // Get destination URL
     const destination = getNotificationDestination(notification);
     
-    // Close dropdown first
     setNotificationsOpen(false);
     
-    // Navigate using window.location for reliable SPA navigation
     if (destination) {
-      // Use setTimeout to ensure state update completes before navigation
       setTimeout(() => {
-        window.location.href = destination;
+        setLocation(destination);
       }, 100);
     }
   };

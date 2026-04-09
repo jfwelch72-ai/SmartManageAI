@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -126,6 +126,7 @@ export default function PlatformOrganizationDetail() {
   const params = useParams<{ id: string }>();
   const orgId = params.id;
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -252,7 +253,7 @@ export default function PlatformOrganizationDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/platform/organizations"] });
       toast({ title: "Organization data deleted", description: "All data has been permanently removed." });
       setDeleteDialogOpen(false);
-      window.location.href = "/admin/organizations";
+      navigate("/admin/organizations");
     },
     onError: (e: Error) => toast({ title: "Deletion failed", description: e.message, variant: "destructive" }),
   });

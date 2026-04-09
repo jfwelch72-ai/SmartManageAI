@@ -1,4 +1,5 @@
 import { useState, useMemo, lazy, Suspense } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { isVendor } from "@/lib/rbac";
@@ -76,6 +77,7 @@ function LoadingFallback() {
 
 export default function UnifiedPortal() {
   const { user, isLoading } = useAuth();
+  const [, navigate] = useLocation();
 
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const token = searchParams.get("token");
@@ -109,7 +111,7 @@ export default function UnifiedPortal() {
   if (isLoading) return <LoadingFallback />;
 
   if (tab && !user && !token && !projectId) {
-    window.location.replace(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    navigate(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`, { replace: true });
     return <LoadingFallback />;
   }
 

@@ -316,21 +316,19 @@ function Router() {
       <Route path="/site/:subdomain/staging" component={() => <PublicWebsite isStaging={true} />} />
       <Route path="/site/:subdomain" component={PublicWebsite} />
       <Route path="/shared-preview/:token" component={SharedPreviewPage} />
-      <Route path="/portal/:projectId" component={() => {
-        const match = (window.location.pathname.match(/\/portal\/(.+)/) || [])[1];
-        if (match) {
+      <Route path="/portal/:projectId">{(params) => {
+        const projectId = params.projectId;
+        if (projectId) {
           const existingSearch = window.location.search;
           const separator = existingSearch ? `${existingSearch}&` : '?';
-          window.location.replace(`/portal${separator}projectId=${encodeURIComponent(match)}`);
-          return null;
+          return <Redirect to={`/portal${separator}projectId=${encodeURIComponent(projectId)}`} />;
         }
         return <Redirect to="/portal" />;
-      }} />
-      <Route path="/sub-portal" component={() => {
+      }}</Route>
+      <Route path="/sub-portal">{() => {
         const search = window.location.search;
-        window.location.replace(`/portal${search}`);
-        return null;
-      }} />
+        return <Redirect to={`/portal${search}`} />;
+      }}</Route>
       <Route path="/portal" component={UnifiedPortal} />
       <Route path="/rfq-response/:token" component={RfqResponsePage} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
