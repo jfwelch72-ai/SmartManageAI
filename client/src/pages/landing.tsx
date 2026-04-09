@@ -668,7 +668,7 @@ export default function LandingPage() {
     setShowDemoModal(false);
   };
 
-  const visibleFeatures = showAllFeatures ? features : features.slice(0, 6);
+  const visibleFeatures = showAllFeatures ? features : features.slice(0, 8);
 
   return (
     <div className="min-h-screen bg-background">
