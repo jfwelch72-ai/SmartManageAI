@@ -181,11 +181,11 @@ export default function CompanySettings() {
   const canViewOverhead = user.role === "ADMIN" || user.role === "MANAGER";
   const canViewProductionRates = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT" || featurePerms?.canAccessReports === true;
   const canViewReportLocks = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
-  const canViewScopeSettings = isOrgAdmin || user.role === "MANAGER" || user.role === "ESTIMATOR";
+  const canViewScopeSettings = isOrgAdmin || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT";
   const canViewWorkflows = isOrgAdmin;
   const canViewAISettings = isOrgAdmin;
   const canViewAIGovernance = isOrgAdmin;
-  const canViewLeaveTypes = isOrgAdmin || user.role === "MANAGER";
+  const canViewLeaveTypes = isOrgAdmin || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
 
   const tabPermissions: Record<string, boolean> = {
     trade: canViewCoreTabs, branding: canViewCoreTabs, insurance: canViewCoreTabs,
