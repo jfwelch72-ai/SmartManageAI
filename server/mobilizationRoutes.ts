@@ -257,6 +257,9 @@ router.patch("/api/mobilization/checklist-items/:itemId", requireAuth, requireRo
       if (parsed.data.status === "COMPLETED") {
         updates.completedAt = new Date();
         updates.completedById = req.user!.id;
+      } else {
+        updates.completedAt = null;
+        updates.completedById = null;
       }
     }
     if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
@@ -283,7 +286,8 @@ router.patch("/api/mobilization/checklist-items/:itemId", requireAuth, requireRo
       .set({
         status: checklistStatus,
         updatedAt: new Date(),
-        ...(allCompleted ? { completedAt: new Date(), completedById: req.user!.id } : {}),
+        completedAt: allCompleted ? new Date() : null,
+        completedById: allCompleted ? req.user!.id : null,
       })
       .where(eq(mobilizationChecklists.id, updated.checklistId));
 
@@ -407,12 +411,23 @@ router.patch("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMEN
       if (parsed.data.status === "SUBMITTED") {
         updates.submittedAt = new Date();
         updates.submittedById = req.user!.id;
+        updates.rejectedAt = null;
+        updates.rejectionReason = null;
       } else if (parsed.data.status === "APPROVED") {
         updates.approvedAt = new Date();
         updates.approvedById = req.user!.id;
       } else if (parsed.data.status === "REJECTED") {
         updates.rejectedAt = new Date();
         updates.rejectionReason = parsed.data.rejectionReason || null;
+        updates.approvedAt = null;
+        updates.approvedById = null;
+      } else if (parsed.data.status === "DRAFT") {
+        updates.submittedAt = null;
+        updates.submittedById = null;
+        updates.approvedAt = null;
+        updates.approvedById = null;
+        updates.rejectedAt = null;
+        updates.rejectionReason = null;
       }
     }
 

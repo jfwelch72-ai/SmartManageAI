@@ -141,8 +141,8 @@ export default function MobilizationTab({ projectId, projectCode, userRole }: Mo
   });
 
   const createChecklist = useMutation({
-    mutationFn: (body: { title: string; description?: string }) =>
-      apiRequest("POST", `/api/projects/${projectId}/mobilization/checklists`, { ...body, useDefaults: true }),
+    mutationFn: (body: { title: string; description?: string; useDefaults?: boolean }) =>
+      apiRequest("POST", `/api/projects/${projectId}/mobilization/checklists`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "mobilization", "checklists"] });
       setShowNewChecklist(false);
@@ -356,6 +356,10 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
   const [editAssignee, setEditAssignee] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [newItemTitle, setNewItemTitle] = useState("");
+  const [newItemCategory, setNewItemCategory] = useState("General");
+  const [newItemDescription, setNewItemDescription] = useState("");
 
   const { data: items = [], isLoading } = useQuery<ChecklistItem[]>({
     queryKey: ["/api/mobilization/checklists", checklist.id, "items"],
@@ -374,6 +378,20 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
       queryClient.invalidateQueries({ queryKey: ["/api/mobilization/checklists", checklist.id, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "mobilization", "checklists"] });
       setEditingItemId(null);
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addItem = useMutation({
+    mutationFn: (body: { title: string; description?: string; category?: string }) =>
+      apiRequest("POST", `/api/mobilization/checklists/${checklist.id}/items`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mobilization/checklists", checklist.id, "items"] });
+      setShowAddItem(false);
+      setNewItemTitle("");
+      setNewItemCategory("General");
+      setNewItemDescription("");
+      toast({ title: "Item added" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -589,6 +607,79 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
               ))}
             </div>
           )}
+          {canManage && (
+            <div className="mt-3 pt-3 border-t">
+              {!showAddItem ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddItem(true)}
+                  data-testid={`button-add-item-${checklist.id}`}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Custom Item
+                </Button>
+              ) : (
+                <div className="space-y-2 p-3 bg-muted/50 rounded-md" data-testid={`add-item-form-${checklist.id}`}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Item Title *</Label>
+                      <Input
+                        value={newItemTitle}
+                        onChange={e => setNewItemTitle(e.target.value)}
+                        placeholder="e.g. Safety briefing"
+                        className="h-8 text-xs"
+                        data-testid={`input-new-item-title-${checklist.id}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Category</Label>
+                      <Input
+                        value={newItemCategory}
+                        onChange={e => setNewItemCategory(e.target.value)}
+                        placeholder="e.g. Safety"
+                        className="h-8 text-xs"
+                        data-testid={`input-new-item-category-${checklist.id}`}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Description</Label>
+                    <Textarea
+                      value={newItemDescription}
+                      onChange={e => setNewItemDescription(e.target.value)}
+                      placeholder="Optional description..."
+                      rows={2}
+                      className="text-xs"
+                      data-testid={`input-new-item-desc-${checklist.id}`}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowAddItem(false)}
+                      className="h-7 text-xs"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => addItem.mutate({
+                        title: newItemTitle,
+                        description: newItemDescription || undefined,
+                        category: newItemCategory || "General",
+                      })}
+                      disabled={!newItemTitle.trim() || addItem.isPending}
+                      className="h-7 text-xs"
+                      data-testid={`button-save-new-item-${checklist.id}`}
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Add Item
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </Card>
@@ -597,11 +688,12 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
 
 function NewChecklistDialog({ onClose, onSave, isSaving }: {
   onClose: () => void;
-  onSave: (data: { title: string; description?: string }) => void;
+  onSave: (data: { title: string; description?: string; useDefaults?: boolean }) => void;
   isSaving: boolean;
 }) {
   const [title, setTitle] = useState("Site Mobilization Checklist");
   const [description, setDescription] = useState("");
+  const [useDefaults, setUseDefaults] = useState(true);
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -616,14 +708,31 @@ function NewChecklistDialog({ onClose, onSave, isSaving }: {
             <Label>Description</Label>
             <Textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} data-testid="input-checklist-description" />
           </div>
-          <p className="text-xs text-muted-foreground">
-            10 default mobilization items will be added automatically (site office, facilities, utilities, fencing, security, equipment, workforce, environmental, safety, materials).
-          </p>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={useDefaults}
+              onCheckedChange={(v) => setUseDefaults(!!v)}
+              data-testid="checkbox-use-defaults"
+            />
+            <Label className="text-sm cursor-pointer" onClick={() => setUseDefaults(!useDefaults)}>
+              Include 10 default mobilization items
+            </Label>
+          </div>
+          {useDefaults && (
+            <p className="text-xs text-muted-foreground ml-6">
+              Site office, facilities, utilities, fencing, security, equipment, workforce, environmental, safety, materials.
+            </p>
+          )}
+          {!useDefaults && (
+            <p className="text-xs text-muted-foreground ml-6">
+              An empty checklist will be created. You can add custom items after creation.
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={() => onSave({ title, description: description || undefined })}
+            onClick={() => onSave({ title, description: description || undefined, useDefaults })}
             disabled={!title.trim() || isSaving}
             data-testid="button-create-checklist"
           >
