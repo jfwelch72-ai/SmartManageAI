@@ -123,6 +123,7 @@ import FieldTakeoffTab from "@/components/project-tabs/FieldTakeoffTab";
 import LidarTab from "@/components/project-tabs/LidarTab";
 import ProjectNotesTab from "@/components/project-tabs/ProjectNotesTab";
 import MobilizationTab from "@/components/project-tabs/MobilizationTab";
+import PermitsTab from "@/components/PermitsTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
 import type { LucideIcon } from "lucide-react";
@@ -475,6 +476,13 @@ function buildTabConfigs(
       label: "LiDAR Scans",
       icon: ScanLine,
       visible: ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "HUSTLER"].includes(userRole || ""),
+      group: "Field Operations",
+    },
+    {
+      value: "permits",
+      label: "Permits",
+      icon: FileCheck,
+      visible: ["ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"].includes(userRole || ""),
       group: "Field Operations",
     },
   ];
@@ -1354,6 +1362,13 @@ export default function ProjectDetailPage() {
             <LidarTab
               projectId={project.id}
               projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
+            />
+          </TabsContent>
+
+          <TabsContent value="permits">
+            <PermitsTab
+              projectId={project.id}
               userRole={user?.role ?? "VIEWER"}
             />
           </TabsContent>

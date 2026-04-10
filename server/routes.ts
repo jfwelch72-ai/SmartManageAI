@@ -76,6 +76,7 @@ import changeOrderApprovalRoutes from "./changeOrderApprovalRoutes";
 import changeOrderExportRoutes from "./changeOrderExportRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
+import permitRoutes from "./permitRoutes";
 import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
 import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
@@ -242,6 +243,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register inspection scheduling routes
   app.use("/api", inspectionRoutes);
+
+  // Register permits & licenses routes
+  app.use("/api", permitRoutes);
 
   // Register punch list routes
   app.use("/api", punchListRoutes);

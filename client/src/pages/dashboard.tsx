@@ -29,6 +29,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { hasManagementAccess, isSuperAdmin, isHustler } from "@/lib/rbac";
+import { ExpiringPermitsBanner } from "@/components/ExpiringPermitsBanner";
 import { format } from "date-fns";
 import { Redirect } from "wouter";
 import { useState } from "react";
@@ -530,6 +531,7 @@ export default function DashboardPage() {
         </div>
         
         <AnnouncementBanner />
+        <ExpiringPermitsBanner />
         <EditModeIndicator />
 
         {hasManagementAccess(user?.role) && (

@@ -59,6 +59,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Hiring Module (ATS)**: Applicant Tracking System with job posting, candidate pipeline, interview scheduling, and AI candidate scoring.
 *   **Talent Pool & Connected Hiring-Marketplace**: Self-service talent profiles with AI-powered skill match.
 *   **Task Detail Modal**: Comprehensive task detail view with subtasks, comments, activity log, and inline actions.
+*   **Permits & Licenses Tracking**: Full lifecycle tracking (Applied → Under Review → Approved → Active → Expired → Renewed) with 10 permit types, expiry date monitoring, dashboard alerts for permits expiring within 30 days, and inspection linking. Located as a tab in Project Detail under Field Operations.
 *   **Punch List Module**: Tracking deficiency items during project closeout.
 *   **Warranty / Post-Construction Module**: Tracking defects, warranty claims, callbacks, and recalls.
 *   **Asset & Property Management**: Post-completion lifecycle with Asset Handover, Warranty Tracking, and Maintenance Logs.

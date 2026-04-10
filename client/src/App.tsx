@@ -192,6 +192,7 @@ const ExecutiveDigestPage = lazy(() => import("@/pages/executive-digest"));
 const WhatIfSimulatorPage = lazy(() => import("@/pages/what-if-simulator"));
 const CalculatorPage = lazy(() => import("@/pages/calculator"));
 const LidarScansPage = lazy(() => import("@/pages/lidar-scans"));
+const PermitsPage = lazy(() => import("@/pages/permits"));
 const ManageWorkersPage = lazy(() => import("@/pages/manage-workers"));
 const WorkerDetailPage = lazy(() => import("@/pages/worker-detail"));
 const PayrollManagementPage = lazy(() => import("@/pages/payroll-management"));
@@ -383,6 +384,7 @@ function Router() {
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
       <Route path="/equipment" component={() => <ProtectedRoute component={EquipmentPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
       <Route path="/lidar-scans" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="LIDAR_SCANNER"><LidarScansPage /></FeatureFlagGate>} permission={RoutePermissions.LIDAR_SCANS} />} />
+      <Route path="/permits" component={() => <ProtectedRoute component={PermitsPage} permission={RoutePermissions.PERMITS} />} />
       <Route path="/rental-vendors" component={() => <ProtectedRoute component={() => <Redirect to="/crm" />} permission={RoutePermissions.CRM} />} />
       <Route path="/vendor-pricing" component={() => <ProtectedRoute component={VendorPricingPage} permission={RoutePermissions.CRM} featurePerm="canManageProcurement" />} />
       <Route path="/mobile-sync" component={() => <ProtectedRoute component={MobileSyncPage} />} />

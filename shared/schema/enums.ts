@@ -653,6 +653,12 @@ export const mobilizationChecklistStatusEnum = pgEnum("mobilization_checklist_st
 export const mobilizationItemStatusEnum = pgEnum("mobilization_item_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "SKIPPED"]);
 export const methodStatementStatusEnum = pgEnum("method_statement_status", ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]);
 
+export const permitStatusEnum = pgEnum("permit_status", ["APPLIED", "UNDER_REVIEW", "APPROVED", "ACTIVE", "EXPIRED", "RENEWED"]);
+export const permitTypeEnum = pgEnum("permit_type", [
+  "BUILDING", "DEMOLITION", "EXCAVATION", "ELECTRICAL", "PLUMBING",
+  "MECHANICAL", "FIRE_SAFETY", "ENVIRONMENTAL", "OCCUPANCY", "CUSTOM"
+]);
+
 export const lidarScanStatusEnum = pgEnum("lidar_scan_status", ["UPLOADING", "PROCESSING", "READY", "ERROR"]);
 export const lidarColorModeEnum = pgEnum("lidar_color_mode", ["RGB", "ELEVATION", "INTENSITY"]);
 export const lidarAnnotationTypeEnum = pgEnum("lidar_annotation_type", ["DISTANCE", "AREA", "VOLUME", "NOTE"]);
