@@ -65,6 +65,13 @@ interface MethodStatement {
   createdAt: string;
 }
 
+interface SafetyChecklist {
+  id: string;
+  status: string;
+  templateId: string;
+  templateName: string | null;
+}
+
 interface ScheduleTask {
   id: string;
   name: string;
@@ -124,6 +131,15 @@ export default function MobilizationTab({ projectId, projectCode, userRole }: Mo
   });
   const scheduleTasks = scheduleData?.tasks || [];
 
+  const { data: safetyChecklists = [] } = useQuery<SafetyChecklist[]>({
+    queryKey: ["/api/projects", projectId, "safety-checklists"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/safety-checklists`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const createChecklist = useMutation({
     mutationFn: (body: { title: string; description?: string }) =>
       apiRequest("POST", `/api/projects/${projectId}/mobilization/checklists`, { ...body, useDefaults: true }),
@@ -153,6 +169,17 @@ export default function MobilizationTab({ projectId, projectCode, userRole }: Mo
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "method-statements"] });
       setShowMethodDetail(null);
       toast({ title: "Status updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMethodContent = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Record<string, unknown> }) =>
+      apiRequest("PATCH", `/api/method-statements/${id}`, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "method-statements"] });
+      setShowMethodDetail(null);
+      toast({ title: "Method statement updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -289,7 +316,7 @@ export default function MobilizationTab({ projectId, projectCode, userRole }: Mo
       {showNewMethodStatement && (
         <NewMethodStatementDialog
           scheduleTasks={scheduleTasks}
-          checklists={checklists}
+          safetyChecklists={safetyChecklists}
           onClose={() => setShowNewMethodStatement(false)}
           onSave={(data) => createMethod.mutate(data)}
           isSaving={createMethod.isPending}
@@ -300,13 +327,17 @@ export default function MobilizationTab({ projectId, projectCode, userRole }: Mo
         <MethodStatementDetailDialog
           statement={showMethodDetail}
           scheduleTasks={scheduleTasks}
-          checklists={checklists}
+          safetyChecklists={safetyChecklists}
           canManage={canManage}
           onClose={() => setShowMethodDetail(null)}
           onStatusChange={(status, rejectionReason) =>
             updateMethodStatus.mutate({ id: showMethodDetail.id, status, rejectionReason })
           }
+          onSave={(updates) =>
+            updateMethodContent.mutate({ id: showMethodDetail.id, updates })
+          }
           isUpdating={updateMethodStatus.isPending}
+          isSaving={updateMethodContent.isPending}
         />
       )}
     </div>
@@ -604,9 +635,9 @@ function NewChecklistDialog({ onClose, onSave, isSaving }: {
   );
 }
 
-function NewMethodStatementDialog({ scheduleTasks, checklists, onClose, onSave, isSaving }: {
+function NewMethodStatementDialog({ scheduleTasks, safetyChecklists, onClose, onSave, isSaving }: {
   scheduleTasks: ScheduleTask[];
-  checklists: MobilizationChecklist[];
+  safetyChecklists: SafetyChecklist[];
   onClose: () => void;
   onSave: (data: Record<string, unknown>) => void;
   isSaving: boolean;
@@ -671,14 +702,14 @@ function NewMethodStatementDialog({ scheduleTasks, checklists, onClose, onSave, 
               </Select>
             </div>
           )}
-          {checklists.length > 0 && (
+          {safetyChecklists.length > 0 && (
             <div className="space-y-1.5">
               <Label>Link to Safety Checklist</Label>
               <Select value={linkedSafetyChecklistId} onValueChange={setLinkedSafetyChecklistId}>
-                <SelectTrigger data-testid="select-method-linked-checklist"><SelectValue placeholder="Select a checklist (optional)" /></SelectTrigger>
+                <SelectTrigger data-testid="select-method-linked-checklist"><SelectValue placeholder="Select a safety checklist (optional)" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
-                  {checklists.map(c => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}
+                  {safetyChecklists.map(c => <SelectItem key={c.id} value={c.id}>{c.templateName || `Checklist ${c.id.slice(0, 8)}`}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -710,20 +741,123 @@ function NewMethodStatementDialog({ scheduleTasks, checklists, onClose, onSave, 
   );
 }
 
-function MethodStatementDetailDialog({ statement, scheduleTasks, checklists, canManage, onClose, onStatusChange, isUpdating }: {
+function MethodStatementDetailDialog({ statement, scheduleTasks, safetyChecklists, canManage, onClose, onStatusChange, onSave, isUpdating, isSaving }: {
   statement: MethodStatement;
   scheduleTasks: ScheduleTask[];
-  checklists: MobilizationChecklist[];
+  safetyChecklists: SafetyChecklist[];
   canManage: boolean;
   onClose: () => void;
   onStatusChange: (status: string, rejectionReason?: string) => void;
+  onSave: (updates: Record<string, unknown>) => void;
   isUpdating: boolean;
+  isSaving: boolean;
 }) {
   const [rejectionReason, setRejectionReason] = useState("");
   const [showReject, setShowReject] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(statement.title);
+  const [editWorkActivity, setEditWorkActivity] = useState(statement.workActivity);
+  const [editSequence, setEditSequence] = useState(statement.sequenceOfOperations || "");
+  const [editEquipment, setEditEquipment] = useState(statement.equipmentResources || "");
+  const [editHazards, setEditHazards] = useState(statement.hazards || "");
+  const [editControls, setEditControls] = useState(statement.controlMeasures || "");
+  const [editPpe, setEditPpe] = useState(statement.ppe || "");
+  const [editEmergency, setEditEmergency] = useState(statement.emergencyProcedures || "");
+  const [editLinkedTaskId, setEditLinkedTaskId] = useState(statement.linkedScheduleTaskId || "none");
+  const [editLinkedChecklistId, setEditLinkedChecklistId] = useState(statement.linkedSafetyChecklistId || "none");
 
   const linkedTask = scheduleTasks.find(t => t.id === statement.linkedScheduleTaskId);
-  const linkedChecklist = checklists.find(c => c.id === statement.linkedSafetyChecklistId);
+  const linkedChecklist = safetyChecklists.find(c => c.id === statement.linkedSafetyChecklistId);
+  const canEdit = canManage && statement.status === "DRAFT";
+
+  function handleSave() {
+    onSave({
+      title: editTitle,
+      workActivity: editWorkActivity,
+      sequenceOfOperations: editSequence || undefined,
+      equipmentResources: editEquipment || undefined,
+      hazards: editHazards || undefined,
+      controlMeasures: editControls || undefined,
+      ppe: editPpe || undefined,
+      emergencyProcedures: editEmergency || undefined,
+      linkedScheduleTaskId: editLinkedTaskId !== "none" ? editLinkedTaskId : undefined,
+      linkedSafetyChecklistId: editLinkedChecklistId !== "none" ? editLinkedChecklistId : undefined,
+    });
+  }
+
+  if (isEditing) {
+    return (
+      <Dialog open={true} onOpenChange={onClose}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-edit-method-statement">
+          <DialogHeader><DialogTitle>Edit Method Statement</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Title *</Label>
+              <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} data-testid="input-edit-method-title" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Work Activity *</Label>
+              <Textarea rows={2} value={editWorkActivity} onChange={e => setEditWorkActivity(e.target.value)} data-testid="input-edit-method-work-activity" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1"><ListOrdered className="h-3.5 w-3.5" /> Sequence of Operations</Label>
+              <Textarea rows={3} value={editSequence} onChange={e => setEditSequence(e.target.value)} data-testid="input-edit-method-sequence" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1"><Wrench className="h-3.5 w-3.5" /> Equipment & Resources</Label>
+              <Textarea rows={2} value={editEquipment} onChange={e => setEditEquipment(e.target.value)} data-testid="input-edit-method-equipment" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Hazards</Label>
+              <Textarea rows={2} value={editHazards} onChange={e => setEditHazards(e.target.value)} data-testid="input-edit-method-hazards" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Control Measures</Label>
+              <Textarea rows={2} value={editControls} onChange={e => setEditControls(e.target.value)} data-testid="input-edit-method-controls" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>PPE Required</Label>
+              <Input value={editPpe} onChange={e => setEditPpe(e.target.value)} data-testid="input-edit-method-ppe" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Emergency Procedures</Label>
+              <Textarea rows={2} value={editEmergency} onChange={e => setEditEmergency(e.target.value)} data-testid="input-edit-method-emergency" />
+            </div>
+            {scheduleTasks.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Link to Schedule Task</Label>
+                <Select value={editLinkedTaskId} onValueChange={setEditLinkedTaskId}>
+                  <SelectTrigger><SelectValue placeholder="Select a task (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {scheduleTasks.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {safetyChecklists.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Link to Safety Checklist</Label>
+                <Select value={editLinkedChecklistId} onValueChange={setEditLinkedChecklistId}>
+                  <SelectTrigger><SelectValue placeholder="Select a safety checklist (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {safetyChecklists.map(c => <SelectItem key={c.id} value={c.id}>{c.templateName || `Checklist ${c.id.slice(0, 8)}`}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={!editTitle.trim() || !editWorkActivity.trim() || isSaving} data-testid="button-save-method-edit">
+              {isSaving ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -746,7 +880,7 @@ function MethodStatementDetailDialog({ statement, scheduleTasks, checklists, can
             )}
             {linkedChecklist && (
               <Badge variant="secondary" className="text-xs">
-                Checklist: {linkedChecklist.title}
+                Safety: {linkedChecklist.templateName || "Checklist"}
               </Badge>
             )}
           </div>
@@ -813,6 +947,15 @@ function MethodStatementDetailDialog({ statement, scheduleTasks, checklists, can
 
         {canManage && (
           <DialogFooter className="flex-col sm:flex-row gap-2">
+            {canEdit && (
+              <Button
+                variant="outline"
+                onClick={() => setIsEditing(true)}
+                data-testid="button-edit-method"
+              >
+                <Pencil className="h-4 w-4 mr-1" /> Edit
+              </Button>
+            )}
             {statement.status === "DRAFT" && (
               <Button
                 onClick={() => onStatusChange("SUBMITTED")}

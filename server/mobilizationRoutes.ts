@@ -1,9 +1,18 @@
 import { Router, Response } from "express";
 import { db } from "./db";
 import { mobilizationChecklists, mobilizationChecklistItems, methodStatements } from "@shared/schema/operations";
-import { eq, desc } from "drizzle-orm";
+import { projects } from "@shared/schema/core";
+import { safetyChecklistInstances, safetyChecklistTemplates } from "@shared/schema/features";
+import { eq, desc, and } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { verifyOrgAccess } from "./orgFilter";
 import { z } from "zod";
+
+async function getProjectOrgId(projectId: string): Promise<string | null> {
+  const [project] = await db.select({ gcOrganizationId: projects.gcOrganizationId })
+    .from(projects).where(eq(projects.id, projectId));
+  return project?.gcOrganizationId || null;
+}
 
 const router = Router();
 
@@ -84,6 +93,9 @@ const updateMethodStatementSchema = z.object({
 router.get("/api/projects/:projectId/mobilization/checklists", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
+    const orgId = await getProjectOrgId(projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
+
     const checklists = await db.select().from(mobilizationChecklists)
       .where(eq(mobilizationChecklists.projectId, projectId))
       .orderBy(desc(mobilizationChecklists.createdAt));
@@ -96,6 +108,9 @@ router.get("/api/projects/:projectId/mobilization/checklists", requireAuth, asyn
 router.post("/api/projects/:projectId/mobilization/checklists", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
+    const orgId = await getProjectOrgId(projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
+
     const parsed = createChecklistSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
     const { title, description, useDefaults } = parsed.data;
@@ -128,6 +143,9 @@ router.patch("/api/mobilization/checklists/:checklistId", requireAuth, requireRo
       .where(eq(mobilizationChecklists.id, checklistId));
     if (!existing) return res.status(404).json({ error: "Checklist not found" });
 
+    const orgId = await getProjectOrgId(existing.projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
+
     const parsed = updateChecklistSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
 
@@ -152,6 +170,9 @@ router.delete("/api/mobilization/checklists/:checklistId", requireAuth, requireR
       .where(eq(mobilizationChecklists.id, checklistId));
     if (!existing) return res.status(404).json({ error: "Checklist not found" });
 
+    const orgId = await getProjectOrgId(existing.projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
+
     await db.delete(mobilizationChecklistItems).where(eq(mobilizationChecklistItems.checklistId, checklistId));
     await db.delete(mobilizationChecklists).where(eq(mobilizationChecklists.id, checklistId));
     res.json({ success: true });
@@ -167,6 +188,9 @@ router.get("/api/mobilization/checklists/:checklistId/items", requireAuth, async
       .from(mobilizationChecklists)
       .where(eq(mobilizationChecklists.id, checklistId));
     if (!checklist) return res.status(404).json({ error: "Checklist not found" });
+
+    const orgId = await getProjectOrgId(checklist.projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
 
     const items = await db.select().from(mobilizationChecklistItems)
       .where(eq(mobilizationChecklistItems.checklistId, checklistId))
@@ -184,6 +208,9 @@ router.post("/api/mobilization/checklists/:checklistId/items", requireAuth, requ
       .from(mobilizationChecklists)
       .where(eq(mobilizationChecklists.id, checklistId));
     if (!checklist) return res.status(404).json({ error: "Checklist not found" });
+
+    const orgId = await getProjectOrgId(checklist.projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
 
     const parsed = createChecklistItemSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
@@ -216,7 +243,10 @@ router.patch("/api/mobilization/checklist-items/:itemId", requireAuth, requireRo
     const [checklist] = await db.select({ projectId: mobilizationChecklists.projectId })
       .from(mobilizationChecklists)
       .where(eq(mobilizationChecklists.id, existingItem.checklistId));
-    if (!checklist) return res.status(403).json({ error: "Access denied" });
+    if (!checklist) return res.status(404).json({ error: "Checklist not found" });
+
+    const orgId = await getProjectOrgId(checklist.projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
 
     const parsed = updateChecklistItemSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
@@ -263,9 +293,34 @@ router.patch("/api/mobilization/checklist-items/:itemId", requireAuth, requireRo
   }
 });
 
+router.get("/api/projects/:projectId/safety-checklists", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const orgId = await getProjectOrgId(projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
+
+    const instances = await db.select({
+      id: safetyChecklistInstances.id,
+      status: safetyChecklistInstances.status,
+      templateId: safetyChecklistInstances.templateId,
+      templateName: safetyChecklistTemplates.name,
+    })
+      .from(safetyChecklistInstances)
+      .leftJoin(safetyChecklistTemplates, eq(safetyChecklistInstances.templateId, safetyChecklistTemplates.id))
+      .where(eq(safetyChecklistInstances.projectId, projectId))
+      .orderBy(desc(safetyChecklistInstances.createdAt));
+    res.json(instances);
+  } catch (error: any) {
+    res.json([]);
+  }
+});
+
 router.get("/api/projects/:projectId/method-statements", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
+    const orgId = await getProjectOrgId(projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
+
     const statements = await db.select().from(methodStatements)
       .where(eq(methodStatements.projectId, projectId))
       .orderBy(desc(methodStatements.createdAt));
@@ -278,6 +333,9 @@ router.get("/api/projects/:projectId/method-statements", requireAuth, async (req
 router.post("/api/projects/:projectId/method-statements", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
+    const orgId = await getProjectOrgId(projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
+
     const parsed = createMethodStatementSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
 
@@ -317,6 +375,9 @@ router.patch("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMEN
     const [existing] = await db.select().from(methodStatements)
       .where(eq(methodStatements.id, id));
     if (!existing) return res.status(404).json({ error: "Method statement not found" });
+
+    const orgId = await getProjectOrgId(existing.projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
 
     const parsed = updateMethodStatementSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
@@ -373,6 +434,9 @@ router.delete("/api/method-statements/:id", requireAuth, requireRole(...MANAGEME
     const [existing] = await db.select().from(methodStatements)
       .where(eq(methodStatements.id, id));
     if (!existing) return res.status(404).json({ error: "Method statement not found" });
+
+    const orgId = await getProjectOrgId(existing.projectId);
+    if (!verifyOrgAccess(req, res, orgId)) return;
 
     await db.delete(methodStatements).where(eq(methodStatements.id, id));
     res.json({ success: true });
