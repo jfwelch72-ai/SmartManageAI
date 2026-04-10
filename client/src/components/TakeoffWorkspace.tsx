@@ -54,7 +54,7 @@ import { onLibraryEvent } from "@/lib/libraryEvents";
 import { generateTakeoffExcel } from "@/utils/takeoff-export";
 import type { LibraryEvent } from "@/lib/libraryEvents";
 import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
-import { Users, Lock, Sparkles, DollarSign, Layers } from "lucide-react";
+import { Users, Lock, Sparkles, DollarSign, Layers, Zap } from "lucide-react";
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -121,6 +121,29 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     }
     prevSheetRef.current = selectedSheet;
   }, [selectedSheet, takeoffHistory]);
+  const autoImportStorageKey = sheetStorageKey ? `${sheetStorageKey}-auto-import` : null;
+  const prevAutoImportKeyRef = useRef<string | null>(autoImportStorageKey);
+  const [autoImportEnabled, setAutoImportEnabled] = useState<boolean>(() => {
+    if (autoImportStorageKey) {
+      try { return sessionStorage.getItem(autoImportStorageKey) === "true"; } catch { /* ignore */ }
+    }
+    return false;
+  });
+  useEffect(() => {
+    if (prevAutoImportKeyRef.current !== autoImportStorageKey) {
+      prevAutoImportKeyRef.current = autoImportStorageKey;
+      if (autoImportStorageKey) {
+        try { setAutoImportEnabled(sessionStorage.getItem(autoImportStorageKey) === "true"); } catch { setAutoImportEnabled(false); }
+      } else {
+        setAutoImportEnabled(false);
+      }
+    }
+  }, [autoImportStorageKey]);
+  useEffect(() => {
+    if (autoImportStorageKey) {
+      try { sessionStorage.setItem(autoImportStorageKey, String(autoImportEnabled)); } catch { /* ignore */ }
+    }
+  }, [autoImportEnabled, autoImportStorageKey]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState<"idle" | "first-point" | "second-point">("idle");
   const [calibrationPoints, setCalibrationPoints] = useState<{ x: number; y: number }[]>([]);
@@ -276,6 +299,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     uploadDialogOpen,
     takeoffHistory,
     selectedCategoryId,
+    autoImportEnabled,
     onCollabBroadcast: collab.broadcastMeasurementChange,
     callbacks: {
       setUploadDialogOpen,
@@ -1450,6 +1474,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={autoImportEnabled ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 gap-1 px-2 text-xs ${autoImportEnabled ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+                  onClick={() => setAutoImportEnabled(!autoImportEnabled)}
+                  data-testid="button-auto-import-toggle"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{autoImportEnabled ? "Auto-Import ON" : "Auto-Import"}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{autoImportEnabled ? "New measurements are automatically added to the estimate" : "Enable to auto-add new measurements to estimate"}</p>
+              </TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

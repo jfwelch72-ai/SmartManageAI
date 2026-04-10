@@ -458,6 +458,137 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
   }
 });
 
+router.post("/api/takeoff/measurements/:id/auto-import", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { takeoffMeasurements, takeoffSheets: sheetsTable, estimates, estimateLineItems } = await import("@shared/schema");
+
+    const [measurement] = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, id))
+      .limit(1);
+    if (!measurement) { res.status(404).json({ error: "Measurement not found" }); return; }
+
+    const access = await verifySheetAccess(measurement.sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
+    const [sheet] = await db
+      .select({ bidId: sheetsTable.bidId, projectId: sheetsTable.projectId })
+      .from(sheetsTable)
+      .where(eq(sheetsTable.id, measurement.sheetId))
+      .limit(1);
+    if (!sheet) { res.status(404).json({ error: "Sheet not found" }); return; }
+
+    const contextId = sheet.bidId || sheet.projectId;
+    if (!contextId) { res.status(400).json({ error: "Sheet has no bid or project association" }); return; }
+
+    const estimateCondition = sheet.bidId
+      ? eq(estimates.bidId, sheet.bidId)
+      : eq(estimates.projectId, sheet.projectId!);
+    const [estimate] = await db
+      .select({ id: estimates.id })
+      .from(estimates)
+      .where(estimateCondition)
+      .limit(1);
+
+    if (!estimate) {
+      res.json({ skipped: true, reason: "No estimate exists yet" });
+      return;
+    }
+
+    let quantity = 0;
+    let unit = "EA";
+    let description = measurement.label || "Takeoff Measurement";
+    const mType = measurement.type as string;
+
+    if (mType === "LINEAR" || mType === "LINEAR_WITH_DROP" || mType === "PITCHED_LINEAR" || mType === "SEGMENT") {
+      quantity = Number(measurement.computedLengthFt) || 0;
+      unit = "LF";
+      description = measurement.label || `${mType === "SEGMENT" ? "Segment" : "Linear"} Measurement`;
+    } else if (mType === "AREA" || mType === "PITCHED_AREA" || mType === "SURFACE_AREA") {
+      quantity = Number(measurement.computedAreaFt2) || 0;
+      unit = "SF";
+      description = measurement.label || `${mType === "PITCHED_AREA" ? "Pitched Area" : mType === "SURFACE_AREA" ? "Surface Area" : "Area"} Measurement`;
+    } else if (mType === "VOLUME") {
+      quantity = Number(measurement.computedVolumeCy) || 0;
+      unit = "CY";
+      description = measurement.label || "Volume Measurement";
+    } else if (mType === "COUNT") {
+      quantity = measurement.count ?? 1;
+      unit = "EA";
+      description = measurement.label || "Count Measurement";
+    }
+
+    if (quantity <= 0) {
+      res.json({ skipped: true, reason: "Measurement has no computed quantity" });
+      return;
+    }
+
+    const materialCost = quantity * (Number(measurement.unitCost) || 0);
+
+    const result = await db.transaction(async (tx) => {
+      const existingItems = await tx
+        .select({ metadata: estimateLineItems.metadata })
+        .from(estimateLineItems)
+        .where(and(
+          eq(estimateLineItems.estimateId, estimate.id),
+          eq(estimateLineItems.source, "TAKEOFF"),
+        ));
+      for (const li of existingItems) {
+        try {
+          const meta = typeof li.metadata === 'string' ? JSON.parse(li.metadata) : (li.metadata || {});
+          if (Array.isArray(meta.sourceMeasurementIds) && meta.sourceMeasurementIds.includes(id)) {
+            return { skipped: true as const, reason: "Measurement already imported" };
+          }
+        } catch {}
+      }
+
+      const [lineItem] = await tx.insert(estimateLineItems).values({
+        estimateId: estimate.id,
+        category: "GENERAL",
+        description,
+        quantity: quantity.toFixed(2),
+        unit,
+        source: "TAKEOFF",
+        materialCost: materialCost.toFixed(2),
+        laborHours: "0",
+        laborCost: "0",
+        equipmentCost: "0",
+        consumablesCost: "0",
+        subcontractCost: "0",
+        overheadAllocation: "0",
+        profitAllocation: "0",
+        totalCost: materialCost.toFixed(2),
+        computedQuantity: quantity.toFixed(2),
+        metadata: JSON.stringify({
+          sourceMeasurementIds: [id],
+          autoImported: true,
+        }),
+      }).returning();
+
+      return { lineItem, autoImported: true as const };
+    });
+
+    if ('skipped' in result) {
+      res.json(result);
+      return;
+    }
+
+    await logCreate(req.user!.id, "estimate_line_item", result.lineItem.id, {
+      autoImported: true,
+      measurementId: id,
+      description,
+      quantity: quantity.toFixed(2),
+      unit,
+    }, req);
+
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;

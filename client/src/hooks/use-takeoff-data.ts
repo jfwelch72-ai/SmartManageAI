@@ -21,6 +21,7 @@ interface UseTakeoffDataParams {
   uploadDialogOpen: boolean;
   takeoffHistory: ReturnType<typeof useTakeoffHistory>;
   selectedCategoryId: string | null;
+  autoImportEnabled?: boolean;
   onCollabBroadcast?: (type: "MEASUREMENT_CREATED" | "MEASUREMENT_UPDATED" | "MEASUREMENT_DELETED", payload: any) => void;
   callbacks: {
     setUploadDialogOpen: (v: boolean) => void;
@@ -45,6 +46,7 @@ export function useTakeoffData({
   uploadDialogOpen,
   takeoffHistory,
   selectedCategoryId,
+  autoImportEnabled,
   onCollabBroadcast,
   callbacks,
 }: UseTakeoffDataParams) {
@@ -231,13 +233,29 @@ export function useTakeoffData({
       const res = await apiRequest("POST", "/api/takeoff/measurements", payload);
       return res.json();
     },
-    onSuccess: (data: TakeoffMeasurement) => {
+    onSuccess: async (data: TakeoffMeasurement) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       if (selectedSheet) {
         takeoffHistory.pushAction("CREATE", data, selectedSheet);
         onCollabBroadcast?.("MEASUREMENT_CREATED", { sheetId: selectedSheet, measurementId: data.id });
       }
       toast({ title: "Success", description: "Measurement saved" });
+
+      if (autoImportEnabled && data.id) {
+        try {
+          const importRes = await apiRequest("POST", `/api/takeoff/measurements/${data.id}/auto-import`);
+          const importData = await importRes.json();
+          if (importData.autoImported) {
+            const estimateKey = isBid ? ["/api/bids", ctxId, "estimate"] : ["/api/projects", ctxId, "estimate"];
+            queryClient.invalidateQueries({ queryKey: estimateKey });
+            toast({ title: "Auto-imported", description: `${data.label || "Measurement"} added to estimate` });
+          } else if (importData.skipped) {
+            toast({ title: "Skipped", description: importData.reason || "Measurement not imported" });
+          }
+        } catch {
+          toast({ title: "Auto-import failed", description: "Measurement saved but could not auto-import to estimate", variant: "destructive" });
+        }
+      }
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to save measurement", variant: "destructive" });
