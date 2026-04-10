@@ -149,6 +149,7 @@ import takeoffCategoryRoutes from "./takeoffCategoryRoutes";
 import takeoffCrossModuleRoutes from "./takeoffCrossModuleRoutes";
 import bimRoutes from "./bimRoutes";
 import lidarRoutes from "./lidarRoutes";
+import mobilizationRoutes from "./mobilizationRoutes";
 import projectCrudRoutes from "./projectCrudRoutes";
 import projectContentRoutes from "./projectContentRoutes";
 import projectFinancialRoutes from "./projectFinancialRoutes";
@@ -511,6 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(takeoffCrossModuleRoutes);
   app.use(bimRoutes);
   app.use(lidarRoutes);
+  app.use(mobilizationRoutes);
 
   // Project Routes (split: core CRUD, content, financial)
   app.use(projectCrudRoutes);

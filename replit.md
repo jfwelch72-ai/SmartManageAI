@@ -68,6 +68,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **LiDAR Scanner Module**: Upload, view, and analyze 3D point cloud scans with a Three.js-based viewer, measurement tools, and BIM/IFC overlay.
 *   **Contractor Marketplace Directory**: Searchable public directory of organizations.
 *   **Leave Management Module**: Employee self-service and manager/HR views for leave management.
+*   **Site Mobilization & Method Statements**: Structured site mobilization checklists with default items (10 categories) and method statement templates with Draft→Submitted→Approved workflow and schedule task linking.
 *   **No-Code Workflow Builder**: Visual pipeline editor for custom approval chains, status pipelines, and notification triggers.
 *   **Notion-Style Project Notes**: Block-based note editor in project detail with page management, block editor, and auto-save.
 *   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination for list endpoints, and N+1 query prevention strategies.

@@ -649,6 +649,10 @@ export const riskStatusEnum = pgEnum("risk_status", [
 export const takeoffVersionStatusEnum = pgEnum("takeoff_version_status", ["DRAFT", "LOCKED"]);
 export const installationStatusEnum = pgEnum("installation_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "ON_HOLD"]);
 
+export const mobilizationChecklistStatusEnum = pgEnum("mobilization_checklist_status", ["DRAFT", "IN_PROGRESS", "COMPLETED"]);
+export const mobilizationItemStatusEnum = pgEnum("mobilization_item_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "SKIPPED"]);
+export const methodStatementStatusEnum = pgEnum("method_statement_status", ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]);
+
 export const lidarScanStatusEnum = pgEnum("lidar_scan_status", ["UPLOADING", "PROCESSING", "READY", "ERROR"]);
 export const lidarColorModeEnum = pgEnum("lidar_color_mode", ["RGB", "ELEVATION", "INTENSITY"]);
 export const lidarAnnotationTypeEnum = pgEnum("lidar_annotation_type", ["DISTANCE", "AREA", "VOLUME", "NOTE"]);

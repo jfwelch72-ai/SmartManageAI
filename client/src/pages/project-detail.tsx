@@ -122,6 +122,7 @@ import LocationManagerTab from "@/components/project-tabs/LocationManagerTab";
 import FieldTakeoffTab from "@/components/project-tabs/FieldTakeoffTab";
 import LidarTab from "@/components/project-tabs/LidarTab";
 import ProjectNotesTab from "@/components/project-tabs/ProjectNotesTab";
+import MobilizationTab from "@/components/project-tabs/MobilizationTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
 import type { LucideIcon } from "lucide-react";
@@ -314,6 +315,13 @@ function buildTabConfigs(
       value: "safety-training",
       label: "Safety Training",
       icon: ShieldCheck,
+      visible: hasManagementAccess(userRole),
+      group: "Field Operations",
+    },
+    {
+      value: "mobilization",
+      label: "Mobilization",
+      icon: HardHat,
       visible: hasManagementAccess(userRole),
       group: "Field Operations",
     },
@@ -1328,6 +1336,14 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="safety-training">
             <SafetyTrainingTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
+            />
+          </TabsContent>
+
+          <TabsContent value="mobilization">
+            <MobilizationTab
               projectId={project.id}
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}
