@@ -29,7 +29,7 @@ const generateReportSchema = z.object({
   emailRecipients: z.array(z.string().email()).optional(),
 });
 
-async function aggregateReportData(projectId: string, startDate: string, endDate: string, reportType: "WEEKLY" | "MONTHLY") {
+export async function aggregateReportData(projectId: string, startDate: string, endDate: string, reportType: "WEEKLY" | "MONTHLY") {
   const startTs = new Date(startDate);
   const endTs = new Date(endDate + "T23:59:59.999Z");
 
@@ -124,26 +124,37 @@ async function aggregateReportData(projectId: string, startDate: string, endDate
   }
 
   let financialSummary: any = null;
-  if (reportType === "MONTHLY") {
+  try {
+    const finResult = await pool.query(
+      `SELECT budget, original_contract_value FROM projects WHERE id = $1`,
+      [projectId]
+    );
+    const fin = finResult.rows[0];
+    const budget = parseFloat(fin?.budget || "0");
+    const contractValue = parseFloat(fin?.original_contract_value || "0");
+
+    let actualCost = 0;
     try {
-      const finResult = await pool.query(
-        `SELECT budget, original_contract_value FROM projects WHERE id = $1`,
-        [projectId]
+      const costResult = await pool.query(
+        `SELECT COALESCE(SUM(amount), 0) as total FROM project_costs WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3`,
+        [projectId, startDate, endDate + "T23:59:59.999Z"]
       );
-      const fin = finResult.rows[0];
-      financialSummary = {
-        budget: parseFloat(fin?.budget || "0"),
-        originalContractValue: parseFloat(fin?.original_contract_value || "0"),
-        changeOrdersSummary: {
-          total: cos.length,
-          approved: cos.filter(c => c.status === "APPROVED").length,
-          approvedAmount: cos.filter(c => c.status === "APPROVED").reduce((s, c) => s + parseFloat(c.amount || "0"), 0),
-          pending: cos.filter(c => c.status === "PENDING" || c.status === "SUBMITTED").length,
-        },
-      };
-    } catch {
-    }
-  }
+      actualCost = parseFloat(costResult.rows[0]?.total || "0");
+    } catch {}
+
+    financialSummary = {
+      budget,
+      originalContractValue: contractValue,
+      actualCostInPeriod: Math.round(actualCost * 100) / 100,
+      budgetVariance: Math.round((budget - actualCost) * 100) / 100,
+      changeOrdersSummary: {
+        total: cos.length,
+        approved: cos.filter(c => c.status === "APPROVED").length,
+        approvedAmount: cos.filter(c => c.status === "APPROVED").reduce((s, c) => s + parseFloat(c.amount || "0"), 0),
+        pending: cos.filter(c => c.status === "PENDING" || c.status === "SUBMITTED").length,
+      },
+    };
+  } catch {}
 
   let healthScore: number | null = null;
   try {
@@ -152,8 +163,43 @@ async function aggregateReportData(projectId: string, startDate: string, endDate
       [projectId]
     );
     healthScore = hsResult.rows[0]?.score ?? null;
-  } catch {
-  }
+  } catch {}
+
+  let procurement: any = null;
+  try {
+    const poResult = await pool.query(
+      `SELECT 
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE status = 'RECEIVED') as received,
+        COUNT(*) FILTER (WHERE status = 'PENDING' OR status = 'ORDERED') as pending
+       FROM purchase_orders WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3`,
+      [projectId, startDate, endDate + "T23:59:59.999Z"]
+    );
+    const po = poResult.rows[0];
+    procurement = {
+      totalOrders: parseInt(po?.total || "0"),
+      received: parseInt(po?.received || "0"),
+      pending: parseInt(po?.pending || "0"),
+    };
+  } catch {}
+
+  let subcontractors: any = null;
+  try {
+    const subResult = await pool.query(
+      `SELECT 
+        COUNT(DISTINCT sc.id) as total_subs,
+        COUNT(DISTINCT sp.id) as pay_apps
+       FROM subcontracts sc
+       LEFT JOIN subcontract_pay_applications sp ON sp.subcontract_id = sc.id AND sp.created_at >= $2 AND sp.created_at <= $3
+       WHERE sc.project_id = $1`,
+      [projectId, startDate, endDate + "T23:59:59.999Z"]
+    );
+    const sr = subResult.rows[0];
+    subcontractors = {
+      totalSubcontracts: parseInt(sr?.total_subs || "0"),
+      payApplicationsInPeriod: parseInt(sr?.pay_apps || "0"),
+    };
+  } catch {}
 
   return {
     project: {
@@ -194,11 +240,13 @@ async function aggregateReportData(projectId: string, startDate: string, endDate
       })),
     },
     financials: financialSummary,
+    procurement,
+    subcontractors,
     healthScore,
   };
 }
 
-function generateReportPDF(reportData: any, branding?: OrganizationBrandingPDF): PassThrough {
+export function generateReportPDF(reportData: any, branding?: OrganizationBrandingPDF): PassThrough {
   const stream = new PassThrough();
   const doc = new PDFDocument({ size: "LETTER", margin: 50 });
   doc.pipe(stream);
@@ -266,8 +314,29 @@ function generateReportPDF(reportData: any, branding?: OrganizationBrandingPDF):
     doc.fontSize(10).fillColor("#374151");
     doc.text(`Budget: $${p.financials.budget.toLocaleString()}`);
     doc.text(`Original Contract: $${p.financials.originalContractValue.toLocaleString()}`);
+    if (p.financials.actualCostInPeriod !== undefined) {
+      doc.text(`Actual Cost (Period): $${p.financials.actualCostInPeriod.toLocaleString()}`);
+      doc.text(`Budget Variance: $${p.financials.budgetVariance.toLocaleString()}`);
+    }
     doc.text(`Approved COs: ${p.financials.changeOrdersSummary.approved} ($${p.financials.changeOrdersSummary.approvedAmount.toLocaleString()})`);
     doc.text(`Pending COs: ${p.financials.changeOrdersSummary.pending}`);
+    doc.moveDown(0.5);
+  }
+
+  if (p.procurement) {
+    doc.fontSize(13).fillColor(primaryColor).text("Procurement Status");
+    doc.fontSize(10).fillColor("#374151");
+    doc.text(`Total Purchase Orders: ${p.procurement.totalOrders}`);
+    doc.text(`Received: ${p.procurement.received}`);
+    doc.text(`Pending/Ordered: ${p.procurement.pending}`);
+    doc.moveDown(0.5);
+  }
+
+  if (p.subcontractors) {
+    doc.fontSize(13).fillColor(primaryColor).text("Subcontractor Summary");
+    doc.fontSize(10).fillColor("#374151");
+    doc.text(`Active Subcontracts: ${p.subcontractors.totalSubcontracts}`);
+    doc.text(`Pay Applications (Period): ${p.subcontractors.payApplicationsInPeriod}`);
     doc.moveDown(0.5);
   }
 
