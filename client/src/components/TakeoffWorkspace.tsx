@@ -630,6 +630,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setOrthoLock,
     currentSnap,
     cursorPosition,
+    runningMeasurement,
+    selectedMeasurementIds,
+    setSelectedMeasurementIds,
+    toggleMeasurementSelection,
   } = interactions;
 
   const handleMarkupMouseDown = (e: any) => {
@@ -2720,13 +2724,47 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     <Text
                       x={currentSnap.snappedPoint.x + 14 / stageScale}
                       y={currentSnap.snappedPoint.y - 6 / stageScale}
-                      text={currentSnap.snapTarget.type === "endpoint" ? "End" : "Mid"}
+                      text={
+                        currentSnap.snapTarget.type === "endpoint" ? "End" :
+                        currentSnap.snapTarget.type === "midpoint" ? "Mid" :
+                        currentSnap.snapTarget.type === "intersection" ? "Int" :
+                        currentSnap.snapTarget.type === "nearest" ? "Near" : "Snap"
+                      }
                       fontSize={11 / stageScale}
-                      fill="#f59e0b"
+                      fill={currentSnap.snapTarget.type === "intersection" ? "#ef4444" : "#f59e0b"}
                       fontStyle="bold"
                     />
                   </>
                 )}
+
+                {runningMeasurement && isDrawing && cursorPosition && (() => {
+                  const costPerUnit = activeCondition?.unitCost ? Number(activeCondition.unitCost) : 0;
+                  const liveCost = costPerUnit > 0 ? runningMeasurement.value * costPerUnit : 0;
+                  const measureText = `${runningMeasurement.value.toFixed(2)} ${runningMeasurement.unit}${runningMeasurement.segments && runningMeasurement.unit === "SF" ? ` | ${(runningMeasurement.segments as number).toFixed(1)} LF` : ""}`;
+                  const costText = liveCost > 0 ? ` | $${liveCost.toFixed(2)}` : "";
+                  const fullText = measureText + costText;
+                  return (
+                    <Group>
+                      <Rect
+                        x={cursorPosition.x + 18 / stageScale}
+                        y={cursorPosition.y - 28 / stageScale}
+                        width={Math.max(80, fullText.length * 7.5) / stageScale}
+                        height={22 / stageScale}
+                        fill="rgba(0,0,0,0.85)"
+                        cornerRadius={4 / stageScale}
+                      />
+                      <Text
+                        x={cursorPosition.x + 24 / stageScale}
+                        y={cursorPosition.y - 24 / stageScale}
+                        text={fullText}
+                        fontSize={13 / stageScale}
+                        fill={liveCost > 0 ? "#4ade80" : "#22d3ee"}
+                        fontStyle="bold"
+                        fontFamily="monospace"
+                      />
+                    </Group>
+                  );
+                })()}
 
                 {orthoLock && isDrawing && drawingPoints.length > 0 && cursorPosition && (
                   <Line
@@ -3312,6 +3350,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             </div>
           )}
         </div>
+        {selectedMeasurementIds.size > 1 && (
+          <div className="flex h-9 bg-primary/10 border-t border-primary/20 px-3 items-center justify-between text-xs shrink-0" data-testid="batch-action-bar">
+            <span className="font-medium text-primary">{selectedMeasurementIds.size} measurements selected</span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs px-2"
+                data-testid="button-batch-delete"
+                onClick={async () => {
+                  if (deleteMeasurementMutation) {
+                    const toDelete = measurements.filter(m => selectedMeasurementIds.has(m.id));
+                    const count = toDelete.length;
+                    setSelectedMeasurementIds(new Set());
+                    setSelectedMeasurementId(null);
+                    for (const m of toDelete) {
+                      deleteMeasurementMutation.mutate(m);
+                    }
+                    toast({ title: "Batch Delete", description: `Deleting ${count} measurements...` });
+                  }
+                }}
+              >
+                <Trash2 className="w-3 h-3 mr-1" />
+                Delete All
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs px-2"
+                data-testid="button-batch-clear"
+                onClick={() => {
+                  setSelectedMeasurementIds(new Set());
+                }}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
         {selectedSheet && (
           <div className="hidden sm:flex h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar">
             <div className="flex items-center gap-4">

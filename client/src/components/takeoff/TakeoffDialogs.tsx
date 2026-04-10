@@ -429,7 +429,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
               <div className="grid grid-cols-2 gap-2">
                 {[
                   ["Cancel / Deselect", "Escape"], ["Complete Polygon", "Enter"],
-                  ["Toggle Ortho Lock", "O"], ["Toggle Snapping", "M"],
+                  ["Undo Last Point", "Backspace"], ["Toggle Ortho Lock", "O"], ["Toggle Snapping", "M"],
                 ].map(([label, key]) => (
                   <div key={key} className="flex items-center justify-between p-2 rounded hover-elevate">
                     <span className="text-sm">{label}</span>
@@ -444,8 +444,9 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
               <div className="grid grid-cols-2 gap-2">
                 {[
                   ["Undo", "Ctrl+Z"], ["Redo", "Ctrl+Y"],
-                  ["Remove Selected", "Delete"], ["Multi-select (BIM)", "Shift+Click"],
-                  ["Add to Selection", "Ctrl+Click"], ["Show Shortcuts", "?"],
+                  ["Remove Selected", "Delete"], ["Duplicate", "Ctrl+D"],
+                  ["Select All", "Ctrl+A"], ["Next Measurement", "Tab"],
+                  ["Previous Measurement", "Shift+Tab"], ["Show Shortcuts", "?"],
                 ].map(([label, key]) => (
                   <div key={key} className="flex items-center justify-between p-2 rounded hover-elevate">
                     <span className="text-sm">{label}</span>

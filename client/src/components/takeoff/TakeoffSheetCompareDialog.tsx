@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Columns, Layers, ArrowLeft, ArrowRight } from "lucide-react";
+import { Columns, Layers, ArrowLeft, ArrowRight, Table2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SheetInfo {
@@ -20,15 +20,25 @@ interface SheetInfo {
   imageUrl?: string | null;
 }
 
+export interface QuantityCompareRow {
+  category: string;
+  unit: string;
+  oldQty: number;
+  newQty: number;
+  diff: number;
+  pctChange: number;
+}
+
 interface TakeoffSheetCompareDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   oldSheet: SheetInfo;
   newSheet: SheetInfo;
   allSheets: SheetInfo[];
+  quantityComparison?: QuantityCompareRow[];
 }
 
-type CompareMode = "side-by-side" | "overlay";
+type CompareMode = "side-by-side" | "overlay" | "quantity-table";
 
 function SheetImage({ sheet, className }: { sheet: SheetInfo; className?: string }) {
   const src = sheet.imageUrl
@@ -63,6 +73,7 @@ export function TakeoffSheetCompareDialog({
   onOpenChange,
   oldSheet,
   newSheet,
+  quantityComparison,
 }: TakeoffSheetCompareDialogProps) {
   const [mode, setMode] = useState<CompareMode>("side-by-side");
   const [overlayOpacity, setOverlayOpacity] = useState(50);
@@ -103,6 +114,17 @@ export function TakeoffSheetCompareDialog({
             >
               <Layers className="w-3.5 h-3.5" /> Overlay
             </Button>
+            {quantityComparison && quantityComparison.length > 0 && (
+              <Button
+                variant={mode === "quantity-table" ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5 h-8"
+                onClick={() => setMode("quantity-table")}
+                data-testid="button-compare-quantity-table"
+              >
+                <Table2 className="w-3.5 h-3.5" /> Quantities
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
@@ -126,7 +148,42 @@ export function TakeoffSheetCompareDialog({
         )}
 
         <div className="flex-1 min-h-0 overflow-hidden">
-          {mode === "side-by-side" ? (
+          {mode === "quantity-table" && quantityComparison ? (
+            <div className="h-full overflow-auto p-4">
+              <table className="w-full text-sm border-collapse" data-testid="quantity-compare-table">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left px-3 py-2 font-semibold">Category</th>
+                    <th className="text-left px-3 py-2 font-semibold">Unit</th>
+                    <th className="text-right px-3 py-2 font-semibold">{oldSheet.revisionLabel || "Old"}</th>
+                    <th className="text-right px-3 py-2 font-semibold">{newSheet.revisionLabel || "New"}</th>
+                    <th className="text-right px-3 py-2 font-semibold">Diff</th>
+                    <th className="text-right px-3 py-2 font-semibold">% Change</th>
+                    <th className="text-center px-3 py-2 font-semibold">Trend</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quantityComparison.map((row, i) => (
+                    <tr key={i} className={cn("border-b hover:bg-muted/30", row.diff > 0 && "bg-red-50 dark:bg-red-950/20", row.diff < 0 && "bg-green-50 dark:bg-green-950/20")} data-testid={`quantity-row-${i}`}>
+                      <td className="px-3 py-2 font-medium">{row.category}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{row.unit}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.oldQty.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{row.newQty.toFixed(2)}</td>
+                      <td className={cn("px-3 py-2 text-right tabular-nums font-medium", row.diff > 0 ? "text-red-600" : row.diff < 0 ? "text-green-600" : "text-muted-foreground")}>
+                        {row.diff > 0 ? "+" : ""}{row.diff.toFixed(2)}
+                      </td>
+                      <td className={cn("px-3 py-2 text-right tabular-nums", row.diff !== 0 ? (row.diff > 0 ? "text-red-600" : "text-green-600") : "text-muted-foreground")}>
+                        {row.pctChange > 0 ? "+" : ""}{row.pctChange.toFixed(1)}%
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {row.diff > 0 ? <TrendingUp className="w-4 h-4 text-red-500 inline" /> : row.diff < 0 ? <TrendingDown className="w-4 h-4 text-green-500 inline" /> : <Minus className="w-4 h-4 text-muted-foreground inline" />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : mode === "side-by-side" ? (
             <div className="h-full flex divide-x">
               <div className="flex-1 min-w-0 flex flex-col">
                 <SheetImage sheet={oldSheet} className="h-full" />

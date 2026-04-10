@@ -1065,4 +1065,33 @@ router.patch("/api/takeoff/sheets/:id/rotation", requireAuth, async (req: AuthRe
   }
 });
 
+router.patch("/api/takeoff/sheets/:id/assignment", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { assignedTo, completionStatus, targetMeasurements } = req.body;
+    const { takeoffSheets } = await import("@shared/schema");
+
+    const access = await verifySheetAccess(id, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
+    const updates: any = { updatedAt: new Date() };
+    if (assignedTo !== undefined) updates.assignedTo = assignedTo;
+    if (completionStatus !== undefined) updates.completionStatus = completionStatus;
+    if (targetMeasurements !== undefined) updates.targetMeasurements = targetMeasurements;
+
+    const [updated] = await db
+      .update(takeoffSheets)
+      .set(updates)
+      .where(eq(takeoffSheets.id, id))
+      .returning();
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

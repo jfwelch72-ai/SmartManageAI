@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ImageOff } from "lucide-react";
+import { Loader2, ImageOff, UserCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePdfThumbnails } from "@/hooks/use-pdf-thumbnails";
 import type { TakeoffSheet } from "@shared/schema";
@@ -11,6 +11,7 @@ interface PageThumbnailStripProps {
   selectedSheet: string | null;
   onSelectSheet: (id: string) => void;
   layout?: "horizontal" | "grid";
+  measurementCounts?: Map<string, number>;
 }
 
 export function PageThumbnailStrip({
@@ -18,6 +19,7 @@ export function PageThumbnailStrip({
   selectedSheet,
   onSelectSheet,
   layout = "grid",
+  measurementCounts,
 }: PageThumbnailStripProps) {
   const { thumbnails, failedSheets, isLoading, progress, observeRef } = usePdfThumbnails(sheets);
   const activeRef = useRef<HTMLButtonElement | null>(null);
@@ -126,7 +128,28 @@ export function PageThumbnailStrip({
                     Old
                   </Badge>
                 )}
+                {(sheet as any).completionStatus === "complete" && (
+                  <CheckCircle2 className="w-3 h-3 text-green-500" />
+                )}
+                {(sheet as any).assignedTo && (
+                  <UserCircle className="w-3 h-3 text-blue-400" />
+                )}
               </div>
+              {measurementCounts && (sheet as any).targetMeasurements && (sheet as any).targetMeasurements > 0 && (() => {
+                const count = measurementCounts.get(sheet.id) || 0;
+                const target = (sheet as any).targetMeasurements;
+                const pct = Math.min(100, Math.round((count / target) * 100));
+                return (
+                  <div className="w-full px-1 pb-0.5">
+                    <div className="h-0.5 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all", pct >= 100 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-blue-500")}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </button>
         );

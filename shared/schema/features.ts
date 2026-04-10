@@ -344,6 +344,9 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   supersededById: varchar("superseded_by_id"),
   rotation: integer("rotation").notNull().default(0),
   scaleLabel: text("scale_label"),
+  assignedTo: varchar("assigned_to"),
+  completionStatus: text("completion_status").notNull().default("not_started"),
+  targetMeasurements: integer("target_measurements"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

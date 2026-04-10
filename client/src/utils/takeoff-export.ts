@@ -290,6 +290,133 @@ function buildByCostCodeSheet(
   return ws;
 }
 
+export interface QuantityDeltaOptions {
+  projectName: string;
+  oldMeasurements: TakeoffMeasurement[];
+  newMeasurements: TakeoffMeasurement[];
+  sheets: TakeoffSheet[];
+  categories: QuantityCategory[];
+  oldRevision: string;
+  newRevision: string;
+}
+
+export function generateQuantityDeltaReport(options: QuantityDeltaOptions): void {
+  const { projectName, oldMeasurements, newMeasurements, sheets, categories, oldRevision, newRevision } = options;
+  const wb = XLSX.utils.book_new();
+
+  const catMap = new Map<string, { name: string; oldQty: number; newQty: number; unit: string; diff: number; pctChange: number }>();
+
+  const aggregateByCategory = (measurements: TakeoffMeasurement[], target: "old" | "new") => {
+    measurements.forEach(m => {
+      const catId = m.categoryId || "__uncategorized__";
+      const catName = getCategoryName(m.categoryId, categories);
+      const qty = getQuantity(m);
+      const unit = getUnit(m.type);
+      if (!catMap.has(catId)) {
+        catMap.set(catId, { name: catName, oldQty: 0, newQty: 0, unit, diff: 0, pctChange: 0 });
+      }
+      const entry = catMap.get(catId)!;
+      if (target === "old") entry.oldQty += qty;
+      else entry.newQty += qty;
+    });
+  };
+
+  aggregateByCategory(oldMeasurements, "old");
+  aggregateByCategory(newMeasurements, "new");
+
+  catMap.forEach(entry => {
+    entry.diff = entry.newQty - entry.oldQty;
+    entry.pctChange = entry.oldQty > 0 ? (entry.diff / entry.oldQty) * 100 : (entry.newQty > 0 ? 100 : 0);
+  });
+
+  const headers = ["Category", "Unit", `${oldRevision} Qty`, `${newRevision} Qty`, "Difference", "% Change", "Status"];
+  const rows: any[][] = [headers];
+
+  Array.from(catMap.values())
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+    .forEach(entry => {
+      const status = entry.diff > 0 ? "INCREASE" : entry.diff < 0 ? "DECREASE" : "NO CHANGE";
+      rows.push([
+        entry.name, entry.unit,
+        Number(entry.oldQty.toFixed(2)), Number(entry.newQty.toFixed(2)),
+        Number(entry.diff.toFixed(2)), Number(entry.pctChange.toFixed(1)),
+        status,
+      ]);
+    });
+
+  const totals = Array.from(catMap.values()).reduce((acc, e) => ({
+    old: acc.old + e.oldQty, new: acc.new + e.newQty, diff: acc.diff + e.diff,
+  }), { old: 0, new: 0, diff: 0 });
+
+  rows.push([]);
+  rows.push(["TOTAL", "", Number(totals.old.toFixed(2)), Number(totals.new.toFixed(2)), Number(totals.diff.toFixed(2)), "", ""]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  styleHeaderRow(ws, headers.length);
+  autoFitColumns(ws);
+  XLSX.utils.book_append_sheet(wb, ws, "Quantity Delta");
+
+  const date = new Date().toISOString().split("T")[0];
+  const safeName = (projectName || "Takeoff").replace(/[^a-zA-Z0-9 _-]/g, "");
+  XLSX.writeFile(wb, `${safeName} - Quantity Delta - ${oldRevision} vs ${newRevision} - ${date}.xlsx`);
+}
+
+export interface BidPackageExportOptions {
+  projectName: string;
+  measurements: TakeoffMeasurement[];
+  sheets: TakeoffSheet[];
+  categories: QuantityCategory[];
+  tradeScope: string;
+}
+
+export function generateBidPackageExport(options: BidPackageExportOptions): void {
+  const { projectName, measurements, sheets, categories, tradeScope } = options;
+  const wb = XLSX.utils.book_new();
+
+  const headers = ["Item #", "Description", "Sheet", "Quantity", "Unit", "Unit Price", "Total"];
+  const rows: any[][] = [headers];
+
+  const grouped = new Map<string, TakeoffMeasurement[]>();
+  measurements.forEach(m => {
+    const catName = getCategoryName(m.categoryId, categories);
+    if (!grouped.has(catName)) grouped.set(catName, []);
+    grouped.get(catName)!.push(m);
+  });
+
+  let itemNum = 1;
+  grouped.forEach((items, catName) => {
+    rows.push([`--- ${catName} ---`, "", "", "", "", "", ""]);
+    items.forEach(m => {
+      const qty = getQuantity(m);
+      const unit = getUnit(m.type);
+      const sheetName = getSheetName(m.sheetId, sheets);
+      rows.push([itemNum++, m.label || catName, sheetName, Number(qty.toFixed(2)), unit, "", ""]);
+    });
+    const catTotal = items.reduce((sum, m) => sum + getQuantity(m), 0);
+    rows.push(["", "Subtotal", "", Number(catTotal.toFixed(2)), "", "", ""]);
+    rows.push([]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  styleHeaderRow(ws, headers.length);
+  autoFitColumns(ws);
+  XLSX.utils.book_append_sheet(wb, ws, "Bid Package");
+
+  const infoRows = [
+    ["Project", projectName],
+    ["Trade/Scope", tradeScope],
+    ["Date", new Date().toLocaleDateString()],
+    ["Total Items", measurements.length],
+  ];
+  const infoWs = XLSX.utils.aoa_to_sheet(infoRows);
+  autoFitColumns(infoWs);
+  XLSX.utils.book_append_sheet(wb, infoWs, "Project Info");
+
+  const date = new Date().toISOString().split("T")[0];
+  const safeName = (projectName || "Takeoff").replace(/[^a-zA-Z0-9 _-]/g, "");
+  XLSX.writeFile(wb, `${safeName} - Bid Package - ${tradeScope} - ${date}.xlsx`);
+}
+
 export function generateTakeoffExcel(options: TakeoffExportOptions): void {
   const { projectName, measurements, sheets, categories, hiddenCategoryIds } = options;
 

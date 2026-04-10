@@ -130,6 +130,8 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const [orthoLock, setOrthoLock] = useState(false);
   const [currentSnap, setCurrentSnap] = useState<SnapResult | null>(null);
   const [cursorPosition, setCursorPosition] = useState<Point | null>(null);
+  const [runningMeasurement, setRunningMeasurement] = useState<{ value: number; unit: string; segments?: number } | null>(null);
+  const [selectedMeasurementIds, setSelectedMeasurementIds] = useState<Set<string>>(new Set());
   const shiftHeldRef = useRef(false);
   const lastInputTypeRef = useRef<"mouse" | "touch" | null>(null);
   const lastInputTimeRef = useRef<number>(0);
@@ -331,6 +333,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       if (e.target === stage) {
         setSelectedMeasurementId(null);
         setSelectedSegmentIndex(null);
+        setSelectedMeasurementIds(new Set());
       }
       return;
     }
@@ -380,9 +383,9 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           sheetId: selectedSheet, type: "LINEAR", points: newPoints,
           label: `Line ${measurements.length + 1}`, categoryId: selectedCategoryId,
         });
-        setIsDrawing(false);
-        setDrawingPoints([]);
-        toast({ title: "Measurement Created", description: `${lengthFt.toFixed(2)} LF` });
+        setDrawingPoints([point]);
+        setRunningMeasurement(null);
+        toast({ title: "Measurement Created", description: `${lengthFt.toFixed(2)} LF — click next point or Esc to stop` });
       }
     } else if (activeTool === "linear_with_drop" || activeTool === "pitched_linear") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
@@ -633,7 +636,33 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     } else {
       setCurrentSnap(null);
     }
-  }, [snapEnabled, snapTargets, stageScale, orthoLock, drawingPoints, sheetRotation, imageWidth, imageHeight]);
+
+    if (isDrawing && drawingPoints.length > 0 && currentSheet?.scalePxPerFoot) {
+      const scale = currentSheet.scalePxPerFoot;
+      const allPts = [...drawingPoints, pt];
+      if (activeTool === "linear" || activeTool === "linear_with_drop" || activeTool === "pitched_linear") {
+        const len = computeDistanceInFeet(allPts, scale);
+        setRunningMeasurement({ value: len, unit: "LF" });
+      } else if (activeTool === "segment") {
+        let total = 0;
+        for (let i = 0; i < allPts.length - 1; i++) {
+          total += computeDistanceInFeet([allPts[i], allPts[i + 1]], scale);
+        }
+        setRunningMeasurement({ value: total, unit: "LF", segments: allPts.length - 1 });
+      } else if (activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") {
+        if (allPts.length >= 3) {
+          const area = computePolygonAreaInFt2(allPts, scale);
+          const perim = computePolygonPerimeterInFt(allPts, scale);
+          setRunningMeasurement({ value: area, unit: "SF", segments: perim });
+        } else {
+          const len = computeDistanceInFeet(allPts, scale);
+          setRunningMeasurement({ value: len, unit: "LF" });
+        }
+      }
+    } else if (!isDrawing && runningMeasurement) {
+      setRunningMeasurement(null);
+    }
+  }, [snapEnabled, snapTargets, stageScale, orthoLock, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
 
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault();
@@ -806,7 +835,23 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       if (e.key === "Enter") {
         if (activeTool === "segment" && drawingPoints.length >= 2) completeSegment();
         else if (drawingPoints.length >= 3) completePolygon();
-      } else if (e.key === "Escape") { setIsDrawing(false); setDrawingPoints([]); toast({ title: "Drawing Cancelled" }); }
+      } else if (e.key === "Escape") {
+        setIsDrawing(false);
+        setDrawingPoints([]);
+        setRunningMeasurement(null);
+        toast({ title: "Drawing Cancelled" });
+      } else if (e.key === "Backspace" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        if (drawingPoints.length > 1) {
+          setDrawingPoints(drawingPoints.slice(0, -1));
+          toast({ title: "Point Removed", description: `${drawingPoints.length - 1} point(s) remaining` });
+        } else if (drawingPoints.length === 1) {
+          setIsDrawing(false);
+          setDrawingPoints([]);
+          setRunningMeasurement(null);
+          toast({ title: "Drawing Cancelled" });
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -895,7 +940,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
       if (key === 'o' && !event.ctrlKey && !event.metaKey && canUseToolShortcuts) { event.preventDefault(); setOrthoLock(!orthoLock); }
       if (key === 'm' && !event.ctrlKey && !event.metaKey && canUseToolShortcuts) { event.preventDefault(); setSnapEnabled(!snapEnabled); }
-      if ((key === 'delete' || key === 'backspace') && !event.ctrlKey && !event.metaKey && canUseNavigationShortcuts && selectedMeasurementId && deleteMeasurementMutation) {
+      if ((key === 'delete' || key === 'backspace') && !event.ctrlKey && !event.metaKey && canUseNavigationShortcuts && !isDrawing && selectedMeasurementId && deleteMeasurementMutation) {
         event.preventDefault();
         const selM = measurements.find(mm => mm.id === selectedMeasurementId);
         if (selM) deleteMeasurementMutation.mutate(selM);
@@ -908,10 +953,53 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       if (key === '-' && !event.ctrlKey && !event.metaKey && !event.shiftKey && canUseNavigationShortcuts) { event.preventDefault(); setStageScale((prev: number) => Math.max(prev / 1.2, 0.1)); }
       if ((event.ctrlKey || event.metaKey) && key === 'r' && !event.shiftKey && canUseNavigationShortcuts) { event.preventDefault(); onRotateCW?.(); }
       if ((event.ctrlKey || event.metaKey) && key === 'r' && event.shiftKey && canUseNavigationShortcuts) { event.preventDefault(); onRotateCCW?.(); }
+
+      if (key === 'tab' && canUseNavigationShortcuts && !isDrawing && measurements.length > 0) {
+        event.preventDefault();
+        const currentIdx = selectedMeasurementId ? measurements.findIndex(m => m.id === selectedMeasurementId) : -1;
+        const nextIdx = event.shiftKey
+          ? (currentIdx <= 0 ? measurements.length - 1 : currentIdx - 1)
+          : (currentIdx >= measurements.length - 1 ? 0 : currentIdx + 1);
+        setSelectedMeasurementId(measurements[nextIdx].id);
+        setSelectedMeasurementIds(new Set());
+      }
+
+      if ((event.ctrlKey || event.metaKey) && key === 'd' && canUseNavigationShortcuts && !isDrawing && selectedMeasurementId && createMeasurementMutation) {
+        event.preventDefault();
+        const srcM = measurements.find(mm => mm.id === selectedMeasurementId);
+        if (srcM) {
+          const pts: Point[] = typeof srcM.points === "string" ? JSON.parse(srcM.points as string) : (srcM.points as Point[]);
+          const offset = 20;
+          const shiftedPts = pts.map(p => ({ x: p.x + offset, y: p.y + offset }));
+          const dupData: any = {
+            sheetId: srcM.sheetId, type: srcM.type as any, points: shiftedPts,
+            label: `${srcM.label || "Measurement"} (copy)`, categoryId: srcM.categoryId || undefined,
+          };
+          if (srcM.depthFeet) dupData.depthFeet = srcM.depthFeet;
+          if (srcM.pitchRatio) dupData.pitchRatio = srcM.pitchRatio;
+          if (srcM.count) dupData.count = srcM.count;
+          if (srcM.color) dupData.color = srcM.color;
+          if (srcM.costCodeId) dupData.costCodeId = srcM.costCodeId;
+          if (srcM.unitCost) dupData.unitCost = srcM.unitCost;
+          if (srcM.computedLengthFt) dupData.computedLengthFt = srcM.computedLengthFt;
+          if (srcM.computedAreaFt2) dupData.computedAreaFt2 = srcM.computedAreaFt2;
+          if (srcM.computedVolumeCy) dupData.computedVolumeCy = srcM.computedVolumeCy;
+          createMeasurementMutation.mutate(dupData);
+          toast({ title: "Duplicated", description: `Measurement copied with offset` });
+        }
+      }
+
+      if ((event.ctrlKey || event.metaKey) && key === 'a' && canUseNavigationShortcuts && !isDrawing) {
+        event.preventDefault();
+        const allIds = new Set(measurements.map(m => m.id));
+        setSelectedMeasurementIds(allIds);
+        if (measurements.length > 0) setSelectedMeasurementId(measurements[0].id);
+        toast({ title: "All Selected", description: `${measurements.length} measurements selected` });
+      }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast, orthoLock, setOrthoLock, snapEnabled, setSnapEnabled, selectedMeasurementId, setSelectedMeasurementId, measurements, deleteMeasurementMutation, onZoomToFit, onRotateCW, onRotateCCW]);
+  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast, orthoLock, setOrthoLock, snapEnabled, setSnapEnabled, selectedMeasurementId, setSelectedMeasurementId, measurements, deleteMeasurementMutation, onZoomToFit, onRotateCW, onRotateCCW, createMeasurementMutation]);
 
   return {
     handleToolSelect,
@@ -938,6 +1026,20 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     currentSnap,
     cursorPosition,
     snapTargets,
+    runningMeasurement,
+    selectedMeasurementIds,
+    setSelectedMeasurementIds,
+    toggleMeasurementSelection: useCallback((id: string, addToSelection: boolean) => {
+      if (addToSelection) {
+        setSelectedMeasurementIds(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      }
+      setSelectedMeasurementId(id);
+    }, [setSelectedMeasurementId]),
   };
 }
 
