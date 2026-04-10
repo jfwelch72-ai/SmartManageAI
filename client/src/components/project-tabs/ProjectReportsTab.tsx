@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -10,10 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   FileText, Download, Trash2, Plus, Loader2, Calendar,
   ClipboardList, Clock, CheckCircle, XCircle, AlertTriangle,
-  BarChart3, Users, Shield, HardHat
+  BarChart3, Users, Shield, HardHat, Settings, Mail
 } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
 
@@ -35,17 +36,52 @@ interface ProjectReportsTabProps {
   projectId: string;
 }
 
+interface ReportSettings {
+  projectId: string;
+  autoWeekly: boolean;
+  autoMonthly: boolean;
+  emailRecipients: string[];
+}
+
 export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps) {
   const { toast } = useToast();
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [reportType, setReportType] = useState<"WEEKLY" | "MONTHLY">("WEEKLY");
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
+  const [recipientInput, setRecipientInput] = useState("");
+  const [emailRecipients, setEmailRecipients] = useState<string[]>([]);
 
   const { data: reports = [], isLoading } = useQuery<ProjectReport[]>({
     queryKey: ["/api/projects", projectId, "progress-reports"],
     enabled: !!projectId,
+  });
+
+  const { data: settings } = useQuery<ReportSettings>({
+    queryKey: ["/api/projects", projectId, "progress-reports", "settings"],
+    enabled: !!projectId,
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setEmailRecipients(settings.emailRecipients || []);
+    }
+  }, [settings]);
+
+  const settingsMutation = useMutation({
+    mutationFn: async (data: { autoWeekly: boolean; autoMonthly: boolean; emailRecipients: string[] }) => {
+      const res = await apiRequest("PUT", `/api/projects/${projectId}/progress-reports/settings`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "progress-reports", "settings"] });
+      toast({ title: "Settings Saved", description: "Report automation settings updated." });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to save settings." });
+    },
   });
 
   const generateMutation = useMutation({
@@ -143,10 +179,16 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
           <h2 className="text-lg font-semibold" data-testid="text-reports-heading">Progress Reports</h2>
           <p className="text-sm text-muted-foreground">Generate and view weekly and monthly progress reports</p>
         </div>
-        <Button onClick={handleOpenGenerate} data-testid="button-generate-report">
-          <Plus className="h-4 w-4 mr-2" />
-          Generate Report
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowSettings(!showSettings)} data-testid="button-report-settings">
+            <Settings className="h-4 w-4 mr-2" />
+            Settings
+          </Button>
+          <Button onClick={handleOpenGenerate} data-testid="button-generate-report">
+            <Plus className="h-4 w-4 mr-2" />
+            Generate Report
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -190,6 +232,126 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
           </CardContent>
         </Card>
       </div>
+
+      {showSettings && (
+        <Card data-testid="report-settings-panel">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Report Automation Settings
+            </CardTitle>
+            <CardDescription>Configure automatic report generation and email delivery</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Auto-generate Weekly Reports</Label>
+                <p className="text-xs text-muted-foreground">Automatically generate weekly reports every Monday at 7:00 AM</p>
+              </div>
+              <Switch
+                checked={settings?.autoWeekly ?? false}
+                onCheckedChange={(checked) => {
+                  settingsMutation.mutate({
+                    autoWeekly: checked,
+                    autoMonthly: settings?.autoMonthly ?? false,
+                    emailRecipients,
+                  });
+                }}
+                data-testid="switch-auto-weekly"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Auto-generate Monthly Reports</Label>
+                <p className="text-xs text-muted-foreground">Automatically generate monthly reports on the 1st of each month</p>
+              </div>
+              <Switch
+                checked={settings?.autoMonthly ?? false}
+                onCheckedChange={(checked) => {
+                  settingsMutation.mutate({
+                    autoWeekly: settings?.autoWeekly ?? false,
+                    autoMonthly: checked,
+                    emailRecipients,
+                  });
+                }}
+                data-testid="switch-auto-monthly"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Email Recipients
+              </Label>
+              <p className="text-xs text-muted-foreground">Add email addresses to receive auto-generated reports</p>
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={recipientInput}
+                  onChange={(e) => setRecipientInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && recipientInput.includes("@")) {
+                      e.preventDefault();
+                      const updated = [...emailRecipients, recipientInput.trim()];
+                      setEmailRecipients(updated);
+                      setRecipientInput("");
+                      settingsMutation.mutate({
+                        autoWeekly: settings?.autoWeekly ?? false,
+                        autoMonthly: settings?.autoMonthly ?? false,
+                        emailRecipients: updated,
+                      });
+                    }
+                  }}
+                  data-testid="input-recipient-email"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (recipientInput.includes("@")) {
+                      const updated = [...emailRecipients, recipientInput.trim()];
+                      setEmailRecipients(updated);
+                      setRecipientInput("");
+                      settingsMutation.mutate({
+                        autoWeekly: settings?.autoWeekly ?? false,
+                        autoMonthly: settings?.autoMonthly ?? false,
+                        emailRecipients: updated,
+                      });
+                    }
+                  }}
+                  data-testid="button-add-recipient"
+                >
+                  Add
+                </Button>
+              </div>
+              {emailRecipients.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {emailRecipients.map((email, i) => (
+                    <Badge key={i} variant="secondary" className="gap-1">
+                      {email}
+                      <button
+                        className="ml-1 hover:text-destructive"
+                        onClick={() => {
+                          const updated = emailRecipients.filter((_, idx) => idx !== i);
+                          setEmailRecipients(updated);
+                          settingsMutation.mutate({
+                            autoWeekly: settings?.autoWeekly ?? false,
+                            autoMonthly: settings?.autoMonthly ?? false,
+                            emailRecipients: updated,
+                          });
+                        }}
+                        data-testid={`button-remove-recipient-${i}`}
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <div className="space-y-3">
@@ -411,8 +573,10 @@ function ReportDataView({ data }: { data: any }) {
           label="Schedule"
           values={[
             { k: "Total Tasks", v: data.schedule?.totalTasks ?? 0 },
+            { k: "Started (Period)", v: data.schedule?.startedTasks ?? 0 },
             { k: "Completed", v: data.schedule?.completedTasks ?? 0 },
             { k: "In Progress", v: data.schedule?.inProgressTasks ?? 0 },
+            { k: "Delayed", v: data.schedule?.delayedTasks ?? 0 },
           ]}
         />
         <SummaryCard

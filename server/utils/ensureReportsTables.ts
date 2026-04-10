@@ -32,6 +32,15 @@ export async function ensureReportsTables(): Promise<void> {
       CREATE INDEX IF NOT EXISTS project_reports_project_id_idx ON project_reports(project_id);
       CREATE INDEX IF NOT EXISTS project_reports_report_type_idx ON project_reports(report_type);
       CREATE INDEX IF NOT EXISTS project_reports_date_range_idx ON project_reports(date_range_start, date_range_end);
+
+      CREATE TABLE IF NOT EXISTS project_report_settings (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id VARCHAR NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+        auto_weekly BOOLEAN NOT NULL DEFAULT false,
+        auto_monthly BOOLEAN NOT NULL DEFAULT false,
+        email_recipients TEXT[] DEFAULT '{}',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `);
     console.log("[migration] project_reports table ready");
   } finally {

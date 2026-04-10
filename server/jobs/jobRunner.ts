@@ -1227,9 +1227,13 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
     const { aggregateReportData } = await import("../projectReportRoutes");
     const { sendEmail } = await import("../services/emailService");
 
-    const activeProjects = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
-      .from(projects)
-      .where(eq(projects.status, "ACTIVE"));
+    const settingCol = type === "WEEKLY" ? "auto_weekly" : "auto_monthly";
+    const enabledResult = await db.execute(
+      sql`SELECT p.id, p.gc_organization_id FROM projects p
+          JOIN project_report_settings prs ON prs.project_id = p.id
+          WHERE p.status = 'ACTIVE' AND prs.${sql.raw(settingCol)} = true`
+    );
+    const activeProjects = (enabledResult.rows || []) as Array<{ id: string; gc_organization_id: string }>;
 
     if (activeProjects.length === 0) return;
 
@@ -1277,16 +1281,11 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
           generatedAt: now,
         }).returning();
 
-        const recipientReports = await db.select({ id: projectReports.id, emailRecipients: projectReports.emailRecipients })
-          .from(projectReports)
-          .where(and(
-            eq(projectReports.projectId, project.id),
-            isNotNull(projectReports.emailRecipients),
-          ))
-          .orderBy(desc(projectReports.createdAt))
-          .limit(1);
-
-        const lastRecipients = recipientReports[0]?.emailRecipients;
+        const settingsResult = await db.execute(
+          sql`SELECT email_recipients FROM project_report_settings WHERE project_id = ${project.id}`
+        );
+        const settingsRow = (settingsResult.rows || [])[0] as any;
+        const lastRecipients = settingsRow?.email_recipients;
         if (lastRecipients && Array.isArray(lastRecipients) && lastRecipients.length > 0) {
           try {
             const projectName = reportData.project?.name || "Project";

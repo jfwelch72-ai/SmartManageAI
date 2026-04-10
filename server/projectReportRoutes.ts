@@ -101,24 +101,28 @@ export async function aggregateReportData(projectId: string, startDate: string, 
   } catch {
   }
 
-  let scheduleSummary = { totalTasks: 0, completedTasks: 0, inProgressTasks: 0, delayedTasks: 0 };
+  let scheduleSummary = { totalTasks: 0, completedTasks: 0, inProgressTasks: 0, delayedTasks: 0, startedTasks: 0 };
   try {
     const schedResult = await pool.query(
       `SELECT 
         COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
-        COUNT(*) FILTER (WHERE status = 'IN_PROGRESS') as in_progress
+        COUNT(*) FILTER (WHERE pst.status = 'COMPLETED') as completed,
+        COUNT(*) FILTER (WHERE pst.status = 'IN_PROGRESS') as in_progress,
+        COUNT(*) FILTER (WHERE pst.status = 'IN_PROGRESS' AND pst.early_finish < $3) as delayed,
+        COUNT(*) FILTER (WHERE pst.actual_start >= $2 AND pst.actual_start <= $3) as started
        FROM project_schedule_tasks pst
        JOIN project_schedules ps ON pst.schedule_id = ps.id
-       WHERE ps.project_id = $1`,
-      [projectId]
+       WHERE ps.project_id = $1
+         AND (pst.early_start <= $3 OR pst.actual_start <= $3 OR pst.status IN ('IN_PROGRESS','COMPLETED'))`,
+      [projectId, startDate, endDate]
     );
     const r = schedResult.rows[0];
     scheduleSummary = {
       totalTasks: parseInt(r?.total || "0"),
       completedTasks: parseInt(r?.completed || "0"),
       inProgressTasks: parseInt(r?.in_progress || "0"),
-      delayedTasks: 0,
+      delayedTasks: parseInt(r?.delayed || "0"),
+      startedTasks: parseInt(r?.started || "0"),
     };
   } catch {
   }
@@ -296,8 +300,10 @@ export function generateReportPDF(reportData: any, branding?: OrganizationBrandi
   doc.fontSize(13).fillColor(primaryColor).text("Schedule Progress");
   doc.fontSize(10).fillColor("#374151");
   doc.text(`Total Tasks: ${p.schedule.totalTasks}`);
+  doc.text(`Started (Period): ${p.schedule.startedTasks || 0}`);
   doc.text(`Completed: ${p.schedule.completedTasks}`);
   doc.text(`In Progress: ${p.schedule.inProgressTasks}`);
+  doc.text(`Delayed: ${p.schedule.delayedTasks || 0}`);
   doc.moveDown(0.5);
 
   if (p.changeOrders.total > 0) {
@@ -383,6 +389,89 @@ router.get(
       res.json(reports);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch reports" });
+    }
+  }
+);
+
+router.get(
+  "/api/projects/:id/progress-reports/settings",
+  requireAuth,
+  requireRole(...MANAGEMENT_ROLES),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const orgId = await getProjectOrgId(projectId);
+      if (!orgId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      if (!verifyOrgAccess(req, res, orgId)) {
+        return;
+      }
+
+      const result = await pool.query(
+        `SELECT * FROM project_report_settings WHERE project_id = $1`,
+        [projectId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.json({ projectId, autoWeekly: false, autoMonthly: false, emailRecipients: [] });
+      }
+
+      const s = result.rows[0];
+      res.json({
+        projectId: s.project_id,
+        autoWeekly: s.auto_weekly,
+        autoMonthly: s.auto_monthly,
+        emailRecipients: s.email_recipients || [],
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch report settings" });
+    }
+  }
+);
+
+const reportSettingsSchema = z.object({
+  autoWeekly: z.boolean(),
+  autoMonthly: z.boolean(),
+  emailRecipients: z.array(z.string().email()).default([]),
+});
+
+router.put(
+  "/api/projects/:id/progress-reports/settings",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "HUSTLER"),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const projectId = req.params.id;
+      const orgId = await getProjectOrgId(projectId);
+      if (!orgId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      if (!verifyOrgAccess(req, res, orgId)) {
+        return;
+      }
+
+      const parsed = reportSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+
+      const { autoWeekly, autoMonthly, emailRecipients } = parsed.data;
+
+      await pool.query(
+        `INSERT INTO project_report_settings (project_id, auto_weekly, auto_monthly, email_recipients, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (project_id) DO UPDATE SET
+           auto_weekly = EXCLUDED.auto_weekly,
+           auto_monthly = EXCLUDED.auto_monthly,
+           email_recipients = EXCLUDED.email_recipients,
+           updated_at = NOW()`,
+        [projectId, autoWeekly, autoMonthly, emailRecipients]
+      );
+
+      res.json({ projectId, autoWeekly, autoMonthly, emailRecipients });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update report settings" });
     }
   }
 );
