@@ -52,10 +52,13 @@ function computeAiPosition(aiIdx: number, imageWidth: number) {
 }
 import { cn } from "@/lib/utils";
 import { onLibraryEvent } from "@/lib/libraryEvents";
-import { generateTakeoffExcel } from "@/utils/takeoff-export";
+import { generateTakeoffExcel, generateQuantityDeltaReport, generateBidPackageExport } from "@/utils/takeoff-export";
 import type { LibraryEvent } from "@/lib/libraryEvents";
 import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
-import { Users, Lock, Sparkles, DollarSign, Layers, Zap, TableProperties } from "lucide-react";
+import { useOfflineQueue } from "@/hooks/use-offline-queue";
+import { detectScaleBatch } from "@/lib/scaleDetection";
+import { Users, Lock, Sparkles, DollarSign, Layers, Zap, TableProperties, Printer } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -244,6 +247,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [overlayOpacity, setOverlayOpacity] = useState(50);
   const [showOverlaySlider, setShowOverlaySlider] = useState(false);
   const [activeCondition, setActiveCondition] = useState<TakeoffCondition | null>(null);
+  const [bidPackageDialogOpen, setBidPackageDialogOpen] = useState(false);
+  const [bidPackageTradeScope, setBidPackageTradeScope] = useState("");
+  const { isOffline, queueLength } = useOfflineQueue();
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -338,6 +344,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     measurementGroups, createGroupMutation, updateGroupMutation,
     deleteGroupMutation, toggleGroupVisibilityMutation,
     conditions, createConditionMutation, updateConditionMutation, deleteConditionMutation,
+    measurementCountsPerSheet,
   } = data;
 
   useEffect(() => {
@@ -991,6 +998,134 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     }
   };
 
+  const handleExportQuantityDelta = async () => {
+    try {
+      const isBid = context?.type === "bid";
+      const ctxId = isBid ? context.bidId : projectId;
+      const url = isBid
+        ? `/api/bids/${ctxId}/takeoff/all-measurements`
+        : `/api/projects/${ctxId}/takeoff/all-measurements`;
+      const res = await apiRequest("GET", url);
+      const allMeasurements = await res.json();
+
+      const activeSheets = sheets.filter((s: any) => s.isActive !== false);
+      const supersededSheets = sheets.filter((s: any) => s.isActive === false);
+
+      if (supersededSheets.length === 0) {
+        toast({ title: "No revisions found", description: "Quantity delta requires at least one superseded sheet revision", variant: "destructive" });
+        return;
+      }
+
+      const supersededIds = new Set(supersededSheets.map((s: any) => s.id));
+      const oldMeasurements = allMeasurements.filter((m: any) => supersededIds.has(m.sheetId));
+      const newMeasurements = allMeasurements.filter((m: any) => !supersededIds.has(m.sheetId));
+
+      generateQuantityDeltaReport({
+        projectName: projectCode || "Takeoff",
+        oldMeasurements,
+        newMeasurements,
+        sheets,
+        categories,
+        oldRevision: "Previous",
+        newRevision: "Current",
+      });
+      toast({ title: "Export complete", description: "Quantity delta report exported" });
+    } catch {
+      toast({ title: "Error", description: "Failed to generate quantity delta report", variant: "destructive" });
+    }
+  };
+
+  const handleExportBidPackage = async () => {
+    setBidPackageDialogOpen(true);
+  };
+
+  const handleConfirmBidPackage = async () => {
+    try {
+      const isBid = context?.type === "bid";
+      const ctxId = isBid ? context.bidId : projectId;
+      const url = isBid
+        ? `/api/bids/${ctxId}/takeoff/all-measurements`
+        : `/api/projects/${ctxId}/takeoff/all-measurements`;
+      const res = await apiRequest("GET", url);
+      const allMeasurements = await res.json();
+
+      if (!allMeasurements || allMeasurements.length === 0) {
+        toast({ title: "No measurements", description: "There are no measurements to include in the bid package", variant: "destructive" });
+        return;
+      }
+
+      generateBidPackageExport({
+        projectName: projectCode || "Takeoff",
+        measurements: allMeasurements,
+        sheets,
+        categories,
+        tradeScope: bidPackageTradeScope || "General",
+      });
+      setBidPackageDialogOpen(false);
+      setBidPackageTradeScope("");
+      toast({ title: "Export complete", description: "Bid package exported" });
+    } catch {
+      toast({ title: "Error", description: "Failed to generate bid package export", variant: "destructive" });
+    }
+  };
+
+  const handlePrintSheet = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    try {
+      const dataUrl = stage.toDataURL({ pixelRatio: 2 });
+      const sheetName = currentSheet?.sheetName || "Takeoff Sheet";
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        toast({ title: "Error", description: "Please allow popups to print", variant: "destructive" });
+        return;
+      }
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${sheetName} - Print</title>
+            <style>
+              @page { size: landscape; margin: 0.5in; }
+              body { margin: 0; display: flex; flex-direction: column; align-items: center; font-family: system-ui, sans-serif; }
+              .title-block { width: 100%; padding: 12px 0; border-bottom: 2px solid #333; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline; }
+              .title-block h1 { font-size: 16px; margin: 0; }
+              .title-block .meta { font-size: 11px; color: #666; }
+              img { max-width: 100%; max-height: calc(100vh - 100px); object-fit: contain; }
+              .legend { width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1px solid #ccc; display: flex; flex-wrap: wrap; gap: 12px; font-size: 10px; }
+              .legend-item { display: flex; align-items: center; gap: 4px; }
+              .legend-swatch { width: 12px; height: 12px; border-radius: 2px; border: 1px solid #999; }
+              @media print { .no-print { display: none; } }
+            </style>
+          </head>
+          <body>
+            <div class="title-block">
+              <h1>${sheetName}</h1>
+              <div class="meta">
+                <span>${projectCode || ""}</span>
+                &nbsp;|&nbsp;
+                <span>${new Date().toLocaleDateString()}</span>
+                &nbsp;|&nbsp;
+                <span>${measurements.length} measurement${measurements.length !== 1 ? "s" : ""}</span>
+              </div>
+            </div>
+            <img src="${dataUrl}" alt="${sheetName}" />
+            <div class="legend">
+              ${categories
+                .filter(c => measurements.some(m => m.categoryId === c.id))
+                .map(c => `<div class="legend-item"><div class="legend-swatch" style="background:${c.color || '#3b82f6'}"></div><span>${c.name}</span></div>`)
+                .join("")}
+            </div>
+            <script>window.onload=function(){window.print();}<\/script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch {
+      toast({ title: "Error", description: "Failed to generate print view", variant: "destructive" });
+    }
+  }, [currentSheet, measurements, categories, projectCode, toast]);
+
   const handleSaveCategory = () => {
     if (!categoryName.trim()) {
       toast({ title: "Error", description: "Category name is required", variant: "destructive" });
@@ -1084,20 +1219,38 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
         if (!currentSheet.scalePxPerFoot) {
           try {
-            const pdf = pdfDocCacheRef.current.get(pdfUrl);
-            if (pdf) {
-              const page = await pdf.getPage((currentSheet.sheetIndex || 0) + 1);
-              const textContent = await page.getTextContent();
-              const textItems = textContent.items
-                .filter((item: any) => item.str && item.str.trim())
-                .map((item: any) => item.str as string);
-              const detected = detectScaleFromText(textItems);
-              if (detected) {
-                if (detected.confidence === "high") {
-                  setDetectedScale(detected);
-                } else {
-                  setDetectedScale(detected);
+            const uncalibratedSheets = sheets.filter((s: any) => !s.scalePxPerFoot && s.imageUrl);
+            const batchInput: Array<{ id: string; textItems: string[] }> = [];
+
+            for (const s of uncalibratedSheets) {
+              try {
+                const sPdfUrl = `/api/takeoff/sheets/${s.id}/pdf`;
+                let sPdf = pdfDocCacheRef.current.get(sPdfUrl);
+                if (!sPdf) {
+                  const loadTask = pdfjsLib.getDocument({ url: sPdfUrl, withCredentials: true });
+                  sPdf = await loadTask.promise;
+                  if (pdfDocCacheRef.current.size >= 20) {
+                    const oldest = pdfDocCacheRef.current.keys().next().value;
+                    if (oldest) pdfDocCacheRef.current.delete(oldest);
+                  }
+                  pdfDocCacheRef.current.set(sPdfUrl, sPdf);
                 }
+                const page = await sPdf.getPage((s.sheetIndex || 0) + 1);
+                const textContent = await page.getTextContent();
+                const textItems = textContent.items
+                  .filter((item: any) => item.str && item.str.trim())
+                  .map((item: any) => item.str as string);
+                batchInput.push({ id: s.id, textItems });
+              } catch {
+                // skip sheets that fail to load
+              }
+            }
+
+            if (batchInput.length > 0) {
+              const batchResults = detectScaleBatch(batchInput);
+              const currentResult = batchResults.get(currentSheet.id);
+              if (currentResult) {
+                setDetectedScale(currentResult);
               }
             }
           } catch (textErr) {
@@ -1258,6 +1411,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setMarkupThickness={setMarkupThickness}
         onExportCurrentSheet={handleExportCurrentSheet}
         onExportAllSheets={handleExportAllSheets}
+        onExportQuantityDelta={handleExportQuantityDelta}
+        onExportBidPackage={handleExportBidPackage}
+        onPrintSheet={handlePrintSheet}
+        isOffline={isOffline}
         onShowShortcuts={() => setShortcutsDialogOpen(true)}
         sheetRotation={sheetRotation}
         onRotateCW={() => handleRotate(90)}
@@ -1710,6 +1867,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               selectedSheet={selectedSheet}
               onSelectSheet={setSelectedSheet}
               layout="horizontal"
+              measurementCounts={measurementCountsPerSheet}
             />
           </div>
         )}
@@ -4080,6 +4238,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         }}
         onExportCurrentSheet={handleExportCurrentSheet}
         onExportAllSheets={handleExportAllSheets}
+        onExportQuantityDelta={handleExportQuantityDelta}
+        onExportBidPackage={handleExportBidPackage}
+        onPrintSheet={handlePrintSheet}
         onZoomToMeasurement={handleZoomToMeasurement}
         onZoomToFitMeasurement={handleZoomToFitMeasurement}
         hideAiMeasurements={hideAiMeasurements}
@@ -4284,6 +4445,33 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         }}
         currentScalePxPerFoot={currentSheet?.scalePxPerFoot ?? null}
       />
+
+      <Dialog open={bidPackageDialogOpen} onOpenChange={setBidPackageDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Export Bid Package</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <label className="text-sm font-medium">Trade / Scope</label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border rounded-md text-sm bg-background"
+              placeholder="e.g. Electrical, Plumbing, General"
+              value={bidPackageTradeScope}
+              onChange={(e) => setBidPackageTradeScope(e.target.value)}
+              data-testid="input-bid-package-trade"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBidPackageDialogOpen(false)} data-testid="button-cancel-bid-package">
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmBidPackage} data-testid="button-confirm-bid-package">
+              Export
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

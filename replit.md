@@ -19,7 +19,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Multi-Tenancy & Customization**: AI-driven onboarding and dynamic features for specific trade types.
 *   **AI Integration**: AI for generation, analysis, scheduling, and automation across modules, governed by an AI Governance System.
 *   **Project Lifecycle Management**: Comprehensive workflows including Bids, Projects, Estimates, Procurement, Change Orders, Time & Material Tracking.
-*   **Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, material calculation, hierarchical line item builder, 6-step bid workflow, full takeoff workspace with advanced features like Assembly Expansion, Polygon Deductions (draw-on-canvas deduct tool), auto-perimeter calculation for area/volume polygons, measurement value labels on canvas (toggleable), Typical Layout tool (save/stamp repeating room units), Column Gridline overlay with alphanumeric labels, and STACK-competitive drawing enhancements: undo-last-point (Backspace during draw), running measurement display (live LF/SF + cost near cursor), continuous linear mode (auto-chain lines), intersection snap (cross-measurement snap targets), batch operations (Ctrl+A select all, batch delete), Ctrl+D duplicate measurement, Tab/Shift+Tab measurement cycling, quantity delta reports, bid package export, side-by-side quantity comparison table, sheet assignment/completion tracking, offline measurement queue, LRU page image cache (50 pages) with PDF document cache (20 docs) and adjacent-page pre-rendering, batch scale auto-detection across sheets with expanded architectural/civil patterns, revision overlay with swipe curtain and diff blend modes, and mobile touch UX with gesture guide overlay, floating action button tool picker, and haptic feedback.
+*   **Estimating Engine**: Advanced takeoff workspace with interactive drawing tools, material calculation, hierarchical line item builder, and a 6-step bid workflow. Includes competitive drawing enhancements like undo-last-point, running measurement display, continuous linear mode, intersection snap, batch operations, and quantity delta reports. Features real-time multi-user collaboration via WebSockets and full takeoff versioning.
 *   **CRM System**: Manages organizational entities, vendor pricing, rental equipment, insurance/compliance tracking, and a 7-stage Sales Pipeline.
 *   **Workforce Management**: Native time-clock (GPS/geofence), shift management with cost code tracking, labor hour tracking, Manager Approval Workflow, configurable overtime rules engine, KPI dashboards, and Certified Payroll Reports.
 *   **Compliance & Audit**: Audit logging, document management (versioning, expiration), Approval Workflows Framework, and Addenda Tracking.
@@ -27,17 +27,13 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Subcontract Management**: Full subcontract lifecycle with SOV scope alignment, AIA G702/G703-style pay applications, and retention tracking.
 *   **Procurement Module**: Full procure-to-pay lifecycle with automated 3-Way Match and RBAC approvals.
 *   **Communication & Collaboration**: Unified Messaging System with Video Calling, Client Portal Chat, Subcontractor Portal System, and unified AI chat.
-*   **Unified External Portal**: Single entry point (`/portal`) for Client, Subcontractor, and Vendor access with role-based auto-detection. Vendor portal includes Dashboard, Analytics, Pricing, Clients, Messages, Documents, Compliance (COI/W-9/License), Purchase Orders, Schedule, and Bid Inbox.
-*   **Takeoff Cross-Module Connections**: Convert takeoff measurements to purchase requests, auto-detect version deltas for PCOs, generate SOV line items, and provide cost lifecycle summaries.
-*   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets.
-*   **Takeoff Data Engine & Versioning**: Rich linked data objects on measurements with full takeoff versioning and comparison views.
-*   **Takeoff Estimating Enhancements**: Assembly takeoffs (multi-component conditions with `assemblyComponents` JSON), formula engine (`formula` field on conditions with `evaluateFormula` utility), floating live cost summary panel (`LiveCostPanel.tsx`), enhanced condition library (search/favorites/CSV import-export), inline overlay transparency slider, and saved scale templates (`savedScaleTemplates` table) with per-sheet `scaleLabel` auto-remember.
+*   **Unified External Portal**: Single entry point (`/portal`) for Client, Subcontractor, and Vendor access with role-based auto-detection.
 *   **Website Builder System**: White-label website management with AI Website Wizard, page builder, publishing controls, and SEO support.
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, and feature flags.
-*   **Integration Gating**: Feature flags (`VIDEO_CALLS`, `SMS_NOTIFICATIONS`) gate unconfigured third-party services. `/api/integration-status` endpoint reports configuration state. Video call button disables when LiveKit is not configured. SMS silently skips when Twilio is not configured.
-*   **Structured Error Logging**: `error_logs` table captures production errors with stack trace, user context, route, and request ID. Global error handler and process-level uncaught exception/rejection handlers persist errors to the database.
-*   **Consolidated Startup Migrations**: 15 idempotent schema migration checks are managed by a single runner (`server/utils/runStartupMigrations.ts`). Individual migration files remain in `server/utils/ensure*.ts`. The runner suppresses "skipped" log noise and outputs a single summary line at startup (e.g., `[migrations] 15 checks complete in 400ms — 0 applied, 15 up-to-date`). Only applied migrations are logged individually.
-*   **Integration Hub**: Provider-agnostic framework for centralized connection management. Includes STACK CT integration for syncing projects, plans/documents, and takeoff/estimate data with STACK Construction Technologies.
+*   **Integration Gating**: Feature flags gate unconfigured third-party services, providing graceful degradation (e.g., video call button disables if LiveKit is not configured).
+*   **Structured Error Logging**: Captures production errors with stack trace, user context, route, and request ID to a dedicated table.
+*   **Consolidated Startup Migrations**: Idempotent schema migration checks managed by a single runner, logging only applied migrations.
+*   **Integration Hub**: Provider-agnostic framework for centralized connection management, including STACK CT integration.
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, history, and comparisons.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs.
 *   **Auto Change Orders from Takeoff Deltas**: Automatic generation of draft PCOs from detected quantity/cost deltas in superseded takeoff sheets.
@@ -45,12 +41,12 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Notification Delivery Framework**: Multi-channel notification service (email, web push, SMS, Teams, Slack) with per-user preferences.
 *   **Background Jobs Framework**: node-cron based job runner with an outbox dispatcher.
 *   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support.
-*   **Account Settings Hub**: Unified settings page (`/settings`) merging Profile and Settings, with URL-based sidebar routing for various sections.
+*   **Account Settings Hub**: Unified settings page (`/settings`) with URL-based sidebar routing.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
 *   **Platform Monitoring & Observability**: Super Admin dashboard with API usage tracking, AI usage analytics, object storage usage, platform integration health checks, and cross-organization audit log viewer.
-*   **Feature Permissions System**: Granular per-user feature access control via boolean flags and role-based defaults for 8 consolidated roles. Includes Permission Presets (30+ built-in across all roles), financial access controls, "Reset to Role Defaults" button, audit logging for all permission changes/preset applications, and Custom Role Labels (per-user display titles that override default role names in the UI).
-*   **Peer Coworker Ratings**: Anonymous peer rating system for field workers with configurable anonymity and scope modes.
-*   **RBAC (8-Role System)**: Consolidated role system including SUPER_ADMIN, ADMIN, HUSTLER, MANAGER, SUPERINTENDENT, ESTIMATOR, FIELD_WORKER, VENDOR with defined hierarchies and alternate labels.
+*   **Feature Permissions System**: Granular per-user feature access control via boolean flags and role-based defaults for 8 consolidated roles, including Permission Presets and audit logging.
+*   **Peer Coworker Ratings**: Anonymous peer rating system for field workers.
+*   **RBAC (8-Role System)**: Consolidated role system with defined hierarchies and alternate labels.
 *   **Role-Based Sidebar Navigation**: Workflow-based sidebar grouping with unique group names and item assignments per role.
 *   **Social Media Management System**: Content management with scheduling, AI generation, multi-platform support, and approval workflow.
 *   **BIM Quantity Extraction**: Client-side IFC file parsing for building element quantity extraction.
@@ -69,33 +65,29 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Risk Management Module**: Full risk register per project with category/probability/impact scoring, risk matrix heat map visualization, lifecycle tracking, and AI-powered risk suggestions.
 *   **Location-Based Takeoff & Field Integration**: Hierarchical location system for organizing takeoff measurements, field takeoff tab for mobile progress tracking, and location cost breakdown.
 *   **BIM Viewer**: IFC file upload and 3D viewer with element tree, properties, measurement tools, and split-view.
-*   **LiDAR Scanner Module**: Upload, view, and analyze 3D point cloud scans (LAS/LAZ/PLY, E57 requires conversion) with a Three.js-based viewer, measurement tools, and BIM/IFC overlay.
+*   **LiDAR Scanner Module**: Upload, view, and analyze 3D point cloud scans with a Three.js-based viewer, measurement tools, and BIM/IFC overlay.
 *   **Contractor Marketplace Directory**: Searchable public directory of organizations.
 *   **Leave Management Module**: Employee self-service and manager/HR views for leave management.
 *   **No-Code Workflow Builder**: Visual pipeline editor for custom approval chains, status pipelines, and notification triggers.
-*   **Notion-Style Project Notes**: Block-based note editor in project detail with page management, block editor (headings, lists, to-do, dividers), and auto-save.
+*   **Notion-Style Project Notes**: Block-based note editor in project detail with page management, block editor, and auto-save.
+*   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination for list endpoints, and N+1 query prevention strategies.
 
 ## External Dependencies
-*   **PostgreSQL (Neon)**
-*   **Replit Object Storage (Google Cloud Storage backend)**
-*   **OpenAI GPT-4 / GPT-4o**
-*   **Resend**
-*   **JWT**
-*   **Bcrypt**
-*   **Uppy**
-*   **node-cron**
-*   **react-konva, konva, pdfjs-dist, xlsx**
-*   **three, web-ifc, laz-perf**
-*   **Recharts**
-*   **react-grid-layout**
-*   **QuickBooks Online**
-*   **STACK CT (Construction Technologies)**
-*   **Google Workspace (Gmail, Calendar)**
-*   **Microsoft 365 (Mail, Calendar)**
-*   **DocuSign**
-*   **@node-saml/node-saml**
-
-## Performance & Security Patterns
-*   **Rate Limiting**: 4-tier system in `server/rateLimiter.ts`: `authLimiter` (15/15min), `sensitiveLimiter` (100/15min, user-keyed), `apiLimiter` (1000/15min, global), `exportLimiter` (20/15min, user-keyed for PDF/CSV exports). All AI analysis/generation endpoints use `sensitiveLimiter`. All export/PDF endpoints use `exportLimiter`.
-*   **Pagination**: List endpoints support opt-in pagination via `?page=N&limit=N` query params. When pagination params are provided, response is `{ data, total, page, limit, totalPages }`. Without params, returns plain array for backward compatibility. Applied to: equipment, warranty cases, KPI templates.
-*   **N+1 Query Prevention**: Workflow templates, library assemblies, and TM tickets use batch queries (IN clauses + Map-based assembly) instead of nested Promise.all loops. Vendor pricing matching uses batched updates (50 per batch).
+*   PostgreSQL (Neon)
+*   Replit Object Storage (Google Cloud Storage backend)
+*   OpenAI GPT-4 / GPT-4o
+*   Resend
+*   JWT
+*   Bcrypt
+*   Uppy
+*   node-cron
+*   react-konva, konva, pdfjs-dist, xlsx
+*   three, web-ifc, laz-perf
+*   Recharts
+*   react-grid-layout
+*   QuickBooks Online
+*   STACK CT (Construction Technologies)
+*   Google Workspace (Gmail, Calendar)
+*   Microsoft 365 (Mail, Calendar)
+*   DocuSign
+*   @node-saml/node-saml

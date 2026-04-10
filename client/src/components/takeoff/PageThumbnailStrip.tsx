@@ -135,20 +135,30 @@ export function PageThumbnailStrip({
                   <UserCircle className="w-3 h-3 text-blue-400" />
                 )}
               </div>
-              {measurementCounts && (sheet as any).targetMeasurements && (sheet as any).targetMeasurements > 0 && (() => {
+              {measurementCounts && (() => {
                 const count = measurementCounts.get(sheet.id) || 0;
                 const target = (sheet as any).targetMeasurements;
-                const pct = Math.min(100, Math.round((count / target) * 100));
-                return (
-                  <div className="w-full px-1 pb-0.5">
-                    <div className="h-0.5 w-full bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={cn("h-full rounded-full transition-all", pct >= 100 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-blue-500")}
-                        style={{ width: `${pct}%` }}
-                      />
+                if (target && target > 0) {
+                  const pct = Math.min(100, Math.round((count / target) * 100));
+                  return (
+                    <div className="w-full px-1 pb-0.5">
+                      <div className="h-0.5 w-full bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full transition-all", pct >= 100 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-blue-500")}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
+                  );
+                }
+                if (count > 0) {
+                  return (
+                    <div className="w-full px-1 pb-0.5">
+                      <span className="text-[8px] text-muted-foreground">{count} meas.</span>
+                    </div>
+                  );
+                }
+                return null;
               })()}
             </div>
           </button>

@@ -7,8 +7,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Label } from "@/components/ui/label";
 import {
   ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle,
-  RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronDown, MousePointer2, Hand, Ruler, Tag, LayoutGrid
+  RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronDown, MousePointer2, Hand, Ruler, Tag, LayoutGrid,
+  Printer, WifiOff, BarChart3, FileSpreadsheet
 } from "lucide-react";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
 import type { TakeoffMeasurement } from "@shared/schema";
 import type { useTakeoffHistory } from "@/hooks/use-takeoff-history";
@@ -44,6 +46,10 @@ interface TakeoffToolbarProps {
   setMarkupThickness: (v: number) => void;
   onExportCurrentSheet?: () => void;
   onExportAllSheets?: () => void;
+  onExportQuantityDelta?: () => void;
+  onExportBidPackage?: () => void;
+  onPrintSheet?: () => void;
+  isOffline?: boolean;
   onShowShortcuts?: () => void;
   sheetRotation: number;
   onRotateCW: () => void;
@@ -68,6 +74,9 @@ export function TakeoffToolbar({
   isDrawing, drawingPoints, isMobile,
   markupColor, setMarkupColor, markupThickness, setMarkupThickness,
   onExportCurrentSheet, onExportAllSheets,
+  onExportQuantityDelta, onExportBidPackage,
+  onPrintSheet,
+  isOffline,
   onShowShortcuts,
   sheetRotation, onRotateCW, onRotateCCW, onRotate180,
   gridEnabled, onToggleGrid, isCalibrated,
@@ -352,10 +361,35 @@ export function TakeoffToolbar({
               </Tooltip>
               <DropdownMenuContent side="right" className="z-[100]">
                 {onExportCurrentSheet && (
-                  <DropdownMenuItem onClick={onExportCurrentSheet} disabled={measurements.length === 0} data-testid="button-export-current-sheet">Current Sheet</DropdownMenuItem>
+                  <DropdownMenuItem onClick={onExportCurrentSheet} disabled={measurements.length === 0} data-testid="button-export-current-sheet">
+                    <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />Current Sheet
+                  </DropdownMenuItem>
                 )}
                 {onExportAllSheets && (
-                  <DropdownMenuItem onClick={onExportAllSheets} data-testid="button-export-all-sheets">All Sheets</DropdownMenuItem>
+                  <DropdownMenuItem onClick={onExportAllSheets} data-testid="button-export-all-sheets">
+                    <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />All Sheets
+                  </DropdownMenuItem>
+                )}
+                {onExportQuantityDelta && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onExportQuantityDelta} data-testid="button-export-qty-delta">
+                      <BarChart3 className="w-3.5 h-3.5 mr-2" />Quantity Delta Report
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {onExportBidPackage && (
+                  <DropdownMenuItem onClick={onExportBidPackage} data-testid="button-export-bid-package">
+                    <Download className="w-3.5 h-3.5 mr-2" />Bid Package Export
+                  </DropdownMenuItem>
+                )}
+                {onPrintSheet && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onPrintSheet} disabled={measurements.length === 0} data-testid="button-print-sheet">
+                      <Printer className="w-3.5 h-3.5 mr-2" />Print Sheet
+                    </DropdownMenuItem>
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -363,6 +397,16 @@ export function TakeoffToolbar({
         </div>
 
         <div className="mt-auto pt-1">
+          {isOffline && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center justify-center h-7 w-7 rounded text-yellow-600 dark:text-yellow-400" data-testid="indicator-offline-desktop">
+                  <WifiOff className="w-3.5 h-3.5" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right">Offline — changes queued</TooltipContent>
+            </Tooltip>
+          )}
           <TinyBtn icon={HelpCircle} label="Shortcuts (?)" onClick={() => onShowShortcuts?.()} testId="button-shortcuts" />
         </div>
       </div>
@@ -559,8 +603,43 @@ export function TakeoffToolbar({
                     All Sheets
                   </DropdownMenuItem>
                 )}
+                {onExportQuantityDelta && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onExportQuantityDelta} data-testid="button-export-qty-delta-mobile">
+                      Quantity Delta Report
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {onExportBidPackage && (
+                  <DropdownMenuItem onClick={onExportBidPackage} data-testid="button-export-bid-package-mobile">
+                    Bid Package Export
+                  </DropdownMenuItem>
+                )}
+                {onPrintSheet && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onPrintSheet} disabled={measurements.length === 0} data-testid="button-print-sheet-mobile">
+                      Print Sheet
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
+          </>
+        )}
+        {isOffline && (
+          <>
+            <Separator orientation="vertical" className="h-6 mx-0.5" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs font-medium" data-testid="indicator-offline">
+                  <WifiOff className="w-3.5 h-3.5" />
+                  <span>Offline</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top">Changes are queued and will sync when back online</TooltipContent>
+            </Tooltip>
           </>
         )}
       </div>

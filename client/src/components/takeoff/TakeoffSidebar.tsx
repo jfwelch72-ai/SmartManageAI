@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
@@ -181,6 +181,9 @@ interface TakeoffSidebarProps {
   onSelectIssue?: (issue: any) => void;
   onExportCurrentSheet?: () => void;
   onExportAllSheets?: () => void;
+  onExportQuantityDelta?: () => void;
+  onExportBidPackage?: () => void;
+  onPrintSheet?: () => void;
   onZoomToMeasurement?: (measurement: TakeoffMeasurement) => void;
   onZoomToFitMeasurement?: (measurement: TakeoffMeasurement) => void;
   conditions?: TakeoffCondition[];
@@ -256,6 +259,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     measurementGroups = [], createGroupMutation, updateGroupMutation, deleteGroupMutation, toggleGroupVisibilityMutation,
     issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
     onExportCurrentSheet, onExportAllSheets,
+    onExportQuantityDelta, onExportBidPackage, onPrintSheet,
     onZoomToMeasurement, onZoomToFitMeasurement,
     conditions = [], activeCondition = null, onActivateCondition, onClearCondition,
     onSaveCondition, onUpdateCondition, onDeleteCondition, saveConditionPending = false,
@@ -1128,6 +1132,27 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           <DropdownMenuItem onClick={onExportAllSheets} data-testid="button-export-all-sheets-sidebar">
                             All Sheets
                           </DropdownMenuItem>
+                        )}
+                        {onExportQuantityDelta && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={onExportQuantityDelta} data-testid="button-export-qty-delta-sidebar">
+                              Quantity Delta Report
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {onExportBidPackage && (
+                          <DropdownMenuItem onClick={onExportBidPackage} data-testid="button-export-bid-package-sidebar">
+                            Bid Package Export
+                          </DropdownMenuItem>
+                        )}
+                        {onPrintSheet && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={onPrintSheet} data-testid="button-print-sheet-sidebar">
+                              Print Sheet
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>

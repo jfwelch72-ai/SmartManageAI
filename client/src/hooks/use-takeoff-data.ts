@@ -141,6 +141,28 @@ export function useTakeoffData({
     enabled: !!selectedSheet,
   });
 
+  const allMeasurementsUrl = isBid
+    ? `/api/bids/${ctxId}/takeoff/all-measurements`
+    : `/api/projects/${ctxId}/takeoff/all-measurements`;
+
+  const { data: allMeasurementsRaw = [] } = useQuery<TakeoffMeasurement[]>({
+    queryKey: [allMeasurementsUrl],
+    queryFn: async () => {
+      const res = await fetch(allMeasurementsUrl, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 30000,
+  });
+
+  const measurementCountsPerSheet = useMemo(() => {
+    const map = new Map<string, number>();
+    allMeasurementsRaw.forEach(m => {
+      map.set(m.sheetId, (map.get(m.sheetId) || 0) + 1);
+    });
+    return map;
+  }, [allMeasurementsRaw]);
+
   const { data: markups = [] } = useQuery<TakeoffMarkupWithAuthor[]>({
     queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"],
     enabled: !!selectedSheet,
@@ -722,5 +744,6 @@ export function useTakeoffData({
     updateGroupMutation,
     deleteGroupMutation,
     toggleGroupVisibilityMutation,
+    measurementCountsPerSheet,
   };
 }
