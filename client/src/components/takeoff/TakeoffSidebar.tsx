@@ -24,13 +24,15 @@ import { cn } from "@/lib/utils";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { COMMON_SCALES, type Tool, type AddendumOverlayData } from "./types";
 import { computePixelDistance, computeNetAreaInFt2, computePolygonAreaInFt2 } from "@shared/utils/geometry";
+import { evaluateFormula, computeAssemblyResults, type FormulaContext } from "@shared/utils/assemblyFormula";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import LibraryItemDialog from "@/components/LibraryItemDialog";
 import { IssuesTab } from "./IssuesTab";
-import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffCondition } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffCondition, AssemblyComponent } from "@shared/schema";
 import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
-import { Zap } from "lucide-react";
+import { Zap, Star, Upload as UploadIcon, FileDown, FolderInput } from "lucide-react";
+import { FormulaEditor } from "./FormulaEditor";
 
 function CostCodeField({ measurementId, currentValue, onCommit }: { measurementId: string; currentValue: string; onCommit: (val: string) => void }) {
   const [localValue, setLocalValue] = useState(currentValue);
@@ -185,8 +187,8 @@ interface TakeoffSidebarProps {
   activeCondition?: TakeoffCondition | null;
   onActivateCondition?: (condition: TakeoffCondition) => void;
   onClearCondition?: () => void;
-  onSaveCondition?: (data: { name: string; measurementType: string; color: string; categoryName?: string; unitCost?: number; costCodeId?: string; labelTemplate?: string; lineStyle?: string }) => void;
-  onUpdateCondition?: (data: { id: string; [key: string]: any }) => void;
+  onSaveCondition?: (data: { name: string; measurementType: string; color: string; categoryName?: string; unitCost?: number; costCodeId?: string; labelTemplate?: string; lineStyle?: string; formula?: string; assemblyComponents?: string }) => void;
+  onUpdateCondition?: (data: { id: string; [key: string]: string | number | boolean | undefined }) => void;
   onDeleteCondition?: (id: string) => void;
   saveConditionPending?: boolean;
   hideAiMeasurements?: boolean;
@@ -514,7 +516,17 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const openIssueCount = allSheetIssues.filter((i: any) => i.status === "OPEN").length;
   const [conditionDialogOpen, setConditionDialogOpen] = useState(false);
   const [editingCondition, setEditingCondition] = useState<TakeoffCondition | null>(null);
-  const [condForm, setCondForm] = useState({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid" });
+  const [condForm, setCondForm] = useState({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid", formula: "", assemblyComponents: [] as AssemblyComponent[] });
+  const [condSearchQuery, setCondSearchQuery] = useState("");
+  const [condShowFavoritesOnly, setCondShowFavoritesOnly] = useState(false);
+  const [applyToProjectOpen, setApplyToProjectOpen] = useState(false);
+  const [applyProjectCode, setApplyProjectCode] = useState("");
+  const [applySelectedIds, setApplySelectedIds] = useState<Set<string>>(new Set());
+  const [applyPending, setApplyPending] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const { data: scaleTemplates = [] } = useQuery<Array<{ id: string; name: string; label: string; pxPerFoot: number; category: string }>>({
+    queryKey: ["/api/takeoff/scale-templates"],
+  });
 
   const revisionChain = (() => {
     if (!currentSheet) return [];
@@ -582,10 +594,120 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
           <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm">Takeoff Conditions</h3>
-              <Button size="sm" onClick={() => { setEditingCondition(null); setCondForm({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid" }); setConditionDialogOpen(true); }} data-testid="button-add-condition">
+              <Button size="sm" onClick={() => { setEditingCondition(null); setCondForm({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid", formula: "", assemblyComponents: [] }); setConditionDialogOpen(true); }} data-testid="button-add-condition">
                 <Plus className="w-4 h-4 mr-1" />New
               </Button>
             </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  value={condSearchQuery}
+                  onChange={(e) => setCondSearchQuery(e.target.value)}
+                  placeholder="Search conditions..."
+                  className="h-7 text-xs pl-7"
+                  data-testid="input-search-conditions"
+                />
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={condShowFavoritesOnly ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={() => setCondShowFavoritesOnly(!condShowFavoritesOnly)}
+                    data-testid="button-toggle-favorites"
+                  >
+                    <Star className={cn("w-3.5 h-3.5", condShowFavoritesOnly && "fill-current text-yellow-500")} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p className="text-xs">Show favorites only</p></TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 px-2"
+                    onClick={async () => {
+                      try {
+                        const res = await apiRequest("GET", "/api/takeoff/conditions/export-csv");
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url; a.download = "conditions.csv"; a.click();
+                        URL.revokeObjectURL(url);
+                      } catch { /* ignore */ }
+                    }}
+                    data-testid="button-export-conditions-csv"
+                  >
+                    <FileDown className="w-3 h-3" />Export
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p className="text-xs">Export conditions as CSV</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 px-2"
+                    onClick={() => csvInputRef.current?.click()}
+                    data-testid="button-import-conditions-csv"
+                  >
+                    <UploadIcon className="w-3 h-3" />Import
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p className="text-xs">Import conditions from CSV</p></TooltipContent>
+              </Tooltip>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const text = await file.text();
+                    const lines = text.split("\n").filter(l => l.trim());
+                    if (lines.length < 2) return;
+                    const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
+                    const rows = [];
+                    for (let i = 1; i < lines.length; i++) {
+                      const vals = lines[i].match(/("(?:[^"]|"")*"|[^,]*)/g)?.map(v => v.replace(/^"|"$/g, "").replace(/""/g, '"').trim()) || [];
+                      const row: Record<string, string> = {};
+                      headers.forEach((h, idx) => {
+                        const key = h === "Name" ? "name" : h === "Measurement Type" ? "measurementType" : h === "Color" ? "color" : h === "Category" ? "categoryName" : h === "Unit Cost" ? "unitCost" : h === "Cost Code" ? "costCodeId" : h === "Line Style" ? "lineStyle" : h === "Label Template" ? "labelTemplate" : h === "Formula" ? "formula" : h === "Assembly Components" ? "assemblyComponents" : h.toLowerCase();
+                        row[key] = vals[idx] || "";
+                      });
+                      if (row.name && row.measurementType) rows.push(row);
+                    }
+                    if (rows.length > 0) {
+                      await apiRequest("POST", "/api/takeoff/conditions/import-csv", { rows });
+                      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/conditions"] });
+                    }
+                  } catch { /* ignore */ }
+                  e.target.value = "";
+                }}
+                data-testid="input-csv-import-file"
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 px-2"
+                    onClick={() => {
+                      setApplySelectedIds(new Set());
+                      setApplyProjectCode("");
+                      setApplyToProjectOpen(true);
+                    }}
+                    disabled={conditions.length === 0}
+                    data-testid="button-apply-to-project"
+                  >
+                    <FolderInput className="w-3 h-3" />Apply to Project
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p className="text-xs">Apply selected conditions to another project</p></TooltipContent>
+              </Tooltip>
+            </div>
+
             <p className="text-xs text-muted-foreground">Click a condition to auto-select the tool and pre-assign properties for the next measurement.</p>
 
             {activeCondition && (
@@ -598,45 +720,92 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               </div>
             )}
 
-            {conditions.length === 0 ? (
-              <div className="text-center py-6 space-y-2">
-                <Zap className="w-8 h-8 mx-auto text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">No conditions yet. Create one to speed up your takeoff workflow.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {conditions.map((cond) => (
-                  <div
-                    key={cond.id}
-                    className={cn(
-                      "p-3 rounded-md border cursor-pointer hover-elevate transition-all",
-                      activeCondition?.id === cond.id ? "ring-2 ring-primary bg-primary/5" : "bg-muted/50"
-                    )}
-                    onClick={() => onActivateCondition?.(cond)}
-                    data-testid={`condition-item-${cond.id}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded-full shrink-0 border" style={{ backgroundColor: cond.color }} />
-                      <span className="font-medium text-sm flex-1 truncate">{cond.name}</span>
-                      <Badge variant="outline" className="text-[10px] shrink-0">{cond.measurementType}</Badge>
+            {(() => {
+              const filtered = conditions
+                .filter((cond) => {
+                  if (condShowFavoritesOnly && !cond.isFavorite) return false;
+                  if (condSearchQuery) {
+                    const q = condSearchQuery.toLowerCase();
+                    return cond.name.toLowerCase().includes(q) ||
+                      (cond.categoryName || "").toLowerCase().includes(q) ||
+                      cond.measurementType.toLowerCase().includes(q);
+                  }
+                  return true;
+                })
+                .sort((a, b) => {
+                  if (a.isFavorite && !b.isFavorite) return -1;
+                  if (!a.isFavorite && b.isFavorite) return 1;
+                  const aTime = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+                  const bTime = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+                  return bTime - aTime;
+                });
+
+              const grouped = new Map<string, typeof filtered>();
+              for (const cond of filtered) {
+                const key = cond.categoryName || "Uncategorized";
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key)!.push(cond);
+              }
+
+              return filtered.length === 0 ? (
+                <div className="text-center py-6 space-y-2">
+                  <Zap className="w-8 h-8 mx-auto text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">
+                    {conditions.length === 0 ? "No conditions yet. Create one to speed up your takeoff workflow." : "No matching conditions found."}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Array.from(grouped.entries()).map(([groupName, groupConds]) => (
+                    <div key={groupName}>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{groupName}</span>
+                        <Badge variant="secondary" className="text-[9px] px-1 h-3.5">{groupConds.length}</Badge>
+                      </div>
+                  {groupConds.map((cond) => (
+                    <div
+                      key={cond.id}
+                      className={cn(
+                        "p-3 rounded-md border cursor-pointer hover-elevate transition-all",
+                        activeCondition?.id === cond.id ? "ring-2 ring-primary bg-primary/5" : "bg-muted/50"
+                      )}
+                      onClick={() => onActivateCondition?.(cond)}
+                      data-testid={`condition-item-${cond.id}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full shrink-0 border" style={{ backgroundColor: cond.color }} />
+                        <span className="font-medium text-sm flex-1 truncate">{cond.name}</span>
+                        <Badge variant="outline" className="text-[10px] shrink-0">{cond.measurementType}</Badge>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                        {cond.categoryName && <span className="bg-muted px-1.5 py-0.5 rounded">{cond.categoryName}</span>}
+                        {cond.unitCost && <span className="bg-muted px-1.5 py-0.5 rounded">${Number(cond.unitCost).toFixed(2)}/unit</span>}
+                        {cond.costCodeId && <span className="bg-muted px-1.5 py-0.5 rounded">{cond.costCodeId}</span>}
+                        {cond.formula && <span className="bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 rounded font-mono">{cond.formula}</span>}
+                      </div>
+                      <div className="mt-2 flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => {
+                          e.stopPropagation();
+                          apiRequest("PATCH", `/api/takeoff/conditions/${cond.id}/favorite`).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ["/api/takeoff/conditions"] });
+                          }).catch(() => {});
+                        }} data-testid={`button-toggle-favorite-${cond.id}`}>
+                          <Star className={cn("w-3 h-3", cond.isFavorite && "fill-current text-yellow-500")} />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setEditingCondition(cond); setCondForm({ name: cond.name, measurementType: cond.measurementType, color: cond.color, categoryName: cond.categoryName || "", unitCost: cond.unitCost ? String(cond.unitCost) : "", costCodeId: cond.costCodeId || "", labelTemplate: cond.labelTemplate || "", lineStyle: cond.lineStyle || "solid", formula: cond.formula || "", assemblyComponents: (() => { try { return cond.assemblyComponents ? JSON.parse(cond.assemblyComponents) : []; } catch { return []; } })() }); setConditionDialogOpen(true); }} data-testid={`button-edit-condition-${cond.id}`}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteCondition?.(cond.id); }} data-testid={`button-delete-condition-${cond.id}`}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                      {cond.categoryName && <span className="bg-muted px-1.5 py-0.5 rounded">{cond.categoryName}</span>}
-                      {cond.unitCost && <span className="bg-muted px-1.5 py-0.5 rounded">${Number(cond.unitCost).toFixed(2)}/unit</span>}
-                      {cond.costCodeId && <span className="bg-muted px-1.5 py-0.5 rounded">{cond.costCodeId}</span>}
+                  ))}
                     </div>
-                    <div className="mt-2 flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setEditingCondition(cond); setCondForm({ name: cond.name, measurementType: cond.measurementType, color: cond.color, categoryName: cond.categoryName || "", unitCost: cond.unitCost ? String(cond.unitCost) : "", costCodeId: cond.costCodeId || "", labelTemplate: cond.labelTemplate || "", lineStyle: cond.lineStyle || "solid" }); setConditionDialogOpen(true); }} data-testid={`button-edit-condition-${cond.id}`}>
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteCondition?.(cond.id); }} data-testid={`button-delete-condition-${cond.id}`}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
 
             {selectedMeasurementId && (() => {
               const selM = measurements.find(m => m.id === selectedMeasurementId);
@@ -662,6 +831,8 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           costCodeId: selM.costCodeId || "",
                           labelTemplate: "",
                           lineStyle: "solid",
+                          formula: "",
+                          assemblyComponents: [],
                         });
                         setConditionDialogOpen(true);
                       }}
@@ -753,6 +924,77 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               </CardContent>
             </Card>
           )}
+
+          {selectedSheet && (() => {
+            return scaleTemplates.length > 0 ? (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm">Saved Scale Templates</h3>
+                  </div>
+                  <div className="space-y-1.5">
+                    {scaleTemplates.map((tpl) => (
+                      <div key={tpl.id} className="flex items-center gap-2 p-2 rounded border hover:bg-muted/50 transition-colors">
+                        <Ruler className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-xs font-medium flex-1 truncate">{tpl.label}</span>
+                        <Badge variant="outline" className="text-[10px] shrink-0">{tpl.category}</Badge>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={async () => {
+                          if (!selectedSheet) return;
+                          try {
+                            await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
+                              scalePxPerFoot: tpl.pxPerFoot,
+                              units: "ft",
+                              scaleLabel: tpl.label,
+                            });
+                            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                          } catch { /* ignore */ }
+                        }} data-testid={`button-apply-scale-template-${tpl.id}`}>
+                          <CheckCircle2 className="w-3 h-3 text-green-600" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={async () => {
+                          try {
+                            await apiRequest("DELETE", `/api/takeoff/scale-templates/${tpl.id}`);
+                            queryClient.invalidateQueries({ queryKey: ["/api/takeoff/scale-templates"] });
+                          } catch { /* ignore */ }
+                        }} data-testid={`button-delete-scale-template-${tpl.id}`}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  {currentSheet?.scalePxPerFoot && (
+                    <Button variant="outline" size="sm" className="w-full text-xs gap-1" onClick={async () => {
+                      const label = prompt("Save current scale as:", currentSheet.scaleLabel || `${currentSheet.scalePxPerFoot} px/ft`);
+                      if (!label) return;
+                      try {
+                        await apiRequest("POST", "/api/takeoff/scale-templates", { name: label, label, pxPerFoot: currentSheet.scalePxPerFoot, category: "custom" });
+                        queryClient.invalidateQueries({ queryKey: ["/api/takeoff/scale-templates"] });
+                      } catch { /* ignore */ }
+                    }} data-testid="button-save-scale-template">
+                      <Save className="w-3 h-3" /> Save Current Scale as Template
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ) : currentSheet?.scalePxPerFoot ? (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <h3 className="font-semibold text-sm">Scale Templates</h3>
+                  <p className="text-xs text-muted-foreground">Save this calibration for reuse on other sheets.</p>
+                  <Button variant="outline" size="sm" className="w-full text-xs gap-1" onClick={async () => {
+                    const label = prompt("Save current scale as:", currentSheet.scaleLabel || `${currentSheet.scalePxPerFoot} px/ft`);
+                    if (!label) return;
+                    try {
+                      await apiRequest("POST", "/api/takeoff/scale-templates", { name: label, label, pxPerFoot: currentSheet.scalePxPerFoot, category: "custom" });
+                      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/scale-templates"] });
+                    } catch { /* ignore */ }
+                  }} data-testid="button-save-scale-template">
+                    <Save className="w-3 h-3" /> Save Current Scale as Template
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : null;
+          })()}
 
           {selectedSheet && (
             <Card>
@@ -1234,6 +1476,21 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {valueStr && <span className="text-xs font-mono font-medium text-foreground/80">{valueStr}</span>}
+                          {meta.conditionFormula && (() => {
+                            const fCtx: FormulaContext = {
+                              length: m.computedLengthFt ?? 0,
+                              area: m.computedAreaFt2 ?? 0,
+                              volume: m.computedVolumeCy ?? 0,
+                              count: m.count ?? 1,
+                              depth: m.depthFeet ?? 0,
+                            };
+                            const fResult = evaluateFormula(meta.conditionFormula, fCtx);
+                            return (
+                              <span className="text-[10px] font-mono text-violet-600 dark:text-violet-400" data-testid={`text-formula-qty-${m.id}`}>
+                                fx={fResult.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </span>
+                            );
+                          })()}
                           {(m as any).pitchRatio && <span className="text-[10px] text-muted-foreground">({(m as any).pitchRatio})</span>}
                           {m.source === "AI" && (
                             <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" data-testid={`badge-ai-source-${m.id}`}>
@@ -1256,6 +1513,16 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           {meta.unitCost && <span className="text-[10px] text-green-600 dark:text-green-400" data-testid={`text-unitcost-${m.id}`}>${Number(meta.unitCost).toFixed(2)}</span>}
                           {meta.costCodeId && <span className="text-[10px] text-blue-500" data-testid={`text-costcode-${m.id}`}>{meta.costCodeId}</span>}
                         </div>
+                        {meta.assemblyResults && Array.isArray(meta.assemblyResults) && meta.assemblyResults.length > 0 && (
+                          <div className="mt-1 space-y-0.5 ml-1 border-l-2 border-violet-200 dark:border-violet-800 pl-2">
+                            {meta.assemblyResults.map((ar: { name: string; quantity: number; unit: string; totalCost: number }, arIdx: number) => (
+                              <div key={arIdx} className="flex items-center justify-between text-[10px] text-muted-foreground" data-testid={`assembly-line-${m.id}-${arIdx}`}>
+                                <span className="truncate">{ar.name}: {ar.quantity.toLocaleString(undefined, { maximumFractionDigits: 1 })} {ar.unit}</span>
+                                {ar.totalCost > 0 && <span className="font-mono text-green-600 dark:text-green-400 shrink-0 ml-1">${ar.totalCost.toFixed(2)}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {m.type === "SEGMENT" && (() => {
                           const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
                           let segProps: any[] = [];
@@ -2707,6 +2974,89 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 </SelectContent>
               </Select>
             </div>
+            <FormulaEditor
+              formula={condForm.formula}
+              onChange={(f) => setCondForm(prev => ({ ...prev, formula: f }))}
+              measurementType={condForm.measurementType}
+            />
+            <Collapsible>
+              <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium w-full py-1">
+                <ChevronRight className="w-3 h-3 transition-transform ui-open:rotate-90" />
+                Assembly Components ({condForm.assemblyComponents.length})
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2 pt-2">
+                {condForm.assemblyComponents.map((comp, idx) => (
+                  <div key={comp.id} className="border rounded p-2 space-y-1.5 bg-muted/30" data-testid={`assembly-component-${idx}`}>
+                    <div className="flex items-center justify-between">
+                      <Input
+                        className="h-7 text-xs flex-1 mr-2"
+                        placeholder="Component name"
+                        value={comp.name}
+                        onChange={(e) => {
+                          const updated = [...condForm.assemblyComponents];
+                          updated[idx] = { ...updated[idx], name: e.target.value };
+                          setCondForm(f => ({ ...f, assemblyComponents: updated }));
+                        }}
+                        data-testid={`input-assembly-name-${idx}`}
+                      />
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive shrink-0" onClick={() => {
+                        setCondForm(f => ({ ...f, assemblyComponents: f.assemblyComponents.filter((_, i) => i !== idx) }));
+                      }} data-testid={`button-remove-assembly-${idx}`}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div>
+                        <Label className="text-[10px]">Unit</Label>
+                        <Input className="h-6 text-[10px]" value={comp.unit} onChange={(e) => {
+                          const updated = [...condForm.assemblyComponents];
+                          updated[idx] = { ...updated[idx], unit: e.target.value };
+                          setCondForm(f => ({ ...f, assemblyComponents: updated }));
+                        }} placeholder="LF" data-testid={`input-assembly-unit-${idx}`} />
+                      </div>
+                      <div>
+                        <Label className="text-[10px]">Unit Cost</Label>
+                        <Input className="h-6 text-[10px]" type="number" value={comp.unitCost || ""} onChange={(e) => {
+                          const updated = [...condForm.assemblyComponents];
+                          updated[idx] = { ...updated[idx], unitCost: parseFloat(e.target.value) || 0 };
+                          setCondForm(f => ({ ...f, assemblyComponents: updated }));
+                        }} placeholder="0.00" data-testid={`input-assembly-cost-${idx}`} />
+                      </div>
+                      <div>
+                        <Label className="text-[10px]">Waste %</Label>
+                        <Input className="h-6 text-[10px]" type="number" value={comp.wasteFactor || ""} onChange={(e) => {
+                          const updated = [...condForm.assemblyComponents];
+                          updated[idx] = { ...updated[idx], wasteFactor: parseFloat(e.target.value) || 0 };
+                          setCondForm(f => ({ ...f, assemblyComponents: updated }));
+                        }} placeholder="0" data-testid={`input-assembly-waste-${idx}`} />
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-[10px]">Formula</Label>
+                      <Input className="h-6 text-[10px] font-mono" value={comp.formula} onChange={(e) => {
+                        const updated = [...condForm.assemblyComponents];
+                        updated[idx] = { ...updated[idx], formula: e.target.value };
+                        setCondForm(f => ({ ...f, assemblyComponents: updated }));
+                      }} placeholder="e.g. length / 1.333 + 1" data-testid={`input-assembly-formula-${idx}`} />
+                    </div>
+                  </div>
+                ))}
+                <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => {
+                  const newComp: AssemblyComponent = {
+                    id: crypto.randomUUID(),
+                    name: "",
+                    measurementType: condForm.measurementType,
+                    unit: condForm.measurementType === "AREA" ? "SF" : condForm.measurementType === "VOLUME" ? "CY" : "LF",
+                    unitCost: 0,
+                    formula: condForm.measurementType === "AREA" ? "area" : condForm.measurementType === "VOLUME" ? "volume" : "length",
+                    wasteFactor: 0,
+                  };
+                  setCondForm(f => ({ ...f, assemblyComponents: [...f.assemblyComponents, newComp] }));
+                }} data-testid="button-add-assembly-component">
+                  <Plus className="w-3 h-3 mr-1" /> Add Component
+                </Button>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConditionDialogOpen(false)} data-testid="button-condition-cancel">Cancel</Button>
@@ -2722,6 +3072,8 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   costCodeId: condForm.costCodeId || undefined,
                   labelTemplate: condForm.labelTemplate || undefined,
                   lineStyle: condForm.lineStyle || undefined,
+                  formula: condForm.formula || undefined,
+                  assemblyComponents: condForm.assemblyComponents.length > 0 ? JSON.stringify(condForm.assemblyComponents) : undefined,
                 };
                 if (editingCondition) {
                   onUpdateCondition?.({ id: editingCondition.id, ...payload });
@@ -2883,6 +3235,82 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
             <Button onClick={() => window.print()} data-testid="button-print-summary">
               <Download className="w-4 h-4 mr-2" />
               Print / Export
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={applyToProjectOpen} onOpenChange={setApplyToProjectOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Apply Conditions to Project</DialogTitle>
+            <DialogDescription>Select conditions and enter the target project code to copy them.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs">Target Project Code</Label>
+              <Input
+                value={applyProjectCode}
+                onChange={(e) => setApplyProjectCode(e.target.value)}
+                placeholder="e.g. PRJ-001"
+                data-testid="input-apply-project-code"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Select Conditions ({applySelectedIds.size} selected)</Label>
+              <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
+                <Button variant="ghost" size="sm" className="w-full text-xs h-6 justify-start" onClick={() => {
+                  if (applySelectedIds.size === conditions.length) {
+                    setApplySelectedIds(new Set());
+                  } else {
+                    setApplySelectedIds(new Set(conditions.map(c => c.id)));
+                  }
+                }} data-testid="button-toggle-all-conditions">
+                  {applySelectedIds.size === conditions.length ? "Deselect All" : "Select All"}
+                </Button>
+                {conditions.map(cond => (
+                  <label key={cond.id} className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-muted/50 px-1 rounded text-xs" data-testid={`checkbox-apply-condition-${cond.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={applySelectedIds.has(cond.id)}
+                      onChange={() => {
+                        const next = new Set(applySelectedIds);
+                        if (next.has(cond.id)) next.delete(cond.id);
+                        else next.add(cond.id);
+                        setApplySelectedIds(next);
+                      }}
+                    />
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cond.color }} />
+                    <span className="truncate">{cond.name}</span>
+                    <Badge variant="secondary" className="text-[9px] ml-auto">{cond.measurementType}</Badge>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApplyToProjectOpen(false)} data-testid="button-apply-cancel">Cancel</Button>
+            <Button
+              disabled={applyPending || !applyProjectCode.trim() || applySelectedIds.size === 0}
+              onClick={async () => {
+                setApplyPending(true);
+                try {
+                  await apiRequest("POST", "/api/takeoff/conditions/apply-to-project", {
+                    conditionIds: Array.from(applySelectedIds),
+                    projectCode: applyProjectCode.trim(),
+                  });
+                  toast({ title: "Conditions Applied", description: `${applySelectedIds.size} condition(s) applied to ${applyProjectCode}` });
+                  setApplyToProjectOpen(false);
+                } catch (err: any) {
+                  toast({ title: "Failed", description: err.message || "Could not apply conditions", variant: "destructive" });
+                } finally {
+                  setApplyPending(false);
+                }
+              }}
+              data-testid="button-apply-submit"
+            >
+              {applyPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FolderInput className="w-4 h-4 mr-2" />}
+              Apply
             </Button>
           </DialogFooter>
         </DialogContent>

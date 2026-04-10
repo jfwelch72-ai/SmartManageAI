@@ -775,7 +775,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       return;
     }
     try {
-      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: scale.pxPerFoot, units: "ft" });
+      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: scale.pxPerFoot, units: "ft", scaleLabel: scale.label });
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
       toast({ title: "Success", description: `Applied scale: ${scale.label}` });
       resetScaleState();

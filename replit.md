@@ -31,6 +31,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Takeoff Cross-Module Connections**: Convert takeoff measurements to purchase requests, auto-detect version deltas for PCOs, generate SOV line items, and provide cost lifecycle summaries.
 *   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets.
 *   **Takeoff Data Engine & Versioning**: Rich linked data objects on measurements with full takeoff versioning and comparison views.
+*   **Takeoff Estimating Enhancements**: Assembly takeoffs (multi-component conditions with `assemblyComponents` JSON), formula engine (`formula` field on conditions with `evaluateFormula` utility), floating live cost summary panel (`LiveCostPanel.tsx`), enhanced condition library (search/favorites/CSV import-export), inline overlay transparency slider, and saved scale templates (`savedScaleTemplates` table) with per-sheet `scaleLabel` auto-remember.
 *   **Website Builder System**: White-label website management with AI Website Wizard, page builder, publishing controls, and SEO support.
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, and feature flags.
 *   **Integration Gating**: Feature flags (`VIDEO_CALLS`, `SMS_NOTIFICATIONS`) gate unconfigured third-party services. `/api/integration-status` endpoint reports configuration state. Video call button disables when LiveKit is not configured. SMS silently skips when Twilio is not configured.

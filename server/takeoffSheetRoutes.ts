@@ -430,6 +430,7 @@ router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: A
         revisionLabel: takeoffSheets.revisionLabel,
         isActive: takeoffSheets.isActive,
         supersededById: takeoffSheets.supersededById,
+        scaleLabel: takeoffSheets.scaleLabel,
         createdAt: takeoffSheets.createdAt,
         updatedAt: takeoffSheets.updatedAt,
         documentId: projectPlans.documentId,

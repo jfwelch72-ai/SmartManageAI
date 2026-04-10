@@ -343,6 +343,7 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   isActive: boolean("is_active").notNull().default(true),
   supersededById: varchar("superseded_by_id"),
   rotation: integer("rotation").notNull().default(0),
+  scaleLabel: text("scale_label"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1527,6 +1528,9 @@ export const takeoffConditions = pgTable("takeoff_conditions", {
   labelTemplate: text("label_template"),
   sortOrder: integer("sort_order").notNull().default(0),
   lastUsedAt: timestamp("last_used_at"),
+  isFavorite: boolean("is_favorite").notNull().default(false),
+  formula: text("formula"),
+  assemblyComponents: text("assembly_components"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1537,6 +1541,33 @@ export const takeoffConditions = pgTable("takeoff_conditions", {
 export const insertTakeoffConditionSchema = createInsertSchema(takeoffConditions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTakeoffCondition = z.infer<typeof insertTakeoffConditionSchema>;
 export type TakeoffCondition = typeof takeoffConditions.$inferSelect;
+
+export interface AssemblyComponent {
+  id: string;
+  name: string;
+  measurementType: string;
+  unit: string;
+  unitCost: number;
+  formula: string;
+  wasteFactor: number;
+}
+
+export const savedScaleTemplates = pgTable("saved_scale_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  label: text("label").notNull(),
+  pxPerFoot: doublePrecision("px_per_foot").notNull(),
+  category: text("category").notNull().default("custom"),
+  isBuiltIn: boolean("is_built_in").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("saved_scale_templates_org_idx").on(table.organizationId),
+}));
+
+export const insertSavedScaleTemplateSchema = createInsertSchema(savedScaleTemplates).omit({ id: true, createdAt: true });
+export type InsertSavedScaleTemplate = z.infer<typeof insertSavedScaleTemplateSchema>;
+export type SavedScaleTemplate = typeof savedScaleTemplates.$inferSelect;
 
 export const insertProjectSpecSchema = createInsertSchema(projectSpecs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectSpec = z.infer<typeof insertProjectSpecSchema>;

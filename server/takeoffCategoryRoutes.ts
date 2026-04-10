@@ -917,6 +917,223 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
   }
 });
 
+router.patch("/api/takeoff/conditions/:id/favorite", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
+    const { takeoffConditions } = await import("@shared/schema");
+    const { id } = req.params;
+    const conditions = orgCtx.isSuperAdmin
+      ? [eq(takeoffConditions.id, id)]
+      : [eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgCtx.orgId!)];
+    const [existing] = await db.select().from(takeoffConditions).where(and(...conditions)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Condition not found" }); return; }
+    const [updated] = await db.update(takeoffConditions)
+      .set({ isFavorite: !existing.isFavorite, updatedAt: new Date() })
+      .where(and(...conditions))
+      .returning();
+    res.json(updated);
+  } catch (error) {
+  next(error);
+  }
+});
+
+router.get("/api/takeoff/conditions/export-csv", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const { takeoffConditions } = await import("@shared/schema");
+    const conditions = await db.select().from(takeoffConditions)
+      .where(eq(takeoffConditions.organizationId, orgId))
+      .orderBy(takeoffConditions.sortOrder);
+    const csvRows = [["Name","Measurement Type","Color","Category","Unit Cost","Cost Code","Line Style","Label Template","Formula","Assembly Components"]];
+    for (const c of conditions) {
+      csvRows.push([
+        c.name, c.measurementType, c.color, c.categoryName || "", String(c.unitCost ?? ""),
+        c.costCodeId || "", c.lineStyle || "solid", c.labelTemplate || "",
+        c.formula || "", c.assemblyComponents || "",
+      ]);
+    }
+    const csv = csvRows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=conditions_export.csv");
+    res.send(csv);
+  } catch (error) {
+  next(error);
+  }
+});
+
+router.post("/api/takeoff/conditions/import-csv", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
+    const { takeoffConditions } = await import("@shared/schema");
+    const resolvedOrgId = orgCtx.isSuperAdmin ? req.body.organizationId : orgCtx.orgId;
+    if (!resolvedOrgId) { res.status(400).json({ error: "organizationId is required" }); return; }
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      res.status(400).json({ error: "No rows provided" }); return;
+    }
+    const VALID_MEASUREMENT_TYPES = ["LINEAR", "AREA", "VOLUME", "COUNT", "SEGMENT", "POLYGON", "RECTANGLE", "CIRCLE", "ANGLE", "NOTE"];
+    const VALID_LINE_STYLES = ["solid", "dashed", "dotted"];
+    let imported = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      if (!row.name || typeof row.name !== "string") { skipped++; continue; }
+      const measType = String(row.measurementType || "").toUpperCase();
+      if (!VALID_MEASUREMENT_TYPES.includes(measType)) { skipped++; continue; }
+      const unitCostParsed = row.unitCost ? parseFloat(String(row.unitCost)) : null;
+      if (unitCostParsed !== null && !Number.isFinite(unitCostParsed)) { skipped++; continue; }
+      const lineStyle = VALID_LINE_STYLES.includes(row.lineStyle) ? row.lineStyle : "solid";
+      let assemblyComponents: string | null = null;
+      if (row.assemblyComponents) {
+        try {
+          const parsed = typeof row.assemblyComponents === "string" ? JSON.parse(row.assemblyComponents) : row.assemblyComponents;
+          if (Array.isArray(parsed)) {
+            assemblyComponents = JSON.stringify(parsed);
+          }
+        } catch { /* skip malformed */ }
+      }
+      await db.insert(takeoffConditions).values({
+        organizationId: resolvedOrgId,
+        name: sanitizeShortText(row.name),
+        measurementType: measType,
+        color: typeof row.color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(row.color) ? row.color : "#3b82f6",
+        categoryName: typeof row.categoryName === "string" ? sanitizeShortText(row.categoryName) : null,
+        unitCost: unitCostParsed,
+        costCodeId: typeof row.costCodeId === "string" ? row.costCodeId : null,
+        lineStyle,
+        labelTemplate: typeof row.labelTemplate === "string" ? row.labelTemplate : null,
+        formula: typeof row.formula === "string" ? row.formula : null,
+        assemblyComponents,
+      });
+      imported++;
+    }
+    res.json({ imported, skipped });
+  } catch (error) {
+  next(error);
+  }
+});
+
+router.post("/api/takeoff/conditions/apply-to-project", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
+    const { takeoffConditions, quantityCategories, projects } = await import("@shared/schema");
+    const resolvedOrgId = orgCtx.isSuperAdmin ? req.body.organizationId : orgCtx.orgId;
+    const { conditionIds, projectCode } = req.body;
+    if (!Array.isArray(conditionIds) || !projectCode) {
+      res.status(400).json({ error: "conditionIds and projectCode are required" }); return;
+    }
+    const [project] = await db.select().from(projects).where(eq(projects.code, projectCode)).limit(1);
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+    if (!orgCtx.isSuperAdmin && project.gcOrganizationId !== orgCtx.orgId) {
+      res.status(403).json({ error: "Project does not belong to your organization" }); return;
+    }
+    const targetOrgId = project.gcOrganizationId || orgCtx.orgId;
+    const conds = await db.select().from(takeoffConditions)
+      .where(and(eq(takeoffConditions.organizationId, resolvedOrgId!), sql`${takeoffConditions.id} = ANY(${conditionIds})`));
+
+    let conditionsCloned = 0;
+    let categoriesCreated = 0;
+    for (const c of conds) {
+      const existingCond = await db.select().from(takeoffConditions)
+        .where(and(
+          eq(takeoffConditions.organizationId, targetOrgId),
+          eq(takeoffConditions.name, c.name),
+          eq(takeoffConditions.measurementType, c.measurementType)
+        )).limit(1);
+
+      if (existingCond.length === 0) {
+        await db.insert(takeoffConditions).values({
+          organizationId: targetOrgId,
+          name: c.name,
+          measurementType: c.measurementType,
+          color: c.color,
+          categoryName: c.categoryName,
+          unitCost: c.unitCost,
+          costCodeId: c.costCodeId,
+          lineStyle: c.lineStyle,
+          labelTemplate: c.labelTemplate,
+          formula: c.formula,
+          assemblyComponents: c.assemblyComponents,
+          isFavorite: false,
+        });
+        conditionsCloned++;
+      }
+
+      if (c.categoryName) {
+        const existingCat = await db.select().from(quantityCategories)
+          .where(and(eq(quantityCategories.projectId, project.id), eq(quantityCategories.name, c.categoryName)))
+          .limit(1);
+        if (existingCat.length === 0) {
+          await db.insert(quantityCategories).values({
+            projectId: project.id,
+            name: c.categoryName,
+            color: c.color,
+            lineStyle: c.lineStyle || "solid",
+            unitCost: c.unitCost,
+          });
+          categoriesCreated++;
+        }
+      }
+    }
+    res.json({ conditionsCloned, categoriesCreated, totalProcessed: conds.length });
+  } catch (error) {
+  next(error);
+  }
+});
+
+router.get("/api/takeoff/scale-templates", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const { savedScaleTemplates } = await import("@shared/schema");
+    const templates = await db.select().from(savedScaleTemplates)
+      .where(eq(savedScaleTemplates.organizationId, orgId))
+      .orderBy(savedScaleTemplates.category, savedScaleTemplates.name);
+    res.json(templates);
+  } catch (error) {
+  next(error);
+  }
+});
+
+router.post("/api/takeoff/scale-templates", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
+    const { savedScaleTemplates } = await import("@shared/schema");
+    const resolvedOrgId = orgCtx.isSuperAdmin ? req.body.organizationId : orgCtx.orgId;
+    if (!resolvedOrgId) { res.status(400).json({ error: "organizationId is required" }); return; }
+    const [template] = await db.insert(savedScaleTemplates).values({
+      organizationId: resolvedOrgId,
+      name: sanitizeShortText(req.body.name),
+      label: req.body.label,
+      pxPerFoot: req.body.pxPerFoot,
+      category: req.body.category || "custom",
+    }).returning();
+    res.json(template);
+  } catch (error) {
+  next(error);
+  }
+});
+
+router.delete("/api/takeoff/scale-templates/:id", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
+    const { savedScaleTemplates } = await import("@shared/schema");
+    const { id } = req.params;
+    const conditions = orgCtx.isSuperAdmin
+      ? [eq(savedScaleTemplates.id, id)]
+      : [eq(savedScaleTemplates.id, id), eq(savedScaleTemplates.organizationId, orgCtx.orgId!)];
+    await db.delete(savedScaleTemplates).where(and(...conditions));
+    res.json({ success: true });
+  } catch (error) {
+  next(error);
+  }
+});
+
 router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgCtx = requireOrgOwnership(req, res);

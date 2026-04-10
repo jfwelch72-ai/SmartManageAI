@@ -645,11 +645,13 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       return;
     }
 
+    const { scaleLabel } = req.body;
     const [updated] = await db
       .update(takeoffSheets)
       .set({ 
         scalePxPerFoot, 
         units: units || "ft",
+        scaleLabel: scaleLabel || null,
         updatedAt: new Date() 
       })
       .where(eq(takeoffSheets.id, id))

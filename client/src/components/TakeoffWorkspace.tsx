@@ -28,6 +28,8 @@ import { type Tool, validateHexColor, hexToRgba } from "./takeoff/types";
 import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
 import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
+import type { TakeoffCondition } from "@shared/schema";
+import { computeAssemblyResults, type FormulaContext } from "@shared/utils/assemblyFormula";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
 import TakeoffCrossModulePanel from "./takeoff/TakeoffCrossModulePanel";
@@ -38,6 +40,7 @@ import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import { TakeoffPropertiesPanel } from "./takeoff/TakeoffPropertiesPanel";
 import { TakeoffVersionHistory } from "./takeoff/TakeoffVersionHistory";
 import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
+import { LiveCostPanel } from "./takeoff/LiveCostPanel";
 import AiTakeoffPanel, { type DetectedItem } from "@/components/AiTakeoffPanel";
 
 const AI_ZONE = { MARGIN_X: 80, START_Y: 40, SPACING_X: 220, SPACING_Y: 60, COLS: 3 };
@@ -51,7 +54,7 @@ import { onLibraryEvent } from "@/lib/libraryEvents";
 import { generateTakeoffExcel } from "@/utils/takeoff-export";
 import type { LibraryEvent } from "@/lib/libraryEvents";
 import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
-import { Users, Lock, Sparkles } from "lucide-react";
+import { Users, Lock, Sparkles, DollarSign, Layers } from "lucide-react";
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -170,6 +173,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [labelHiddenCategories, setLabelHiddenCategories] = useState<Set<string>>(() => {
     try { const stored = localStorage.getItem("takeoff-label-hidden-categories"); return stored ? new Set(JSON.parse(stored)) : new Set(); } catch { return new Set(); }
   });
+  const [showCostPanel, setShowCostPanel] = useState(false);
+  const [overlayOpacity, setOverlayOpacity] = useState(50);
+  const [showOverlaySlider, setShowOverlaySlider] = useState(false);
+  const [activeCondition, setActiveCondition] = useState<TakeoffCondition | null>(null);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -262,6 +269,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     deleteSheetMutation, handleMoveSheet,
     measurementGroups, createGroupMutation, updateGroupMutation,
     deleteGroupMutation, toggleGroupVisibilityMutation,
+    conditions, createConditionMutation, updateConditionMutation, deleteConditionMutation,
   } = data;
 
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
@@ -468,7 +476,53 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     workspaceRef,
     stageRef,
     takeoffHistory,
-    createMeasurementMutation,
+    createMeasurementMutation: {
+      ...createMeasurementMutation,
+      mutate: (data: Record<string, unknown>) => {
+        const enriched: Record<string, unknown> = { ...data };
+        if (activeCondition) {
+          if (activeCondition.unitCost && !enriched.unitCost) enriched.unitCost = activeCondition.unitCost;
+          if (activeCondition.costCodeId && !enriched.costCodeId) enriched.costCodeId = activeCondition.costCodeId;
+          if (activeCondition.color && !enriched.color) enriched.color = activeCondition.color;
+          if (activeCondition.labelTemplate) {
+            const label = String(enriched.label || "");
+            const count = (label.match(/\d+/) || ["1"])[0];
+            enriched.label = activeCondition.labelTemplate.replace("#{n}", count).replace("{n}", count);
+          }
+
+          const getMeta = (): Record<string, unknown> => {
+            if (!enriched.metadata) return {};
+            try { return typeof enriched.metadata === "string" ? JSON.parse(enriched.metadata as string) : enriched.metadata as Record<string, unknown>; } catch { return {}; }
+          };
+
+          if (activeCondition.formula) {
+            const meta = getMeta();
+            meta.conditionFormula = activeCondition.formula;
+            meta.conditionId = activeCondition.id;
+            enriched.metadata = JSON.stringify(meta);
+          }
+          if (activeCondition.assemblyComponents) {
+            const meta = getMeta();
+            meta.assemblyComponents = activeCondition.assemblyComponents;
+            try {
+              const components = JSON.parse(activeCondition.assemblyComponents);
+              if (Array.isArray(components)) {
+                const ctx: FormulaContext = {
+                  length: (enriched.computedLengthFt as number) || 0,
+                  area: (enriched.computedAreaFt2 as number) || 0,
+                  volume: (enriched.computedVolumeCy as number) || 0,
+                  count: 1,
+                  depth: (enriched.depthFeet as number) || 0,
+                };
+                meta.assemblyResults = computeAssemblyResults(components, ctx);
+              }
+            } catch { /* assembly parse error */ }
+            enriched.metadata = JSON.stringify(meta);
+          }
+        }
+        createMeasurementMutation.mutate(enriched);
+      },
+    },
     aggregatedMeasurements,
     setShortcutsDialogOpen,
     isMobile,
@@ -1039,7 +1093,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setActiveCondition(null);
   };
 
-  const handleSaveCondition = (data: { name: string; measurementType: string; color: string; categoryName?: string; unitCost?: number; costCodeId?: string; labelTemplate?: string; lineStyle?: string }) => {
+  const handleSaveCondition = (data: { name: string; measurementType: string; color: string; categoryName?: string; unitCost?: number; costCodeId?: string; labelTemplate?: string; lineStyle?: string; formula?: string; assemblyComponents?: string }) => {
     createConditionMutation.mutate(data);
   };
 
@@ -1673,7 +1727,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     <KonvaImage
                       key={`addenda-overlay-${addendumId}`}
                       image={addendaImages[addendumId]}
-                      opacity={overlay.opacity}
+                      opacity={showOverlaySlider ? (overlayOpacity / 100) * overlay.opacity : overlay.opacity}
                       listening={false}
                     />
                   );
@@ -3144,30 +3198,76 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               </div>
             );
           })()}
+
+          <LiveCostPanel
+            measurements={measurements}
+            categories={categories}
+            visible={showCostPanel}
+            onClose={() => setShowCostPanel(false)}
+          />
+
+          {showOverlaySlider && (
+            <div className="absolute top-3 right-3 z-30 bg-card/95 backdrop-blur-sm border rounded-lg shadow-lg px-3 py-2 flex items-center gap-3 w-[220px]" data-testid="overlay-opacity-slider">
+              <Layers className="w-4 h-4 text-muted-foreground shrink-0" />
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={overlayOpacity}
+                onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+                className="flex-1 accent-primary h-1.5"
+                data-testid="input-overlay-opacity"
+              />
+              <span className="text-[10px] tabular-nums text-muted-foreground w-8 text-right">{overlayOpacity}%</span>
+              <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => setShowOverlaySlider(false)} data-testid="button-close-overlay-slider">
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          )}
         </div>
-        {selectedSheet && measurements.length > 0 && (
+        {selectedSheet && (
           <div className="hidden sm:flex h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar">
             <div className="flex items-center gap-4">
-              <span className="font-medium text-foreground/80">{measurements.length} measurement{measurements.length !== 1 ? "s" : ""}</span>
-              {(() => {
-                const totals = { lf: 0, sf: 0, cy: 0, count: 0 };
-                measurements.forEach(m => {
-                  if (m.computedLengthFt) totals.lf += Number(m.computedLengthFt);
-                  if (m.computedAreaFt2) totals.sf += Number(m.computedAreaFt2);
-                  if (m.computedVolumeCy) totals.cy += Number(m.computedVolumeCy);
-                  if (m.type === "COUNT" && m.count) totals.count += Number(m.count);
-                });
-                return (
-                  <>
-                    {totals.lf > 0 && <span>LF: <strong className="text-foreground/80">{totals.lf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
-                    {totals.sf > 0 && <span>SF: <strong className="text-foreground/80">{totals.sf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
-                    {totals.cy > 0 && <span>CY: <strong className="text-foreground/80">{totals.cy.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>}
-                    {totals.count > 0 && <span>Count: <strong className="text-foreground/80">{totals.count.toLocaleString()}</strong></span>}
-                  </>
-                );
-              })()}
+              {measurements.length > 0 && (
+                <>
+                  <span className="font-medium text-foreground/80">{measurements.length} measurement{measurements.length !== 1 ? "s" : ""}</span>
+                  {(() => {
+                    const totals = { lf: 0, sf: 0, cy: 0, count: 0 };
+                    measurements.forEach(m => {
+                      if (m.computedLengthFt) totals.lf += Number(m.computedLengthFt);
+                      if (m.computedAreaFt2) totals.sf += Number(m.computedAreaFt2);
+                      if (m.computedVolumeCy) totals.cy += Number(m.computedVolumeCy);
+                      if (m.type === "COUNT" && m.count) totals.count += Number(m.count);
+                    });
+                    return (
+                      <>
+                        {totals.lf > 0 && <span>LF: <strong className="text-foreground/80">{totals.lf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
+                        {totals.sf > 0 && <span>SF: <strong className="text-foreground/80">{totals.sf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
+                        {totals.cy > 0 && <span>CY: <strong className="text-foreground/80">{totals.cy.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>}
+                        {totals.count > 0 && <span>Count: <strong className="text-foreground/80">{totals.count.toLocaleString()}</strong></span>}
+                      </>
+                    );
+                  })()}
+                </>
+              )}
             </div>
             <div className="flex items-center gap-3">
+              <button
+                className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors", showCostPanel && "bg-primary/10 text-primary")}
+                onClick={() => setShowCostPanel(!showCostPanel)}
+                data-testid="button-toggle-cost-panel"
+              >
+                <DollarSign className="w-3 h-3" />
+                <span>Costs</span>
+              </button>
+              <button
+                className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors", showOverlaySlider && "bg-primary/10 text-primary")}
+                onClick={() => setShowOverlaySlider(!showOverlaySlider)}
+                data-testid="button-toggle-overlay-slider"
+              >
+                <Layers className="w-3 h-3" />
+                <span>Overlay</span>
+              </button>
               <span>Zoom: {Math.round(stageScale * 100)}%</span>
               {currentSheet?.scalePxPerFoot ? (
                 <span className="text-green-600 dark:text-green-400">Scale: {currentSheet.units || "ft"}</span>
@@ -3538,6 +3638,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           });
         }}
         showMeasurementLabels={showMeasurementLabels}
+        conditions={conditions}
+        activeCondition={activeCondition}
+        onActivateCondition={handleActivateCondition}
+        onClearCondition={handleClearCondition}
+        onSaveCondition={handleSaveCondition}
+        onUpdateCondition={(d: { id: string; [key: string]: string | number | boolean | undefined }) => updateConditionMutation.mutate(d)}
+        onDeleteCondition={(id: string) => deleteConditionMutation.mutate(id)}
+        saveConditionPending={createConditionMutation.isPending}
       />
 
       {crossModulePanelOpen && context?.type !== "bid" && (
