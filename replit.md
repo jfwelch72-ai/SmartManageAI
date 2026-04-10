@@ -60,6 +60,9 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Talent Pool & Connected Hiring-Marketplace**: Self-service talent profiles with AI-powered skill match.
 *   **Task Detail Modal**: Comprehensive task detail view with subtasks, comments, activity log, and inline actions.
 *   **Permits & Licenses Tracking**: Full lifecycle tracking (Applied → Under Review → Approved → Active → Expired → Renewed) with 10 permit types, expiry date monitoring, dashboard alerts for permits expiring within 30 days, and inspection linking. Located as a tab in Project Detail under Field Operations.
+*   **QC Material Testing Log**: Material test tracking within QA/QC (Inspections tab) with 7 pre-populated test types (Concrete Cylinder Break, Soil Compaction, Steel Tensile, Aggregate Gradation, Asphalt Core, Moisture Content, Rebar Mill Cert), pass/fail status, auto-generated punch list items on failure, and lab report tracking.
+*   **PPE Compliance Tracker**: Per-project PPE compliance logging in Safety Training tab with 6 PPE types (Hard Hat, Safety Vest, Gloves, Eye Protection, Steel Toes, Fall Protection), compliance/violation status, stats dashboard, and date/type/status filtering.
+*   **Safety Officer Assignment**: Project-level safety officer assignment dropdown in Safety Training tab with org user selection and display.
 *   **Punch List Module**: Tracking deficiency items during project closeout.
 *   **Warranty / Post-Construction Module**: Tracking defects, warranty claims, callbacks, and recalls.
 *   **Asset & Property Management**: Post-completion lifecycle with Asset Handover, Warranty Tracking, and Maintenance Logs.

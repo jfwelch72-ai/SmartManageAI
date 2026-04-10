@@ -363,6 +363,7 @@ export const projects = pgTable("projects", {
   autoInvoice: boolean("auto_invoice").default(false),
   autoChangeOrderEnabled: boolean("auto_change_order_enabled").notNull().default(true),
   autoChangeOrderThreshold: decimal("auto_change_order_threshold", { precision: 12, scale: 2 }).default("0"),
+  safetyOfficerId: varchar("safety_officer_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

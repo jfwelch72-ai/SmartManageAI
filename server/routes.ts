@@ -175,6 +175,8 @@ import clientPortalRoutes from "./clientPortalRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 import reportRoutes from "./reportRoutes";
 import safetyTrainingRoutes from "./safetyTrainingRoutes";
+import materialTestRoutes from "./materialTestRoutes";
+import ppeComplianceRoutes from "./ppeComplianceRoutes";
 import safetyWorkflowRoutes from "./safetyWorkflowRoutes";
 import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
 import costLedgerRoutes from "./costLedgerRoutes";
@@ -249,6 +251,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register punch list routes
   app.use("/api", punchListRoutes);
+  app.use("/api", materialTestRoutes);
+  app.use("/api", ppeComplianceRoutes);
   app.use("/api", warrantyRoutes);
 
   // Register AI routes through single orchestration layer (consolidates document, scheduling, takeoff, CFO analytics routes)

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
-import { Calendar as CalendarIcon, User, Filter, X, Edit2, Save, XCircle, Package, ChevronDown, ChevronUp, Plus, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, User, Filter, X, Edit2, Save, XCircle, Package, ChevronDown, ChevronUp, Plus, Loader2, UserCheck } from "lucide-react";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -87,6 +87,18 @@ export default function DailyNoteFeed({ projectId, projectCode, availableUsers }
   const { data: notes = [], isLoading } = useQuery<ProjectNote[]>({
     queryKey: ["/api/projects", projectId, "notes", queryString],
     enabled: !!projectId,
+  });
+
+  const { data: safetyOfficerData } = useQuery<{ safetyOfficerId: string | null; safetyOfficer: { id: string; firstName: string; lastName: string; email: string } | null }>({
+    queryKey: ["/api/projects", projectCode, "safety-officer"],
+    queryFn: async () => {
+      if (!projectCode) return { safetyOfficerId: null, safetyOfficer: null };
+      const r = await fetch(`/api/projects/${projectCode}/safety-officer`, { credentials: "include" });
+      if (!r.ok) return { safetyOfficerId: null, safetyOfficer: null };
+      return r.json();
+    },
+    enabled: !!projectCode,
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: scopeItems = [] } = useQuery<ScopeItem[]>({
@@ -246,6 +258,13 @@ export default function DailyNoteFeed({ projectId, projectCode, availableUsers }
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {safetyOfficerData?.safetyOfficer && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 rounded-lg text-sm" data-testid="daily-report-safety-officer">
+              <UserCheck className="h-4 w-4 text-primary" />
+              <span className="font-medium text-muted-foreground">Safety Officer:</span>
+              <span>{safetyOfficerData.safetyOfficer.firstName} {safetyOfficerData.safetyOfficer.lastName}</span>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="daily-note">Notes & Progress</Label>
             <Textarea

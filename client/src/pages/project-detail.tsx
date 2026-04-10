@@ -13,6 +13,7 @@ import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
 import DelaysSection from "@/components/DelaysSection";
 import InspectionsSection from "@/components/InspectionsSection";
+import MaterialTestingSection from "@/components/MaterialTestingSection";
 import MaterialBudgetTracker from "@/components/MaterialBudgetTracker";
 import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
@@ -1133,11 +1134,18 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="inspections">
-            <InspectionsSection
-              projectId={project.id}
-              projectCode={projectCode}
-              userRole={user?.role || ""}
-            />
+            <div className="space-y-6">
+              <InspectionsSection
+                projectId={project.id}
+                projectCode={projectCode}
+                userRole={user?.role || ""}
+              />
+              <MaterialTestingSection
+                projectId={project.id}
+                projectCode={projectCode}
+                userRole={user?.role || ""}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="jobsite-ai">

@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteBlockTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum, mobilizationChecklistStatusEnum, mobilizationItemStatusEnum, methodStatementStatusEnum, permitStatusEnum, permitTypeEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteBlockTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum, mobilizationChecklistStatusEnum, mobilizationItemStatusEnum, methodStatementStatusEnum, permitStatusEnum, permitTypeEnum, materialTestStatusEnum, materialTestTypeEnum, ppeTypeEnum, ppeComplianceStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, contracts, crmOrganisations, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
@@ -3128,4 +3128,56 @@ export const projectPermits = pgTable("project_permits", {
 export const insertProjectPermitSchema = createInsertSchema(projectPermits).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectPermit = z.infer<typeof insertProjectPermitSchema>;
 export type ProjectPermit = typeof projectPermits.$inferSelect;
+
+export const materialTests = pgTable("material_tests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  testNumber: text("test_number").notNull(),
+  materialType: text("material_type").notNull(),
+  testType: materialTestTypeEnum("test_type").notNull(),
+  customTestType: text("custom_test_type"),
+  sampleId: text("sample_id"),
+  testDate: date("test_date").notNull(),
+  labName: text("lab_name"),
+  testResults: text("test_results"),
+  status: materialTestStatusEnum("status").notNull().default("PENDING"),
+  specRequirement: text("spec_requirement"),
+  reportFileUrl: text("report_file_url"),
+  reportFileName: text("report_file_name"),
+  notes: text("notes"),
+  punchListItemId: varchar("punch_list_item_id").references(() => punchListItems.id, { onDelete: "set null" }),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("material_tests_project_id_idx").on(table.projectId),
+  statusIdx: index("material_tests_status_idx").on(table.status),
+  testTypeIdx: index("material_tests_test_type_idx").on(table.testType),
+  testDateIdx: index("material_tests_test_date_idx").on(table.testDate),
+}));
+
+export const insertMaterialTestSchema = createInsertSchema(materialTests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMaterialTest = z.infer<typeof insertMaterialTestSchema>;
+export type MaterialTest = typeof materialTests.$inferSelect;
+
+export const ppeComplianceLogs = pgTable("ppe_compliance_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  checkDate: date("check_date").notNull(),
+  workerName: text("worker_name").notNull(),
+  workerUserId: varchar("worker_user_id").references(() => users.id, { onDelete: "set null" }),
+  ppeType: ppeTypeEnum("ppe_type").notNull(),
+  complianceStatus: ppeComplianceStatusEnum("compliance_status").notNull(),
+  notes: text("notes"),
+  checkedById: varchar("checked_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("ppe_compliance_logs_project_id_idx").on(table.projectId),
+  checkDateIdx: index("ppe_compliance_logs_check_date_idx").on(table.checkDate),
+  statusIdx: index("ppe_compliance_logs_status_idx").on(table.complianceStatus),
+}));
+
+export const insertPpeComplianceLogSchema = createInsertSchema(ppeComplianceLogs).omit({ id: true, createdAt: true });
+export type InsertPpeComplianceLog = z.infer<typeof insertPpeComplianceLogSchema>;
+export type PpeComplianceLog = typeof ppeComplianceLogs.$inferSelect;
 

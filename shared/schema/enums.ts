@@ -659,6 +659,16 @@ export const permitTypeEnum = pgEnum("permit_type", [
   "MECHANICAL", "FIRE_SAFETY", "ENVIRONMENTAL", "OCCUPANCY", "CUSTOM"
 ]);
 
+export const materialTestStatusEnum = pgEnum("material_test_status", ["PENDING", "IN_PROGRESS", "PASSED", "FAILED"]);
+export const materialTestTypeEnum = pgEnum("material_test_type", [
+  "CONCRETE_CYLINDER_BREAK", "SOIL_COMPACTION", "STEEL_TENSILE", "AGGREGATE_GRADATION",
+  "ASPHALT_CORE", "MOISTURE_CONTENT", "REBAR_MILL_CERT", "OTHER"
+]);
+export const ppeTypeEnum = pgEnum("ppe_type", [
+  "HARD_HAT", "SAFETY_VEST", "GLOVES", "EYE_PROTECTION", "STEEL_TOES", "FALL_PROTECTION"
+]);
+export const ppeComplianceStatusEnum = pgEnum("ppe_compliance_status", ["COMPLIANT", "VIOLATION"]);
+
 export const lidarScanStatusEnum = pgEnum("lidar_scan_status", ["UPLOADING", "PROCESSING", "READY", "ERROR"]);
 export const lidarColorModeEnum = pgEnum("lidar_color_mode", ["RGB", "ELEVATION", "INTENSITY"]);
 export const lidarAnnotationTypeEnum = pgEnum("lidar_annotation_type", ["DISTANCE", "AREA", "VOLUME", "NOTE"]);

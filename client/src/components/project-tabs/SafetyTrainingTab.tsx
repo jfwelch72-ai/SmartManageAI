@@ -11,7 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ShieldCheck, MessageSquare, ClipboardList, CheckCircle2, Plus } from "lucide-react";
+import { ShieldCheck, MessageSquare, ClipboardList, CheckCircle2, Plus, Shield } from "lucide-react";
+import PpeComplianceSection from "@/components/PpeComplianceSection";
+import SafetyOfficerAssignment from "@/components/SafetyOfficerAssignment";
 
 interface TrainingAssignment {
   id: string; employeeId: string; employeeFirstName: string; employeeLastName: string;
@@ -47,7 +49,7 @@ function fmtDate(d: string | null | undefined) {
 
 export default function SafetyTrainingTab({ projectId, projectCode, userRole }: SafetyTrainingTabProps) {
   const { toast } = useToast();
-  const [section, setSection] = useState<"training" | "talks" | "checklists">("training");
+  const [section, setSection] = useState<"training" | "talks" | "checklists" | "ppe">("training");
   const [showStartChecklist, setShowStartChecklist] = useState(false);
 
   const { data: templates = [] } = useQuery<ChecklistTemplate[]>({
@@ -110,6 +112,8 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
 
   return (
     <div className="space-y-4" data-testid="project-safety-training-tab">
+      <SafetyOfficerAssignment projectCode={projectCode} userRole={userRole} />
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
@@ -131,6 +135,9 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
         </button>
         <button onClick={() => setSection("checklists")} className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${section === "checklists" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`} data-testid="section-checklists">
           <ClipboardList className="h-3.5 w-3.5" /> Checklists ({checklistInstances.length})
+        </button>
+        <button onClick={() => setSection("ppe")} className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${section === "ppe" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`} data-testid="section-ppe">
+          <Shield className="h-3.5 w-3.5" /> PPE Compliance
         </button>
       </div>
 
@@ -230,6 +237,14 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
           </div>
         )}
         </>
+      )}
+
+      {section === "ppe" && (
+        <PpeComplianceSection
+          projectId={projectId}
+          projectCode={projectCode}
+          userRole={userRole}
+        />
       )}
 
       {showStartChecklist && (
