@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ClipboardCheck, Plus, CheckCircle2, Clock, FileText,
-  ChevronDown, ChevronRight, Shield, HardHat, Loader2
+  ChevronDown, ChevronRight, Shield, HardHat, Loader2,
+  Pencil, Trash2, Save, X, ListOrdered, Wrench
 } from "lucide-react";
 import { hasManagementAccess } from "@/lib/rbac";
 
@@ -48,12 +49,15 @@ interface MethodStatement {
   title: string;
   description: string | null;
   workActivity: string;
+  sequenceOfOperations: string | null;
+  equipmentResources: string | null;
   hazards: string | null;
   controlMeasures: string | null;
   ppe: string | null;
   emergencyProcedures: string | null;
   status: string;
   linkedScheduleTaskId: string | null;
+  linkedSafetyChecklistId: string | null;
   submittedAt: string | null;
   approvedAt: string | null;
   rejectedAt: string | null;
@@ -285,6 +289,7 @@ export default function MobilizationTab({ projectId, projectCode, userRole }: Mo
       {showNewMethodStatement && (
         <NewMethodStatementDialog
           scheduleTasks={scheduleTasks}
+          checklists={checklists}
           onClose={() => setShowNewMethodStatement(false)}
           onSave={(data) => createMethod.mutate(data)}
           isSaving={createMethod.isPending}
@@ -295,6 +300,7 @@ export default function MobilizationTab({ projectId, projectCode, userRole }: Mo
         <MethodStatementDetailDialog
           statement={showMethodDetail}
           scheduleTasks={scheduleTasks}
+          checklists={checklists}
           canManage={canManage}
           onClose={() => setShowMethodDetail(null)}
           onStatusChange={(status, rejectionReason) =>
@@ -315,6 +321,10 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
   projectId: string;
 }) {
   const { toast } = useToast();
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editAssignee, setEditAssignee] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editNotes, setEditNotes] = useState("");
 
   const { data: items = [], isLoading } = useQuery<ChecklistItem[]>({
     queryKey: ["/api/mobilization/checklists", checklist.id, "items"],
@@ -332,9 +342,37 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mobilization/checklists", checklist.id, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "mobilization", "checklists"] });
+      setEditingItemId(null);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  const deleteChecklist = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/mobilization/checklists/${checklist.id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "mobilization", "checklists"] });
+      toast({ title: "Checklist deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  function startEditing(item: ChecklistItem) {
+    setEditingItemId(item.id);
+    setEditAssignee(item.assignedToName || "");
+    setEditDueDate(item.dueDate ? new Date(item.dueDate).toISOString().split("T")[0] : "");
+    setEditNotes(item.notes || "");
+  }
+
+  function saveItemEdit(itemId: string) {
+    updateItem.mutate({
+      itemId,
+      updates: {
+        assignedToName: editAssignee || undefined,
+        dueDate: editDueDate || null,
+        notes: editNotes || undefined,
+      },
+    });
+  }
 
   const completedCount = items.filter(i => i.status === "COMPLETED").length;
   const totalCount = items.length;
@@ -364,6 +402,17 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
           </div>
         </div>
         <div className="flex items-center gap-3 ml-3">
+          {canManage && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={(e) => { e.stopPropagation(); deleteChecklist.mutate(); }}
+              data-testid={`button-delete-checklist-${checklist.id}`}
+            >
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+            </Button>
+          )}
           <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
             <div
               className="h-full bg-primary rounded-full transition-all"
@@ -389,46 +438,119 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
                     {items.filter(i => i.category === cat).map(item => (
                       <div
                         key={item.id}
-                        className="flex items-start gap-3 py-2 px-2 rounded hover:bg-muted/50 group"
+                        className="py-2 px-2 rounded hover:bg-muted/50 group"
                         data-testid={`checklist-item-${item.id}`}
                       >
-                        {canManage ? (
-                          <Checkbox
-                            checked={item.status === "COMPLETED"}
-                            onCheckedChange={(checked) => {
-                              updateItem.mutate({
-                                itemId: item.id,
-                                updates: { status: checked ? "COMPLETED" : "PENDING" },
-                              });
-                            }}
-                            className="mt-0.5"
-                            data-testid={`checkbox-item-${item.id}`}
-                          />
-                        ) : (
-                          <div className="mt-0.5">
-                            {item.status === "COMPLETED" ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-600" />
-                            ) : (
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <span className={`text-sm ${item.status === "COMPLETED" ? "line-through text-muted-foreground" : ""}`}>
-                            {item.title}
-                          </span>
-                          {item.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                        <div className="flex items-start gap-3">
+                          {canManage ? (
+                            <Checkbox
+                              checked={item.status === "COMPLETED"}
+                              onCheckedChange={(checked) => {
+                                updateItem.mutate({
+                                  itemId: item.id,
+                                  updates: { status: checked ? "COMPLETED" : "PENDING" },
+                                });
+                              }}
+                              className="mt-0.5"
+                              data-testid={`checkbox-item-${item.id}`}
+                            />
+                          ) : (
+                            <div className="mt-0.5">
+                              {item.status === "COMPLETED" ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              ) : (
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
                           )}
-                          <div className="flex gap-2 mt-0.5 text-xs text-muted-foreground">
-                            {item.assignedToName && <span>Assigned: {item.assignedToName}</span>}
-                            {item.dueDate && <span>Due: {fmtDate(item.dueDate)}</span>}
-                            {item.completedAt && <span className="text-green-600">Done {fmtDate(item.completedAt)}</span>}
+                          <div className="flex-1 min-w-0">
+                            <span className={`text-sm ${item.status === "COMPLETED" ? "line-through text-muted-foreground" : ""}`}>
+                              {item.title}
+                            </span>
+                            {item.description && (
+                              <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                            )}
+                            <div className="flex gap-2 mt-0.5 text-xs text-muted-foreground">
+                              {item.assignedToName && <span>Assigned: {item.assignedToName}</span>}
+                              {item.dueDate && <span>Due: {fmtDate(item.dueDate)}</span>}
+                              {item.notes && <span>Notes: {item.notes}</span>}
+                              {item.completedAt && <span className="text-green-600">Done {fmtDate(item.completedAt)}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {canManage && editingItemId !== item.id && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => startEditing(item)}
+                                data-testid={`button-edit-item-${item.id}`}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            )}
+                            <Badge className={`text-xs ${STATUS_BADGE[item.status]?.className || ""}`}>
+                              {STATUS_BADGE[item.status]?.label || item.status}
+                            </Badge>
                           </div>
                         </div>
-                        <Badge className={`text-xs ${STATUS_BADGE[item.status]?.className || ""}`}>
-                          {STATUS_BADGE[item.status]?.label || item.status}
-                        </Badge>
+                        {editingItemId === item.id && (
+                          <div className="mt-2 ml-7 p-3 bg-muted/50 rounded-md space-y-2" data-testid={`edit-panel-item-${item.id}`}>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Responsible Person</Label>
+                                <Input
+                                  value={editAssignee}
+                                  onChange={e => setEditAssignee(e.target.value)}
+                                  placeholder="Enter name"
+                                  className="h-8 text-xs"
+                                  data-testid={`input-item-assignee-${item.id}`}
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Target Date</Label>
+                                <Input
+                                  type="date"
+                                  value={editDueDate}
+                                  onChange={e => setEditDueDate(e.target.value)}
+                                  className="h-8 text-xs"
+                                  data-testid={`input-item-due-date-${item.id}`}
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Notes</Label>
+                              <Textarea
+                                value={editNotes}
+                                onChange={e => setEditNotes(e.target.value)}
+                                placeholder="Add notes..."
+                                rows={2}
+                                className="text-xs"
+                                data-testid={`input-item-notes-${item.id}`}
+                              />
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setEditingItemId(null)}
+                                className="h-7 text-xs"
+                                data-testid={`button-cancel-edit-${item.id}`}
+                              >
+                                <X className="h-3 w-3 mr-1" /> Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => saveItemEdit(item.id)}
+                                disabled={updateItem.isPending}
+                                className="h-7 text-xs"
+                                data-testid={`button-save-item-${item.id}`}
+                              >
+                                <Save className="h-3 w-3 mr-1" /> Save
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -482,19 +604,23 @@ function NewChecklistDialog({ onClose, onSave, isSaving }: {
   );
 }
 
-function NewMethodStatementDialog({ scheduleTasks, onClose, onSave, isSaving }: {
+function NewMethodStatementDialog({ scheduleTasks, checklists, onClose, onSave, isSaving }: {
   scheduleTasks: ScheduleTask[];
+  checklists: MobilizationChecklist[];
   onClose: () => void;
   onSave: (data: Record<string, unknown>) => void;
   isSaving: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [workActivity, setWorkActivity] = useState("");
+  const [sequenceOfOperations, setSequenceOfOperations] = useState("");
+  const [equipmentResources, setEquipmentResources] = useState("");
   const [hazards, setHazards] = useState("");
   const [controlMeasures, setControlMeasures] = useState("");
   const [ppe, setPpe] = useState("");
   const [emergencyProcedures, setEmergencyProcedures] = useState("");
   const [linkedTaskId, setLinkedTaskId] = useState("");
+  const [linkedSafetyChecklistId, setLinkedSafetyChecklistId] = useState("");
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -508,6 +634,14 @@ function NewMethodStatementDialog({ scheduleTasks, onClose, onSave, isSaving }: 
           <div className="space-y-1.5">
             <Label>Work Activity *</Label>
             <Textarea rows={2} value={workActivity} onChange={e => setWorkActivity(e.target.value)} placeholder="Describe the work activity..." data-testid="input-method-work-activity" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1"><ListOrdered className="h-3.5 w-3.5" /> Sequence of Operations</Label>
+            <Textarea rows={3} value={sequenceOfOperations} onChange={e => setSequenceOfOperations(e.target.value)} placeholder="Step-by-step procedure for carrying out the work..." data-testid="input-method-sequence" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1"><Wrench className="h-3.5 w-3.5" /> Equipment & Resources</Label>
+            <Textarea rows={2} value={equipmentResources} onChange={e => setEquipmentResources(e.target.value)} placeholder="List equipment, tools, and resources needed..." data-testid="input-method-equipment" />
           </div>
           <div className="space-y-1.5">
             <Label>Hazards</Label>
@@ -537,6 +671,18 @@ function NewMethodStatementDialog({ scheduleTasks, onClose, onSave, isSaving }: 
               </Select>
             </div>
           )}
+          {checklists.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Link to Safety Checklist</Label>
+              <Select value={linkedSafetyChecklistId} onValueChange={setLinkedSafetyChecklistId}>
+                <SelectTrigger data-testid="select-method-linked-checklist"><SelectValue placeholder="Select a checklist (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {checklists.map(c => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -544,11 +690,14 @@ function NewMethodStatementDialog({ scheduleTasks, onClose, onSave, isSaving }: 
             onClick={() => onSave({
               title,
               workActivity,
+              sequenceOfOperations: sequenceOfOperations || undefined,
+              equipmentResources: equipmentResources || undefined,
               hazards: hazards || undefined,
               controlMeasures: controlMeasures || undefined,
               ppe: ppe || undefined,
               emergencyProcedures: emergencyProcedures || undefined,
               linkedScheduleTaskId: linkedTaskId && linkedTaskId !== "none" ? linkedTaskId : undefined,
+              linkedSafetyChecklistId: linkedSafetyChecklistId && linkedSafetyChecklistId !== "none" ? linkedSafetyChecklistId : undefined,
             })}
             disabled={!title.trim() || !workActivity.trim() || isSaving}
             data-testid="button-create-method-statement"
@@ -561,9 +710,10 @@ function NewMethodStatementDialog({ scheduleTasks, onClose, onSave, isSaving }: 
   );
 }
 
-function MethodStatementDetailDialog({ statement, scheduleTasks, canManage, onClose, onStatusChange, isUpdating }: {
+function MethodStatementDetailDialog({ statement, scheduleTasks, checklists, canManage, onClose, onStatusChange, isUpdating }: {
   statement: MethodStatement;
   scheduleTasks: ScheduleTask[];
+  checklists: MobilizationChecklist[];
   canManage: boolean;
   onClose: () => void;
   onStatusChange: (status: string, rejectionReason?: string) => void;
@@ -573,6 +723,7 @@ function MethodStatementDetailDialog({ statement, scheduleTasks, canManage, onCl
   const [showReject, setShowReject] = useState(false);
 
   const linkedTask = scheduleTasks.find(t => t.id === statement.linkedScheduleTaskId);
+  const linkedChecklist = checklists.find(c => c.id === statement.linkedSafetyChecklistId);
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -584,13 +735,18 @@ function MethodStatementDetailDialog({ statement, scheduleTasks, canManage, onCl
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge className={`text-xs ${STATUS_BADGE[statement.status]?.className || ""}`}>
               {STATUS_BADGE[statement.status]?.label || statement.status}
             </Badge>
             {linkedTask && (
               <Badge variant="secondary" className="text-xs">
-                Linked: {linkedTask.name}
+                Task: {linkedTask.name}
+              </Badge>
+            )}
+            {linkedChecklist && (
+              <Badge variant="secondary" className="text-xs">
+                Checklist: {linkedChecklist.title}
               </Badge>
             )}
           </div>
@@ -600,6 +756,22 @@ function MethodStatementDetailDialog({ statement, scheduleTasks, canManage, onCl
               <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-1">Work Activity</h4>
               <p className="text-sm">{statement.workActivity}</p>
             </div>
+            {statement.sequenceOfOperations && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-1 flex items-center gap-1">
+                  <ListOrdered className="h-3.5 w-3.5" /> Sequence of Operations
+                </h4>
+                <p className="text-sm whitespace-pre-line">{statement.sequenceOfOperations}</p>
+              </div>
+            )}
+            {statement.equipmentResources && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-1 flex items-center gap-1">
+                  <Wrench className="h-3.5 w-3.5" /> Equipment & Resources
+                </h4>
+                <p className="text-sm whitespace-pre-line">{statement.equipmentResources}</p>
+              </div>
+            )}
             {statement.hazards && (
               <div>
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-1">Hazards</h4>

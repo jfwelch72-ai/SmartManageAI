@@ -46,15 +46,23 @@ const updateChecklistItemSchema = z.object({
   dueDate: z.string().nullable().optional(),
 });
 
+const updateChecklistSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().nullable().optional(),
+});
+
 const createMethodStatementSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
   workActivity: z.string().min(1, "Work activity is required"),
+  sequenceOfOperations: z.string().optional(),
+  equipmentResources: z.string().optional(),
   hazards: z.string().optional(),
   controlMeasures: z.string().optional(),
   ppe: z.string().optional(),
   emergencyProcedures: z.string().optional(),
   linkedScheduleTaskId: z.string().optional(),
+  linkedSafetyChecklistId: z.string().optional(),
 });
 
 const updateMethodStatementSchema = z.object({
@@ -62,11 +70,14 @@ const updateMethodStatementSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   workActivity: z.string().optional(),
+  sequenceOfOperations: z.string().optional(),
+  equipmentResources: z.string().optional(),
   hazards: z.string().optional(),
   controlMeasures: z.string().optional(),
   ppe: z.string().optional(),
   emergencyProcedures: z.string().optional(),
   linkedScheduleTaskId: z.string().optional(),
+  linkedSafetyChecklistId: z.string().optional(),
   rejectionReason: z.string().optional(),
 });
 
@@ -105,6 +116,45 @@ router.post("/api/projects/:projectId/mobilization/checklists", requireAuth, req
     }
 
     res.json(checklist);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.patch("/api/mobilization/checklists/:checklistId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+  try {
+    const { checklistId } = req.params;
+    const [existing] = await db.select().from(mobilizationChecklists)
+      .where(eq(mobilizationChecklists.id, checklistId));
+    if (!existing) return res.status(404).json({ error: "Checklist not found" });
+
+    const parsed = updateChecklistSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (parsed.data.title !== undefined) updates.title = parsed.data.title;
+    if (parsed.data.description !== undefined) updates.description = parsed.data.description;
+
+    const [updated] = await db.update(mobilizationChecklists)
+      .set(updates)
+      .where(eq(mobilizationChecklists.id, checklistId))
+      .returning();
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete("/api/mobilization/checklists/:checklistId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+  try {
+    const { checklistId } = req.params;
+    const [existing] = await db.select().from(mobilizationChecklists)
+      .where(eq(mobilizationChecklists.id, checklistId));
+    if (!existing) return res.status(404).json({ error: "Checklist not found" });
+
+    await db.delete(mobilizationChecklistItems).where(eq(mobilizationChecklistItems.checklistId, checklistId));
+    await db.delete(mobilizationChecklists).where(eq(mobilizationChecklists.id, checklistId));
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -236,11 +286,14 @@ router.post("/api/projects/:projectId/method-statements", requireAuth, requireRo
       title: parsed.data.title,
       description: parsed.data.description || null,
       workActivity: parsed.data.workActivity,
+      sequenceOfOperations: parsed.data.sequenceOfOperations || null,
+      equipmentResources: parsed.data.equipmentResources || null,
       hazards: parsed.data.hazards || null,
       controlMeasures: parsed.data.controlMeasures || null,
       ppe: parsed.data.ppe || null,
       emergencyProcedures: parsed.data.emergencyProcedures || null,
       linkedScheduleTaskId: parsed.data.linkedScheduleTaskId || null,
+      linkedSafetyChecklistId: parsed.data.linkedSafetyChecklistId || null,
       createdById: req.user!.id,
     }).returning();
 
@@ -279,11 +332,14 @@ router.patch("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMEN
     if (parsed.data.title !== undefined) updates.title = parsed.data.title;
     if (parsed.data.description !== undefined) updates.description = parsed.data.description;
     if (parsed.data.workActivity !== undefined) updates.workActivity = parsed.data.workActivity;
+    if (parsed.data.sequenceOfOperations !== undefined) updates.sequenceOfOperations = parsed.data.sequenceOfOperations;
+    if (parsed.data.equipmentResources !== undefined) updates.equipmentResources = parsed.data.equipmentResources;
     if (parsed.data.hazards !== undefined) updates.hazards = parsed.data.hazards;
     if (parsed.data.controlMeasures !== undefined) updates.controlMeasures = parsed.data.controlMeasures;
     if (parsed.data.ppe !== undefined) updates.ppe = parsed.data.ppe;
     if (parsed.data.emergencyProcedures !== undefined) updates.emergencyProcedures = parsed.data.emergencyProcedures;
     if (parsed.data.linkedScheduleTaskId !== undefined) updates.linkedScheduleTaskId = parsed.data.linkedScheduleTaskId;
+    if (parsed.data.linkedSafetyChecklistId !== undefined) updates.linkedSafetyChecklistId = parsed.data.linkedSafetyChecklistId;
 
     if (parsed.data.status) {
       updates.status = parsed.data.status;
