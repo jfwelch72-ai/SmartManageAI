@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import crypto from "crypto";
 import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
@@ -1269,8 +1270,11 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
         if (existing.length > 0) continue;
 
         const reportData = await aggregateReportData(project.id, startStr, endStr, type);
+        const reportId = crypto.randomUUID();
+        const pdfStorageKey = `reports/${project.id}/${reportId}.pdf`;
 
         const [report] = await db.insert(projectReports).values({
+          id: reportId,
           projectId: project.id,
           reportType: type,
           title: `${type === "WEEKLY" ? "Weekly" : "Monthly"} Report: ${startStr} to ${endStr}`,
@@ -1278,13 +1282,14 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
           dateRangeEnd: endStr,
           status: "COMPLETED",
           reportData,
+          pdfStorageKey,
           generatedAt: now,
         }).returning();
 
         const settingsResult = await db.execute(
           sql`SELECT email_recipients FROM project_report_settings WHERE project_id = ${project.id}`
         );
-        const settingsRow = (settingsResult.rows || [])[0] as any;
+        const settingsRow = (settingsResult.rows || [])[0] as { email_recipients?: string[] } | undefined;
         const lastRecipients = settingsRow?.email_recipients;
         if (lastRecipients && Array.isArray(lastRecipients) && lastRecipients.length > 0) {
           try {

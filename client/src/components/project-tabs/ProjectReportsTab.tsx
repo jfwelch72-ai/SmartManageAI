@@ -18,6 +18,23 @@ import {
 } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
 
+interface ReportData {
+  project: { id: string; name: string; projectCode: string | null; status: string };
+  period: { start: string; end: string; type: string };
+  dailyNotes: { total: number; entries: Array<{ date: string | null; text: string; type: string | null }> };
+  labor: { totalRegularHours: number; totalOvertimeHours: number; totalHours: number; uniqueWorkers: number; entriesCount: number };
+  safety: { ppeViolations: number; materialTestsFailed: number; totalIncidents: number };
+  schedule: { totalTasks: number; completedTasks: number; inProgressTasks: number; delayedTasks: number; startedTasks: number };
+  changeOrders: { total: number; items: Array<{ number: number | null; description: string | null; amount: string | null; status: string }> };
+  financials: { budget: number; actualCost: number; variance: number; variancePercent: number; changeOrdersSummary: { approved: number; pending: number } } | null;
+  procurement: { totalOrders: number; received: number; pending: number } | null;
+  subcontractors: { totalSubcontracts: number; payApplicationsInPeriod: number; totalContractValue: number; billedToDate: number } | null;
+  materialsReceived: { totalDeliveries: number; totalAmount: number; items: Array<{ description: string; amount: number; vendor: string | null; deliveryDate: string | null }> } | null;
+  weatherSummary: { daysWithData: number; entries: Array<{ date: string; conditions: string }> } | null;
+  keyPhotos: { totalPhotos: number; batches: number } | null;
+  healthScore: number | null;
+}
+
 interface ProjectReport {
   id: string;
   projectId: string;
@@ -27,7 +44,7 @@ interface ProjectReport {
   dateRangeEnd: string;
   status: "GENERATING" | "COMPLETED" | "FAILED";
   generatedById: string | null;
-  reportData: any;
+  reportData: ReportData | null;
   generatedAt: string | null;
   createdAt: string;
 }
@@ -533,7 +550,7 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
   );
 }
 
-function ReportDataView({ data }: { data: any }) {
+function ReportDataView({ data }: { data: ReportData }) {
   return (
     <div className="mt-4 space-y-4 border-t pt-4" data-testid="report-data-view">
       {data.healthScore != null && (
@@ -604,33 +621,23 @@ function ReportDataView({ data }: { data: any }) {
                 <p className="font-medium">${data.financials.budget?.toLocaleString() ?? "—"}</p>
               </div>
               <div>
-                <p className="text-muted-foreground text-xs">Original Contract</p>
-                <p className="font-medium">${data.financials.originalContractValue?.toLocaleString() ?? "—"}</p>
+                <p className="text-muted-foreground text-xs">Actual Cost (Period)</p>
+                <p className="font-medium">${data.financials.actualCost?.toLocaleString() ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">Variance</p>
+                <p className={`font-medium ${data.financials.variance >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  ${data.financials.variance?.toLocaleString() ?? "—"} ({data.financials.variancePercent}%)
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground text-xs">Approved COs</p>
-                <p className="font-medium">
-                  {data.financials.changeOrdersSummary?.approved ?? 0} (${data.financials.changeOrdersSummary?.approvedAmount?.toLocaleString() ?? 0})
-                </p>
+                <p className="font-medium">{data.financials.changeOrdersSummary?.approved ?? 0}</p>
               </div>
               <div>
                 <p className="text-muted-foreground text-xs">Pending COs</p>
                 <p className="font-medium">{data.financials.changeOrdersSummary?.pending ?? 0}</p>
               </div>
-              {data.financials.actualCostInPeriod !== undefined && (
-                <div>
-                  <p className="text-muted-foreground text-xs">Actual Cost (Period)</p>
-                  <p className="font-medium">${data.financials.actualCostInPeriod?.toLocaleString() ?? "—"}</p>
-                </div>
-              )}
-              {data.financials.budgetVariance !== undefined && (
-                <div>
-                  <p className="text-muted-foreground text-xs">Budget Variance</p>
-                  <p className={`font-medium ${data.financials.budgetVariance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    ${data.financials.budgetVariance?.toLocaleString() ?? "—"}
-                  </p>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>
@@ -668,18 +675,104 @@ function ReportDataView({ data }: { data: any }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Users className="h-4 w-4" />
-              Subcontractor Summary
+              Subcontractor Performance
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground text-xs">Active Subcontracts</p>
                 <p className="font-medium">{data.subcontractors.totalSubcontracts}</p>
               </div>
               <div>
+                <p className="text-muted-foreground text-xs">Total Contract Value</p>
+                <p className="font-medium">${data.subcontractors.totalContractValue?.toLocaleString() ?? "0"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">Billed to Date</p>
+                <p className="font-medium">${data.subcontractors.billedToDate?.toLocaleString() ?? "0"}</p>
+              </div>
+              <div>
                 <p className="text-muted-foreground text-xs">Pay Applications (Period)</p>
                 <p className="font-medium">{data.subcontractors.payApplicationsInPeriod}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {data.weatherSummary && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Weather Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-2">{data.weatherSummary.daysWithData} day(s) with weather data</p>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {data.weatherSummary.entries?.slice(0, 10).map((w: { date: string; conditions: string }, i: number) => (
+                <div key={i} className="flex justify-between text-xs py-1 border-b last:border-0">
+                  <span className="font-medium">{w.date}</span>
+                  <span className="text-muted-foreground truncate max-w-[300px]">{w.conditions || "N/A"}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {data.materialsReceived && data.materialsReceived.totalDeliveries > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <ClipboardList className="h-4 w-4" />
+              Materials Received
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm mb-2">
+              <div>
+                <p className="text-muted-foreground text-xs">Total Deliveries</p>
+                <p className="font-medium">{data.materialsReceived.totalDeliveries}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">Total Amount</p>
+                <p className="font-medium">${data.materialsReceived.totalAmount?.toLocaleString() ?? "0"}</p>
+              </div>
+            </div>
+            {data.materialsReceived.items?.length > 0 && (
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {data.materialsReceived.items.slice(0, 10).map((m: { description: string; amount: number; vendor: string | null }, i: number) => (
+                  <div key={i} className="flex justify-between text-xs py-1 border-b last:border-0">
+                    <span className="truncate max-w-[200px]">{m.description}</span>
+                    <span>${m.amount.toLocaleString()}{m.vendor ? ` (${m.vendor})` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {data.keyPhotos && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Site Photos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-muted-foreground text-xs">Photos Captured</p>
+                <p className="font-medium">{data.keyPhotos.totalPhotos}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">Analysis Batches</p>
+                <p className="font-medium">{data.keyPhotos.batches}</p>
               </div>
             </div>
           </CardContent>
@@ -693,7 +786,7 @@ function ReportDataView({ data }: { data: any }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {data.changeOrders.items.slice(0, 10).map((co: any, i: number) => (
+              {data.changeOrders.items.slice(0, 10).map((co: { number: number | null; description: string | null; amount: string | null; status: string }, i: number) => (
                 <div key={i} className="flex items-center justify-between text-sm py-1 border-b last:border-0">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs">CO #{co.number}</Badge>
@@ -717,7 +810,7 @@ function ReportDataView({ data }: { data: any }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {data.dailyNotes.entries.slice(0, 15).map((note: any, i: number) => (
+              {data.dailyNotes.entries.slice(0, 15).map((note: { date: string | null; text: string; type: string | null }, i: number) => (
                 <div key={i} className="text-sm py-1 border-b last:border-0">
                   <span className="text-xs text-muted-foreground">
                     {note.date ? format(new Date(note.date), "MMM d") : "—"}

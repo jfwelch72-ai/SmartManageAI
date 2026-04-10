@@ -11,6 +11,23 @@ import { PassThrough } from "stream";
 import { pool } from "./db";
 import type { OrganizationBrandingPDF } from "./pdf-service";
 
+interface ReportData {
+  project: { id: string; name: string; projectCode: string | null; status: string };
+  period: { start: string; end: string; type: string };
+  dailyNotes: { total: number; entries: Array<{ date: Date | string | null; text: string; type: string | null }> };
+  labor: { totalRegularHours: number; totalOvertimeHours: number; totalHours: number; uniqueWorkers: number; entriesCount: number };
+  safety: { ppeViolations: number; materialTestsFailed: number; totalIncidents: number };
+  schedule: { totalTasks: number; completedTasks: number; inProgressTasks: number; delayedTasks: number; startedTasks: number };
+  changeOrders: { total: number; items: Array<{ number: number | null; description: string | null; amount: string | null; status: string }> };
+  financials: { budget: number; actualCost: number; variance: number; variancePercent: number; changeOrdersSummary: { approved: number; pending: number } } | null;
+  procurement: { totalOrders: number; received: number; pending: number } | null;
+  subcontractors: { totalSubcontracts: number; payApplicationsInPeriod: number; totalContractValue: number; billedToDate: number } | null;
+  materialsReceived: { totalDeliveries: number; totalAmount: number; items: Array<{ description: string; amount: number; vendor: string | null; deliveryDate: string | null }> } | null;
+  weatherSummary: { daysWithData: number; entries: Array<{ date: string; conditions: string }> } | null;
+  keyPhotos: { totalPhotos: number; batches: number } | null;
+  healthScore: number | null;
+}
+
 async function getProjectOrgId(projectId: string): Promise<string | null> {
   const [project] = await db.select({ gcOrganizationId: projects.gcOrganizationId })
     .from(projects).where(eq(projects.id, projectId));
@@ -29,7 +46,7 @@ const generateReportSchema = z.object({
   emailRecipients: z.array(z.string().email()).optional(),
 });
 
-export async function aggregateReportData(projectId: string, startDate: string, endDate: string, reportType: "WEEKLY" | "MONTHLY") {
+export async function aggregateReportData(projectId: string, startDate: string, endDate: string, reportType: "WEEKLY" | "MONTHLY"): Promise<ReportData> {
   const startTs = new Date(startDate);
   const endTs = new Date(endDate + "T23:59:59.999Z");
 
@@ -127,34 +144,32 @@ export async function aggregateReportData(projectId: string, startDate: string, 
   } catch {
   }
 
-  let financialSummary: any = null;
+  let financialSummary: { budget: number; actualCost: number; variance: number; variancePercent: number; changeOrdersSummary: { approved: number; pending: number } } | null = null;
   try {
     const finResult = await pool.query(
-      `SELECT budget, original_contract_value FROM projects WHERE id = $1`,
+      `SELECT budget, contract_amount FROM projects WHERE id = $1`,
       [projectId]
     );
     const fin = finResult.rows[0];
-    const budget = parseFloat(fin?.budget || "0");
-    const contractValue = parseFloat(fin?.original_contract_value || "0");
+    const budget = parseFloat(fin?.budget || fin?.contract_amount || "0");
 
     let actualCost = 0;
     try {
       const costResult = await pool.query(
-        `SELECT COALESCE(SUM(amount), 0) as total FROM project_costs WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3`,
+        `SELECT COALESCE(SUM(total_amount), 0) as total FROM cost_ledger_postings WHERE project_id = $1 AND posted_at >= $2 AND posted_at <= $3`,
         [projectId, startDate, endDate + "T23:59:59.999Z"]
       );
       actualCost = parseFloat(costResult.rows[0]?.total || "0");
     } catch {}
 
+    const variance = budget - actualCost;
     financialSummary = {
       budget,
-      originalContractValue: contractValue,
-      actualCostInPeriod: Math.round(actualCost * 100) / 100,
-      budgetVariance: Math.round((budget - actualCost) * 100) / 100,
+      actualCost: Math.round(actualCost * 100) / 100,
+      variance: Math.round(variance * 100) / 100,
+      variancePercent: budget > 0 ? Math.round((variance / budget) * 10000) / 100 : 0,
       changeOrdersSummary: {
-        total: cos.length,
         approved: cos.filter(c => c.status === "APPROVED").length,
-        approvedAmount: cos.filter(c => c.status === "APPROVED").reduce((s, c) => s + parseFloat(c.amount || "0"), 0),
         pending: cos.filter(c => c.status === "PENDING" || c.status === "SUBMITTED").length,
       },
     };
@@ -169,13 +184,13 @@ export async function aggregateReportData(projectId: string, startDate: string, 
     healthScore = hsResult.rows[0]?.score ?? null;
   } catch {}
 
-  let procurement: any = null;
+  let procurement: { totalOrders: number; received: number; pending: number } | null = null;
   try {
     const poResult = await pool.query(
       `SELECT 
         COUNT(*) as total,
-        COUNT(*) FILTER (WHERE status = 'RECEIVED') as received,
-        COUNT(*) FILTER (WHERE status = 'PENDING' OR status = 'ORDERED') as pending
+        COUNT(*) FILTER (WHERE status IN ('FULFILLED', 'PARTIAL')) as received,
+        COUNT(*) FILTER (WHERE status IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'SENT', 'ACKNOWLEDGED')) as pending
        FROM purchase_orders WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3`,
       [projectId, startDate, endDate + "T23:59:59.999Z"]
     );
@@ -187,14 +202,16 @@ export async function aggregateReportData(projectId: string, startDate: string, 
     };
   } catch {}
 
-  let subcontractors: any = null;
+  let subcontractors: { totalSubcontracts: number; payApplicationsInPeriod: number; totalContractValue: number; billedToDate: number } | null = null;
   try {
     const subResult = await pool.query(
       `SELECT 
         COUNT(DISTINCT sc.id) as total_subs,
-        COUNT(DISTINCT sp.id) as pay_apps
-       FROM subcontracts sc
-       LEFT JOIN subcontract_pay_applications sp ON sp.subcontract_id = sc.id AND sp.created_at >= $2 AND sp.created_at <= $3
+        COUNT(DISTINCT sp.id) as pay_apps,
+        COALESCE(SUM(DISTINCT sc.contract_amount), 0) as total_value,
+        COALESCE(SUM(sp.net_amount_due), 0) as billed
+       FROM subcontractor_contracts sc
+       LEFT JOIN sub_pay_applications sp ON sp.contract_id = sc.id AND sp.created_at >= $2 AND sp.created_at <= $3
        WHERE sc.project_id = $1`,
       [projectId, startDate, endDate + "T23:59:59.999Z"]
     );
@@ -202,7 +219,77 @@ export async function aggregateReportData(projectId: string, startDate: string, 
     subcontractors = {
       totalSubcontracts: parseInt(sr?.total_subs || "0"),
       payApplicationsInPeriod: parseInt(sr?.pay_apps || "0"),
+      totalContractValue: Math.round(parseFloat(sr?.total_value || "0") * 100) / 100,
+      billedToDate: Math.round(parseFloat(sr?.billed || "0") * 100) / 100,
     };
+  } catch {}
+
+  let materialsReceived: { totalDeliveries: number; totalAmount: number; items: Array<{ description: string; amount: number; vendor: string | null; deliveryDate: string | null }> } | null = null;
+  try {
+    const matResult = await pool.query(
+      `SELECT description, amount, vendor, delivery_date 
+       FROM stored_materials 
+       WHERE project_id = $1 AND delivery_date >= $2 AND delivery_date <= $3
+       ORDER BY delivery_date DESC LIMIT 20`,
+      [projectId, startDate, endDate]
+    );
+    const matCountResult = await pool.query(
+      `SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total 
+       FROM stored_materials 
+       WHERE project_id = $1 AND delivery_date >= $2 AND delivery_date <= $3`,
+      [projectId, startDate, endDate]
+    );
+    const mc = matCountResult.rows[0];
+    materialsReceived = {
+      totalDeliveries: parseInt(mc?.cnt || "0"),
+      totalAmount: Math.round(parseFloat(mc?.total || "0") * 100) / 100,
+      items: matResult.rows.map((r: { description: string; amount: string; vendor: string | null; delivery_date: string | null }) => ({
+        description: r.description,
+        amount: parseFloat(r.amount || "0"),
+        vendor: r.vendor,
+        deliveryDate: r.delivery_date,
+      })),
+    };
+  } catch {}
+
+  let weatherSummary: { daysWithData: number; entries: Array<{ date: string; conditions: string }> } | null = null;
+  try {
+    const weatherNotes = await pool.query(
+      `SELECT DISTINCT ON (created_at::date) created_at::date as note_date, text
+       FROM project_notes
+       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
+         AND (LOWER(text) LIKE '%weather%' OR LOWER(text) LIKE '%rain%' OR LOWER(text) LIKE '%sunny%' OR LOWER(text) LIKE '%wind%' OR LOWER(text) LIKE '%storm%' OR LOWER(text) LIKE '%snow%' OR LOWER(text) LIKE '%clear%' OR LOWER(text) LIKE '%overcast%' OR LOWER(text) LIKE '%fog%')
+       ORDER BY created_at::date, created_at DESC`,
+      [projectId, startDate, endDate + "T23:59:59.999Z"]
+    );
+    if (weatherNotes.rows.length > 0) {
+      weatherSummary = {
+        daysWithData: weatherNotes.rows.length,
+        entries: weatherNotes.rows.map((r: { note_date: string; text: string }) => ({
+          date: r.note_date,
+          conditions: r.text.substring(0, 200),
+        })),
+      };
+    }
+  } catch {}
+
+  let keyPhotos: { totalPhotos: number; batches: number } | null = null;
+  try {
+    const photoResult = await pool.query(
+      `SELECT COUNT(jp.id) as photo_count, COUNT(DISTINCT jb.id) as batch_count
+       FROM jobsite_analysis_photos jp
+       JOIN jobsite_analysis_batches jb ON jp.batch_id = jb.id
+       WHERE jb.project_id = $1 AND jb.analysis_date >= $2 AND jb.analysis_date <= $3`,
+      [projectId, startDate, endDate]
+    );
+    const pr = photoResult.rows[0];
+    const photoCount = parseInt(pr?.photo_count || "0");
+    if (photoCount > 0) {
+      keyPhotos = {
+        totalPhotos: photoCount,
+        batches: parseInt(pr?.batch_count || "0"),
+      };
+    }
   } catch {}
 
   return {
@@ -246,11 +333,14 @@ export async function aggregateReportData(projectId: string, startDate: string, 
     financials: financialSummary,
     procurement,
     subcontractors,
+    materialsReceived,
+    weatherSummary,
+    keyPhotos,
     healthScore,
   };
 }
 
-export function generateReportPDF(reportData: any, branding?: OrganizationBrandingPDF): PassThrough {
+export function generateReportPDF(reportData: ReportData, branding?: OrganizationBrandingPDF): PassThrough {
   const stream = new PassThrough();
   const doc = new PDFDocument({ size: "LETTER", margin: 50 });
   doc.pipe(stream);
@@ -319,13 +409,38 @@ export function generateReportPDF(reportData: any, branding?: OrganizationBrandi
     doc.fontSize(13).fillColor(primaryColor).text("Financial Summary");
     doc.fontSize(10).fillColor("#374151");
     doc.text(`Budget: $${p.financials.budget.toLocaleString()}`);
-    doc.text(`Original Contract: $${p.financials.originalContractValue.toLocaleString()}`);
-    if (p.financials.actualCostInPeriod !== undefined) {
-      doc.text(`Actual Cost (Period): $${p.financials.actualCostInPeriod.toLocaleString()}`);
-      doc.text(`Budget Variance: $${p.financials.budgetVariance.toLocaleString()}`);
-    }
-    doc.text(`Approved COs: ${p.financials.changeOrdersSummary.approved} ($${p.financials.changeOrdersSummary.approvedAmount.toLocaleString()})`);
+    doc.text(`Actual Cost (Period): $${p.financials.actualCost.toLocaleString()}`);
+    doc.text(`Variance: $${p.financials.variance.toLocaleString()} (${p.financials.variancePercent}%)`);
+    doc.text(`Approved COs: ${p.financials.changeOrdersSummary.approved}`);
     doc.text(`Pending COs: ${p.financials.changeOrdersSummary.pending}`);
+    doc.moveDown(0.5);
+  }
+
+  if (p.weatherSummary) {
+    doc.fontSize(13).fillColor(primaryColor).text("Weather Summary");
+    doc.fontSize(10).fillColor("#374151");
+    doc.text(`Days with weather data: ${p.weatherSummary.daysWithData}`);
+    for (const w of (p.weatherSummary.entries || []).slice(0, 10)) {
+      doc.text(`${w.date}: ${w.conditions || "N/A"}`);
+    }
+    doc.moveDown(0.5);
+  }
+
+  if (p.materialsReceived && p.materialsReceived.totalDeliveries > 0) {
+    doc.fontSize(13).fillColor(primaryColor).text("Materials Received");
+    doc.fontSize(10).fillColor("#374151");
+    doc.text(`Total Deliveries: ${p.materialsReceived.totalDeliveries}`);
+    doc.text(`Total Amount: $${p.materialsReceived.totalAmount.toLocaleString()}`);
+    for (const m of (p.materialsReceived.items || []).slice(0, 10)) {
+      doc.text(`• ${m.description} — $${m.amount.toLocaleString()}${m.vendor ? ` (${m.vendor})` : ""}`);
+    }
+    doc.moveDown(0.5);
+  }
+
+  if (p.keyPhotos) {
+    doc.fontSize(13).fillColor(primaryColor).text("Site Photos");
+    doc.fontSize(10).fillColor("#374151");
+    doc.text(`Photos captured: ${p.keyPhotos.totalPhotos} across ${p.keyPhotos.batches} analysis batch(es)`);
     doc.moveDown(0.5);
   }
 
@@ -339,9 +454,11 @@ export function generateReportPDF(reportData: any, branding?: OrganizationBrandi
   }
 
   if (p.subcontractors) {
-    doc.fontSize(13).fillColor(primaryColor).text("Subcontractor Summary");
+    doc.fontSize(13).fillColor(primaryColor).text("Subcontractor Performance");
     doc.fontSize(10).fillColor("#374151");
     doc.text(`Active Subcontracts: ${p.subcontractors.totalSubcontracts}`);
+    doc.text(`Total Contract Value: $${p.subcontractors.totalContractValue?.toLocaleString() ?? "0"}`);
+    doc.text(`Billed to Date: $${p.subcontractors.billedToDate?.toLocaleString() ?? "0"}`);
     doc.text(`Pay Applications (Period): ${p.subcontractors.payApplicationsInPeriod}`);
     doc.moveDown(0.5);
   }
@@ -541,11 +658,13 @@ router.post(
 
       try {
         const reportData = await aggregateReportData(projectId, dateRangeStart, dateRangeEnd, reportType);
+        const pdfStorageKey = `reports/${projectId}/${report.id}.pdf`;
 
         const [updated] = await db.update(projectReports)
           .set({
             status: "COMPLETED",
             reportData,
+            pdfStorageKey,
             generatedAt: new Date(),
           })
           .where(eq(projectReports.id, report.id))
@@ -601,7 +720,7 @@ router.get(
         primaryColor: org?.primary_color || "#1a365d",
       };
 
-      const pdfStream = generateReportPDF(report.reportData as any, branding);
+      const pdfStream = generateReportPDF(report.reportData as ReportData, branding);
       const filename = `${report.reportType.toLowerCase()}_report_${report.dateRangeStart}_${report.dateRangeEnd}.pdf`;
 
       res.setHeader("Content-Type", "application/pdf");
