@@ -29,7 +29,7 @@ interface ReportData {
   healthScore: number | null;
 }
 
-function streamToBuffer(stream: PassThrough): Promise<Buffer> {
+export function streamToBuffer(stream: PassThrough): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     stream.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -38,7 +38,7 @@ function streamToBuffer(stream: PassThrough): Promise<Buffer> {
   });
 }
 
-async function persistPdfToStorage(pdfStorageKey: string, pdfBuffer: Buffer): Promise<void> {
+export async function persistPdfToStorage(pdfStorageKey: string, pdfBuffer: Buffer): Promise<void> {
   try {
     const privateDir = process.env.PRIVATE_OBJECT_DIR || process.env.REPLIT_OBJECT_STORAGE_PRIVATE_DIR;
     if (!privateDir) return;

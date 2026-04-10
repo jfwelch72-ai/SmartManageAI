@@ -1225,7 +1225,7 @@ async function processImapEmailSync() {
 async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
   try {
     const { projectReports } = await import("@shared/schema/operations");
-    const { aggregateReportData } = await import("../projectReportRoutes");
+    const { aggregateReportData, generateReportPDF, streamToBuffer, persistPdfToStorage } = await import("../projectReportRoutes");
     const { sendEmail } = await import("../services/emailService");
 
     const settingCol = type === "WEEKLY" ? "auto_weekly" : "auto_monthly";
@@ -1272,6 +1272,22 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
         const reportData = await aggregateReportData(project.id, startStr, endStr, type);
         const reportId = crypto.randomUUID();
         const pdfStorageKey = `reports/${project.id}/${reportId}.pdf`;
+
+        try {
+          const orgResult = await db.execute(
+            sql`SELECT name, primary_color FROM organizations WHERE id = ${project.gcOrganizationId}`
+          );
+          const orgRow = (orgResult.rows || [])[0] as { name?: string; primary_color?: string } | undefined;
+          const branding = {
+            organizationName: orgRow?.name || "SmartManageAI",
+            primaryColor: orgRow?.primary_color || "#1a365d",
+          };
+          const pdfStream = generateReportPDF(reportData, branding);
+          const pdfBuffer = await streamToBuffer(pdfStream);
+          await persistPdfToStorage(pdfStorageKey, pdfBuffer);
+        } catch (pdfErr) {
+          logError(`Failed to persist PDF for scheduled report ${reportId}`, {}, pdfErr instanceof Error ? pdfErr : new Error(String(pdfErr)));
+        }
 
         const [report] = await db.insert(projectReports).values({
           id: reportId,
