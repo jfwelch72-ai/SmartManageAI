@@ -18,6 +18,7 @@ import { ensureStackctProviderEnum } from "./ensureStackctProviderEnum";
 import { ensureMobilizationTables } from "./ensureMobilizationTables";
 import { ensurePermitTables } from "./ensurePermitTables";
 import { ensureMaterialTestTables } from "./ensureMaterialTestTables";
+import { ensureReportsTables } from "./ensureReportsTables";
 
 interface MigrationStep {
   name: string;
@@ -43,6 +44,7 @@ const migrations: MigrationStep[] = [
   { name: "mobilization_tables", fn: ensureMobilizationTables },
   { name: "permit_tables", fn: ensurePermitTables },
   { name: "material_test_tables", fn: ensureMaterialTestTables },
+  { name: "project_reports_table", fn: ensureReportsTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

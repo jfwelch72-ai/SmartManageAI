@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteBlockTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum, mobilizationChecklistStatusEnum, mobilizationItemStatusEnum, methodStatementStatusEnum, permitStatusEnum, permitTypeEnum, materialTestStatusEnum, materialTestTypeEnum, ppeTypeEnum, ppeComplianceStatusEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteBlockTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum, mobilizationChecklistStatusEnum, mobilizationItemStatusEnum, methodStatementStatusEnum, permitStatusEnum, permitTypeEnum, materialTestStatusEnum, materialTestTypeEnum, ppeTypeEnum, ppeComplianceStatusEnum, projectReportTypeEnum, projectReportStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, contracts, crmOrganisations, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
@@ -3180,4 +3180,28 @@ export const ppeComplianceLogs = pgTable("ppe_compliance_logs", {
 export const insertPpeComplianceLogSchema = createInsertSchema(ppeComplianceLogs).omit({ id: true, createdAt: true });
 export type InsertPpeComplianceLog = z.infer<typeof insertPpeComplianceLogSchema>;
 export type PpeComplianceLog = typeof ppeComplianceLogs.$inferSelect;
+
+export const projectReports = pgTable("project_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  reportType: projectReportTypeEnum("report_type").notNull(),
+  title: text("title").notNull(),
+  dateRangeStart: date("date_range_start").notNull(),
+  dateRangeEnd: date("date_range_end").notNull(),
+  status: projectReportStatusEnum("status").notNull().default("GENERATING"),
+  generatedById: varchar("generated_by_id").references(() => users.id, { onDelete: "set null" }),
+  reportData: jsonb("report_data"),
+  pdfStorageKey: text("pdf_storage_key"),
+  emailRecipients: text("email_recipients").array(),
+  generatedAt: timestamp("generated_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("project_reports_project_id_idx").on(table.projectId),
+  reportTypeIdx: index("project_reports_report_type_idx").on(table.reportType),
+  dateRangeIdx: index("project_reports_date_range_idx").on(table.dateRangeStart, table.dateRangeEnd),
+}));
+
+export const insertProjectReportSchema = createInsertSchema(projectReports).omit({ id: true, createdAt: true });
+export type InsertProjectReport = z.infer<typeof insertProjectReportSchema>;
+export type ProjectReport = typeof projectReports.$inferSelect;
 

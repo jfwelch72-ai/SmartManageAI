@@ -176,6 +176,7 @@ import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 import reportRoutes from "./reportRoutes";
 import safetyTrainingRoutes from "./safetyTrainingRoutes";
 import materialTestRoutes from "./materialTestRoutes";
+import projectReportRoutes from "./projectReportRoutes";
 import ppeComplianceRoutes from "./ppeComplianceRoutes";
 import safetyWorkflowRoutes from "./safetyWorkflowRoutes";
 import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
@@ -521,6 +522,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(bimRoutes);
   app.use(lidarRoutes);
   app.use(mobilizationRoutes);
+  app.use(projectReportRoutes);
 
   // Project Routes (split: core CRUD, content, financial)
   app.use(projectCrudRoutes);

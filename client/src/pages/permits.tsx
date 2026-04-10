@@ -9,7 +9,7 @@ import {
 import { format, differenceInDays, parseISO } from "date-fns";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { Helmet } from "react-helmet";
+import { useEffect } from "react";
 
 interface PermitWithProject {
   id: string;
@@ -78,9 +78,6 @@ export default function PermitsPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6" data-testid="page-permits">
-      <Helmet>
-        <title>Permits & Licenses | SmartManageAI</title>
-      </Helmet>
 
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

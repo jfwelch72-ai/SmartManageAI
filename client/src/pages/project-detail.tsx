@@ -124,6 +124,7 @@ import FieldTakeoffTab from "@/components/project-tabs/FieldTakeoffTab";
 import LidarTab from "@/components/project-tabs/LidarTab";
 import ProjectNotesTab from "@/components/project-tabs/ProjectNotesTab";
 import MobilizationTab from "@/components/project-tabs/MobilizationTab";
+import ProjectReportsTab from "@/components/project-tabs/ProjectReportsTab";
 import PermitsTab from "@/components/PermitsTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
@@ -326,6 +327,13 @@ function buildTabConfigs(
       icon: HardHat,
       visible: hasManagementAccess(userRole),
       group: "Field Operations",
+    },
+    {
+      value: "progress-reports",
+      label: "Reports",
+      icon: FileText,
+      visible: hasManagementAccess(userRole),
+      group: "Documents & Communication",
     },
     {
       value: "email-communications",
@@ -1364,6 +1372,10 @@ export default function ProjectDetailPage() {
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}
             />
+          </TabsContent>
+
+          <TabsContent value="progress-reports">
+            <ProjectReportsTab projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="lidar-scans">

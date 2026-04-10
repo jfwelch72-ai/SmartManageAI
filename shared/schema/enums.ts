@@ -669,6 +669,9 @@ export const ppeTypeEnum = pgEnum("ppe_type", [
 ]);
 export const ppeComplianceStatusEnum = pgEnum("ppe_compliance_status", ["COMPLIANT", "VIOLATION"]);
 
+export const projectReportTypeEnum = pgEnum("project_report_type", ["WEEKLY", "MONTHLY"]);
+export const projectReportStatusEnum = pgEnum("project_report_status", ["GENERATING", "COMPLETED", "FAILED"]);
+
 export const lidarScanStatusEnum = pgEnum("lidar_scan_status", ["UPLOADING", "PROCESSING", "READY", "ERROR"]);
 export const lidarColorModeEnum = pgEnum("lidar_color_mode", ["RGB", "ELEVATION", "INTENSITY"]);
 export const lidarAnnotationTypeEnum = pgEnum("lidar_annotation_type", ["DISTANCE", "AREA", "VOLUME", "NOTE"]);
