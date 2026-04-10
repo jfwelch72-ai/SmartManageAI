@@ -32,6 +32,7 @@ import type { TakeoffCondition } from "@shared/schema";
 import { computeAssemblyResults, type FormulaContext } from "@shared/utils/assemblyFormula";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
+import { MeasurementTable } from "./takeoff/MeasurementTable";
 import TakeoffCrossModulePanel from "./takeoff/TakeoffCrossModulePanel";
 import { PageThumbnailStrip } from "./takeoff/PageThumbnailStrip";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
@@ -54,7 +55,7 @@ import { onLibraryEvent } from "@/lib/libraryEvents";
 import { generateTakeoffExcel } from "@/utils/takeoff-export";
 import type { LibraryEvent } from "@/lib/libraryEvents";
 import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
-import { Users, Lock, Sparkles, DollarSign, Layers, Zap } from "lucide-react";
+import { Users, Lock, Sparkles, DollarSign, Layers, Zap, TableProperties } from "lucide-react";
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -234,6 +235,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     try { const stored = localStorage.getItem("takeoff-label-hidden-categories"); return stored ? new Set(JSON.parse(stored)) : new Set(); } catch { return new Set(); }
   });
   const [showCostPanel, setShowCostPanel] = useState(false);
+  const [showMeasurementTable, setShowMeasurementTable] = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(50);
   const [showOverlaySlider, setShowOverlaySlider] = useState(false);
   const [activeCondition, setActiveCondition] = useState<TakeoffCondition | null>(null);
@@ -1687,6 +1689,109 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               {calibrationMode === "first-point" ? "Click first point on a known distance" : "Click second point to complete"}
             </div>
           )}
+          {isDrawing && isMobile && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border px-3 py-2" data-testid="mobile-drawing-bar">
+              <div className="flex items-center gap-1.5 pr-2 border-r">
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-xs font-medium">{drawingPoints.length} pts</span>
+              </div>
+              {drawingPoints.length > 0 && (
+                <button
+                  onClick={() => {
+                    const event = new KeyboardEvent("keydown", { key: "Backspace" });
+                    window.dispatchEvent(event);
+                  }}
+                  className="px-3 py-1.5 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-lg text-xs font-medium active:scale-95 transition-transform"
+                  data-testid="mobile-undo-point"
+                >
+                  Undo
+                </button>
+              )}
+              {(activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area" || activeTool === "segment") && drawingPoints.length >= (activeTool === "segment" ? 2 : 3) && (
+                <button
+                  onClick={() => {
+                    const event = new KeyboardEvent("keydown", { key: "Enter" });
+                    window.dispatchEvent(event);
+                  }}
+                  className="px-3 py-1.5 bg-green-500/20 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium active:scale-95 transition-transform"
+                  data-testid="mobile-close-polygon"
+                >
+                  Close
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  const event = new KeyboardEvent("keydown", { key: "Escape" });
+                  window.dispatchEvent(event);
+                }}
+                className="px-3 py-1.5 bg-red-500/20 text-red-700 dark:text-red-300 rounded-lg text-xs font-medium active:scale-95 transition-transform"
+                data-testid="mobile-cancel-draw"
+              >
+                Cancel
+              </button>
+              {activeCondition && (
+                <div className="flex items-center gap-1 pl-2 border-l">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: activeCondition.color || "#2563eb" }} />
+                  <span className="text-[10px] text-muted-foreground truncate max-w-[60px]">{activeCondition.name}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {isDrawing && !isMobile && (
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-card/95 backdrop-blur-sm rounded-lg shadow-lg border px-3 py-1.5" data-testid="drawing-guide-bar">
+              <div className="flex items-center gap-1.5">
+                <div className={cn("w-2 h-2 rounded-full animate-pulse", isDrawing ? "bg-green-500" : "bg-muted-foreground")} />
+                <span className="text-[11px] font-medium">
+                  {activeTool === "linear" || activeTool === "linear_with_drop" || activeTool === "pitched_linear"
+                    ? drawingPoints.length === 0 ? "Click start point" : "Click end point · Esc cancel"
+                    : activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area"
+                    ? drawingPoints.length < 3 ? `Click point ${drawingPoints.length + 1}` : `${drawingPoints.length} pts · Enter to close · Backspace undo`
+                    : activeTool === "segment"
+                    ? `${drawingPoints.length} pts · Enter to finish · Backspace undo`
+                    : activeTool === "count"
+                    ? "Click to place count"
+                    : "Drawing..."}
+                </span>
+              </div>
+              {drawingPoints.length > 0 && (
+                <span className="text-[10px] text-muted-foreground border-l pl-2">
+                  {drawingPoints.length} point{drawingPoints.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {activeCondition && (
+                <span className="text-[10px] text-muted-foreground border-l pl-2 flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: activeCondition.color || "#2563eb" }} />
+                  {activeCondition.name}
+                </span>
+              )}
+            </div>
+          )}
+          {isDrawing && conditions.length > 0 && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 bg-card/95 backdrop-blur-sm rounded-lg shadow-lg border px-2 py-1.5 max-w-[80%] overflow-x-auto" data-testid="condition-quick-bar">
+              {activeCondition && (
+                <div className="flex items-center gap-1.5 pr-2 border-r mr-1 shrink-0">
+                  <div className="w-3 h-3 rounded-full border border-white/30 shrink-0" style={{ backgroundColor: activeCondition.color || "#2563eb" }} />
+                  <span className="text-[11px] font-semibold truncate max-w-[120px]">{activeCondition.name}</span>
+                </div>
+              )}
+              {conditions
+                .filter(c => c.id !== activeCondition?.id)
+                .sort((a, b) => (b.lastUsedAt || "").localeCompare(a.lastUsedAt || ""))
+                .slice(0, 8)
+                .map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => handleActivateCondition(c)}
+                    className="flex items-center gap-1 px-1.5 py-1 rounded text-[10px] hover:bg-accent/80 transition-colors shrink-0"
+                    data-testid={`quick-condition-${c.id}`}
+                    title={`${c.name} (${c.measurementType})`}
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color || "#2563eb" }} />
+                    <span className="truncate max-w-[80px] text-muted-foreground">{c.name}</span>
+                  </button>
+                ))}
+            </div>
+          )}
           {selectedSheet ? (
             <Stage
               ref={stageRef}
@@ -2465,22 +2570,37 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   } catch {}
                   if (!labelText.trim()) return null;
                   const fontSize = Math.max(10, Math.min(14, 12 / stageScale));
+                  const lines = labelText.trim().split("\n");
+                  const maxLineLen = Math.max(...lines.map(l => l.length));
+                  const bgWidth = maxLineLen * fontSize * 0.52 + 12;
+                  const bgHeight = lines.length * (fontSize + 3) + 6;
+                  const mColor = m.color || baseColor;
                   return (
                     <Group key={`label-${m.id}`} x={center.x} y={center.y} listening={false}>
                       <Rect
                         x={-2}
                         y={-2}
-                        width={labelText.length * fontSize * 0.45 + 8}
-                        height={(labelText.split("\n").length) * (fontSize + 2) + 4}
-                        fill="rgba(0,0,0,0.7)"
+                        width={bgWidth}
+                        height={bgHeight}
+                        fill="rgba(0,0,0,0.8)"
                         cornerRadius={3}
+                      />
+                      <Rect
+                        x={-2}
+                        y={-2}
+                        width={3}
+                        height={bgHeight}
+                        fill={mColor}
+                        cornerRadius={[3, 0, 0, 3]}
                       />
                       <Text
                         text={labelText.trim()}
                         fontSize={fontSize}
                         fill="white"
                         fontStyle="bold"
+                        fontFamily="system-ui, sans-serif"
                         padding={4}
+                        x={2}
                       />
                     </Group>
                   );
@@ -2613,16 +2733,81 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       />
                     )}
 
-                    {drawingPoints.map((point, i) => (
-                      <Circle
-                        key={`temp-${i}`}
-                        x={point.x}
-                        y={point.y}
-                        radius={isMobile ? 10 : 6}
-                        fill={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : activeTool === "volume" ? "#ea580c" : "#2563eb"}
-                        stroke="white"
-                        strokeWidth={isMobile ? 3 : 2}
+                    {isDrawing && cursorPosition && drawingPoints.length > 0 && (
+                      <Line
+                        points={[
+                          drawingPoints[drawingPoints.length - 1].x,
+                          drawingPoints[drawingPoints.length - 1].y,
+                          cursorPosition.x,
+                          cursorPosition.y,
+                        ]}
+                        stroke={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : activeTool === "volume" ? "#ea580c" : activeTool === "deduct" ? "#ef4444" : "#2563eb"}
+                        strokeWidth={1.5 / stageScale}
+                        dash={[8 / stageScale, 4 / stageScale]}
+                        opacity={0.7}
                       />
+                    )}
+
+                    {isDrawing && currentSheet?.scalePxPerFoot && drawingPoints.length >= 1 && (() => {
+                      const scale = currentSheet.scalePxPerFoot;
+                      const allPts = drawingPoints;
+                      const labels: Array<{ x: number; y: number; text: string; angle: number }> = [];
+                      for (let i = 0; i < allPts.length - 1; i++) {
+                        const dx = allPts[i + 1].x - allPts[i].x;
+                        const dy = allPts[i + 1].y - allPts[i].y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const ft = dist / scale;
+                        if (ft < 0.1) continue;
+                        const mx = (allPts[i].x + allPts[i + 1].x) / 2;
+                        const my = (allPts[i].y + allPts[i + 1].y) / 2;
+                        let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                        if (angle > 90 || angle < -90) angle += 180;
+                        labels.push({ x: mx, y: my - 8 / stageScale, text: `${ft.toFixed(2)}'`, angle: 0 });
+                      }
+                      return labels.map((lbl, i) => (
+                        <Group key={`seg-lbl-${i}`}>
+                          <Rect
+                            x={lbl.x - (lbl.text.length * 3.5) / stageScale}
+                            y={lbl.y - 6 / stageScale}
+                            width={(lbl.text.length * 7) / stageScale}
+                            height={13 / stageScale}
+                            fill="rgba(0,0,0,0.75)"
+                            cornerRadius={2 / stageScale}
+                          />
+                          <Text
+                            x={lbl.x - (lbl.text.length * 3.2) / stageScale}
+                            y={lbl.y - 4 / stageScale}
+                            text={lbl.text}
+                            fontSize={10 / stageScale}
+                            fill="#fbbf24"
+                            fontFamily="monospace"
+                            fontStyle="bold"
+                          />
+                        </Group>
+                      ));
+                    })()}
+
+                    {drawingPoints.map((point, i) => (
+                      <Group key={`temp-${i}`}>
+                        <Circle
+                          x={point.x}
+                          y={point.y}
+                          radius={isMobile ? 10 : 6}
+                          fill={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : activeTool === "volume" ? "#ea580c" : "#2563eb"}
+                          stroke="white"
+                          strokeWidth={isMobile ? 3 : 2}
+                        />
+                        {drawingPoints.length > 1 && (
+                          <Text
+                            x={point.x + (isMobile ? 12 : 8) / stageScale}
+                            y={point.y - (isMobile ? 12 : 8) / stageScale}
+                            text={`${i + 1}`}
+                            fontSize={9 / stageScale}
+                            fill="white"
+                            fontStyle="bold"
+                          />
+                        )}
+                      </Group>
                     ))}
 
                     {(activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && drawingPoints.length >= 3 && (
@@ -3432,6 +3617,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 <Layers className="w-3 h-3" />
                 <span>Overlay</span>
               </button>
+              <button
+                className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors", showMeasurementTable && "bg-primary/10 text-primary")}
+                onClick={() => setShowMeasurementTable(!showMeasurementTable)}
+                data-testid="button-toggle-measurement-table"
+              >
+                <TableProperties className="w-3 h-3" />
+                <span>Table</span>
+              </button>
               <span>Zoom: {Math.round(stageScale * 100)}%</span>
               {currentSheet?.scalePxPerFoot ? (
                 <span className="text-green-600 dark:text-green-400">Scale: {currentSheet.units || "ft"}</span>
@@ -3442,6 +3635,34 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           </div>
         )}
       </div>
+
+      {showMeasurementTable && selectedSheet && (
+        <div className="fixed bottom-0 left-[65px] right-0 z-30 bg-card border-t shadow-lg" style={{ height: "35vh" }} data-testid="measurement-table-panel">
+          <div className="flex items-center justify-between px-3 py-1 border-b bg-muted/30">
+            <span className="text-xs font-semibold flex items-center gap-1.5">
+              <TableProperties className="w-3.5 h-3.5" />
+              Measurements ({measurements.length})
+            </span>
+            <button onClick={() => setShowMeasurementTable(false)} className="text-muted-foreground hover:text-foreground p-0.5" data-testid="close-measurement-table">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div style={{ height: "calc(35vh - 30px)" }}>
+            <MeasurementTable
+              measurements={measurements}
+              categories={categories}
+              selectedMeasurementId={selectedMeasurementId}
+              onSelect={(id) => setSelectedMeasurementId(id)}
+              onDelete={(id) => {
+                const m = measurements.find((m: any) => m.id === id);
+                if (m) deleteMeasurementMutation.mutate(m);
+              }}
+              onUpdate={(id, data) => updateMeasurementMutation.mutate({ id, ...data })}
+              scalePxPerFoot={currentSheet?.scalePxPerFoot}
+            />
+          </div>
+        </div>
+      )}
 
       {selectedIssue && (
         <IssueDetailPanel
