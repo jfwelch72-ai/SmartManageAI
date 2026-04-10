@@ -71,7 +71,44 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
-  const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const sheetStorageKey = context
+    ? `takeoff-sheet-${context.type === "bid" ? context.bidId : context.projectId}`
+    : projectId
+      ? `takeoff-sheet-${projectId}`
+      : null;
+  const prevStorageKeyRef = useRef<string | null>(sheetStorageKey);
+  const [selectedSheet, setSelectedSheet] = useState<string | null>(() => {
+    if (sheetStorageKey) {
+      try {
+        return sessionStorage.getItem(sheetStorageKey);
+      } catch { /* ignore */ }
+    }
+    return null;
+  });
+  useEffect(() => {
+    if (prevStorageKeyRef.current !== sheetStorageKey) {
+      prevStorageKeyRef.current = sheetStorageKey;
+      if (sheetStorageKey) {
+        try {
+          const stored = sessionStorage.getItem(sheetStorageKey);
+          setSelectedSheet(stored);
+        } catch { setSelectedSheet(null); }
+      } else {
+        setSelectedSheet(null);
+      }
+    }
+  }, [sheetStorageKey]);
+  useEffect(() => {
+    if (sheetStorageKey) {
+      try {
+        if (selectedSheet) {
+          sessionStorage.setItem(sheetStorageKey, selectedSheet);
+        } else {
+          sessionStorage.removeItem(sheetStorageKey);
+        }
+      } catch { /* ignore */ }
+    }
+  }, [selectedSheet, sheetStorageKey]);
   const [localRotation, setLocalRotation] = useState<number | null>(null);
   const takeoffHistory = useTakeoffHistory(selectedSheet);
   const prevSheetRef = useRef<string | null>(null);
@@ -271,6 +308,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     deleteGroupMutation, toggleGroupVisibilityMutation,
     conditions, createConditionMutation, updateConditionMutation, deleteConditionMutation,
   } = data;
+
+  useEffect(() => {
+    if (!sheetsLoading && sheets.length > 0 && selectedSheet) {
+      const exists = sheets.some((s: any) => s.id === selectedSheet);
+      if (!exists) {
+        setSelectedSheet(null);
+      }
+    }
+  }, [sheetsLoading, sheets, selectedSheet]);
 
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
