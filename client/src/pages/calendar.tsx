@@ -51,6 +51,14 @@ const VENDOR_EVENT_ICONS: Record<string, typeof DollarSign> = {
   VENDOR_ENROLLMENT_CHANGE: UserPlus,
 };
 
+function cleanLeaveDescription(description: string | null | undefined): string | null {
+  if (!description) return null;
+  const match = description.match(/^leave_request:[0-9a-f-]+(?: - (.*))?$/i);
+  if (!match) return description;
+  const reason = match[1]?.trim();
+  return reason || null;
+}
+
 function isVendorEventType(eventType: string): boolean {
   return eventType.startsWith("VENDOR_");
 }
@@ -583,6 +591,7 @@ export default function CalendarPage() {
                         const isVendorEvt = isVendorEventType(event.eventType);
                         const colors = isVendorEvt ? VENDOR_EVENT_COLORS[event.eventType] : null;
                         const Icon = isVendorEvt ? VENDOR_EVENT_ICONS[event.eventType] : null;
+                        const cleanedDesc = cleanLeaveDescription(event.description);
 
                         return (
                           <Card 
@@ -628,9 +637,7 @@ export default function CalendarPage() {
                                     ? ` - ${format(new Date(event.endDate), "MMM d, yyyy")}`
                                     : `, ${format(new Date(event.startDate), "yyyy")}`}
                                 </p>
-                                {event.description && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{event.description}</p>
-                                )}
+                                {cleanedDesc && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{cleanedDesc}</p>}
                               </div>
                             </div>
                           </Card>
@@ -681,12 +688,15 @@ export default function CalendarPage() {
                       </div>
                     )}
                     
-                    {selectedEvent.description && (
-                      <div>
-                        <Label className="text-sm font-medium">Description</Label>
-                        <p className="mt-1 text-sm text-muted-foreground">{selectedEvent.description}</p>
-                      </div>
-                    )}
+                    {(() => {
+                      const desc = cleanLeaveDescription(selectedEvent.description);
+                      return desc ? (
+                        <div>
+                          <Label className="text-sm font-medium">Description</Label>
+                          <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+                        </div>
+                      ) : null;
+                    })()}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
