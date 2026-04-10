@@ -5,7 +5,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
 import { sanitizeShortText } from "./sanitization";
-import { createArcSegment, computeDistanceInFeet, computePolygonAreaInFt2, computeVolumeInCY, computePitchedAreaFt2 } from "@shared/utils/geometry";
+import { createArcSegment, computeDistanceInFeet, computePolygonAreaInFt2, computePolygonPerimeterInFt, computeVolumeInCY, computePitchedAreaFt2 } from "@shared/utils/geometry";
 import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, getDefaultVersionIdsBatch, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 
@@ -267,6 +267,20 @@ async function computeMeasurementGeometry(
     } catch (e) { console.error("Error computing volume:", e); }
   }
 
+  if (["AREA", "PITCHED_AREA", "SURFACE_AREA", "VOLUME"].includes(mType) && points.length >= 3) {
+    try {
+      const perimeterFt = computePolygonPerimeterInFt(points, scalePxPerFoot);
+      const existingMeta: Record<string, unknown> = (() => {
+        try {
+          const raw = validated.metadata;
+          if (!raw) return {};
+          return typeof raw === "string" ? JSON.parse(raw) : raw;
+        } catch { return {}; }
+      })();
+      finalValues.metadata = JSON.stringify({ ...existingMeta, perimeterFt });
+    } catch (e) { console.error("Error computing perimeter:", e); }
+  }
+
   return finalValues;
 }
 
@@ -356,7 +370,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
         let pointsForCompute = validated.points;
         if (!pointsForCompute) {
           const [full] = await db
-            .select({ points: takeoffMeasurements.points, depthFeet: takeoffMeasurements.depthFeet, pitchRatio: takeoffMeasurements.pitchRatio })
+            .select({ points: takeoffMeasurements.points, depthFeet: takeoffMeasurements.depthFeet, pitchRatio: takeoffMeasurements.pitchRatio, metadata: takeoffMeasurements.metadata })
             .from(takeoffMeasurements)
             .where(eq(takeoffMeasurements.id, id))
             .limit(1);
@@ -364,6 +378,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
             pointsForCompute = full.points;
             if (validated.depthFeet === undefined && full.depthFeet) finalValues.depthFeet = full.depthFeet;
             if (validated.pitchRatio === undefined && full.pitchRatio) finalValues.pitchRatio = full.pitchRatio;
+            if (!validated.metadata && full.metadata) finalValues.metadata = full.metadata;
           }
         }
 
@@ -670,6 +685,9 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
           case "AREA":
             if (points.length >= 3) {
               updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+              const perimA = computePolygonPerimeterInFt(points, scalePxPerFoot);
+              const metaA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+              updates.metadata = JSON.stringify({ ...metaA, perimeterFt: perimA });
             }
             break;
 
@@ -680,6 +698,9 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
                 areaFt2 = computePitchedAreaFt2(areaFt2, measurement.pitchRatio);
               }
               updates.computedAreaFt2 = areaFt2;
+              const perimPA = computePolygonPerimeterInFt(points, scalePxPerFoot);
+              const metaPA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+              updates.metadata = JSON.stringify({ ...metaPA, perimeterFt: perimPA });
             }
             break;
 
@@ -688,6 +709,9 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
               const surfArea = computePolygonAreaInFt2(points, scalePxPerFoot);
               updates.computedAreaFt2 = surfArea;
               updates.computedSurfaceAreaFt2 = surfArea;
+              const perimSA = computePolygonPerimeterInFt(points, scalePxPerFoot);
+              const metaSA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+              updates.metadata = JSON.stringify({ ...metaSA, perimeterFt: perimSA });
             }
             break;
 
@@ -696,6 +720,9 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
               const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
               updates.computedAreaFt2 = areaFt2;
               updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
+              const perimV = computePolygonPerimeterInFt(points, scalePxPerFoot);
+              const metaV: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+              updates.metadata = JSON.stringify({ ...metaV, perimeterFt: perimV });
             }
             break;
 
@@ -807,6 +834,9 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
                 case "AREA":
                   if (points.length >= 3) {
                     updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                    const bPerimA = computePolygonPerimeterInFt(points, scalePxPerFoot);
+                    const bMetaA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+                    updates.metadata = JSON.stringify({ ...bMetaA, perimeterFt: bPerimA });
                   }
                   break;
                 case "PITCHED_AREA":
@@ -816,6 +846,9 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
                       areaFt2 = computePitchedAreaFt2(areaFt2, measurement.pitchRatio);
                     }
                     updates.computedAreaFt2 = areaFt2;
+                    const bPerimPA = computePolygonPerimeterInFt(points, scalePxPerFoot);
+                    const bMetaPA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+                    updates.metadata = JSON.stringify({ ...bMetaPA, perimeterFt: bPerimPA });
                   }
                   break;
                 case "SURFACE_AREA":
@@ -823,6 +856,9 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
                     const surfArea = computePolygonAreaInFt2(points, scalePxPerFoot);
                     updates.computedAreaFt2 = surfArea;
                     updates.computedSurfaceAreaFt2 = surfArea;
+                    const bPerimSA = computePolygonPerimeterInFt(points, scalePxPerFoot);
+                    const bMetaSA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+                    updates.metadata = JSON.stringify({ ...bMetaSA, perimeterFt: bPerimSA });
                   }
                   break;
                 case "VOLUME":
@@ -830,6 +866,9 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
                     const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
                     updates.computedAreaFt2 = areaFt2;
                     updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
+                    const bPerimV = computePolygonPerimeterInFt(points, scalePxPerFoot);
+                    const bMetaV: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
+                    updates.metadata = JSON.stringify({ ...bMetaV, perimeterFt: bPerimV });
                   }
                   break;
                 case "SEGMENT":

@@ -394,6 +394,44 @@ export function computeNetAreaInFt2(
 }
 
 /**
+ * Compute polygon perimeter in feet
+ * 
+ * @param points - Array of points defining the polygon
+ * @param scalePxPerFoot - Scale factor (pixels per foot)
+ * @returns Perimeter in linear feet (LF)
+ */
+export function computePolygonPerimeterInFt(points: Point[], scalePxPerFoot: number): number {
+  if (points.length < 2 || scalePxPerFoot <= 0) return 0;
+
+  let totalPx = 0;
+  for (let i = 0; i < points.length; i++) {
+    const next = (i + 1) % points.length;
+    totalPx += computePixelDistance(points[i], points[next]);
+  }
+  return totalPx / scalePxPerFoot;
+}
+
+/**
+ * Ray-casting point-in-polygon test
+ * 
+ * @param point - The point to test
+ * @param polygon - Array of points defining the polygon
+ * @returns true if the point is inside the polygon
+ */
+export function isPointInPolygon(point: Point, polygon: Point[]): boolean {
+  if (polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    if ((yi > point.y) !== (yj > point.y) && point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
  * Format a measurement value for display
  * 
  * @param value - Numeric value

@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
   History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download,
-  FolderPlus, GripVertical, FolderOpen, Loader2, MapPin, Search, ArrowUpDown
+  FolderPlus, GripVertical, FolderOpen, Loader2, MapPin, Search, ArrowUpDown, Tag
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -23,7 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { COMMON_SCALES, type Tool, type AddendumOverlayData } from "./types";
-import { computePixelDistance } from "@shared/utils/geometry";
+import { computePixelDistance, computeNetAreaInFt2, computePolygonAreaInFt2 } from "@shared/utils/geometry";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import LibraryItemDialog from "@/components/LibraryItemDialog";
@@ -192,6 +192,18 @@ interface TakeoffSidebarProps {
   hideAiMeasurements?: boolean;
   setHideAiMeasurements?: (v: boolean) => void;
   measurementLinks?: { hasPR: Set<string>; hasCO: Set<string>; hasSOV: Set<string> };
+  typicals?: Array<{ id: string; name: string; measurementIds: string[]; sheetId: string }>;
+  onSaveTypical?: (name: string, measurementIds: string[]) => void;
+  onDeleteTypical?: (id: string) => void;
+  onStampTypical?: (typicalId: string) => void;
+  structuralGridlines?: {
+    horizontal: Array<{ label: string; position: number }>;
+    vertical: Array<{ label: string; position: number }>;
+  };
+  onUpdateGridlines?: (gridlines: { horizontal: Array<{ label: string; position: number }>; vertical: Array<{ label: string; position: number }> }) => void;
+  labelHiddenCategories?: Set<string>;
+  onToggleLabelCategory?: (catId: string) => void;
+  showMeasurementLabels?: boolean;
 }
 
 interface MeasurementMeta {
@@ -247,6 +259,10 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     onSaveCondition, onUpdateCondition, onDeleteCondition, saveConditionPending = false,
     hideAiMeasurements = false, setHideAiMeasurements,
     measurementLinks,
+    typicals = [], onSaveTypical, onDeleteTypical, onStampTypical,
+    structuralGridlines = { horizontal: [], vertical: [] }, onUpdateGridlines,
+    labelHiddenCategories = new Set(), onToggleLabelCategory,
+    showMeasurementLabels = true,
   } = props;
 
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -477,7 +493,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     if (!selectedSheet) return;
     try {
       const pts = typeof m.points === "string" ? JSON.parse(m.points) : m.points;
-      const offsetPts = Array.isArray(pts) ? pts.map((p: any) => ({ x: (p.x || 0) + 30, y: (p.y || 0) + 30 })) : [{ x: 130, y: 130 }];
+      const offsetPts = Array.isArray(pts) ? pts.map((p: { x: number; y: number }) => ({ x: (p.x || 0) + 30, y: (p.y || 0) + 30 })) : [{ x: 130, y: 130 }];
       await apiRequest("POST", "/api/takeoff/measurements", {
         sheetId: selectedSheet,
         type: m.type,
@@ -766,6 +782,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onToggleCategoryVisibility(category.id)} data-testid={`button-toggle-visibility-category-${category.id}`} title={isHidden ? "Show layer" : "Hide layer"}>
                                 {isHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                               </Button>
+                              {showMeasurementLabels && onToggleLabelCategory && (
+                                <Button size="icon" variant="ghost" className={cn("h-6 w-6", labelHiddenCategories.has(category.id) && "opacity-40")} onClick={() => onToggleLabelCategory(category.id)} data-testid={`button-toggle-label-category-${category.id}`} title={labelHiddenCategories.has(category.id) ? "Show labels for this category" : "Hide labels for this category"}>
+                                  <Tag className="w-3 h-3" />
+                                </Button>
+                              )}
                               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingCategory(category); setCategoryDialogOpen(true); }} data-testid={`button-edit-category-${category.id}`}>
                                 <Pencil className="w-3 h-3" />
                               </Button>
@@ -1248,7 +1269,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               </CollapsibleTrigger>
                               <CollapsibleContent>
                                 <div className="mt-1 space-y-1 ml-2 border-l-2 border-muted pl-2">
-                                  {points.slice(0, -1).map((_: any, i: number) => {
+                                  {points.slice(0, -1).map((_: { x: number; y: number }, i: number) => {
                                     const segLabel = segProps[i]?.label || `Seg ${i + 1}`;
                                     const segColor = segProps[i]?.color || "#2563eb";
                                     const p1 = points[i];
@@ -1398,11 +1419,21 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       return pts.length >= 2 ? <div className="flex justify-between"><span className="text-muted-foreground">Segments:</span><span>{pts.length - 1}</span></div> : null;
                     })()}
                     {selM.computedAreaFt2 && (() => {
-                      const deductions: Array<{width: number; height: number; label?: string}> = (() => {
+                      const deductions: Array<{width?: number; height?: number; points?: {x:number;y:number}[]; areaFt2?: number; label?: string}> = (() => {
                         try { return selM.deductions ? JSON.parse(selM.deductions as string) : []; } catch { return []; }
                       })();
-                      const totalDeductionSf = deductions.reduce((sum, d) => sum + (d.width * d.height), 0);
                       const grossArea = Number(selM.computedAreaFt2);
+                      const mainPts = (() => { try { const p = typeof selM.points === "string" ? JSON.parse(selM.points) : selM.points; return Array.isArray(p) ? p : []; } catch { return []; } })();
+                      const polyDeductPolygons = deductions.filter(d => d.points && Array.isArray(d.points)).map(d => d.points!);
+                      const wHDeductionSf = deductions.filter(d => !d.points).reduce((sum, d) => sum + ((d.width || 0) * (d.height || 0)), 0);
+                      let polyDeductionSf = 0;
+                      if (polyDeductPolygons.length > 0 && currentSheet?.scalePxPerFoot) {
+                        const netResult = computeNetAreaInFt2(mainPts, polyDeductPolygons, currentSheet.scalePxPerFoot);
+                        polyDeductionSf = netResult.deductionArea;
+                      } else {
+                        polyDeductionSf = deductions.filter(d => d.points).reduce((sum, d) => sum + (d.areaFt2 || 0), 0);
+                      }
+                      const totalDeductionSf = wHDeductionSf + polyDeductionSf;
                       const netArea = Math.max(0, grossArea - totalDeductionSf);
                       return (
                         <>
@@ -1411,20 +1442,58 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             <span>{grossArea.toFixed(2)} SF</span>
                           </div>
                           {deductions.length > 0 && (
-                            <div className="flex justify-between text-green-600 dark:text-green-400 font-medium">
-                              <span>Net Area:</span>
-                              <span>{netArea.toFixed(2)} SF</span>
-                            </div>
+                            <>
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Deductions:</span>
+                                <span>-{totalDeductionSf.toFixed(2)} SF</span>
+                              </div>
+                              <div className="flex justify-between text-green-600 dark:text-green-400 font-medium">
+                                <span>Net Area:</span>
+                                <span>{netArea.toFixed(2)} SF</span>
+                              </div>
+                            </>
                           )}
                         </>
                       );
+                    })()}
+                    {(() => {
+                      try {
+                        const meta = selM.metadata ? (typeof selM.metadata === "string" ? JSON.parse(selM.metadata) : selM.metadata) : null;
+                        if (meta?.perimeterFt) {
+                          return (
+                            <div className="flex justify-between" data-testid="text-perimeter">
+                              <span className="text-muted-foreground">Perimeter:</span>
+                              <span>{Number(meta.perimeterFt).toFixed(2)} LF</span>
+                            </div>
+                          );
+                        }
+                      } catch {}
+                      return null;
+                    })()}
+                    {structuralGridlines && (structuralGridlines.vertical.length > 0 || structuralGridlines.horizontal.length > 0) && (() => {
+                      const pts = (() => { try { const p = typeof selM.points === "string" ? JSON.parse(selM.points) : selM.points; return Array.isArray(p) ? p : []; } catch { return []; } })();
+                      if (pts.length === 0) return null;
+                      const center = pts.length === 1 ? pts[0] : { x: pts.reduce((s: number, p: { x: number; y: number }) => s + p.x, 0) / pts.length, y: pts.reduce((s: number, p: { x: number; y: number }) => s + p.y, 0) / pts.length };
+                      const nearestV = structuralGridlines.vertical.length > 0
+                        ? structuralGridlines.vertical.reduce((best, gl) => Math.abs(gl.position - center.x) < Math.abs(best.position - center.x) ? gl : best)
+                        : null;
+                      const nearestH = structuralGridlines.horizontal.length > 0
+                        ? structuralGridlines.horizontal.reduce((best, gl) => Math.abs(gl.position - center.y) < Math.abs(best.position - center.y) ? gl : best)
+                        : null;
+                      const ref = [nearestV?.label, nearestH?.label].filter(Boolean).join("/");
+                      return ref ? (
+                        <div className="flex justify-between" data-testid="text-grid-reference">
+                          <span className="text-muted-foreground">Grid Ref:</span>
+                          <span className="font-mono text-purple-600 dark:text-purple-400">{ref}</span>
+                        </div>
+                      ) : null;
                     })()}
                     {(selM as any).computedSurfaceAreaFt2 && <div className="flex justify-between"><span className="text-muted-foreground">Surface Area:</span><span>{Number((selM as any).computedSurfaceAreaFt2).toFixed(2)} SF</span></div>}
                     {selM.computedVolumeCy && <div className="flex justify-between"><span className="text-muted-foreground">Volume:</span><span>{Number(selM.computedVolumeCy).toFixed(2)} CY</span></div>}
                     {(selM as any).pitchRatio && <div className="flex justify-between"><span className="text-muted-foreground">Pitch:</span><span>{(selM as any).pitchRatio}</span></div>}
                   </div>
                   {(selM.type === "AREA" || selM.type === "PITCHED_AREA" || selM.type === "SURFACE_AREA") && selM.computedAreaFt2 && (() => {
-                    const deductions: Array<{width: number; height: number; label?: string}> = (() => {
+                    const deductions: Array<{width?: number; height?: number; points?: {x: number; y: number}[]; areaFt2?: number; label?: string}> = (() => {
                       try { return selM.deductions ? JSON.parse(selM.deductions as string) : []; } catch { return []; }
                     })();
                     return (
@@ -1448,9 +1517,30 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             </Button>
                           </div>
                           {deductions.length === 0 && (
-                            <p className="text-[10px] text-muted-foreground">No deductions. Add openings (windows, doors) to subtract from the area.</p>
+                            <p className="text-[10px] text-muted-foreground">No deductions. Add openings (W×H) or draw polygon deducts on canvas with the Deduct tool.</p>
                           )}
-                          {deductions.map((d, idx) => (
+                          {deductions.map((d: { width?: number; height?: number; points?: { x: number; y: number }[]; areaFt2?: number; label?: string }, idx: number) => {
+                            if (d.points && Array.isArray(d.points)) {
+                              return (
+                                <div key={idx} className="flex items-center gap-1.5 text-xs bg-red-50 dark:bg-red-950/30 rounded p-1.5 border border-red-200 dark:border-red-800" data-testid={`deduction-item-${idx}`}>
+                                  <span className="text-[10px] font-medium text-red-600 dark:text-red-400">{d.label || `Deduct ${idx + 1}`}</span>
+                                  <span className="text-[9px] text-muted-foreground ml-auto">{Number(d.areaFt2 || 0).toFixed(1)} SF (polygon)</span>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-5 w-5 text-destructive"
+                                    onClick={() => {
+                                      const updated = deductions.filter((_, i) => i !== idx);
+                                      updateMeasurementMutation.mutate({ id: selM.id, deductions: JSON.stringify(updated) });
+                                    }}
+                                    data-testid={`button-delete-deduction-${idx}`}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              );
+                            }
+                            return (
                             <div key={idx} className="flex items-center gap-1.5 text-xs bg-muted/50 rounded p-1.5" data-testid={`deduction-item-${idx}`}>
                               <Input
                                 className="h-6 w-16 text-[10px] px-1"
@@ -1488,7 +1578,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                                 data-testid={`input-deduction-height-${idx}`}
                               />
                               <span className="text-muted-foreground text-[9px]">ft</span>
-                              <span className="text-[9px] text-muted-foreground ml-auto">{(d.width * d.height).toFixed(1)} SF</span>
+                              <span className="text-[9px] text-muted-foreground ml-auto">{((d.width || 0) * (d.height || 0)).toFixed(1)} SF</span>
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -1502,7 +1592,8 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                                 <X className="w-3 h-3" />
                               </Button>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </>
                     );
@@ -2188,6 +2279,199 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               </Card>
             </Collapsible>
           )}
+          <Card>
+            <CardContent className="pt-4 space-y-2">
+              <Collapsible>
+                <CollapsibleTrigger className="flex items-center gap-2 w-full text-left text-sm font-semibold" data-testid="button-toggle-typicals-panel">
+                  <ChevronRight className="w-4 h-4" />
+                  <Copy className="w-4 h-4" />
+                  Typical Layouts
+                  <Badge variant="secondary" className="ml-auto">{typicals.length}</Badge>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="space-y-2 mt-2">
+                    <p className="text-[10px] text-muted-foreground">Save a group of measurements as a typical to stamp/repeat in other locations.</p>
+                    {selectedMeasurementId && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full h-7 text-xs"
+                        onClick={() => {
+                          const ids = bulkSelectMode && bulkSelectedIds.size > 0
+                            ? Array.from(bulkSelectedIds)
+                            : selectedMeasurementId ? [selectedMeasurementId] : [];
+                          if (ids.length > 0 && onSaveTypical) {
+                            const name = `Typical ${typicals.length + 1}`;
+                            onSaveTypical(name, ids);
+                          }
+                        }}
+                        data-testid="button-save-typical"
+                      >
+                        <Plus className="w-3 h-3 mr-1" /> Save Selected as Typical
+                      </Button>
+                    )}
+                    {typicals.map((t) => (
+                      <div key={t.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 text-xs" data-testid={`typical-item-${t.id}`}>
+                        <Copy className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="flex-1 truncate">{t.name} ({t.measurementIds.length} items)</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-5 text-[10px] px-1.5"
+                          onClick={() => onStampTypical?.(t.id)}
+                          data-testid={`button-stamp-typical-${t.id}`}
+                        >
+                          Stamp
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 text-destructive"
+                          onClick={() => onDeleteTypical?.(t.id)}
+                          data-testid={`button-delete-typical-${t.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-4 space-y-2">
+              <Collapsible>
+                <CollapsibleTrigger className="flex items-center gap-2 w-full text-left text-sm font-semibold" data-testid="button-toggle-gridlines-panel">
+                  <ChevronRight className="w-4 h-4" />
+                  <Ruler className="w-4 h-4" />
+                  Column Gridlines
+                  <Badge variant="secondary" className="ml-auto">{structuralGridlines.vertical.length + structuralGridlines.horizontal.length}</Badge>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="space-y-2 mt-2">
+                    <p className="text-[10px] text-muted-foreground">Define structural column gridlines with alphanumeric labels (A, B, C / 1, 2, 3).</p>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-semibold">Vertical (A, B, C...)</Label>
+                      {structuralGridlines.vertical.map((gl, idx) => (
+                        <div key={`v-${idx}`} className="flex items-center gap-1 text-xs" data-testid={`gridline-vertical-${idx}`}>
+                          <Input
+                            className="h-6 w-12 text-[10px] px-1"
+                            defaultValue={gl.label}
+                            onBlur={(e) => {
+                              const updated = { ...structuralGridlines, vertical: [...structuralGridlines.vertical] };
+                              updated.vertical[idx] = { ...updated.vertical[idx], label: e.target.value };
+                              onUpdateGridlines?.(updated);
+                            }}
+                            data-testid={`input-gridline-vlabel-${idx}`}
+                          />
+                          <Input
+                            type="number"
+                            className="h-6 w-16 text-[10px] px-1"
+                            defaultValue={gl.position}
+                            onBlur={(e) => {
+                              const updated = { ...structuralGridlines, vertical: [...structuralGridlines.vertical] };
+                              updated.vertical[idx] = { ...updated.vertical[idx], position: parseFloat(e.target.value) || 0 };
+                              onUpdateGridlines?.(updated);
+                            }}
+                            data-testid={`input-gridline-vpos-${idx}`}
+                          />
+                          <span className="text-[9px] text-muted-foreground">px</span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-5 w-5 text-destructive ml-auto"
+                            onClick={() => {
+                              const updated = { ...structuralGridlines, vertical: structuralGridlines.vertical.filter((_, i) => i !== idx) };
+                              onUpdateGridlines?.(updated);
+                            }}
+                            data-testid={`button-delete-gridline-v-${idx}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[10px] px-2"
+                        onClick={() => {
+                          const nextLabel = String.fromCharCode(65 + structuralGridlines.vertical.length);
+                          const lastPos = structuralGridlines.vertical.length > 0
+                            ? structuralGridlines.vertical[structuralGridlines.vertical.length - 1].position + 200
+                            : 100;
+                          const updated = { ...structuralGridlines, vertical: [...structuralGridlines.vertical, { label: nextLabel, position: lastPos }] };
+                          onUpdateGridlines?.(updated);
+                        }}
+                        data-testid="button-add-gridline-vertical"
+                      >
+                        <Plus className="w-3 h-3 mr-0.5" /> Add Vertical
+                      </Button>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-semibold">Horizontal (1, 2, 3...)</Label>
+                      {structuralGridlines.horizontal.map((gl, idx) => (
+                        <div key={`h-${idx}`} className="flex items-center gap-1 text-xs" data-testid={`gridline-horizontal-${idx}`}>
+                          <Input
+                            className="h-6 w-12 text-[10px] px-1"
+                            defaultValue={gl.label}
+                            onBlur={(e) => {
+                              const updated = { ...structuralGridlines, horizontal: [...structuralGridlines.horizontal] };
+                              updated.horizontal[idx] = { ...updated.horizontal[idx], label: e.target.value };
+                              onUpdateGridlines?.(updated);
+                            }}
+                            data-testid={`input-gridline-hlabel-${idx}`}
+                          />
+                          <Input
+                            type="number"
+                            className="h-6 w-16 text-[10px] px-1"
+                            defaultValue={gl.position}
+                            onBlur={(e) => {
+                              const updated = { ...structuralGridlines, horizontal: [...structuralGridlines.horizontal] };
+                              updated.horizontal[idx] = { ...updated.horizontal[idx], position: parseFloat(e.target.value) || 0 };
+                              onUpdateGridlines?.(updated);
+                            }}
+                            data-testid={`input-gridline-hpos-${idx}`}
+                          />
+                          <span className="text-[9px] text-muted-foreground">px</span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-5 w-5 text-destructive ml-auto"
+                            onClick={() => {
+                              const updated = { ...structuralGridlines, horizontal: structuralGridlines.horizontal.filter((_, i) => i !== idx) };
+                              onUpdateGridlines?.(updated);
+                            }}
+                            data-testid={`button-delete-gridline-h-${idx}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[10px] px-2"
+                        onClick={() => {
+                          const nextLabel = String(structuralGridlines.horizontal.length + 1);
+                          const lastPos = structuralGridlines.horizontal.length > 0
+                            ? structuralGridlines.horizontal[structuralGridlines.horizontal.length - 1].position + 200
+                            : 100;
+                          const updated = { ...structuralGridlines, horizontal: [...structuralGridlines.horizontal, { label: nextLabel, position: lastPos }] };
+                          onUpdateGridlines?.(updated);
+                        }}
+                        data-testid="button-add-gridline-horizontal"
+                      >
+                        <Plus className="w-3 h-3 mr-0.5" /> Add Horizontal
+                      </Button>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </CardContent>
+          </Card>
+
           {markups.length > 0 && (
             <Card>
               <CardContent className="pt-4 space-y-2">

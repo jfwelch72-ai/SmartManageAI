@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Label } from "@/components/ui/label";
 import {
   ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle,
-  RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronDown, MousePointer2, Hand, Ruler
+  RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronDown, MousePointer2, Hand, Ruler, Tag, LayoutGrid
 } from "lucide-react";
 import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
 import type { TakeoffMeasurement } from "@shared/schema";
@@ -53,6 +53,10 @@ interface TakeoffToolbarProps {
   onToggleGrid: (v: boolean) => void;
   isCalibrated: boolean;
   onFitToPage?: () => void;
+  showMeasurementLabels?: boolean;
+  onToggleMeasurementLabels?: (v: boolean) => void;
+  showStructuralGridlines?: boolean;
+  onToggleStructuralGridlines?: (v: boolean) => void;
 }
 
 export function TakeoffToolbar({
@@ -68,6 +72,8 @@ export function TakeoffToolbar({
   sheetRotation, onRotateCW, onRotateCCW, onRotate180,
   gridEnabled, onToggleGrid, isCalibrated,
   onFitToPage,
+  showMeasurementLabels, onToggleMeasurementLabels,
+  showStructuralGridlines, onToggleStructuralGridlines,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
   const zoomPercent = Math.round(stageScale * 100);
@@ -327,6 +333,8 @@ export function TakeoffToolbar({
         <div className="flex items-center gap-px">
           <TinyBtn icon={FlipVertical2} label="Rotate 180°" onClick={onRotate180} testId="button-rotate-180" />
           <TinyBtn icon={Grid3X3} label={!isCalibrated ? "Calibrate first" : gridEnabled ? "Grid: ON" : "Grid: OFF"} active={gridEnabled} onClick={() => onToggleGrid(!gridEnabled)} disabled={!isCalibrated} testId="button-toggle-grid" />
+          <TinyBtn icon={Tag} label={showMeasurementLabels ? "Labels: ON" : "Labels: OFF"} active={!!showMeasurementLabels} onClick={() => onToggleMeasurementLabels?.(!showMeasurementLabels)} testId="button-toggle-labels" />
+          <TinyBtn icon={LayoutGrid} label={showStructuralGridlines ? "Gridlines: ON" : "Gridlines: OFF"} active={!!showStructuralGridlines} onClick={() => onToggleStructuralGridlines?.(!showStructuralGridlines)} testId="button-toggle-structural-gridlines" />
         </div>
         <div className="flex items-center gap-px">
           <TinyBtn icon={Upload} label="Import Plan" onClick={onUpload} testId="button-upload-plan" />

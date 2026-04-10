@@ -7,12 +7,14 @@ import {
   computePixelDistance,
   computeDistanceInFeet,
   computePolygonAreaInFt2,
+  computePolygonPerimeterInFt,
   computeVolumeInCY,
   inchesToFeet,
   createArcSegment,
   computePitchedLinearFt,
   computePitchedAreaFt2,
   computeLinearWithDropFt,
+  isPointInPolygon,
   type Point,
 } from "@shared/utils/geometry";
 import {
@@ -86,6 +88,12 @@ interface UseTakeoffInteractionsParams {
   imageHeight: number;
   onRotateCW?: () => void;
   onRotateCCW?: () => void;
+  structuralGridlines?: {
+    horizontal: Array<{ label: string; position: number }>;
+    vertical: Array<{ label: string; position: number }>;
+  };
+  showStructuralGridlines?: boolean;
+  gridlineSnapThreshold?: number;
 }
 
 function inverseRotatePoint(
@@ -179,9 +187,29 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
         if (snap.isSnapped) return snap.snappedPoint;
       }
+      if (params.showStructuralGridlines && params.structuralGridlines) {
+        const threshold = (params.gridlineSnapThreshold ?? 10) / stageScale;
+        let snappedX = pt.x;
+        let snappedY = pt.y;
+        for (const gl of params.structuralGridlines.vertical) {
+          if (Math.abs(pt.x - gl.position) < threshold) {
+            snappedX = gl.position;
+            break;
+          }
+        }
+        for (const gl of params.structuralGridlines.horizontal) {
+          if (Math.abs(pt.y - gl.position) < threshold) {
+            snappedY = gl.position;
+            break;
+          }
+        }
+        if (snappedX !== pt.x || snappedY !== pt.y) {
+          return { x: snappedX, y: snappedY };
+        }
+      }
       return pt;
     },
-    [orthoLock, snapEnabled, snapTargets, drawingPoints, stageScale]
+    [orthoLock, snapEnabled, snapTargets, drawingPoints, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
   );
 
   const completePolygon = useCallback(() => {
@@ -191,6 +219,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     }
 
     const areaFt2 = computePolygonAreaInFt2(drawingPoints, currentSheet.scalePxPerFoot);
+    const perimeterFt = computePolygonPerimeterInFt(drawingPoints, currentSheet.scalePxPerFoot);
 
     if (activeTool === "area") {
       createMeasurementMutation.mutate({
@@ -200,8 +229,9 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         label: `Area ${aggregatedMeasurements.byType.area.length + 1}`,
         categoryId: selectedCategoryId,
         computedAreaFt2: areaFt2,
+        metadata: JSON.stringify({ perimeterFt }),
       });
-      toast({ title: "Area Measurement Created", description: `${areaFt2.toFixed(2)} SF` });
+      toast({ title: "Area Measurement Created", description: `${areaFt2.toFixed(2)} SF | ${perimeterFt.toFixed(2)} LF perimeter` });
     } else if (activeTool === "volume") {
       const defaultDepthInches = 12;
       const depthFt = inchesToFeet(defaultDepthInches);
@@ -215,6 +245,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         categoryId: selectedCategoryId,
         computedAreaFt2: areaFt2,
         computedVolumeCy: volumeCy,
+        metadata: JSON.stringify({ perimeterFt }),
       });
       toast({ title: "Volume Measurement Created", description: `${areaFt2.toFixed(2)} SF @ ${defaultDepthInches}" depth = ${volumeCy.toFixed(2)} CY` });
     } else if (activeTool === "pitched_area") {
@@ -228,6 +259,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         pitchRatio,
         computedAreaFt2: areaFt2,
         computedSurfaceAreaFt2: pitchedArea,
+        metadata: JSON.stringify({ perimeterFt }),
       });
       toast({ title: "Pitched Area Created", description: `Flat: ${areaFt2.toFixed(2)} SF → Pitched (${pitchRatio}): ${pitchedArea.toFixed(2)} SF` });
     } else if (activeTool === "surface_area") {
@@ -241,6 +273,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         pitchRatio,
         computedAreaFt2: areaFt2,
         computedSurfaceAreaFt2: surfaceArea,
+        metadata: JSON.stringify({ perimeterFt }),
       });
       toast({ title: "Surface Area Created", description: `Flat: ${areaFt2.toFixed(2)} SF → Surface (${pitchRatio}): ${surfaceArea.toFixed(2)} SF` });
     }
@@ -289,7 +322,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const transform = stage.getAbsoluteTransform().copy().invert();
     let point = inverseRotatePoint(transform.point(pointerPosition), sheetRotation, imageWidth, imageHeight);
 
-    const isDrawingTool = ["linear", "arc", "area", "volume", "count", "segment"].includes(activeTool);
+    const isDrawingTool = ["linear", "arc", "area", "volume", "count", "segment", "deduct"].includes(activeTool);
     if (isDrawingTool) {
       point = resolvePoint(point);
     }
@@ -428,6 +461,70 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           const firstPoint = drawingPoints[0];
           const distance = computePixelDistance(point, firstPoint);
           if (distance < 10) { completePolygon(); return; }
+        }
+        setDrawingPoints([...drawingPoints, point]);
+      }
+    } else if (activeTool === "deduct") {
+      if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
+      if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
+      if (!selectedMeasurementId) { toast({ title: "Select Area First", description: "Select an area measurement to add a deduct polygon", variant: "destructive" }); return; }
+      const targetM = measurements.find(m => m.id === selectedMeasurementId);
+      if (!targetM || !["AREA", "PITCHED_AREA", "SURFACE_AREA", "VOLUME"].includes(targetM.type)) {
+        toast({ title: "Invalid Target", description: "Select an area or volume measurement to add deducts", variant: "destructive" });
+        return;
+      }
+      if (!isDrawing) {
+        setIsDrawing(true);
+        setDrawingPoints([point]);
+        toast({ title: "Drawing Deduct", description: "Click to add points. Click first point to close deduct polygon." });
+      } else {
+        if (drawingPoints.length >= 3) {
+          const firstPoint = drawingPoints[0];
+          const distance = computePixelDistance(point, firstPoint);
+          if (distance < 10) {
+            const hostPoints: Point[] = (() => {
+              try {
+                const pts = targetM.points ? (typeof targetM.points === "string" ? JSON.parse(targetM.points) : targetM.points) : [];
+                return Array.isArray(pts) ? pts : [];
+              } catch { return []; }
+            })();
+            if (hostPoints.length >= 3) {
+              const deductCentroid: Point = {
+                x: drawingPoints.reduce((s, p) => s + p.x, 0) / drawingPoints.length,
+                y: drawingPoints.reduce((s, p) => s + p.y, 0) / drawingPoints.length,
+              };
+              if (!isPointInPolygon(deductCentroid, hostPoints)) {
+                toast({ title: "Invalid Deduction", description: "Deduct polygon must be inside the parent measurement area", variant: "destructive" });
+                setIsDrawing(false);
+                setDrawingPoints([]);
+                return;
+              }
+            }
+            const deductAreaFt2 = computePolygonAreaInFt2(drawingPoints, currentSheet.scalePxPerFoot);
+            const existingDeductions: Array<{ points: { x: number; y: number }[]; areaFt2: number; label?: string }> = (() => {
+              try {
+                const parsed = targetM.deductions ? JSON.parse(targetM.deductions as string) : [];
+                return Array.isArray(parsed) ? parsed : [];
+              } catch { return []; }
+            })();
+            const newDeduction = {
+              points: drawingPoints,
+              areaFt2: deductAreaFt2,
+              label: `Deduct ${existingDeductions.length + 1}`,
+            };
+            const updatedDeductions = [...existingDeductions, newDeduction];
+            setIsDrawing(false);
+            setDrawingPoints([]);
+            apiRequest("PATCH", `/api/takeoff/measurements/${targetM.id}`, {
+              deductions: JSON.stringify(updatedDeductions),
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+              toast({ title: "Deduct Added", description: `${deductAreaFt2.toFixed(2)} SF deducted` });
+            }).catch(() => {
+              toast({ title: "Error", description: "Failed to save deduction", variant: "destructive" });
+            });
+            return;
+          }
         }
         setDrawingPoints([...drawingPoints, point]);
       }
@@ -781,7 +878,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       const key = event.key.toLowerCase();
 
       if (canUseToolShortcuts) {
-        const toolMap: Record<string, Tool> = { s: "select", h: "pan", l: "linear", a: "area", v: "volume", c: "count", n: "note", r: "arc", d: "linear_with_drop", p: "pitched_linear", t: "pitched_area", g: "surface_area", e: "segment" };
+        const toolMap: Record<string, Tool> = { s: "select", h: "pan", l: "linear", a: "area", v: "volume", c: "count", n: "note", r: "arc", d: "linear_with_drop", p: "pitched_linear", t: "pitched_area", g: "surface_area", e: "segment", x: "deduct" };
         if (toolMap[key]) { event.preventDefault(); setActiveTool(toolMap[key]); }
       }
 

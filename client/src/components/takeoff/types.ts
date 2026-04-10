@@ -1,7 +1,8 @@
 import {
   MousePointer2, Hand, Ruler, Square, Circle as CircleIcon,
   Box, MapPin, StickyNote, MoveVertical, Triangle, Scaling, Grid3x3,
-  MoveUpRight, Type, RectangleHorizontal, MessageSquare, Highlighter, PenLine, Flag, GitBranch
+  MoveUpRight, Type, RectangleHorizontal, MessageSquare, Highlighter, PenLine, Flag, GitBranch,
+  Scissors, Copy, LayoutGrid
 } from "lucide-react";
 
 export type Tool =
@@ -19,6 +20,8 @@ export type Tool =
   | "pitched_linear"
   | "surface_area"
   | "segment"
+  | "deduct"
+  | "typical"
   | "markup_arrow"
   | "markup_text"
   | "markup_rectangle"
@@ -66,6 +69,8 @@ export const TOOL_CONFIG = [
   { id: "pitched_area", icon: Scaling, label: "Pitched Area", color: "primary", shortcut: "T", group: "measure" },
   { id: "surface_area", icon: Grid3x3, label: "Surface Area", color: "primary", shortcut: "G", group: "measure" },
   { id: "segment", icon: GitBranch, label: "Segment", color: "primary", shortcut: "E", group: "measure" },
+  { id: "deduct", icon: Scissors, label: "Deduct", color: "primary", shortcut: "X", group: "measure" },
+  { id: "typical", icon: Copy, label: "Typical", color: "primary", shortcut: null, group: "measure" },
   { id: "markup_arrow", icon: MoveUpRight, label: "Arrow", color: "default", shortcut: null, group: "markup" },
   { id: "markup_text", icon: Type, label: "Text Label", color: "default", shortcut: null, group: "markup" },
   { id: "markup_rectangle", icon: RectangleHorizontal, label: "Rectangle", color: "default", shortcut: null, group: "markup" },

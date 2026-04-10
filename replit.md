@@ -19,7 +19,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Multi-Tenancy & Customization**: AI-driven onboarding and dynamic features for specific trade types.
 *   **AI Integration**: AI for generation, analysis, scheduling, and automation across modules, governed by an AI Governance System.
 *   **Project Lifecycle Management**: Comprehensive workflows including Bids, Projects, Estimates, Procurement, Change Orders, Time & Material Tracking.
-*   **Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, material calculation, hierarchical line item builder, 6-step bid workflow, full takeoff workspace with advanced features like Assembly Expansion and Polygon Deductions.
+*   **Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, material calculation, hierarchical line item builder, 6-step bid workflow, full takeoff workspace with advanced features like Assembly Expansion, Polygon Deductions (draw-on-canvas deduct tool), auto-perimeter calculation for area/volume polygons, measurement value labels on canvas (toggleable), Typical Layout tool (save/stamp repeating room units), and Column Gridline overlay with alphanumeric labels.
 *   **CRM System**: Manages organizational entities, vendor pricing, rental equipment, insurance/compliance tracking, and a 7-stage Sales Pipeline.
 *   **Workforce Management**: Native time-clock (GPS/geofence), shift management with cost code tracking, labor hour tracking, Manager Approval Workflow, configurable overtime rules engine, KPI dashboards, and Certified Payroll Reports.
 *   **Compliance & Audit**: Audit logging, document management (versioning, expiration), Approval Workflows Framework, and Addenda Tracking.

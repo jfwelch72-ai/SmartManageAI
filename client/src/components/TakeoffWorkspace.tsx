@@ -22,6 +22,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import {
   createArcSegment,
   sampleArcPoints,
+  computeNetAreaInFt2,
 } from "@shared/utils/geometry";
 import { type Tool, validateHexColor, hexToRgba } from "./takeoff/types";
 import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
@@ -152,6 +153,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     try { return localStorage.getItem("takeoff-grid-enabled") === "true"; } catch { return false; }
   });
   const [crossModulePanelOpen, setCrossModulePanelOpen] = useState(false);
+  const [showMeasurementLabels, setShowMeasurementLabels] = useState(() => {
+    try { return localStorage.getItem("takeoff-show-labels") !== "false"; } catch { return true; }
+  });
+  const [typicals, setTypicals] = useState<Array<{ id: string; name: string; measurementIds: string[]; sheetId: string; geometry?: Array<{ type: string; points: Array<{ x: number; y: number }>; label?: string; categoryId?: string | null; computedAreaFt2?: number | null; computedLengthFt?: number | null; computedVolumeCy?: number | null; count?: number | null; metadata?: string | Record<string, unknown> | null }> }>>(() => {
+    try { return JSON.parse(localStorage.getItem("takeoff-typicals") || "[]"); } catch { return []; }
+  });
+  const [typicalPlacementCount, setTypicalPlacementCount] = useState(0);
+  const [structuralGridlines, setStructuralGridlines] = useState<{
+    horizontal: Array<{ label: string; position: number }>;
+    vertical: Array<{ label: string; position: number }>;
+  }>(() => {
+    try { return JSON.parse(localStorage.getItem("takeoff-gridlines") || '{"horizontal":[],"vertical":[]}'); } catch { return { horizontal: [], vertical: [] }; }
+  });
+  const [showStructuralGridlines, setShowStructuralGridlines] = useState(false);
+  const [labelHiddenCategories, setLabelHiddenCategories] = useState<Set<string>>(() => {
+    try { const stored = localStorage.getItem("takeoff-label-hidden-categories"); return stored ? new Set(JSON.parse(stored)) : new Set(); } catch { return new Set(); }
+  });
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -461,6 +479,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     imageHeight: pdfImage?.height || 0,
     onRotateCW: () => handleRotate(90),
     onRotateCCW: () => handleRotate(-90),
+    structuralGridlines,
+    showStructuralGridlines,
   });
 
   const {
@@ -637,8 +657,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         return { x: cx, y: cy };
       }
     }
-    const avgX = pts.reduce((sum: number, p: any) => sum + p.x, 0) / pts.length;
-    const avgY = pts.reduce((sum: number, p: any) => sum + p.y, 0) / pts.length;
+    const avgX = pts.reduce((sum: number, p: { x: number; y: number }) => sum + p.x, 0) / pts.length;
+    const avgY = pts.reduce((sum: number, p: { x: number; y: number }) => sum + p.y, 0) / pts.length;
     return { x: avgX, y: avgY };
   };
 
@@ -1061,6 +1081,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         gridEnabled={gridEnabled}
         onToggleGrid={handleToggleGrid}
         isCalibrated={!!currentSheet?.scalePxPerFoot}
+        showMeasurementLabels={showMeasurementLabels}
+        onToggleMeasurementLabels={(v) => { setShowMeasurementLabels(v); localStorage.setItem("takeoff-show-labels", String(v)); }}
+        showStructuralGridlines={showStructuralGridlines}
+        onToggleStructuralGridlines={setShowStructuralGridlines}
         onFitToPage={() => {
           if (pdfImage && containerRef.current) {
             const cw = containerRef.current.clientWidth;
@@ -1961,38 +1985,76 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       />
                     );
                   } else if ((m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && points.length >= 3) {
-                    const flatPoints = points.flatMap((p: any) => [p.x, p.y]);
+                    const flatPoints = points.flatMap((p: { x: number; y: number }) => [p.x, p.y]);
+                    const deductPolygons: Array<{ points: { x: number; y: number }[]; areaFt2: number; label?: string }> = (() => {
+                      try {
+                        const parsed = m.deductions ? JSON.parse(m.deductions as string) : [];
+                        return Array.isArray(parsed) ? parsed.filter((d: { points?: Array<{ x: number; y: number }>; areaFt2?: number; label?: string }) => d.points && Array.isArray(d.points)) : [];
+                      } catch { return []; }
+                    })();
                     return (
-                      <Line
-                        key={m.id}
-                        points={flatPoints}
-                        stroke={baseColor}
-                        strokeWidth={effectiveWidth}
-                        dash={dashArray.length > 0 ? dashArray : undefined}
-                        hitStrokeWidth={isMobile ? 20 : 0}
-                        fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
-                        opacity={isSelected ? 1 : 0.8}
-                        closed={true}
-                        onClick={handleMeasurementClick}
-                        onTap={handleMeasurementClick}
-                      />
+                      <Fragment key={m.id}>
+                        <Line
+                          points={flatPoints}
+                          stroke={baseColor}
+                          strokeWidth={effectiveWidth}
+                          dash={dashArray.length > 0 ? dashArray : undefined}
+                          hitStrokeWidth={isMobile ? 20 : 0}
+                          fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
+                          opacity={isSelected ? 1 : 0.8}
+                          closed={true}
+                          onClick={handleMeasurementClick}
+                          onTap={handleMeasurementClick}
+                        />
+                        {deductPolygons.map((dp, dpIdx) => (
+                          <Line
+                            key={`${m.id}-deduct-${dpIdx}`}
+                            points={dp.points.flatMap((p: { x: number; y: number }) => [p.x, p.y])}
+                            stroke="#ef4444"
+                            strokeWidth={2}
+                            dash={[6, 4]}
+                            fill="rgba(239,68,68,0.15)"
+                            closed={true}
+                            listening={false}
+                          />
+                        ))}
+                      </Fragment>
                     );
                   } else if (m.type === "VOLUME" && points.length >= 3) {
-                    const flatPoints = points.flatMap((p: any) => [p.x, p.y]);
+                    const flatPoints = points.flatMap((p: { x: number; y: number }) => [p.x, p.y]);
+                    const deductPolygons: Array<{ points: { x: number; y: number }[]; areaFt2: number; label?: string }> = (() => {
+                      try {
+                        const parsed = m.deductions ? JSON.parse(m.deductions as string) : [];
+                        return Array.isArray(parsed) ? parsed.filter((d: { points?: Array<{ x: number; y: number }>; areaFt2?: number; label?: string }) => d.points && Array.isArray(d.points)) : [];
+                      } catch { return []; }
+                    })();
                     return (
-                      <Line
-                        key={m.id}
-                        points={flatPoints}
-                        stroke={baseColor}
-                        strokeWidth={effectiveWidth}
-                        dash={dashArray.length > 0 ? dashArray : undefined}
-                        hitStrokeWidth={isMobile ? 20 : 0}
-                        fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
-                        opacity={isSelected ? 1 : 0.8}
-                        closed={true}
-                        onClick={handleMeasurementClick}
-                        onTap={handleMeasurementClick}
-                      />
+                      <Fragment key={m.id}>
+                        <Line
+                          points={flatPoints}
+                          stroke={baseColor}
+                          strokeWidth={effectiveWidth}
+                          dash={dashArray.length > 0 ? dashArray : undefined}
+                          hitStrokeWidth={isMobile ? 20 : 0}
+                          fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
+                          opacity={isSelected ? 1 : 0.8}
+                          closed={true}
+                          onClick={handleMeasurementClick}
+                          onTap={handleMeasurementClick}
+                        />
+                        {deductPolygons.map((dp, dpIdx) => (
+                          <Line
+                            key={`${m.id}-deduct-${dpIdx}`}
+                            points={dp.points.flatMap((p: { x: number; y: number }) => [p.x, p.y])}
+                            stroke="#ef4444"
+                            strokeWidth={2}
+                            dash={[6, 4]}
+                            fill="rgba(239,68,68,0.15)"
+                            closed={true}
+                            listening={false}
+                          />
+                        ))}
+                      </Fragment>
                     );
                   } else if (m.type === "COUNT" && points.length >= 1) {
                     if (isAiMeasurement) {
@@ -2212,6 +2274,102 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   return null;
                 })}
 
+                {showMeasurementLabels && measurements.map((m) => {
+                  if (m.categoryId && hiddenCategoryIds.has(m.categoryId)) return null;
+                  if (m.categoryId && labelHiddenCategories.has(m.categoryId)) return null;
+                  if (hideAiMeasurements && m.source === "AI") return null;
+                  const center = getMeasurementCenter(m);
+                  if (!center) return null;
+                  const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
+                  const catColor = validateHexColor(category?.color);
+                  const baseColor = catColor || (
+                    m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" ? "#2563eb" :
+                    m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA" ? "#16a34a" :
+                    m.type === "VOLUME" ? "#ea580c" :
+                    m.type === "COUNT" ? "#dc2626" : "#f59e0b"
+                  );
+                  let labelText = m.label || "";
+                  if (m.computedLengthFt) labelText += `\n${Number(m.computedLengthFt).toFixed(1)} LF`;
+                  if (m.computedAreaFt2) {
+                    let displayArea = Number(m.computedAreaFt2);
+                    try {
+                      const deductions: Array<{ width?: number; height?: number; points?: Array<{ x: number; y: number }>; areaFt2?: number }> = m.deductions ? JSON.parse(m.deductions as string) : [];
+                      if (deductions.length > 0) {
+                        const mainPts = parseMeasurementPoints(m);
+                        const polyDeductPolygons = deductions.filter(d => d.points && Array.isArray(d.points)).map(d => d.points!);
+                        const wHDeductionSf = deductions.filter(d => !d.points).reduce((sum, d) => sum + ((d.width || 0) * (d.height || 0)), 0);
+                        let polyDeductionSf = 0;
+                        if (polyDeductPolygons.length > 0 && currentSheet?.scalePxPerFoot && mainPts.length >= 3) {
+                          const netResult = computeNetAreaInFt2(mainPts, polyDeductPolygons, currentSheet.scalePxPerFoot);
+                          polyDeductionSf = netResult.deductionArea;
+                        } else {
+                          polyDeductionSf = deductions.filter(d => d.points).reduce((sum, d) => sum + (d.areaFt2 || 0), 0);
+                        }
+                        displayArea = Math.max(0, displayArea - wHDeductionSf - polyDeductionSf);
+                      }
+                    } catch {}
+                    labelText += `\n${displayArea.toFixed(1)} SF`;
+                  }
+                  const mRecord = m as Record<string, unknown>;
+                  if (mRecord.computedSurfaceAreaFt2) labelText += `\n${Number(mRecord.computedSurfaceAreaFt2).toFixed(1)} SF surf`;
+                  if (m.computedVolumeCy) labelText += `\n${Number(m.computedVolumeCy).toFixed(2)} CY`;
+                  if (m.type === "COUNT") labelText += `\n${m.count || 1} EA`;
+                  try {
+                    const meta = m.metadata ? (typeof m.metadata === "string" ? JSON.parse(m.metadata) : m.metadata) : null;
+                    if (meta?.perimeterFt) labelText += `\n${Number(meta.perimeterFt).toFixed(1)} LF perim`;
+                  } catch {}
+                  if (!labelText.trim()) return null;
+                  const fontSize = Math.max(10, Math.min(14, 12 / stageScale));
+                  return (
+                    <Group key={`label-${m.id}`} x={center.x} y={center.y} listening={false}>
+                      <Rect
+                        x={-2}
+                        y={-2}
+                        width={labelText.length * fontSize * 0.45 + 8}
+                        height={(labelText.split("\n").length) * (fontSize + 2) + 4}
+                        fill="rgba(0,0,0,0.7)"
+                        cornerRadius={3}
+                      />
+                      <Text
+                        text={labelText.trim()}
+                        fontSize={fontSize}
+                        fill="white"
+                        fontStyle="bold"
+                        padding={4}
+                      />
+                    </Group>
+                  );
+                })}
+
+                {showStructuralGridlines && pdfImage && (() => {
+                  const imgW = pdfImage.width;
+                  const imgH = pdfImage.height;
+                  const elements: JSX.Element[] = [];
+                  structuralGridlines.vertical.forEach((gl, i) => {
+                    const x = gl.position;
+                    if (x < 0 || x > imgW) return;
+                    elements.push(
+                      <Line key={`sgl-v-${i}`} points={[x, 0, x, imgH]} stroke="#9333ea" strokeWidth={1.5} dash={[12, 6]} opacity={0.6} listening={false} />,
+                      <Group key={`sgl-vl-${i}`} x={x} y={10} listening={false}>
+                        <Rect x={-12} y={-4} width={24} height={18} fill="#9333ea" cornerRadius={3} opacity={0.85} />
+                        <Text text={gl.label} x={-10} y={-1} fontSize={11} fill="white" fontStyle="bold" width={20} align="center" />
+                      </Group>
+                    );
+                  });
+                  structuralGridlines.horizontal.forEach((gl, i) => {
+                    const y = gl.position;
+                    if (y < 0 || y > imgH) return;
+                    elements.push(
+                      <Line key={`sgl-h-${i}`} points={[0, y, imgW, y]} stroke="#9333ea" strokeWidth={1.5} dash={[12, 6]} opacity={0.6} listening={false} />,
+                      <Group key={`sgl-hl-${i}`} x={10} y={y} listening={false}>
+                        <Rect x={-4} y={-12} width={18} height={24} fill="#9333ea" cornerRadius={3} opacity={0.85} />
+                        <Text text={gl.label} x={-2} y={-9} fontSize={11} fill="white" fontStyle="bold" width={14} align="center" />
+                      </Group>
+                    );
+                  });
+                  return elements;
+                })()}
+
                 {flashMeasurementId && flashPulse > 0 && (() => {
                   const fm = measurements.find(m => m.id === flashMeasurementId);
                   if (!fm) return null;
@@ -2273,6 +2431,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       />
                     )}
 
+                    {activeTool === "deduct" && drawingPoints.length >= 2 && (
+                      <Line
+                        points={drawingPoints.flatMap(p => [p.x, p.y])}
+                        stroke="#ef4444"
+                        strokeWidth={2}
+                        dash={[6, 4]}
+                        fill={drawingPoints.length >= 3 ? "rgba(239,68,68,0.12)" : undefined}
+                        closed={drawingPoints.length >= 3}
+                      />
+                    )}
+
                     {activeTool === "segment" && drawingPoints.length >= 2 && (
                       <>
                         {drawingPoints.slice(0, -1).map((p, i) => {
@@ -2317,6 +2486,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         y={drawingPoints[0].y}
                         radius={isMobile ? 16 : 10}
                         stroke={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : "#ea580c"}
+                        strokeWidth={isMobile ? 4 : 3}
+                        fill="transparent"
+                        dash={[3, 3]}
+                      />
+                    )}
+
+                    {activeTool === "deduct" && drawingPoints.length >= 3 && (
+                      <Circle
+                        x={drawingPoints[0].x}
+                        y={drawingPoints[0].y}
+                        radius={isMobile ? 16 : 10}
+                        stroke="#ef4444"
                         strokeWidth={isMobile ? 4 : 3}
                         fill="transparent"
                         dash={[3, 3]}
@@ -3274,6 +3455,89 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         hideAiMeasurements={hideAiMeasurements}
         setHideAiMeasurements={setHideAiMeasurements}
         measurementLinks={measurementLinks}
+        typicals={typicals}
+        onSaveTypical={(name, measurementIds) => {
+          if (!selectedSheet) return;
+          const sourceMeasurements = measurements.filter(m => measurementIds.includes(m.id));
+          const geometry = sourceMeasurements.map(m => ({
+            type: m.type,
+            points: typeof m.points === "string" ? JSON.parse(m.points) : m.points,
+            label: m.label,
+            categoryId: m.categoryId,
+            computedAreaFt2: m.computedAreaFt2,
+            computedLengthFt: m.computedLengthFt,
+            computedVolumeCy: m.computedVolumeCy,
+            count: m.count,
+            metadata: m.metadata,
+          }));
+          const newTypical = { id: crypto.randomUUID(), name, measurementIds, sheetId: selectedSheet, geometry };
+          const updated = [...typicals, newTypical];
+          setTypicals(updated);
+          localStorage.setItem("takeoff-typicals", JSON.stringify(updated));
+          toast({ title: "Typical Saved", description: `"${name}" with ${geometry.length} measurement(s)` });
+        }}
+        onDeleteTypical={(id) => {
+          const updated = typicals.filter(t => t.id !== id);
+          setTypicals(updated);
+          localStorage.setItem("takeoff-typicals", JSON.stringify(updated));
+          toast({ title: "Typical Deleted" });
+        }}
+        onStampTypical={(typicalId) => {
+          const typical = typicals.find(t => t.id === typicalId);
+          if (!typical || !selectedSheet) return;
+          const sources = typical.geometry && typical.geometry.length > 0
+            ? typical.geometry
+            : measurements.filter(m => typical.measurementIds.includes(m.id)).map(m => ({
+                type: m.type,
+                points: typeof m.points === "string" ? JSON.parse(m.points) : m.points,
+                label: m.label,
+                categoryId: m.categoryId,
+                computedAreaFt2: m.computedAreaFt2,
+                computedLengthFt: m.computedLengthFt,
+                computedVolumeCy: m.computedVolumeCy,
+                count: m.count,
+                metadata: m.metadata,
+              }));
+          if (sources.length === 0) {
+            toast({ title: "Error", description: "No measurements found for this typical", variant: "destructive" });
+            return;
+          }
+          const offset = { x: 100 + typicalPlacementCount * 50, y: 100 + typicalPlacementCount * 50 };
+          setTypicalPlacementCount(c => c + 1);
+          sources.forEach((src) => {
+            const pts: Array<{ x: number; y: number }> = Array.isArray(src.points) ? src.points : [];
+            if (pts.length === 0) return;
+            const offsetPts = pts.map((p: { x: number; y: number }) => ({ x: p.x + offset.x, y: p.y + offset.y }));
+            createMeasurementMutation.mutate({
+              sheetId: selectedSheet,
+              type: src.type,
+              points: offsetPts,
+              label: `${src.label || src.type} (copy)`,
+              categoryId: src.categoryId,
+              computedAreaFt2: src.computedAreaFt2,
+              computedLengthFt: src.computedLengthFt,
+              computedVolumeCy: src.computedVolumeCy,
+              count: src.count,
+              metadata: src.metadata,
+            });
+          });
+          toast({ title: "Typical Stamped", description: `Placed ${sources.length} measurement(s) with offset` });
+        }}
+        structuralGridlines={structuralGridlines}
+        onUpdateGridlines={(gl) => {
+          setStructuralGridlines(gl);
+          localStorage.setItem("takeoff-gridlines", JSON.stringify(gl));
+        }}
+        labelHiddenCategories={labelHiddenCategories}
+        onToggleLabelCategory={(catId) => {
+          setLabelHiddenCategories(prev => {
+            const next = new Set(prev);
+            if (next.has(catId)) next.delete(catId); else next.add(catId);
+            localStorage.setItem("takeoff-label-hidden-categories", JSON.stringify([...next]));
+            return next;
+          });
+        }}
+        showMeasurementLabels={showMeasurementLabels}
       />
 
       {crossModulePanelOpen && context?.type !== "bid" && (
