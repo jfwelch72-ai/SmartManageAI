@@ -111,4 +111,5 @@ export const PROVIDER_DESCRIPTIONS: Record<string, string> = {
   microsoft: "Integrate Outlook mail and Microsoft 365 Calendar.",
   docusign: "Send contracts and change orders for electronic signature.",
   zapier: "Connect SmartManageAI to 5,000+ apps via webhooks and automation triggers.",
+  stackct: "Sync projects, plans, and takeoff/estimate data with STACK Construction Technologies.",
 };

@@ -1,7 +1,8 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Link2, FileText, Loader2, Settings, Zap } from "lucide-react";
+import { Link2, FileText, Loader2, Settings, Zap, HardHat, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Provider, Connection } from "@/components/integrations/types";
@@ -9,7 +10,43 @@ import { SecurityBanner, ProviderCardGrid, TokenStatusBadge, SecurityDetailsPane
 import { IntegrationSyncPanel } from "@/components/integrations/IntegrationSyncPanel";
 import { AccountMappingPanel, SyncSchedulePanel } from "@/components/integrations/QboMappingPanel";
 import { WebhookConfigPanel } from "@/components/integrations/WebhookConfigPanel";
+import { StackCTSyncPanel } from "@/components/integrations/StackCTSyncPanel";
 import { Badge } from "@/components/ui/badge";
+
+function StackCTConnectButton() {
+  const { toast } = useToast();
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/integrations/connections", {
+        provider: "stackct",
+        displayName: "STACK CT",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "STACK CT Connection Created", description: "Enter your credentials to complete setup." });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/connections"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Button
+      onClick={() => createMutation.mutate()}
+      disabled={createMutation.isPending}
+      data-testid="button-connect-stackct"
+    >
+      {createMutation.isPending ? (
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+      ) : (
+        <Plus className="h-4 w-4 mr-2" />
+      )}
+      Connect STACK CT
+    </Button>
+  );
+}
 
 export default function IntegrationsPage({ embedded }: { embedded?: boolean } = {}) {
   const { toast } = useToast();
@@ -65,6 +102,7 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
   const activeConnections = (connections || []).filter(c => c.status === "active");
   const qboConnection = activeConnections.find(c => c.provider === "qbo");
   const zapierConnection = activeConnections.find(c => c.provider === "zapier");
+  const stackctConnection = (connections || []).find(c => c.provider === "stackct" && c.status !== "disconnected");
 
   return (
     <div className={embedded ? "space-y-6" : "px-3 sm:px-6 py-4 sm:py-6 space-y-6"}>
@@ -105,6 +143,28 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
               <p className="text-sm text-muted-foreground" data-testid="text-no-qbo">
                 Connect QuickBooks Online above to enable accounting sync operations.
               </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Separator />
+
+      {stackctConnection ? (
+        <StackCTSyncPanel connection={stackctConnection} />
+      ) : (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <HardHat className="h-5 w-5 text-blue-500" />
+            STACK CT
+          </h2>
+          <Card>
+            <CardContent className="py-8 text-center">
+              <HardHat className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground mb-4" data-testid="text-no-stackct">
+                Connect STACK CT to sync projects, plans, and takeoff/estimate data.
+              </p>
+              <StackCTConnectButton />
             </CardContent>
           </Card>
         </div>

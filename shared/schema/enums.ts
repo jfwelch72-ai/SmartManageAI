@@ -545,7 +545,7 @@ export const portalChatThreadStatusEnum = pgEnum("portal_chat_thread_status", ["
 export const portalChatThreadCategoryEnum = pgEnum("portal_chat_thread_category", ["PROJECT", "RFI", "SUBMITTAL", "TASK", "GENERAL"]);
 export const portalChatPriorityEnum = pgEnum("portal_chat_priority", ["NORMAL", "URGENT"]);
 
-export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "google", "microsoft", "docusign", "dropbox_sign", "zapier", "dropbox", "gdrive", "onedrive", "box"]);
+export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "google", "microsoft", "docusign", "dropbox_sign", "zapier", "dropbox", "gdrive", "onedrive", "box", "stackct"]);
 export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected"]);
 export const integrationEventStatusEnum = pgEnum("integration_event_status", ["queued", "processing", "sent", "failed", "dead_letter"]);
 export const approvalStatusEnum = pgEnum("approval_status_v2", ["pending", "approved", "rejected"]);

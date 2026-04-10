@@ -35,8 +35,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, and feature flags.
 *   **Integration Gating**: Feature flags (`VIDEO_CALLS`, `SMS_NOTIFICATIONS`) gate unconfigured third-party services. `/api/integration-status` endpoint reports configuration state. Video call button disables when LiveKit is not configured. SMS silently skips when Twilio is not configured.
 *   **Structured Error Logging**: `error_logs` table captures production errors with stack trace, user context, route, and request ID. Global error handler and process-level uncaught exception/rejection handlers persist errors to the database.
-*   **Consolidated Startup Migrations**: 14 idempotent schema migration checks are managed by a single runner (`server/utils/runStartupMigrations.ts`). Individual migration files remain in `server/utils/ensure*.ts`. The runner suppresses "skipped" log noise and outputs a single summary line at startup (e.g., `[migrations] 14 checks complete in 400ms — 0 applied, 14 up-to-date`). Only applied migrations are logged individually.
-*   **Integration Hub**: Provider-agnostic framework for centralized connection management.
+*   **Consolidated Startup Migrations**: 15 idempotent schema migration checks are managed by a single runner (`server/utils/runStartupMigrations.ts`). Individual migration files remain in `server/utils/ensure*.ts`. The runner suppresses "skipped" log noise and outputs a single summary line at startup (e.g., `[migrations] 15 checks complete in 400ms — 0 applied, 15 up-to-date`). Only applied migrations are logged individually.
+*   **Integration Hub**: Provider-agnostic framework for centralized connection management. Includes STACK CT integration for syncing projects, plans/documents, and takeoff/estimate data with STACK Construction Technologies.
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, history, and comparisons.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs.
 *   **Auto Change Orders from Takeoff Deltas**: Automatic generation of draft PCOs from detected quantity/cost deltas in superseded takeoff sheets.
@@ -88,6 +88,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Recharts**
 *   **react-grid-layout**
 *   **QuickBooks Online**
+*   **STACK CT (Construction Technologies)**
 *   **Google Workspace (Gmail, Calendar)**
 *   **Microsoft 365 (Mail, Calendar)**
 *   **DocuSign**

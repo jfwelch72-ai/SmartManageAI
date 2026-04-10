@@ -8,11 +8,12 @@ import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 import { eq, and, desc } from "drizzle-orm";
-import { integrationConnections, type IntegrationConnection, integrationSyncState, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES } from "@shared/schema";
+import { integrationConnections, type IntegrationConnection, integrationSyncState, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES, projects } from "@shared/schema";
 import { db } from "./db";
 import { decryptMetadata } from "./integrations/encryption";
 import type { AuthRequest } from "./auth";
 import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentStatus, exportPayroll, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "./integrations/providers/qbo";
+import { importProjects as stackctImportProjects, exportProjects as stackctExportProjects, importPlans as stackctImportPlans, exportPlans as stackctExportPlans, importEstimates as stackctImportEstimates, exportEstimates as stackctExportEstimates, acquireTokenWithCredentials as stackctAcquireToken } from "./integrations/providers/stackct";
 import { z } from "zod";
 import * as webhookService from "./integrations/webhookService";
 import { generateWebhookSecret, deliverZapierWebhook } from "./integrations/providers/zapier";
@@ -1153,6 +1154,281 @@ router.post("/zapier/incoming/:secretKey", async (req, res) => {
   } catch (err) {
     logError("Zapier incoming webhook error", { error: String(err) });
     res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ========================================
+// STACK CT Credential Authorization
+// ========================================
+
+const stackctCredentialSchema = z.object({
+  clientId: z.string().min(1, "Client ID is required"),
+  clientSecret: z.string().min(1, "Client Secret is required"),
+});
+
+router.post("/connections/:id/stackct-authorize", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.provider !== "stackct") {
+      return res.status(400).json({ error: "This endpoint is for STACK CT connections only" });
+    }
+
+    const parsed = stackctCredentialSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid credentials", details: parsed.error.flatten() });
+    }
+
+    const { clientId, clientSecret } = parsed.data;
+
+    const tokens = await stackctAcquireToken(clientId, clientSecret);
+
+    const enrichedTokens = {
+      ...tokens,
+      raw: {
+        ...tokens.raw,
+        clientId,
+        clientSecret,
+      },
+    };
+
+    await connectionService.storeConnectionTokens(connection.id, user.organizationId, enrichedTokens);
+
+    logIntegrationAudit("connection.authorized", {
+      orgId: user.organizationId,
+      connectionId: connection.id,
+      provider: "stackct",
+      userId: user.id,
+    });
+
+    const updated = await connectionService.getConnection(connection.id, user.organizationId);
+    res.json(connectionService.sanitizeConnection(updated));
+  } catch (err) {
+    logError("STACK CT authorization failed", { error: String(err) });
+    logIntegrationAudit("security.auth_attempt_failed", {
+      orgId: (req as any).user.organizationId,
+      connectionId: req.params.id,
+      provider: "stackct",
+      error: String(err),
+    });
+    res.status(400).json({ error: "Failed to authorize with STACK CT. Please check your credentials." });
+  }
+});
+
+// ========================================
+// STACK CT Sync Routes
+// ========================================
+
+const stackctSyncSchema = z.object({
+  operation: z.enum(["import_projects", "export_projects", "import_plans", "export_plans", "import_estimates", "export_estimates"]),
+  dryRun: z.boolean().optional().default(false),
+  stackctProjectId: z.string().optional(),
+  localProjectId: z.string().optional(),
+});
+
+router.post("/connections/:id/stackct-sync", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+
+    let connection = await connectionService.getDecryptedConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.status !== "active") {
+      return res.status(400).json({ error: "Connection must be active to sync" });
+    }
+    if (connection.provider !== "stackct") {
+      return res.status(400).json({ error: "This endpoint is for STACK CT connections only" });
+    }
+
+    const parsed = stackctSyncSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    }
+
+    const { operation, dryRun, stackctProjectId, localProjectId } = parsed.data;
+
+    if (localProjectId) {
+      const [project] = await db.select({ id: projects.id }).from(projects)
+        .where(and(eq(projects.id, localProjectId), eq(projects.organizationId, user.organizationId)));
+      if (!project) {
+        return res.status(403).json({ error: "Project does not belong to your organization" });
+      }
+    }
+
+    const metadata = (connection.metadata as Record<string, any>) || {};
+    if (metadata.expiresAt && new Date(metadata.expiresAt) < new Date()) {
+      const provider = getProvider(connection.provider);
+      if (provider) {
+        try {
+          const newTokens = await provider.refreshToken(connection);
+          await connectionService.storeConnectionTokens(connection.id, user.organizationId, newTokens);
+          connection = (await connectionService.getDecryptedConnection(connection.id, user.organizationId))!;
+          logIntegrationAudit("security.token_refresh_success", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id });
+        } catch (refreshErr) {
+          logIntegrationAudit("security.token_refresh_failed", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id, error: String(refreshErr) });
+          return res.status(401).json({ error: "Token expired and refresh failed. Please reconnect." });
+        }
+      }
+    }
+
+    let result;
+    const startTime = Date.now();
+
+    switch (operation) {
+      case "import_projects":
+        result = await stackctImportProjects(connection, dryRun);
+        break;
+      case "export_projects":
+        result = await stackctExportProjects(connection, dryRun);
+        break;
+      case "import_plans":
+        if (!stackctProjectId || !localProjectId) {
+          return res.status(400).json({ error: "stackctProjectId and localProjectId are required for plan sync" });
+        }
+        result = await stackctImportPlans(connection, stackctProjectId, localProjectId, dryRun);
+        break;
+      case "export_plans":
+        if (!stackctProjectId || !localProjectId) {
+          return res.status(400).json({ error: "stackctProjectId and localProjectId are required for plan sync" });
+        }
+        result = await stackctExportPlans(connection, stackctProjectId, localProjectId, dryRun);
+        break;
+      case "import_estimates":
+        if (!stackctProjectId || !localProjectId) {
+          return res.status(400).json({ error: "stackctProjectId and localProjectId are required for estimate sync" });
+        }
+        result = await stackctImportEstimates(connection, stackctProjectId, localProjectId, dryRun);
+        break;
+      case "export_estimates":
+        if (!stackctProjectId || !localProjectId) {
+          return res.status(400).json({ error: "stackctProjectId and localProjectId are required for estimate sync" });
+        }
+        result = await stackctExportEstimates(connection, stackctProjectId, localProjectId, dryRun);
+        break;
+    }
+
+    const duration = Date.now() - startTime;
+
+    const syncLog = {
+      operation,
+      dryRun,
+      result,
+      duration,
+      triggeredBy: user.id,
+      triggeredAt: new Date().toISOString(),
+    };
+
+    const [existing] = await db.select().from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.connectionId, connection.id),
+        eq(integrationSyncState.entityType, `stackct_sync_log_${operation}`)
+      ));
+
+    const prevLogs = (existing?.metadata as any)?.logs || [];
+    prevLogs.unshift(syncLog);
+    const logs = prevLogs.slice(0, 50);
+
+    if (existing) {
+      await db.update(integrationSyncState)
+        .set({
+          metadata: { logs, latestResult: result },
+          lastSyncAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(integrationSyncState.id, existing.id));
+    } else {
+      await db.insert(integrationSyncState).values({
+        organizationId: user.organizationId,
+        connectionId: connection.id,
+        entityType: `stackct_sync_log_${operation}`,
+        metadata: { logs, latestResult: result },
+        lastSyncAt: new Date(),
+      });
+    }
+
+    if (!dryRun) {
+      await connectionService.updateConnectionStatus(connection.id, user.organizationId, "active");
+    }
+
+    logIntegrationAudit(`sync.${operation}.${dryRun ? "dry_run" : "executed"}`, {
+      orgId: user.organizationId,
+      connectionId: connection.id,
+      provider: "stackct",
+      userId: user.id,
+      meta: { result, duration },
+    });
+
+    logInfo("STACK CT sync operation completed", { operation, dryRun, duration, success: result?.success });
+    res.json({ ...result, dryRun, duration });
+  } catch (err) {
+    logError("STACK CT sync operation failed", { error: String(err), connectionId: req.params.id });
+    res.status(500).json({ error: "STACK CT sync operation failed", details: String(err) });
+  }
+});
+
+router.get("/connections/:id/stackct-sync-history", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+
+    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+
+    const syncStates = await db.select().from(integrationSyncState)
+      .where(eq(integrationSyncState.connectionId, connection.id))
+      .orderBy(desc(integrationSyncState.lastSyncAt));
+
+    const history = syncStates
+      .filter(s => s.entityType.startsWith("stackct_sync_log_"))
+      .map(s => {
+        const meta = s.metadata as any;
+        return {
+          operation: s.entityType.replace("stackct_sync_log_", ""),
+          lastSyncAt: s.lastSyncAt,
+          latestResult: meta?.latestResult || null,
+          logs: (meta?.logs || []).slice(0, 20),
+        };
+      });
+
+    const projectMappingRecords = syncStates
+      .filter(s => s.entityType.startsWith("stackct_project_") || s.entityType.startsWith("stackct_export_project_"));
+
+    const projectMappings: { localProjectId: string; stackctProjectId: string; projectName: string }[] = [];
+    const seenKeys = new Set<string>();
+
+    for (const s of projectMappingRecords) {
+      const meta = s.metadata as any;
+      const localProjectId = meta?.localProjectId;
+      const stackctProjectId = meta?.stackctProjectId;
+      if (!localProjectId || !stackctProjectId) continue;
+      const key = `${localProjectId}::${stackctProjectId}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      projectMappings.push({
+        localProjectId,
+        stackctProjectId,
+        projectName: meta?.name || meta?.projectName || `Project ${localProjectId.substring(0, 8)}`,
+      });
+    }
+
+    res.json({
+      history,
+      projectMappings,
+      connectionId: connection.id,
+      provider: connection.provider,
+    });
+  } catch (err) {
+    logError("Failed to get STACK CT sync history", { error: String(err) });
+    res.status(500).json({ error: "Failed to get STACK CT sync history" });
   }
 });
 

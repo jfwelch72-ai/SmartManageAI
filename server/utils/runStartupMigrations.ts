@@ -14,6 +14,7 @@ import { ensurePermissionPresetsTable } from "./ensurePermissionPresetsTable";
 import { ensureLidarTables } from "./ensureLidarTables";
 import { ensureErrorLogsTable } from "./ensureErrorLogsTable";
 import { ensureScopeModifierTables } from "./ensureScopeModifierTables";
+import { ensureStackctProviderEnum } from "./ensureStackctProviderEnum";
 
 interface MigrationStep {
   name: string;
@@ -35,6 +36,7 @@ const migrations: MigrationStep[] = [
   { name: "lidar_tables", fn: ensureLidarTables },
   { name: "error_logs_table", fn: ensureErrorLogsTable },
   { name: "scope_modifier_tables", fn: ensureScopeModifierTables },
+  { name: "stackct_provider_enum", fn: ensureStackctProviderEnum },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

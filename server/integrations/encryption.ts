@@ -87,6 +87,9 @@ export function encryptMetadata(metadata: Record<string, any>): Record<string, a
   if (result.refreshToken && typeof result.refreshToken === "string") {
     result.refreshToken = encryptToken(result.refreshToken);
   }
+  if (result.clientSecret && typeof result.clientSecret === "string") {
+    result.clientSecret = encryptToken(result.clientSecret);
+  }
 
   return result;
 }
@@ -101,6 +104,9 @@ export function decryptMetadata(metadata: Record<string, any>): Record<string, a
   }
   if (result.refreshToken && typeof result.refreshToken === "string") {
     result.refreshToken = decryptToken(result.refreshToken);
+  }
+  if (result.clientSecret && typeof result.clientSecret === "string") {
+    result.clientSecret = decryptToken(result.clientSecret);
   }
 
   return result;

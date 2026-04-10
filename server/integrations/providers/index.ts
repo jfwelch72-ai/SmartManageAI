@@ -8,6 +8,7 @@ import { dropboxProvider } from "./dropbox/provider";
 import { gdriveProvider } from "./gdrive/provider";
 import { onedriveProvider } from "./onedrive/provider";
 import { boxProvider } from "./box/provider";
+import { stackctProvider } from "./stackct";
 
 export function registerAllProviders() {
   registerProvider(qboProvider);
@@ -19,4 +20,5 @@ export function registerAllProviders() {
   registerProvider(gdriveProvider);
   registerProvider(onedriveProvider);
   registerProvider(boxProvider);
+  registerProvider(stackctProvider);
 }
