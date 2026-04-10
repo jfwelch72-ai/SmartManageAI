@@ -49,9 +49,9 @@ const createChecklistItemSchema = z.object({
 
 const updateChecklistItemSchema = z.object({
   status: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED", "SKIPPED"]).optional(),
-  notes: z.string().optional(),
-  assignedToUserId: z.string().optional(),
-  assignedToName: z.string().optional(),
+  notes: z.string().nullable().optional(),
+  assignedToUserId: z.string().nullable().optional(),
+  assignedToName: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
 });
 
@@ -385,6 +385,17 @@ router.patch("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMEN
 
     const parsed = updateMethodStatementSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+
+    const hasContentEdits = parsed.data.title !== undefined || parsed.data.description !== undefined ||
+      parsed.data.workActivity !== undefined || parsed.data.sequenceOfOperations !== undefined ||
+      parsed.data.equipmentResources !== undefined || parsed.data.hazards !== undefined ||
+      parsed.data.controlMeasures !== undefined || parsed.data.ppe !== undefined ||
+      parsed.data.emergencyProcedures !== undefined || parsed.data.linkedScheduleTaskId !== undefined ||
+      parsed.data.linkedSafetyChecklistId !== undefined;
+
+    if (hasContentEdits && existing.status !== "DRAFT") {
+      return res.status(400).json({ error: "Content can only be edited when status is DRAFT" });
+    }
 
     if (parsed.data.status) {
       const allowed = VALID_METHOD_TRANSITIONS[existing.status] || [];

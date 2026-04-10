@@ -416,9 +416,9 @@ function ChecklistCard({ checklist, expanded, onToggle, canManage, projectId }: 
     updateItem.mutate({
       itemId,
       updates: {
-        assignedToName: editAssignee || undefined,
+        assignedToName: editAssignee || null,
         dueDate: editDueDate || null,
-        notes: editNotes || undefined,
+        notes: editNotes || null,
       },
     });
   }
