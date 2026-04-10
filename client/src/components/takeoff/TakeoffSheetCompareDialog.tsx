@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Columns, Layers, ArrowLeft, ArrowRight, Table2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Columns, Layers, ArrowLeft, ArrowRight, Table2, TrendingUp, TrendingDown, Minus, SplitSquareHorizontal, Diff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SheetInfo {
@@ -38,7 +38,7 @@ interface TakeoffSheetCompareDialogProps {
   quantityComparison?: QuantityCompareRow[];
 }
 
-type CompareMode = "side-by-side" | "overlay" | "quantity-table";
+type CompareMode = "side-by-side" | "overlay" | "swipe" | "diff" | "quantity-table";
 
 function SheetImage({ sheet, className }: { sheet: SheetInfo; className?: string }) {
   const src = sheet.imageUrl
@@ -77,6 +77,35 @@ export function TakeoffSheetCompareDialog({
 }: TakeoffSheetCompareDialogProps) {
   const [mode, setMode] = useState<CompareMode>("side-by-side");
   const [overlayOpacity, setOverlayOpacity] = useState(50);
+  const [swipePosition, setSwipePosition] = useState(50);
+  const swipeContainerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+
+  const handleSwipeMove = useCallback((clientX: number) => {
+    if (!swipeContainerRef.current) return;
+    const rect = swipeContainerRef.current.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const pct = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    setSwipePosition(pct);
+  }, []);
+
+  const handleSwipeMouseDown = useCallback(() => { isDraggingRef.current = true; }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => { if (isDraggingRef.current) handleSwipeMove(e.clientX); };
+    const handleMouseUp = () => { isDraggingRef.current = false; };
+    const handleTouchMove = (e: TouchEvent) => { if (isDraggingRef.current && e.touches[0]) handleSwipeMove(e.touches[0].clientX); };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("touchmove", handleTouchMove);
+    window.addEventListener("touchend", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleMouseUp);
+    };
+  }, [handleSwipeMove]);
 
   const oldSrc = oldSheet.imageUrl || `/api/takeoff/sheets/${oldSheet.id}/pdf`;
   const newSrc = newSheet.imageUrl || `/api/takeoff/sheets/${newSheet.id}/pdf`;
@@ -114,6 +143,24 @@ export function TakeoffSheetCompareDialog({
             >
               <Layers className="w-3.5 h-3.5" /> Overlay
             </Button>
+            <Button
+              variant={mode === "swipe" ? "default" : "outline"}
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => setMode("swipe")}
+              data-testid="button-compare-swipe"
+            >
+              <SplitSquareHorizontal className="w-3.5 h-3.5" /> Swipe
+            </Button>
+            <Button
+              variant={mode === "diff" ? "default" : "outline"}
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => setMode("diff")}
+              data-testid="button-compare-diff"
+            >
+              <Diff className="w-3.5 h-3.5" /> Diff
+            </Button>
             {quantityComparison && quantityComparison.length > 0 && (
               <Button
                 variant={mode === "quantity-table" ? "default" : "outline"}
@@ -148,7 +195,78 @@ export function TakeoffSheetCompareDialog({
         )}
 
         <div className="flex-1 min-h-0 overflow-hidden">
-          {mode === "quantity-table" && quantityComparison ? (
+          {mode === "swipe" ? (
+            <div className="h-full flex flex-col">
+              <div className="shrink-0 flex items-center gap-4 px-3 py-2 bg-muted/50 border-b text-xs">
+                <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-200">Old: {oldSheet.sheetName}</Badge>
+                <span className="text-muted-foreground">Drag the divider to compare</span>
+                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-200">New: {newSheet.sheetName}</Badge>
+              </div>
+              <div
+                ref={swipeContainerRef}
+                className="flex-1 min-h-0 relative overflow-hidden bg-white cursor-col-resize select-none"
+                onMouseDown={handleSwipeMouseDown}
+                onTouchStart={handleSwipeMouseDown}
+                data-testid="swipe-compare-container"
+              >
+                <img
+                  src={newSrc}
+                  alt={newSheet.sheetName}
+                  className="absolute inset-0 w-full h-full object-contain"
+                  draggable={false}
+                />
+                <div
+                  className="absolute inset-0 overflow-hidden"
+                  style={{ clipPath: `inset(0 ${100 - swipePosition}% 0 0)` }}
+                >
+                  <img
+                    src={oldSrc}
+                    alt={oldSheet.sheetName}
+                    className="absolute inset-0 w-full h-full object-contain"
+                    draggable={false}
+                  />
+                </div>
+                <div
+                  className="absolute top-0 bottom-0 z-10 flex flex-col items-center"
+                  style={{ left: `${swipePosition}%`, transform: "translateX(-50%)" }}
+                >
+                  <div className="w-1 flex-1 bg-primary shadow-lg" />
+                  <div className="w-8 h-8 rounded-full bg-primary shadow-lg flex items-center justify-center cursor-grab active:cursor-grabbing">
+                    <SplitSquareHorizontal className="w-4 h-4 text-primary-foreground" />
+                  </div>
+                  <div className="w-1 flex-1 bg-primary shadow-lg" />
+                </div>
+              </div>
+            </div>
+          ) : mode === "diff" ? (
+            <div className="h-full flex flex-col">
+              <div className="shrink-0 flex items-center gap-4 px-3 py-2 bg-muted/50 border-b text-xs">
+                <span className="font-medium">Difference Highlight</span>
+                <span className="text-muted-foreground">Areas that changed between revisions are highlighted</span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <div className="w-3 h-3 rounded bg-red-500/40" /> <span>Removed</span>
+                  <div className="w-3 h-3 rounded bg-green-500/40" /> <span>Added</span>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto bg-muted/20 flex items-center justify-center p-2">
+                <div className="relative inline-block border rounded shadow-sm bg-white">
+                  <img
+                    src={newSrc}
+                    alt={newSheet.sheetName}
+                    className="block max-w-full max-h-[calc(80vh-120px)] object-contain"
+                    data-testid="compare-diff-base"
+                  />
+                  <img
+                    src={oldSrc}
+                    alt={oldSheet.sheetName}
+                    className="absolute inset-0 w-full h-full object-contain"
+                    style={{ opacity: 0.4, mixBlendMode: "difference" }}
+                    data-testid="compare-diff-overlay"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : mode === "quantity-table" && quantityComparison ? (
             <div className="h-full overflow-auto p-4">
               <table className="w-full text-sm border-collapse" data-testid="quantity-compare-table">
                 <thead>

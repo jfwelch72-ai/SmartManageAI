@@ -327,6 +327,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const isDrawingTool = ["linear", "arc", "area", "volume", "count", "segment", "deduct"].includes(activeTool);
     if (isDrawingTool) {
       point = resolvePoint(point);
+      if (navigator.vibrate) navigator.vibrate(10);
     }
 
     if (activeTool === "select") {

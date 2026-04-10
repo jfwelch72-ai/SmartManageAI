@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, Fragment } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, Fragment } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect, Group } from "react-konva";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -236,6 +236,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   });
   const [showCostPanel, setShowCostPanel] = useState(false);
   const [showMeasurementTable, setShowMeasurementTable] = useState(false);
+  const [showMobileGestureGuide, setShowMobileGestureGuide] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !localStorage.getItem("takeoff-gesture-guide-dismissed");
+  });
+  const [showMobileToolPicker, setShowMobileToolPicker] = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(50);
   const [showOverlaySlider, setShowOverlaySlider] = useState(false);
   const [activeCondition, setActiveCondition] = useState<TakeoffCondition | null>(null);
@@ -1009,6 +1014,55 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     ).toString();
   }, []);
 
+  const pdfImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const pdfDocCacheRef = useRef<Map<string, any>>(new Map());
+  const [pdfLoadProgress, setPdfLoadProgress] = useState(0);
+
+  const renderPdfPage = useCallback(async (sheetId: string, pdfUrl: string, pageIndex: number): Promise<HTMLImageElement> => {
+    const cacheKey = `${sheetId}-${pageIndex}`;
+    const cached = pdfImageCacheRef.current.get(cacheKey);
+    if (cached) {
+      pdfImageCacheRef.current.delete(cacheKey);
+      pdfImageCacheRef.current.set(cacheKey, cached);
+      return cached;
+    }
+
+    let pdf = pdfDocCacheRef.current.get(pdfUrl);
+    if (!pdf) {
+      const loadingTask = pdfjsLib.getDocument({ url: pdfUrl, withCredentials: true });
+      pdf = await loadingTask.promise;
+      pdfDocCacheRef.current.set(pdfUrl, pdf);
+      if (pdfDocCacheRef.current.size > 20) {
+        const firstKey = pdfDocCacheRef.current.keys().next().value;
+        if (firstKey) pdfDocCacheRef.current.delete(firstKey);
+      }
+    }
+
+    const page = await pdf.getPage(pageIndex + 1);
+    const scale = 1.5;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas context unavailable");
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    await page.render({ canvasContext: context, viewport }).promise;
+
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => {
+        pdfImageCacheRef.current.set(cacheKey, img);
+        if (pdfImageCacheRef.current.size > 50) {
+          const firstKey = pdfImageCacheRef.current.keys().next().value;
+          if (firstKey) pdfImageCacheRef.current.delete(firstKey);
+        }
+        resolve(img);
+      };
+      img.onerror = reject;
+      img.src = canvas.toDataURL();
+    });
+  }, []);
+
   useEffect(() => {
     if (!currentSheet?.imageUrl) {
       setPdfImage(null);
@@ -1018,61 +1072,62 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     const loadPDF = async () => {
       try {
         setIsPdfLoading(true);
-        setPdfImage(null);
+        setPdfLoadProgress(10);
         const pdfUrl = `/api/takeoff/sheets/${currentSheet.id}/pdf`;
-        const loadingTask = pdfjsLib.getDocument({
-          url: pdfUrl,
-          withCredentials: true,
-        });
-        const pdf = await loadingTask.promise;
-        const pageNumber = (currentSheet.sheetIndex || 0) + 1;
-        const page = await pdf.getPage(pageNumber);
-        const scale = 1.5;
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        if (!context) return;
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        await page.render({
-          canvasContext: context,
-          viewport: viewport,
-        }).promise;
-        const img = new window.Image();
-        img.src = canvas.toDataURL();
-        img.onload = () => {
-          setPdfImage(img);
-          setIsPdfLoading(false);
-        };
+        setPdfLoadProgress(30);
+
+        const img = await renderPdfPage(currentSheet.id, pdfUrl, currentSheet.sheetIndex || 0);
+        setPdfLoadProgress(80);
+        setPdfImage(img);
+        setPdfLoadProgress(100);
+        setIsPdfLoading(false);
 
         if (!currentSheet.scalePxPerFoot) {
           try {
-            const textContent = await page.getTextContent();
-            const textItems = textContent.items
-              .filter((item: any) => item.str && item.str.trim())
-              .map((item: any) => item.str as string);
-            const detected = detectScaleFromText(textItems);
-            if (detected) {
-              setDetectedScale(detected);
+            const pdf = pdfDocCacheRef.current.get(pdfUrl);
+            if (pdf) {
+              const page = await pdf.getPage((currentSheet.sheetIndex || 0) + 1);
+              const textContent = await page.getTextContent();
+              const textItems = textContent.items
+                .filter((item: any) => item.str && item.str.trim())
+                .map((item: any) => item.str as string);
+              const detected = detectScaleFromText(textItems);
+              if (detected) {
+                if (detected.confidence === "high") {
+                  setDetectedScale(detected);
+                } else {
+                  setDetectedScale(detected);
+                }
+              }
             }
           } catch (textErr) {
             console.warn("Could not extract text from PDF for scale detection:", textErr);
           }
         }
+
+        const currentIdx = sheets.findIndex((s: any) => s.id === currentSheet.id);
+        const adjacentIndices = [currentIdx - 1, currentIdx + 1, currentIdx + 2].filter(i => i >= 0 && i < sheets.length);
+        for (const idx of adjacentIndices) {
+          const adjSheet = sheets[idx] as any;
+          if (adjSheet && adjSheet.imageUrl && !pdfImageCacheRef.current.has(`${adjSheet.id}-${adjSheet.sheetIndex || 0}`)) {
+            renderPdfPage(adjSheet.id, `/api/takeoff/sheets/${adjSheet.id}/pdf`, adjSheet.sheetIndex || 0).catch(() => {});
+          }
+        }
       } catch (error) {
-        console.error('Error loading PDF:', error);
+        console.error("Error loading PDF:", error);
         setIsPdfLoading(false);
+        setPdfLoadProgress(0);
         toast({
           title: "Error",
           description: "Failed to load PDF. The file may not be a valid PDF document.",
-          variant: "destructive"
+          variant: "destructive",
         });
       }
     };
 
     loadPDF();
     setDetectedScale(null);
-  }, [currentSheet?.id, currentSheet?.imageUrl, toast]);
+  }, [currentSheet?.id, currentSheet?.imageUrl, toast, renderPdfPage, sheets]);
 
   const autoDetectedSheetsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -1737,6 +1792,92 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               )}
             </div>
           )}
+          {isMobile && showMobileGestureGuide && selectedSheet && !isDrawing && (
+            <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center" data-testid="mobile-gesture-guide">
+              <div className="bg-card rounded-xl shadow-2xl p-5 mx-4 max-w-sm space-y-4">
+                <h3 className="text-sm font-bold text-center">Touch Gestures</h3>
+                <div className="space-y-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+                      <span className="text-lg">👆</span>
+                    </div>
+                    <div><span className="font-medium text-foreground">Tap</span> — Place measurement points or select items</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0">
+                      <span className="text-lg">🤏</span>
+                    </div>
+                    <div><span className="font-medium text-foreground">Pinch</span> — Zoom in/out on the plan</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
+                      <span className="text-lg">👆👆</span>
+                    </div>
+                    <div><span className="font-medium text-foreground">Double-tap</span> — Complete polygon or close shape</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+                      <span className="text-lg">☝️</span>
+                    </div>
+                    <div><span className="font-medium text-foreground">One-finger drag</span> — Pan the drawing</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowMobileGestureGuide(false);
+                    localStorage.setItem("takeoff-gesture-guide-dismissed", "1");
+                  }}
+                  className="w-full py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium active:scale-95 transition-transform"
+                  data-testid="dismiss-gesture-guide"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          )}
+          {isMobile && !isDrawing && selectedSheet && (
+            <div className="absolute bottom-4 right-4 z-40" data-testid="mobile-fab-tools">
+              {showMobileToolPicker && (
+                <div className="absolute bottom-14 right-0 bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border p-2 grid grid-cols-3 gap-1.5 min-w-[180px] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                  {[
+                    { id: "linear" as const, label: "Line", icon: "📏" },
+                    { id: "area" as const, label: "Area", icon: "⬜" },
+                    { id: "volume" as const, label: "Vol", icon: "📦" },
+                    { id: "count" as const, label: "Count", icon: "🔢" },
+                    { id: "segment" as const, label: "Seg", icon: "📐" },
+                    { id: "arc" as const, label: "Arc", icon: "⌒" },
+                  ].map(tool => (
+                    <button
+                      key={tool.id}
+                      onClick={() => {
+                        setActiveTool(tool.id);
+                        setShowMobileToolPicker(false);
+                        if (navigator.vibrate) navigator.vibrate(10);
+                      }}
+                      className={cn(
+                        "flex flex-col items-center gap-0.5 p-2 rounded-lg text-[10px] active:scale-95 transition-all",
+                        activeTool === tool.id ? "bg-primary/20 text-primary font-bold" : "hover:bg-accent"
+                      )}
+                      data-testid={`mobile-tool-${tool.id}`}
+                    >
+                      <span className="text-base">{tool.icon}</span>
+                      <span>{tool.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  setShowMobileToolPicker(!showMobileToolPicker);
+                  if (navigator.vibrate) navigator.vibrate(10);
+                }}
+                className="w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-90 transition-transform"
+                data-testid="mobile-fab-button"
+              >
+                <span className="text-xl">{activeTool === "linear" ? "📏" : activeTool === "area" ? "⬜" : activeTool === "count" ? "🔢" : "✏️"}</span>
+              </button>
+            </div>
+          )}
           {isDrawing && !isMobile && (
             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-card/95 backdrop-blur-sm rounded-lg shadow-lg border px-3 py-1.5" data-testid="drawing-guide-bar">
               <div className="flex items-center gap-1.5">
@@ -1910,7 +2051,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   y={sheetRotation === 90 ? (pdfImage?.width || 0) : sheetRotation === 180 ? (pdfImage?.height || 0) : 0}
                 >
                 {isPdfLoading ? (
-                  <Text text="Loading PDF..." x={20} y={20} fontSize={16} fill="#888" />
+                  <>
+                    <Rect x={20} y={20} width={200} height={6} fill="#e5e7eb" cornerRadius={3} />
+                    <Rect x={20} y={20} width={Math.max(4, pdfLoadProgress * 2)} height={6} fill="#f97316" cornerRadius={3} />
+                    <Text text={`Loading plan... ${pdfLoadProgress}%`} x={20} y={32} fontSize={12} fill="#888" />
+                  </>
                 ) : pdfImage ? (
                   <KonvaImage image={pdfImage} />
                 ) : (

@@ -39,6 +39,35 @@ const ARCHITECTURAL_PATTERNS: Array<{ regex: RegExp; parser: (match: RegExpMatch
       return { label: `${match[1]}" = 1'-0"`, pxPerFoot: val * 96, units: "ft", confidence: "high", rawText: match[0] };
     },
   },
+  {
+    regex: new RegExp(`(\\d+\\/\\d+)\\s*${INCH}\\s*=\\s*1\\s*(?:FOOT|FT|ft)`, "gi"),
+    hasScaleKeyword: false,
+    parser: (match) => {
+      const result = parseFraction(match[1]);
+      if (!result) return null;
+      return { label: `${match[1]}" = 1'-0"`, pxPerFoot: result * 96, units: "ft", confidence: "high", rawText: match[0] };
+    },
+  },
+  {
+    regex: /SCALE\s*[:=]?\s*(\d+)\s*(?:INCH|IN|in)\s*=\s*(\d+)\s*(?:FOOT|FEET|FT|ft)/gi,
+    hasScaleKeyword: true,
+    parser: (match) => {
+      const inches = parseInt(match[1]);
+      const feet = parseInt(match[2]);
+      if (!inches || !feet) return null;
+      const pxPerFoot = (inches * 96) / feet;
+      return { label: `${inches}" = ${feet}'`, pxPerFoot, units: "ft", confidence: "high", rawText: match[0] };
+    },
+  },
+  {
+    regex: new RegExp(`(\\d+\\/\\d+)\\s*${INCH}\\s*PER\\s*(?:FOOT|FT)`, "gi"),
+    hasScaleKeyword: false,
+    parser: (match) => {
+      const result = parseFraction(match[1]);
+      if (!result) return null;
+      return { label: `${match[1]}" = 1'-0"`, pxPerFoot: result * 96, units: "ft", confidence: "medium", rawText: match[0] };
+    },
+  },
 ];
 
 const CIVIL_PATTERNS: Array<{ regex: RegExp; parser: (match: RegExpMatchArray) => DetectedScale | null; hasScaleKeyword: boolean }> = [
@@ -54,6 +83,24 @@ const CIVIL_PATTERNS: Array<{ regex: RegExp; parser: (match: RegExpMatchArray) =
   {
     regex: new RegExp(`1\\s*${INCH}\\s*=\\s*(\\d+)\\s*${FOOT}`, "gi"),
     hasScaleKeyword: false,
+    parser: (match) => {
+      const feet = parseInt(match[1]);
+      if (!feet || feet <= 0) return null;
+      return { label: `1" = ${feet}'`, pxPerFoot: 96 / feet, units: "ft", confidence: "high", rawText: match[0] };
+    },
+  },
+  {
+    regex: new RegExp(`1\\s*${INCH}\\s*=\\s*(\\d+)\\s*(?:FEET|FT|ft)`, "gi"),
+    hasScaleKeyword: false,
+    parser: (match) => {
+      const feet = parseInt(match[1]);
+      if (!feet || feet <= 0) return null;
+      return { label: `1" = ${feet}'`, pxPerFoot: 96 / feet, units: "ft", confidence: "high", rawText: match[0] };
+    },
+  },
+  {
+    regex: new RegExp(`SCALE\\s*[:=]?\\s*1\\s*${INCH}\\s*=\\s*(\\d+)\\s*(?:FEET|FT|ft)`, "gi"),
+    hasScaleKeyword: true,
     parser: (match) => {
       const feet = parseInt(match[1]);
       if (!feet || feet <= 0) return null;
@@ -176,4 +223,43 @@ export function detectScaleFromText(textItems: string[]): DetectedScale | null {
 
   const best = candidates[0];
   return { label: best.label, pxPerFoot: best.pxPerFoot, units: best.units, confidence: best.confidence, rawText: best.rawText };
+}
+
+export function detectScaleBatch(sheets: Array<{ id: string; textItems: string[] }>): Map<string, DetectedScale> {
+  const results = new Map<string, DetectedScale>();
+  const scaleVotes = new Map<number, { scale: DetectedScale; count: number }>();
+
+  for (const sheet of sheets) {
+    const detected = detectScaleFromText(sheet.textItems);
+    if (detected) {
+      results.set(sheet.id, detected);
+      const key = Math.round(detected.pxPerFoot * 100);
+      const existing = scaleVotes.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        scaleVotes.set(key, { scale: detected, count: 1 });
+      }
+    }
+  }
+
+  if (scaleVotes.size > 0) {
+    let dominant: { scale: DetectedScale; count: number } | null = null;
+    for (const entry of scaleVotes.values()) {
+      if (!dominant || entry.count > dominant.count) dominant = entry;
+    }
+    if (dominant && dominant.count >= 2) {
+      for (const sheet of sheets) {
+        if (!results.has(sheet.id)) {
+          results.set(sheet.id, {
+            ...dominant.scale,
+            confidence: "medium",
+            rawText: `Inferred from ${dominant.count} other sheets`,
+          });
+        }
+      }
+    }
+  }
+
+  return results;
 }
