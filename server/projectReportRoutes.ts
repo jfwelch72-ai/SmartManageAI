@@ -10,6 +10,7 @@ import PDFDocument from "pdfkit";
 import { PassThrough } from "stream";
 import { pool } from "./db";
 import type { OrganizationBrandingPDF } from "./pdf-service";
+import { objectStorageClient } from "./objectStorage";
 
 interface ReportData {
   project: { id: string; name: string; projectCode: string | null; status: string };
@@ -26,6 +27,49 @@ interface ReportData {
   weatherSummary: { daysWithData: number; entries: Array<{ date: string; conditions: string }> } | null;
   keyPhotos: { totalPhotos: number; batches: number } | null;
   healthScore: number | null;
+}
+
+function streamToBuffer(stream: PassThrough): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
+}
+
+async function persistPdfToStorage(pdfStorageKey: string, pdfBuffer: Buffer): Promise<void> {
+  try {
+    const privateDir = process.env.PRIVATE_OBJECT_DIR || process.env.REPLIT_OBJECT_STORAGE_PRIVATE_DIR;
+    if (!privateDir) return;
+    const fullPath = `${privateDir}/${pdfStorageKey}`;
+    const slashIdx = fullPath.indexOf("/");
+    const bucketName = fullPath.substring(0, slashIdx);
+    const objectName = fullPath.substring(slashIdx + 1);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    await file.save(pdfBuffer, { contentType: "application/pdf" });
+  } catch {
+  }
+}
+
+async function loadPdfFromStorage(pdfStorageKey: string): Promise<Buffer | null> {
+  try {
+    const privateDir = process.env.PRIVATE_OBJECT_DIR || process.env.REPLIT_OBJECT_STORAGE_PRIVATE_DIR;
+    if (!privateDir) return null;
+    const fullPath = `${privateDir}/${pdfStorageKey}`;
+    const slashIdx = fullPath.indexOf("/");
+    const bucketName = fullPath.substring(0, slashIdx);
+    const objectName = fullPath.substring(slashIdx + 1);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+    const [buffer] = await file.download();
+    return buffer;
+  } catch {
+    return null;
+  }
 }
 
 async function getProjectOrgId(projectId: string): Promise<string | null> {
@@ -660,6 +704,16 @@ router.post(
         const reportData = await aggregateReportData(projectId, dateRangeStart, dateRangeEnd, reportType);
         const pdfStorageKey = `reports/${projectId}/${report.id}.pdf`;
 
+        const orgResult = await pool.query(`SELECT name, primary_color FROM organizations WHERE id = $1`, [orgId]);
+        const org = orgResult.rows[0] as { name?: string; primary_color?: string } | undefined;
+        const branding: OrganizationBrandingPDF = {
+          organizationName: org?.name || "SmartManageAI",
+          primaryColor: org?.primary_color || "#1a365d",
+        };
+        const pdfStream = generateReportPDF(reportData, branding);
+        const pdfBuffer = await streamToBuffer(pdfStream);
+        await persistPdfToStorage(pdfStorageKey, pdfBuffer);
+
         const [updated] = await db.update(projectReports)
           .set({
             status: "COMPLETED",
@@ -710,21 +764,29 @@ router.get(
         return res.status(400).json({ error: "Report not ready for PDF export" });
       }
 
+      const filename = `${report.reportType.toLowerCase()}_report_${report.dateRangeStart}_${report.dateRangeEnd}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+      if (report.pdfStorageKey) {
+        const storedPdf = await loadPdfFromStorage(report.pdfStorageKey);
+        if (storedPdf) {
+          res.setHeader("Content-Length", storedPdf.length.toString());
+          return res.end(storedPdf);
+        }
+      }
+
       const orgResult = await pool.query(
         `SELECT name, primary_color FROM organizations WHERE id = $1`,
         [orgId]
       );
-      const org = orgResult.rows[0];
+      const org = orgResult.rows[0] as { name?: string; primary_color?: string } | undefined;
       const branding: OrganizationBrandingPDF = {
         organizationName: org?.name || "SmartManageAI",
         primaryColor: org?.primary_color || "#1a365d",
       };
 
       const pdfStream = generateReportPDF(report.reportData as ReportData, branding);
-      const filename = `${report.reportType.toLowerCase()}_report_${report.dateRangeStart}_${report.dateRangeEnd}.pdf`;
-
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       pdfStream.pipe(res);
     } catch (err) {
       res.status(500).json({ error: "Failed to generate PDF" });
