@@ -1372,6 +1372,8 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                       <BimViewer
                         fileUrl={splitBimUrl.url}
                         fileName={splitBimDoc.title || splitBimDoc.fileName}
+                        fileSize={splitBimDoc.fileSize}
+                        uploadDate={splitBimDoc.uploadedAt}
                         onAddToTakeoff={handleBimAddToTakeoff}
                         onElementSelect={handleBimElementSelect}
                         highlightStoreyId={highlightStoreyId}
@@ -1437,6 +1439,8 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                         <BimViewer
                           fileUrl={previewUrlData.url}
                           fileName={doc.title || doc.fileName}
+                          fileSize={doc.fileSize}
+                          uploadDate={doc.uploadedAt}
                           onAddToTakeoff={handleBimAddToTakeoff}
                           onElementSelect={handleBimElementSelect}
                           highlightStoreyId={highlightStoreyId}

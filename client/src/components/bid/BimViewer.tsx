@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 export interface BimViewerProps {
   fileUrl: string;
   fileName?: string;
+  fileSize?: number | null;
+  uploadDate?: string | Date | null;
   onAddToTakeoff?: (elements: BimElementSummary[]) => void;
   onElementSelect?: (elements: BimSelectedElement[]) => void;
   highlightStoreyId?: number | null;
@@ -485,7 +487,24 @@ function getElementsInStorey(ifcApi: WebIFC.IfcAPI, modelID: number, storeyExpre
   return elementIds;
 }
 
-export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElementSelect, highlightStoreyId }: BimViewerProps) {
+function checkBrowserCapabilities(): { supported: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+  if (typeof WebAssembly === "undefined") {
+    warnings.push("WebAssembly is not supported by your browser.");
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) {
+      warnings.push("WebGL is not supported or is disabled in your browser.");
+    }
+  } catch {
+    warnings.push("Could not detect WebGL support.");
+  }
+  return { supported: warnings.length === 0, warnings };
+}
+
+export default function BimViewer({ fileUrl, fileName, fileSize, uploadDate, onAddToTakeoff, onElementSelect, highlightStoreyId }: BimViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -501,8 +520,10 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
 
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
+  const [loadingStatus, setLoadingStatus] = useState("Checking browser compatibility...");
   const [error, setError] = useState<string | null>(null);
+  const [compatWarnings, setCompatWarnings] = useState<string[]>([]);
+  const [retryCount, setRetryCount] = useState(0);
   const [treeData, setTreeData] = useState<IFCTreeNode[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [selectedElementIds, setSelectedElementIds] = useState<Set<number>>(new Set());
@@ -598,6 +619,14 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
   const initThreeScene = useCallback(() => {
     if (!containerRef.current || !canvasRef.current) return;
 
+    const compat = checkBrowserCapabilities();
+    if (!compat.supported) {
+      setCompatWarnings(compat.warnings);
+      setError("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
+      setLoading(false);
+      return;
+    }
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf0f0f0);
     sceneRef.current = scene;
@@ -608,11 +637,19 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
     camera.position.set(30, 30, 30);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({
-      canvas: canvasRef.current,
-      antialias: true,
-      alpha: true,
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas: canvasRef.current,
+        antialias: true,
+        alpha: true,
+      });
+    } catch (e) {
+      setCompatWarnings(["WebGL renderer failed to initialize. Your browser or GPU may not support WebGL."]);
+      setError("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
+      setLoading(false);
+      return;
+    }
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -671,7 +708,16 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
 
   const loadIfcModel = useCallback(async () => {
     try {
-      setLoadingStatus("Initializing IFC parser...");
+      setLoadingStatus("Checking browser compatibility...");
+      setProgress(2);
+
+      const compat = checkBrowserCapabilities();
+      if (!compat.supported) {
+        setCompatWarnings(compat.warnings);
+        throw new Error("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
+      }
+
+      setLoadingStatus("Loading 3D engine...");
       setProgress(5);
 
       const ifcApi = new WebIFC.IfcAPI();
@@ -708,7 +754,7 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
         offset += chunk.length;
       }
 
-      setLoadingStatus("Parsing IFC model...");
+      setLoadingStatus("Processing model data...");
       setProgress(60);
 
       const modelID = ifcApi.OpenModel(allData);
@@ -812,7 +858,7 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
       setLoading(false);
     } catch (err: any) {
       console.error("IFC load error:", err);
-      setError(err.message || "Failed to load IFC model");
+      setError("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
       setLoading(false);
     }
   }, [fileUrl, fileName]);
@@ -1090,15 +1136,22 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
   }, [applySelection, controlMode, setOrbitMode]);
 
   useEffect(() => {
+    allMeshesGroupRef.current = new THREE.Group();
+    measureGroupRef.current = new THREE.Group();
+    meshMapRef.current.clear();
+    originalMaterialsRef.current.clear();
+
     const cleanup = initThreeScene();
-    loadIfcModel();
+    if (sceneRef.current) {
+      loadIfcModel();
+    }
     return () => {
       cleanup?.();
       if (ifcApiRef.current) {
         try { ifcApiRef.current.CloseModel(modelIdRef.current); } catch (e) { console.warn("[BIM] Failed to close model:", e); }
       }
     };
-  }, [initThreeScene, loadIfcModel]);
+  }, [initThreeScene, loadIfcModel, retryCount]);
 
   const handleAddToTakeoff = useCallback(() => {
     if (onAddToTakeoff && selectedElementSummaries.length > 0) {
@@ -1110,9 +1163,47 @@ export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElement
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center" data-testid="bim-viewer-error">
         <AlertCircle className="w-16 h-16 text-destructive/50 mb-4" />
-        <h3 className="text-lg font-semibold mb-2">Failed to Load BIM Model</h3>
-        <p className="text-sm text-muted-foreground max-w-md mb-4">{error}</p>
-        <Button variant="outline" onClick={() => { setError(null); setLoading(true); loadIfcModel(); }} data-testid="bim-retry-button">
+        <h3 className="text-lg font-semibold mb-2" data-testid="bim-error-title">Failed to Load BIM Model</h3>
+        <p className="text-sm text-muted-foreground max-w-md mb-4" data-testid="bim-error-message">{error}</p>
+        {compatWarnings.length > 0 && (
+          <div className="text-xs text-muted-foreground max-w-md mb-4 space-y-1" data-testid="bim-compat-warnings">
+            {compatWarnings.map((w, i) => (
+              <p key={i}>• {w}</p>
+            ))}
+          </div>
+        )}
+        {(fileName || fileSize != null || uploadDate) && (
+          <div className="border rounded-lg p-4 mb-4 bg-muted/30 text-left max-w-sm w-full" data-testid="bim-file-metadata">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">File Information</p>
+            <div className="space-y-1 text-sm">
+              {fileName && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">File name</span>
+                  <span className="font-medium truncate ml-2 max-w-[200px]" data-testid="bim-meta-filename">{fileName}</span>
+                </div>
+              )}
+              {fileName && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Format</span>
+                  <span className="font-medium" data-testid="bim-meta-format">{fileName.split(".").pop()?.toUpperCase() || "IFC"}</span>
+                </div>
+              )}
+              {fileSize != null && fileSize > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Size</span>
+                  <span className="font-medium" data-testid="bim-meta-size">{(fileSize / (1024 * 1024)).toFixed(1)} MB</span>
+                </div>
+              )}
+              {uploadDate && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Upload date</span>
+                  <span className="font-medium" data-testid="bim-meta-date">{new Date(uploadDate).toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <Button variant="outline" onClick={() => { setError(null); setCompatWarnings([]); setLoading(true); setProgress(0); setRetryCount(c => c + 1); }} data-testid="bim-retry-button">
           <RotateCcw className="w-4 h-4 mr-2" /> Retry
         </Button>
       </div>

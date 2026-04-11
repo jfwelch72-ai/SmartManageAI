@@ -1589,7 +1589,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       }>
                         <BimViewer
                           fileUrl={splitBimUrl.url}
-                          fileName={(splitBimDoc as any).title || (splitBimDoc as any).fileName}
+                          fileName={splitBimDoc.title || splitBimDoc.fileName}
+                          fileSize={splitBimDoc.fileSize}
+                          uploadDate={splitBimDoc.uploadedAt}
                           onAddToTakeoff={handleBimAddToTakeoff}
                           onElementSelect={handleBimElementSelect}
                           highlightStoreyId={highlightStoreyId}
@@ -1642,7 +1644,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                           </div>
                         }>
-                          <BimViewer fileUrl={previewUrlData.url} fileName={doc.title || doc.fileName} />
+                          <BimViewer fileUrl={previewUrlData.url} fileName={doc.title || doc.fileName} fileSize={doc.fileSize} uploadDate={doc.uploadedAt} />
                         </Suspense>
                       </div>
                     </div>

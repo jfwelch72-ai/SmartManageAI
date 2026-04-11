@@ -181,15 +181,26 @@ export default function LidarScansPage() {
             <h2 className="text-lg font-semibold" data-testid="text-viewing-scan-name">{viewingScan.fileName}</h2>
             <ScanStatusBadge status={viewingScan.status} />
           </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {viewingScan.fileFormat && (
+              <span data-testid="text-viewing-format">{viewingScan.fileFormat.toUpperCase()}</span>
+            )}
+            {viewingScan.fileSize && (
+              <span data-testid="text-viewing-size">{(viewingScan.fileSize / (1024 * 1024)).toFixed(1)} MB</span>
+            )}
+          </div>
         </div>
         <Suspense fallback={
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-3" data-testid="lidar-suspense-loading">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Loading 3D engine...</p>
           </div>
         }>
           <PointCloudViewer
             fileUrl={viewingScan.fileUrl}
             fileName={viewingScan.fileName}
+            fileSize={viewingScan.fileSize}
+            uploadDate={viewingScan.createdAt}
             compareFileUrl={viewingCompareUrl || undefined}
             bimOverlayUrl={viewingBimUrl || undefined}
             onMeasurement={(m) => {

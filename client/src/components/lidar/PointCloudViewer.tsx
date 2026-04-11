@@ -8,12 +8,14 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import {
   RotateCcw, Ruler,
-  SquareDashedBottom, Box, Palette, Loader2, AlertCircle, Columns2
+  SquareDashedBottom, Box, Palette, Loader2, AlertCircle, Columns2, RefreshCw
 } from "lucide-react";
 
 export interface PointCloudViewerProps {
   fileUrl: string;
   fileName?: string;
+  fileSize?: number | null;
+  uploadDate?: string | Date | null;
   colorMode?: "RGB" | "ELEVATION" | "INTENSITY";
   onMeasurement?: (measurement: MeasurementResult) => void;
   compareFileUrl?: string;
@@ -187,9 +189,28 @@ async function loadPointCloudFromUrl(url: string, budget: number, fileName?: str
   return { geometry, count: result.count, hasRealColor: result.hasRealColor };
 }
 
+function checkBrowserCapabilities(): { supported: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+  if (typeof WebAssembly === "undefined") {
+    warnings.push("WebAssembly is not supported by your browser.");
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+    if (!gl) {
+      warnings.push("WebGL is not supported or is disabled in your browser.");
+    }
+  } catch {
+    warnings.push("Could not detect WebGL support.");
+  }
+  return { supported: warnings.length === 0, warnings };
+}
+
 export default function PointCloudViewer({
   fileUrl,
   fileName,
+  fileSize,
+  uploadDate,
   colorMode: initialColorMode = "RGB",
   onMeasurement,
   compareFileUrl,
@@ -209,8 +230,10 @@ export default function PointCloudViewer({
   const bimOverlayRef = useRef<THREE.Group | null>(null);
 
   const [loading, setLoading] = useState(true);
-  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
+  const [loadingStatus, setLoadingStatus] = useState("Checking browser compatibility...");
   const [error, setError] = useState<string | null>(null);
+  const [compatWarnings, setCompatWarnings] = useState<string[]>([]);
+  const [retryCount, setRetryCount] = useState(0);
   const [pointSize, setPointSize] = useState(2);
   const [pointBudget, setPointBudget] = useState(1000000);
   const [colorMode, setColorMode] = useState<ColorMode>(initialColorMode);
@@ -228,6 +251,14 @@ export default function PointCloudViewer({
     const width = container.clientWidth;
     const height = container.clientHeight;
 
+    const compat = checkBrowserCapabilities();
+    if (!compat.supported) {
+      setCompatWarnings(compat.warnings);
+      setError("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
+      setLoading(false);
+      return;
+    }
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
     sceneRef.current = scene;
@@ -236,7 +267,15 @@ export default function PointCloudViewer({
     camera.position.set(0, 50, 100);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+    } catch (e) {
+      setCompatWarnings(["WebGL renderer failed to initialize. Your browser or GPU may not support WebGL."]);
+      setError("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
+      setLoading(false);
+      return;
+    }
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
@@ -282,6 +321,10 @@ export default function PointCloudViewer({
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
+      sceneRef.current = null;
+      rendererRef.current = null;
+      cameraRef.current = null;
+      controlsRef.current = null;
     };
   }, []);
 
@@ -342,17 +385,33 @@ export default function PointCloudViewer({
   useEffect(() => {
     const cleanup = initScene();
     return cleanup;
-  }, [initScene]);
+  }, [initScene, retryCount]);
+
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setCompatWarnings([]);
+    setLoading(true);
+    setLoadingStatus("Checking browser compatibility...");
+    setRetryCount(c => c + 1);
+  }, []);
 
   useEffect(() => {
     if (!sceneRef.current) return;
     const scene = sceneRef.current;
     setLoading(true);
     setError(null);
-    setLoadingStatus("Downloading point cloud data...");
+    setLoadingStatus("Checking browser compatibility...");
 
     const loadCloud = async () => {
       try {
+        const compat = checkBrowserCapabilities();
+        if (!compat.supported) {
+          setCompatWarnings(compat.warnings);
+          throw new Error("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
+        }
+
+        setLoadingStatus("Loading 3D engine...");
+
         if (pointCloudRef.current) {
           scene.remove(pointCloudRef.current);
           pointCloudRef.current.geometry.dispose();
@@ -360,29 +419,33 @@ export default function PointCloudViewer({
           pointCloudRef.current = null;
         }
 
+        setLoadingStatus("Downloading point cloud data...");
         const { geometry, count, hasRealColor } = await loadPointCloudFromUrl(fileUrl, pointBudget, fileName);
         hasRealColorRef.current = hasRealColor;
 
         const colorArr = geometry.attributes.color.array as Float32Array;
         originalColorsRef.current = new Float32Array(colorArr);
 
+        setLoadingStatus("Processing model...");
         const material = new THREE.PointsMaterial({ size: pointSize, vertexColors: true, sizeAttenuation: true });
         const points = new THREE.Points(geometry, material);
         scene.add(points);
         pointCloudRef.current = points;
         setPointCount(count);
 
+        setLoadingStatus("Rendering point cloud...");
         applyColorMode(points, colorMode);
         fitCameraToCloud(geometry);
         setLoading(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load point cloud");
+        console.error("Point cloud load error:", err);
+        setError("3D viewer could not load. Your browser may not support this feature, or there was a network issue.");
         setLoading(false);
       }
     };
 
     loadCloud();
-  }, [fileUrl, fileName, pointBudget]);
+  }, [fileUrl, fileName, pointBudget, retryCount]);
 
   useEffect(() => {
     if (pointCloudRef.current) {
@@ -629,10 +692,52 @@ export default function PointCloudViewer({
           </div>
         )}
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10" data-testid="error-overlay">
-            <div className="flex flex-col items-center gap-2 text-destructive max-w-md text-center">
-              <AlertCircle className="h-8 w-8" />
-              <p className="text-sm">{error}</p>
+          <div className="absolute inset-0 flex items-center justify-center bg-background/90 z-10" data-testid="error-overlay">
+            <div className="flex flex-col items-center gap-3 max-w-md text-center px-4">
+              <AlertCircle className="h-12 w-12 text-destructive/60" />
+              <h3 className="text-base font-semibold" data-testid="lidar-error-title">Failed to Load Point Cloud</h3>
+              <p className="text-sm text-muted-foreground" data-testid="lidar-error-message">{error}</p>
+              {compatWarnings.length > 0 && (
+                <div className="text-xs text-muted-foreground space-y-1" data-testid="lidar-compat-warnings">
+                  {compatWarnings.map((w, i) => (
+                    <p key={i}>• {w}</p>
+                  ))}
+                </div>
+              )}
+              {(fileName || fileSize != null || uploadDate) && (
+                <div className="border rounded-lg p-3 bg-muted/30 text-left w-full" data-testid="lidar-file-metadata">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">File Information</p>
+                  <div className="space-y-1 text-sm">
+                    {fileName && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">File name</span>
+                        <span className="font-medium truncate ml-2 max-w-[200px]" data-testid="lidar-meta-filename">{fileName}</span>
+                      </div>
+                    )}
+                    {fileName && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Format</span>
+                        <span className="font-medium" data-testid="lidar-meta-format">{fileName.split(".").pop()?.toUpperCase() || "Unknown"}</span>
+                      </div>
+                    )}
+                    {fileSize != null && fileSize > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Size</span>
+                        <span className="font-medium" data-testid="lidar-meta-size">{(fileSize / (1024 * 1024)).toFixed(1)} MB</span>
+                      </div>
+                    )}
+                    {uploadDate && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Upload date</span>
+                        <span className="font-medium" data-testid="lidar-meta-date">{new Date(uploadDate).toLocaleDateString()}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={handleRetry} data-testid="lidar-retry-button">
+                <RefreshCw className="h-4 w-4 mr-2" /> Retry
+              </Button>
             </div>
           </div>
         )}

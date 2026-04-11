@@ -128,10 +128,12 @@ export default function LidarTab({ projectId, projectCode, userRole }: LidarTabP
           <ScanStatusBadge status={viewingScan.status} />
         </div>
         <div className="h-[600px] border rounded-lg overflow-hidden">
-          <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+          <Suspense fallback={<div className="flex flex-col items-center justify-center h-full gap-3"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Loading 3D engine...</p></div>}>
             <PointCloudViewer
               fileUrl={viewingScan.fileUrl}
               fileName={viewingScan.fileName}
+              fileSize={viewingScan.fileSize}
+              uploadDate={viewingScan.createdAt}
               onMeasurement={(m) => {
                 toast({ title: m.label });
                 saveAnnotationMutation.mutate({ scanId: viewingScan.id, type: m.type, label: m.label, points: JSON.stringify(m.points), value: m.value, unit: m.unit });
