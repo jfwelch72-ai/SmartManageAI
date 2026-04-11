@@ -134,6 +134,7 @@ const TimeClockPage = lazy(() => import("@/pages/time-clock"));
 const TimeClockManagerPage = lazy(() => import("@/pages/time-clock-manager"));
 const AISettingsPage = lazy(() => import("@/pages/ai-settings"));
 const CrewsPage = lazy(() => import("@/pages/crews"));
+const DispatchBoardPage = lazy(() => import("@/pages/dispatch-board"));
 const CostRatesPage = lazy(() => import("@/pages/cost-rates"));
 const CompanyCommunicationsPage = lazy(() => import("@/pages/company-communications"));
 const TasksPage = lazy(() => import("@/pages/tasks"));
@@ -355,6 +356,7 @@ function Router() {
       <Route path="/ai-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=ai-settings" />} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} featurePerm="canViewFinancials" />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} featurePerm="canManageScheduling" />} />
+      <Route path="/dispatch-board" component={() => <ProtectedRoute component={DispatchBoardPage} permission={RoutePermissions.DISPATCH_BOARD} featurePerm="canManageScheduling" />} />
       <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={() => <Redirect to="/subcontracts" />} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canViewFinancials" />} />
       <Route path="/company-settings" component={() => <ProtectedRoute component={CompanySettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} featurePerm={["canAccessCompanySettings", "canAccessScopeSettings", "canAccessProductionRates", "canLockDailyReports", "canManageWebsite"]} />} />
       <Route path="/integrations" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=integrations" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />

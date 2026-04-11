@@ -104,6 +104,7 @@ const router = Router();
 
 router.use("/api/crews", requireAuth, requireFeaturePermission('canManageScheduling'));
 router.use("/api/crew-assignments", requireAuth, requireFeaturePermission('canManageScheduling'));
+router.use("/api/dispatch", requireAuth, requireFeaturePermission('canManageScheduling'));
 
 router.get("/api/crews", async (req: AuthRequest, res) => {
   try {
@@ -479,7 +480,7 @@ router.get("/api/crew-assignments", requireAuth, async (req: AuthRequest, res) =
   }
 });
 
-router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"), async (req: AuthRequest, res) => {
   try {
     const { crewProjectAssignments, insertCrewProjectAssignmentSchema } = await import("@shared/schema");
     const { ne: neOp } = await import("drizzle-orm");
@@ -606,7 +607,7 @@ router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTEN
   }
 });
 
-router.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"), async (req: AuthRequest, res) => {
   try {
     const { crewProjectAssignments } = await import("@shared/schema");
     const { id } = req.params;
@@ -634,6 +635,195 @@ router.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPE
     res.json({ success: true });
   } catch (error) {
     logError("Error removing crew assignment:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/dispatch/assignments", async (req: AuthRequest, res) => {
+  try {
+    const { crewProjectAssignments, projectSchedules, projectScheduleTasks, crewMembers } = await import("@shared/schema");
+    const { getOrgIdForFilter } = await import("./orgFilter");
+    const { lte, gte, or, isNull, inArray } = await import("drizzle-orm");
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ crews: [], assignments: [], projects: [], scheduleTasks: [] });
+    }
+
+    const startDate = req.query.startDate as string;
+    const endDate = req.query.endDate as string;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: "startDate and endDate query params required" });
+    }
+
+    const crewWhereClause = shouldFilter && orgId
+      ? and(eq(crews.organizationId, orgId), eq(crews.isActive, true))
+      : eq(crews.isActive, true);
+
+    const allCrews = await db
+      .select({
+        crew: crews,
+        lead: { id: users.id, firstName: users.firstName, lastName: users.lastName },
+      })
+      .from(crews)
+      .leftJoin(users, eq(crews.leadId, users.id))
+      .where(crewWhereClause)
+      .orderBy(crews.name);
+
+    const crewIds = allCrews.map(c => c.crew.id);
+
+    if (crewIds.length === 0) {
+      return res.json({ crews: [], assignments: [], projects: [], scheduleTasks: [] });
+    }
+
+    const rangeStart = new Date(startDate);
+    const rangeEnd = new Date(endDate);
+
+    const assignments = await db
+      .select({
+        assignment: crewProjectAssignments,
+        crew: { id: crews.id, name: crews.name },
+        project: { id: projects.id, code: projects.code, name: projects.name, status: projects.status },
+      })
+      .from(crewProjectAssignments)
+      .leftJoin(crews, eq(crewProjectAssignments.crewId, crews.id))
+      .leftJoin(projects, eq(crewProjectAssignments.projectId, projects.id))
+      .where(
+        and(
+          inArray(crewProjectAssignments.crewId, crewIds),
+          or(isNull(crewProjectAssignments.startDate), lte(crewProjectAssignments.startDate, rangeEnd)),
+          or(isNull(crewProjectAssignments.endDate), gte(crewProjectAssignments.endDate, rangeStart))
+        )
+      );
+
+    const projectWhereClause = shouldFilter && orgId
+      ? and(eq(projects.status, "ACTIVE"), eq(projects.gcOrganizationId, orgId))
+      : eq(projects.status, "ACTIVE");
+
+    const activeProjects = await db
+      .select({ id: projects.id, code: projects.code, name: projects.name, status: projects.status })
+      .from(projects)
+      .where(projectWhereClause)
+      .orderBy(projects.name);
+
+    const scheduleTasks = await db
+      .select({
+        id: projectScheduleTasks.id,
+        name: projectScheduleTasks.name,
+        crewId: projectScheduleTasks.crewId,
+        crewIds: projectScheduleTasks.crewIds,
+        plannedStartDate: projectScheduleTasks.plannedStartDate,
+        plannedEndDate: projectScheduleTasks.plannedEndDate,
+        status: projectScheduleTasks.status,
+        percentComplete: projectScheduleTasks.percentComplete,
+        projectId: projectSchedules.projectId,
+        projectName: projects.name,
+        projectCode: projects.code,
+      })
+      .from(projectScheduleTasks)
+      .innerJoin(projectSchedules, eq(projectScheduleTasks.scheduleId, projectSchedules.id))
+      .innerJoin(projects, eq(projectSchedules.projectId, projects.id))
+      .where(
+        and(
+          eq(projectSchedules.isActive, true),
+          or(
+            inArray(projectScheduleTasks.crewId, crewIds),
+            sql`EXISTS (SELECT 1 FROM unnest(${projectScheduleTasks.crewIds}) AS cid WHERE cid = ANY(ARRAY[${sql.join(crewIds.map(id => sql`${id}`), sql`,`)}]))`
+          ),
+          or(isNull(projectScheduleTasks.plannedStartDate), lte(projectScheduleTasks.plannedStartDate, endDate)),
+          or(isNull(projectScheduleTasks.plannedEndDate), gte(projectScheduleTasks.plannedEndDate, startDate))
+        )
+      );
+
+    const memberCounts = await db
+      .select({
+        crewId: crewMembers.crewId,
+        count: sql<number>`count(*)`.as('count'),
+      })
+      .from(crewMembers)
+      .where(inArray(crewMembers.crewId, crewIds))
+      .groupBy(crewMembers.crewId);
+
+    const memberCountMap = new Map(memberCounts.map(mc => [mc.crewId, Number(mc.count)]));
+
+    const crewsWithCounts = allCrews.map(({ crew, lead }) => ({
+      ...crew,
+      lead: lead?.id ? lead : null,
+      memberCount: memberCountMap.get(crew.id) || 0,
+    }));
+
+    res.json({ crews: crewsWithCounts, assignments, projects: activeProjects, scheduleTasks });
+  } catch (error) {
+    logError("Error fetching dispatch data:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/api/dispatch/assignments/:id", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    const { crewProjectAssignments } = await import("@shared/schema");
+    const { getOrgIdForFilter } = await import("./orgFilter");
+    const { id } = req.params;
+    const { startDate, endDate, projectId, notes } = req.body as {
+      startDate?: string | null;
+      endDate?: string | null;
+      projectId?: string;
+      notes?: string | null;
+    };
+
+    const [existing] = await db
+      .select({
+        assignment: crewProjectAssignments,
+        crewOrgId: crews.organizationId,
+      })
+      .from(crewProjectAssignments)
+      .innerJoin(crews, eq(crewProjectAssignments.crewId, crews.id))
+      .where(eq(crewProjectAssignments.id, id))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Assignment not found" });
+    }
+
+    const { shouldFilter, orgId } = getOrgIdForFilter(req);
+    if (shouldFilter && orgId && existing.crewOrgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (projectId !== undefined && shouldFilter && orgId) {
+      const [targetProject] = await db
+        .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1);
+      if (!targetProject || targetProject.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Target project not accessible" });
+      }
+    }
+
+    const updateData: Partial<{
+      startDate: Date | null;
+      endDate: Date | null;
+      projectId: string;
+      notes: string | null;
+    }> = {};
+    if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
+    if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+    if (projectId !== undefined) updateData.projectId = projectId;
+    if (notes !== undefined) updateData.notes = notes;
+
+    const [updated] = await db
+      .update(crewProjectAssignments)
+      .set(updateData)
+      .where(eq(crewProjectAssignments.id, id))
+      .returning();
+
+    await logUpdate(req.user!.id, "crew_project_assignments", id, existing.assignment, updateData, req);
+
+    res.json(updated);
+  } catch (error) {
+    logError("Error updating dispatch assignment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

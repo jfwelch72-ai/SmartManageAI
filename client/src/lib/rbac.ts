@@ -325,6 +325,7 @@ export const RoutePermissions = {
   EXECUTIVE_DIGEST: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER",
   LIDAR_SCANS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "FIELD_WORKER" || role === "HUSTLER",
   PERMITS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
+  DISPATCH_BOARD: (role?: string, perms?: FeaturePerms) => hasDispatchAccess(role, perms),
 };
 
 export const FeaturePermissions = {
@@ -514,6 +515,7 @@ export const NavItems: Record<string, NavItem> = {
   '/calculator': { href: '/calculator', label: 'Calculator', testId: 'nav-calculator', visible: () => true },
   '/lidar-scans': { href: '/lidar-scans', label: 'LiDAR Scans', testId: 'nav-lidar-scans', visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "FIELD_WORKER" || role === "HUSTLER" },
   '/permits': { href: '/permits', label: 'Permits & Licenses', testId: 'nav-permits', visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
+  '/dispatch-board': { href: '/dispatch-board', label: 'Dispatch Board', testId: 'nav-dispatch-board', visible: (role?: string, perms?: FeaturePerms) => hasDispatchAccess(role, perms) },
 };
 
 export const NavigationConfig = {
@@ -551,7 +553,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
@@ -569,7 +571,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/production-rates', '/overhead-costs'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
@@ -578,7 +580,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
 const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/dashboard'] },
   { key: 'crew', label: 'Crew', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management', '/safety-training'] },
-  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module', '/permits'] },
+  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/dispatch-board', '/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module', '/permits'] },
   { key: 'review', label: 'Review', itemHrefs: ['/approvals', '/reports'] },
   { key: 'reference', label: 'Reference', itemHrefs: ['/bids', '/production-rates', '/scope-settings', '/communications'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },

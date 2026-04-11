@@ -48,6 +48,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Peer Coworker Ratings**: Anonymous peer rating system for field workers.
 *   **RBAC (8-Role System)**: Consolidated role system with defined hierarchies and alternate labels.
 *   **Role-Based Sidebar Navigation**: Workflow-based sidebar grouping with unique group names and item assignments per role.
+*   **Crew Dispatch Board**: Visual weekly grid for managing crew-to-project assignments (crews as rows, days as columns), with drag-and-drop reassignment, conflict detection, unassigned crew highlighting, and day/week/2-week views. RBAC-gated via `hasDispatchAccess`.
 *   **Social Media Management System**: Content management with scheduling, AI generation, 7-platform support (Facebook, Instagram, LinkedIn, Twitter/X, TikTok, YouTube, Pinterest), approval workflow, and engagement analytics (likes, comments, shares, reach) with periodic sync.
 *   **BIM Quantity Extraction**: Client-side IFC file parsing for building element quantity extraction.
 *   **Contract Management Lifecycle**: Full contract lifecycle with E-Signature Integration and AI-Powered Risk Analysis.
