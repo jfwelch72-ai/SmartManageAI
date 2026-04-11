@@ -218,7 +218,7 @@ router.get("/security-log", requireAuth, async (req, res) => {
   }
 });
 
-type CloudProvider = "gdrive" | "dropbox";
+type CloudProvider = "gdrive" | "dropbox" | "onedrive" | "box";
 
 interface CloudFileEntry {
   id: string;
@@ -305,7 +305,7 @@ router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
   try {
     const { provider, folderId, query } = req.query as Record<string, string>;
 
-    if (!provider || !["gdrive", "dropbox"].includes(provider)) {
+    if (!provider || !["gdrive", "dropbox", "onedrive", "box"].includes(provider)) {
       return res.status(400).json({ error: "Unsupported provider" });
     }
 
@@ -430,6 +430,107 @@ router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
           isFolder: f[".tag"] === "folder",
           path: f.path_display || f.path_lower,
         }));
+        return res.json({ files });
+      }
+    }
+
+    if (cloudProvider === "onedrive") {
+      let url: string;
+      if (query) {
+        const sanitizedQuery = query.replace(/'/g, "''").replace(/[\\%#&?]/g, "");
+        const searchBase = folderId
+          ? `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(folderId)}/search(q='${sanitizedQuery}')`
+          : `https://graph.microsoft.com/v1.0/me/drive/root/search(q='${sanitizedQuery}')`;
+        url = `${searchBase}?$top=50&$select=id,name,file,folder,size,lastModifiedDateTime,parentReference`;
+      } else if (folderId) {
+        url = `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(folderId)}/children?$top=50&$select=id,name,file,folder,size,lastModifiedDateTime,parentReference&$orderby=name`;
+      } else {
+        url = `https://graph.microsoft.com/v1.0/me/drive/root/children?$top=50&$select=id,name,file,folder,size,lastModifiedDateTime,parentReference&$orderby=name`;
+      }
+
+      const onedriveRes = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!onedriveRes.ok) {
+        const errText = await onedriveRes.text();
+        logError("OneDrive list failed", { status: onedriveRes.status, body: errText });
+        return res.status(502).json({ error: "Failed to list OneDrive files" });
+      }
+
+      const onedriveData = await onedriveRes.json() as { value?: Array<{ id: string; name: string; file?: { mimeType?: string }; folder?: object; size?: number; lastModifiedDateTime?: string }> };
+      const files: CloudFileEntry[] = (onedriveData.value || []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        mimeType: item.file?.mimeType || null,
+        size: item.size ?? null,
+        modifiedAt: item.lastModifiedDateTime ?? null,
+        isFolder: !!item.folder,
+      }));
+
+      return res.json({ files });
+    }
+
+    if (cloudProvider === "box") {
+      if (query) {
+        const searchParams = new URLSearchParams({
+          query,
+          limit: "50",
+          fields: "id,name,type,size,modified_at",
+        });
+        if (folderId) {
+          searchParams.set("ancestor_folder_ids", folderId);
+        }
+
+        const searchRes = await fetch(
+          `https://api.box.com/2.0/search?${searchParams.toString()}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (!searchRes.ok) {
+          const errText = await searchRes.text();
+          logError("Box search failed", { status: searchRes.status, body: errText });
+          return res.status(502).json({ error: "Failed to search Box files" });
+        }
+
+        const searchData = await searchRes.json() as { entries?: Array<{ id: string; name: string; type: string; size?: number; modified_at?: string }> };
+        const files: CloudFileEntry[] = (searchData.entries || [])
+          .filter((item) => item.type === "file" || item.type === "folder")
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            mimeType: null,
+            size: item.size ?? null,
+            modifiedAt: item.modified_at ?? null,
+            isFolder: item.type === "folder",
+          }));
+
+        return res.json({ files });
+      } else {
+        const boxFolderId = folderId || "0";
+        const listRes = await fetch(
+          `https://api.box.com/2.0/folders/${encodeURIComponent(boxFolderId)}/items?limit=100&fields=id,name,type,size,modified_at`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (!listRes.ok) {
+          const errText = await listRes.text();
+          logError("Box list failed", { status: listRes.status, body: errText });
+          return res.status(502).json({ error: "Failed to list Box files" });
+        }
+
+        const listData = await listRes.json() as { entries?: Array<{ id: string; name: string; type: string; size?: number; modified_at?: string }> };
+        const files: CloudFileEntry[] = (listData.entries || [])
+          .filter((item) => item.type === "file" || item.type === "folder")
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            mimeType: null,
+            size: item.size ?? null,
+            modifiedAt: item.modified_at ?? null,
+            isFolder: item.type === "folder",
+          }));
+
         return res.json({ files });
       }
     }

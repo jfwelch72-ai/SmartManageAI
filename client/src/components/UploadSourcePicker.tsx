@@ -116,7 +116,7 @@ const SOURCE_OPTIONS = [
     iconComponent: OneDriveIcon,
     isCloud: true,
     provider: "onedrive",
-    implemented: false,
+    implemented: true,
   },
   {
     id: "box" as UploadSource,
@@ -125,7 +125,7 @@ const SOURCE_OPTIONS = [
     iconComponent: SiBox,
     isCloud: true,
     provider: "box",
-    implemented: false,
+    implemented: true,
   },
 ];
 
@@ -137,7 +137,7 @@ function formatFileSize(bytes: number | null): string {
 }
 
 interface CloudFileBrowserProps {
-  provider: "gdrive" | "dropbox";
+  provider: "gdrive" | "dropbox" | "onedrive" | "box";
   onSelect: (file: CloudFile) => void;
 }
 
@@ -699,7 +699,7 @@ export function UploadSourcePicker({
           </div>
         )}
 
-        {step === "pick-file" && isImplementedCloud && (selectedSource === "gdrive" || selectedSource === "dropbox") && (
+        {step === "pick-file" && isImplementedCloud && (selectedSource === "gdrive" || selectedSource === "dropbox" || selectedSource === "onedrive" || selectedSource === "box") && (
           <div className="space-y-3">
             <CloudFileBrowser
               provider={selectedSource}
