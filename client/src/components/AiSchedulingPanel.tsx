@@ -1455,8 +1455,15 @@ function RecommendationsPanel({ recommendations, onDismiss }: { recommendations:
                       <p className="font-medium text-sm">{rec.title}</p>
                     </div>
                     <p className="text-xs text-muted-foreground">{rec.description}</p>
-                    {rec.estimatedDaysImprovement && (
-                      <p className="text-xs font-medium mt-1 text-green-600">Potential savings: ~{rec.estimatedDaysImprovement} days</p>
+                    {(rec.estimatedDaysImprovement || rec.estimatedCostSavings) && (
+                      <div className="flex items-center gap-3 mt-1">
+                        {rec.estimatedDaysImprovement && (
+                          <p className="text-xs font-medium text-green-600" data-testid={`text-days-savings-${rec.id}`}>~{rec.estimatedDaysImprovement} days saved</p>
+                        )}
+                        {rec.estimatedCostSavings && Number(rec.estimatedCostSavings) > 0 && (
+                          <p className="text-xs font-medium text-green-600" data-testid={`text-cost-savings-${rec.id}`}>~${Number(rec.estimatedCostSavings).toLocaleString()} saved</p>
+                        )}
+                      </div>
                     )}
                   </div>
                   <Button variant="ghost" size="sm" className="shrink-0 h-6 w-6 p-0" onClick={() => onDismiss(rec.id)} data-testid={`button-dismiss-rec-${rec.id}`}>

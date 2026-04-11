@@ -1197,9 +1197,6 @@ project_schedule_tasks(id, schedule_id, parent_task_id, name, description, trade
 -- project schedule (Gantt) definitions
 project_schedules(id, organization_id, project_id, name, generated_by, baseline_start_date, baseline_end_date, actual_start_date, actual_end_date, working_days, options_json, ai_notes, version, is_active, baseline_locked, baseline_locked_at, projected_completion_date, created_at, updated_at, created_by_user_id)
 
--- project specification index data
-project_spec_index(id, project_id, data, created_at, updated_at)
-
 -- uploaded project specification files
 project_specs(id, project_id, file_url, original_file_name, created_at, updated_at)
 
@@ -1561,7 +1558,6 @@ const ALLOWED_TABLES = new Set([
   'project_risks',
   'project_schedule_tasks',
   'project_schedules',
-  'project_spec_index',
   'project_specs',
   'purchase_order_items',
   'purchase_request_items',
@@ -1788,7 +1784,7 @@ const TABLES_ORG_VIA_PROJECT_JOIN = new Set([
   'equipment_assignments', 'daily_scope_progress',
   'punch_list_items', 'warranty_cases', 'warranty_tasks',
   'budget_line_items', 'tm_tickets',
-  'asset_handover_items', 'asset_handover_signoffs', 'budget_alerts', 'company_daily_notes', 'cost_ledger_postings', 'cost_transactions', 'equipment_fuel_logs', 'equipment_hour_logs', 'equipment_hour_reminders', 'estimate_history', 'forecast_adjustments', 'handoff_packets', 'maintenance_logs', 'maintenance_recurring_schedules', 'plan_documents', 'project_cost_codes', 'project_delays', 'project_employee_rates', 'project_equipment_plans', 'project_labor_rates', 'project_locations', 'project_material_budgets', 'project_material_usage', 'project_plans', 'project_spec_index', 'project_specs', 'rental_equipment_usages', 'tm_daily_sheets',
+  'asset_handover_items', 'asset_handover_signoffs', 'budget_alerts', 'company_daily_notes', 'cost_ledger_postings', 'cost_transactions', 'equipment_fuel_logs', 'equipment_hour_logs', 'equipment_hour_reminders', 'estimate_history', 'forecast_adjustments', 'handoff_packets', 'maintenance_logs', 'maintenance_recurring_schedules', 'plan_documents', 'project_cost_codes', 'project_delays', 'project_employee_rates', 'project_equipment_plans', 'project_labor_rates', 'project_locations', 'project_material_budgets', 'project_material_usage', 'project_plans', 'project_specs', 'rental_equipment_usages', 'tm_daily_sheets',
 ]);
 
 const TABLES_CUSTOM_ORG_CTE: Record<string, string> = {

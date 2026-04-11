@@ -1,12 +1,13 @@
 import { Router, NextFunction } from "express";
 import { db } from "./db";
-import { projects, users, media, projectNotes, insertProjectNoteSchema, insertMediaSchema, filePermissions, organizations, orgCostCodes, insertOrgCostCodeSchema, projectCostCodes, conversations, conversationParticipants, messages } from "@shared/schema";
+import { projects, users, media, projectNotes, insertProjectNoteSchema, insertMediaSchema, filePermissions, organizations, orgCostCodes, insertOrgCostCodeSchema, projectCostCodes, conversations, conversationParticipants, messages, photoCustodyRecords } from "@shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
 import { sanitizeText } from "./sanitization";
 import { emitMessageNew } from "./messagingEvents";
+import { logError } from "./utils/logger";
 
 const router = Router();
 
@@ -268,6 +269,30 @@ router.post("/api/projects/:code/media", requireAuth, requireRole("ADMIN", "MANA
       userId: req.user!.id,
       grantedById: req.user!.id,
     }]);
+
+    if (newMedia.type === "IMAGE" && req.user!.organizationId) {
+      try {
+        await db.insert(photoCustodyRecords).values({
+          organizationId: req.user!.organizationId,
+          projectId: project.id,
+          photoUrl: newMedia.fileUrl,
+          photoFileName: newMedia.fileName,
+          photoObjectKey: newMedia.objectKey || undefined,
+          originalMetadataJson: {
+            captureTimestamp: new Date().toISOString(),
+            deviceId: req.headers["x-device-id"] as string || undefined,
+            deviceModel: req.headers["x-device-model"] as string || undefined,
+          },
+          action: "UPLOADED",
+          actionById: req.user!.id,
+          actionNotes: newMedia.caption || undefined,
+          ipAddress: (req.headers["x-forwarded-for"] as string || req.socket.remoteAddress || undefined),
+          userAgent: req.headers["user-agent"] || undefined,
+        });
+      } catch (custodyErr) {
+        logError("Failed to create photo custody record:", { mediaId: newMedia.id, projectId: project.id }, custodyErr instanceof Error ? custodyErr : new Error(String(custodyErr)));
+      }
+    }
 
     res.status(201).json(newMedia);
   } catch (error) {

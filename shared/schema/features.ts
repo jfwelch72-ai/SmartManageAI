@@ -578,15 +578,6 @@ export const projectSpecs = pgTable("project_specs", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Project Spec Index table (AI-generated index of specs)
-export const projectSpecIndex = pgTable("project_spec_index", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  data: text("data").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
 // Estimate Settings table (global cost settings and rates)
 export const estimateSettings = pgTable("estimate_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1575,10 +1566,6 @@ export type SavedScaleTemplate = typeof savedScaleTemplates.$inferSelect;
 export const insertProjectSpecSchema = createInsertSchema(projectSpecs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectSpec = z.infer<typeof insertProjectSpecSchema>;
 export type ProjectSpec = typeof projectSpecs.$inferSelect;
-
-export const insertProjectSpecIndexSchema = createInsertSchema(projectSpecIndex).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertProjectSpecIndex = z.infer<typeof insertProjectSpecIndexSchema>;
-export type ProjectSpecIndex = typeof projectSpecIndex.$inferSelect;
 
 export const insertEstimateSettingsSchema = createInsertSchema(estimateSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEstimateSettings = z.infer<typeof insertEstimateSettingsSchema>;

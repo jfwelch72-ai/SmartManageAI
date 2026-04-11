@@ -7,6 +7,7 @@ interface Announcement {
   id: string;
   title: string;
   message: string;
+  type?: string;
   createdAt: string;
 }
 
@@ -35,7 +36,7 @@ export function AnnouncementBanner() {
           className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3"
           data-testid={`announcement-banner-${a.id}`}
         >
-          <Megaphone className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+          <Megaphone className={`h-5 w-5 mt-0.5 shrink-0 ${a.type === "URGENT" ? "text-destructive" : "text-primary"}`} />
           <div className="flex-1 min-w-0">
             <p className="font-medium text-sm">{a.title}</p>
             <p className="text-sm text-muted-foreground">{a.message}</p>
