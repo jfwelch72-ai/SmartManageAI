@@ -8328,3 +8328,69 @@ export const errorLogs = pgTable("error_logs", {
 
 export type ErrorLog = typeof errorLogs.$inferSelect;
 
+export const emailCampaigns = pgTable("email_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
+  name: text("name").notNull(),
+  subject: text("subject").notNull(),
+  htmlContent: text("html_content").notNull(),
+  textContent: text("text_content"),
+  fromName: text("from_name"),
+  replyTo: text("reply_to"),
+  status: text("status").notNull().default("DRAFT"),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  totalRecipients: integer("total_recipients").default(0),
+  totalSent: integer("total_sent").default(0),
+  totalOpened: integer("total_opened").default(0),
+  totalClicked: integer("total_clicked").default(0),
+  totalBounced: integer("total_bounced").default(0),
+  totalUnsubscribed: integer("total_unsubscribed").default(0),
+  tags: text("tags").array(),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_campaigns_org_idx").on(table.organizationId),
+}));
+
+export const insertEmailCampaignSchema = createInsertSchema(emailCampaigns).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailCampaign = z.infer<typeof insertEmailCampaignSchema>;
+export type EmailCampaign = typeof emailCampaigns.$inferSelect;
+
+export const emailCampaignContacts = pgTable("email_campaign_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => emailCampaigns.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  name: text("name"),
+  status: text("status").notNull().default("PENDING"),
+  sentAt: timestamp("sent_at"),
+  openedAt: timestamp("opened_at"),
+  clickedAt: timestamp("clicked_at"),
+  errorMessage: text("error_message"),
+}, (table) => ({
+  campaignIdx: index("email_campaign_contacts_campaign_idx").on(table.campaignId),
+}));
+
+export const insertEmailCampaignContactSchema = createInsertSchema(emailCampaignContacts).omit({ id: true });
+export type InsertEmailCampaignContact = z.infer<typeof insertEmailCampaignContactSchema>;
+export type EmailCampaignContact = typeof emailCampaignContacts.$inferSelect;
+
+export const emailCampaignTemplates = pgTable("email_campaign_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
+  name: text("name").notNull(),
+  subject: text("subject"),
+  htmlContent: text("html_content").notNull(),
+  category: text("category").default("GENERAL"),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_campaign_templates_org_idx").on(table.organizationId),
+}));
+
+export const insertEmailCampaignTemplateSchema = createInsertSchema(emailCampaignTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailCampaignTemplate = z.infer<typeof insertEmailCampaignTemplateSchema>;
+export type EmailCampaignTemplate = typeof emailCampaignTemplates.$inferSelect;
+

@@ -1028,26 +1028,81 @@ router.post("/domain/verify", requireAuth, async (req: AuthRequest, res: Respons
       return res.status(400).json({ error: "No custom domain configured" });
     }
 
+    const domain = website.customDomain;
+    const subdomain = website.subdomain || "";
+    const expectedCname = `${subdomain}.smartmanageai-sites.com`;
+    const expectedARecord = "76.76.21.21";
+
+    const dns = await import("dns").then(m => m.promises);
+    const issues: string[] = [];
+    let cnameOk = false;
+    let aRecordOk = false;
+
+    try {
+      const cnameRecords = await dns.resolveCname(`www.${domain}`);
+      if (cnameRecords.some(r => r.toLowerCase() === expectedCname.toLowerCase())) {
+        cnameOk = true;
+      } else {
+        issues.push(`CNAME for www.${domain} points to ${cnameRecords.join(", ")} — expected ${expectedCname}`);
+      }
+    } catch (dnsErr: any) {
+      if (dnsErr?.code === "ENODATA" || dnsErr?.code === "ENOTFOUND") {
+        issues.push(`No CNAME record found for www.${domain}. Add a CNAME record pointing www to ${expectedCname}`);
+      } else {
+        issues.push(`Could not resolve CNAME for www.${domain}: ${dnsErr?.message || "unknown error"}`);
+      }
+    }
+
+    try {
+      const aRecords = await dns.resolve4(domain);
+      if (aRecords.includes(expectedARecord)) {
+        aRecordOk = true;
+      } else {
+        issues.push(`A record for ${domain} resolves to ${aRecords.join(", ")} — expected ${expectedARecord}`);
+      }
+    } catch (dnsErr: any) {
+      if (dnsErr?.code === "ENODATA" || dnsErr?.code === "ENOTFOUND") {
+        issues.push(`No A record found for ${domain}. Add an A record pointing @ to ${expectedARecord}`);
+      } else {
+        issues.push(`Could not resolve A record for ${domain}: ${dnsErr?.message || "unknown error"}`);
+      }
+    }
+
+    const verified = cnameOk && aRecordOk;
+
     const [updated] = await db.update(organizationWebsites)
       .set({
-        customDomainVerified: true,
+        customDomainVerified: verified,
         updatedAt: new Date(),
       })
       .where(eq(organizationWebsites.id, website.id))
       .returning();
 
-    await logUpdate(user.id, "organization_websites", website.id, website, { customDomainVerified: true }, req);
+    await logUpdate(user.id, "organization_websites", website.id, website, { customDomainVerified: verified }, req);
 
     await db.insert(websiteDeployments).values({
       websiteId: website.id,
       organizationId: website.organizationId,
-      action: "DOMAIN_VERIFIED",
+      action: verified ? "DOMAIN_VERIFIED" : "DOMAIN_VERIFICATION_FAILED",
       performedByUserId: user.id,
       performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
-      note: `DNS verification completed for ${website.customDomain}`,
+      note: verified
+        ? `DNS verification completed for ${domain}`
+        : `DNS verification failed for ${domain}: ${issues.join("; ")}`,
     });
 
-    res.json({ success: true, website: updated, verified: true });
+    res.json({
+      success: true,
+      website: updated,
+      verified,
+      cnameOk,
+      aRecordOk,
+      issues: issues.length > 0 ? issues : undefined,
+      expected: {
+        cname: { host: `www.${domain}`, target: expectedCname },
+        aRecord: { host: domain, target: expectedARecord },
+      },
+    });
   } catch (error) {
     logError("Error verifying domain:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to verify domain" });

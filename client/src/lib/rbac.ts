@@ -483,6 +483,7 @@ export const NavItems: Record<string, NavItem> = {
   '/tasks': { href: '/tasks', label: 'Tasks', testId: 'nav-tasks', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTasks : hasContractorAccess(role) },
   '/messages': { href: '/messages', label: 'Messages', testId: 'nav-messages', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMessages : hasContractorAccess(role) },
   '/email-assistant': { href: '/email-assistant', label: 'Email Assistant', testId: 'nav-email-assistant', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessEmailAssistant : hasManagementAccess(role) },
+  '/email-campaigns': { href: '/email-campaigns', label: 'Email Campaigns', testId: 'nav-email-campaigns', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessEmailAssistant : hasManagementAccess(role) },
   '/users': { href: '/users', label: 'User Management', testId: 'nav-users', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageUsers : isOrganizationAdmin(role) || role === "HUSTLER" },
   '/manage-workers': { href: '/manage-workers', label: 'Workforce Management', testId: 'nav-manage-workers', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWorkforce : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/crews': { href: '/crews', label: 'Crews & Skills', testId: 'nav-crews', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageCrews : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
@@ -552,7 +553,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports'] },
-  { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media'] },
+  { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
 

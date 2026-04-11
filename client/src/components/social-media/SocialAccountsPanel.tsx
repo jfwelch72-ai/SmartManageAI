@@ -59,6 +59,15 @@ export function SocialAccountsPanel() {
         twitter_denied: "Twitter/X connection was cancelled.",
         twitter_failed: "Twitter/X connection failed. Please try again.",
         twitter_not_configured: "Twitter/X app credentials are not configured yet.",
+        tiktok_denied: "TikTok connection was cancelled.",
+        tiktok_failed: "TikTok connection failed. Please try again.",
+        tiktok_not_configured: "TikTok app credentials are not configured. Contact your admin to set up TikTok integration.",
+        youtube_denied: "YouTube connection was cancelled.",
+        youtube_failed: "YouTube connection failed. Please try again.",
+        youtube_not_configured: "YouTube/Google API credentials are not configured. Contact your admin to set up YouTube integration.",
+        pinterest_denied: "Pinterest connection was cancelled.",
+        pinterest_failed: "Pinterest connection failed. Please try again.",
+        pinterest_not_configured: "Pinterest app credentials are not configured. Contact your admin to set up Pinterest integration.",
       };
       toast({
         title: "Connection Failed",
@@ -99,6 +108,9 @@ export function SocialAccountsPanel() {
       case "INSTAGRAM": return "/api/social/auth/facebook";
       case "LINKEDIN": return "/api/social/auth/linkedin";
       case "TWITTER": return "/api/social/auth/twitter";
+      case "TIKTOK": return "/api/social/auth/tiktok";
+      case "YOUTUBE": return "/api/social/auth/youtube";
+      case "PINTEREST": return "/api/social/auth/pinterest";
       default: return null;
     }
   };

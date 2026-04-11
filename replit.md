@@ -48,7 +48,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Peer Coworker Ratings**: Anonymous peer rating system for field workers.
 *   **RBAC (8-Role System)**: Consolidated role system with defined hierarchies and alternate labels.
 *   **Role-Based Sidebar Navigation**: Workflow-based sidebar grouping with unique group names and item assignments per role.
-*   **Social Media Management System**: Content management with scheduling, AI generation, multi-platform support, and approval workflow.
+*   **Social Media Management System**: Content management with scheduling, AI generation, 7-platform support (Facebook, Instagram, LinkedIn, Twitter/X, TikTok, YouTube, Pinterest), approval workflow, and engagement analytics (likes, comments, shares, reach) with periodic sync.
 *   **BIM Quantity Extraction**: Client-side IFC file parsing for building element quantity extraction.
 *   **Contract Management Lifecycle**: Full contract lifecycle with E-Signature Integration and AI-Powered Risk Analysis.
 *   **Clause Library & Template Builder**: Organization-scoped reusable contract clause management and template assembly.
@@ -77,6 +77,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Notion-Style Project Notes**: Block-based note editor in project detail with page management, block editor, and auto-save.
 *   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination for list endpoints, N+1 query prevention strategies, and DB health check monitoring.
 *   **Production Hardening**: Zod validation on all financial route mutations, structured error logging (no silent catch blocks), safe financial math utilities (roundCurrency, safeDivide), pagination utility, and notification framework integration for scheduled reports.
+*   **Email Marketing Campaigns**: Full email campaign lifecycle with template management, contact lists, bulk sending via Resend, scheduling, and campaign analytics (open/click/bounce tracking).
+*   **Website Builder DNS Verification**: Real DNS lookup verification for custom domains (CNAME and A record validation) with actionable error messages.
 
 ## External Dependencies
 *   PostgreSQL (Neon)

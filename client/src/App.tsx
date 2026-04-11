@@ -163,6 +163,7 @@ const SubcontractsPage = lazy(() => import("@/pages/subcontracts"));
 const SocialMediaPage = lazy(() => import("@/pages/social-media"));
 const BidWizardPage = lazy(() => import("@/pages/bid-wizard"));
 const EmailAssistantPage = lazy(() => import("@/pages/email-assistant"));
+const EmailCampaignsPage = lazy(() => import("@/pages/email-campaigns"));
 const HustlerDashboard = lazy(() => import("@/pages/hustler-dashboard"));
 const HustlerOrgDetail = lazy(() => import("@/pages/hustler-org-detail"));
 const HustlerUnifiedInbox = lazy(() => import("@/pages/hustler-unified-inbox"));
@@ -439,6 +440,7 @@ function Router() {
       <Route path="/website-builder" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=website" />} permission={RoutePermissions.WEBSITE_BUILDER} />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} permission={RoutePermissions.EMAIL_ASSISTANT} />} />
+      <Route path="/email-campaigns" component={() => <ProtectedRoute component={EmailCampaignsPage} permission={RoutePermissions.EMAIL_ASSISTANT} />} />
       <Route path="/procurement-module" component={() => <ProtectedRoute component={ProcurementModulePage} permission={RoutePermissions.PROCUREMENT} featurePerm="canManageProcurement" />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
 

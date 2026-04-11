@@ -1,4 +1,4 @@
-import { logWarn } from "../utils/logger";
+import { logWarn, logError } from "../utils/logger";
 import crypto from "crypto";
 
 const ENCRYPTION_KEY = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || "";
@@ -253,6 +253,234 @@ async function publishToTwitter(post: PostData, token: string): Promise<PublishR
   };
 }
 
+async function publishToTikTok(post: PostData, token: string, accountId: string): Promise<PublishResult> {
+  try {
+    const mediaUrl = post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls[0] : null;
+    const isVideo = mediaUrl && /\.(mp4|mov|avi|webm)$/i.test(mediaUrl);
+
+    if (isVideo) {
+      const res = await fetch("https://open.tiktokapis.com/v2/post/publish/inbox/video/init/", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          post_info: {
+            title: post.content.substring(0, 150),
+            privacy_level: "SELF_ONLY",
+          },
+          source_info: {
+            source: "PULL_FROM_URL",
+            video_url: mediaUrl,
+          },
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json() as any;
+      if (data.error?.code) {
+        return { success: false, platformSupported: true, error: `TikTok API error: ${data.error.message || data.error.code}` };
+      }
+      return {
+        success: true,
+        platformSupported: true,
+        externalPostId: data.data?.publish_id || undefined,
+      };
+    }
+
+    const res = await fetch("https://open.tiktokapis.com/v2/post/publish/content/init/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        post_info: {
+          title: post.content.substring(0, 150),
+          description: buildPostMessage(post),
+          privacy_level: "SELF_ONLY",
+        },
+        ...(mediaUrl ? {
+          media_info: {
+            images: {
+              image_url_list: post.mediaUrls,
+            },
+          },
+        } : {}),
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await res.json() as any;
+    if (data.error?.code) {
+      return { success: false, platformSupported: true, error: `TikTok API error: ${data.error.message || data.error.code}` };
+    }
+    return {
+      success: true,
+      platformSupported: true,
+      externalPostId: data.data?.publish_id || undefined,
+    };
+  } catch (err: any) {
+    logError("TikTok publish error:", {}, err instanceof Error ? err : new Error(String(err)));
+    return { success: false, platformSupported: true, error: err.message || "TikTok publishing failed" };
+  }
+}
+
+async function publishToYouTube(post: PostData, token: string): Promise<PublishResult> {
+  try {
+    const mediaUrl = post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls[0] : null;
+    const isVideo = mediaUrl && /\.(mp4|mov|avi|webm)$/i.test(mediaUrl);
+
+    if (isVideo) {
+      const metadata = {
+        snippet: {
+          title: post.title || post.content.substring(0, 100),
+          description: buildPostMessage(post),
+          tags: post.hashtags || [],
+        },
+        status: {
+          privacyStatus: "public",
+        },
+      };
+
+      const initRes = await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(metadata),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!initRes.ok) {
+        const errorData = await initRes.json().catch(() => ({})) as any;
+        return { success: false, platformSupported: true, error: `YouTube API error: ${errorData.error?.message || initRes.statusText}` };
+      }
+
+      const uploadUrl = initRes.headers.get("location");
+      if (!uploadUrl) {
+        return { success: false, platformSupported: true, error: "YouTube did not return an upload URL" };
+      }
+
+      const videoRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(60000) });
+      if (!videoRes.ok) {
+        return { success: false, platformSupported: true, error: "Failed to fetch video from media URL for YouTube upload" };
+      }
+      const videoBuffer = await videoRes.arrayBuffer();
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "video/*",
+          "Content-Length": String(videoBuffer.byteLength),
+        },
+        body: videoBuffer,
+        signal: AbortSignal.timeout(120000),
+      });
+
+      if (!uploadRes.ok) {
+        const errorData = await uploadRes.json().catch(() => ({})) as any;
+        return { success: false, platformSupported: true, error: `YouTube upload error: ${errorData.error?.message || uploadRes.statusText}` };
+      }
+
+      const uploadData = await uploadRes.json() as any;
+      const videoId = uploadData.id;
+
+      return {
+        success: true,
+        platformSupported: true,
+        externalPostId: videoId,
+        externalPostUrl: videoId ? `https://youtube.com/watch?v=${videoId}` : undefined,
+      };
+    }
+
+    const bulletinBody = {
+      snippet: {
+        description: buildPostMessage(post),
+      },
+    };
+
+    const res = await fetch("https://www.googleapis.com/youtube/v3/activities?part=snippet", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(bulletinBody),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({})) as any;
+      return { success: false, platformSupported: true, error: `YouTube API error: ${errorData.error?.message || res.statusText}` };
+    }
+
+    const data = await res.json() as any;
+    return {
+      success: true,
+      platformSupported: true,
+      externalPostId: data.id || undefined,
+      externalPostUrl: data.id ? `https://youtube.com/watch?v=${data.id}` : undefined,
+    };
+  } catch (err: any) {
+    logError("YouTube publish error:", {}, err instanceof Error ? err : new Error(String(err)));
+    return { success: false, platformSupported: true, error: err.message || "YouTube publishing failed" };
+  }
+}
+
+async function publishToPinterest(post: PostData, token: string, boardId: string): Promise<PublishResult> {
+  try {
+    const mediaUrl = post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls[0] : null;
+    const description = buildPostMessage(post);
+
+    const pinBody: any = {
+      board_id: boardId,
+      title: post.title || post.content.substring(0, 100),
+      description,
+    };
+
+    if (mediaUrl) {
+      pinBody.media_source = {
+        source_type: "image_url",
+        url: mediaUrl,
+      };
+    } else {
+      pinBody.media_source = {
+        source_type: "image_url",
+        url: "https://via.placeholder.com/600x600.png?text=Post",
+      };
+      pinBody.note = description;
+    }
+
+    const res = await fetch("https://api.pinterest.com/v5/pins", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(pinBody),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({})) as any;
+      return { success: false, platformSupported: true, error: `Pinterest API error: ${errorData.message || res.statusText}` };
+    }
+
+    const data = await res.json() as any;
+    return {
+      success: true,
+      platformSupported: true,
+      externalPostId: data.id || undefined,
+      externalPostUrl: data.id ? `https://pinterest.com/pin/${data.id}` : undefined,
+    };
+  } catch (err: any) {
+    logError("Pinterest publish error:", {}, err instanceof Error ? err : new Error(String(err)));
+    return { success: false, platformSupported: true, error: err.message || "Pinterest publishing failed" };
+  }
+}
+
 function publishStub(platform: string): PublishResult {
   console.log(`[Social Publish] ${platform} publishing is not yet supported — post was marked as published locally only.`);
   return {
@@ -301,16 +529,150 @@ export async function publishToPlatform(post: PostData, account: AccountData): P
       return publishToTwitter(post, token);
 
     case "TIKTOK":
-      return publishStub("TikTok");
+      if (!process.env.TIKTOK_CLIENT_ID) {
+        return { success: false, platformSupported: true, error: "TikTok API credentials not configured. Set TIKTOK_CLIENT_ID environment variable." };
+      }
+      return publishToTikTok(post, token, accountId);
 
     case "YOUTUBE":
-      return publishStub("YouTube");
+      if (!process.env.YOUTUBE_CLIENT_ID) {
+        return { success: false, platformSupported: true, error: "YouTube API credentials not configured. Set YOUTUBE_CLIENT_ID environment variable." };
+      }
+      return publishToYouTube(post, token);
 
     case "PINTEREST":
-      return publishStub("Pinterest");
+      if (!process.env.PINTEREST_APP_ID) {
+        return { success: false, platformSupported: true, error: "Pinterest API credentials not configured. Set PINTEREST_APP_ID environment variable." };
+      }
+      if (!accountId) throw new Error("Pinterest Board ID is required. Please update your account settings.");
+      return publishToPinterest(post, token, accountId);
 
     default:
       return publishStub(platform);
+  }
+}
+
+export interface EngagementData {
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number;
+  impressions: number;
+  clicks: number;
+}
+
+export async function fetchEngagement(
+  post: { externalPostId: string; platform: string | null },
+  account: AccountData
+): Promise<EngagementData | null> {
+  if (!account.accessTokenEncrypted) return null;
+
+  const token = decrypt(account.accessTokenEncrypted);
+  if (!token) return null;
+
+  const platform = account.platform;
+  const postId = post.externalPostId;
+
+  try {
+    switch (platform) {
+      case "FACEBOOK": {
+        const res = await fetch(
+          `https://graph.facebook.com/v19.0/${postId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${token}`,
+          { signal: AbortSignal.timeout(15000) }
+        );
+        const data = await res.json();
+        if (data.error) {
+          logError("Facebook engagement fetch failed", { postId, error: data.error.message });
+          return null;
+        }
+        return {
+          likes: data.likes?.summary?.total_count || 0,
+          comments: data.comments?.summary?.total_count || 0,
+          shares: data.shares?.count || 0,
+          reach: 0,
+          impressions: 0,
+          clicks: 0,
+        };
+      }
+
+      case "INSTAGRAM": {
+        const res = await fetch(
+          `https://graph.facebook.com/v19.0/${postId}?fields=like_count,comments_count,reach,impressions&access_token=${token}`,
+          { signal: AbortSignal.timeout(15000) }
+        );
+        const data = await res.json();
+        if (data.error) {
+          logError("Instagram engagement fetch failed", { postId, error: data.error.message });
+          return null;
+        }
+        return {
+          likes: data.like_count || 0,
+          comments: data.comments_count || 0,
+          shares: 0,
+          reach: data.reach || 0,
+          impressions: data.impressions || 0,
+          clicks: 0,
+        };
+      }
+
+      case "TWITTER": {
+        const res = await fetch(
+          `https://api.twitter.com/2/tweets/${postId}?tweet.fields=public_metrics`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(15000),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok || !data.data) {
+          logError("Twitter engagement fetch failed", { postId, status: res.status });
+          return null;
+        }
+        const metrics = data.data.public_metrics || {};
+        return {
+          likes: metrics.like_count || 0,
+          comments: metrics.reply_count || 0,
+          shares: metrics.retweet_count || 0,
+          reach: 0,
+          impressions: metrics.impression_count || 0,
+          clicks: 0,
+        };
+      }
+
+      case "LINKEDIN": {
+        const shareUrn = postId.startsWith("urn:") ? postId : `urn:li:share:${postId}`;
+        const res = await fetch(
+          `https://api.linkedin.com/v2/socialActions/${encodeURIComponent(shareUrn)}/totalShareStatistics`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "X-Restli-Protocol-Version": "2.0.0",
+            },
+            signal: AbortSignal.timeout(15000),
+          }
+        );
+        if (!res.ok) {
+          logError("LinkedIn engagement fetch failed", { postId, status: res.status });
+          return null;
+        }
+        const data = await res.json();
+        const totalStats = data.totalShareStatistics || {};
+        return {
+          likes: totalStats.likeCount || 0,
+          comments: totalStats.commentCount || 0,
+          shares: totalStats.shareCount || 0,
+          reach: totalStats.uniqueImpressionsCount || 0,
+          impressions: totalStats.impressionCount || 0,
+          clicks: totalStats.clickCount || 0,
+        };
+      }
+
+      default:
+        return null;
+    }
+  } catch (err) {
+    logError("Engagement fetch error", { postId, platform }, err instanceof Error ? err : new Error(String(err)));
+    return null;
   }
 }
 
@@ -340,6 +702,28 @@ export async function validateToken(platform: string, token: string, accountId?:
       }
       case "TWITTER": {
         const res = await fetch("https://api.twitter.com/2/users/me", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        return res.ok ? { valid: true } : { valid: false, error: `HTTP ${res.status}` };
+      }
+      case "TIKTOK": {
+        const res = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json() as any;
+        return data.error?.code ? { valid: false, error: data.error.message || `Error code: ${data.error.code}` } : { valid: true };
+      }
+      case "YOUTUBE": {
+        const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        return res.ok ? { valid: true } : { valid: false, error: `HTTP ${res.status}` };
+      }
+      case "PINTEREST": {
+        const res = await fetch("https://api.pinterest.com/v5/user_account", {
           headers: { Authorization: `Bearer ${token}` },
           signal: AbortSignal.timeout(10000),
         });

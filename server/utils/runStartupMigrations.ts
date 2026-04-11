@@ -19,6 +19,8 @@ import { ensureMobilizationTables } from "./ensureMobilizationTables";
 import { ensurePermitTables } from "./ensurePermitTables";
 import { ensureMaterialTestTables } from "./ensureMaterialTestTables";
 import { ensureReportsTables } from "./ensureReportsTables";
+import { ensureSocialEngagementColumns } from "./ensureSocialEngagementColumns";
+import { ensureEmailCampaignTables } from "./ensureEmailCampaignTables";
 
 interface MigrationStep {
   name: string;
@@ -45,6 +47,8 @@ const migrations: MigrationStep[] = [
   { name: "permit_tables", fn: ensurePermitTables },
   { name: "material_test_tables", fn: ensureMaterialTestTables },
   { name: "project_reports_table", fn: ensureReportsTables },
+  { name: "social_engagement_columns", fn: ensureSocialEngagementColumns },
+  { name: "email_campaign_tables", fn: ensureEmailCampaignTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

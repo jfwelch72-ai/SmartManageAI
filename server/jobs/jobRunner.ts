@@ -10,7 +10,7 @@ import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSc
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
-import { publishToPlatform } from "../social/publishService";
+import { publishToPlatform, fetchEngagement } from "../social/publishService";
 import { socialAccounts } from "@shared/schema";
 import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
 import { bids } from "@shared/schema";
@@ -32,6 +32,7 @@ let imapSyncTask: ReturnType<typeof cron.schedule> | null = null;
 let weeklyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let monthlyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let dbHealthCheckTask: ReturnType<typeof cron.schedule> | null = null;
+let socialEngagementTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -148,6 +149,14 @@ export function startJobRunner() {
     }
   });
 
+  socialEngagementTask = cron.schedule("0 */4 * * *", async () => {
+    try {
+      await processSocialEngagement();
+    } catch (err) {
+      logError("Social engagement sync failed", { error: String(err) });
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, periodic report, and DB health check schedulers)");
 }
 
@@ -207,6 +216,10 @@ export function stopJobRunner() {
   if (dbHealthCheckTask) {
     dbHealthCheckTask.stop();
     dbHealthCheckTask = null;
+  }
+  if (socialEngagementTask) {
+    socialEngagementTask.stop();
+    socialEngagementTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -1375,6 +1388,67 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
   } catch (err) {
     logError("Periodic report processing error", { error: String(err) });
   }
+}
+
+async function processSocialEngagement() {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const postedPosts = await db
+    .select()
+    .from(socialMediaPosts)
+    .where(
+      and(
+        eq(socialMediaPosts.status, "POSTED"),
+        isNotNull(socialMediaPosts.externalPostId),
+        isNotNull(socialMediaPosts.socialAccountId),
+        gte(socialMediaPosts.publishedAt, thirtyDaysAgo)
+      )
+    );
+
+  if (postedPosts.length === 0) return;
+
+  logInfo("Processing social engagement sync", { count: postedPosts.length });
+
+  let updated = 0;
+  let failed = 0;
+
+  for (const post of postedPosts) {
+    try {
+      if (!post.socialAccountId || !post.externalPostId) continue;
+
+      const account = await db.query.socialAccounts.findFirst({
+        where: eq(socialAccounts.id, post.socialAccountId),
+      });
+
+      if (!account || !account.accessTokenEncrypted) continue;
+
+      const engagement = await fetchEngagement(
+        { externalPostId: post.externalPostId, platform: post.platform },
+        { id: account.id, platform: account.platform, accountId: account.accountId, accessTokenEncrypted: account.accessTokenEncrypted, refreshTokenEncrypted: account.refreshTokenEncrypted }
+      );
+
+      if (engagement) {
+        await db.execute(
+          sql`UPDATE social_media_posts SET
+            engagement_likes = ${engagement.likes},
+            engagement_comments = ${engagement.comments},
+            engagement_shares = ${engagement.shares},
+            engagement_reach = ${engagement.reach},
+            engagement_impressions = ${engagement.impressions},
+            engagement_clicks = ${engagement.clicks},
+            engagement_updated_at = NOW(),
+            updated_at = NOW()
+          WHERE id = ${post.id}`
+        );
+        updated++;
+      }
+    } catch (err) {
+      failed++;
+      logError("Engagement sync failed for post", { postId: post.id, error: String(err) });
+    }
+  }
+
+  logInfo("Social engagement sync complete", { updated, failed, total: postedPosts.length });
 }
 
 async function runDbHealthCheck() {

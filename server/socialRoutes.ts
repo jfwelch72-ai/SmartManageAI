@@ -8,7 +8,7 @@ import { requireAuth, requireFeaturePermission, type AuthRequest } from "./auth"
 import { randomUUID } from "crypto";
 import crypto from "crypto";
 import multer from "multer";
-import { publishToPlatform, validateToken, refreshToken } from "./social/publishService";
+import { publishToPlatform, validateToken, refreshToken, fetchEngagement } from "./social/publishService";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
@@ -591,6 +591,59 @@ router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Resp
   }
 });
 
+router.post("/sync-engagement/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const { id } = req.params;
+    const post = await db.query.socialMediaPosts.findFirst({
+      where: and(eq(socialMediaPosts.id, id), eq(socialMediaPosts.organizationId, orgId)),
+    });
+    if (!post) return res.status(404).json({ error: "Post not found" });
+    if (post.status !== "POSTED" || !post.externalPostId) {
+      return res.status(400).json({ error: "Post must be published with an external ID to sync engagement" });
+    }
+    if (!post.socialAccountId) {
+      return res.status(400).json({ error: "No social account linked to this post" });
+    }
+
+    const account = await db.query.socialAccounts.findFirst({
+      where: and(eq(socialAccounts.id, post.socialAccountId), eq(socialAccounts.organizationId, orgId)),
+    });
+    if (!account) {
+      return res.status(400).json({ error: "Linked social account not found" });
+    }
+
+    const engagement = await fetchEngagement(
+      { externalPostId: post.externalPostId, platform: post.platform },
+      { id: account.id, platform: account.platform, accountId: account.accountId, accessTokenEncrypted: account.accessTokenEncrypted, refreshTokenEncrypted: account.refreshTokenEncrypted }
+    );
+
+    if (!engagement) {
+      return res.status(200).json({ message: "Engagement data not available for this platform", metrics: null });
+    }
+
+    await db.execute(
+      sql`UPDATE social_media_posts SET
+        engagement_likes = ${engagement.likes},
+        engagement_comments = ${engagement.comments},
+        engagement_shares = ${engagement.shares},
+        engagement_reach = ${engagement.reach},
+        engagement_impressions = ${engagement.impressions},
+        engagement_clicks = ${engagement.clicks},
+        engagement_updated_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${id}`
+    );
+
+    res.json({ metrics: engagement });
+  } catch (error) {
+    logError("Error syncing engagement:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to sync engagement data" });
+  }
+});
+
 router.post("/posts/bulk", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
@@ -929,6 +982,28 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
       where: eq(socialAccounts.organizationId, orgId),
     });
 
+    const postedPosts = allPosts.filter(p => p.status === "POSTED");
+    const engagementResult = await db.execute(
+      sql`SELECT
+        COALESCE(SUM(engagement_likes), 0) AS total_likes,
+        COALESCE(SUM(engagement_comments), 0) AS total_comments,
+        COALESCE(SUM(engagement_shares), 0) AS total_shares,
+        COALESCE(SUM(engagement_reach), 0) AS total_reach,
+        COALESCE(SUM(engagement_impressions), 0) AS total_impressions,
+        COALESCE(SUM(engagement_clicks), 0) AS total_clicks
+      FROM social_media_posts
+      WHERE organization_id = ${orgId} AND status = 'POSTED'`
+    );
+    const engRow = engagementResult.rows[0] || {};
+    const totalEngagement = {
+      likes: parseInt(engRow.total_likes as string) || 0,
+      comments: parseInt(engRow.total_comments as string) || 0,
+      shares: parseInt(engRow.total_shares as string) || 0,
+      reach: parseInt(engRow.total_reach as string) || 0,
+      impressions: parseInt(engRow.total_impressions as string) || 0,
+      clicks: parseInt(engRow.total_clicks as string) || 0,
+    };
+
     res.json({
       total, drafts, scheduled, posted, failed, pendingApproval,
       publishedThisMonth, publishedThisWeek,
@@ -938,6 +1013,7 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
         acc[a.platform] = a.status;
         return acc;
       }, {}),
+      totalEngagement,
     });
   } catch (error) {
     logError("Error fetching social stats:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -1349,8 +1425,203 @@ router.get("/auth/twitter/callback", requireAuth, async (req: AuthRequest, res: 
   }
 });
 
+// ─── TIKTOK ───────────────────────────────────────────────────────────────────
+
+router.get("/auth/tiktok", requireAuth, (req: AuthRequest, res: Response) => {
+  const clientKey = process.env.TIKTOK_CLIENT_ID;
+  if (!clientKey) return res.redirect("/social-media?error=tiktok_not_configured");
+
+  const state = generateState();
+  setCookie(res, "social_oauth_state_tiktok", state);
+  const redirectUri = `${getBaseUrl(req)}/api/social/auth/tiktok/callback`;
+  const scope = "user.info.basic,video.publish";
+  const url = `https://www.tiktok.com/v2/auth/authorize/?client_key=${clientKey}&scope=${encodeURIComponent(scope)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+  res.redirect(url);
+});
+
+router.get("/auth/tiktok/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { code, state, error } = req.query as Record<string, string>;
+    if (error) return res.redirect("/social-media?error=tiktok_denied");
+    if (!validateAndClearState(req, res, "social_oauth_state_tiktok", state)) {
+      return res.redirect("/social-media?error=tiktok_failed");
+    }
+
+    const clientKey = process.env.TIKTOK_CLIENT_ID;
+    const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
+    if (!clientKey || !clientSecret) return res.redirect("/social-media?error=tiktok_not_configured");
+
+    const redirectUri = `${getBaseUrl(req)}/api/social/auth/tiktok/callback`;
+
+    const tokenRes = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_key: clientKey,
+        client_secret: clientSecret,
+        code,
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri,
+      }).toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    const tokenData = await tokenRes.json() as any;
+    if (!tokenData.access_token) {
+      logError("TikTok token exchange failed:", {}, new Error(JSON.stringify(tokenData)));
+      return res.redirect("/social-media?error=tiktok_failed");
+    }
+
+    const userRes = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    const userData = await userRes.json() as any;
+    const tiktokUser = userData.data?.user || {};
+
+    const orgId = req.user!.organizationId!;
+    const userId = req.user!.id;
+    await upsertSocialAccount(orgId, userId, "TIKTOK", tiktokUser.display_name || "TikTok User", tiktokUser.open_id || "", tokenData.access_token, tokenData.refresh_token, tokenData.expires_in);
+
+    res.redirect("/social-media?connected=TIKTOK");
+  } catch (err) {
+    logError("TikTok OAuth callback error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.redirect("/social-media?error=tiktok_failed");
+  }
+});
+
+// ─── YOUTUBE ──────────────────────────────────────────────────────────────────
+
+router.get("/auth/youtube", requireAuth, (req: AuthRequest, res: Response) => {
+  const clientId = process.env.YOUTUBE_CLIENT_ID;
+  if (!clientId) return res.redirect("/social-media?error=youtube_not_configured");
+
+  const state = generateState();
+  setCookie(res, "social_oauth_state_youtube", state);
+  const redirectUri = `${getBaseUrl(req)}/api/social/auth/youtube/callback`;
+  const scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube";
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${state}&access_type=offline&prompt=consent`;
+  res.redirect(url);
+});
+
+router.get("/auth/youtube/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { code, state, error } = req.query as Record<string, string>;
+    if (error) return res.redirect("/social-media?error=youtube_denied");
+    if (!validateAndClearState(req, res, "social_oauth_state_youtube", state)) {
+      return res.redirect("/social-media?error=youtube_failed");
+    }
+
+    const clientId = process.env.YOUTUBE_CLIENT_ID;
+    const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) return res.redirect("/social-media?error=youtube_not_configured");
+
+    const redirectUri = `${getBaseUrl(req)}/api/social/auth/youtube/callback`;
+
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      }).toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    const tokenData = await tokenRes.json() as any;
+    if (!tokenData.access_token) {
+      logError("YouTube token exchange failed:", {}, new Error(JSON.stringify(tokenData)));
+      return res.redirect("/social-media?error=youtube_failed");
+    }
+
+    const channelRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    const channelData = await channelRes.json() as any;
+    const channel = channelData.items?.[0] || {};
+    const channelName = channel.snippet?.title || "YouTube Channel";
+    const channelId = channel.id || "";
+
+    const orgId = req.user!.organizationId!;
+    const userId = req.user!.id;
+    await upsertSocialAccount(orgId, userId, "YOUTUBE", channelName, channelId, tokenData.access_token, tokenData.refresh_token, tokenData.expires_in);
+
+    res.redirect("/social-media?connected=YOUTUBE");
+  } catch (err) {
+    logError("YouTube OAuth callback error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.redirect("/social-media?error=youtube_failed");
+  }
+});
+
+// ─── PINTEREST ────────────────────────────────────────────────────────────────
+
+router.get("/auth/pinterest", requireAuth, (req: AuthRequest, res: Response) => {
+  const clientId = process.env.PINTEREST_APP_ID;
+  if (!clientId) return res.redirect("/social-media?error=pinterest_not_configured");
+
+  const state = generateState();
+  setCookie(res, "social_oauth_state_pinterest", state);
+  const redirectUri = `${getBaseUrl(req)}/api/social/auth/pinterest/callback`;
+  const scope = "boards:read,pins:read,pins:write";
+  const url = `https://www.pinterest.com/oauth/?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${state}`;
+  res.redirect(url);
+});
+
+router.get("/auth/pinterest/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { code, state, error } = req.query as Record<string, string>;
+    if (error) return res.redirect("/social-media?error=pinterest_denied");
+    if (!validateAndClearState(req, res, "social_oauth_state_pinterest", state)) {
+      return res.redirect("/social-media?error=pinterest_failed");
+    }
+
+    const clientId = process.env.PINTEREST_APP_ID;
+    const clientSecret = process.env.PINTEREST_APP_SECRET;
+    if (!clientId || !clientSecret) return res.redirect("/social-media?error=pinterest_not_configured");
+
+    const redirectUri = `${getBaseUrl(req)}/api/social/auth/pinterest/callback`;
+    const credentials = "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
+    const tokenRes = await fetch("https://api.pinterest.com/v5/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: credentials,
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+      }).toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    const tokenData = await tokenRes.json() as any;
+    if (!tokenData.access_token) {
+      logError("Pinterest token exchange failed:", {}, new Error(JSON.stringify(tokenData)));
+      return res.redirect("/social-media?error=pinterest_failed");
+    }
+
+    const userRes = await fetch("https://api.pinterest.com/v5/user_account", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    const userData = await userRes.json() as any;
+    const username = userData.username || "Pinterest User";
+
+    const orgId = req.user!.organizationId!;
+    const userId = req.user!.id;
+    await upsertSocialAccount(orgId, userId, "PINTEREST", username, userData.id || "", tokenData.access_token, tokenData.refresh_token, tokenData.expires_in);
+
+    res.redirect("/social-media?connected=PINTEREST");
+  } catch (err) {
+    logError("Pinterest OAuth callback error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.redirect("/social-media?error=pinterest_failed");
+  }
+});
+
 // ─── STATUS ENDPOINT ──────────────────────────────────────────────────────────
-// Returns which platforms have OAuth credentials configured server-side
 
 router.get("/auth/platform-status", requireAuth, (_req: Request, res: Response) => {
   res.json({
@@ -1358,9 +1629,9 @@ router.get("/auth/platform-status", requireAuth, (_req: Request, res: Response) 
     INSTAGRAM: !!(process.env.FB_APP_ID && process.env.FB_APP_SECRET),
     LINKEDIN: !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET),
     TWITTER: !!process.env.TWITTER_CLIENT_ID,
-    TIKTOK: false,
-    YOUTUBE: false,
-    PINTEREST: false,
+    TIKTOK: !!process.env.TIKTOK_CLIENT_ID,
+    YOUTUBE: !!process.env.YOUTUBE_CLIENT_ID,
+    PINTEREST: !!process.env.PINTEREST_APP_ID,
   });
 });
 

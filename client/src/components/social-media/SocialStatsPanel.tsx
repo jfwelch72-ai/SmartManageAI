@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Megaphone, Clock, CheckCircle, Edit, Eye, AlertCircle, TrendingUp, Users
+  Megaphone, Clock, CheckCircle, Edit, Eye, AlertCircle, TrendingUp, Users,
+  Heart, MessageCircle, Share2
 } from "lucide-react";
 import { getPlatformInfo } from "./types";
 
@@ -48,6 +49,32 @@ export function SocialStatsPanel() {
           </Card>
         ))}
       </div>
+
+      {stats?.totalEngagement && (stats.totalEngagement.likes > 0 || stats.totalEngagement.comments > 0 || stats.totalEngagement.shares > 0 || stats.totalEngagement.reach > 0) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Engagement</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "Total Likes", value: stats.totalEngagement.likes, icon: Heart, color: "text-rose-500" },
+                { label: "Total Comments", value: stats.totalEngagement.comments, icon: MessageCircle, color: "text-blue-500" },
+                { label: "Total Shares", value: stats.totalEngagement.shares, icon: Share2, color: "text-green-500" },
+                { label: "Total Reach", value: stats.totalEngagement.reach, icon: Eye, color: "text-purple-500" },
+              ].map((e) => (
+                <div key={e.label} className="flex items-center gap-3 p-3 rounded-lg border" data-testid={`engagement-${e.label.toLowerCase().replace(/\s/g, '-')}`}>
+                  <e.icon className={`h-5 w-5 ${e.color}`} />
+                  <div>
+                    <p className="text-xs text-muted-foreground">{e.label}</p>
+                    <p className="text-lg font-bold">{e.value.toLocaleString()}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {stats?.byPlatform && Object.keys(stats.byPlatform).length > 0 && (
         <Card>
