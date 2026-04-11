@@ -34,7 +34,8 @@ import {
   Clock,
   Layers,
   SlidersHorizontal,
-  ScanSearch
+  ScanSearch,
+  RefreshCw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -514,11 +515,21 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                 </div>
               )}
               {analysisResults.metadata.analysisSource && analysisResults.metadata.analysisSource !== "openai_vision" && (
-                <div className="flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                  <span className="text-[11px] text-amber-700 dark:text-amber-400">
-                    Demo Data - Upload a blueprint for real AI detection
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 w-full" data-testid="banner-ai-fallback-takeoff">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span className="text-xs text-amber-700 dark:text-amber-400 flex-1">
+                    AI analysis unavailable — showing sample data.
                   </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                    onClick={() => refetchResults()}
+                    data-testid="button-retry-takeoff-analysis"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Retry
+                  </Button>
                 </div>
               )}
             </div>

@@ -9,6 +9,10 @@ import {
   LayoutGrid,
   X,
   Bookmark,
+  FileText,
+  Image,
+  MessageSquare,
+  Star,
 } from "lucide-react";
 import {
   type BodyComponentType,
@@ -53,16 +57,50 @@ export function PageEditorCanvas({
         "max-w-[375px]"
       }`}>
         {sortedComponents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="flex flex-col items-center justify-center py-16 text-center">
             <LayoutGrid className="h-16 w-16 text-muted-foreground/40 mb-4" />
             <h3 className="text-lg font-medium mb-2">Start building your page</h3>
-            <p className="text-sm text-muted-foreground mb-4 max-w-md">
-              Add components from the library on the left, or click below to add your first section.
+            <p className="text-sm text-muted-foreground mb-6 max-w-md">
+              Choose a starter section below to get started, or add components from the library on the left.
             </p>
-            <Button onClick={() => onAddComponent("hero")} data-testid="button-add-first-component">
-              <Plus className="h-4 w-4 mr-1" />
-              Add Hero Section
-            </Button>
+            <div className="grid grid-cols-2 gap-3 max-w-sm w-full mb-4">
+              <Button
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-auto py-4"
+                onClick={() => onAddComponent("hero")}
+                data-testid="button-add-first-component"
+              >
+                <Star className="h-5 w-5 text-primary" />
+                <span className="text-xs font-medium">Hero Section</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-auto py-4"
+                onClick={() => onAddComponent("content")}
+                data-testid="button-add-content-section"
+              >
+                <FileText className="h-5 w-5 text-primary" />
+                <span className="text-xs font-medium">Content Block</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-auto py-4"
+                onClick={() => onAddComponent("gallery")}
+                data-testid="button-add-gallery-section"
+              >
+                <Image className="h-5 w-5 text-primary" />
+                <span className="text-xs font-medium">Photo Gallery</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-auto py-4"
+                onClick={() => onAddComponent("form")}
+                data-testid="button-add-contact-section"
+              >
+                <MessageSquare className="h-5 w-5 text-primary" />
+                <span className="text-xs font-medium">Contact Form</span>
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-0">

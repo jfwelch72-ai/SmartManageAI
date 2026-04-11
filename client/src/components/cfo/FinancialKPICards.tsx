@@ -1,6 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, FolderOpen } from "lucide-react";
+import { Link } from "wouter";
 import type { ProjectProfitability } from "./types";
 
 interface FinancialKPICardsProps {
@@ -30,6 +32,26 @@ export function FinancialKPICards({ profitability, formatCurrency, onProjectClic
       if (a.billingUrgency !== 'CRITICAL' && b.billingUrgency === 'CRITICAL') return 1;
       return (a.daysUntilDraw || 999) - (b.daysUntilDraw || 999);
     });
+
+  if (profitability.length === 0) {
+    return (
+      <Card className="border-dashed" data-testid="card-empty-profitability">
+        <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+          <FolderOpen className="w-12 h-12 text-muted-foreground/40 mb-4" />
+          <h3 className="text-lg font-medium mb-2">No Profitability Data</h3>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md">
+            Set up project budgets to track profitability. Once budgets are configured, you'll see financial KPIs and variance tracking here.
+          </p>
+          <Link href="/projects">
+            <Button data-testid="button-goto-budget-setup">
+              <DollarSign className="w-4 h-4 mr-1" />
+              Go to Projects
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <>

@@ -75,6 +75,7 @@ interface BatchSummary {
   crewCountEstimate?: number;
   weatherConditions?: string;
   primaryConcerns?: string[];
+  analysisMethod?: string;
 }
 
 interface AnalysisBatch {
@@ -461,6 +462,31 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
           </Button>
         </div>
       </div>
+
+      {batches.some(b => {
+        let summary = b.summary;
+        if (!summary && b.summaryJson) {
+          try { summary = JSON.parse(b.summaryJson); } catch { summary = null; }
+        }
+        return summary?.analysisMethod?.includes("Fallback") || summary?.analysisMethod?.includes("Demo");
+      }) && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800" data-testid="banner-ai-fallback-jobsite">
+          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+          <span className="text-sm text-amber-700 dark:text-amber-400 flex-1">
+            AI analysis unavailable — showing sample data. Retry or upload new photos for real analysis.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-sm text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+            onClick={() => refetch()}
+            data-testid="button-retry-jobsite-analysis"
+          >
+            <RefreshCw className="w-4 h-4 mr-1" />
+            Retry
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>

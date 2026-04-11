@@ -6,7 +6,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
-import { Users, BriefcaseBusiness, CalendarClock, TrendingUp, UserCheck, UserX, Clock, Target, BadgePercent, ClipboardList } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
+import { Users, BriefcaseBusiness, CalendarClock, TrendingUp, UserCheck, UserX, Clock, Target, BadgePercent, ClipboardList, Plus, BarChart3 } from "lucide-react";
 
 interface HiringAnalytics {
   jobs: {
@@ -185,6 +187,34 @@ export default function HiringAnalyticsPage() {
 
   const SOURCE_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#ec4899", "#06b6d4", "#eab308", "#6366f1"];
   const AI_HISTOGRAM_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6"];
+
+  const isEmpty = analytics && analytics.jobs.total === 0 && analytics.candidates.total === 0;
+
+  if (isEmpty) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="heading-hiring-analytics">Hiring Analytics</h1>
+          <p className="text-muted-foreground">Pipeline performance and workforce acquisition metrics</p>
+        </div>
+        <Card data-testid="card-hiring-empty-state">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <BarChart3 className="w-16 h-16 text-muted-foreground/40 mb-4" />
+            <h3 className="text-lg font-medium mb-2">No Hiring Data Yet</h3>
+            <p className="text-sm text-muted-foreground mb-6 max-w-md">
+              Post your first job to see analytics here. Once you start receiving applicants, you'll see pipeline metrics, conversion rates, and hiring trends.
+            </p>
+            <Link href="/hiring?tab=jobs">
+              <Button data-testid="button-create-first-job">
+                <Plus className="w-4 h-4 mr-1" />
+                Post Your First Job
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
