@@ -31,6 +31,7 @@ let bidDueDateTask: ReturnType<typeof cron.schedule> | null = null;
 let imapSyncTask: ReturnType<typeof cron.schedule> | null = null;
 let weeklyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let monthlyReportTask: ReturnType<typeof cron.schedule> | null = null;
+let dbHealthCheckTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -139,7 +140,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, and periodic report schedulers)");
+  dbHealthCheckTask = cron.schedule("0 */6 * * *", async () => {
+    try {
+      await runDbHealthCheck();
+    } catch (err) {
+      logError("DB health check failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, periodic report, and DB health check schedulers)");
 }
 
 export function stopJobRunner() {
@@ -194,6 +203,10 @@ export function stopJobRunner() {
   if (monthlyReportTask) {
     monthlyReportTask.stop();
     monthlyReportTask = null;
+  }
+  if (dbHealthCheckTask) {
+    dbHealthCheckTask.stop();
+    dbHealthCheckTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -1307,13 +1320,39 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
         );
         const settingsRow = (settingsResult.rows || [])[0] as { email_recipients?: string[] } | undefined;
         const lastRecipients = settingsRow?.email_recipients;
+
+        const orgAdmins = await db.select({ id: users.id }).from(users)
+          .where(and(
+            eq(users.organizationId, project.gc_organization_id),
+            inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER"]),
+          ));
+
+        const projectName = reportData.project?.name || "Project";
+        const reportLabel = type === "WEEKLY" ? "Weekly" : "Monthly";
+        const notificationMessage = `${reportLabel} Progress Report for ${projectName} (${startStr} to ${endStr}) is ready.`;
+
+        if (orgAdmins.length > 0) {
+          try {
+            const notifs: InsertNotification[] = orgAdmins.map(u => ({
+              userId: u.id,
+              type: "GENERAL" as const,
+              title: `${reportLabel} Report Ready`,
+              message: notificationMessage,
+              organizationId: project.gc_organization_id,
+              metadata: { projectId: project.id, reportId: report.id, reportType: type },
+            }));
+            await insertNotifications(notifs);
+          } catch (notifErr) {
+            logError("Failed to insert report notifications", { projectId: project.id, error: String(notifErr) });
+          }
+        }
+
         if (lastRecipients && Array.isArray(lastRecipients) && lastRecipients.length > 0) {
           try {
-            const projectName = reportData.project?.name || "Project";
             await sendEmail({
               to: lastRecipients as string[],
-              subject: `${type === "WEEKLY" ? "Weekly" : "Monthly"} Progress Report - ${projectName} (${startStr} to ${endStr})`,
-              html: `<h2>${type === "WEEKLY" ? "Weekly" : "Monthly"} Progress Report</h2>
+              subject: `${reportLabel} Progress Report - ${projectName} (${startStr} to ${endStr})`,
+              html: `<h2>${reportLabel} Progress Report</h2>
                 <p><strong>Project:</strong> ${projectName}</p>
                 <p><strong>Period:</strong> ${startStr} to ${endStr}</p>
                 <p><strong>Labor Hours:</strong> ${reportData.labor?.totalHours || 0} (${reportData.labor?.uniqueWorkers || 0} workers)</p>
@@ -1335,5 +1374,31 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
     }
   } catch (err) {
     logError("Periodic report processing error", { error: String(err) });
+  }
+}
+
+async function runDbHealthCheck() {
+  const start = Date.now();
+  try {
+    const result = await db.execute(sql`SELECT 1 AS ok, NOW() AS server_time`);
+    const elapsed = Date.now() - start;
+    if (elapsed > 5000) {
+      logError("DB health check slow", { responseTimeMs: elapsed });
+    } else {
+      logInfo("DB health check passed", { responseTimeMs: elapsed });
+    }
+
+    const connResult = await db.execute(sql`
+      SELECT numbackends AS active_connections, 
+             datname AS database_name
+      FROM pg_stat_database 
+      WHERE datname = current_database()
+    `);
+    const row = (connResult.rows || [])[0] as { active_connections?: number } | undefined;
+    if (row?.active_connections && Number(row.active_connections) > 80) {
+      logError("DB connection pool nearing limit", { activeConnections: row.active_connections });
+    }
+  } catch (err) {
+    logError("DB health check failed", { responseTimeMs: Date.now() - start, error: String(err) });
   }
 }

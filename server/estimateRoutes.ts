@@ -609,7 +609,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           if (Array.isArray(meta.sourceMeasurementIds) && meta.sourceMeasurementIds.length > 0) {
             for (const mid of meta.sourceMeasurementIds) alreadyImportedMeasurementIds.add(mid);
           }
-        } catch {}
+        } catch (err) { logError("Failed to parse line item metadata for sourceMeasurementIds", { lineItemId: li.id }, err instanceof Error ? err : new Error(String(err))); }
       }
 
       const lineItemsToCreate: Array<{
@@ -686,7 +686,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   }
                 }
               }
-            } catch {}
+            } catch (err) { logError("Failed to parse deductions metadata for area measurement", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
 
             if (measurement.computedAreaFt2) {
               let area = Number(measurement.computedAreaFt2);
@@ -698,7 +698,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     const { netArea } = computeNetAreaInFt2(points, deductionPolygons, sheet.scalePxPerFoot);
                     area = netArea;
                   }
-                } catch {}
+                } catch (err) { logError("Failed to compute net area with deductions", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
               }
               area = Math.max(0, area - rectDeductionSf);
               areaTotal += area;
@@ -743,7 +743,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             }
           } else if (measurement.type === "COUNT") {
             let meta: any = {};
-            try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+            try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch (err) { logError("Failed to parse COUNT measurement metadata", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
             const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
             const qty = Number.isFinite(rawQty) ? rawQty : 1;
             const unit = (meta.unit || "EA").toUpperCase();
@@ -915,7 +915,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     }
                   }
                 }
-              } catch {}
+              } catch (err) { logError("Failed to parse deductions for uncategorized area measurement", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
               if (measurement.computedAreaFt2) {
                 uncatArea += Math.max(0, Number(measurement.computedAreaFt2) - rectDeductionSf);
                 uncatAreaIds.push(measurement.id);
@@ -952,7 +952,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               }
             } else if (measurement.type === "COUNT") {
               let meta: any = {};
-              try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+              try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch (err) { logError("Failed to parse COUNT measurement metadata", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
               const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
               const qty = Number.isFinite(rawQty) ? rawQty : 1;
               const unit = (meta.unit || "EA").toUpperCase();
@@ -1068,7 +1068,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           if (Array.isArray(meta.sourceMeasurementIds) && meta.sourceMeasurementIds.length > 0) {
             for (const mid of meta.sourceMeasurementIds) alreadyImportedMeasurementIds.add(mid);
           }
-        } catch {}
+        } catch (err) { logError("Failed to parse line item metadata for sourceMeasurementIds", { lineItemId: li.id }, err instanceof Error ? err : new Error(String(err))); }
       }
 
       const filteredCategories = categories;
@@ -1245,7 +1245,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   }
                 }
               }
-            } catch {}
+            } catch (err) { logError("Failed to parse deductions metadata for area measurement", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
 
             if (measurement.computedAreaFt2) {
               let area = Number(measurement.computedAreaFt2);
@@ -1257,7 +1257,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     const { netArea } = computeNetAreaInFt2(points, deductionPolygons, sheet.scalePxPerFoot);
                     area = netArea;
                   }
-                } catch {}
+                } catch (err) { logError("Failed to compute net area with deductions", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
               }
               area = Math.max(0, area - rectDeductionSf);
               areaTotal += area;
@@ -1302,7 +1302,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             }
           } else if (measurement.type === "COUNT") {
             let meta: any = {};
-            try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+            try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch (err) { logError("Failed to parse COUNT measurement metadata", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
             const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
             const qty = Number.isFinite(rawQty) ? rawQty : 1;
             const unit = (meta.unit || "EA").toUpperCase();
@@ -1506,7 +1506,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     }
                   }
                 }
-              } catch {}
+              } catch (err) { logError("Failed to parse deductions for uncategorized area measurement", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
               if (measurement.computedAreaFt2) {
                 uncatArea += Math.max(0, Number(measurement.computedAreaFt2) - rectDeductionSf);
                 uncatAreaIds.push(measurement.id);
@@ -1543,7 +1543,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               }
             } else if (measurement.type === "COUNT") {
               let meta: any = {};
-              try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch {}
+              try { meta = typeof measurement.metadata === 'string' ? JSON.parse(measurement.metadata) : (measurement.metadata || {}); } catch (err) { logError("Failed to parse COUNT measurement metadata", { measurementId: measurement.id }, err instanceof Error ? err : new Error(String(err))); }
               const rawQty = Number(measurement.count ?? meta.quantity ?? 1);
               const qty = Number.isFinite(rawQty) ? rawQty : 1;
               const unit = (meta.unit || "EA").toUpperCase();

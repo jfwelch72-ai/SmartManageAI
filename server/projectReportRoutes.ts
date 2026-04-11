@@ -11,6 +11,7 @@ import { PassThrough } from "stream";
 import { pool } from "./db";
 import type { OrganizationBrandingPDF } from "./pdf-service";
 import { objectStorageClient } from "./objectStorage";
+import { logError } from "./utils/logger";
 
 interface ReportData {
   project: { id: string; name: string; projectCode: string | null; status: string };
@@ -49,7 +50,8 @@ export async function persistPdfToStorage(pdfStorageKey: string, pdfBuffer: Buff
     const bucket = objectStorageClient.bucket(bucketName);
     const file = bucket.file(objectName);
     await file.save(pdfBuffer, { contentType: "application/pdf" });
-  } catch {
+  } catch (err) {
+    logError("Failed to persist PDF to storage", { pdfStorageKey }, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -67,7 +69,8 @@ async function loadPdfFromStorage(pdfStorageKey: string): Promise<Buffer | null>
     if (!exists) return null;
     const [buffer] = await file.download();
     return buffer;
-  } catch {
+  } catch (err) {
+    logError("Failed to load PDF from storage", { pdfStorageKey }, err instanceof Error ? err : new Error(String(err)));
     return null;
   }
 }
@@ -159,7 +162,8 @@ export async function aggregateReportData(projectId: string, startDate: string, 
     );
     materialTestsFailed = parseInt(testResult.rows[0]?.cnt || "0");
     safetyIncidents = ppeViolations + materialTestsFailed;
-  } catch {
+  } catch (err) {
+    logError("Failed to query safety incident data", { projectId }, err instanceof Error ? err : new Error(String(err)));
   }
 
   let scheduleSummary = { totalTasks: 0, completedTasks: 0, inProgressTasks: 0, delayedTasks: 0, startedTasks: 0 };
@@ -185,7 +189,8 @@ export async function aggregateReportData(projectId: string, startDate: string, 
       delayedTasks: parseInt(r?.delayed || "0"),
       startedTasks: parseInt(r?.started || "0"),
     };
-  } catch {
+  } catch (err) {
+    logError("Failed to query schedule summary data", { projectId }, err instanceof Error ? err : new Error(String(err)));
   }
 
   let financialSummary: { budget: number; actualCost: number; variance: number; variancePercent: number; changeOrdersSummary: { approved: number; pending: number } } | null = null;
@@ -204,7 +209,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
         [projectId, startDate, endDate + "T23:59:59.999Z"]
       );
       actualCost = parseFloat(costResult.rows[0]?.total || "0");
-    } catch {}
+    } catch (err) { logError("Failed to query cost ledger postings", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
     const variance = budget - actualCost;
     financialSummary = {
@@ -217,7 +222,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
         pending: cos.filter(c => c.status === "PENDING" || c.status === "SUBMITTED").length,
       },
     };
-  } catch {}
+  } catch (err) { logError("Failed to aggregate financial summary", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
   let healthScore: number | null = null;
   try {
@@ -226,7 +231,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
       [projectId]
     );
     healthScore = hsResult.rows[0]?.score ?? null;
-  } catch {}
+  } catch (err) { logError("Failed to query project health score", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
   let procurement: { totalOrders: number; received: number; pending: number } | null = null;
   try {
@@ -244,7 +249,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
       received: parseInt(po?.received || "0"),
       pending: parseInt(po?.pending || "0"),
     };
-  } catch {}
+  } catch (err) { logError("Failed to query procurement data", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
   let subcontractors: { totalSubcontracts: number; payApplicationsInPeriod: number; totalContractValue: number; billedToDate: number } | null = null;
   try {
@@ -266,7 +271,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
       totalContractValue: Math.round(parseFloat(sr?.total_value || "0") * 100) / 100,
       billedToDate: Math.round(parseFloat(sr?.billed || "0") * 100) / 100,
     };
-  } catch {}
+  } catch (err) { logError("Failed to query subcontractor data", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
   let materialsReceived: { totalDeliveries: number; totalAmount: number; items: Array<{ description: string; amount: number; vendor: string | null; deliveryDate: string | null }> } | null = null;
   try {
@@ -294,7 +299,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
         deliveryDate: r.delivery_date,
       })),
     };
-  } catch {}
+  } catch (err) { logError("Failed to query materials received data", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
   let weatherSummary: { daysWithData: number; entries: Array<{ date: string; conditions: string }> } | null = null;
   try {
@@ -315,7 +320,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
         })),
       };
     }
-  } catch {}
+  } catch (err) { logError("Failed to query weather summary data", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
   let keyPhotos: { totalPhotos: number; batches: number } | null = null;
   try {
@@ -334,7 +339,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
         batches: parseInt(pr?.batch_count || "0"),
       };
     }
-  } catch {}
+  } catch (err) { logError("Failed to query key photos data", { projectId }, err instanceof Error ? err : new Error(String(err))); }
 
   return {
     project: {

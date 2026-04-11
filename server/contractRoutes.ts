@@ -8,6 +8,91 @@ import { contracts, contractVersions, contractRedlines, contractApprovals, signa
 import { projects, domainEvents, changeOrders, users } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import { insertNotification } from "./services/notificationService";
+import { parsePagination } from "./utils/pagination";
+import { z } from "zod";
+
+const createContractSchema = z.object({
+  projectId: z.string().min(1),
+  contractNumber: z.string().min(1),
+  contractType: z.enum(["PRIME", "SUBCONTRACT", "PURCHASE_ORDER", "SERVICE_AGREEMENT", "LEASE", "OTHER"]).optional().default("PRIME"),
+  parties: z.string().nullable().optional(),
+  contractValue: z.union([z.string(), z.number()]).nullable().optional(),
+  effectiveDate: z.string().nullable().optional(),
+  expirationDate: z.string().nullable().optional(),
+  paymentTerms: z.union([z.string(), z.number()]).nullable().optional(),
+  retentionPercent: z.union([z.string(), z.number()]).nullable().optional(),
+  insuranceRequirements: z.string().nullable().optional(),
+  scopeSummary: z.string().nullable().optional(),
+  keyDates: z.string().nullable().optional(),
+  bidId: z.string().nullable().optional(),
+});
+
+const updateContractSchema = z.object({
+  contractNumber: z.string().min(1).optional(),
+  contractType: z.enum(["PRIME", "SUBCONTRACT", "PURCHASE_ORDER", "SERVICE_AGREEMENT", "LEASE", "OTHER"]).optional(),
+  parties: z.string().nullable().optional(),
+  contractValue: z.union([z.string(), z.number()]).nullable().optional(),
+  effectiveDate: z.string().nullable().optional(),
+  expirationDate: z.string().nullable().optional(),
+  paymentTerms: z.union([z.string(), z.number()]).nullable().optional(),
+  retentionPercent: z.union([z.string(), z.number()]).nullable().optional(),
+  insuranceRequirements: z.string().nullable().optional(),
+  scopeSummary: z.string().nullable().optional(),
+  keyDates: z.string().nullable().optional(),
+  changeNote: z.string().optional(),
+});
+
+const transitionSchema = z.object({
+  newStatus: z.string().min(1),
+  signatureDate: z.string().optional(),
+  signatoryNames: z.string().nullable().optional(),
+  executedDocumentUrl: z.string().nullable().optional(),
+});
+
+const createRedlineSchema = z.object({
+  description: z.string().min(1),
+  section: z.string().nullable().optional(),
+});
+
+const updateRedlineSchema = z.object({
+  status: z.enum(["OPEN", "RESOLVED", "REJECTED"]).optional(),
+  resolution: z.string().nullable().optional(),
+});
+
+const requestApprovalSchema = z.object({
+  reviewerIds: z.array(z.string().min(1)).min(1),
+});
+
+const approveRejectSchema = z.object({
+  comments: z.string().nullable().optional(),
+});
+
+const addAttachmentSchema = z.object({
+  fileName: z.string().min(1),
+  objectKey: z.string().min(1),
+  fileType: z.string().optional(),
+  fileSize: z.number().optional(),
+});
+
+const linkChangeOrderSchema = z.object({
+  changeOrderId: z.string().min(1),
+});
+
+const signatureRequestSchema = z.object({
+  signers: z.array(z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    role: z.string().min(1),
+  })).min(1),
+  message: z.string().nullable().optional(),
+  expiresInDays: z.number().positive().optional(),
+});
+
+const signActionSchema = z.object({
+  signerId: z.string().min(1),
+  action: z.enum(["sign", "decline"]),
+  declineReason: z.string().optional(),
+});
 
 const router = Router();
 
@@ -96,7 +181,14 @@ router.get("/api/contracts", requireAuth, async (req: AuthRequest, res: Response
       filtered = filtered.filter(c => c.contractType === contractType);
     }
 
-    res.json(filtered);
+    if (req.query.page) {
+      const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+      const total = filtered.length;
+      const paginated = filtered.slice(offset, offset + limit);
+      res.json({ data: paginated, total, page, limit });
+    } else {
+      res.json(filtered);
+    }
   } catch (err) {
     logError("[Contracts] List error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list contracts" });
@@ -168,12 +260,12 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
     if (!org) return;
     const { orgId, shouldFilter } = org;
 
-    const { projectId, contractNumber, contractType, parties, contractValue, effectiveDate, expirationDate, paymentTerms, retentionPercent, insuranceRequirements, scopeSummary, keyDates, bidId } = req.body;
-
-    if (!projectId || !contractNumber) {
-      res.status(400).json({ error: "projectId and contractNumber are required" });
+    const parsed = createContractSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
       return;
     }
+    const { projectId, contractNumber, contractType, parties, contractValue, effectiveDate, expirationDate, paymentTerms, retentionPercent, insuranceRequirements, scopeSummary, keyDates, bidId } = parsed.data;
 
     const [project] = await db.select().from(projects)
       .where(and(eq(projects.id, projectId), orgCondition(projects.gcOrganizationId, orgId, shouldFilter)));
@@ -247,7 +339,12 @@ router.patch("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Re
 
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
-    const { contractNumber, contractType, parties, contractValue, effectiveDate, expirationDate, paymentTerms, retentionPercent, insuranceRequirements, scopeSummary, keyDates } = req.body;
+    const parsed = updateContractSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const { contractNumber, contractType, parties, contractValue, effectiveDate, expirationDate, paymentTerms, retentionPercent, insuranceRequirements, scopeSummary, keyDates } = parsed.data;
 
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (contractNumber !== undefined) updates.contractNumber = contractNumber;
@@ -275,7 +372,7 @@ router.patch("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Re
       versionNumber: newVersion,
       snapshotJson: JSON.stringify(updated),
       changedById: req.user!.id,
-      changeNote: req.body.changeNote || "Contract updated",
+      changeNote: parsed.data.changeNote || "Contract updated",
     });
 
     res.json(updated);
@@ -305,8 +402,12 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
     if (!org) return;
     const { orgId, shouldFilter } = org;
 
-    const { newStatus } = req.body;
-    if (!newStatus) { res.status(400).json({ error: "newStatus is required" }); return; }
+    const parsed = transitionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const { newStatus } = parsed.data;
 
     const [existing] = await db.select().from(contracts)
       .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
@@ -336,9 +437,9 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
     }
 
     if (newStatus === "EXECUTED") {
-      updates.signatureDate = req.body.signatureDate ? new Date(req.body.signatureDate) : new Date();
-      updates.signatoryNames = req.body.signatoryNames || null;
-      updates.executedDocumentUrl = req.body.executedDocumentUrl || null;
+      updates.signatureDate = parsed.data.signatureDate ? new Date(parsed.data.signatureDate) : new Date();
+      updates.signatoryNames = parsed.data.signatoryNames || null;
+      updates.executedDocumentUrl = parsed.data.executedDocumentUrl || null;
 
       if (existing.contractValue) {
         await db.update(projects)
@@ -398,8 +499,12 @@ router.post("/api/contracts/:id/redlines", requireAuth, async (req: AuthRequest,
       .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
-    const { description, section } = req.body;
-    if (!description) { res.status(400).json({ error: "description is required" }); return; }
+    const parsed = createRedlineSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const { description, section } = parsed.data;
 
     const [redline] = await db.insert(contractRedlines).values({
       contractId: req.params.id,
@@ -432,7 +537,12 @@ router.patch("/api/contracts/:id/redlines/:redlineId", requireAuth, async (req: 
       .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
-    const { status, resolution } = req.body;
+    const parsed = updateRedlineSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const { status, resolution } = parsed.data;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (status) updates.status = status;
     if (resolution !== undefined) updates.resolution = resolution;
@@ -478,13 +588,14 @@ router.post("/api/contracts/:id/request-approval", requireAuth, async (req: Auth
       return;
     }
 
-    const { reviewerIds } = req.body;
-    if (!reviewerIds || !Array.isArray(reviewerIds) || reviewerIds.length === 0) {
-      res.status(400).json({ error: "reviewerIds array is required" });
+    const parsed = requestApprovalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
       return;
     }
+    const { reviewerIds } = parsed.data;
 
-    const uniqueReviewerIds = [...new Set(reviewerIds as string[])];
+    const uniqueReviewerIds = [...new Set(reviewerIds)];
 
     const selfAssigned = uniqueReviewerIds.includes(req.user!.id);
     if (selfAssigned) {
@@ -556,12 +667,18 @@ router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, 
     const [approval] = await db.select().from(contractApprovals)
       .where(and(eq(contractApprovals.contractId, req.params.id), eq(contractApprovals.reviewerId, req.user!.id), eq(contractApprovals.decision, "PENDING")));
 
+    const parsed = approveRejectSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+
     if (!approval) {
       res.status(403).json({ error: "No pending approval found for your user. You must be an assigned reviewer." });
       return;
     } else {
       await db.update(contractApprovals)
-        .set({ decision: "APPROVED", comments: req.body.comments || null, decidedAt: new Date() })
+        .set({ decision: "APPROVED", comments: parsed.data.comments || null, decidedAt: new Date() })
         .where(eq(contractApprovals.id, approval.id));
     }
 
@@ -605,9 +722,15 @@ router.post("/api/contracts/:id/reject", requireAuth, async (req: AuthRequest, r
     const [approval] = await db.select().from(contractApprovals)
       .where(and(eq(contractApprovals.contractId, req.params.id), eq(contractApprovals.reviewerId, req.user!.id), eq(contractApprovals.decision, "PENDING")));
 
+    const parsed = approveRejectSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+
     if (approval) {
       await db.update(contractApprovals)
-        .set({ decision: "REJECTED", comments: req.body.comments || null, decidedAt: new Date() })
+        .set({ decision: "REJECTED", comments: parsed.data.comments || null, decidedAt: new Date() })
         .where(eq(contractApprovals.id, approval.id));
     } else {
       res.status(403).json({ error: "No pending approval found for your user. You must be an assigned reviewer." });
@@ -618,7 +741,7 @@ router.post("/api/contracts/:id/reject", requireAuth, async (req: AuthRequest, r
       await db.update(contracts)
         .set({ status: "REDLINED", updatedAt: new Date() })
         .where(eq(contracts.id, req.params.id));
-      await recordVersionSnapshot(req.params.id, { ...existing, status: "REDLINED" }, req.user!.id, `Approval rejected: ${req.body.comments || "No comment"}`);
+      await recordVersionSnapshot(req.params.id, { ...existing, status: "REDLINED" }, req.user!.id, `Approval rejected: ${parsed.data.comments || "No comment"}`);
     }
 
     res.json({ message: "Contract rejected" });
@@ -740,11 +863,12 @@ router.post("/api/contracts/:id/attachments", requireAuth, async (req: AuthReque
       .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
-    const { fileName, objectKey, fileType, fileSize } = req.body;
-    if (!fileName || !objectKey) {
-      res.status(400).json({ error: "fileName and objectKey are required" });
+    const parsed = addAttachmentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
       return;
     }
+    const { fileName, objectKey, fileType, fileSize } = parsed.data;
 
     const existingAttachments: ContractAttachment[] = JSON.parse(contract.attachmentsJson || "[]");
     const newAttachment: ContractAttachment = {
@@ -869,8 +993,12 @@ router.post("/api/contracts/:id/link-change-order", requireAuth, async (req: Aut
       .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
-    const { changeOrderId } = req.body;
-    if (!changeOrderId) { res.status(400).json({ error: "changeOrderId is required" }); return; }
+    const parsed = linkChangeOrderSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const { changeOrderId } = parsed.data;
 
     const [existingCO] = await db.select().from(changeOrders)
       .where(and(eq(changeOrders.id, changeOrderId), eq(changeOrders.projectId, contract.projectId)));
@@ -940,18 +1068,12 @@ router.post("/api/contracts/:id/signature-request", requireAuth, async (req: Aut
       return;
     }
 
-    const { signers, message, expiresInDays } = req.body;
-    if (!signers || !Array.isArray(signers) || signers.length === 0) {
-      res.status(400).json({ error: "At least one signer is required" });
+    const parsed = signatureRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
       return;
     }
-
-    for (const signer of signers) {
-      if (!signer.name || !signer.email || !signer.role) {
-        res.status(400).json({ error: "Each signer needs name, email, and role" });
-        return;
-      }
-    }
+    const { signers, message, expiresInDays } = parsed.data;
 
     const signersWithStatus: Signer[] = signers.map((s: { name: string; email: string; role: string }) => ({
       id: crypto.randomUUID(),
@@ -1062,11 +1184,12 @@ router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", require
       return;
     }
 
-    const { signerId, action, declineReason } = req.body;
-    if (!signerId || !action) {
-      res.status(400).json({ error: "signerId and action (sign/decline) are required" });
+    const parsed = signActionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
       return;
     }
+    const { signerId, action, declineReason } = parsed.data;
 
     const signers: Signer[] = JSON.parse(sigReq.signersJson || "[]");
     const signerIndex = signers.findIndex(s => s.id === signerId);
@@ -1089,13 +1212,10 @@ router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", require
     if (action === "sign") {
       signers[signerIndex].status = "SIGNED";
       signers[signerIndex].signedAt = new Date().toISOString();
-    } else if (action === "decline") {
+    } else {
       signers[signerIndex].status = "DECLINED";
       signers[signerIndex].declinedAt = new Date().toISOString();
       signers[signerIndex].declineReason = declineReason || undefined;
-    } else {
-      res.status(400).json({ error: "action must be 'sign' or 'decline'" });
-      return;
     }
 
     const allSigned = signers.every(s => s.status === "SIGNED");

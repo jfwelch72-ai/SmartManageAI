@@ -49,6 +49,27 @@ export type ProjectStatus = 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
 export const DEFAULT_COST_RATE = 50;
 export const DEFAULT_OT_MULTIPLIER = 1.5;
 
+export function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function roundPercent(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function safeNumber(value: unknown, fallback: number = 0): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return n;
+}
+
+export function safeDivide(numerator: number, denominator: number, fallback: number = 0): number {
+  if (!Number.isFinite(denominator) || denominator === 0) return fallback;
+  const result = numerator / denominator;
+  if (!Number.isFinite(result)) return fallback;
+  return result;
+}
+
 /**
  * Calculate total labor cost from time entries
  * Supports regular and overtime rates
@@ -94,15 +115,18 @@ export function calculateLaborEfficiency(
   if (budgetedCost <= 0) {
     return 'N/A';
   }
+  if (actualCost <= 0) {
+    return 'N/A';
+  }
   
-  const efficiency = (budgetedCost / actualCost) * 100;
+  const efficiency = roundPercent(safeDivide(budgetedCost, actualCost, 0) * 100);
   
   if (efficiency >= 100) {
-    return `${Math.round(efficiency)}% (On Target)`;
+    return `${efficiency}% (On Target)`;
   } else if (efficiency >= 90) {
-    return `${Math.round(efficiency)}% (Slightly Over)`;
+    return `${efficiency}% (Slightly Over)`;
   } else {
-    return `${Math.round(efficiency)}% (Over Budget)`;
+    return `${efficiency}% (Over Budget)`;
   }
 }
 
@@ -284,7 +308,7 @@ export function projectFinancials(
   const projectedTotalCost = calculateProjectedCost(actualCostToDate, percentComplete);
   const estimatedMargin = calculateEstimatedMargin(adjustedBudget, projectedTotalCost);
   const estimatedMarginPercent = adjustedBudget > 0 
-    ? Math.round((estimatedMargin / adjustedBudget) * 100 * 100) / 100 
+    ? roundPercent(safeDivide(estimatedMargin, adjustedBudget, 0) * 100) 
     : 0;
   
   return {

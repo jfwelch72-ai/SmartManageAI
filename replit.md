@@ -75,7 +75,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Site Mobilization & Method Statements**: Structured site mobilization checklists with default items (10 categories) and method statement templates with Draft→Submitted→Approved workflow and schedule task linking.
 *   **No-Code Workflow Builder**: Visual pipeline editor for custom approval chains, status pipelines, and notification triggers.
 *   **Notion-Style Project Notes**: Block-based note editor in project detail with page management, block editor, and auto-save.
-*   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination for list endpoints, and N+1 query prevention strategies.
+*   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination for list endpoints, N+1 query prevention strategies, and DB health check monitoring.
+*   **Production Hardening**: Zod validation on all financial route mutations, structured error logging (no silent catch blocks), safe financial math utilities (roundCurrency, safeDivide), pagination utility, and notification framework integration for scheduled reports.
 
 ## External Dependencies
 *   PostgreSQL (Neon)

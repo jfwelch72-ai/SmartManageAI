@@ -799,10 +799,16 @@ router.post("/api/payroll/pay-runs", requireAuth, requireFeaturePermission("canM
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const { payPeriodStart, payPeriodEnd, notes } = req.body;
-    if (!payPeriodStart || !payPeriodEnd) {
-      return res.status(400).json({ error: "Pay period start and end dates are required" });
+    const createPayRunSchema = z.object({
+      payPeriodStart: z.string().min(1),
+      payPeriodEnd: z.string().min(1),
+      notes: z.string().nullable().optional(),
+    });
+    const parsed = createPayRunSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
     }
+    const { payPeriodStart, payPeriodEnd, notes } = parsed.data;
 
     const startDate = new Date(payPeriodStart);
     const endDate = new Date(payPeriodEnd);
@@ -1163,7 +1169,14 @@ const payRunStatusHandler = async (req: any, res: Response) => {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const { status } = req.body;
+    const statusSchema = z.object({
+      status: z.string().min(1),
+    });
+    const parsed = statusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+    }
+    const { status } = parsed.data;
     const validTransitions: Record<string, string[]> = {
       DRAFT: ["PENDING_APPROVAL", "VOIDED", "ARCHIVED"],
       PENDING_APPROVAL: ["APPROVED", "DRAFT", "VOIDED", "ARCHIVED"],
@@ -1552,8 +1565,22 @@ router.post("/api/payroll/deduction-types", requireAuth, requireFeaturePermissio
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
 
-    const { name, category, calculationMethod, rate, amount, maxAnnualAmount, isPreTax, isActive, sortOrder } = req.body;
-    if (!name || !category) return res.status(400).json({ error: "Name and category are required" });
+    const createDeductionTypeSchema = z.object({
+      name: z.string().min(1),
+      category: z.string().min(1),
+      calculationMethod: z.string().optional(),
+      rate: z.string().optional(),
+      amount: z.string().optional(),
+      maxAnnualAmount: z.string().optional(),
+      isPreTax: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+      sortOrder: z.number().optional(),
+    });
+    const parsed = createDeductionTypeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+    }
+    const { name, category, calculationMethod, rate, amount, maxAnnualAmount, isPreTax, isActive, sortOrder } = parsed.data;
 
     const body: any = { organizationId: orgId, name, category, isActive: isActive !== false };
     if (calculationMethod) body.calculationMethod = calculationMethod;
@@ -1581,7 +1608,22 @@ router.patch("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePerm
       .where(and(eq(payrollDeductionTypes.id, req.params.id), eq(payrollDeductionTypes.organizationId, orgId)));
     if (!existing) return res.status(404).json({ error: "Deduction type not found" });
 
-    const { name, category, calculationMethod, rate, amount, maxAnnualAmount, isPreTax, isActive, sortOrder } = req.body;
+    const updateDeductionTypeSchema = z.object({
+      name: z.string().min(1).optional(),
+      category: z.string().min(1).optional(),
+      calculationMethod: z.string().optional(),
+      rate: z.string().optional(),
+      amount: z.string().optional(),
+      maxAnnualAmount: z.string().optional(),
+      isPreTax: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+      sortOrder: z.number().optional(),
+    });
+    const parsed = updateDeductionTypeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+    }
+    const { name, category, calculationMethod, rate, amount, maxAnnualAmount, isPreTax, isActive, sortOrder } = parsed.data;
     const updateData: any = { updatedAt: new Date() };
     if (name !== undefined) updateData.name = name;
     if (category !== undefined) updateData.category = category;
@@ -1685,10 +1727,19 @@ router.post("/api/payroll/employee-deductions", requireAuth, requireFeaturePermi
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
 
-    const { userId, deductionTypeId, overrideAmount, effectiveDate, endDate, isActive } = req.body;
-    if (!userId || !deductionTypeId || !effectiveDate) {
-      return res.status(400).json({ error: "userId, deductionTypeId, and effectiveDate are required" });
+    const createEmployeeDeductionSchema = z.object({
+      userId: z.string().min(1),
+      deductionTypeId: z.string().min(1),
+      effectiveDate: z.string().min(1),
+      overrideAmount: z.string().optional(),
+      endDate: z.string().optional(),
+      isActive: z.boolean().optional(),
+    });
+    const parsed = createEmployeeDeductionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
     }
+    const { userId, deductionTypeId, overrideAmount, effectiveDate, endDate, isActive } = parsed.data;
 
     const [user] = await db.select({ id: users.id }).from(users)
       .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
@@ -1720,7 +1771,17 @@ router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireFeature
       .where(and(eq(employeeDeductions.id, req.params.id), eq(employeeDeductions.organizationId, orgId)));
     if (!existing) return res.status(404).json({ error: "Employee deduction not found" });
 
-    const { overrideAmount, effectiveDate, endDate, isActive } = req.body;
+    const updateEmployeeDeductionSchema = z.object({
+      overrideAmount: z.string().nullable().optional(),
+      effectiveDate: z.string().optional(),
+      endDate: z.string().nullable().optional(),
+      isActive: z.boolean().optional(),
+    });
+    const parsed = updateEmployeeDeductionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+    }
+    const { overrideAmount, effectiveDate, endDate, isActive } = parsed.data;
     const updateData: any = { updatedAt: new Date() };
     if (overrideAmount !== undefined) updateData.overrideAmount = overrideAmount || null;
     if (effectiveDate !== undefined) updateData.effectiveDate = effectiveDate;

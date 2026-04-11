@@ -78,11 +78,18 @@ export async function runStartupMigrations(): Promise<void> {
   };
 
   for (const step of migrations) {
+    const stepStart = Date.now();
     try {
       await step.fn();
+      const stepElapsed = Date.now() - stepStart;
+      if (stepElapsed > 5000) {
+        originalLog(`[migration] ${step.name} completed in ${stepElapsed}ms (slow)`);
+      }
     } catch (err) {
+      const stepElapsed = Date.now() - stepStart;
       failed.push(step.name);
-      originalError(`[migration] ${step.name} failed:`, err);
+      originalError(`[migration] ${step.name} failed after ${stepElapsed}ms:`, err);
+      logError(`Migration step failed: ${step.name}`, { stepElapsed }, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
