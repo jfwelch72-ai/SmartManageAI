@@ -3348,13 +3348,13 @@ router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: A
       inputRefs: { title, category },
       fn: async () => {
         const imageResponse = await openai.images.generate({
-          model: "gpt-image-1",
+          model: "dall-e-3",
           prompt: imagePrompt,
           n: 1,
-          size: "1536x1024",
-          quality: "low",
-          output_format: "png",
-        } as any);
+          size: "1792x1024",
+          quality: "standard",
+          response_format: "b64_json",
+        });
         const model = "dall-e-3";
         const cost = estimateCost(model, 0, 0);
         return {
@@ -3406,12 +3406,6 @@ router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: A
     logError("Error generating blog image:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.code === "content_policy_violation") {
       return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different title." });
-    }
-    if (error?.code === "unknown_model" || error?.message?.includes("Unknown model")) {
-      return res.status(501).json({ error: "AI image generation model is not available. Please upload an image manually." });
-    }
-    if (error?.status === 404 || error?.message?.includes("not found") || error?.message?.includes("does not exist")) {
-      return res.status(501).json({ error: "AI image generation is not available with your current configuration. Please upload an image manually." });
     }
     res.status(500).json({ error: error?.message || "Failed to generate blog featured image" });
   }

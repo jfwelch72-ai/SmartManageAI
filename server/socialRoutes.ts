@@ -177,13 +177,13 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
       inputRefs: { prompt: prompt.substring(0, 200) },
       fn: async () => {
         const imageResponse = await openai.images.generate({
-          model: "gpt-image-1",
+          model: "dall-e-3",
           prompt: imagePrompt,
           n: 1,
           size: "1024x1024",
-          quality: "low",
-          output_format: "png",
-        } as any);
+          quality: "standard",
+          response_format: "b64_json",
+        });
         const model = "dall-e-3";
         return {
           result: imageResponse.data?.[0]?.b64_json || null,
@@ -230,9 +230,6 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
     logError("Error generating social media image:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.code === "content_policy_violation") {
       return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different prompt." });
-    }
-    if (error?.code === "unknown_model" || error?.message?.includes("Unknown model") || error?.status === 404 || error?.message?.includes("not found")) {
-      return res.status(501).json({ error: "AI image generation is not available. Please upload an image manually." });
     }
     res.status(500).json({ error: error?.message || "Failed to generate image" });
   }
