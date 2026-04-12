@@ -174,7 +174,7 @@ export function useSendEmail() {
     onError: (error: any) => {
       toast({ 
         title: "Send failed", 
-        description: extractErrorMessage(error, "Could not send email. Check your SMTP settings."),
+        description: extractErrorMessage(error, "Could not send email. Check your account settings."),
         variant: "destructive" 
       });
     },

@@ -1350,6 +1350,174 @@ async function outlookApiFetch(url: string, account: typeof emailAccounts.$infer
   return response;
 }
 
+function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+function buildRfc2822Message(
+  from: string,
+  to: string,
+  subject: string,
+  options: { cc?: string; text?: string; html?: string; inReplyTo?: string; references?: string }
+): string {
+  const boundary = `boundary_${crypto.randomUUID().replace(/-/g, "")}`;
+  const lines: string[] = [];
+  lines.push(`From: ${sanitizeHeaderValue(from)}`);
+  lines.push(`To: ${sanitizeHeaderValue(to)}`);
+  if (options.cc) lines.push(`Cc: ${sanitizeHeaderValue(options.cc)}`);
+  lines.push(`Subject: ${sanitizeHeaderValue(subject)}`);
+  if (options.inReplyTo) lines.push(`In-Reply-To: ${sanitizeHeaderValue(options.inReplyTo)}`);
+  if (options.references) lines.push(`References: ${sanitizeHeaderValue(options.references)}`);
+  lines.push("MIME-Version: 1.0");
+  lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+  lines.push("");
+
+  const textBody = options.text || "";
+  lines.push(`--${boundary}`);
+  lines.push("Content-Type: text/plain; charset=UTF-8");
+  lines.push("");
+  lines.push(textBody);
+
+  if (options.html) {
+    lines.push(`--${boundary}`);
+    lines.push("Content-Type: text/html; charset=UTF-8");
+    lines.push("");
+    lines.push(options.html);
+  }
+
+  lines.push(`--${boundary}--`);
+  return lines.join("\r\n");
+}
+
+async function sendViaGmail(
+  account: typeof emailAccounts.$inferSelect,
+  options: { to: string; cc?: string; bcc?: string; subject: string; text?: string; html?: string; inReplyTo?: string; references?: string }
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    let token = await getValidGmailToken(account);
+    const fromAddr = account.displayName
+      ? `"${account.displayName}" <${account.emailAddress}>`
+      : account.emailAddress;
+
+    const rawMessage = buildRfc2822Message(fromAddr, options.to, options.subject, {
+      cc: options.cc,
+      text: options.text,
+      html: options.html,
+      inReplyTo: options.inReplyTo,
+      references: options.references,
+    });
+    const encodedMessage = Buffer.from(rawMessage)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    let response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ raw: encodedMessage }),
+    });
+
+    if (response.status === 401) {
+      token = await refreshGmailAccessToken(account);
+      response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ raw: encodedMessage }),
+      });
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      logError("Gmail API send failed:", { statusCode: response.status, account: account.emailAddress }, new Error(errBody));
+      return { success: false, error: response.status === 403
+        ? "Gmail permission denied. Please reconnect your Gmail account with send permissions."
+        : "Failed to send email via Gmail. Please try again or check your account connection." };
+    }
+
+    const result = await response.json() as { id: string; threadId?: string };
+    return { success: true, messageId: result.id };
+  } catch (err: any) {
+    logError("Gmail send error:", {}, err instanceof Error ? err : new Error(String(err)));
+    return { success: false, error: err.message || String(err) };
+  }
+}
+
+async function sendViaOutlook(
+  account: typeof emailAccounts.$inferSelect,
+  options: { to: string; cc?: string; bcc?: string; subject: string; text?: string; html?: string; inReplyTo?: string; references?: string }
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    let token = await getValidOutlookToken(account);
+
+    const toRecipients = [{ emailAddress: { address: options.to } }];
+    const ccRecipients = options.cc
+      ? options.cc.split(",").map(e => e.trim()).filter(e => e.length > 0).map(e => ({ emailAddress: { address: e } }))
+      : [];
+    const bccRecipients = options.bcc
+      ? options.bcc.split(",").map(e => e.trim()).filter(e => e.length > 0).map(e => ({ emailAddress: { address: e } }))
+      : [];
+
+    const message: any = {
+      subject: options.subject,
+      body: {
+        contentType: options.html ? "HTML" : "Text",
+        content: options.html || options.text || "",
+      },
+      toRecipients,
+    };
+    if (ccRecipients.length > 0) message.ccRecipients = ccRecipients;
+    if (bccRecipients.length > 0) message.bccRecipients = bccRecipients;
+    if (options.inReplyTo) {
+      message.internetMessageHeaders = [
+        { name: "In-Reply-To", value: options.inReplyTo },
+        ...(options.references ? [{ name: "References", value: options.references }] : []),
+      ];
+    }
+
+    let response = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message, saveToSentItems: true }),
+    });
+
+    if (response.status === 401) {
+      token = await refreshOutlookAccessToken(account);
+      response = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message, saveToSentItems: true }),
+      });
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      logError("Outlook Graph send failed:", { statusCode: response.status, account: account.emailAddress }, new Error(errBody));
+      return { success: false, error: response.status === 403
+        ? "Outlook permission denied. Please reconnect your Outlook account with send permissions."
+        : "Failed to send email via Outlook. Please try again or check your account connection." };
+    }
+
+    const msgId = response.headers.get("message-id") || `outlook-sent-${crypto.randomUUID()}`;
+    return { success: true, messageId: msgId };
+  } catch (err: any) {
+    logError("Outlook send error:", {}, err instanceof Error ? err : new Error(String(err)));
+    return { success: false, error: err.message || String(err) };
+  }
+}
+
 interface GmailMessagePart {
   mimeType?: string;
   body?: { data?: string; size?: number };
@@ -2555,113 +2723,126 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
       return res.status(404).json({ error: "Email account not found or inactive" });
     }
 
+    const sendOpts = {
+      to: data.to,
+      cc: data.cc,
+      bcc: data.bcc,
+      subject: data.subject,
+      text: data.text,
+      html: data.html,
+      inReplyTo: data.inReplyTo,
+      references: data.references,
+    };
+
+    let sendResult: { success: boolean; messageId?: string; error?: string };
+
     if (account.provider === "IMAP") {
       if (!account.smtpHost) {
         return res.status(400).json({ error: "SMTP not configured for this account. Please add SMTP settings to send emails." });
       }
-
-      const sendResult = await sendSmtpEmail(account, {
-        to: data.to,
-        cc: data.cc,
-        bcc: data.bcc,
-        subject: data.subject,
-        text: data.text,
-        html: data.html,
-        inReplyTo: data.inReplyTo,
-        references: data.references,
-      });
-
-      if (!sendResult.success) {
-        return next(error);
+      sendResult = await sendSmtpEmail(account, sendOpts);
+    } else if (account.provider === "GMAIL") {
+      if (!account.accessToken && !account.refreshToken) {
+        return res.status(400).json({ error: "Gmail account not authorized. Please reconnect your Gmail account." });
       }
-
-      let targetThreadId: string | null = null;
-
-      if (data.replyToMessageId) {
-        const [originalMessage] = await db
-          .select()
-          .from(emailMessages)
-          .where(
-            and(
-              eq(emailMessages.id, data.replyToMessageId),
-              eq(emailMessages.organizationId, orgId)
-            )
-          )
-          .limit(1);
-
-        if (originalMessage) {
-          targetThreadId = originalMessage.threadId;
-        }
+      sendResult = await sendViaGmail(account, sendOpts);
+    } else if (account.provider === "OUTLOOK") {
+      if (!account.accessToken && !account.refreshToken) {
+        return res.status(400).json({ error: "Outlook account not authorized. Please reconnect your Outlook account." });
       }
-
-      if (!targetThreadId) {
-        const newThreadId = crypto.randomUUID();
-        await db.insert(emailThreads).values({
-          id: newThreadId,
-          organizationId: orgId,
-          emailAccountId: account.id,
-          subject: data.subject,
-          externalThreadId: sendResult.messageId || `sent-thread-${newThreadId}`,
-          status: "OPEN",
-          messageCount: 0,
-          unreadCount: 0,
-          lastMessageAt: new Date(),
-        });
-        targetThreadId = newThreadId;
-      }
-
-      const sentMessageId = crypto.randomUUID();
-      await db.insert(emailMessages).values({
-        id: sentMessageId,
-        organizationId: orgId,
-        emailAccountId: account.id,
-        threadId: targetThreadId,
-        externalId: sendResult.messageId || `sent-${sentMessageId}`,
-        fromAddress: account.emailAddress,
-        fromName: account.displayName || null,
-        toAddresses: JSON.stringify([data.to]),
-        ccAddresses: data.cc ? JSON.stringify([data.cc]) : null,
-        subject: data.subject,
-        bodyText: data.text || null,
-        bodyHtml: data.html || null,
-        snippet: (data.text || "").substring(0, 200),
-        receivedAt: new Date(),
-        isRead: true,
-        isIncoming: false,
-        hasAttachments: false,
-      });
-
-      const [msgCounts] = await db
-        .select({
-          total: sql<number>`count(*)::int`,
-          unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
-        })
-        .from(emailMessages)
-        .where(eq(emailMessages.threadId, targetThreadId));
-
-      await db
-        .update(emailThreads)
-        .set({
-          messageCount: msgCounts?.total ?? 1,
-          unreadCount: msgCounts?.unread ?? 0,
-          lastMessageAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(emailThreads.id, targetThreadId));
-
-      await logAudit({
-        userId: req.user.id,
-        entityType: "EMAIL_MESSAGE",
-        entityId: data.accountId,
-        action: "CREATE",
-        oldValue: null,
-        newValue: JSON.stringify({ to: data.to, subject: data.subject }),
-      }, req);
-
-      return res.json({ success: true, messageId: sendResult.messageId });
+      sendResult = await sendViaOutlook(account, sendOpts);
+    } else {
+      return res.status(400).json({ error: `Sending via ${account.provider} is not supported. Supported providers: IMAP/SMTP, Gmail, Outlook.` });
     }
 
-    return res.status(400).json({ error: `Sending via ${account.provider} is not yet supported from this endpoint` });
+    if (!sendResult.success) {
+      return res.status(500).json({ error: sendResult.error || "Failed to send email" });
+    }
+
+    let targetThreadId: string | null = null;
+
+    if (data.replyToMessageId) {
+      const [originalMessage] = await db
+        .select()
+        .from(emailMessages)
+        .where(
+          and(
+            eq(emailMessages.id, data.replyToMessageId),
+            eq(emailMessages.organizationId, orgId)
+          )
+        )
+        .limit(1);
+
+      if (originalMessage) {
+        targetThreadId = originalMessage.threadId;
+      }
+    }
+
+    if (!targetThreadId) {
+      const newThreadId = crypto.randomUUID();
+      await db.insert(emailThreads).values({
+        id: newThreadId,
+        organizationId: orgId,
+        emailAccountId: account.id,
+        subject: data.subject,
+        externalThreadId: sendResult.messageId || `sent-thread-${newThreadId}`,
+        status: "OPEN",
+        messageCount: 0,
+        unreadCount: 0,
+        lastMessageAt: new Date(),
+      });
+      targetThreadId = newThreadId;
+    }
+
+    const sentMessageId = crypto.randomUUID();
+    await db.insert(emailMessages).values({
+      id: sentMessageId,
+      organizationId: orgId,
+      emailAccountId: account.id,
+      threadId: targetThreadId,
+      externalId: sendResult.messageId || `sent-${sentMessageId}`,
+      fromAddress: account.emailAddress,
+      fromName: account.displayName || null,
+      toAddresses: JSON.stringify([data.to]),
+      ccAddresses: data.cc ? JSON.stringify([data.cc]) : null,
+      subject: data.subject,
+      bodyText: data.text || null,
+      bodyHtml: data.html || null,
+      snippet: (data.text || "").substring(0, 200),
+      receivedAt: new Date(),
+      isRead: true,
+      isIncoming: false,
+      hasAttachments: false,
+    });
+
+    const [msgCounts] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+      })
+      .from(emailMessages)
+      .where(eq(emailMessages.threadId, targetThreadId));
+
+    await db
+      .update(emailThreads)
+      .set({
+        messageCount: msgCounts?.total ?? 1,
+        unreadCount: msgCounts?.unread ?? 0,
+        lastMessageAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(emailThreads.id, targetThreadId));
+
+    await logAudit({
+      userId: req.user.id,
+      entityType: "EMAIL_MESSAGE",
+      entityId: data.accountId,
+      action: "CREATE",
+      oldValue: null,
+      newValue: JSON.stringify({ to: data.to, subject: data.subject, provider: account.provider }),
+    }, req);
+
+    return res.json({ success: true, messageId: sendResult.messageId });
   } catch (error) {
         return next(error);
   }
