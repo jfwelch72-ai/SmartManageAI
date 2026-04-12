@@ -50,7 +50,7 @@ import { notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum }
 import { requireAuth, type AuthRequest } from "./auth";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { isValidE164 } from "./services/smsService";
+import { isValidE164, isTwilioConfigured } from "./services/smsService";
 import { isValidTeamsWebhookUrl } from "./services/teamsService";
 import { isValidSlackWebhookUrl } from "./services/slackService";
 import { hasFeature } from "./services/featureAccess";
@@ -98,6 +98,7 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
 
     const orgId = req.user!.organizationId;
     const enterpriseNotificationsEnabled = orgId ? await hasFeature(orgId, "ENTERPRISE_NOTIFICATIONS") : false;
+    const twilioConfigured = isTwilioConfigured();
 
     res.json({
       channel: channelRow
@@ -130,6 +131,7 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
         slackEnabled: r.slackEnabled,
       })),
       enterpriseNotificationsEnabled,
+      twilioConfigured,
     });
   } catch (error) {
     next(error);
@@ -150,6 +152,16 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
 
     const orgId = req.user!.organizationId;
     const enterpriseNotifs = orgId ? await hasFeature(orgId, "ENTERPRISE_NOTIFICATIONS") : false;
+    const twilioReady = isTwilioConfigured();
+    const effectiveSmsEnabled = channel.smsEnabled && twilioReady;
+
+    if (channel.smsEnabled && !twilioReady) {
+      return res.status(200).json({
+        success: true,
+        warning: "SMS notifications cannot be enabled because Twilio is not configured. Contact your administrator to set up TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER.",
+        smsForced: false,
+      });
+    }
 
     if (enterpriseNotifs) {
       await db
@@ -157,7 +169,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
         .values({
           userId,
           emailEnabled: channel.emailEnabled,
-          smsEnabled: channel.smsEnabled,
+          smsEnabled: effectiveSmsEnabled,
           pushEnabled: channel.pushEnabled,
           teamsEnabled: channel.teamsEnabled,
           slackEnabled: channel.slackEnabled,
@@ -167,7 +179,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
           target: notificationChannelPrefs.userId,
           set: {
             emailEnabled: channel.emailEnabled,
-            smsEnabled: channel.smsEnabled,
+            smsEnabled: effectiveSmsEnabled,
             pushEnabled: channel.pushEnabled,
             teamsEnabled: channel.teamsEnabled,
             slackEnabled: channel.slackEnabled,

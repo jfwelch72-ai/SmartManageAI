@@ -1,5 +1,5 @@
 import twilio from "twilio";
-import { logError, logInfo } from "../utils/logger";
+import { logError, logInfo, logWarn } from "../utils/logger";
 
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
@@ -18,7 +18,7 @@ export function isTwilioConfigured(): boolean {
 
 export async function sendSms(to: string, body: string): Promise<void> {
   if (!isTwilioConfigured()) {
-    logInfo("smsService: Twilio not configured, skipping SMS", { to: to.slice(0, 4) + "***" });
+    logWarn("smsService: Twilio not configured — SMS skipped. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER to enable.", { to: to.slice(0, 4) + "***" });
     return;
   }
 

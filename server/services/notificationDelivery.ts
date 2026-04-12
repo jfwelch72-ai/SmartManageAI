@@ -3,7 +3,7 @@ import { users, notificationChannelPrefs, notificationTypePrefs, notificationTyp
 import { eq, and } from "drizzle-orm";
 import { sendNotificationEmail } from "../email";
 import { sendPushToUser } from "./pushService";
-import { sendSms } from "./smsService";
+import { sendSms, isTwilioConfigured } from "./smsService";
 import { sendTeamsMessage } from "./teamsService";
 import { sendSlackMessage } from "./slackService";
 import { logError } from "../utils/logger";
@@ -414,7 +414,7 @@ export async function deliverNotification(notification: NotificationRecord): Pro
     if (prefs.emailEnabled) {
       tasks.push(deliverEmail(userRow.email, notification));
     }
-    if (prefs.smsEnabled && enterpriseNotifications) {
+    if (prefs.smsEnabled && enterpriseNotifications && isTwilioConfigured()) {
       let smsFeatureEnabled = true;
       if (userRow.organizationId) {
         smsFeatureEnabled = await isFeatureEnabled(userRow.organizationId, "SMS_NOTIFICATIONS");
