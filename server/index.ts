@@ -105,7 +105,7 @@ app.use(helmet({
           mediaSrc: ["'self'", "blob:", "https:", "http:"],
           manifestSrc: ["'self'"],
           frameSrc: ["'self'"],
-          frameAncestors: ["'self'"],
+          frameAncestors: ["'self'", "https://*.replit.dev", "https://*.replit.app", "https://*.repl.co"],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
         },
