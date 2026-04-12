@@ -16,6 +16,7 @@ export interface EmailOptions {
   subject: string;
   html?: string;
   text?: string;
+  from?: string;
   replyTo?: string;
   attachments?: EmailAttachment[];
 }
@@ -51,7 +52,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       }
 
       const emailPayload: any = {
-        from: DEFAULT_FROM_EMAIL,
+        from: options.from || DEFAULT_FROM_EMAIL,
         to: recipients,
         subject: options.subject,
         text: options.text || '',

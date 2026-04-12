@@ -276,11 +276,15 @@ router.post("/api/email-campaigns/:id/send", requireAuth, async (req, res, next)
 
     for (const contact of contacts) {
       try {
+        const campaignFrom = campaign.fromName
+          ? `${campaign.fromName} <${campaign.replyTo || process.env.EMAIL_FROM_ADDRESS || 'onboarding@resend.dev'}>`
+          : undefined;
         const success = await sendEmail({
           to: contact.email,
           subject: campaign.subject,
           html: campaign.htmlContent,
           text: campaign.textContent || undefined,
+          from: campaignFrom,
           replyTo: campaign.replyTo || undefined,
         });
 
