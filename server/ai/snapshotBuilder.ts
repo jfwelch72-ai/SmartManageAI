@@ -33,6 +33,9 @@ import {
   crewMarketplace,
   vendorPricebooks,
   pricebookImportJobs,
+  unifiedPayments,
+  payApplications,
+  tmInvoices,
 } from "@shared/schema";
 import { sql, desc, eq, gt } from "drizzle-orm";
 import { calculateProjectDataQuality } from "./dataQualityScorer";
@@ -509,10 +512,75 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .limit(200);
 
   const totalBilled = recentBillingEvents.reduce((sum, e) => sum + Number(e.totalAmount || 0), 0);
-  const totalReceived = 0; // Will be calculated from payment tracking when implemented
 
-  // Overdue invoices - to be implemented with payment tracking
-  const overdueInvoices: any[] = [];
+  const activePaymentsYTD = await db
+    .select({ total: sql<number>`COALESCE(SUM(amount::numeric), 0)` })
+    .from(unifiedPayments)
+    .where(sql`${unifiedPayments.status} = 'ACTIVE' AND ${unifiedPayments.paymentDate} >= ${startOfYear.toISOString().split('T')[0]}`);
+  const totalReceived = Number(activePaymentsYTD[0]?.total || 0);
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  const overdueAia = await db.execute(sql`
+    SELECT pa.id, CONCAT('Pay App #', pa.application_number) as invoice_number,
+      pa.project_id, p.name as project_name,
+      COALESCE(pa.current_payment_due, '0')::numeric as total_amount,
+      COALESCE((SELECT SUM(up.amount::numeric) FROM unified_payments up WHERE up.invoice_id = pa.id AND up.invoice_type = 'AIA_PAY_APP' AND up.status = 'ACTIVE'), 0) as paid_amount,
+      pa.period_to as due_date
+    FROM pay_applications pa
+    LEFT JOIN projects p ON pa.project_id = p.id
+    WHERE pa.status = 'APPROVED' AND pa.period_to < ${todayStr}
+    LIMIT 50
+  `);
+
+  const overdueTm = await db.execute(sql`
+    SELECT ti.id, ti.invoice_number,
+      ti.project_id, p.name as project_name,
+      COALESCE(ti.total, '0')::numeric as total_amount,
+      COALESCE((SELECT SUM(up.amount::numeric) FROM unified_payments up WHERE up.invoice_id = ti.id AND up.invoice_type = 'TM_INVOICE' AND up.status = 'ACTIVE'), 0) as paid_amount,
+      COALESCE(ti.due_date, ti.invoice_date) as due_date
+    FROM tm_invoices ti
+    LEFT JOIN projects p ON ti.project_id = p.id
+    WHERE ti.status = 'SENT' AND COALESCE(ti.due_date, ti.invoice_date) < ${todayStr}
+    LIMIT 50
+  `);
+
+  interface OverdueRow {
+    id: string;
+    invoice_number: string;
+    project_id: string;
+    project_name: string;
+    total_amount: string | number;
+    paid_amount: string | number;
+    due_date: string;
+  }
+
+  function mapOverdueRow(r: OverdueRow, type: string) {
+    const totalAmt = Number(r.total_amount || 0);
+    const paidAmt = Number(r.paid_amount || 0);
+    return {
+      type,
+      invoice_number: r.invoice_number,
+      project_name: r.project_name,
+      amount: totalAmt - paidAmt,
+      due_date: r.due_date,
+      days_overdue: Math.floor((today.getTime() - new Date(r.due_date).getTime()) / (1000 * 60 * 60 * 24)),
+    };
+  }
+
+  function hasOutstanding(r: OverdueRow) {
+    return Number(r.total_amount || 0) - Number(r.paid_amount || 0) > 0.01;
+  }
+
+  const overdueInvoices = [
+    ...(overdueAia.rows as unknown as OverdueRow[])
+      .filter(hasOutstanding)
+      .map((r) => mapOverdueRow(r, "AIA_PAY_APP")),
+    ...(overdueTm.rows as unknown as OverdueRow[])
+      .filter(hasOutstanding)
+      .map((r) => mapOverdueRow(r, "TM_INVOICE")),
+  ];
 
   // Active bids (using current schema: no status field, using dueDate instead of bidDeadline)
   const activeBids = await db

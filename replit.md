@@ -80,6 +80,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Production Hardening**: Zod validation on all financial route mutations, structured error logging (no silent catch blocks), safe financial math utilities (roundCurrency, safeDivide), pagination utility, and notification framework integration for scheduled reports.
 *   **Email Marketing Campaigns**: Full email campaign lifecycle with template management, contact lists, bulk sending via Resend, scheduling, and campaign analytics (open/click/bounce tracking).
 *   **Website Builder DNS Verification**: Real DNS lookup verification for custom domains (CNAME and A record validation) with actionable error messages.
+*   **Unified Payment & Invoice Tracking**: Cross-billing-type payment recording system (`unified_payments` table) covering AIA pay apps, T&M invoices, and general invoices. Includes AR summary with aging buckets (current, 30-day, 60-day, 90+ day), CFO dashboard AR widget, T&M payment recording UI, and AI snapshot builder integration for real `totalReceived` and `overdueInvoices` data.
 
 ## External Dependencies
 *   PostgreSQL (Neon)

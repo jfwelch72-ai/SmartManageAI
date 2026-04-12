@@ -180,7 +180,7 @@ import { db } from "./db";
 import {
   scheduleOfValues, sovLineItems, sovPayments, projects, organizations, users,
   payApplications, storedMaterials, retentionReleases, changeOrders, tmTickets,
-  purchaseOrders, purchaseOrderItems,
+  purchaseOrders, purchaseOrderItems, unifiedPayments,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte, inArray, type SQL } from "drizzle-orm";
 import { requireAuth, AuthRequest, requireRole, requireFeaturePermission, requireRoleOrFeature } from "./auth";
@@ -516,15 +516,31 @@ router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER
       .from(sovPayments).where(eq(sovPayments.sovId, app.sovId));
     const nextPaymentNum = (existingPayments[0]?.maxNum || 0) + 1;
 
+    const paymentDateStr = new Date().toISOString().split("T")[0];
+
     await db.insert(sovPayments).values({
       organizationId: app.organizationId,
       sovId: app.sovId,
       paymentNumber: nextPaymentNum,
       amount: amountStr,
-      paymentDate: new Date().toISOString().split("T")[0],
+      paymentDate: paymentDateStr,
       paymentMethod: paymentMethod || "CHECK",
       referenceNumber: paymentReference || null,
       notes: `Pay Application #${app.applicationNumber} payment`,
+      recordedById: req.user?.id,
+    });
+
+    await db.insert(unifiedPayments).values({
+      organizationId: app.organizationId,
+      invoiceType: "AIA_PAY_APP",
+      invoiceId: id,
+      projectId: app.projectId,
+      amount: amountStr,
+      paymentDate: paymentDateStr,
+      paymentMethod: paymentMethod || "CHECK",
+      referenceNumber: paymentReference || null,
+      notes: `Pay Application #${app.applicationNumber} payment`,
+      status: "ACTIVE",
       recordedById: req.user?.id,
     });
 

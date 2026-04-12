@@ -1,11 +1,12 @@
 import { logError } from "./utils/logger";
 import { Express } from "express";
 import { db } from "./db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireFeaturePermission, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyApprovers, notifySubmitter, getApproverUserIds, notifyUsers } from "./services/approvalNotificationService";
 import { eventBus } from "./events";
+import { z } from "zod";
 import { 
   tmTickets, 
   tmTicketLaborEntries,
@@ -13,6 +14,7 @@ import {
   tmTicketMaterialEntries,
   tmTicketScopeModifiers,
   tmInvoices,
+  unifiedPayments,
   projects,
   users,
   auditLog,
@@ -794,6 +796,8 @@ function registerTMInvoiceRoutes(app: Express) {
   app.post("/api/tm-invoices/:invoiceId/mark-paid", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res, next) => {
     try {
       const { invoiceId } = req.params;
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
       
       if (!hasBillingApprovalAccess(effectiveRole || "")) {
@@ -803,6 +807,31 @@ function registerTMInvoiceRoutes(app: Express) {
       const invoice = await db.query.tmInvoices.findFirst({ where: eq(tmInvoices.id, invoiceId) });
       if (!invoice) {
         return res.status(404).json({ error: "Invoice not found" });
+      }
+      if (shouldFilter && orgId && invoice.organizationId !== orgId) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const invoiceTotal = Number(invoice.total || 0);
+      const existingPaidResult = await db.execute(
+        sql`SELECT COALESCE(SUM(amount::numeric), 0) as total FROM unified_payments WHERE invoice_id = ${invoice.id} AND invoice_type = 'TM_INVOICE' AND status = 'ACTIVE'`
+      );
+      const alreadyPaid = Number(existingPaidResult.rows[0]?.total || 0);
+      const remaining = Math.max(0, invoiceTotal - alreadyPaid);
+
+      if (remaining > 0) {
+        await db.insert(unifiedPayments).values({
+          organizationId: invoice.organizationId,
+          invoiceType: "TM_INVOICE",
+          invoiceId: invoice.id,
+          projectId: invoice.projectId,
+          amount: remaining.toFixed(2),
+          paymentDate: new Date().toISOString().split("T")[0],
+          paymentMethod: "OTHER",
+          notes: `T&M Invoice ${invoice.invoiceNumber} marked as paid`,
+          status: "ACTIVE",
+          recordedById: req.user?.id,
+        });
       }
 
       const [updated] = await db.update(tmInvoices)
@@ -832,6 +861,117 @@ function registerTMInvoiceRoutes(app: Express) {
       });
 
       res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  const tmRecordPaymentSchema = z.object({
+    amount: z.coerce.number().positive("Payment amount must be positive"),
+    paymentDate: z.string().optional(),
+    paymentMethod: z.enum(["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]).optional().default("CHECK"),
+    referenceNumber: z.string().optional(),
+    notes: z.string().optional(),
+  });
+
+  app.post("/api/tm-invoices/:invoiceId/record-payment", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res, next) => {
+    try {
+      const { invoiceId } = req.params;
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+      const effectiveRole = req.user?.effectiveRole || req.user?.role;
+
+      if (!hasBillingApprovalAccess(effectiveRole || "")) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const parsed = tmRecordPaymentSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+
+      const invoice = await db.query.tmInvoices.findFirst({ where: eq(tmInvoices.id, invoiceId) });
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      if (shouldFilter && orgId && invoice.organizationId !== orgId) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      if (invoice.status === "PAID") {
+        return res.status(400).json({ error: "Invoice is already fully paid" });
+      }
+
+      if (invoice.status === "CANCELLED") {
+        return res.status(400).json({ error: "Cannot record payment on a cancelled invoice" });
+      }
+
+      const { amount, paymentDate, paymentMethod, referenceNumber, notes } = parsed.data;
+
+      const [payment] = await db.insert(unifiedPayments).values({
+        organizationId: invoice.organizationId,
+        invoiceType: "TM_INVOICE",
+        invoiceId: invoice.id,
+        projectId: invoice.projectId,
+        amount: amount.toFixed(2),
+        paymentDate: paymentDate || new Date().toISOString().split("T")[0],
+        paymentMethod: paymentMethod || "CHECK",
+        referenceNumber: referenceNumber || null,
+        notes: notes || `T&M Invoice ${invoice.invoiceNumber} payment`,
+        status: "ACTIVE",
+        recordedById: req.user?.id,
+      }).returning();
+
+      const invoiceTotal = Number(invoice.total || 0);
+
+      const totalPaidResult = await db.execute(
+        sql`SELECT COALESCE(SUM(amount::numeric), 0) as total FROM unified_payments WHERE invoice_id = ${invoice.id} AND invoice_type = 'TM_INVOICE' AND status = 'ACTIVE'`
+      );
+      const totalPaid = Number(totalPaidResult.rows[0]?.total || 0);
+
+      const fullyPaid = invoiceTotal > 0 && totalPaid >= invoiceTotal * 0.999;
+
+      if (fullyPaid) {
+        await db.update(tmInvoices)
+          .set({ status: "PAID", paidAt: new Date(), updatedAt: new Date() })
+          .where(eq(tmInvoices.id, invoiceId));
+
+        await db.update(tmTickets)
+          .set({ billingStatus: "BILLED", billedAt: new Date(), updatedAt: new Date() })
+          .where(eq(tmTickets.invoiceId, invoiceId));
+      }
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "unified_payment",
+        entityId: payment.id,
+        newValue: JSON.stringify({ invoiceType: "TM_INVOICE", invoiceId, amount, paymentMethod, fullyPaid }),
+      });
+
+      res.json({ payment, fullyPaid, totalPaid });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/tm-invoices/:invoiceId/payments", requireAuth, requireFeaturePermission('canViewFinancials'), async (req: AuthRequest, res, next) => {
+    try {
+      const { invoiceId } = req.params;
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+      const invoice = await db.query.tmInvoices.findFirst({ where: eq(tmInvoices.id, invoiceId) });
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      if (shouldFilter && orgId && invoice.organizationId !== orgId) return res.status(404).json({ error: "Not found" });
+
+      const payments = await db.select()
+        .from(unifiedPayments)
+        .where(and(
+          eq(unifiedPayments.invoiceId, invoiceId),
+          eq(unifiedPayments.invoiceType, "TM_INVOICE"),
+        ))
+        .orderBy(desc(unifiedPayments.paymentDate));
+
+      res.json(payments);
     } catch (error) {
       next(error);
     }

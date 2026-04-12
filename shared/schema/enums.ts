@@ -676,3 +676,7 @@ export const lidarScanStatusEnum = pgEnum("lidar_scan_status", ["UPLOADING", "PR
 export const lidarColorModeEnum = pgEnum("lidar_color_mode", ["RGB", "ELEVATION", "INTENSITY"]);
 export const lidarAnnotationTypeEnum = pgEnum("lidar_annotation_type", ["DISTANCE", "AREA", "VOLUME", "NOTE"]);
 export const lidarComparisonTypeEnum = pgEnum("lidar_comparison_type", ["SCAN_VS_SCAN", "SCAN_VS_BIM"]);
+
+export const unifiedPaymentMethodEnum = pgEnum("unified_payment_method", ["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]);
+export const unifiedPaymentStatusEnum = pgEnum("unified_payment_status", ["ACTIVE", "VOIDED"]);
+export const invoiceTypeEnum = pgEnum("invoice_type", ["AIA_PAY_APP", "TM_INVOICE", "GENERAL"]);

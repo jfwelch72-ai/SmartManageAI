@@ -87,6 +87,7 @@ import projectNotePagesRoutes from "./projectNotePagesRoutes";
 import taskRoutes from "./taskRoutes";
 import estimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmRoutes";
+import paymentRoutes from "./paymentRoutes";
 import platformRoutes, { trackApiRequest } from "./platformRoutes";
 import platformBillingRoutes from "./platformBillingRoutes";
 import calculatorRoutes from "./calculatorRoutes";
@@ -281,6 +282,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register T&M ticket routes
   registerTMTicketRoutes(app);
+
+  // Register unified payment routes
+  app.use("/api/payments", paymentRoutes);
 
   // Register platform routes (admin, org, user)
   app.use("/api", platformRoutes);

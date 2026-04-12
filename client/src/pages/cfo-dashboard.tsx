@@ -9,6 +9,7 @@ import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { FinancialKPICards } from "@/components/cfo/FinancialKPICards";
+import { AccountsReceivableSummary } from "@/components/cfo/AccountsReceivableSummary";
 import { ProjectProfitabilityTable } from "@/components/cfo/ProjectProfitabilityTable";
 import { EquipmentMetrics } from "@/components/cfo/EquipmentMetrics";
 import { CostForecastingSection } from "@/components/cfo/CostForecastingSection";
@@ -262,6 +263,8 @@ export default function CFODashboard() {
                 onProjectClick={handleProjectClick}
               />
             )}
+
+            <AccountsReceivableSummary formatCurrency={formatCurrency} />
 
             <PortfolioRiskSummary formatCurrency={formatCurrency} />
 

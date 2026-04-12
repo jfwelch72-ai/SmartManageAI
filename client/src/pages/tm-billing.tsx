@@ -27,6 +27,13 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   DollarSign,
   FileText,
   CheckCircle,
@@ -36,6 +43,7 @@ import {
   CreditCard,
   AlertCircle,
   Loader2,
+  Banknote,
 } from "lucide-react";
 
 interface TMTicketWithProject {
@@ -86,6 +94,15 @@ export default function TMBillingPage() {
     new Set(),
   );
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [paymentInvoiceId, setPaymentInvoiceId] = useState<string | null>(null);
+  const [paymentFormData, setPaymentFormData] = useState({
+    amount: "",
+    paymentDate: new Date().toISOString().split("T")[0],
+    paymentMethod: "CHECK",
+    referenceNumber: "",
+    notes: "",
+  });
   const [invoiceFormData, setInvoiceFormData] = useState({
     clientName: "",
     clientAddress: "",
@@ -195,6 +212,46 @@ export default function TMBillingPage() {
       });
     },
   });
+
+  const recordPaymentMutation = useMutation({
+    mutationFn: async (data: { invoiceId: string; amount: number; paymentDate: string; paymentMethod: string; referenceNumber?: string; notes?: string }) => {
+      return apiRequest("POST", `/api/tm-invoices/${data.invoiceId}/record-payment`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payments/ar-summary"] });
+      setShowPaymentDialog(false);
+      setPaymentInvoiceId(null);
+      setPaymentFormData({ amount: "", paymentDate: new Date().toISOString().split("T")[0], paymentMethod: "CHECK", referenceNumber: "", notes: "" });
+      toast({ title: "Payment recorded successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to record payment", variant: "destructive" });
+    },
+  });
+
+  const openPaymentDialog = (invoiceId: string) => {
+    setPaymentInvoiceId(invoiceId);
+    setShowPaymentDialog(true);
+  };
+
+  const handleRecordPayment = () => {
+    if (!paymentInvoiceId) return;
+    const amount = parseFloat(paymentFormData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: "Please enter a valid payment amount", variant: "destructive" });
+      return;
+    }
+    recordPaymentMutation.mutate({
+      invoiceId: paymentInvoiceId,
+      amount,
+      paymentDate: paymentFormData.paymentDate,
+      paymentMethod: paymentFormData.paymentMethod,
+      referenceNumber: paymentFormData.referenceNumber || undefined,
+      notes: paymentFormData.notes || undefined,
+    });
+  };
 
   const handleTicketSelect = (ticketId: string, checked: boolean) => {
     const newSelected = new Set(selectedTickets);
@@ -632,17 +689,28 @@ export default function TMBillingPage() {
                           )}
                           {(invoice.status === "DRAFT" ||
                             invoice.status === "SENT") && (
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                markPaidMutation.mutate(invoice.id)
-                              }
-                              disabled={markPaidMutation.isPending}
-                              data-testid={`button-paid-${invoice.id}`}
-                            >
-                              <CreditCard className="h-4 w-4 mr-1" />
-                              Mark Paid
-                            </Button>
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openPaymentDialog(invoice.id)}
+                                data-testid={`button-record-payment-${invoice.id}`}
+                              >
+                                <Banknote className="h-4 w-4 mr-1" />
+                                Record Payment
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  markPaidMutation.mutate(invoice.id)
+                                }
+                                disabled={markPaidMutation.isPending}
+                                data-testid={`button-paid-${invoice.id}`}
+                              >
+                                <CreditCard className="h-4 w-4 mr-1" />
+                                Mark Paid
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -778,6 +846,125 @@ export default function TMBillingPage() {
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : null}
               Create Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              Record a payment received for this invoice
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="paymentAmount">Payment Amount *</Label>
+              <Input
+                id="paymentAmount"
+                type="number"
+                step="0.01"
+                value={paymentFormData.amount}
+                onChange={(e) =>
+                  setPaymentFormData((prev) => ({
+                    ...prev,
+                    amount: e.target.value,
+                  }))
+                }
+                placeholder="0.00"
+                data-testid="input-payment-amount"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="paymentDate">Payment Date *</Label>
+              <Input
+                id="paymentDate"
+                type="date"
+                value={paymentFormData.paymentDate}
+                onChange={(e) =>
+                  setPaymentFormData((prev) => ({
+                    ...prev,
+                    paymentDate: e.target.value,
+                  }))
+                }
+                data-testid="input-payment-date"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="paymentMethod">Payment Method</Label>
+              <Select
+                value={paymentFormData.paymentMethod}
+                onValueChange={(value) =>
+                  setPaymentFormData((prev) => ({
+                    ...prev,
+                    paymentMethod: value,
+                  }))
+                }
+              >
+                <SelectTrigger data-testid="select-payment-method">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CHECK">Check</SelectItem>
+                  <SelectItem value="ACH">ACH</SelectItem>
+                  <SelectItem value="WIRE">Wire Transfer</SelectItem>
+                  <SelectItem value="CREDIT_CARD">Credit Card</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="referenceNumber">Reference Number</Label>
+              <Input
+                id="referenceNumber"
+                value={paymentFormData.referenceNumber}
+                onChange={(e) =>
+                  setPaymentFormData((prev) => ({
+                    ...prev,
+                    referenceNumber: e.target.value,
+                  }))
+                }
+                placeholder="Check # or transaction ID"
+                data-testid="input-reference-number"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="paymentNotes">Notes</Label>
+              <Textarea
+                id="paymentNotes"
+                value={paymentFormData.notes}
+                onChange={(e) =>
+                  setPaymentFormData((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
+                placeholder="Payment notes"
+                data-testid="input-payment-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowPaymentDialog(false)}
+              data-testid="button-cancel-payment"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRecordPayment}
+              disabled={!paymentFormData.amount || recordPaymentMutation.isPending}
+              data-testid="button-submit-payment"
+            >
+              {recordPaymentMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Banknote className="h-4 w-4 mr-2" />
+              )}
+              Record Payment
             </Button>
           </DialogFooter>
         </DialogContent>
