@@ -89,7 +89,13 @@ export function useTakeoffData({
       if (data?.sheets?.[0]?.id) {
         callbacks.setSelectedSheet(data.sheets[0].id);
       }
-      toast({ title: "Success", description: "Plan sheet imported to takeoff workspace" });
+      const sheetCount = data?.sheets?.length || 1;
+      toast({
+        title: "Success",
+        description: sheetCount > 1
+          ? `Imported ${sheetCount} sheets from multi-page PDF`
+          : "Plan sheet imported to takeoff workspace",
+      });
     },
     onError: (error: any) => {
       toast({

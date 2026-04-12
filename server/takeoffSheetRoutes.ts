@@ -77,14 +77,14 @@ router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("AD
       sheetValues.push({
         bidId: bid.id,
         imageUrl: document.fileUrl,
-        sheetIndex: existingSheets.length + i,
+        sheetIndex: i,
         sheetName: pageCount > 1 ? `${baseSheetName} - Page ${i + 1}` : baseSheetName,
       });
     }
 
     const sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
 
-    res.status(201).json({ sheets });
+    res.status(201).json({ sheets, pageCount });
   } catch (error) {
   next(error);
   }
@@ -95,20 +95,61 @@ router.post("/api/bids/:bidId/takeoff/plans", requireAuth, requireRole("ADMIN", 
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
 
-    const { fileUrl, fileName } = req.body;
+    const { fileUrl, fileName, objectKey } = req.body;
     if (!fileUrl || !fileName) return res.status(400).json({ error: "File URL and name are required" });
 
     const existingSheets = await db.select().from(takeoffSheets)
       .where(eq(takeoffSheets.bidId, bid.id));
 
-    const [sheet] = await db.insert(takeoffSheets).values({
-      bidId: bid.id,
-      imageUrl: fileUrl,
-      sheetIndex: existingSheets.length,
-      sheetName: fileName,
-    }).returning();
+    let pageCount = 1;
+    const isPdf = fileName?.toLowerCase().endsWith(".pdf");
+    if (isPdf) {
+      try {
+        const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        let gcsFile = null;
+        if (objectKey) {
+          try { gcsFile = await objectStorageService.getObjectEntityFile(objectKey); } catch {}
+        }
+        if (!gcsFile && fileUrl) {
+          if (fileUrl.startsWith("https://storage.googleapis.com/")) {
+            const url = new URL(fileUrl);
+            const parts = url.pathname.split("/").filter(Boolean);
+            if (parts.length >= 2) {
+              gcsFile = objectStorageClient.bucket(parts[0]).file(parts.slice(1).join("/"));
+              const [exists] = await gcsFile.exists();
+              if (!exists) gcsFile = null;
+            }
+          } else {
+            try { gcsFile = await objectStorageService.getObjectEntityFile(fileUrl); } catch {}
+          }
+        }
+        if (gcsFile) {
+          const [pdfBuffer] = await gcsFile.download();
+          const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
+          const pdfDoc = await loadingTask.promise;
+          pageCount = pdfDoc.numPages;
+        }
+      } catch (error) {
+        logError("Error reading PDF page count for direct upload:", {}, error instanceof Error ? error : new Error(String(error)));
+      }
+    }
 
-    res.status(201).json({ sheets: [sheet] });
+    const baseSheetName = fileName.replace(/\.[^/.]+$/, '');
+    const sheetValues = [];
+    for (let i = 0; i < pageCount; i++) {
+      sheetValues.push({
+        bidId: bid.id,
+        imageUrl: fileUrl,
+        sheetIndex: i,
+        sheetName: pageCount > 1 ? `${baseSheetName} - Page ${i + 1}` : baseSheetName,
+      });
+    }
+
+    const sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
+
+    res.status(201).json({ sheets, pageCount });
   } catch (error) {
   next(error);
   }
@@ -767,11 +808,10 @@ router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (
   }
 });
 
-// Upload a plan PDF and create sheets
 router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
-    const { fileUrl, fileName } = req.body;
+    const { fileUrl, fileName, objectKey } = req.body;
 
     if (!fileUrl || !fileName) {
       res.status(400).json({ error: "File URL and name are required" });
@@ -793,45 +833,78 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
       return;
     }
 
-    const { projectPlans, takeoffSheets, insertProjectPlanSchema, insertTakeoffSheetSchema } = await import("@shared/schema");
+    const { projectPlans, takeoffSheets } = await import("@shared/schema");
 
-    // Upload plan (sequential operations with compensating cleanup)
-    // Create project plan record
+    let pageCount = 1;
+    const isPdf = fileName?.toLowerCase().endsWith(".pdf");
+    if (isPdf) {
+      try {
+        const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        let gcsFile = null;
+        if (objectKey) {
+          try { gcsFile = await objectStorageService.getObjectEntityFile(objectKey); } catch {}
+        }
+        if (!gcsFile && fileUrl) {
+          if (fileUrl.startsWith("https://storage.googleapis.com/")) {
+            const url = new URL(fileUrl);
+            const parts = url.pathname.split("/").filter(Boolean);
+            if (parts.length >= 2) {
+              gcsFile = objectStorageClient.bucket(parts[0]).file(parts.slice(1).join("/"));
+              const [exists] = await gcsFile.exists();
+              if (!exists) gcsFile = null;
+            }
+          } else {
+            try { gcsFile = await objectStorageService.getObjectEntityFile(fileUrl); } catch {}
+          }
+        }
+        if (gcsFile) {
+          const [pdfBuffer] = await gcsFile.download();
+          const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
+          const pdfDoc = await loadingTask.promise;
+          pageCount = pdfDoc.numPages;
+        }
+      } catch (error) {
+        logError("Error reading PDF page count for direct upload:", {}, error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+
     const [plan] = await db.insert(projectPlans).values({
       projectId,
       originalPdfUrl: fileUrl,
       fileName,
     }).returning();
 
-    let sheet;
-    try {
-      [sheet] = await db.insert(takeoffSheets).values({
+    const baseSheetName = fileName.replace(/\.[^/.]+$/, '');
+    const sheetValues = [];
+    for (let i = 0; i < pageCount; i++) {
+      sheetValues.push({
         projectId,
         planId: plan.id,
-        imageUrl: fileUrl, // Using PDF URL as placeholder
-        sheetIndex: 0,
-        sheetName: fileName,
-      }).returning();
-    } catch (sheetError) {
-      // Compensating cleanup: delete the orphaned plan
-      await db.delete(projectPlans).where(eq(projectPlans.id, plan.id));
-      throw sheetError; // Re-throw to trigger outer catch
+        imageUrl: fileUrl,
+        sheetIndex: i,
+        sheetName: pageCount > 1 ? `${baseSheetName} - Page ${i + 1}` : baseSheetName,
+      });
     }
 
-    // Audit log
+    let sheets;
+    try {
+      sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
+    } catch (sheetError) {
+      await db.delete(projectPlans).where(eq(projectPlans.id, plan.id));
+      throw sheetError;
+    }
+
     await logAudit({
       userId: req.user!.id,
       action: "CREATE",
       entityType: "project_plan",
       entityId: plan.id,
-      newValue: `Uploaded plan: ${fileName}`,
+      newValue: `Uploaded plan: ${fileName} (${pageCount} page${pageCount > 1 ? "s" : ""})`,
     }, req);
 
-    res.status(201).json({
-      plan,
-      sheets: [sheet],
-      notice: "Multi-page PDF sheet splitting is coming soon. Currently, each uploaded PDF is treated as a single sheet. For multi-page plans, please upload each page as a separate file.",
-    });
+    res.status(201).json({ plan, sheets, pageCount });
   } catch (error) {
   next(error);
   }

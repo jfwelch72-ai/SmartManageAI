@@ -481,10 +481,16 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
                   <p className="text-sm mt-2">Upload plan documents to the project first via the Documents section</p>
                 </div>
               ) : (
+                <>
+                <div className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2 flex items-center gap-2">
+                  <Layers className="w-3.5 h-3.5 flex-shrink-0" />
+                  Multi-page PDFs are automatically split into individual sheets
+                </div>
                 <ScrollArea className="max-h-[300px]">
                   <div className="space-y-2">
                     {planDocuments.map((doc) => {
                       const isAlreadyImported = sheets.some((sheet: any) => sheet.documentId === doc.id && (sheet.isActive !== false));
+                      const isPdf = doc.fileName?.toLowerCase().endsWith(".pdf");
                       return (
                         <div key={doc.id} className={cn("flex items-center gap-3 p-3 rounded-lg border overflow-hidden", isAlreadyImported ? "bg-muted/50 cursor-not-allowed opacity-60" : "hover-elevate cursor-pointer")} onClick={() => { if (!isAlreadyImported && !importPlanMutation.isPending) handleDocClick(doc.id); }} data-testid={`button-import-doc-${doc.id}`}>
                           <FileText className="w-8 h-8 text-primary flex-shrink-0" />
@@ -492,12 +498,14 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
                             <p className="font-medium truncate">{doc.title || doc.fileName}</p>
                             <p className="text-sm text-muted-foreground truncate">{doc.fileName}</p>
                           </div>
+                          {isPdf && !isAlreadyImported && <Badge variant="outline" className="flex-shrink-0 text-[10px]">PDF</Badge>}
                           {isAlreadyImported ? <Badge variant="secondary" className="flex-shrink-0">Imported</Badge> : importPlanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : null}
                         </div>
                       );
                     })}
                   </div>
                 </ScrollArea>
+                </>
               )}
             </div>
           )}
