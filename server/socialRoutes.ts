@@ -444,6 +444,16 @@ router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Res
         { id: post.id, content: post.content, platform: post.platform, mediaUrls: post.mediaUrls, hashtags: post.hashtags, title: post.title },
         { id: account.id, platform: account.platform, accountId: account.accountId, accessTokenEncrypted: account.accessTokenEncrypted, refreshTokenEncrypted: account.refreshTokenEncrypted }
       );
+
+      if (!result.success) {
+        const failReason = result.error || "Publishing failed with no details";
+        const [failed] = await db.update(socialMediaPosts)
+          .set({ status: "FAILED", lastError: failReason, retryCount: (post.retryCount || 0) + 1, updatedAt: new Date() })
+          .where(eq(socialMediaPosts.id, id))
+          .returning();
+        return res.status(502).json({ error: `Publishing failed: ${failReason}`, post: failed });
+      }
+
       externalPostId = result.externalPostId;
       externalPostUrl = result.externalPostUrl;
       if (!result.platformSupported) {

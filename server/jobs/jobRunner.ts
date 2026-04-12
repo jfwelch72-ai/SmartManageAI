@@ -485,7 +485,21 @@ async function processScheduledSocialPosts() {
           externalPostId = result.externalPostId;
           externalPostUrl = result.externalPostUrl;
         } else if (account && !account.accessTokenEncrypted) {
-          logInfo("Social account has no token, marking as published locally", { postId: post.id });
+          const retries = (post.retryCount || 0) + 1;
+          const isFinalFailure = retries >= 3;
+          await db.update(socialMediaPosts)
+            .set({
+              status: isFinalFailure ? "FAILED" as any : "SCHEDULED" as any,
+              retryCount: retries,
+              lastError: "Social account has no access token. Please reconnect the account.",
+              updatedAt: now,
+            })
+            .where(eq(socialMediaPosts.id, post.id));
+          if (isFinalFailure) {
+            await notifyPostOwnerOfFailure(post, "Social account has no access token");
+          }
+          logError("Social account has no token", { postId: post.id });
+          continue;
         }
       } else {
         const retries = (post.retryCount || 0) + 1;
