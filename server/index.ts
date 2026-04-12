@@ -51,6 +51,13 @@ app.use(compression());
 
 const isProduction = process.env.NODE_ENV === "production";
 
+const livekitDomain = process.env.LIVEKIT_URL
+  ? new URL(process.env.LIVEKIT_URL.startsWith("wss://") ? process.env.LIVEKIT_URL.replace("wss://", "https://") : process.env.LIVEKIT_URL).hostname
+  : null;
+const livekitConnectSrc = livekitDomain
+  ? [`wss://${livekitDomain}`, `https://${livekitDomain}`]
+  : [];
+
 app.use(helmet({
   contentSecurityPolicy: isProduction
     ? {
@@ -58,14 +65,30 @@ app.use(helmet({
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-          imgSrc: ["'self'", "data:", "blob:", "https://*.googleapis.com", "https://*.gstatic.com", "https://storage.googleapis.com"],
+          imgSrc: ["'self'", "data:", "blob:", "https://storage.googleapis.com", "https://*.googleapis.com", "https://*.gstatic.com", "https://*.googleusercontent.com"],
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
-          connectSrc: ["'self'", "https://*.replit.dev", "wss://*.replit.dev", "https://api.openai.com"],
-          frameSrc: ["'none'"],
+          connectSrc: [
+            "'self'",
+            "https://*.replit.dev", "wss://*.replit.dev",
+            "https://api.openai.com",
+            "https://storage.googleapis.com",
+            ...livekitConnectSrc,
+          ],
+          workerSrc: ["'self'", "blob:"],
+          childSrc: ["'self'", "blob:"],
+          mediaSrc: ["'self'", "blob:", "https://storage.googleapis.com"],
+          manifestSrc: ["'self'"],
+          frameSrc: livekitDomain ? [`https://${livekitDomain}`] : ["'none'"],
           frameAncestors: ["'none'"],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
-          formAction: ["'self'"],
+          formAction: [
+            "'self'",
+            "https://accounts.google.com",
+            "https://www.facebook.com",
+            "https://www.linkedin.com",
+            "https://twitter.com",
+          ],
           upgradeInsecureRequests: [],
         },
       }
@@ -77,6 +100,10 @@ app.use(helmet({
           imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
           fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
           connectSrc: ["'self'", "ws:", "wss:", "https:", "http:"],
+          workerSrc: ["'self'", "blob:"],
+          childSrc: ["'self'", "blob:"],
+          mediaSrc: ["'self'", "blob:", "https:", "http:"],
+          manifestSrc: ["'self'"],
           frameSrc: ["'self'"],
           frameAncestors: ["'self'"],
           objectSrc: ["'none'"],
@@ -84,7 +111,7 @@ app.use(helmet({
         },
       },
   crossOriginEmbedderPolicy: false,
-  frameguard: false,
+  frameguard: isProduction ? { action: "deny" } : false,
 }));
 
 const allowedOrigins: string[] = [];
