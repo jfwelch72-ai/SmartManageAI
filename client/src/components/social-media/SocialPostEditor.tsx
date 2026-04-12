@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Plus, Loader2, Edit, Clock, Eye,
-  Check, ChevronDown, Send
+  Check, ChevronDown, Send, AlertTriangle
 } from "lucide-react";
 import { type SocialPost, type SocialAccount, PLATFORMS, CHAR_LIMITS, getPlatformInfo } from "./types";
 import { PlatformPreview } from "./SocialPlatformPreview";
@@ -26,6 +26,20 @@ export function SocialPostEditor({ open, onClose, editingPost, prefilledDate }: 
   prefilledDate?: Date | null;
 }) {
   const { toast } = useToast();
+
+  interface PlatformStatus {
+    FACEBOOK: boolean;
+    INSTAGRAM: boolean;
+    LINKEDIN: boolean;
+    TWITTER: boolean;
+    TIKTOK: boolean;
+    YOUTUBE: boolean;
+    PINTEREST: boolean;
+  }
+
+  const { data: platformStatus } = useQuery<PlatformStatus>({
+    queryKey: ["/api/social/auth/platform-status"],
+  });
 
   const getDefaultForm = () => ({
     title: "",
@@ -115,6 +129,11 @@ export function SocialPostEditor({ open, onClose, editingPost, prefilledDate }: 
     setPlatformDropdownOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
+
+  const unconfiguredPlatforms = useMemo(() => {
+    if (!platformStatus) return [];
+    return form.platforms.filter(p => !(platformStatus[p as keyof PlatformStatus] ?? false));
+  }, [form.platforms, platformStatus]);
 
   const charLimit = form.platforms.length > 0 ? Math.min(...form.platforms.map(p => CHAR_LIMITS[p] || 5000)) : 5000;
   const charCount = form.content.length;
@@ -248,6 +267,7 @@ export function SocialPostEditor({ open, onClose, editingPost, prefilledDate }: 
                     {PLATFORMS.map(p => {
                       const PIcon = p.icon;
                       const isSelected = form.platforms.includes(p.value);
+                      const isConfigured = platformStatus ? (platformStatus[p.value as keyof PlatformStatus] ?? false) : true;
                       return (
                         <button
                           key={p.value}
@@ -267,13 +287,25 @@ export function SocialPostEditor({ open, onClose, editingPost, prefilledDate }: 
                             {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
                           </div>
                           <PIcon className="h-3.5 w-3.5" style={{ color: p.color }} />
-                          <span>{p.label}</span>
+                          <span className={!isConfigured ? "text-muted-foreground" : ""}>{p.label}</span>
+                          {!isConfigured && <span className="ml-auto text-xs text-amber-500">Not configured</span>}
                         </button>
                       );
                     })}
                   </div>
                 )}
               </div>
+              {unconfiguredPlatforms.length > 0 && (
+                <div className="flex items-start gap-2 mt-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800" data-testid="platform-config-warning">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {unconfiguredPlatforms.length === 1
+                      ? `${getPlatformInfo(unconfiguredPlatforms[0]).label} API credentials are not configured. Posts to this platform will fail to publish.`
+                      : `${unconfiguredPlatforms.map(p => getPlatformInfo(p).label).join(", ")} API credentials are not configured. Posts to these platforms will fail to publish.`
+                    }
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <Label>Tone</Label>

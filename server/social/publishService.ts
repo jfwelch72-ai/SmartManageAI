@@ -514,18 +514,30 @@ export async function publishToPlatform(post: PostData, account: AccountData): P
 
   switch (platform) {
     case "FACEBOOK":
+      if (!process.env.FB_APP_ID || !process.env.FB_APP_SECRET) {
+        return { success: false, platformSupported: true, error: "Facebook API credentials not configured. Set FB_APP_ID and FB_APP_SECRET environment variables." };
+      }
       if (!accountId) throw new Error("Facebook Page ID is required. Please update your account settings.");
       return publishToFacebook(post, token, accountId);
 
     case "INSTAGRAM":
+      if (!process.env.FB_APP_ID || !process.env.FB_APP_SECRET) {
+        return { success: false, platformSupported: true, error: "Instagram (Facebook) API credentials not configured. Set FB_APP_ID and FB_APP_SECRET environment variables." };
+      }
       if (!accountId) throw new Error("Instagram Business Account ID is required. Please update your account settings.");
       return publishToInstagram(post, token, accountId);
 
     case "LINKEDIN":
+      if (!process.env.LINKEDIN_CLIENT_ID || !process.env.LINKEDIN_CLIENT_SECRET) {
+        return { success: false, platformSupported: true, error: "LinkedIn API credentials not configured. Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET environment variables." };
+      }
       if (!accountId) throw new Error("LinkedIn Organization URN or ID is required. Please update your account settings.");
       return publishToLinkedIn(post, token, accountId);
 
     case "TWITTER":
+      if (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET) {
+        return { success: false, platformSupported: true, error: "Twitter/X API credentials not configured. Set TWITTER_CLIENT_ID and TWITTER_CLIENT_SECRET environment variables." };
+      }
       return publishToTwitter(post, token);
 
     case "TIKTOK":

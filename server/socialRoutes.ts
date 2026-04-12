@@ -12,6 +12,7 @@ import { publishToPlatform, validateToken, refreshToken, fetchEngagement } from 
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
+import { isSocialPlatformConfigured } from "./services/integrationStatusService";
 
 const router = Router();
 
@@ -109,6 +110,23 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response, next:
     }
     const approvalStatus = postStatus === "PENDING_APPROVAL" ? "pending" : undefined;
 
+    const warnings: string[] = [];
+
+    if (platform && !isSocialPlatformConfigured(platform)) {
+      if (postStatus === "SCHEDULED" || postStatus === "POSTED") {
+        warnings.push(`${platform} API credentials are not configured. This post will fail to publish. Please configure the platform keys or switch to DRAFT.`);
+      } else {
+        warnings.push(`${platform} API credentials are not configured. Publishing will not work until credentials are added.`);
+      }
+    }
+
+    if (platforms && Array.isArray(platforms)) {
+      const unconfigured = platforms.filter((p: string) => !isSocialPlatformConfigured(p));
+      if (unconfigured.length > 0) {
+        warnings.push(`The following platforms are not configured: ${unconfigured.join(", ")}. Posts to these platforms will fail.`);
+      }
+    }
+
     let warning: string | undefined;
     if (platform && content) {
       const duplicates = await db.query.socialMediaPosts.findMany({
@@ -150,7 +168,8 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response, next:
       createdById: req.user!.id,
     }).returning();
 
-    res.json(warning ? { ...post, warning } : post);
+    const allWarnings = warning ? [warning, ...warnings] : warnings;
+    res.json(allWarnings.length > 0 ? { ...post, warning: allWarnings[0], warnings: allWarnings } : post);
   } catch (error) {
     next(error);
   }

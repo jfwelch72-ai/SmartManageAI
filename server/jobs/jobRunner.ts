@@ -465,6 +465,23 @@ async function processScheduledSocialPosts() {
             { id: post.id, content: post.content, platform: post.platform, mediaUrls: post.mediaUrls, hashtags: post.hashtags, title: post.title },
             { id: account.id, platform: account.platform, accountId: account.accountId, accessTokenEncrypted: account.accessTokenEncrypted, refreshTokenEncrypted: account.refreshTokenEncrypted }
           );
+          if (!result.success) {
+            const errorMsg = result.error || "Platform publishing returned failure";
+            const isPlatformNotConfigured = errorMsg.includes("not configured");
+            await db.update(socialMediaPosts)
+              .set({
+                status: isPlatformNotConfigured ? "FAILED" as any : ((post.retryCount || 0) + 1 >= 3 ? "FAILED" as any : "SCHEDULED" as any),
+                retryCount: isPlatformNotConfigured ? 3 : (post.retryCount || 0) + 1,
+                lastError: errorMsg,
+                updatedAt: now,
+              })
+              .where(eq(socialMediaPosts.id, post.id));
+            if (isPlatformNotConfigured || (post.retryCount || 0) + 1 >= 3) {
+              await notifyPostOwnerOfFailure(post, errorMsg);
+            }
+            logError("Social post publish failed", { postId: post.id, platform: post.platform, error: errorMsg });
+            continue;
+          }
           externalPostId = result.externalPostId;
           externalPostUrl = result.externalPostUrl;
         } else if (account && !account.accessTokenEncrypted) {
