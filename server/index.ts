@@ -111,6 +111,8 @@ app.use(helmet({
         },
       },
   crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: isProduction ? { policy: "same-origin" } : false,
+  crossOriginResourcePolicy: isProduction ? { policy: "same-origin" } : { policy: "cross-origin" },
   frameguard: isProduction ? { action: "deny" } : false,
 }));
 
