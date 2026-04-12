@@ -62,7 +62,7 @@ function hasTMApprovalAccess(role: string): boolean {
 }
 
 function registerTMApprovalRoutes(app: Express) {
-  app.post("/api/tm-tickets/:ticketId/submit", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
+  app.post("/api/tm-tickets/:ticketId/submit", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const userId = req.user!.id;
@@ -115,12 +115,11 @@ function registerTMApprovalRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      logError("Error submitting T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to submit T&M ticket" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-tickets/:ticketId/approve", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-tickets/:ticketId/approve", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const userId = req.user!.id;
@@ -199,12 +198,11 @@ function registerTMApprovalRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      logError("Error approving T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to approve T&M ticket" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-tickets/:ticketId/reject", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-tickets/:ticketId/reject", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const { reason } = req.body;
@@ -261,12 +259,11 @@ function registerTMApprovalRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      logError("Error rejecting T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to reject T&M ticket" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-tickets/:ticketId/signed-document", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-tickets/:ticketId/signed-document", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const { url, fileName, objectKey } = req.body;
@@ -309,8 +306,7 @@ function registerTMApprovalRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      logError("Error uploading signed document:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to upload signed document" });
+      next(error);
     }
   });
 }
@@ -325,7 +321,7 @@ function hasBillingApprovalAccess(role: string): boolean {
 }
 
 function registerTMInvoiceRoutes(app: Express) {
-  app.get("/api/tm-billing/pending", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/tm-billing/pending", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -377,12 +373,11 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(enrichedTickets);
     } catch (error) {
-      logError("Error fetching pending billing tickets:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch pending billing tickets" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-tickets/:ticketId/approve-for-billing", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-tickets/:ticketId/approve-for-billing", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const { billingNotes } = req.body;
@@ -511,12 +506,11 @@ function registerTMInvoiceRoutes(app: Express) {
       const finalTicket = await db.query.tmTickets.findFirst({ where: eq(tmTickets.id, ticketId) });
       res.json(finalTicket || updated);
     } catch (error) {
-      logError("Error approving ticket for billing:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to approve ticket for billing" });
+      next(error);
     }
   });
 
-  app.get("/api/tm-billing/approved", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/tm-billing/approved", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -556,12 +550,11 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(enrichedTickets);
     } catch (error) {
-      logError("Error fetching approved billing tickets:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch approved billing tickets" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-invoices", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res) => {
+  app.post("/api/tm-invoices", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res, next) => {
     try {
       const { ticketIds, projectId, clientName, clientAddress, clientEmail, dueDate, notes, taxRate } = req.body;
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -642,12 +635,11 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json({ ...invoice, tickets });
     } catch (error) {
-      logError("Error creating invoice:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to create invoice" });
+      next(error);
     }
   });
 
-  app.get("/api/tm-invoices", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/tm-invoices", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -681,12 +673,11 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(enrichedInvoices);
     } catch (error) {
-      logError("Error fetching invoices:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch invoices" });
+      next(error);
     }
   });
 
-  app.get("/api/tm-invoices/:invoiceId", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/tm-invoices/:invoiceId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { invoiceId } = req.params;
       
@@ -708,12 +699,11 @@ function registerTMInvoiceRoutes(app: Express) {
         createdBy: createdBy ? { id: createdBy.id, firstName: createdBy.firstName, lastName: createdBy.lastName } : null,
       });
     } catch (error) {
-      logError("Error fetching invoice:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch invoice" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-tickets/:ticketId/client-signoff", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-tickets/:ticketId/client-signoff", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const { clientName, signature } = req.body;
@@ -768,12 +758,11 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      logError("Error saving client sign-off:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to save client sign-off" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-invoices/:invoiceId/send", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res) => {
+  app.post("/api/tm-invoices/:invoiceId/send", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res, next) => {
     try {
       const { invoiceId } = req.params;
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -798,12 +787,11 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      logError("Error sending invoice:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to send invoice" });
+      next(error);
     }
   });
 
-  app.post("/api/tm-invoices/:invoiceId/mark-paid", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res) => {
+  app.post("/api/tm-invoices/:invoiceId/mark-paid", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res, next) => {
     try {
       const { invoiceId } = req.params;
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -845,12 +833,11 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      logError("Error marking invoice as paid:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to mark invoice as paid" });
+      next(error);
     }
   });
 
-  app.get("/api/tm-billing/summary", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/tm-billing/summary", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
@@ -908,8 +895,7 @@ function registerTMInvoiceRoutes(app: Express) {
         totalPaid: invoices.filter(i => i.status === "PAID").reduce((sum, i) => sum + Number(i.total || 0), 0),
       });
     } catch (error) {
-      logError("Error fetching billing summary:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch billing summary" });
+      next(error);
     }
   });
 }
@@ -931,7 +917,7 @@ export function registerTMTicketRoutes(app: Express) {
   registerTMApprovalRoutes(app);
   registerTMInvoiceRoutes(app);
 
-  app.get("/api/projects/:projectId/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
+  app.get("/api/projects/:projectId/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -974,12 +960,11 @@ export function registerTMTicketRoutes(app: Express) {
       
       res.json(enrichedTickets);
     } catch (error) {
-      logError("Error fetching T&M tickets:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch T&M tickets" });
+      next(error);
     }
   });
 
-  app.get("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       
@@ -1011,12 +996,11 @@ export function registerTMTicketRoutes(app: Express) {
         project: project ? { id: project.id, name: project.name, code: project.code, clientName: project.clientName, locationAddress: project.locationAddress } : null,
       });
     } catch (error) {
-      logError("Error fetching T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch T&M ticket" });
+      next(error);
     }
   });
 
-  app.post("/api/projects/:projectId/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
+  app.post("/api/projects/:projectId/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res, next) => {
     try {
       const { projectId } = req.params;
       const userId = req.user!.id;
@@ -1168,11 +1152,11 @@ export function registerTMTicketRoutes(app: Express) {
       if (error.message?.includes("missing")) {
         return res.status(400).json({ error: error.message });
       }
-      res.status(500).json({ error: "Failed to create T&M ticket" });
+      next(error);
     }
   });
 
-  app.put("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res) => {
+  app.put("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const userId = req.user!.id;
@@ -1269,12 +1253,11 @@ export function registerTMTicketRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      logError("Error updating T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to update T&M ticket" });
+      next(error);
     }
   });
 
-  app.delete("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res) => {
+  app.delete("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       const userId = req.user!.id;
@@ -1311,12 +1294,11 @@ export function registerTMTicketRoutes(app: Express) {
       
       res.json({ success: true });
     } catch (error) {
-      logError("Error deleting T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to delete T&M ticket" });
+      next(error);
     }
   });
 
-  app.get("/api/tm-tickets/:ticketId/pdf", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/tm-tickets/:ticketId/pdf", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
       
@@ -1573,12 +1555,11 @@ export function registerTMTicketRoutes(app: Express) {
       res.setHeader('Content-Disposition', `inline; filename="tm-ticket-${ticket.ticketNumber}.html"`);
       res.send(html);
     } catch (error) {
-      logError("Error generating T&M ticket PDF:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to generate T&M ticket PDF" });
+      next(error);
     }
   });
 
-  app.get("/api/projects/:projectId/tm-summary", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
+  app.get("/api/projects/:projectId/tm-summary", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res, next) => {
     try {
       const { projectId } = req.params;
       
@@ -1603,8 +1584,7 @@ export function registerTMTicketRoutes(app: Express) {
         totalLaborHours: approvedTickets.reduce((sum, t) => sum + Number(t.totalLaborHours || 0), 0),
       });
     } catch (error) {
-      logError("Error fetching T&M summary:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch T&M summary" });
+      next(error);
     }
   });
 }

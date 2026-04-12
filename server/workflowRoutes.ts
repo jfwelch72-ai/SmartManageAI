@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { workflowTemplates, workflowStages, workflowApprovalSteps, workflowNotificationRules, workflowInstances } from "@shared/schema";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
@@ -47,7 +47,7 @@ const createTemplateSchema = z.object({
   })).min(1),
 });
 
-router.get("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -116,12 +116,11 @@ router.get("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), asy
 
     res.json(templatesWithStages);
   } catch (error) {
-    logError("Get workflow templates error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(404).json({ error: "Not found" });
@@ -172,12 +171,11 @@ router.get("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), 
 
     res.json({ ...template, stages: stagesWithDetails });
   } catch (error) {
-    logError("Get workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.post("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -262,12 +260,11 @@ router.post("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: A
 
     res.status(201).json({ ...template, stages: createdStages });
   } catch (error) {
-    logError("Create workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.put("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -362,12 +359,11 @@ router.put("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req:
 
     res.json({ ...fullTemplate[0], stages: allStages });
   } catch (error) {
-    logError("Update workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/:id/status", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.patch("/:id/status", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -404,12 +400,11 @@ router.patch("/:id/status", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), as
 
     res.json(updated);
   } catch (error) {
-    logError("Update workflow status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -426,12 +421,11 @@ router.delete("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (r
     await db.delete(workflowTemplates).where(eq(workflowTemplates.id, req.params.id));
     res.json({ message: "Template deleted" });
   } catch (error) {
-    logError("Delete workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/:id/clone", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/clone", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -520,12 +514,11 @@ router.post("/:id/clone", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), asyn
 
     res.status(201).json({ ...clone, stages: allStages });
   } catch (error) {
-    logError("Clone workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const schema = z.object({
       entityType: z.enum(["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET"]),
@@ -548,12 +541,11 @@ router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Respo
 
     res.status(201).json(instance);
   } catch (error) {
-    logError("Start workflow instance error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -578,12 +570,11 @@ router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPE
 
     res.json(result);
   } catch (error) {
-    logError("Transition workflow error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/instances/entity/:entityType/:entityId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/instances/entity/:entityType/:entityId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -597,8 +588,7 @@ router.get("/instances/entity/:entityType/:entityId", requireAuth, async (req: A
     if (!data) return res.json(null);
     res.json(data);
   } catch (error) {
-    logError("Get workflow instance error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

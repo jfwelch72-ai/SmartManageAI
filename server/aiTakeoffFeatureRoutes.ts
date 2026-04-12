@@ -82,8 +82,7 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       estimatedTime: analysisMode === "QUICK" ? 30 : 120,
     });
   } catch (error) {
-    logError("AI Takeoff analyze error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to start analysis" });
+    next(error);
   }
 });
 
@@ -837,8 +836,7 @@ router.get("/ai-features/takeoff/results/:analysisId", requireAuth, async (req: 
       processingTimeMs: analysis.processingTimeMs,
     });
   } catch (error) {
-    logError("Get takeoff results error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get results" });
+    next(error);
   }
 });
 
@@ -870,8 +868,7 @@ router.get("/ai-features/takeoff/history/:contextId", requireAuth, async (req: A
 
     res.json({ analyses });
   } catch (error) {
-    logError("Get takeoff history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get history" });
+    next(error);
   }
 });
 

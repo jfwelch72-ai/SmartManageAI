@@ -39,8 +39,7 @@ router.get("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest,
 
     res.json(threadsWithPreview);
   } catch (error) {
-    logError("Portal chat threads list error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -83,8 +82,7 @@ router.post("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest
 
     res.status(201).json({ ...thread, message: msg });
   } catch (error) {
-    logError("Portal chat create thread error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -131,8 +129,7 @@ router.get("/portal/chat/threads/:threadId/messages", requirePortalAuth, async (
 
     res.json(messages);
   } catch (error) {
-    logError("Portal chat get messages error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -189,8 +186,7 @@ router.post("/portal/chat/threads/:threadId/messages", requirePortalAuth, async 
 
     res.status(201).json(msg);
   } catch (error) {
-    logError("Portal chat send message error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -228,8 +224,7 @@ router.post("/portal/chat/threads/:threadId/read", requirePortalAuth, async (req
 
     res.json({ success: true });
   } catch (error) {
-    logError("Portal chat mark read error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

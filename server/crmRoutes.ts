@@ -211,7 +211,7 @@ const router = Router();
 // Routes from crmVendorRoutes.ts
 // ========================================
 
-router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -263,12 +263,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       
       res.json(results);
     } catch (error) {
-      logError("Get CRM organisations error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {
@@ -349,13 +348,12 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         items,
       });
     } catch (error) {
-      logError("Expiring compliance check error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Duplicate detection — must be before /:id to avoid route conflict
-  router.get("/api/crm/organisations/duplicates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/duplicates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {
@@ -459,13 +457,12 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
 
       res.json({ pairs, total: pairs.length });
     } catch (error) {
-      logError("Duplicate detection error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Merge two orgs: re-parent contacts, notes, compliance records, then soft-delete loser
-  router.post("/api/crm/organisations/:id/merge/:targetId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/crm/organisations/:id/merge/:targetId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId: userOrgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {
@@ -651,12 +648,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
 
       res.json({ success: true, winnerId, loserId });
     } catch (error) {
-      logError("Merge CRM organisations error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -689,12 +685,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       
       res.json({ ...organisation, contacts });
     } catch (error) {
-      logError("Get CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -737,12 +732,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       
       res.status(201).json(newOrg);
     } catch (error) {
-      logError("Create CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.put("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.put("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -805,12 +799,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       
       res.json(updated);
     } catch (error) {
-      logError("Update CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+  router.delete("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -847,12 +840,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       
       res.json({ success: true });
     } catch (error) {
-      logError("Delete CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -897,12 +889,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
 
       res.json(notes);
     } catch (error) {
-      logError("Get CRM organisation notes error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.post("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -964,12 +955,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
 
       res.status(201).json(noteWithDetails);
     } catch (error) {
-      logError("Create CRM organisation note error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/crm/organisations/:orgId/notes/:noteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.delete("/api/crm/organisations/:orgId/notes/:noteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1000,12 +990,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
 
       res.json({ success: true });
     } catch (error) {
-      logError("Delete CRM organisation note error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/crm/search", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/crm/search", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1048,12 +1037,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       
       res.json({ organisations });
     } catch (error) {
-      logError("CRM search error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/crm/organisations/:id/communications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/crm/organisations/:id/communications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId: userOrgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {
@@ -1232,8 +1220,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         },
       });
     } catch (error) {
-      logError("Get CRM org communications error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -1245,7 +1232,7 @@ const CONTACT_READ_ROLES = [
   "ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT",
 ] as const;
 
-router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
@@ -1294,12 +1281,11 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
 
     res.json(contacts);
   } catch (error) {
-    logError("Get CRM contacts (all) error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/organisations/:id/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
@@ -1323,12 +1309,11 @@ router.get("/api/crm/organisations/:id/contacts", requireAuth, requireRole(...CO
 
     res.json(contacts);
   } catch (error) {
-    logError("Get CRM contacts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied - no organization" });
@@ -1377,12 +1362,11 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
 
     res.status(201).json(newContact);
   } catch (error) {
-    logError("Create CRM contact error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
@@ -1435,12 +1419,11 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
 
     res.json(updated);
   } catch (error) {
-    logError("Update CRM contact error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
@@ -1471,8 +1454,7 @@ router.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete CRM contact error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1494,7 +1476,7 @@ const STAGE_LABELS: Record<string, string> = {
   LOST: "Lost",
 };
 
-router.get("/api/crm/pipeline/users", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/pipeline/users", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1511,12 +1493,11 @@ router.get("/api/crm/pipeline/users", requireAuth, requireRole(...PIPELINE_ROLES
 
     res.json(orgUsers);
   } catch (error) {
-    logError("Get pipeline users error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/pipeline/stats", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/pipeline/stats", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1568,8 +1549,7 @@ router.get("/api/crm/pipeline/stats", requireAuth, requireRole(...PIPELINE_ROLES
       stageValues,
     });
   } catch (error) {
-    logError("Pipeline stats error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1610,7 +1590,7 @@ function buildOppBaseQuery() {
     .leftJoin(users, eq(users.id, crmOpportunities.assignedToId));
 }
 
-router.get("/api/crm/opportunities", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/opportunities", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1647,12 +1627,11 @@ router.get("/api/crm/opportunities", requireAuth, requireRole(...PIPELINE_ROLES)
 
     res.json(results);
   } catch (error) {
-    logError("Get opportunities error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/opportunities/:id", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/opportunities/:id", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1668,12 +1647,11 @@ router.get("/api/crm/opportunities/:id", requireAuth, requireRole(...PIPELINE_RO
 
     res.json(opp);
   } catch (error) {
-    logError("Get opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
@@ -1714,12 +1692,11 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
 
     res.status(201).json(created);
   } catch (error) {
-    logError("Create opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res) => {
+router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1796,12 +1773,11 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
 
     res.json(updated);
   } catch (error) {
-    logError("Update opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/crm/opportunities/:id", requireAuth, requireRole(...DELETE_ROLES), async (req: AuthRequest, res) => {
+router.delete("/api/crm/opportunities/:id", requireAuth, requireRole(...DELETE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1824,12 +1800,11 @@ router.delete("/api/crm/opportunities/:id", requireAuth, requireRole(...DELETE_R
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1866,12 +1841,11 @@ router.get("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...
 
     res.json(activities);
   } catch (error) {
-    logError("Get activities error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
@@ -1926,8 +1900,7 @@ router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(..
 
     res.status(201).json(withUser);
   } catch (error) {
-    logError("Create activity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1943,7 +1916,7 @@ async function getNextProjectCode(): Promise<string> {
   return String(maxCode + 1);
 }
 
-router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
@@ -1995,12 +1968,11 @@ router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requir
 
     res.status(201).json({ project: newProject, opportunityId: opp.id });
   } catch (error) {
-    logError("Convert to project error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
@@ -2049,8 +2021,7 @@ router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("A
 
     res.status(201).json({ bid: newBid, opportunityId: opp.id });
   } catch (error) {
-    logError("Create bid from opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2066,7 +2037,7 @@ function parseDays(query: Record<string, string>): number {
 }
 
 // Win/Loss Summary — counts, values, and win rate for closed deals in a date range
-router.get("/api/crm/reports/win-loss", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/reports/win-loss", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2114,13 +2085,12 @@ router.get("/api/crm/reports/win-loss", requireAuth, requireRole(...PIPELINE_ROL
       avgLostDeal,
     });
   } catch (error) {
-    logError("Win-loss report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Time in Stage — average days each opp spent in each stage, derived from stage-change activity logs
-router.get("/api/crm/reports/time-in-stage", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/reports/time-in-stage", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2218,13 +2188,12 @@ router.get("/api/crm/reports/time-in-stage", requireAuth, requireRole(...PIPELIN
 
     res.json({ days, stages });
   } catch (error) {
-    logError("Time-in-stage report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Rep Performance — per-assignee breakdown of open deals, pipeline value, wins, losses, win rate
-router.get("/api/crm/reports/rep-performance", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/reports/rep-performance", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2278,14 +2247,13 @@ router.get("/api/crm/reports/rep-performance", requireAuth, requireRole(...PIPEL
 
     res.json({ days, reps });
   } catch (error) {
-    logError("Rep performance report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 const PIPELINE_OPEN_STAGES = ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION"];
 
-router.post("/api/crm/opportunities/:id/rescore", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/crm/opportunities/:id/rescore", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2299,12 +2267,11 @@ router.post("/api/crm/opportunities/:id/rescore", requireAuth, requireRole(...PI
     const result = await scoreWinProbability(opp.id);
     res.json({ opportunityId: opp.id, aiWinProbability: result.score, aiWinProbabilityRationale: result.rationale });
   } catch (error) {
-    logError("Re-score opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/reports/revenue-forecast", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/crm/reports/revenue-forecast", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2359,8 +2326,7 @@ router.get("/api/crm/reports/revenue-forecast", requireAuth, requireRole(...PIPE
       monthlyProjections,
     });
   } catch (error) {
-    logError("Revenue forecast report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

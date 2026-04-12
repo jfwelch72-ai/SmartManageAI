@@ -279,7 +279,7 @@
  *       200: { description: Attachment deleted }
  */
 import {logError, logWarn } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import {
   insertRfiSchema,
@@ -348,7 +348,7 @@ async function createActivityEntry(rfiId: string, userId: string, userName: stri
   });
 }
 
-router.get("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -400,12 +400,11 @@ router.get("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "
 
     res.json(mapped);
   } catch (error) {
-    logError("Get RFIs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/rfi/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/rfi/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -438,12 +437,11 @@ router.get("/rfi/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
 
     res.json({ total, open, answered, closed, overdue });
   } catch (error) {
-    logError("Get RFI stats error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, project, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -532,12 +530,11 @@ router.get("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER
       activity,
     });
   } catch (error) {
-    logError("Get RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -581,12 +578,11 @@ router.post("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
 
     res.status(201).json(newRfi);
   } catch (error) {
-    logError("Create RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -625,12 +621,11 @@ router.patch("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
 
     res.json(updated);
   } catch (error) {
-    logError("Update RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -657,12 +652,11 @@ router.post("/rfi/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    logError("Submit RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/review", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/review", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -683,12 +677,11 @@ router.post("/rfi/:id/review", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    logError("Review RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -732,12 +725,11 @@ router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    logError("Forward RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -773,12 +765,11 @@ router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    logError("Answer RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/close", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/close", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -804,12 +795,11 @@ router.post("/rfi/:id/close", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     res.json(updated);
   } catch (error) {
-    logError("Close RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/reopen", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/reopen", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -839,12 +829,11 @@ router.post("/rfi/:id/reopen", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    logError("Reopen RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/link-co", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/link-co", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -882,12 +871,11 @@ router.post("/rfi/:id/link-co", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    logError("Link CO error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/link-tm", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/link-tm", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -925,12 +913,11 @@ router.post("/rfi/:id/link-tm", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    logError("Link TM error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -956,12 +943,11 @@ router.post("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
 
     res.status(201).json(entry);
   } catch (error) {
-    logError("Add RFI activity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -975,12 +961,11 @@ router.get("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(activity);
   } catch (error) {
-    logError("Get RFI activity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -995,27 +980,26 @@ router.delete("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
 
     res.status(204).send();
   } catch (error) {
-    logError("Delete RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Legacy /files endpoints — kept for backward compatibility with sub-portal; return empty arrays / no-ops
-router.post("/rfi/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
   if (denied) return res.status(403).json({ error: "Access denied" });
   if (!rfi) return res.status(404).json({ error: "RFI not found" });
   res.status(200).json([]);
 });
 
-router.get("/rfi/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/rfi/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
   if (denied) return res.status(403).json({ error: "Access denied" });
   if (!rfi) return res.status(404).json({ error: "RFI not found" });
   res.json([]);
 });
 
-router.delete("/rfi/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.delete("/rfi/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
   if (denied) return res.status(403).json({ error: "Access denied" });
   if (!rfi) return res.status(404).json({ error: "RFI not found" });
@@ -1024,7 +1008,7 @@ router.delete("/rfi/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", 
 
 // ==================== Normalized RFI Attachments ====================
 
-router.get("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -1038,12 +1022,11 @@ router.get("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMI
 
     res.json(attachments);
   } catch (error) {
-    logError("Get RFI attachments error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -1131,12 +1114,11 @@ router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADM
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    logError("Upload RFI attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/rfi/:id/attachments/:attachmentId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.delete("/rfi/:id/attachments/:attachmentId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
@@ -1178,8 +1160,7 @@ router.delete("/rfi/:id/attachments/:attachmentId", requireAuth, requireRole("SU
     await db.delete(rfiAttachments).where(eq(rfiAttachments.id, attachmentId));
     res.status(204).send();
   } catch (error) {
-    logError("Delete RFI attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

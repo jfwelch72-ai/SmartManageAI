@@ -197,8 +197,7 @@ router.get("/api/onboarding-library/for-org", requireAuth, async (req: Request, 
       materials: { groups, materials: allMaterials },
     });
   } catch (error: any) {
-    logError("Error fetching org library data:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch library data" });
+    next(error);
   }
 });
 

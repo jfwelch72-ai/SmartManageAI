@@ -1,4 +1,5 @@
 import { Router , NextFunction } from "express";
+import { safeJsonParse } from "./responseHelper";
 import { db } from "./db";
 import { users, organizations, organizationSowItems, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum, masterSowItems, hustlerOrganizations, unitsOfMeasure } from "@shared/schema";
 import { eq, and, asc } from "drizzle-orm";
@@ -376,7 +377,7 @@ Step progression for preset trades: 1=trade, 2=crew, 3=region, 4=workTypes confi
 Step progression for OTHER trades: 1=trade, 2=tradeName, 3=crew, 4=region, 5=customSowItems, 6=customWorkTypes, 7=materials, 8=customCalculators, 9=website, 10=confirmation`;
 }
 
-router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req: AuthRequest, res, next) => {
   try {
 
     const validationResult = onboardingCompleteSchema.safeParse(req.body);
@@ -718,7 +719,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
       
       for (const template of templates) {
         try {
-          const templateWorkTypes = JSON.parse(template.workTypesJson || '[]');
+          const templateWorkTypes = safeJsonParse(template.workTypesJson, []);
           for (let wtIdx = 0; wtIdx < templateWorkTypes.length; wtIdx++) {
             const wt = templateWorkTypes[wtIdx];
             if (wt && wt.name) {
@@ -741,7 +742,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
         }
 
         try {
-          const calculators = JSON.parse(template.calculatorConfigJson || '[]');
+          const calculators = safeJsonParse(template.calculatorConfigJson, []);
           for (let calcIdx = 0; calcIdx < calculators.length; calcIdx++) {
             const calc = calculators[calcIdx];
             if (calc && calc.name) {
@@ -803,8 +804,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
       isHustler,
     });
   } catch (error: any) {
-    logError("[Onboarding] FAILED", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to complete onboarding. Please try again." });
+    next(error);
   }
 });
 
@@ -925,7 +925,7 @@ async function extractThemeFromWebsite(organizationId: string, websiteUrl: strin
   }
 }
 
-router.post("/ai/onboarding/research-trade", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/research-trade", sensitiveLimiter, requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const validationResult = tradeResearchSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -949,8 +949,7 @@ router.post("/ai/onboarding/research-trade", sensitiveLimiter, requireAuth, asyn
       research,
     });
   } catch (error: any) {
-    logError("Trade research error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to research trade. Please try again." });
+    next(error);
   }
 });
 
@@ -1008,7 +1007,7 @@ INSTRUCTIONS:
 `;
 }
 
-router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const validationResult = onboardingChatSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -1068,12 +1067,11 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: Au
     const parsed = JSON.parse(responseText);
     res.json(parsed);
   } catch (error: any) {
-    logError("AI Onboarding error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get AI response. Please try again." });
+    next(error);
   }
 });
 
-router.get("/ai/walkthrough/status", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai/walkthrough/status", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [freshUser] = await db.select({
       walkthroughCompleted: users.walkthroughCompleted,
@@ -1127,12 +1125,11 @@ router.get("/ai/walkthrough/status", requireAuth, async (req: AuthRequest, res) 
       } : null,
     });
   } catch (error: any) {
-    logError("Walkthrough status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get walkthrough status" });
+    next(error);
   }
 });
 
-router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1166,12 +1163,11 @@ router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res) 
       firstName,
     });
   } catch (error: any) {
-    logError("Walkthrough start error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to start walkthrough" });
+    next(error);
   }
 });
 
-router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1239,12 +1235,11 @@ router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res) =
       });
     }
   } catch (error: any) {
-    logError("Walkthrough next error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to advance walkthrough" });
+    next(error);
   }
 });
 
-router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1267,12 +1262,11 @@ router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, re
       message: "Walkthrough completed",
     });
   } catch (error: any) {
-    logError("Walkthrough complete error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to complete walkthrough" });
+    next(error);
   }
 });
 
-router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1294,12 +1288,11 @@ router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res) 
       message: "Walkthrough reset",
     });
   } catch (error: any) {
-    logError("Walkthrough reset error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to reset walkthrough" });
+    next(error);
   }
 });
 
-router.patch("/ai/walkthrough/step", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/ai/walkthrough/step", requireAuth, async (req: AuthRequest, res, next) => {
   try {
 
     if (!req.user.organizationId) {
@@ -1337,8 +1330,7 @@ router.patch("/ai/walkthrough/step", requireAuth, async (req: AuthRequest, res) 
       completed: updateData.walkthroughCompleted ?? false,
     });
   } catch (error: any) {
-    logError("Walkthrough step update error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update walkthrough step" });
+    next(error);
   }
 });
 

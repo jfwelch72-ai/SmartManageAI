@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import {
   warrantyCases, warrantyTasks, warrantyDocuments, projects,
@@ -102,7 +102,7 @@ const ALLOWED_TRANSITIONS: Record<string, { targets: string[]; roles: UserRole[]
 
 // ─── LIST CASES ───────────────────────────────────────────────────────────────
 
-router.get("/projects/:code/warranty/cases", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/warranty/cases", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -156,8 +156,7 @@ router.get("/projects/:code/warranty/cases", requireAuth, async (req: AuthReques
       res.json(cases.map(enrichCase));
     }
   } catch (err) {
-    logError("Error listing warranty cases:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch warranty cases" });
+    next(err);
   }
 });
 
@@ -171,7 +170,7 @@ router.post(
   "/projects/:code/warranty/cases",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -238,15 +237,14 @@ router.post(
 
       res.status(201).json(enrichCase(wc));
     } catch (err) {
-      logError("Error creating warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create warranty case" });
+      next(err);
     }
   },
 );
 
 // ─── GET ONE CASE ─────────────────────────────────────────────────────────────
 
-router.get("/projects/:code/warranty/cases/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/warranty/cases/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const wc = await resolveCase(req.params.id, req, res);
     if (!wc) return;
@@ -254,14 +252,13 @@ router.get("/projects/:code/warranty/cases/:id", requireAuth, async (req: AuthRe
     if (!project || project.id !== wc.projectId) return res.status(404).json({ error: "Warranty case not found" });
     res.json(enrichCase(wc));
   } catch (err) {
-    logError("Error fetching warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch warranty case" });
+    next(err);
   }
 });
 
 // ─── UPDATE CASE ──────────────────────────────────────────────────────────────
 
-router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const wc = await resolveCase(req.params.id, req, res);
     if (!wc) return;
@@ -366,8 +363,7 @@ router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: Auth
 
     res.json(enrichCase(updated));
   } catch (err) {
-    logError("Error updating warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update warranty case" });
+    next(err);
   }
 });
 
@@ -377,7 +373,7 @@ router.delete(
   "/projects/:code/warranty/cases/:id",
   requireAuth,
   requireRole(...CLOSE_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const wc = await resolveCase(req.params.id, req, res);
       if (!wc) return;
@@ -396,8 +392,7 @@ router.delete(
 
       res.status(204).send();
     } catch (err) {
-      logError("Error deleting warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete warranty case" });
+      next(err);
     }
   },
 );
@@ -416,7 +411,7 @@ async function resolveCaseForProject(caseId: string, code: string, req: AuthRequ
 
 // ─── LIST TASKS FOR CASE ──────────────────────────────────────────────────────
 
-router.get("/projects/:code/warranty/cases/:id/tasks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/warranty/cases/:id/tasks", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
     if (!wc) return;
@@ -429,8 +424,7 @@ router.get("/projects/:code/warranty/cases/:id/tasks", requireAuth, async (req: 
 
     res.json(tasks);
   } catch (err) {
-    logError("Error listing warranty tasks:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch warranty tasks" });
+    next(err);
   }
 });
 
@@ -440,7 +434,7 @@ router.post(
   "/projects/:code/warranty/cases/:id/tasks",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
       if (!wc) return;
@@ -467,15 +461,14 @@ router.post(
       const [task] = await db.insert(warrantyTasks).values(parsed.data).returning();
       res.status(201).json(task);
     } catch (err) {
-      logError("Error creating warranty task:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create warranty task" });
+      next(err);
     }
   },
 );
 
 // ─── UPDATE TASK ──────────────────────────────────────────────────────────────
 
-router.patch("/projects/:code/warranty/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:code/warranty/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const [task] = await db.select().from(warrantyTasks).where(eq(warrantyTasks.id, req.params.taskId)).limit(1);
     if (!task) return res.status(404).json({ error: "Warranty task not found" });
@@ -509,8 +502,7 @@ router.patch("/projects/:code/warranty/tasks/:taskId", requireAuth, async (req: 
 
     res.json(updated);
   } catch (err) {
-    logError("Error updating warranty task:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update warranty task" });
+    next(err);
   }
 });
 
@@ -520,7 +512,7 @@ router.delete(
   "/projects/:code/warranty/tasks/:taskId",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const [task] = await db.select().from(warrantyTasks).where(eq(warrantyTasks.id, req.params.taskId)).limit(1);
       if (!task) return res.status(404).json({ error: "Warranty task not found" });
@@ -531,8 +523,7 @@ router.delete(
       await db.delete(warrantyTasks).where(eq(warrantyTasks.id, req.params.taskId));
       res.status(204).send();
     } catch (err) {
-      logError("Error deleting warranty task:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete warranty task" });
+      next(err);
     }
   },
 );
@@ -542,7 +533,7 @@ router.delete(
 router.post(
   "/projects/:code/warranty/cases/:id/documents",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
       if (!wc) return;
@@ -570,8 +561,7 @@ router.post(
       const [doc] = await db.insert(warrantyDocuments).values(parsed.data).returning();
       res.status(201).json(doc);
     } catch (err) {
-      logError("Error adding warranty document:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to add document" });
+      next(err);
     }
   },
 );
@@ -582,7 +572,7 @@ router.delete(
   "/projects/:code/warranty/cases/:id/documents/:docId",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
       if (!wc) return;
@@ -593,15 +583,14 @@ router.delete(
       await db.delete(warrantyDocuments).where(eq(warrantyDocuments.id, req.params.docId));
       res.status(204).send();
     } catch (err) {
-      logError("Error deleting warranty document:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete document" });
+      next(err);
     }
   },
 );
 
 // ─── LIST DOCUMENTS FOR CASE ──────────────────────────────────────────────────
 
-router.get("/projects/:code/warranty/cases/:id/documents", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/warranty/cases/:id/documents", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
     if (!wc) return;
@@ -614,14 +603,13 @@ router.get("/projects/:code/warranty/cases/:id/documents", requireAuth, async (r
 
     res.json(docs);
   } catch (err) {
-    logError("Error listing warranty documents:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch documents" });
+    next(err);
   }
 });
 
 // ─── HTML EXPORT ──────────────────────────────────────────────────────────────
 
-router.get("/projects/:code/warranty/export", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/warranty/export", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -681,8 +669,7 @@ router.get("/projects/:code/warranty/export", requireAuth, async (req: AuthReque
     res.setHeader("Content-Type", "text/html");
     res.send(html);
   } catch (err) {
-    logError("Error exporting warranty cases:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to export warranty cases" });
+    next(err);
   }
 });
 

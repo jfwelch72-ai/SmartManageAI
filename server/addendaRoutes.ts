@@ -8,7 +8,7 @@ import { notifyDocumentEvent } from "./services/documentNotificationService";
 
 const router = Router();
 
-router.get("/projects/:projectId/addenda", requireAuth, async (req, res) => {
+router.get("/projects/:projectId/addenda", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const { projectId } = req.params;
@@ -30,12 +30,11 @@ router.get("/projects/:projectId/addenda", requireAuth, async (req, res) => {
 
     res.json(withAcks);
   } catch (err) {
-    logError("Failed to list addenda", { error: String(err) });
-    res.status(500).json({ error: "Failed to list addenda" });
+    next(err);
   }
 });
 
-router.post("/projects/:projectId/addenda", requireAuth, async (req, res) => {
+router.post("/projects/:projectId/addenda", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(user.role)) {
@@ -69,12 +68,11 @@ router.post("/projects/:projectId/addenda", requireAuth, async (req, res) => {
     logInfo("Addendum created", { addendumId: addendum.id, projectId, number: nextNumber });
     res.status(201).json(addendum);
   } catch (err) {
-    logError("Failed to create addendum", { error: String(err) });
-    res.status(500).json({ error: "Failed to create addendum" });
+    next(err);
   }
 });
 
-router.get("/addenda/:id", requireAuth, async (req, res) => {
+router.get("/addenda/:id", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const [addendum] = await db.select().from(addenda)
@@ -89,11 +87,11 @@ router.get("/addenda/:id", requireAuth, async (req, res) => {
 
     res.json({ ...addendum, acknowledgments: acks });
   } catch (err) {
-    res.status(500).json({ error: "Failed to get addendum" });
+    next(err);
   }
 });
 
-router.patch("/addenda/:id", requireAuth, async (req, res) => {
+router.patch("/addenda/:id", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(user.role)) {
@@ -119,11 +117,11 @@ router.patch("/addenda/:id", requireAuth, async (req, res) => {
     if (!updated) return res.status(404).json({ error: "Addendum not found" });
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: "Failed to update addendum" });
+    next(err);
   }
 });
 
-router.delete("/addenda/:id", requireAuth, async (req, res) => {
+router.delete("/addenda/:id", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -140,11 +138,11 @@ router.delete("/addenda/:id", requireAuth, async (req, res) => {
     await db.delete(addenda).where(eq(addenda.id, req.params.id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: "Failed to delete addendum" });
+    next(err);
   }
 });
 
-router.post("/addenda/:id/issue", requireAuth, async (req, res) => {
+router.post("/addenda/:id/issue", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"].includes(user.role)) {
@@ -181,11 +179,11 @@ router.post("/addenda/:id/issue", requireAuth, async (req, res) => {
 
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: "Failed to issue addendum" });
+    next(err);
   }
 });
 
-router.post("/addenda/:id/acknowledge", requireAuth, async (req, res) => {
+router.post("/addenda/:id/acknowledge", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const { recipientType, recipientEmail } = req.body;
@@ -219,11 +217,11 @@ router.post("/addenda/:id/acknowledge", requireAuth, async (req, res) => {
 
     res.status(201).json(ack);
   } catch (err) {
-    res.status(500).json({ error: "Failed to acknowledge addendum" });
+    next(err);
   }
 });
 
-router.get("/addenda/:id/acknowledgments", requireAuth, async (req, res) => {
+router.get("/addenda/:id/acknowledgments", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const [existing] = await db.select().from(addenda)
@@ -237,11 +235,11 @@ router.get("/addenda/:id/acknowledgments", requireAuth, async (req, res) => {
       .where(eq(addendumAcknowledgments.addendumId, req.params.id));
     res.json(acks);
   } catch (err) {
-    res.status(500).json({ error: "Failed to list acknowledgments" });
+    next(err);
   }
 });
 
-router.get("/addenda/:id/preview-url", requireAuth, async (req, res) => {
+router.get("/addenda/:id/preview-url", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const [addendum] = await db.select().from(addenda)
@@ -259,14 +257,14 @@ router.get("/addenda/:id/preview-url", requireAuth, async (req, res) => {
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
       await objectStorageService.downloadObject(objectFile, res, 3600);
-    } catch {
+    } catch (downloadErr) {
       logWarn("Non-critical operation failed");
       if (!res.headersSent) {
-        res.status(500).json({ error: "Failed to stream addendum file" });
+        next(downloadErr);
       }
     }
   } catch (err) {
-    res.status(500).json({ error: "Failed to get addendum preview URL" });
+    next(err);
   }
 });
 

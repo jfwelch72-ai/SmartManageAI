@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, type Column } from "drizzle-orm";
 import { requireAuth, requireRole, requireRoleOrFeature, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -153,7 +153,7 @@ async function recordVersionSnapshot(contractId: string, contract: Partial<Contr
   return newVersion;
 }
 
-router.get("/api/contracts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -190,12 +190,11 @@ router.get("/api/contracts", requireAuth, async (req: AuthRequest, res: Response
       res.json(filtered);
     }
   } catch (err) {
-    logError("[Contracts] List error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list contracts" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/by-project/:projectId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts/by-project/:projectId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -211,12 +210,11 @@ router.get("/api/contracts/by-project/:projectId", requireAuth, async (req: Auth
 
     res.json(result);
   } catch (err) {
-    logError("[Contracts] By project error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list contracts" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -245,12 +243,11 @@ router.get("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json({ ...contract, versions, redlines, approvals });
   } catch (err) {
-    logError("[Contracts] Get error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to get contract" });
+    next(err);
   }
 });
 
-router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -319,12 +316,11 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
 
     res.status(201).json(newContract);
   } catch (err) {
-    logError("[Contracts] Create error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to create contract" });
+    next(err);
   }
 });
 
-router.patch("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -377,8 +373,7 @@ router.patch("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Re
 
     res.json(updated);
   } catch (err) {
-    logError("[Contracts] Update error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update contract" });
+    next(err);
   }
 });
 
@@ -392,7 +387,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   AMENDED: ["IN_REVIEW"],
 };
 
-router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -480,12 +475,11 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
 
     res.json(updated);
   } catch (err) {
-    logError("[Contracts] Transition error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to transition contract" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/redlines", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/redlines", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -518,12 +512,11 @@ router.post("/api/contracts/:id/redlines", requireAuth, async (req: AuthRequest,
 
     res.status(201).json(redline);
   } catch (err) {
-    logError("[Contracts] Redline create error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to create redline" });
+    next(err);
   }
 });
 
-router.patch("/api/contracts/:id/redlines/:redlineId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/contracts/:id/redlines/:redlineId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -563,12 +556,11 @@ router.patch("/api/contracts/:id/redlines/:redlineId", requireAuth, async (req: 
 
     res.json(updated);
   } catch (err) {
-    logError("[Contracts] Redline update error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update redline" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/request-approval", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/request-approval", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -649,12 +641,11 @@ router.post("/api/contracts/:id/request-approval", requireAuth, async (req: Auth
 
     res.status(201).json(approvalRecords);
   } catch (err) {
-    logError("[Contracts] Request approval error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to request approval" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const org = resolveOrgFilter(req, res);
     if (!org) return;
@@ -704,12 +695,11 @@ router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, 
 
     res.json({ message: "Contract approved" });
   } catch (err) {
-    logError("[Contracts] Approve error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to approve contract" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/reject", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/reject", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const org = resolveOrgFilter(req, res);
     if (!org) return;
@@ -746,12 +736,11 @@ router.post("/api/contracts/:id/reject", requireAuth, async (req: AuthRequest, r
 
     res.json({ message: "Contract rejected" });
   } catch (err) {
-    logError("[Contracts] Reject error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to reject contract" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/:id/versions", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts/:id/versions", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -771,12 +760,11 @@ router.get("/api/contracts/:id/versions", requireAuth, async (req: AuthRequest, 
 
     res.json(versions);
   } catch (err) {
-    logError("[Contracts] Versions error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list versions" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/:id/versions/compare", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts/:id/versions/compare", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -819,12 +807,11 @@ router.get("/api/contracts/:id/versions/compare", requireAuth, async (req: AuthR
 
     res.json({ v1: v1, v2: v2, changes, version1: ver1, version2: ver2 });
   } catch (err) {
-    logError("[Contracts] Version compare error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to compare versions" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/attachments/upload-url", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/attachments/upload-url", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -844,12 +831,11 @@ router.post("/api/contracts/:id/attachments/upload-url", requireAuth, async (req
 
     res.json({ uploadURL, objectKey });
   } catch (err) {
-    logError("[Contracts] Upload URL error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to generate upload URL" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/attachments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/attachments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -893,12 +879,11 @@ router.post("/api/contracts/:id/attachments", requireAuth, async (req: AuthReque
 
     res.status(201).json(newAttachment);
   } catch (err) {
-    logError("[Contracts] Attachment add error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to add attachment" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/:id/attachments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts/:id/attachments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -915,12 +900,11 @@ router.get("/api/contracts/:id/attachments", requireAuth, async (req: AuthReques
     const attachments = JSON.parse(contract.attachmentsJson || "[]");
     res.json(attachments);
   } catch (err) {
-    logError("[Contracts] Attachments list error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list attachments" });
+    next(err);
   }
 });
 
-router.delete("/api/contracts/:id/attachments/:attachmentId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/contracts/:id/attachments/:attachmentId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -951,12 +935,11 @@ router.delete("/api/contracts/:id/attachments/:attachmentId", requireAuth, async
 
     res.json({ message: "Attachment removed" });
   } catch (err) {
-    logError("[Contracts] Attachment delete error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to remove attachment" });
+    next(err);
   }
 });
 
-router.delete("/api/contracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/api/contracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const org = resolveOrgFilter(req, res);
     if (!org) return;
@@ -974,12 +957,11 @@ router.delete("/api/contracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADM
     await db.delete(contracts).where(eq(contracts.id, req.params.id));
     res.json({ message: "Contract deleted" });
   } catch (err) {
-    logError("[Contracts] Delete error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to delete contract" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/link-change-order", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/link-change-order", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -1012,12 +994,11 @@ router.post("/api/contracts/:id/link-change-order", requireAuth, async (req: Aut
     if (!co) { res.status(404).json({ error: "Change order not found" }); return; }
     res.json(co);
   } catch (err) {
-    logError("[Contracts] Link CO error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to link change order" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/:id/change-orders", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts/:id/change-orders", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) {
       res.status(403).json({ error: "Access denied" });
@@ -1036,8 +1017,7 @@ router.get("/api/contracts/:id/change-orders", requireAuth, async (req: AuthRequ
 
     res.json(linkedCOs);
   } catch (err) {
-    logError("[Contracts] Get COs error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to get linked change orders" });
+    next(err);
   }
 });
 
@@ -1052,7 +1032,7 @@ interface Signer {
   declineReason?: string;
 }
 
-router.post("/api/contracts/:id/signature-request", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:id/signature-request", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManageContracts(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const org = resolveOrgFilter(req, res);
@@ -1124,12 +1104,11 @@ router.post("/api/contracts/:id/signature-request", requireAuth, async (req: Aut
 
     res.status(201).json(sigReq);
   } catch (err) {
-    logError("[Contracts] Signature request error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to create signature request" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/:id/signature-requests", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/contracts/:id/signature-requests", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canViewContracts(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const org = resolveOrgFilter(req, res);
@@ -1151,12 +1130,11 @@ router.get("/api/contracts/:id/signature-requests", requireAuth, async (req: Aut
 
     res.json(enriched);
   } catch (err) {
-    logError("[Contracts] List signature requests error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list signature requests" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const org = resolveOrgFilter(req, res);
     if (!org) return;
@@ -1271,12 +1249,11 @@ router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", require
 
     res.json({ signers, status: newStatus });
   } catch (err) {
-    logError("[Contracts] Sign error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to process signature" });
+    next(err);
   }
 });
 
-router.post("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTRACT_MANAGE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTRACT_MANAGE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { orgId, isSuperAdmin: isSA, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || (!isSA && !orgId)) return res.status(403).json({ error: "Organization required" });
@@ -1414,12 +1391,11 @@ Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope
       analyzedAt: analysis.analyzedAt,
     });
   } catch (err) {
-    logError("[Contracts] Risk analysis error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to run risk analysis" });
+    next(err);
   }
 });
 
-router.get("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTRACT_VIEW_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTRACT_VIEW_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { orgId, isSuperAdmin: isSA, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || (!isSA && !orgId)) return res.status(403).json({ error: "Organization required" });
@@ -1449,8 +1425,7 @@ router.get("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTR
 
     res.json(formatted);
   } catch (err) {
-    logError("[Contracts] Get risk analyses error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to get risk analyses" });
+    next(err);
   }
 });
 

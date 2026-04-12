@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { exportLimiter } from "./rateLimiter";
 import { db } from "./db";
 import {
@@ -100,7 +100,7 @@ type AttachmentEntry = { url: string; filename: string; mimeType: string; upload
 type StatusEntry = { status: string; changedBy: string; changedAt: string; note?: string };
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
-router.get("/projects/:code/punch-list", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/punch-list", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -144,8 +144,7 @@ router.get("/projects/:code/punch-list", requireAuth, async (req: AuthRequest, r
 
     res.json(items.map(enrichItem));
   } catch (err) {
-    logError("Error listing punch list items:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch punch list items" });
+    next(err);
   }
 });
 
@@ -154,7 +153,7 @@ router.post(
   "/projects/:code/punch-list",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -209,14 +208,13 @@ router.post(
 
       res.status(201).json(enrichItem(item));
     } catch (err) {
-      logError("Error creating punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create punch list item" });
+      next(err);
     }
   },
 );
 
 // ─── GET ONE (project-scoped) ─────────────────────────────────────────────────
-router.get("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const item = await resolveItem(req.params.id, req, res);
     if (!item) return;
@@ -227,13 +225,12 @@ router.get("/projects/:code/punch-list/:id", requireAuth, async (req: AuthReques
     }
     res.json(enrichItem(item));
   } catch (err) {
-    logError("Error fetching punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch punch list item" });
+    next(err);
   }
 });
 
 // ─── UPDATE (project-scoped) ──────────────────────────────────────────────────
-router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const item = await resolveItem(req.params.id, req, res);
     if (!item) return;
@@ -389,8 +386,7 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
 
     res.json(enrichItem(updated));
   } catch (err) {
-    logError("Error updating punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update punch list item" });
+    next(err);
   }
 });
 
@@ -399,7 +395,7 @@ router.delete(
   "/projects/:code/punch-list/:id",
   requireAuth,
   requireRole(...VERIFY_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const item = await resolveItem(req.params.id, req, res);
       if (!item) return;
@@ -421,8 +417,7 @@ router.delete(
 
       res.status(204).send();
     } catch (err) {
-      logError("Error deleting punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete punch list item" });
+      next(err);
     }
   },
 );
@@ -431,7 +426,7 @@ router.delete(
 router.post(
   "/projects/:code/punch-list/:id/attachments",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const item = await resolveItem(req.params.id, req, res);
       if (!item) return;
@@ -461,8 +456,7 @@ router.post(
 
       res.json(enrichItem(updatedItem));
     } catch (err) {
-      logError("Error adding attachment:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to add attachment" });
+      next(err);
     }
   },
 );
@@ -471,7 +465,7 @@ router.post(
 router.delete(
   "/projects/:code/punch-list/:id/attachments/:filename",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const item = await resolveItem(req.params.id, req, res);
       if (!item) return;
@@ -492,14 +486,13 @@ router.delete(
 
       res.json(enrichItem(updatedItem));
     } catch (err) {
-      logError("Error removing attachment:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to remove attachment" });
+      next(err);
     }
   },
 );
 
 // ─── PDF EXPORT (browser-printable HTML — consistent with other modules) ──────
-router.get("/projects/:code/punch-list/export/pdf", requireAuth, exportLimiter, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/punch-list/export/pdf", requireAuth, exportLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -593,8 +586,7 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, exportLimiter, 
     res.setHeader("Content-Disposition", `inline; filename="punch-list-${project.code}.html"`);
     res.send(html);
   } catch (err) {
-    logError("Error exporting punch list:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to export punch list" });
+    next(err);
   }
 });
 
@@ -606,7 +598,7 @@ router.post(
   "/projects/:code/inspections/:inspectionId/punch-list",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -708,8 +700,7 @@ router.post(
 
       res.status(201).json(createdItems.map(enrichItem));
     } catch (err) {
-      logError("Error creating punch list items from inspection:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create punch list items from inspection" });
+      next(err);
     }
   },
 );

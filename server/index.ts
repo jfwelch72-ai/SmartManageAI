@@ -49,8 +49,40 @@ app.set("trust proxy", 1);
 
 app.use(compression());
 
+const isProduction = process.env.NODE_ENV === "production";
+
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: isProduction
+    ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          imgSrc: ["'self'", "data:", "blob:", "https://*.googleapis.com", "https://*.gstatic.com", "https://storage.googleapis.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          connectSrc: ["'self'", "https://*.replit.dev", "wss://*.replit.dev", "https://api.openai.com"],
+          frameSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          upgradeInsecureRequests: [],
+        },
+      }
+    : {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+          connectSrc: ["'self'", "ws:", "wss:", "https:", "http:"],
+          frameSrc: ["'self'"],
+          frameAncestors: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+        },
+      },
   crossOriginEmbedderPolicy: false,
   frameguard: false,
 }));
@@ -258,8 +290,7 @@ app.use((req, res, next) => {
     log(`serving on port ${port}`);
     logOAuthRedirectUris();
     
-    // AI Schedulers only run in production mode
-    const isProduction = process.env.NODE_ENV === 'production';
+    // AI Schedulers only run in production mode (isProduction declared at top level)
     
     if (isProduction) {
       // Initialize AI PM + CFO scheduler (runs at configured daily time, default 6:00 AM)

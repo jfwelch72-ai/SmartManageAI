@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -76,7 +76,7 @@ function getRpConfig() {
 router.post(
   "/api/auth/passkey/register-options",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
       const { rpName, rpID } = getRpConfig();
@@ -110,8 +110,7 @@ router.post(
 
       res.json({ ...options, regSessionId });
     } catch (error) {
-      logError("Passkey register-options error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to generate registration options" });
+      next(error);
     }
   }
 );
@@ -119,7 +118,7 @@ router.post(
 router.post(
   "/api/auth/passkey/register-verify",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
       const { rpID, origin } = getRpConfig();
@@ -174,15 +173,14 @@ router.post(
 
       res.json({ verified: true });
     } catch (error) {
-      logError("Passkey register-verify error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to verify registration" });
+      next(error);
     }
   }
 );
 
 router.post(
   "/api/auth/passkey/auth-options",
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { rpID } = getRpConfig();
 
@@ -196,15 +194,14 @@ router.post(
 
       res.json({ ...options, sessionId });
     } catch (error) {
-      logError("Passkey auth-options error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to generate authentication options" });
+      next(error);
     }
   }
 );
 
 router.post(
   "/api/auth/passkey/auth-verify",
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { rpID, origin } = getRpConfig();
       const { response, sessionId } = req.body || {};
@@ -300,8 +297,7 @@ router.post(
         redirectTo: redirectPath,
       });
     } catch (error) {
-      logError("Passkey auth-verify error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to verify authentication" });
+      next(error);
     }
   }
 );
@@ -309,7 +305,7 @@ router.post(
 router.get(
   "/api/auth/passkey/credentials",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
       const creds = await db
@@ -323,8 +319,7 @@ router.get(
 
       res.json(creds);
     } catch (error) {
-      logError("Passkey credentials list error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to list passkeys" });
+      next(error);
     }
   }
 );
@@ -332,7 +327,7 @@ router.get(
 router.delete(
   "/api/auth/passkey/credentials/:id",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
       const { id } = req.params;
@@ -352,8 +347,7 @@ router.delete(
 
       res.json({ deleted: true });
     } catch (error) {
-      logError("Passkey delete error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to delete passkey" });
+      next(error);
     }
   }
 );

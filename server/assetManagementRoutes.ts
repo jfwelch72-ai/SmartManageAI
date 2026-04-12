@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import {
@@ -68,7 +68,7 @@ async function requireHandoverComplete(projectId: string, res: Response): Promis
 
 // ─── HANDOVER ITEMS ───────────────────────────────────────────────────────────
 
-router.get("/projects/:code/handover/items", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/handover/items", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await verifyProjectAccess(req.params.code, req, res);
     if (!project) return;
@@ -77,8 +77,7 @@ router.get("/projects/:code/handover/items", requireAuth, async (req: AuthReques
       .orderBy(assetHandoverItems.sortOrder, assetHandoverItems.createdAt);
     res.json(items);
   } catch (err) {
-    logError("Error listing handover items:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch handover items" });
+    next(err);
   }
 });
 
@@ -86,7 +85,7 @@ router.post(
   "/projects/:code/handover/items",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -105,8 +104,7 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "handoverItem", entityId: item.id, newValue: JSON.stringify({ title: item.title }) }, req);
       res.status(201).json(item);
     } catch (err) {
-      logError("Error creating handover item:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create handover item" });
+      next(err);
     }
   },
 );
@@ -115,7 +113,7 @@ router.patch(
   "/projects/:code/handover/items/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -163,8 +161,7 @@ router.patch(
       await logAudit({ userId: req.user!.id, action: "UPDATE", entityType: "handoverItem", entityId: updated.id, newValue: JSON.stringify({ changes: Object.keys(update) }) }, req);
       res.json(updated);
     } catch (err) {
-      logError("Error updating handover item:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to update handover item" });
+      next(err);
     }
   },
 );
@@ -173,7 +170,7 @@ router.delete(
   "/projects/:code/handover/items/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -185,15 +182,14 @@ router.delete(
       await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "handoverItem", entityId: existing.id, oldValue: JSON.stringify({ title: existing.title }) }, req);
       res.status(204).send();
     } catch (err) {
-      logError("Error deleting handover item:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete handover item" });
+      next(err);
     }
   },
 );
 
 // ─── HANDOVER EXPORT ──────────────────────────────────────────────────────────
 
-router.get("/projects/:code/handover/export", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/handover/export", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await verifyProjectAccess(req.params.code, req, res);
     if (!project) return;
@@ -279,14 +275,13 @@ router.get("/projects/:code/handover/export", requireAuth, async (req: AuthReque
     res.setHeader("Content-Disposition", `attachment; filename="handover-summary-${project.code}.pdf"`);
     stream.pipe(res);
   } catch (err) {
-    logError("Error exporting handover:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to export handover summary" });
+    next(err);
   }
 });
 
 // ─── HANDOVER SIGNOFFS ────────────────────────────────────────────────────────
 
-router.get("/projects/:code/handover/signoffs", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/handover/signoffs", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await verifyProjectAccess(req.params.code, req, res);
     if (!project) return;
@@ -294,8 +289,7 @@ router.get("/projects/:code/handover/signoffs", requireAuth, async (req: AuthReq
       .where(eq(assetHandoverSignoffs.projectId, project.id));
     res.json(signoffs);
   } catch (err) {
-    logError("Error listing signoffs:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch signoffs" });
+    next(err);
   }
 });
 
@@ -303,7 +297,7 @@ router.post(
   "/projects/:code/handover/signoffs",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -337,15 +331,14 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "handoverSignoff", entityId: signoff.id, newValue: JSON.stringify({ role, projectId: project.id }) }, req);
       res.status(201).json(signoff);
     } catch (err) {
-      logError("Error creating signoff:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create signoff" });
+      next(err);
     }
   },
 );
 
 // ─── MAINTENANCE LOGS ─────────────────────────────────────────────────────────
 
-router.get("/projects/:code/maintenance/logs", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/maintenance/logs", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await verifyProjectAccess(req.params.code, req, res);
     if (!project) return;
@@ -370,8 +363,7 @@ router.get("/projects/:code/maintenance/logs", requireAuth, async (req: AuthRequ
       .orderBy(desc(maintenanceLogs.date));
     res.json(logs);
   } catch (err) {
-    logError("Error listing maintenance logs:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch maintenance logs" });
+    next(err);
   }
 });
 
@@ -379,7 +371,7 @@ router.post(
   "/projects/:code/maintenance/logs",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -400,8 +392,7 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "maintenanceLog", entityId: log.id, newValue: JSON.stringify({ title: log.title }) }, req);
       res.status(201).json(log);
     } catch (err) {
-      logError("Error creating maintenance log:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create maintenance log" });
+      next(err);
     }
   },
 );
@@ -410,7 +401,7 @@ router.patch(
   "/projects/:code/maintenance/logs/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -456,8 +447,7 @@ router.patch(
       await logAudit({ userId: req.user!.id, action: "UPDATE", entityType: "maintenanceLog", entityId: updated.id, newValue: JSON.stringify({ changes: Object.keys(update) }) }, req);
       res.json(updated);
     } catch (err) {
-      logError("Error updating maintenance log:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to update maintenance log" });
+      next(err);
     }
   },
 );
@@ -466,7 +456,7 @@ router.delete(
   "/projects/:code/maintenance/logs/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -478,15 +468,14 @@ router.delete(
       await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "maintenanceLog", entityId: existing.id, oldValue: JSON.stringify({ title: existing.title }) }, req);
       res.status(204).send();
     } catch (err) {
-      logError("Error deleting maintenance log:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete maintenance log" });
+      next(err);
     }
   },
 );
 
 // ─── MAINTENANCE COST SUMMARY ─────────────────────────────────────────────────
 
-router.get("/projects/:code/maintenance/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/maintenance/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await verifyProjectAccess(req.params.code, req, res);
     if (!project) return;
@@ -516,14 +505,13 @@ router.get("/projects/:code/maintenance/summary", requireAuth, async (req: AuthR
 
     res.json({ totalCost, totalEntries: logs.length, bySystem, byType, costOverTime });
   } catch (err) {
-    logError("Error fetching maintenance summary:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch maintenance summary" });
+    next(err);
   }
 });
 
 // ─── RECURRING SCHEDULES ──────────────────────────────────────────────────────
 
-router.get("/projects/:code/maintenance/schedules", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/maintenance/schedules", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await verifyProjectAccess(req.params.code, req, res);
     if (!project) return;
@@ -532,8 +520,7 @@ router.get("/projects/:code/maintenance/schedules", requireAuth, async (req: Aut
       .orderBy(maintenanceRecurringSchedules.nextDueDate);
     res.json(schedules);
   } catch (err) {
-    logError("Error listing schedules:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to fetch schedules" });
+    next(err);
   }
 });
 
@@ -541,7 +528,7 @@ router.post(
   "/projects/:code/maintenance/schedules",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -561,8 +548,7 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "maintenanceSchedule", entityId: schedule.id, newValue: JSON.stringify({ title: schedule.title }) }, req);
       res.status(201).json(schedule);
     } catch (err) {
-      logError("Error creating schedule:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create schedule" });
+      next(err);
     }
   },
 );
@@ -571,7 +557,7 @@ router.patch(
   "/projects/:code/maintenance/schedules/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -599,8 +585,7 @@ router.patch(
       await logAudit({ userId: req.user!.id, action: "UPDATE", entityType: "maintenanceSchedule", entityId: updated.id, newValue: JSON.stringify({ changes: Object.keys(update) }) }, req);
       res.json(updated);
     } catch (err) {
-      logError("Error updating schedule:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to update schedule" });
+      next(err);
     }
   },
 );
@@ -609,7 +594,7 @@ router.delete(
   "/projects/:code/maintenance/schedules/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await verifyProjectAccess(req.params.code, req, res);
       if (!project) return;
@@ -621,8 +606,7 @@ router.delete(
       await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "maintenanceSchedule", entityId: existing.id, oldValue: JSON.stringify({ title: existing.title }) }, req);
       res.status(204).send();
     } catch (err) {
-      logError("Error deleting schedule:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete schedule" });
+      next(err);
     }
   },
 );

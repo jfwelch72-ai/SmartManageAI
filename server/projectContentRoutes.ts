@@ -423,7 +423,7 @@ router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest,
     res.json(merged);
   } catch (error) {
     console.error("Error fetching project cost codes:", error);
-    res.status(500).json({ error: "Failed to fetch project cost codes" });
+    next(error);
   }
 });
 
@@ -474,7 +474,7 @@ router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), a
     res.json(updated);
   } catch (error) {
     console.error("Error updating project cost codes:", error);
-    res.status(500).json({ error: "Failed to update project cost codes" });
+    next(error);
   }
 });
 
@@ -516,7 +516,7 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res, next) =
     res.json(merged);
   } catch (error) {
     console.error("Error fetching cost codes:", error);
-    res.status(500).json({ error: "Failed to fetch cost codes" });
+    next(error);
   }
 });
 
@@ -543,7 +543,7 @@ router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res, nex
     res.json(rows);
   } catch (error) {
     console.error("Error fetching org cost codes:", error);
-    res.status(500).json({ error: "Failed to fetch custom cost codes" });
+    next(error);
   }
 });
 
@@ -575,7 +575,7 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
     console.error("Error creating org cost code:", error);
-    res.status(500).json({ error: "Failed to create cost code" });
+    next(error);
   }
 });
 
@@ -612,7 +612,7 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
     console.error("Error updating org cost code:", error);
-    res.status(500).json({ error: "Failed to update cost code" });
+    next(error);
   }
 });
 

@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { requireAuth, type AuthRequest } from "./auth";
 
 const router = Router();
@@ -117,7 +117,7 @@ function generateFallbackForecast(numDays: number): WeatherDay[] {
   return days;
 }
 
-router.get("/forecast", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/forecast", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { lat, lng, days = "10" } = req.query;
 
@@ -183,12 +183,11 @@ router.get("/forecast", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json(result);
   } catch (error) {
-    logError("Error fetching weather forecast:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch weather forecast" });
+    next(error);
   }
 });
 
-router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/history", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { lat, lng, startDate, endDate } = req.query;
 
@@ -273,12 +272,11 @@ router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    logError("Error fetching weather history:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch weather history" });
+    next(error);
   }
 });
 
-router.get("/geocode", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/geocode", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { address } = req.query;
 
@@ -313,8 +311,7 @@ router.get("/geocode", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ results });
   } catch (error) {
-    logError("Error geocoding address:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to geocode address" });
+    next(error);
   }
 });
 

@@ -1,4 +1,5 @@
 import { Router , NextFunction } from "express";
+import { safeJsonParse } from "./responseHelper";
 import { db } from "./db";
 import { vendorPricebooks, vendorPricebookItems, aiCoDrafts, organizations, projects, changeOrders, equipment as equipmentTable } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -18,7 +19,7 @@ router.get("/cfo/profitability", requireAuth, async (req: AuthRequest, res, next
     const latestRun = await getLatestAIRun();
 
     if (latestRun?.profitabilityData) {
-      const profitabilityData = JSON.parse(latestRun.profitabilityData);
+      const profitabilityData = safeJsonParse(latestRun.profitabilityData, null);
       return res.json(profitabilityData);
     }
 
@@ -54,7 +55,7 @@ router.get("/cfo/equipment-metrics", requireAuth, async (req: AuthRequest, res, 
       });
     }
 
-    const snapshotData = JSON.parse(latestRun.snapshotData);
+    const snapshotData = safeJsonParse(latestRun.snapshotData, null);
     const equipment = snapshotData.equipment || {};
     const roiAnalysis = equipment.roi_analysis || {};
 
@@ -428,8 +429,7 @@ router.post("/ai-features/vendors/pricebook/upload", requireAuth, requireRole("A
       status: "PROCESSING",
     });
   } catch (error) {
-    logError("Pricebook upload error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to upload pricebook" });
+    next(error);
   }
 });
 
@@ -454,8 +454,7 @@ router.get("/ai-features/vendors/pricebook/items", requireAuth, async (req: Auth
 
     res.json({ items, totalCount: items.length });
   } catch (error) {
-    logError("Get pricebook items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get items" });
+    next(error);
   }
 });
 
@@ -474,8 +473,7 @@ router.get("/ai-features/vendors/pricebooks", requireAuth, async (req: AuthReque
 
     res.json({ pricebooks });
   } catch (error) {
-    logError("Get pricebooks error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get pricebooks" });
+    next(error);
   }
 });
 
@@ -552,8 +550,7 @@ router.post("/ai-features/change-orders/generate", requireAuth, requireRole("ADM
       aiNotes: `Generated change order draft based on ${Object.keys(linkedItems).filter(k => linkedItems[k as keyof typeof linkedItems]?.length).length} linked item types.`,
     });
   } catch (error) {
-    logError("Generate CO error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate change order" });
+    next(error);
   }
 });
 
@@ -652,8 +649,7 @@ router.get("/ai-features/change-orders/drafts/:projectId", requireAuth, async (r
 
     res.json({ drafts });
   } catch (error) {
-    logError("Get CO drafts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get drafts" });
+    next(error);
   }
 });
 
@@ -680,8 +676,7 @@ router.patch("/ai-features/change-orders/drafts/:draftId", requireAuth, async (r
 
     res.json({ success: true });
   } catch (error) {
-    logError("Update CO draft error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update draft" });
+    next(error);
   }
 });
 
@@ -704,7 +699,7 @@ router.post("/ai-features/change-orders/drafts/:draftId/convert", requireAuth, r
       return res.status(404).json({ error: "Draft not found" });
     }
 
-    const draftContent = draft.draftContentJson ? JSON.parse(draft.draftContentJson) : {};
+    const draftContent = safeJsonParse(draft.draftContentJson, {});
 
     // Generate next change order number
     const existingCOs = await db.select()
@@ -732,8 +727,7 @@ router.post("/ai-features/change-orders/drafts/:draftId/convert", requireAuth, r
       changeOrderId: co.id,
     });
   } catch (error) {
-    logError("Convert CO draft error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to convert draft" });
+    next(error);
   }
 });
 
@@ -759,8 +753,7 @@ router.get("/ai-features/sub-recommendations", requireAuth, async (req: AuthRequ
 
     res.json({ recommendations, total: recommendations.length });
   } catch (error) {
-    logError("Sub recommendations error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get recommendations" });
+    next(error);
   }
 });
 
@@ -800,8 +793,7 @@ router.get("/audit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (re
     const result = await getAiAuditLog(orgId, limit, offset, dateFrom, dateTo);
     res.json(result);
   } catch (err) {
-    logError("Failed to get AI audit log", { error: String(err) });
-    res.status(500).json({ error: "Failed to get AI audit log" });
+    next(err);
   }
 });
 
@@ -812,8 +804,7 @@ router.get("/usage", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (re
     const data = await getOrgLimitsWithUsage(orgId);
     res.json(data);
   } catch (err) {
-    logError("Failed to get AI usage", { error: String(err) });
-    res.status(500).json({ error: "Failed to get AI usage" });
+    next(err);
   }
 });
 
@@ -825,8 +816,7 @@ router.get("/cost-breakdown", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), 
     const breakdown = await getCostBreakdownByActionType(orgId, dateFrom, dateTo);
     res.json(breakdown);
   } catch (err) {
-    logError("Failed to get cost breakdown", { error: String(err) });
-    res.status(500).json({ error: "Failed to get cost breakdown" });
+    next(err);
   }
 });
 

@@ -1,4 +1,4 @@
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { pushSubscriptions } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
@@ -24,7 +24,7 @@ const subscribeBodySchema = z.object({
   userAgent: z.string().optional(),
 });
 
-router.post("/api/notifications/push-subscribe", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/notifications/push-subscribe", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const parsed = subscribeBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -45,12 +45,11 @@ router.post("/api/notifications/push-subscribe", requireAuth, async (req: AuthRe
 
     res.json({ success: true });
   } catch (err) {
-    logError("pushSubscriptionRoutes: subscribe failed", { error: String(err) });
-    res.status(500).json({ error: "Failed to save push subscription" });
+    next(err);
   }
 });
 
-router.delete("/api/notifications/push-unsubscribe", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/notifications/push-unsubscribe", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { endpoint } = req.body as { endpoint?: string };
     const userId = req.user!.id;
@@ -65,8 +64,7 @@ router.delete("/api/notifications/push-unsubscribe", requireAuth, async (req: Au
 
     res.json({ success: true });
   } catch (err) {
-    logError("pushSubscriptionRoutes: unsubscribe failed", { error: String(err) });
-    res.status(500).json({ error: "Failed to remove push subscription" });
+    next(err);
   }
 });
 

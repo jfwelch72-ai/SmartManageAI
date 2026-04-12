@@ -20,7 +20,7 @@ const router = Router();
  * Run all calculator verification tests
  * GET /api/calculators/verify
  */
-router.get('/verify', async (req, res) => {
+router.get('/verify', async (req, res, next) => {
   try {
     const summary = runAllVerificationTests();
     
@@ -40,11 +40,7 @@ router.get('/verify', async (req, res) => {
       allResults: summary.results,
     });
   } catch (error: any) {
-    logError('Verification error:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    next(error);
   }
 });
 
@@ -543,7 +539,7 @@ router.post('/lowvoltage', (req, res) => {
  * Seed master calculators table (dev only)
  * POST /api/calculators/seed
  */
-router.post('/seed', requireDevSeed, async (req, res) => {
+router.post('/seed', requireDevSeed, async (req, res, next) => {
   try {
     await seedMasterCalculators();
     res.json({ 
@@ -552,7 +548,7 @@ router.post('/seed', requireDevSeed, async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    next(error);
   }
 });
 

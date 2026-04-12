@@ -35,7 +35,7 @@ function userId(req: AuthRequest): string {
   return req.user!.id;
 }
 
-router.get("/my-profile", requireAuth, async (req: AuthRequest, res) => {
+router.get("/my-profile", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [profile] = await db
       .select()
@@ -78,12 +78,11 @@ router.get("/my-profile", requireAuth, async (req: AuthRequest, res) => {
       certifications: certs,
     });
   } catch (err) {
-    logError("GET /api/talent-pool/my-profile", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch talent profile" });
+    next(err);
   }
 });
 
-router.post("/my-profile", requireAuth, async (req: AuthRequest, res) => {
+router.post("/my-profile", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db
       .select()
@@ -105,12 +104,11 @@ router.post("/my-profile", requireAuth, async (req: AuthRequest, res) => {
     const [profile] = await db.insert(talentProfiles).values(parsed.data).returning();
     res.status(201).json(profile);
   } catch (err) {
-    logError("POST /api/talent-pool/my-profile", { error: String(err) });
-    res.status(500).json({ error: "Failed to create talent profile" });
+    next(err);
   }
 });
 
-router.put("/my-profile", requireAuth, async (req: AuthRequest, res) => {
+router.put("/my-profile", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db
       .select()
@@ -142,12 +140,11 @@ router.put("/my-profile", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(profile);
   } catch (err) {
-    logError("PUT /api/talent-pool/my-profile", { error: String(err) });
-    res.status(500).json({ error: "Failed to update talent profile" });
+    next(err);
   }
 });
 
-router.get("/directory", requireAuth, async (req: AuthRequest, res) => {
+router.get("/directory", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { search, trade, availability, location, skill, certification, minRating, page = "1", limit = "20", sort = "newest" } = req.query;
 
@@ -277,12 +274,11 @@ router.get("/directory", requireAuth, async (req: AuthRequest, res) => {
       totalPages: Math.ceil(total / limitNum),
     });
   } catch (err) {
-    logError("GET /api/talent-pool/directory", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch talent directory" });
+    next(err);
   }
 });
 
-router.get("/profiles/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/profiles/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [result] = await db
       .select({
@@ -346,12 +342,11 @@ router.get("/profiles/:id", requireAuth, async (req: AuthRequest, res) => {
       certifications: certs,
     });
   } catch (err) {
-    logError("GET /api/talent-pool/profiles/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch talent profile" });
+    next(err);
   }
 });
 
-router.get("/skill-suggestions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/skill-suggestions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { trade, q } = req.query;
     const conditions: any[] = [];
@@ -378,12 +373,11 @@ router.get("/skill-suggestions", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(allSkills);
   } catch (err) {
-    logError("GET /api/talent-pool/skill-suggestions", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch skill suggestions" });
+    next(err);
   }
 });
 
-router.post("/profiles/:id/recruit", requireAuth, requireRole(...HIRING_ROLES), async (req: AuthRequest, res) => {
+router.post("/profiles/:id/recruit", requireAuth, requireRole(...HIRING_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const recruiterOrgId = orgId(req);
     const { jobId } = req.body;
@@ -475,12 +469,11 @@ router.post("/profiles/:id/recruit", requireAuth, requireRole(...HIRING_ROLES), 
 
     res.status(201).json(candidate);
   } catch (err) {
-    logError("POST /api/talent-pool/profiles/:id/recruit", { error: String(err) });
-    res.status(500).json({ error: "Failed to recruit talent" });
+    next(err);
   }
 });
 
-router.get("/profiles/:id/match-score", requireAuth, requireRole(...HIRING_ROLES), async (req: AuthRequest, res) => {
+router.get("/profiles/:id/match-score", requireAuth, requireRole(...HIRING_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { jobId } = req.query;
     if (!jobId || typeof jobId !== "string") {
@@ -580,12 +573,11 @@ router.get("/profiles/:id/match-score", requireAuth, requireRole(...HIRING_ROLES
       jobTitle: job.title,
     });
   } catch (err) {
-    logError("GET /api/talent-pool/profiles/:id/match-score", { error: String(err) });
-    res.status(500).json({ error: "Failed to compute match score" });
+    next(err);
   }
 });
 
-router.get("/by-organization/:orgId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/by-organization/:orgId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const targetOrgId = req.params.orgId;
 
@@ -613,12 +605,11 @@ router.get("/by-organization/:orgId", requireAuth, async (req: AuthRequest, res)
 
     res.json(profiles);
   } catch (err) {
-    logError("GET /api/talent-pool/by-organization/:orgId", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch organization talent profiles" });
+    next(err);
   }
 });
 
-router.get("/my-skills", requireAuth, async (req: AuthRequest, res) => {
+router.get("/my-skills", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const mySkills = await db
       .select({
@@ -632,12 +623,11 @@ router.get("/my-skills", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(mySkills);
   } catch (err) {
-    logError("GET /api/talent-pool/my-skills", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch skills" });
+    next(err);
   }
 });
 
-router.post("/my-skills", requireAuth, async (req: AuthRequest, res) => {
+router.post("/my-skills", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { skillName } = req.body;
     if (!skillName || typeof skillName !== "string") {
@@ -674,12 +664,11 @@ router.post("/my-skills", requireAuth, async (req: AuthRequest, res) => {
 
     res.status(201).json({ id: userSkill.id, name: skill.name, skillId: skill.id });
   } catch (err) {
-    logError("POST /api/talent-pool/my-skills", { error: String(err) });
-    res.status(500).json({ error: "Failed to add skill" });
+    next(err);
   }
 });
 
-router.delete("/my-skills/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/my-skills/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     await db
       .delete(userSkills)
@@ -687,12 +676,11 @@ router.delete("/my-skills/:id", requireAuth, async (req: AuthRequest, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    logError("DELETE /api/talent-pool/my-skills/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to remove skill" });
+    next(err);
   }
 });
 
-router.get("/my-certifications", requireAuth, async (req: AuthRequest, res) => {
+router.get("/my-certifications", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const certs = await db
       .select()
@@ -701,12 +689,11 @@ router.get("/my-certifications", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(certs);
   } catch (err) {
-    logError("GET /api/talent-pool/my-certifications", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch certifications" });
+    next(err);
   }
 });
 
-router.post("/my-certifications", requireAuth, async (req: AuthRequest, res) => {
+router.post("/my-certifications", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { certificationName } = req.body;
     if (!certificationName || typeof certificationName !== "string") {
@@ -724,12 +711,11 @@ router.post("/my-certifications", requireAuth, async (req: AuthRequest, res) => 
 
     res.status(201).json(cert);
   } catch (err) {
-    logError("POST /api/talent-pool/my-certifications", { error: String(err) });
-    res.status(500).json({ error: "Failed to add certification" });
+    next(err);
   }
 });
 
-router.delete("/my-certifications/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/my-certifications/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     await db
       .delete(userCertifications)
@@ -737,12 +723,11 @@ router.delete("/my-certifications/:id", requireAuth, async (req: AuthRequest, re
 
     res.json({ success: true });
   } catch (err) {
-    logError("DELETE /api/talent-pool/my-certifications/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to remove certification" });
+    next(err);
   }
 });
 
-router.post("/api/talent-pool/upload-portfolio-photos", requireAuth, talentUpload.array("photos", 10), async (req: AuthRequest, res) => {
+router.post("/api/talent-pool/upload-portfolio-photos", requireAuth, talentUpload.array("photos", 10), async (req: AuthRequest, res, next) => {
   try {
     const uid = userId(req);
     const files = req.files as Express.Multer.File[];
@@ -779,12 +764,11 @@ router.post("/api/talent-pool/upload-portfolio-photos", requireAuth, talentUploa
 
     res.status(201).json({ urls: uploadedUrls });
   } catch (err) {
-    logError("POST /api/talent-pool/upload-portfolio-photos", { error: String(err) });
-    res.status(500).json({ error: "Failed to upload photos" });
+    next(err);
   }
 });
 
-router.get("/api/talent-pool/portfolio-files/*", async (req, res) => {
+router.get("/api/talent-pool/portfolio-files/*", async (req, res, next) => {
   try {
     const objectId = req.params[0];
     if (!objectId) {
@@ -815,8 +799,7 @@ router.get("/api/talent-pool/portfolio-files/*", async (req, res) => {
     const [buffer] = await objectFile.download();
     res.send(buffer);
   } catch (err) {
-    logError("GET /api/talent-pool/portfolio-files/*", { error: String(err) });
-    res.status(500).json({ error: "Failed to serve file" });
+    next(err);
   }
 });
 

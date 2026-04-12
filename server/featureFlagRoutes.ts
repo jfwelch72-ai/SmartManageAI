@@ -6,7 +6,7 @@ import { logError } from "./utils/logger";
 
 const router = Router();
 
-router.get("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER"), async (req, res) => {
+router.get("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER"), async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!user.organizationId) {
@@ -15,12 +15,11 @@ router.get("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER"), asy
     const flags = await flagService.getFeatureFlags(user.organizationId);
     res.json({ flags, keys: FEATURE_FLAG_KEYS });
   } catch (err) {
-    logError("Failed to get feature flags", { error: String(err) });
-    res.status(500).json({ error: "Failed to get feature flags" });
+    next(err);
   }
 });
 
-router.get("/:orgId", requireAuth, async (req, res) => {
+router.get("/:orgId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (user.role !== "SUPER_ADMIN") {
@@ -29,12 +28,11 @@ router.get("/:orgId", requireAuth, async (req, res) => {
     const flags = await flagService.getFeatureFlags(req.params.orgId);
     res.json({ flags, keys: FEATURE_FLAG_KEYS });
   } catch (err) {
-    logError("Failed to get feature flags for org", { error: String(err) });
-    res.status(500).json({ error: "Failed to get feature flags" });
+    next(err);
   }
 });
 
-router.patch("/:orgId", requireAuth, async (req, res) => {
+router.patch("/:orgId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (user.role !== "SUPER_ADMIN") {
@@ -58,8 +56,7 @@ router.patch("/:orgId", requireAuth, async (req, res) => {
 
     res.status(400).json({ error: "Provide { flag, enabled } or { flags: {...} }" });
   } catch (err) {
-    logError("Failed to update feature flags", { error: String(err) });
-    res.status(500).json({ error: "Failed to update feature flags" });
+    next(err);
   }
 });
 

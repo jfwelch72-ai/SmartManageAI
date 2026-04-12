@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import {
   materialTests, projects, punchListItems, users,
@@ -33,7 +33,7 @@ async function generateTestNumber(projectCode: string): Promise<string> {
 router.get(
   "/projects/:code/material-tests",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -52,8 +52,7 @@ router.get(
 
       res.json(tests);
     } catch (err) {
-      logError("Error fetching material tests:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to fetch material tests" });
+      next(err);
     }
   },
 );
@@ -62,7 +61,7 @@ router.post(
   "/projects/:code/material-tests",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -148,8 +147,7 @@ router.post(
 
       res.status(201).json(test);
     } catch (err) {
-      logError("Error creating material test:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create material test" });
+      next(err);
     }
   },
 );
@@ -158,7 +156,7 @@ router.patch(
   "/projects/:code/material-tests/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -255,8 +253,7 @@ router.patch(
 
       res.json(updated);
     } catch (err) {
-      logError("Error updating material test:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to update material test" });
+      next(err);
     }
   },
 );
@@ -265,7 +262,7 @@ router.delete(
   "/projects/:code/material-tests/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -296,8 +293,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (err) {
-      logError("Error deleting material test:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete material test" });
+      next(err);
     }
   },
 );
@@ -305,7 +301,7 @@ router.delete(
 router.get(
   "/projects/:code/safety-officer",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -323,8 +319,7 @@ router.get(
 
       res.json({ safetyOfficerId: project.safetyOfficerId, safetyOfficer: officer || null });
     } catch (err) {
-      logError("Error fetching safety officer:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to fetch safety officer" });
+      next(err);
     }
   },
 );
@@ -333,7 +328,7 @@ router.patch(
   "/projects/:code/safety-officer",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -365,8 +360,7 @@ router.patch(
 
       res.json({ success: true, safetyOfficerId: safetyOfficerId || null });
     } catch (err) {
-      logError("Error updating safety officer:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to update safety officer" });
+      next(err);
     }
   },
 );

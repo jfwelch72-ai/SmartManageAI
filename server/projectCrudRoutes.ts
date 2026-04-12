@@ -1079,7 +1079,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
     if (error.code === '23505') {
       res.status(409).json({ error: "Unable to generate unique project code - please try again" });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });

@@ -98,7 +98,7 @@ export function registerPerformanceRoutes(app: Express) {
     return orgId;
   };
 
-  app.get("/api/performance/criteria", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/criteria", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -111,12 +111,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      logError("Error fetching criteria:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/kpi-criteria", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/kpi-criteria", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -170,12 +169,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(kpiCriteria);
     } catch (error) {
-      logError("Error fetching KPI criteria:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.post("/api/performance/criteria", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/performance/criteria", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -197,12 +195,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json(created);
     } catch (error) {
-      logError("Error creating criteria:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.patch("/api/performance/criteria/:id", requireAuth, async (req: AuthRequest, res) => {
+  app.patch("/api/performance/criteria/:id", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -231,12 +228,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      logError("Error updating criteria:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.delete("/api/performance/criteria/:id", requireAuth, async (req: AuthRequest, res) => {
+  app.delete("/api/performance/criteria/:id", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -257,12 +253,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      logError("Error deleting criteria:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/eligible-employees", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/eligible-employees", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -293,12 +288,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(eligible);
     } catch (error) {
-      logError("Error fetching eligible employees:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.post("/api/performance/ratings", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/performance/ratings", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -483,12 +477,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json({ ...rating, scores: insertedScores });
     } catch (error) {
-      logError("Error creating rating:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/ratings/my", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/ratings/my", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -511,12 +504,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(ratingsWithScores);
     } catch (error) {
-      logError("Error fetching my ratings:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/ratings", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/ratings", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -548,12 +540,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(ratingsWithScores);
     } catch (error) {
-      logError("Error fetching ratings:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/leaderboard", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/leaderboard", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -581,12 +572,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(leaderboard);
     } catch (error) {
-      logError("Error fetching leaderboard:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/reward-types", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/reward-types", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -600,12 +590,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      logError("Error fetching reward types:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.post("/api/performance/reward-types", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/performance/reward-types", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -626,12 +615,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json(created);
     } catch (error) {
-      logError("Error creating reward type:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.patch("/api/performance/reward-types/:id", requireAuth, async (req: AuthRequest, res) => {
+  app.patch("/api/performance/reward-types/:id", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -659,12 +647,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      logError("Error updating reward type:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.delete("/api/performance/reward-types/:id", requireAuth, async (req: AuthRequest, res) => {
+  app.delete("/api/performance/reward-types/:id", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -685,12 +672,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      logError("Error deleting reward type:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.post("/api/performance/rewards", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/performance/rewards", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -726,12 +712,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json(created);
     } catch (error) {
-      logError("Error assigning reward:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/rewards/my", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/rewards/my", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -752,12 +737,11 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      logError("Error fetching my rewards:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/rewards/analytics", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/rewards/analytics", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       if (!requireAdmin(req, res)) return;
       const orgId = getOrgId(req, res);
@@ -797,12 +781,11 @@ export function registerPerformanceRoutes(app: Express) {
         byMonth,
       });
     } catch (error) {
-      logError("Error fetching reward analytics:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.get("/api/performance/rewards", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/performance/rewards", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -833,8 +816,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      logError("Error fetching rewards:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 }

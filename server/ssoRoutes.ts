@@ -1,5 +1,5 @@
 import {logError, logWarn } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { AuthRequest, requireAuth, requireRole, generateToken, setAuthCookie } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
 import { db } from "./db";
@@ -15,7 +15,7 @@ router.get(
   requireAuth,
   requireRole("ADMIN", "SUPER_ADMIN"),
   requireFeature("SSO"),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = req.user!.organizationId;
       if (!orgId) {
@@ -36,8 +36,7 @@ router.get(
 
       return res.json({ config: config || null, orgSlug: org?.slug || null });
     } catch (error: any) {
-      logError("Error fetching SSO config:", {}, error instanceof Error ? error : new Error(String(error)));
-      return res.status(500).json({ error: "Failed to fetch SSO configuration" });
+            return next(error);
     }
   }
 );
@@ -47,7 +46,7 @@ router.put(
   requireAuth,
   requireRole("ADMIN", "SUPER_ADMIN"),
   requireFeature("SSO"),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = req.user!.organizationId;
       if (!orgId) {
@@ -123,8 +122,7 @@ router.put(
 
       return res.json({ config });
     } catch (error: any) {
-      logError("Error saving SSO config:", {}, error instanceof Error ? error : new Error(String(error)));
-      return res.status(500).json({ error: "Failed to save SSO configuration" });
+            return next(error);
     }
   }
 );
@@ -134,7 +132,7 @@ router.post(
   requireAuth,
   requireRole("ADMIN", "SUPER_ADMIN"),
   requireFeature("SSO"),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { certificate, ssoLoginUrl } = req.body;
       const errors: string[] = [];
@@ -174,13 +172,12 @@ router.post(
 
       return res.json({ valid: true, message: "SSO configuration appears valid" });
     } catch (error: any) {
-      logError("Error testing SSO config:", {}, error instanceof Error ? error : new Error(String(error)));
-      return res.status(500).json({ error: "Failed to test SSO configuration" });
+            return next(error);
     }
   }
 );
 
-router.get("/:orgSlug/login", async (req: AuthRequest, res: Response) => {
+router.get("/:orgSlug/login", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgSlug } = req.params;
 
@@ -220,12 +217,11 @@ router.get("/:orgSlug/login", async (req: AuthRequest, res: Response) => {
     const loginUrl = await saml.getAuthorizeUrlAsync("", req.headers.host || "", {});
     return res.redirect(loginUrl);
   } catch (error: any) {
-    logError("Error initiating SSO login:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to initiate SSO login" });
+        return next(error);
   }
 });
 
-router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response) => {
+router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgSlug } = req.params;
 
@@ -325,8 +321,7 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response) => {
 
     return res.redirect("/dashboard");
   } catch (error: any) {
-    logError("Error processing SSO callback:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to process SSO callback" });
+        return next(error);
   }
 });
 

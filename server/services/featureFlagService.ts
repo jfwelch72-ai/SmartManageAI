@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { safeJsonParse } from "../responseHelper";
 import { organizations, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
 import { eq, or, isNull, sql } from "drizzle-orm";
 import {logInfo, logWarn } from "../utils/logger";
@@ -20,7 +21,7 @@ export async function getFeatureFlags(orgId: string): Promise<FeatureFlagsMap> {
   }
 
   try {
-    const parsed = JSON.parse(org.featureFlags) as FeatureFlagsMap;
+    const parsed = safeJsonParse(org.featureFlags, null) as FeatureFlagsMap;
     return { ...DEFAULT_FLAGS, ...parsed };
   } catch {
     logWarn("Non-critical operation failed");

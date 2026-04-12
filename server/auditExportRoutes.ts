@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { AuthRequest, requireAuth, requireRole } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
 import { parsePagination } from "./utils/routeHelpers";
@@ -9,7 +9,7 @@ import { eq, and, gte, lte, desc, sql, type SQL } from "drizzle-orm";
 
 const router = Router();
 
-router.get("/search", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("AUDIT_EXPORT"), async (req: AuthRequest, res: Response) => {
+router.get("/search", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("AUDIT_EXPORT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const {
@@ -78,12 +78,11 @@ router.get("/search", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireF
       },
     });
   } catch (error) {
-    logError("Error searching audit logs:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to search audit logs" });
+    next(error);
   }
 });
 
-router.get("/stats", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("AUDIT_EXPORT"), async (req: AuthRequest, res: Response) => {
+router.get("/stats", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("AUDIT_EXPORT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const [actionStats, entityStats, recentCount] = await Promise.all([
       db.select({
@@ -112,12 +111,11 @@ router.get("/stats", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFe
       last24Hours: recentCount[0]?.count || 0,
     });
   } catch (error) {
-    logError("Error fetching audit stats:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch audit statistics" });
+    next(error);
   }
 });
 
-router.get("/export", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("AUDIT_EXPORT"), async (req: AuthRequest, res: Response) => {
+router.get("/export", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("AUDIT_EXPORT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { format = "csv", dateFrom, dateTo, entityType, action } = req.query as Record<string, string>;
 
@@ -177,8 +175,7 @@ router.get("/export", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireF
     res.setHeader("Content-Disposition", `attachment; filename="audit-log-${new Date().toISOString().split("T")[0]}.csv"`);
     res.send(csvRows.join("\n"));
   } catch (error) {
-    logError("Error exporting audit logs:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to export audit logs" });
+    next(error);
   }
 });
 

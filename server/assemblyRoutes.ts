@@ -46,7 +46,7 @@ async function verifyMeasurementOrg(measurementId: string, orgId: string): Promi
   return false;
 }
 
-router.get("/api/assemblies", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/assemblies", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -59,12 +59,11 @@ router.get("/api/assemblies", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(rows);
   } catch (error: any) {
-    logError("List assemblies error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to list assemblies" });
+    next(error);
   }
 });
 
-router.get("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -84,8 +83,7 @@ router.get("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) => 
 
     res.json({ ...assembly, items });
   } catch (error: any) {
-    logError("Get assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get assembly" });
+    next(error);
   }
 });
 
@@ -109,7 +107,7 @@ const createAssemblySchema = z.object({
     .min(1),
 });
 
-router.post("/api/assemblies", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
+router.post("/api/assemblies", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -131,12 +129,11 @@ router.post("/api/assemblies", requireAuth, requireRole(...ESTIMATOR_PLUS), asyn
 
     res.status(201).json({ ...assembly, items: insertedItems });
   } catch (error: any) {
-    logError("Create assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create assembly" });
+    next(error);
   }
 });
 
-router.patch("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
+router.patch("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -196,12 +193,11 @@ router.patch("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS),
 
     res.json({ ...updated, items: finalItems });
   } catch (error: any) {
-    logError("Update assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update assembly" });
+    next(error);
   }
 });
 
-router.delete("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
+router.delete("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -216,12 +212,11 @@ router.delete("/api/assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS)
     await db.delete(takeoffAssemblies).where(eq(takeoffAssemblies.id, req.params.id));
     res.json({ success: true });
   } catch (error: any) {
-    logError("Delete assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete assembly" });
+    next(error);
   }
 });
 
-router.post("/api/takeoff/measurements/:measurementId/assemblies", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
+router.post("/api/takeoff/measurements/:measurementId/assemblies", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -246,12 +241,11 @@ router.post("/api/takeoff/measurements/:measurementId/assemblies", requireAuth, 
 
     res.status(201).json(link);
   } catch (error: any) {
-    logError("Link assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to link assembly" });
+    next(error);
   }
 });
 
-router.delete("/api/takeoff/measurement-assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/measurement-assemblies/:id", requireAuth, requireRole(...ESTIMATOR_PLUS), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -273,12 +267,11 @@ router.delete("/api/takeoff/measurement-assemblies/:id", requireAuth, requireRol
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Unlink assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to unlink assembly" });
+    next(error);
   }
 });
 
-router.get("/api/takeoff/measurements/:measurementId/assembly-quantities", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/measurements/:measurementId/assembly-quantities", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "No organization" });
@@ -347,8 +340,7 @@ router.get("/api/takeoff/measurements/:measurementId/assembly-quantities", requi
 
     res.json(results);
   } catch (error: any) {
-    logError("Assembly quantities error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to compute assembly quantities" });
+    next(error);
   }
 });
 

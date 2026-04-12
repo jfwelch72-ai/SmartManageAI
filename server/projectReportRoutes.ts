@@ -1,4 +1,4 @@
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectReports, projectNotes, timeEntries, changeOrders } from "@shared/schema/operations";
 import { projects, users } from "@shared/schema/core";
@@ -537,7 +537,7 @@ router.get(
   "/api/projects/:id/progress-reports",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = req.params.id;
       const orgId = await getProjectOrgId(projectId);
@@ -554,7 +554,7 @@ router.get(
 
       res.json(reports);
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch reports" });
+      next(err);
     }
   }
 );
@@ -563,7 +563,7 @@ router.get(
   "/api/projects/:id/progress-reports/settings",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = req.params.id;
       const orgId = await getProjectOrgId(projectId);
@@ -591,7 +591,7 @@ router.get(
         emailRecipients: s.email_recipients || [],
       });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch report settings" });
+      next(err);
     }
   }
 );
@@ -606,7 +606,7 @@ router.put(
   "/api/projects/:id/progress-reports/settings",
   requireAuth,
   requireRole("ADMIN", "MANAGER", "HUSTLER"),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = req.params.id;
       const orgId = await getProjectOrgId(projectId);
@@ -637,7 +637,7 @@ router.put(
 
       res.json({ projectId, autoWeekly, autoMonthly, emailRecipients });
     } catch (err) {
-      res.status(500).json({ error: "Failed to update report settings" });
+      next(err);
     }
   }
 );
@@ -646,7 +646,7 @@ router.get(
   "/api/projects/:id/progress-reports/:reportId",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = req.params.id;
       const orgId = await getProjectOrgId(projectId);
@@ -666,7 +666,7 @@ router.get(
       if (!report) return res.status(404).json({ error: "Report not found" });
       res.json(report);
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch report" });
+      next(err);
     }
   }
 );
@@ -675,7 +675,7 @@ router.post(
   "/api/projects/:id/progress-reports/generate",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = req.params.id;
       const orgId = await getProjectOrgId(projectId);
@@ -738,7 +738,7 @@ router.post(
       }
     } catch (err) {
       console.error("[progress-reports] Generate error:", err);
-      res.status(500).json({ error: "Failed to generate report" });
+      next(err);
     }
   }
 );
@@ -747,7 +747,7 @@ router.get(
   "/api/projects/:id/progress-reports/:reportId/pdf",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = req.params.id;
       const orgId = await getProjectOrgId(projectId);
@@ -794,7 +794,7 @@ router.get(
       const pdfStream = generateReportPDF(report.reportData as ReportData, branding);
       pdfStream.pipe(res);
     } catch (err) {
-      res.status(500).json({ error: "Failed to generate PDF" });
+      next(err);
     }
   }
 );
@@ -803,7 +803,7 @@ router.delete(
   "/api/projects/:id/progress-reports/:reportId",
   requireAuth,
   requireRole("ADMIN", "MANAGER", "HUSTLER"),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const projectId = req.params.id;
       const orgId = await getProjectOrgId(projectId);
@@ -824,7 +824,7 @@ router.delete(
       if (!deleted) return res.status(404).json({ error: "Report not found" });
       res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: "Failed to delete report" });
+      next(err);
     }
   }
 );

@@ -185,7 +185,7 @@
  *       200: { description: Password set }
  */
 import {logError, logWarn } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets, hustlerOrganizations } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens } from "./auth";
@@ -412,7 +412,7 @@ export function mergePermissions(roleDefaults: PermissionSet, dbPerms: Partial<P
   return result;
 }
 
-router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) {
@@ -523,12 +523,11 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
 
     res.json(usersWithPermissions);
   } catch (error) {
-    logError('Error fetching permissions:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to fetch permissions' });
+    next(error);
   }
 });
 
-router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { userId } = req.params;
     const orgId = req.user!.organizationId;
@@ -661,8 +660,7 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
 
     res.json({ success: true });
   } catch (error) {
-    logError('Error updating permissions:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to update permissions' });
+    next(error);
   }
 });
 
@@ -1367,7 +1365,7 @@ async function seedBuiltInPresets() {
 
 export { seedBuiltInPresets };
 
-router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const role = (req.query.role as string) || '';
@@ -1390,12 +1388,11 @@ router.get('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN'
 
     res.json(allRows);
   } catch (error) {
-    logError('Error fetching permission presets:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to fetch permission presets' });
+    next(error);
   }
 });
 
-router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) {
@@ -1435,12 +1432,11 @@ router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN
 
     res.json({ ...created, permissions: data.permissions });
   } catch (error) {
-    logError('Error creating permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to create permission preset' });
+    next(error);
   }
 });
 
-router.delete('/api/dashboard/permission-presets/:id', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+router.delete('/api/dashboard/permission-presets/:id', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const orgId = req.user!.organizationId;
@@ -1467,12 +1463,11 @@ router.delete('/api/dashboard/permission-presets/:id', requireAuth, requireRole(
     await db.delete(permissionPresets).where(eq(permissionPresets.id, id));
     res.json({ success: true });
   } catch (error) {
-    logError('Error deleting permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to delete permission preset' });
+    next(error);
   }
 });
 
-router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { userId } = req.params;
     const orgId = req.user!.organizationId;
@@ -1562,12 +1557,11 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
 
     res.json({ success: true, permissions: fullPermSet, appliedPresetId: presetId });
   } catch (error) {
-    logError('Error applying permission preset:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to apply permission preset' });
+    next(error);
   }
 });
 
-router.delete('/api/dashboard/permissions/:userId/reset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response) => {
+router.delete('/api/dashboard/permissions/:userId/reset', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN', 'HUSTLER'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { userId } = req.params;
     const orgId = req.user!.organizationId;
@@ -1608,12 +1602,11 @@ router.delete('/api/dashboard/permissions/:userId/reset', requireAuth, requireRo
 
     res.json({ success: true, permissions: roleDefaults, message: `Permissions reset to ${targetUser.role} role defaults` });
   } catch (error) {
-    logError('Error resetting permissions:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to reset permissions' });
+    next(error);
   }
 });
 
-router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -1680,12 +1673,11 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
 
     res.json({ ...mergePermissions(roleDefaults, dbPerms), appliedPresetName: presetName });
   } catch (error) {
-    logError('Error fetching user permissions:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to fetch permissions' });
+    next(error);
   }
 });
 
-router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -1721,17 +1713,16 @@ router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
 
     res.json({ layout: roleDefault, isCustom: false });
   } catch (error) {
-    logError('Error fetching layout:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to fetch layout' });
+    next(error);
   }
 });
 
-router.get('/api/dashboard/layout/default', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/layout/default', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
   res.json({ layout: roleDefault });
 });
 
-router.put('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: Response) => {
+router.put('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -1807,12 +1798,11 @@ router.put('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
 
     res.json({ success: true, layout });
   } catch (error) {
-    logError('Error saving layout:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to save layout' });
+    next(error);
   }
 });
 
-router.post('/api/dashboard/layout/reset', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/layout/reset', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -1831,8 +1821,7 @@ router.post('/api/dashboard/layout/reset', requireAuth, async (req: AuthRequest,
 
     res.json({ success: true, layout: roleDefault });
   } catch (error) {
-    logError('Error resetting layout:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to reset layout' });
+    next(error);
   }
 });
 
@@ -1975,11 +1964,11 @@ function validatePalette(palette: Partial<UserColorPalette>, mode: 'light' | 'da
   };
 }
 
-router.get('/api/dashboard/palettes/presets', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/palettes/presets', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   res.json(PRESET_PALETTES);
 });
 
-router.get('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -2003,12 +1992,11 @@ router.get('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res: 
 
     res.json({ palette: palette || null, orgPalette: orgPalette || null, isActive: !!palette });
   } catch (error) {
-    logError('Error fetching palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to fetch palette' });
+    next(error);
   }
 });
 
-router.get('/api/dashboard/palettes', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/palettes', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -2025,12 +2013,11 @@ router.get('/api/dashboard/palettes', requireAuth, async (req: AuthRequest, res:
 
     res.json(palettes);
   } catch (error) {
-    logError('Error fetching palettes:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to fetch palettes' });
+    next(error);
   }
 });
 
-router.post('/api/dashboard/palette/validate', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/palette/validate', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const palette = req.body;
     
@@ -2043,12 +2030,11 @@ router.post('/api/dashboard/palette/validate', requireAuth, async (req: AuthRequ
       dark: darkValidation,
     });
   } catch (error) {
-    logError('Error validating palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to validate palette' });
+    next(error);
   }
 });
 
-router.post('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -2152,12 +2138,11 @@ router.post('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res:
     }
     res.json(response);
   } catch (error) {
-    logError('Error saving palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to save palette' });
+    next(error);
   }
 });
 
-router.put('/api/dashboard/palette/:paletteId/activate', requireAuth, async (req: AuthRequest, res: Response) => {
+router.put('/api/dashboard/palette/:paletteId/activate', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { paletteId } = req.params;
     const userId = req.user!.id;
@@ -2191,12 +2176,11 @@ router.put('/api/dashboard/palette/:paletteId/activate', requireAuth, async (req
 
     res.json({ success: true });
   } catch (error) {
-    logError('Error activating palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to activate palette' });
+    next(error);
   }
 });
 
-router.post('/api/dashboard/palette/deactivate', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/palette/deactivate', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -2214,12 +2198,11 @@ router.post('/api/dashboard/palette/deactivate', requireAuth, async (req: AuthRe
 
     res.json({ success: true });
   } catch (error) {
-    logError('Error deactivating palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to deactivate palette' });
+    next(error);
   }
 });
 
-router.get('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) {
@@ -2234,12 +2217,11 @@ router.get('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, r
 
     res.json({ palette: palette || null, isActive: !!palette });
   } catch (error) {
-    logError('Error fetching org palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to fetch organization palette' });
+    next(error);
   }
 });
 
-router.post('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const role = req.user!.role;
@@ -2338,12 +2320,11 @@ router.post('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, 
     }
     res.json(response);
   } catch (error) {
-    logError('Error saving org palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to save organization palette' });
+    next(error);
   }
 });
 
-router.post('/api/dashboard/org-palette/deactivate', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/api/dashboard/org-palette/deactivate', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const role = req.user!.role;
@@ -2362,12 +2343,11 @@ router.post('/api/dashboard/org-palette/deactivate', requireAuth, async (req: Au
 
     res.json({ success: true });
   } catch (error) {
-    logError('Error deactivating org palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to deactivate organization palette' });
+    next(error);
   }
 });
 
-router.delete('/api/dashboard/palette/:paletteId', requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete('/api/dashboard/palette/:paletteId', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { paletteId } = req.params;
     const userId = req.user!.id;
@@ -2393,8 +2373,7 @@ router.delete('/api/dashboard/palette/:paletteId', requireAuth, async (req: Auth
 
     res.json({ success: true });
   } catch (error) {
-    logError('Error deleting palette:', {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: 'Failed to delete palette' });
+    next(error);
   }
 });
 
@@ -2410,7 +2389,7 @@ const DASHBOARD_CACHE_TTL = 60_000;
 // ====================
 
 // Get dashboard statistics
-router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, isSuperAdmin: isSuperAdminUser, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2537,13 +2516,12 @@ router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: Au
 
     res.json(result);
   } catch (error) {
-    logError("Dashboard stats error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Get KPI metric data for dashboard KPI Summary Cards
-router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     const metric = req.query.metric as string;
@@ -2786,13 +2764,12 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
       isEstimated,
     });
   } catch (error) {
-    logError("KPI endpoint error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Get comprehensive dashboard snapshot for AI analysis
-router.get("/api/dashboard/snapshot", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/snapshot", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2807,13 +2784,12 @@ router.get("/api/dashboard/snapshot", requireAuth, requireRole("ADMIN", "MANAGER
     
     res.json({ snapshot, aiData });
   } catch (error) {
-    logError("Dashboard snapshot error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Aggregate time tracking data for production rate calculations
-router.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2831,8 +2807,7 @@ router.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("
     
     res.json(result);
   } catch (error) {
-    logError("Time tracking aggregation error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2852,7 +2827,7 @@ const updateUserSchema = insertUserSchema.omit({ passwordHash: true }).partial()
 });
 
 // Get all users (Admin/Manager/Office Manager)
-router.get("/api/users", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/users", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     // Organization filtering: SUPER_ADMIN sees all users, others see only their org's users
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -2873,13 +2848,12 @@ router.get("/api/users", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER",
     const usersWithoutPasswords = allUsers.map(({ passwordHash, ...user }) => user);
     res.json(usersWithoutPasswords);
   } catch (error) {
-    logError("Get users error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Get user by ID (Admin/Manager only)
-router.get("/api/users/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/users/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
     
@@ -2893,13 +2867,12 @@ router.get("/api/users/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async
     const { passwordHash, ...userWithoutPassword } = user;
     res.json(userWithoutPassword);
   } catch (error) {
-    logError("Get user error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Create user (Admin only)
-router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     // SECURITY: Sanitize text inputs for data integrity
     const sanitizedBody = {
@@ -2945,13 +2918,13 @@ router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthReq
     if (error.code === '23505') { // Unique violation
       res.status(409).json({ error: "Email already exists" });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
 // Update user (Admin only)
-router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const [targetUser] = await db.select({ organizationId: users.organizationId, role: users.role, roleLabel: users.roleLabel }).from(users).where(eq(users.id, req.params.id)).limit(1);
     if (!targetUser) { res.status(404).json({ error: "User not found" }); return; }
@@ -3027,13 +3000,13 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
     if (error.code === '23505') {
       res.status(409).json({ error: "Email already exists" });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
 // Update user cost rates (Admin only)
-router.patch("/api/users/:id/cost-rates", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/api/users/:id/cost-rates", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const [targetUserCheck] = await db.select({ role: users.role }).from(users).where(eq(users.id, req.params.id)).limit(1);
     if (targetUserCheck?.role === "SUPER_ADMIN" && req.user?.role !== "SUPER_ADMIN") {
@@ -3082,13 +3055,12 @@ router.patch("/api/users/:id/cost-rates", requireAuth, requireRole("ADMIN"), asy
     const { passwordHash, tokenVersion, ...userWithoutPassword } = updated;
     res.json(userWithoutPassword);
   } catch (error) {
-    logError("Update cost rates error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Revoke all user tokens (logout all devices) - Admin only
-router.post("/api/users/:id/revoke-tokens", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/api/users/:id/revoke-tokens", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
     
@@ -3113,13 +3085,12 @@ router.post("/api/users/:id/revoke-tokens", requireAuth, requireRole("ADMIN"), s
 
     res.json({ success: true, message: "All tokens revoked. User will need to log in again." });
   } catch (error) {
-    logError("Revoke tokens error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Change own password
-router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       currentPassword: z.string().min(1),
@@ -3151,12 +3122,11 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
 
     res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {
-    logError("Change password error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/auth/set-initial-password", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/api/auth/set-initial-password", requireAuth, sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       password: z.string().min(8, "Password must be at least 8 characters"),
@@ -3183,8 +3153,7 @@ router.post("/api/auth/set-initial-password", requireAuth, sensitiveLimiter, asy
 
     res.json({ success: true, message: "Password set successfully" });
   } catch (error) {
-    logError("Set initial password error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -3222,7 +3191,7 @@ function getPeriodDates(period: string): { start: Date; end: Date; bucketFormat:
   }
 }
 
-router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const metric = req.query.metric as string;
     const period = (req.query.period as string) || "30D";
@@ -3459,8 +3428,7 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
 
     res.json(trendResult);
   } catch (error) {
-    logError("Trend data error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -3480,7 +3448,7 @@ const ENTITY_SORT_FIELDS: Record<string, string[]> = {
   CHANGE_ORDERS: ["change_order_number", "status", "amount", "created_at"],
 };
 
-router.get("/api/dashboard/list", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/list", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const entity = req.query.entity as string;
     const status = (req.query.status as string) || "";
@@ -3688,8 +3656,7 @@ router.get("/api/dashboard/list", requireAuth, async (req: AuthRequest, res) => 
 
     res.json({ items, entity, total });
   } catch (error) {
-    logError("List widget data error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -3707,7 +3674,7 @@ interface Alert {
   link?: string;
 }
 
-router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4046,8 +4013,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
 
     res.json(alertsResult);
   } catch (error) {
-    logError("Alerts endpoint error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -4055,7 +4021,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
 // Workforce Snapshot Widget
 // ====================
 
-router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canManagePayroll"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4131,8 +4097,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
 
     res.json(wfResult);
   } catch (error) {
-    logError("Workforce snapshot error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -4140,7 +4105,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
 // Cash Position Widget
 // ====================
 
-router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4217,8 +4182,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
 
     res.json(cpResult);
   } catch (error) {
-    logError("Cash position error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -4226,7 +4190,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
 // SOV Progress Widget
 // ====================
 
-router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4375,8 +4339,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
 
     res.json(sovResult);
   } catch (error) {
-    logError("SOV progress error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -4384,7 +4347,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
 // Bid Pipeline Widget
 // ====================
 
-router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4464,8 +4427,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
 
     res.json(bpResult);
   } catch (error) {
-    logError("Bid pipeline error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -4473,7 +4435,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
 // Cost Code Breakdown Widget
 // ============================
 
-router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4652,8 +4614,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
       totalActual: 0,
     });
   } catch (error) {
-    logError("Cost code breakdown error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -4661,7 +4622,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
 // Schedule Impact Widget
 // ============================
 
-router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4861,15 +4822,14 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
 
     res.json(siResult);
   } catch (error) {
-    logError("Schedule impact error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ====================
 // Labor Utilization Widget
 // ====================
-router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canManagePayroll"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -4948,15 +4908,14 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
 
     res.json(luResult);
   } catch (error) {
-    logError("Labor utilization error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ====================
 // Safety Summary Widget
 // ====================
-router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -5023,15 +4982,14 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
 
     res.json(ssResult);
   } catch (error) {
-    logError("Safety summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ====================
 // Change Orders Pending Widget
 // ====================
-router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res) => {
+router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canViewFinancials"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -5106,8 +5064,7 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
 
     res.json(coResult);
   } catch (error) {
-    logError("Change orders pending error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

@@ -11,7 +11,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
-router.get("/api/production-rates", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { startDate, endDate, projectCode, unit } = req.query;
     
@@ -148,12 +148,11 @@ router.get("/api/production-rates", requireAuth, requireRole("ADMIN", "HUSTLER",
       availableUnits,
     });
   } catch (error) {
-    logError("Get production rates error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { description, unit, startDate, endDate } = req.query;
     
@@ -274,12 +273,11 @@ router.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "HU
       }),
     });
   } catch (error) {
-    logError("Get production rate detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { startDate, endDate, projectCode, source } = req.query;
     
@@ -552,12 +550,11 @@ router.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "H
       availableCategories,
     });
   } catch (error) {
-    logError("Get unified production rates error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { description, unit, startDate, endDate, projectCode, minQuantity, maxQuantity } = req.query;
     
@@ -784,12 +781,11 @@ router.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "H
       availableUnits,
     });
   } catch (error) {
-    logError("Get production rate metrics error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { description, unit, quantity } = req.query;
     
@@ -831,8 +827,7 @@ router.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "
       },
     });
   } catch (error) {
-    logError("Get production rate estimate error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

@@ -6,7 +6,7 @@ import {logError, logWarn } from "./utils/logger";
 
 const router = Router();
 
-router.get("/revisions/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/revisions/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -14,11 +14,11 @@ router.get("/revisions/:id", requireAuth, async (req: AuthRequest, res) => {
     if (!revision) return res.status(404).json({ error: "Revision not found" });
     res.json(revision);
   } catch (err) {
-    res.status(500).json({ error: "Failed to get revision" });
+    next(err);
   }
 });
 
-router.post("/revisions/:id/supersede", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res) => {
+router.post("/revisions/:id/supersede", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -26,24 +26,22 @@ router.post("/revisions/:id/supersede", requireAuth, requireRole("SUPER_ADMIN", 
     if (!result) return res.status(404).json({ error: "Revision not found" });
     res.json(result);
   } catch (err) {
-    logError("Failed to supersede revision", { error: String(err) });
-    res.status(500).json({ error: "Failed to supersede" });
+    next(err);
   }
 });
 
-router.get("/:docId/revisions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/:docId/revisions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
     const revisions = await docService.getRevisionHistory(orgId, req.params.docId);
     res.json(revisions);
   } catch (err) {
-    logError("Failed to list revisions", { error: String(err) });
-    res.status(500).json({ error: "Failed to list revisions" });
+    next(err);
   }
 });
 
-router.post("/:docId/revisions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/:docId/revisions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const user = getUserOrThrow(req, res);
     if (!user) return;
@@ -62,12 +60,11 @@ router.post("/:docId/revisions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
     );
     res.status(201).json(revision);
   } catch (err) {
-    logError("Failed to create revision", { error: String(err) });
-    res.status(500).json({ error: "Failed to create revision" });
+    next(err);
   }
 });
 
-router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, res) => {
+router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -80,20 +77,20 @@ router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, r
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(revision.storageKey);
       await objectStorageService.downloadObject(objectFile, res, 3600);
-    } catch {
+    } catch (downloadErr) {
       logWarn("Non-critical operation failed");
       if (!res.headersSent) {
-        res.status(500).json({ error: "Failed to stream revision file" });
+        next(downloadErr);
       }
     }
   } catch (err) {
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to get preview URL" });
+      next(err);
     }
   }
 });
 
-router.get("/:docId/compare", requireAuth, async (req: AuthRequest, res) => {
+router.get("/:docId/compare", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -103,7 +100,7 @@ router.get("/:docId/compare", requireAuth, async (req: AuthRequest, res) => {
     if (!comparison) return res.status(404).json({ error: "Revisions not found" });
     res.json(comparison);
   } catch (err) {
-    res.status(500).json({ error: "Failed to compare revisions" });
+    next(err);
   }
 });
 

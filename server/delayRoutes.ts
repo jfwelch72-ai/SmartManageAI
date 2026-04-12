@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectDelays, projects, changeOrders, users, notifications, delayNotifications, insertProjectDelaySchema, insertDelayNotificationSchema, type ProjectDelay, delayClaims, dailyReportLocks, photoCustodyRecords, insertDelayClaimSchema, insertDailyReportLockSchema, insertPhotoCustodyRecordSchema, type DelayClaim, type DailyReportLock, type PhotoCustodyRecord } from "@shared/schema";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
@@ -228,7 +228,7 @@ async function notifyDelayStatusChange(
   }
 }
 
-router.get("/projects/:projectId/delays", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/delays", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -272,12 +272,11 @@ router.get("/projects/:projectId/delays", requireAuth, async (req: AuthRequest, 
 
     res.json(enrichedDelays);
   } catch (error) {
-    logError("Error fetching project delays:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch delays" });
+    next(error);
   }
 });
 
-router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const userId = req.user!.id;
@@ -392,12 +391,11 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
       scheduleImpact,
     });
   } catch (error) {
-    logError("Error creating delay:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create delay" });
+    next(error);
   }
 });
 
-router.get("/delays/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delays/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const delay = await getDelayById(req.params.id);
 
@@ -422,12 +420,11 @@ router.get("/delays/:id", requireAuth, async (req: AuthRequest, res: Response) =
       linkedChangeOrder
     });
   } catch (error) {
-    logError("Error fetching delay:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch delay" });
+    next(error);
   }
 });
 
-router.patch("/delays/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/delays/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const delay = await getDelayById(req.params.id);
@@ -500,12 +497,11 @@ router.patch("/delays/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERI
       scheduleImpact,
     });
   } catch (error) {
-    logError("Error updating delay:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update delay" });
+    next(error);
   }
 });
 
-router.post("/delays/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delays/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const delay = await getDelayById(req.params.id);
@@ -566,12 +562,11 @@ router.post("/delays/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    logError("Error submitting delay:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to submit delay" });
+    next(error);
   }
 });
 
-router.post("/delays/:id/acknowledge", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delays/:id/acknowledge", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const delay = await getDelayById(req.params.id);
@@ -628,12 +623,11 @@ router.post("/delays/:id/acknowledge", requireAuth, requireRole("ADMIN", "MANAGE
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    logError("Error acknowledging delay:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to acknowledge delay" });
+    next(error);
   }
 });
 
-router.post("/delays/:id/resolve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delays/:id/resolve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const delay = await getDelayById(req.params.id);
@@ -700,12 +694,11 @@ router.post("/delays/:id/resolve", requireAuth, requireRole("ADMIN", "MANAGER", 
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    logError("Error resolving delay:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to resolve delay" });
+    next(error);
   }
 });
 
-router.post("/delays/:id/create-change-order", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delays/:id/create-change-order", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const delay = await getDelayById(req.params.id);
@@ -793,12 +786,11 @@ router.post("/delays/:id/create-change-order", requireAuth, requireRole("ADMIN",
 
     res.status(201).json(newChangeOrder);
   } catch (error) {
-    logError("Error creating change order from delay:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create change order" });
+    next(error);
   }
 });
 
-router.post("/delays/:id/revert-to-draft", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delays/:id/revert-to-draft", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const delay = await getDelayById(req.params.id);
@@ -840,12 +832,11 @@ router.post("/delays/:id/revert-to-draft", requireAuth, requireRole("ADMIN", "MA
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    logError("Error reverting delay to draft:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to revert delay" });
+    next(error);
   }
 });
 
-router.get("/delays/dashboard/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delays/dashboard/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const activeDelays = await db
       .select({
@@ -884,8 +875,7 @@ router.get("/delays/dashboard/summary", requireAuth, async (req: AuthRequest, re
       }))
     });
   } catch (error) {
-    logError("Error fetching delay dashboard summary:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch delay summary" });
+    next(error);
   }
 });
 
@@ -945,7 +935,7 @@ We appreciate your understanding and cooperation in addressing this matter. We r
   return { subject, body };
 }
 
-router.post("/delays/:id/notifications/generate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delays/:id/notifications/generate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -1016,12 +1006,11 @@ router.post("/delays/:id/notifications/generate", requireAuth, requireRole("ADMI
 
     res.status(201).json(notification);
   } catch (error) {
-    logError("Error generating delay notification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate notification" });
+    next(error);
   }
 });
 
-router.get("/delays/:id/notifications", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delays/:id/notifications", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -1039,12 +1028,11 @@ router.get("/delays/:id/notifications", requireAuth, async (req: AuthRequest, re
 
     res.json(notificationsList);
   } catch (error) {
-    logError("Error fetching delay notifications:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch notifications" });
+    next(error);
   }
 });
 
-router.get("/delays/:delayId/notifications/:notificationId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delays/:delayId/notifications/:notificationId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { delayId, notificationId } = req.params;
 
@@ -1064,12 +1052,11 @@ router.get("/delays/:delayId/notifications/:notificationId", requireAuth, async 
 
     res.json(notification);
   } catch (error) {
-    logError("Error fetching notification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch notification" });
+    next(error);
   }
 });
 
-router.patch("/delays/:delayId/notifications/:notificationId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/delays/:delayId/notifications/:notificationId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { delayId, notificationId } = req.params;
     const userId = req.user!.id;
@@ -1144,12 +1131,11 @@ router.patch("/delays/:delayId/notifications/:notificationId", requireAuth, requ
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating notification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update notification" });
+    next(error);
   }
 });
 
-router.get("/delays/:delayId/notifications/:notificationId/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delays/:delayId/notifications/:notificationId/pdf", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { delayId, notificationId } = req.params;
 
@@ -1235,12 +1221,11 @@ router.get("/delays/:delayId/notifications/:notificationId/pdf", requireAuth, as
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("Error generating notification PDF:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate PDF" });
+    next(error);
   }
 });
 
-router.delete("/delays/:delayId/notifications/:notificationId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/delays/:delayId/notifications/:notificationId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { delayId, notificationId } = req.params;
     const userId = req.user!.id;
@@ -1273,12 +1258,11 @@ router.delete("/delays/:delayId/notifications/:notificationId", requireAuth, req
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting notification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete notification" });
+    next(error);
   }
 });
 
-router.post("/delays/:id/fetch-weather-evidence", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delays/:id/fetch-weather-evidence", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { lat, lng } = req.body;
@@ -1344,8 +1328,7 @@ router.post("/delays/:id/fetch-weather-evidence", requireAuth, requireRole("ADMI
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible,
     });
   } catch (error) {
-    logError("Error fetching weather evidence:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch weather evidence" });
+    next(error);
   }
 });
 
@@ -1397,7 +1380,7 @@ async function generateClaimNumber(projectCode: string): Promise<string> {
 // ============================================================================
 
 // GET /api/delay-claims - List all delay claims for organization
-router.get("/delay-claims", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1437,8 +1420,7 @@ router.get("/delay-claims", requireAuth, async (req: AuthRequest, res: Response)
       claimTypeLabel: CLAIM_TYPE_LABELS[claim.claimType] || claim.claimType,
     })));
   } catch (error) {
-    logError("Error fetching delay claims:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch delay claims" });
+    next(error);
   }
 });
 
@@ -1447,7 +1429,7 @@ router.get("/delay-claims", requireAuth, async (req: AuthRequest, res: Response)
 // ============================================================================
 
 // GET /api/delay-claims/locks - List locks for a project
-router.get("/delay-claims/locks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/locks", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1479,13 +1461,12 @@ router.get("/delay-claims/locks", requireAuth, async (req: AuthRequest, res: Res
       project,
     })));
   } catch (error) {
-    logError("Error fetching daily report locks:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch daily report locks" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/locks - Lock a daily report
-router.post("/delay-claims/locks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/locks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1559,13 +1540,12 @@ router.post("/delay-claims/locks", requireAuth, requireRole("ADMIN", "MANAGER", 
     
     res.status(201).json(lock);
   } catch (error) {
-    logError("Error locking daily report:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to lock daily report" });
+    next(error);
   }
 });
 
 // GET /api/delay-claims/locks/:projectId/:date - Get lock status for specific date
-router.get("/delay-claims/locks/:projectId/:date", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/locks/:projectId/:date", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1585,13 +1565,12 @@ router.get("/delay-claims/locks/:projectId/:date", requireAuth, async (req: Auth
     
     res.json(lock || { status: "UNLOCKED", projectId, reportDate: date });
   } catch (error) {
-    logError("Error fetching lock status:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch lock status" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/locks/:id/supervisor-lock - Supervisor-level lock
-router.post("/delay-claims/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1625,13 +1604,12 @@ router.post("/delay-claims/locks/:id/supervisor-lock", requireAuth, requireRole(
     
     res.json(updated);
   } catch (error) {
-    logError("Error applying supervisor lock:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to apply supervisor lock" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/locks/:id/unlock - Unlock a locked report
-router.post("/delay-claims/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1686,8 +1664,7 @@ router.post("/delay-claims/locks/:id/unlock", requireAuth, requireRole("ADMIN", 
     
     res.json(updated);
   } catch (error) {
-    logError("Error unlocking daily report:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to unlock daily report" });
+    next(error);
   }
 });
 
@@ -1700,7 +1677,7 @@ router.post("/delay-claims/locks/:id/unlock", requireAuth, requireRole("ADMIN", 
 // ============================================================================
 
 // GET /api/delay-claims/photo-custody - List photo custody records
-router.get("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1740,13 +1717,12 @@ router.get("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, 
       actionByUser: user,
     })));
   } catch (error) {
-    logError("Error fetching photo custody records:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch photo custody records" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/photo-custody - Record a custody action
-router.post("/delay-claims/photo-custody", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/photo-custody", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1775,12 +1751,12 @@ router.post("/delay-claims/photo-custody", requireAuth, requireRole("ADMIN", "MA
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
-    res.status(500).json({ error: "Failed to create photo custody record" });
+    next(error);
   }
 });
 
 // GET /api/delay-claims/photo-custody/chain/:photoUrl - Get full chain of custody for a photo
-router.get("/delay-claims/photo-custody/chain/:photoUrl", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/photo-custody/chain/:photoUrl", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1817,8 +1793,7 @@ router.get("/delay-claims/photo-custody/chain/:photoUrl", requireAuth, async (re
       totalActions: records.length,
     });
   } catch (error) {
-    logError("Error fetching chain of custody:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch chain of custody" });
+    next(error);
   }
 });
 
@@ -1827,7 +1802,7 @@ router.get("/delay-claims/photo-custody/chain/:photoUrl", requireAuth, async (re
 // ============================================================================
 
 // GET /api/delay-claims/:id - Get single delay claim
-router.get("/delay-claims/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1870,13 +1845,12 @@ router.get("/delay-claims/:id", requireAuth, async (req: AuthRequest, res: Respo
       claimTypeLabel: CLAIM_TYPE_LABELS[result.claim.claimType] || result.claim.claimType,
     });
   } catch (error) {
-    logError("Error fetching delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch delay claim" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims - Create new delay claim
-router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1940,12 +1914,12 @@ router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
-    res.status(500).json({ error: "Failed to create delay claim" });
+    next(error);
   }
 });
 
 // PATCH /api/delay-claims/:id - Update delay claim
-router.patch("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2008,13 +1982,12 @@ router.patch("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER", "
       claimTypeLabel: CLAIM_TYPE_LABELS[updated.claimType] || updated.claimType,
     });
   } catch (error) {
-    logError("Error updating delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update delay claim" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/:id/submit - Submit claim for review
-router.post("/delay-claims/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2066,13 +2039,12 @@ router.post("/delay-claims/:id/submit", requireAuth, requireRole("ADMIN", "MANAG
     
     res.json(updated);
   } catch (error) {
-    logError("Error submitting delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to submit delay claim" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/:id/review - Start review of claim
-router.post("/delay-claims/:id/review", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/review", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2110,13 +2082,12 @@ router.post("/delay-claims/:id/review", requireAuth, requireRole("ADMIN", "MANAG
     
     res.json(updated);
   } catch (error) {
-    logError("Error starting review:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to start review" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/:id/approve - Approve claim
-router.post("/delay-claims/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2165,13 +2136,12 @@ router.post("/delay-claims/:id/approve", requireAuth, requireRole("ADMIN", "MANA
     
     res.json(updated);
   } catch (error) {
-    logError("Error approving delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to approve delay claim" });
+    next(error);
   }
 });
 
 // POST /api/delay-claims/:id/reject - Reject claim
-router.post("/delay-claims/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2222,13 +2192,12 @@ router.post("/delay-claims/:id/reject", requireAuth, requireRole("ADMIN", "MANAG
     
     res.json(updated);
   } catch (error) {
-    logError("Error rejecting delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to reject delay claim" });
+    next(error);
   }
 });
 
 // DELETE /api/delay-claims/:id - Delete claim (draft only)
-router.delete("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2263,8 +2232,7 @@ router.delete("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER"),
     
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete delay claim" });
+    next(error);
   }
 });
 

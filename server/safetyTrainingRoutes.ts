@@ -121,7 +121,7 @@ function isSafetyAdmin(role?: string): boolean {
 }
 
 // GET /api/safety-training — list all training programs for org
-router.get("/api/safety-training", async (req: AuthRequest, res) => {
+router.get("/api/safety-training", async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const trainings = await db
@@ -150,12 +150,12 @@ router.get("/api/safety-training", async (req: AuthRequest, res) => {
 
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    next(error);
   }
 });
 
 // POST /api/safety-training — create training program
-router.post("/api/safety-training", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/safety-training", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -173,7 +173,7 @@ router.post("/api/safety-training", requireAuth, async (req: AuthRequest, res) =
 });
 
 // PATCH /api/safety-training/:id — edit training program
-router.patch("/api/safety-training/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/safety-training/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -201,7 +201,7 @@ router.patch("/api/safety-training/:id", requireAuth, async (req: AuthRequest, r
 });
 
 // DELETE /api/safety-training/:id — soft delete (set inactive)
-router.delete("/api/safety-training/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/safety-training/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -214,12 +214,12 @@ router.delete("/api/safety-training/:id", requireAuth, async (req: AuthRequest, 
       .where(and(eq(safetyTrainings.id, id), eq(safetyTrainings.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    next(error);
   }
 });
 
 // GET /api/safety-training/assignments — list all assignments for org
-router.get("/api/safety-training/assignments", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/safety-training/assignments", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -260,12 +260,12 @@ router.get("/api/safety-training/assignments", requireAuth, async (req: AuthRequ
 
     res.json(assignments);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    next(error);
   }
 });
 
 // POST /api/safety-training/assign — assign training to employees or all
-router.post("/api/safety-training/assign", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/safety-training/assign", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -310,7 +310,7 @@ router.post("/api/safety-training/assign", requireAuth, async (req: AuthRequest,
 });
 
 // PATCH /api/safety-training/assignments/:id — mark complete / update notes
-router.patch("/api/safety-training/assignments/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/safety-training/assignments/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -352,7 +352,7 @@ router.patch("/api/safety-training/assignments/:id", requireAuth, async (req: Au
 });
 
 // DELETE /api/safety-training/assignments/:id — remove assignment
-router.delete("/api/safety-training/assignments/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/safety-training/assignments/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -364,12 +364,12 @@ router.delete("/api/safety-training/assignments/:id", requireAuth, async (req: A
       .where(and(eq(safetyTrainingAssignments.id, id), eq(safetyTrainingAssignments.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    next(error);
   }
 });
 
 // GET /api/safety-training/export/pdf — PDF report
-router.get("/api/safety-training/export/pdf", requireAuth, exportLimiter, async (req: AuthRequest, res) => {
+router.get("/api/safety-training/export/pdf", requireAuth, exportLimiter, async (req: AuthRequest, res, next) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -547,7 +547,7 @@ router.get("/api/safety-training/export/pdf", requireAuth, exportLimiter, async 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    next(error);
   }
 });
 

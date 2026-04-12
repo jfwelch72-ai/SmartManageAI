@@ -63,8 +63,7 @@ router.get("/voice-logs", requireAuth, requireInternalRole, async (req: Authenti
 
     res.json(logs);
   } catch (error) {
-    logError("Error fetching voice logs:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch voice logs" });
+    next(error);
   }
 });
 
@@ -84,8 +83,7 @@ router.get("/voice-logs/:id", requireAuth, requireInternalRole, async (req: Auth
 
     res.json(log);
   } catch (error) {
-    logError("Error fetching voice log:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch voice log" });
+    next(error);
   }
 });
 
@@ -106,8 +104,7 @@ router.post("/voice-logs", requireAuth, requireInternalRole, async (req: Authent
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error creating voice log:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create voice log" });
+    next(error);
   }
 });
 
@@ -170,8 +167,7 @@ router.patch("/voice-logs/:id", requireAuth, requireInternalRole, async (req: Au
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error updating voice log:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update voice log" });
+    next(error);
   }
 });
 
@@ -192,8 +188,7 @@ router.delete("/voice-logs/:id", requireAuth, requireInternalRole, async (req: A
     await db.delete(voiceLogs).where(eq(voiceLogs.id, id));
     res.status(204).send();
   } catch (error) {
-    logError("Error deleting voice log:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete voice log" });
+    next(error);
   }
 });
 
@@ -230,8 +225,7 @@ router.get("/issue-captures", requireAuth, requireInternalRole, async (req: Auth
 
     res.json(issues);
   } catch (error) {
-    logError("Error fetching issue captures:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch issue captures" });
+    next(error);
   }
 });
 
@@ -251,8 +245,7 @@ router.get("/issue-captures/:id", requireAuth, requireInternalRole, async (req: 
 
     res.json(issue);
   } catch (error) {
-    logError("Error fetching issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch issue capture" });
+    next(error);
   }
 });
 
@@ -273,8 +266,7 @@ router.post("/issue-captures", requireAuth, requireInternalRole, async (req: Aut
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error creating issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create issue capture" });
+    next(error);
   }
 });
 
@@ -348,8 +340,7 @@ router.patch("/issue-captures/:id", requireAuth, requireInternalRole, async (req
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error updating issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update issue capture" });
+    next(error);
   }
 });
 
@@ -370,8 +361,7 @@ router.delete("/issue-captures/:id", requireAuth, requireInternalRole, async (re
     await db.delete(issueCaptures).where(eq(issueCaptures.id, id));
     res.status(204).send();
   } catch (error) {
-    logError("Error deleting issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete issue capture" });
+    next(error);
   }
 });
 
@@ -407,8 +397,7 @@ router.get("/issue-captures/stats/summary", requireAuth, requireInternalRole, as
 
     res.json(stats);
   } catch (error) {
-    logError("Error fetching issue stats:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch issue stats" });
+    next(error);
   }
 });
 
@@ -444,8 +433,7 @@ router.get("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res: 
 
     res.json(queue);
   } catch (error) {
-    logError("Error fetching offline sync queue:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch offline sync queue" });
+    next(error);
   }
 });
 
@@ -466,8 +454,7 @@ router.post("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res:
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error creating offline sync item:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create offline sync item" });
+    next(error);
   }
 });
 
@@ -495,8 +482,7 @@ router.post("/offline-sync/batch", requireAuth, async (req: AuthenticatedRequest
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error creating batch offline sync items:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create batch offline sync items" });
+    next(error);
   }
 });
 
@@ -569,8 +555,7 @@ router.patch("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest,
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error updating offline sync item:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update offline sync item" });
+    next(error);
   }
 });
 
@@ -591,8 +576,7 @@ router.delete("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest
     await db.delete(offlineSyncQueue).where(eq(offlineSyncQueue.id, id));
     res.status(204).send();
   } catch (error) {
-    logError("Error deleting offline sync item:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete offline sync item" });
+    next(error);
   }
 });
 
@@ -611,8 +595,7 @@ router.delete("/offline-sync/clear/synced", requireAuth, async (req: Authenticat
 
     res.json({ message: "Synced items cleared" });
   } catch (error) {
-    logError("Error clearing synced items:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to clear synced items" });
+    next(error);
   }
 });
 
@@ -645,8 +628,7 @@ router.get("/offline-sync/stats", requireAuth, async (req: AuthenticatedRequest,
 
     res.json(stats);
   } catch (error) {
-    logError("Error fetching offline sync stats:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch offline sync stats" });
+    next(error);
   }
 });
 
@@ -698,7 +680,7 @@ Respond with valid JSON only.`;
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {
-      return res.status(500).json({ error: "No response from AI" });
+      return next(error);
     }
 
     const parsed = JSON.parse(content);
@@ -707,8 +689,7 @@ Respond with valid JSON only.`;
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    logError("Error parsing voice log:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to parse voice log" });
+    next(error);
   }
 });
 
@@ -753,8 +734,7 @@ router.post("/photo-auto-tag", requireAuth, requireInternalRole, async (req: Aut
         const mime = mediaRecord?.mimeType || "image/jpeg";
         resolvedImageUrl = `data:${mime};base64,${base64}`;
       } catch (e) {
-        logError("Failed to download image for auto-tag:", {}, e instanceof Error ? e : new Error(String(e)));
-        return res.status(500).json({ error: "Failed to download image for analysis" });
+        return next(e);
       }
     }
 
@@ -788,7 +768,7 @@ Respond with valid JSON only: { "tags": [...], "description": "..." }`;
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {
-      return res.status(500).json({ error: "No response from AI" });
+      return next(error);
     }
 
     const parsed = JSON.parse(content);
@@ -807,8 +787,7 @@ Respond with valid JSON only: { "tags": [...], "description": "..." }`;
 
     res.json({ tags, description, mediaId: updated?.id });
   } catch (error) {
-    logError("Error auto-tagging photo:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to auto-tag photo" });
+    next(error);
   }
 });
 

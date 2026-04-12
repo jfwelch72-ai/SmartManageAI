@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { requireAuth } from "./auth";
 import { exportLimiter } from "./rateLimiter";
@@ -53,7 +53,7 @@ async function verifyTemplateOrg(templateId: string, orgId: string): Promise<str
 
 // ==================== Toolbox Talk Topics ====================
 
-router.get("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const topics = await db
@@ -63,11 +63,11 @@ router.get("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, re
       .orderBy(desc(toolboxTalkTopics.createdAt));
     res.json(topics);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.post("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const parsed = insertToolboxTalkTopicSchema.parse({
@@ -82,7 +82,7 @@ router.post("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, r
   }
 });
 
-router.patch("/api/toolbox-talks/topics/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/toolbox-talks/topics/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -103,7 +103,7 @@ router.patch("/api/toolbox-talks/topics/:id", requireAuth, async (req: AuthReque
   }
 });
 
-router.delete("/api/toolbox-talks/topics/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/toolbox-talks/topics/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -112,13 +112,13 @@ router.delete("/api/toolbox-talks/topics/:id", requireAuth, async (req: AuthRequ
       .where(and(eq(toolboxTalkTopics.id, id), eq(toolboxTalkTopics.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
 // ==================== Scheduled Toolbox Talks ====================
 
-router.get("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const { projectId } = req.query;
@@ -148,11 +148,11 @@ router.get("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest,
       .orderBy(desc(toolboxTalkScheduled.scheduledDate));
     res.json(talks);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.post("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId!;
@@ -177,7 +177,7 @@ router.post("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest
   }
 });
 
-router.patch("/api/toolbox-talks/scheduled/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/toolbox-talks/scheduled/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId!;
@@ -206,7 +206,7 @@ router.patch("/api/toolbox-talks/scheduled/:id", requireAuth, async (req: AuthRe
   }
 });
 
-router.delete("/api/toolbox-talks/scheduled/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/toolbox-talks/scheduled/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -215,13 +215,13 @@ router.delete("/api/toolbox-talks/scheduled/:id", requireAuth, async (req: AuthR
       .where(and(eq(toolboxTalkScheduled.id, id), eq(toolboxTalkScheduled.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
 // ==================== Toolbox Talk Attendance ====================
 
-router.get("/api/toolbox-talks/scheduled/:talkId/attendance", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/toolbox-talks/scheduled/:talkId/attendance", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const { talkId } = req.params;
@@ -244,11 +244,11 @@ router.get("/api/toolbox-talks/scheduled/:talkId/attendance", requireAuth, async
       .orderBy(toolboxTalkAttendance.signedAt);
     res.json(records);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.post("/api/toolbox-talks/scheduled/:talkId/attendance", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/toolbox-talks/scheduled/:talkId/attendance", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const { talkId } = req.params;
@@ -282,7 +282,7 @@ router.post("/api/toolbox-talks/scheduled/:talkId/attendance", requireAuth, asyn
   }
 });
 
-router.get("/api/toolbox-talks/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/toolbox-talks/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const today = new Date().toISOString().split("T")[0];
@@ -317,13 +317,13 @@ router.get("/api/toolbox-talks/summary", requireAuth, async (req: AuthRequest, r
       overdue: overdueCount?.count ?? 0,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
 // ==================== Safety Checklist Templates ====================
 
-router.get("/api/safety-checklists/templates", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/safety-checklists/templates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const templates = await db
@@ -333,11 +333,11 @@ router.get("/api/safety-checklists/templates", requireAuth, async (req: AuthRequ
       .orderBy(desc(safetyChecklistTemplates.createdAt));
     res.json(templates);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.post("/api/safety-checklists/templates", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/safety-checklists/templates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const parsed = insertSafetyChecklistTemplateSchema.parse({
@@ -352,7 +352,7 @@ router.post("/api/safety-checklists/templates", requireAuth, async (req: AuthReq
   }
 });
 
-router.patch("/api/safety-checklists/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/safety-checklists/templates/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -373,7 +373,7 @@ router.patch("/api/safety-checklists/templates/:id", requireAuth, async (req: Au
   }
 });
 
-router.delete("/api/safety-checklists/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/safety-checklists/templates/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -382,13 +382,13 @@ router.delete("/api/safety-checklists/templates/:id", requireAuth, async (req: A
       .where(and(eq(safetyChecklistTemplates.id, id), eq(safetyChecklistTemplates.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
 // ==================== Checklist Instances ====================
 
-router.get("/api/safety-checklists/instances", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/safety-checklists/instances", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const { projectId } = req.query;
@@ -418,11 +418,11 @@ router.get("/api/safety-checklists/instances", requireAuth, async (req: AuthRequ
       .orderBy(desc(safetyChecklistInstances.createdAt));
     res.json(instances);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.post("/api/safety-checklists/instances", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/safety-checklists/instances", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId!;
 
@@ -448,7 +448,7 @@ router.post("/api/safety-checklists/instances", requireAuth, async (req: AuthReq
   }
 });
 
-router.patch("/api/safety-checklists/instances/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/safety-checklists/instances/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const { id } = req.params;
@@ -485,7 +485,7 @@ router.patch("/api/safety-checklists/instances/:id", requireAuth, async (req: Au
   }
 });
 
-router.get("/api/safety-checklists/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/safety-checklists/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     const [totalTemplates] = await db.select({ count: sql<number>`count(*)::int` })
@@ -503,13 +503,13 @@ router.get("/api/safety-checklists/summary", requireAuth, async (req: AuthReques
       inProgress: totalInProgress?.count ?? 0,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
 // ==================== OSHA Incidents ====================
 
-router.get("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -531,11 +531,11 @@ router.get("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Res
       .orderBy(desc(oshaIncidents.dateOfInjury));
     res.json(incidents);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.post("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId!;
@@ -565,7 +565,7 @@ router.post("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Re
   }
 });
 
-router.patch("/api/osha-incidents/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/osha-incidents/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId!;
@@ -599,7 +599,7 @@ router.patch("/api/osha-incidents/:id", requireAuth, async (req: AuthRequest, re
   }
 });
 
-router.delete("/api/osha-incidents/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/osha-incidents/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -608,11 +608,11 @@ router.delete("/api/osha-incidents/:id", requireAuth, async (req: AuthRequest, r
       .where(and(eq(oshaIncidents.id, id), eq(oshaIncidents.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.get("/api/osha-incidents/300-log", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/osha-incidents/300-log", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -652,11 +652,11 @@ router.get("/api/osha-incidents/300-log", requireAuth, async (req: AuthRequest, 
       },
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 
-router.get("/api/osha-incidents/300a-pdf", requireAuth, exportLimiter, async (req: AuthRequest, res: Response) => {
+router.get("/api/osha-incidents/300a-pdf", requireAuth, exportLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -798,11 +798,11 @@ router.get("/api/osha-incidents/300a-pdf", requireAuth, exportLimiter, async (re
     doc.end();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    next(error);
   }
 });
 
-router.get("/api/osha-incidents/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/osha-incidents/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
     const orgId = req.user!.organizationId;
@@ -833,7 +833,7 @@ router.get("/api/osha-incidents/summary", requireAuth, async (req: AuthRequest, 
       recordableIncidents: recordableCount?.count ?? 0,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(500).json({ error: errMsg });
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
   }
 });
 

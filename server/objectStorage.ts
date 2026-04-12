@@ -107,7 +107,7 @@ export class ObjectStorageService {
       stream.on("error", (err: Error) => {
         logError("Stream error:", {}, err instanceof Error ? err : new Error(String(err)));
         if (!res.headersSent) {
-          res.status(500).json({ error: "Error streaming file" });
+          next(error);
         }
       });
 
@@ -115,7 +115,7 @@ export class ObjectStorageService {
     } catch (error) {
       logError("Error downloading file:", {}, error instanceof Error ? error : new Error(String(error)));
       if (!res.headersSent) {
-        res.status(500).json({ error: "Error downloading file" });
+        next(error);
       }
     }
   }

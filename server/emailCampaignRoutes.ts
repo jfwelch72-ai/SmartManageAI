@@ -58,7 +58,7 @@ const scheduleCampaignSchema = z.object({
   scheduledAt: z.string().refine((val) => !isNaN(Date.parse(val)), { message: "Invalid date" }),
 });
 
-router.get("/api/email-campaigns/templates", requireAuth, async (req, res) => {
+router.get("/api/email-campaigns/templates", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -68,12 +68,11 @@ router.get("/api/email-campaigns/templates", requireAuth, async (req, res) => {
     const templates = await db.select().from(emailCampaignTemplates).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(emailCampaignTemplates.createdAt));
     res.json(templates);
   } catch (error) {
-    logError("Failed to list email campaign templates", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to list templates" });
+    next(error);
   }
 });
 
-router.post("/api/email-campaigns/templates", requireAuth, async (req, res) => {
+router.post("/api/email-campaigns/templates", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -91,12 +90,11 @@ router.post("/api/email-campaigns/templates", requireAuth, async (req, res) => {
     }).returning();
     res.status(201).json(template);
   } catch (error) {
-    logError("Failed to create email campaign template", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create template" });
+    next(error);
   }
 });
 
-router.patch("/api/email-campaigns/templates/:id", requireAuth, async (req, res) => {
+router.patch("/api/email-campaigns/templates/:id", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -116,12 +114,11 @@ router.patch("/api/email-campaigns/templates/:id", requireAuth, async (req, res)
     if (!template) return res.status(404).json({ error: "Template not found" });
     res.json(template);
   } catch (error) {
-    logError("Failed to update email campaign template", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update template" });
+    next(error);
   }
 });
 
-router.delete("/api/email-campaigns/templates/:id", requireAuth, async (req, res) => {
+router.delete("/api/email-campaigns/templates/:id", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -134,12 +131,11 @@ router.delete("/api/email-campaigns/templates/:id", requireAuth, async (req, res
     if (!deleted) return res.status(404).json({ error: "Template not found" });
     res.json({ success: true });
   } catch (error) {
-    logError("Failed to delete email campaign template", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete template" });
+    next(error);
   }
 });
 
-router.get("/api/email-campaigns", requireAuth, async (req, res) => {
+router.get("/api/email-campaigns", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -156,12 +152,11 @@ router.get("/api/email-campaigns", requireAuth, async (req, res) => {
 
     res.json({ data: campaigns, total: totalResult[0]?.count || 0 });
   } catch (error) {
-    logError("Failed to list email campaigns", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to list campaigns" });
+    next(error);
   }
 });
 
-router.get("/api/email-campaigns/:id", requireAuth, async (req, res) => {
+router.get("/api/email-campaigns/:id", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -177,12 +172,11 @@ router.get("/api/email-campaigns/:id", requireAuth, async (req, res) => {
 
     res.json({ ...campaign, contacts });
   } catch (error) {
-    logError("Failed to get email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get campaign" });
+    next(error);
   }
 });
 
-router.post("/api/email-campaigns", requireAuth, async (req, res) => {
+router.post("/api/email-campaigns", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -202,12 +196,11 @@ router.post("/api/email-campaigns", requireAuth, async (req, res) => {
 
     res.status(201).json(campaign);
   } catch (error) {
-    logError("Failed to create email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create campaign" });
+    next(error);
   }
 });
 
-router.patch("/api/email-campaigns/:id", requireAuth, async (req, res) => {
+router.patch("/api/email-campaigns/:id", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -230,12 +223,11 @@ router.patch("/api/email-campaigns/:id", requireAuth, async (req, res) => {
 
     res.json(campaign);
   } catch (error) {
-    logError("Failed to update email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update campaign" });
+    next(error);
   }
 });
 
-router.delete("/api/email-campaigns/:id", requireAuth, async (req, res) => {
+router.delete("/api/email-campaigns/:id", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -251,12 +243,11 @@ router.delete("/api/email-campaigns/:id", requireAuth, async (req, res) => {
     await db.delete(emailCampaigns).where(eq(emailCampaigns.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    logError("Failed to delete email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete campaign" });
+    next(error);
   }
 });
 
-router.post("/api/email-campaigns/:id/send", requireAuth, async (req, res) => {
+router.post("/api/email-campaigns/:id/send", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -319,11 +310,11 @@ router.post("/api/email-campaigns/:id/send", requireAuth, async (req, res) => {
     }).where(eq(emailCampaigns.id, campaign.id));
   } catch (error) {
     logError("Failed to send email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    if (!res.headersSent) res.status(500).json({ error: "Failed to send campaign" });
+    if (!res.headersSent) next(error);
   }
 });
 
-router.post("/api/email-campaigns/:id/schedule", requireAuth, async (req, res) => {
+router.post("/api/email-campaigns/:id/schedule", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -347,12 +338,11 @@ router.post("/api/email-campaigns/:id/schedule", requireAuth, async (req, res) =
 
     res.json(campaign);
   } catch (error) {
-    logError("Failed to schedule email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to schedule campaign" });
+    next(error);
   }
 });
 
-router.post("/api/email-campaigns/:id/cancel", requireAuth, async (req, res) => {
+router.post("/api/email-campaigns/:id/cancel", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -373,12 +363,11 @@ router.post("/api/email-campaigns/:id/cancel", requireAuth, async (req, res) => 
 
     res.json(campaign);
   } catch (error) {
-    logError("Failed to cancel email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to cancel campaign" });
+    next(error);
   }
 });
 
-router.post("/api/email-campaigns/:id/contacts", requireAuth, async (req, res) => {
+router.post("/api/email-campaigns/:id/contacts", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -408,12 +397,11 @@ router.post("/api/email-campaigns/:id/contacts", requireAuth, async (req, res) =
 
     res.status(201).json(contacts);
   } catch (error) {
-    logError("Failed to add contacts to email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to add contacts" });
+    next(error);
   }
 });
 
-router.delete("/api/email-campaigns/:id/contacts/:contactId", requireAuth, async (req, res) => {
+router.delete("/api/email-campaigns/:id/contacts/:contactId", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -438,12 +426,11 @@ router.delete("/api/email-campaigns/:id/contacts/:contactId", requireAuth, async
 
     res.json({ success: true });
   } catch (error) {
-    logError("Failed to remove contact from email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to remove contact" });
+    next(error);
   }
 });
 
-router.post("/api/email-campaigns/:id/duplicate", requireAuth, async (req, res) => {
+router.post("/api/email-campaigns/:id/duplicate", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const orgCtx = getOrgIdForFilter(authReq);
@@ -469,8 +456,7 @@ router.post("/api/email-campaigns/:id/duplicate", requireAuth, async (req, res) 
 
     res.status(201).json(campaign);
   } catch (error) {
-    logError("Failed to duplicate email campaign", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to duplicate campaign" });
+    next(error);
   }
 });
 

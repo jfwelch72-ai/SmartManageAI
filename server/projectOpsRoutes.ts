@@ -66,7 +66,7 @@ function validateJSONField(jsonString: string | null | undefined, fieldName: str
 // Receipts Routes
 // ====================
 
-router.get("/api/projects/:code/receipts", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/receipts", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -93,12 +93,11 @@ router.get("/api/projects/:code/receipts", requireAuth, async (req: AuthRequest,
 
     res.json(projectReceipts);
   } catch (error) {
-    logError("Get receipts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/receipts", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const rawAmount = req.body.amount;
     let processedAmount: string | undefined = undefined;
@@ -172,8 +171,7 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
 
     res.status(201).json(newReceipt);
   } catch (error: any) {
-    logError("Create receipt error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -181,7 +179,7 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
 // Plan Documents Routes
 // ====================
 
-router.get("/api/projects/:code/documents", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/documents", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -208,12 +206,11 @@ router.get("/api/projects/:code/documents", requireAuth, async (req: AuthRequest
 
     res.json(docs);
   } catch (error) {
-    logError("Get documents error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -243,12 +240,12 @@ router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, asyn
   } catch (error) {
     logError("Project document preview-url error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to generate preview URL" });
+      next(error);
     }
   }
 });
 
-router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -278,12 +275,12 @@ router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (re
   } catch (error) {
     logError("Project document stream error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to stream document" });
+      next(error);
     }
   }
 });
 
-router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertPlanDocumentSchema.extend({
       uploadedById: z.string().optional(),
@@ -321,12 +318,11 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     res.status(201).json(newDoc);
   } catch (error: any) {
-    logError("Create document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const bodySchema = z.object({
       url: z.string().url(),
@@ -523,7 +519,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
     });
 
     if (!uploadResponse.ok) {
-      res.status(500).json({ error: "Failed to upload file to object storage" });
+      next(error);
       return;
     }
 
@@ -571,12 +567,11 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
 
     res.status(201).json(newDoc);
   } catch (error: any) {
-    logError("Create document from URL error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const bodySchema = z.object({
       provider: z.enum(["gdrive", "dropbox", "onedrive", "box"]),
@@ -748,7 +743,7 @@ router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN",
     });
 
     if (!uploadResponse.ok) {
-      res.status(500).json({ error: "Failed to upload file to object storage" });
+      next(error);
       return;
     }
 
@@ -791,12 +786,11 @@ router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN",
 
     res.status(201).json(newDoc);
   } catch (error: any) {
-    logError("Create document from cloud error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { documentId } = req.params;
     const userRole = req.user!.role;
@@ -857,12 +851,11 @@ router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest
 
     res.json({ message: "Document deleted successfully" });
   } catch (error: any) {
-    logError("Delete document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/documents/:documentId/download-url", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/documents/:documentId/download-url", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { documentId } = req.params;
 
@@ -921,8 +914,7 @@ router.get("/api/documents/:documentId/download-url", requireAuth, async (req: A
       res.json({ url: document.fileUrl });
     }
   } catch (error: any) {
-    logError("Get document download URL error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -930,7 +922,7 @@ router.get("/api/documents/:documentId/download-url", requireAuth, async (req: A
 // File Permissions Routes
 // ====================
 
-router.post("/api/file-permissions", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res) => {
+router.post("/api/file-permissions", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertFilePermissionSchema.extend({
       grantedById: z.string().optional(),
@@ -969,12 +961,11 @@ router.post("/api/file-permissions", requireAuth, requireRoleOrFeature(["ADMIN",
     
     res.status(201).json(newPermission);
   } catch (error: any) {
-    logError("Grant file permission error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/file-permissions/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res) => {
+router.delete("/api/file-permissions/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res, next) => {
   try {
     const [deleted] = await db
       .delete(filePermissions)
@@ -988,12 +979,11 @@ router.delete("/api/file-permissions/:id", requireAuth, requireRoleOrFeature(["A
 
     res.json({ message: "Permission revoked successfully" });
   } catch (error) {
-    logError("Revoke file permission error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/file-permissions/:fileType/:fileId", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res) => {
+router.get("/api/file-permissions/:fileType/:fileId", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessCompanySettings"), async (req: AuthRequest, res, next) => {
   try {
     const { fileType, fileId } = req.params;
     
@@ -1023,12 +1013,11 @@ router.get("/api/file-permissions/:fileType/:fileId", requireAuth, requireRoleOr
 
     res.json(permissions);
   } catch (error) {
-    logError("Get file permissions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/users/:userId/file-permissions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/users/:userId/file-permissions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (req.user!.id !== req.params.userId && 
         req.user!.role !== "ADMIN" && 
@@ -1045,8 +1034,7 @@ router.get("/api/users/:userId/file-permissions", requireAuth, async (req: AuthR
 
     res.json(permissions);
   } catch (error) {
-    logError("Get user file permissions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1054,7 +1042,7 @@ router.get("/api/users/:userId/file-permissions", requireAuth, async (req: AuthR
 // Change Orders Routes
 // ====================
 
-router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1101,12 +1089,11 @@ router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(rows.map(r => ({ ...r.order, project: r.project })));
   } catch (error) {
-    logError("List change orders error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -1146,12 +1133,11 @@ router.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthReq
 
     res.json(enrichedOrders);
   } catch (error) {
-    logError("Get change orders error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1304,14 +1290,13 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
 
     res.status(201).json(newOrder);
   } catch (error: any) {
-    logError("Create change order error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 const updateChangeOrderSchema = insertChangeOrderSchema.omit({ requestedById: true }).partial();
 
-router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res) => {
+router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1389,8 +1374,7 @@ router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN
 
     res.json(updatedOrder);
   } catch (error: any) {
-    logError("Update change order error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1398,7 +1382,7 @@ router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN
 // Change Order Line Items Routes
 // ====================
 
-router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     
@@ -1423,12 +1407,11 @@ router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthReq
       subcontractorMarkupPercent: order?.subcontractorMarkupPercent ?? "5",
     });
   } catch (error) {
-    logError("Get change order line items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/change-orders/:id/line-items", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res) => {
+router.put("/api/change-orders/:id/line-items", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { laborEntries, equipmentEntries, materialEntries, costBreakdown, overheadPercent, profitPercent, subcontractorMarkupPercent } = req.body;
@@ -1607,8 +1590,7 @@ router.put("/api/change-orders/:id/line-items", requireAuth, requireRoleOrFeatur
       total: grandTotal
     });
   } catch (error) {
-    logError("Update change order line items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1616,7 +1598,7 @@ router.put("/api/change-orders/:id/line-items", requireAuth, requireRoleOrFeatur
 // Calendar Events Routes
 // ====================
 
-router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { startDate, endDate, eventType } = req.query;
     const userRole = req.user?.role;
@@ -1691,8 +1673,7 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
 
     res.json(eventsWithUser);
   } catch (error) {
-    logError("Get calendar events error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1927,7 +1908,7 @@ async function getVendorCalendarEvents(userId: string, filterEventType?: string,
   return filtered;
 }
 
-router.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const eventsWithUser = await db
       .select({
@@ -1954,12 +1935,11 @@ router.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res)
 
     res.json(eventsWithUser);
   } catch (error) {
-    logError("Get user calendar events error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -2006,12 +1986,11 @@ router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =
 
     res.status(201).json(newEvent);
   } catch (error: any) {
-    logError("Create calendar event error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/calendar/events/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/calendar/events/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [event] = await db
       .select()
@@ -2035,8 +2014,7 @@ router.delete("/api/calendar/events/:id", requireAuth, async (req: AuthRequest, 
     await db.delete(calendarEvents).where(eq(calendarEvents.id, req.params.id));
     res.status(204).send();
   } catch (error: any) {
-    logError("Delete calendar event error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2044,18 +2022,17 @@ router.delete("/api/calendar/events/:id", requireAuth, async (req: AuthRequest, 
 // Routes from projectHealthRoutes.ts
 // ========================================
 
-router.get("/api/project-health/overview", requireAuth, async (req, res) => {
+router.get("/api/project-health/overview", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const overview = await healthService.getOrgHealthOverview(user.organizationId);
     res.json(overview);
   } catch (err) {
-    logError("Failed to get health overview", { error: String(err) });
-    res.status(500).json({ error: "Failed to get health overview" });
+    next(err);
   }
 });
 
-router.get("/api/project-health/:projectId", requireAuth, async (req, res) => {
+router.get("/api/project-health/:projectId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const projectId = req.params.projectId;
@@ -2076,11 +2053,11 @@ router.get("/api/project-health/:projectId", requireAuth, async (req, res) => {
     }
     res.json(snapshot);
   } catch (err) {
-    res.status(500).json({ error: "Failed to get health score" });
+    next(err);
   }
 });
 
-router.post("/api/project-health/:projectId/compute", requireAuth, async (req, res) => {
+router.post("/api/project-health/:projectId/compute", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -2097,12 +2074,11 @@ router.post("/api/project-health/:projectId/compute", requireAuth, async (req, r
     const snapshot = await healthService.saveHealthSnapshot(user.organizationId, projectId, breakdown);
     res.json({ breakdown, snapshot });
   } catch (err) {
-    logError("Failed to compute health score", { error: String(err) });
-    res.status(500).json({ error: "Failed to compute health score" });
+    next(err);
   }
 });
 
-router.get("/api/project-health/:projectId/history", requireAuth, async (req, res) => {
+router.get("/api/project-health/:projectId/history", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const projectId = req.params.projectId;
@@ -2116,18 +2092,17 @@ router.get("/api/project-health/:projectId/history", requireAuth, async (req, re
     const history = await healthService.getSnapshotHistory(user.organizationId, projectId, limit);
     res.json(history);
   } catch (err) {
-    res.status(500).json({ error: "Failed to get health history" });
+    next(err);
   }
 });
 
-router.get("/api/project-health-portfolio/summary", requireAuth, async (req, res) => {
+router.get("/api/project-health-portfolio/summary", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     const summary = await healthService.getPortfolioHealthSummary(user.organizationId);
     res.json(summary);
   } catch (err) {
-    logError("Failed to get portfolio health summary", { error: String(err) });
-    res.status(500).json({ error: "Failed to get portfolio health summary" });
+    next(err);
   }
 });
 
@@ -2400,7 +2375,7 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
   return vaultDocs;
 }
 
-router.get("/api/projects/:code/vault", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/vault", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {
@@ -2433,12 +2408,11 @@ router.get("/api/projects/:code/vault", requireAuth, requireRole(...VAULT_MANAGE
 
     res.json(filtered);
   } catch (error) {
-    logError("Project vault error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {
@@ -2484,8 +2458,7 @@ router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRo
 
     res.json({ url: signedUrl, fileName: doc.fileName, mimeType: doc.mimeType });
   } catch (error) {
-    logError("Vault signed URL error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate signed URL" });
+    next(error);
   }
 });
 
@@ -2493,7 +2466,7 @@ const vaultExportSchema = z.object({
   documentIds: z.array(z.string()).min(1, "At least one document ID is required").max(500),
 });
 
-router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), exportLimiter, async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), exportLimiter, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {
@@ -2675,8 +2648,7 @@ router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...
     res.setHeader("Content-Disposition", `attachment; filename="Project_Vault_${project.code}_${new Date().toISOString().slice(0, 10)}.pdf"`);
     res.send(Buffer.from(finalPdfBytes));
   } catch (error) {
-    logError("Project vault PDF export error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate PDF" });
+    next(error);
   }
 });
 

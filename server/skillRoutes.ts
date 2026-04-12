@@ -88,17 +88,16 @@ import { sanitizeShortText, sanitizeText } from "./sanitization";
 
 const router = Router();
 
-router.get("/api/skills", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/skills", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const allSkills = await db.select().from(skills).orderBy(skills.category, skills.name);
     res.json(allSkills);
   } catch (error) {
-    logError("Error fetching skills:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -127,11 +126,11 @@ router.post("/api/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequ
       res.status(400).json({ error: "A skill with this name already exists" });
       return;
     }
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/skills/generate", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/skills/generate", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const predefinedSkills = [
       { name: "OSHA 10 Certified", category: "Safety", description: "Completed OSHA 10-hour construction safety training" },
@@ -205,12 +204,11 @@ router.post("/api/skills/generate", requireRole("ADMIN", "MANAGER"), async (req:
       skills: createdSkills 
     });
   } catch (error) {
-    logError("Error generating skills:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/skills/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.delete("/api/skills/:id", requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
 
@@ -226,12 +224,11 @@ router.delete("/api/skills/:id", requireRole("ADMIN"), async (req: AuthRequest, 
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting skill:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/users/:userId/skills", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/users/:userId/skills", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -247,12 +244,11 @@ router.get("/api/users/:userId/skills", requireAuth, async (req: AuthRequest, re
 
     res.json(userSkillsList);
   } catch (error) {
-    logError("Error fetching user skills:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/users/:userId/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/users/:userId/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
     const { skillId, proficiencyLevel, yearsExperience } = req.body;
@@ -286,12 +282,11 @@ router.post("/api/users/:userId/skills", requireRole("ADMIN", "MANAGER"), async 
 
     res.status(201).json(newUserSkill);
   } catch (error) {
-    logError("Error assigning skill:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/users/:userId/skills/:skillId", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/users/:userId/skills/:skillId", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { userId, skillId } = req.params;
 
@@ -317,8 +312,7 @@ router.delete("/api/users/:userId/skills/:skillId", requireRole("ADMIN", "MANAGE
 
     res.json({ success: true});
   } catch (error) {
-    logError("Error removing skill:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

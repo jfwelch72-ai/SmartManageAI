@@ -1,4 +1,4 @@
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { mobilizationChecklists, mobilizationChecklistItems, methodStatements } from "@shared/schema/operations";
 import { projects } from "@shared/schema/core";
@@ -90,7 +90,7 @@ const updateMethodStatementSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-router.get("/api/projects/:projectId/mobilization/checklists", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/projects/:projectId/mobilization/checklists", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const orgId = await getProjectOrgId(projectId);
@@ -101,11 +101,11 @@ router.get("/api/projects/:projectId/mobilization/checklists", requireAuth, asyn
       .orderBy(desc(mobilizationChecklists.createdAt));
     res.json(checklists);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.post("/api/projects/:projectId/mobilization/checklists", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.post("/api/projects/:projectId/mobilization/checklists", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const orgId = await getProjectOrgId(projectId);
@@ -132,11 +132,11 @@ router.post("/api/projects/:projectId/mobilization/checklists", requireAuth, req
 
     res.json(checklist);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.patch("/api/mobilization/checklists/:checklistId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.patch("/api/mobilization/checklists/:checklistId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { checklistId } = req.params;
     const [existing] = await db.select().from(mobilizationChecklists)
@@ -159,11 +159,11 @@ router.patch("/api/mobilization/checklists/:checklistId", requireAuth, requireRo
       .returning();
     res.json(updated);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.delete("/api/mobilization/checklists/:checklistId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.delete("/api/mobilization/checklists/:checklistId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { checklistId } = req.params;
     const [existing] = await db.select().from(mobilizationChecklists)
@@ -177,11 +177,11 @@ router.delete("/api/mobilization/checklists/:checklistId", requireAuth, requireR
     await db.delete(mobilizationChecklists).where(eq(mobilizationChecklists.id, checklistId));
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.get("/api/mobilization/checklists/:checklistId/items", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/mobilization/checklists/:checklistId/items", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { checklistId } = req.params;
     const [checklist] = await db.select({ projectId: mobilizationChecklists.projectId })
@@ -197,11 +197,11 @@ router.get("/api/mobilization/checklists/:checklistId/items", requireAuth, async
       .orderBy(mobilizationChecklistItems.sortOrder);
     res.json(items);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.post("/api/mobilization/checklists/:checklistId/items", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.post("/api/mobilization/checklists/:checklistId/items", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { checklistId } = req.params;
     const [checklist] = await db.select({ projectId: mobilizationChecklists.projectId })
@@ -228,11 +228,11 @@ router.post("/api/mobilization/checklists/:checklistId/items", requireAuth, requ
 
     res.json(item);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.patch("/api/mobilization/checklist-items/:itemId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.patch("/api/mobilization/checklist-items/:itemId", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { itemId } = req.params;
 
@@ -293,11 +293,11 @@ router.patch("/api/mobilization/checklist-items/:itemId", requireAuth, requireRo
 
     res.json(updated);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.get("/api/projects/:projectId/safety-checklists", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/projects/:projectId/safety-checklists", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const orgId = await getProjectOrgId(projectId);
@@ -319,7 +319,7 @@ router.get("/api/projects/:projectId/safety-checklists", requireAuth, async (req
   }
 });
 
-router.get("/api/projects/:projectId/method-statements", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/projects/:projectId/method-statements", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const orgId = await getProjectOrgId(projectId);
@@ -330,11 +330,11 @@ router.get("/api/projects/:projectId/method-statements", requireAuth, async (req
       .orderBy(desc(methodStatements.createdAt));
     res.json(statements);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.post("/api/projects/:projectId/method-statements", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.post("/api/projects/:projectId/method-statements", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const orgId = await getProjectOrgId(projectId);
@@ -361,7 +361,7 @@ router.post("/api/projects/:projectId/method-statements", requireAuth, requireRo
 
     res.json(statement);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
@@ -372,7 +372,7 @@ const VALID_METHOD_TRANSITIONS: Record<string, string[]> = {
   REJECTED: ["DRAFT"],
 };
 
-router.patch("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.patch("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -449,11 +449,11 @@ router.patch("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMEN
 
     res.json(updated);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.delete("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response) => {
+router.delete("/api/method-statements/:id", requireAuth, requireRole(...MANAGEMENT_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -467,7 +467,7 @@ router.delete("/api/method-statements/:id", requireAuth, requireRole(...MANAGEME
     await db.delete(methodStatements).where(eq(methodStatements.id, id));
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 

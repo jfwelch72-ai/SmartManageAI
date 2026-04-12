@@ -1,4 +1,5 @@
 import { eventBus } from "../eventBus";
+import { safeJsonParse } from "../../responseHelper";
 import { db } from "../../db";
 import { notifications, users } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
@@ -147,7 +148,7 @@ export function registerHiringEventListener(): void {
         .limit(1);
       if (interview?.interviewerUserIdsJson) {
         try {
-          const interviewerIds = JSON.parse(interview.interviewerUserIdsJson);
+          const interviewerIds = safeJsonParse(interview.interviewerUserIdsJson, null);
           if (Array.isArray(interviewerIds)) {
             for (const id of interviewerIds) {
               if (typeof id === "string" && id) recipientIds.add(id);

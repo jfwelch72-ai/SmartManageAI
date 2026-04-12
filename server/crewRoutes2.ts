@@ -106,7 +106,7 @@ router.use("/api/crews", requireAuth, requireFeaturePermission('canManageSchedul
 router.use("/api/crew-assignments", requireAuth, requireFeaturePermission('canManageScheduling'));
 router.use("/api/dispatch", requireAuth, requireFeaturePermission('canManageScheduling'));
 
-router.get("/api/crews", async (req: AuthRequest, res) => {
+router.get("/api/crews", async (req: AuthRequest, res, next) => {
   try {
     const { getOrgIdForFilter } = await import("./orgFilter");
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -169,12 +169,11 @@ router.get("/api/crews", async (req: AuthRequest, res) => {
 
     res.json(crewsWithCounts);
   } catch (error) {
-    logError("Error fetching crews:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -236,12 +235,11 @@ router.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthReque
 
     res.status(201).json(newCrew);
   } catch (error) {
-    logError("Error creating crew:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/crews/:id", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/crews/:id", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     
@@ -274,12 +272,11 @@ router.patch("/api/crews/:id", requireRole("ADMIN", "MANAGER"), async (req: Auth
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating crew:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/crews/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.delete("/api/crews/:id", requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
 
@@ -295,12 +292,11 @@ router.delete("/api/crews/:id", requireRole("ADMIN"), async (req: AuthRequest, r
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Error deleting crew:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crews/:id/members", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crews/:id/members", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
 
@@ -324,12 +320,11 @@ router.get("/api/crews/:id/members", requireAuth, async (req: AuthRequest, res) 
 
     res.json(members);
   } catch (error) {
-    logError("Error fetching crew members:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { userId, role, skillIds } = req.body;
@@ -414,12 +409,12 @@ router.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (re
     if (error.message === "User is already a member of this crew") {
       res.status(400).json({ error: "User is already a member of this crew" });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
-router.delete("/api/crews/:id/members/:userId", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/crews/:id/members/:userId", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { id, userId } = req.params;
 
@@ -445,12 +440,11 @@ router.delete("/api/crews/:id/members/:userId", requireRole("ADMIN", "MANAGER"),
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Error removing crew member:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crew-assignments", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crew-assignments", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { crewProjectAssignments } = await import("@shared/schema");
     
@@ -475,12 +469,11 @@ router.get("/api/crew-assignments", requireAuth, async (req: AuthRequest, res) =
 
     res.json(assignments);
   } catch (error) {
-    logError("Error fetching crew assignments:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const { crewProjectAssignments, insertCrewProjectAssignmentSchema } = await import("@shared/schema");
     const { ne: neOp } = await import("drizzle-orm");
@@ -602,12 +595,12 @@ router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTEN
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid input", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
-router.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"), async (req: AuthRequest, res) => {
+router.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const { crewProjectAssignments } = await import("@shared/schema");
     const { id } = req.params;
@@ -634,8 +627,7 @@ router.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPE
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error removing crew assignment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

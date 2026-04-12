@@ -103,7 +103,7 @@
  *           application/pdf: {}
  */
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import { 
@@ -163,7 +163,7 @@ async function verifyContractAccess(contractId: string, orgId: string | null, sh
   return { contract, hasAccess: true };
 }
 
-router.get("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -204,12 +204,11 @@ router.get("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "A
 
     res.json(result);
   } catch (error) {
-    logError("Get all subcontracts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/projects", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/projects", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -234,12 +233,11 @@ router.get("/subcontracts/projects", requireAuth, requireRoleOrFeature(["SUPER_A
     const projectList = await query;
     res.json(projectList);
   } catch (error) {
-    logError("Get projects for subcontracts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/subcontractors", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/subcontractors", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -264,12 +262,11 @@ router.get("/subcontracts/subcontractors", requireAuth, requireRoleOrFeature(["S
 
     res.json(subList);
   } catch (error) {
-    logError("Get subcontractors error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/project/:projectId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/project/:projectId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -301,12 +298,11 @@ router.get("/subcontracts/project/:projectId", requireAuth, requireRoleOrFeature
       subcontractor: c.subcontractor,
     })));
   } catch (error) {
-    logError("Get subcontracts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -345,8 +341,7 @@ router.get("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN"
       }
     });
   } catch (error) {
-    logError("Get subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -367,7 +362,7 @@ const createSubcontractSchema = z.object({
   lienWaiverRequired: z.boolean().optional(),
 });
 
-router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -438,8 +433,7 @@ router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "
       subcontractor
     });
   } catch (error) {
-    logError("Create subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -459,7 +453,7 @@ const updateSubcontractSchema = z.object({
   status: z.enum(["PENDING", "ACTIVE", "COMPLETED", "TERMINATED"]).optional()
 });
 
-router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -539,12 +533,11 @@ router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMI
       subcontractor
     });
   } catch (error) {
-    logError("Update subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -564,12 +557,11 @@ router.delete("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMI
 
     res.status(204).send();
   } catch (error) {
-    logError("Delete subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/:id/pdf", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:id/pdf", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -688,8 +680,7 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRoleOrFeature(["SUPER_AD
     
     pdfStream.pipe(res);
   } catch (error) {
-    logError("Generate subcontract PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

@@ -17,7 +17,7 @@ const router = Router();
 // Routes from vendorEnrollmentRoutes.ts
 // ========================================
 
-router.get("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -48,12 +48,11 @@ router.get("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json(enrollments);
   } catch (error) {
-    logError("Get vendor enrollments error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -97,12 +96,11 @@ router.post("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGE
     if (error.code === "23505") {
       return res.status(409).json({ error: "Vendor is already enrolled" });
     }
-    logError("Create vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.put("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -135,12 +133,11 @@ router.put("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MAN
 
     res.json(updated);
   } catch (error) {
-    logError("Update vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -159,12 +156,11 @@ router.delete("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor-enrollments/by-crm-org/:crmOrgId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor-enrollments/by-crm-org/:crmOrgId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -209,12 +205,11 @@ router.get("/api/vendor-enrollments/by-crm-org/:crmOrgId", requireAuth, requireR
       res.json(null);
     }
   } catch (error) {
-    logError("Get enrollment by CRM org error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor-enrollments/invite", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/vendor-enrollments/invite", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -356,12 +351,11 @@ SmartManageAI Construction Management Platform
       message: `Invitation will be sent to ${vendorEmail}`,
     });
   } catch (error) {
-    logError("Invite vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -390,12 +384,11 @@ router.patch("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "M
 
     res.json(updated);
   } catch (error) {
-    logError("Update enrollment settings error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor-enrollments/:id/suspend", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/vendor-enrollments/:id/suspend", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -434,12 +427,11 @@ router.post("/api/vendor-enrollments/:id/suspend", requireAuth, requireRole("ADM
 
     res.json(updated);
   } catch (error) {
-    logError("Suspend vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor-enrollments/:id/reactivate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/vendor-enrollments/:id/reactivate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -479,12 +471,11 @@ router.post("/api/vendor-enrollments/:id/reactivate", requireAuth, requireRole("
 
     res.json(updated);
   } catch (error) {
-    logError("Reactivate vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/portal", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/portal", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -542,12 +533,11 @@ router.get("/api/vendor/portal", requireAuth, requireRole("VENDOR"), async (req:
       enrolledClients: enrollments,
     });
   } catch (error) {
-    logError("Get vendor portal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/enrollments", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/enrollments", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -581,12 +571,11 @@ router.get("/api/vendor/enrollments", requireAuth, requireRole("VENDOR"), async 
 
     res.json(enrollments);
   } catch (error) {
-    logError("Get vendor enrollments error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -671,12 +660,11 @@ router.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (re
       enrollmentsServed: enrollments.length,
     });
   } catch (error) {
-    logError("Submit vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -699,12 +687,11 @@ router.get("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req
 
     res.json(items);
   } catch (error) {
-    logError("Get vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const headers = [
       "itemName",
@@ -739,12 +726,11 @@ router.get("/api/vendor/pricing/csv-template", requireAuth, requireRole("VENDOR"
     res.setHeader("Content-Disposition", "attachment; filename=pricing_template.csv");
     res.send(csvContent);
   } catch (error) {
-    logError("Get CSV template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor/pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.post("/api/vendor/pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -917,12 +903,11 @@ router.post("/api/vendor/pricing/bulk", requireAuth, requireRole("VENDOR"), asyn
       validationWarnings: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
-    logError("Bulk upload vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -971,12 +956,11 @@ router.get("/api/vendor/pricing/export", requireAuth, requireRole("VENDOR"), asy
     res.setHeader("Content-Disposition", "attachment; filename=material_pricing_export.csv");
     res.send(csvContent);
   } catch (error) {
-    logError("Export material pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -992,12 +976,11 @@ router.get("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), asy
 
     res.json(items);
   } catch (error) {
-    logError("Get vendor rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.post("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1066,12 +1049,11 @@ router.post("/api/vendor/rental-pricing", requireAuth, requireRole("VENDOR"), as
       enrollmentsServed: enrollments.length,
     });
   } catch (error) {
-    logError("Submit vendor rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/rental-pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/rental-pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const headers = ["name","equipmentType","make","model","description","dailyRate","weeklyRate","monthlyRate","deliveryFee","pickupFee","minimumRentalDays","leadTimeDays"];
     const sampleRow = ["CAT 320 Excavator","HEAVY_EQUIPMENT","Caterpillar","320","Standard excavator","450.00","2250.00","7500.00","350.00","350.00","1","2"];
@@ -1080,12 +1062,11 @@ router.get("/api/vendor/rental-pricing/csv-template", requireAuth, requireRole("
     res.setHeader("Content-Disposition", "attachment; filename=rental_pricing_template.csv");
     res.send(csvContent);
   } catch (error) {
-    logError("Get rental CSV template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor/rental-pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.post("/api/vendor/rental-pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1180,12 +1161,11 @@ router.post("/api/vendor/rental-pricing/bulk", requireAuth, requireRole("VENDOR"
 
     res.json({ success: true, message: "Items added successfully.", itemsCreated: items.length, totalRecords: insertedItems.length, enrollmentsServed: enrollments.length });
   } catch (error) {
-    logError("Bulk upload rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/rental-pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/rental-pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1232,12 +1212,11 @@ router.get("/api/vendor/rental-pricing/export", requireAuth, requireRole("VENDOR
     res.setHeader("Content-Disposition", "attachment; filename=rental_pricing_export.csv");
     res.send(csvContent);
   } catch (error) {
-    logError("Export rental pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1253,12 +1232,11 @@ router.get("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), as
 
     res.json(items);
   } catch (error) {
-    logError("Get vendor service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.post("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1322,12 +1300,11 @@ router.post("/api/vendor/service-pricing", requireAuth, requireRole("VENDOR"), a
       enrollmentsServed: enrollments.length,
     });
   } catch (error) {
-    logError("Submit vendor service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/service-pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/service-pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const headers = ["serviceName","serviceCode","category","description","unit","rate","minimumHours","travelFee","leadTimeDays"];
     const sampleRow = ["Excavation Work","EXC-001","Excavation","Foundation excavation services","HR","125.00","4","75.00","3"];
@@ -1336,12 +1313,11 @@ router.get("/api/vendor/service-pricing/csv-template", requireAuth, requireRole(
     res.setHeader("Content-Disposition", "attachment; filename=service_pricing_template.csv");
     res.send(csvContent);
   } catch (error) {
-    logError("Get service CSV template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor/service-pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.post("/api/vendor/service-pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1434,12 +1410,11 @@ router.post("/api/vendor/service-pricing/bulk", requireAuth, requireRole("VENDOR
 
     res.json({ success: true, message: "Items added successfully.", itemsCreated: items.length, totalRecords: insertedItems.length, enrollmentsServed: enrollments.length });
   } catch (error) {
-    logError("Bulk upload service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/service-pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/service-pricing/export", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1484,8 +1459,7 @@ router.get("/api/vendor/service-pricing/export", requireAuth, requireRole("VENDO
     res.setHeader("Content-Disposition", "attachment; filename=service_pricing_export.csv");
     res.send(csvContent);
   } catch (error) {
-    logError("Export service pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1511,7 +1485,7 @@ const createImportJobSchema = z.object({
   effectiveDate: z.string().optional(),
 });
 
-router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res) => {
+router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1569,12 +1543,11 @@ router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res) => {
       },
     });
   } catch (error: any) {
-    logError("[VendorPricebook] Failed to fetch import jobs", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch import jobs" });
+    next(error);
   }
 });
 
-router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1624,12 +1597,11 @@ router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, re
       extractedItems,
     });
   } catch (error: any) {
-    logError("[VendorPricebook] Failed to fetch import job", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch import job" });
+    next(error);
   }
 });
 
-router.post("/pricebook-imports", requireAuth, upload.single('file'), async (req: AuthRequest, res) => {
+router.post("/pricebook-imports", requireAuth, upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1708,12 +1680,11 @@ router.post("/pricebook-imports", requireAuth, upload.single('file'), async (req
       message: "Pricebook uploaded. AI extraction will begin shortly.",
     });
   } catch (error: any) {
-    logError("[VendorPricebook] Failed to create import job", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to upload pricebook" });
+    next(error);
   }
 });
 
-router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRequest, res) => {
+router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1808,16 +1779,14 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
         })
         .where(eq(pricebookImportJobs.id, jobId));
 
-      logError(`[VendorPricebook] Job ${jobId} failed: ${extractionError.message}`);
-      res.status(500).json({ error: "AI extraction failed", details: extractionError.message });
+      next(error);
     }
   } catch (error: any) {
-    logError("[VendorPricebook] Failed to process import job", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to process import job" });
+    next(error);
   }
 });
 
-router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, async (req: AuthRequest, res) => {
+router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1883,12 +1852,11 @@ router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, asyn
 
     res.json({ success: true, message: "Item approved" });
   } catch (error: any) {
-    logError("[VendorPricebook] Failed to approve item", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to approve item" });
+    next(error);
   }
 });
 
-router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async (req: AuthRequest, res) => {
+router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1926,12 +1894,11 @@ router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async
 
     res.json({ success: true, message: "Item rejected" });
   } catch (error: any) {
-    logError("[VendorPricebook] Failed to reject item", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to reject item" });
+    next(error);
   }
 });
 
-router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: AuthRequest, res) => {
+router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1978,8 +1945,7 @@ router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: Au
 
     res.json({ success: true, message: "All items approved" });
   } catch (error: any) {
-    logError("[VendorPricebook] Failed to approve all items", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to approve all items" });
+    next(error);
   }
 });
 
@@ -1999,7 +1965,7 @@ router.use("/api/vendor-pricing", requireAuth, requireFeaturePermission('canMana
 router.use("/api/rental-catalog", requireAuth, requireFeaturePermission('canManageProcurement'));
 router.use("/api/ai-features/vendor-pricebooks", requireAuth, requireFeaturePermission('canManageProcurement'));
 
-router.get("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const items = await db
       .select()
@@ -2009,12 +1975,11 @@ router.get("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRe
     
     res.json(items);
   } catch (error) {
-    logError("Get vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/organisations/:id/pricing/search", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing/search", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
     if (!org) { res.status(404).json({ error: "Organisation not found" }); return; }
@@ -2056,12 +2021,11 @@ router.get("/api/crm/organisations/:id/pricing/search", requireAuth, async (req:
     const units = [...new Set(items.map(i => i.unit).filter(Boolean))];
     res.json({ items, facets: { categories, units }, total: items.length });
   } catch (error) {
-    logError("Search vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/organisations/:id/pricing/bulk-import", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/crm/organisations/:id/pricing/bulk-import", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { items } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
@@ -2097,12 +2061,11 @@ router.post("/api/crm/organisations/:id/pricing/bulk-import", requireAuth, async
     }
     res.json({ imported, failed, total: items.length });
   } catch (error) {
-    logError("Bulk import vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/organisations/:id/pricing/history/:itemId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing/history/:itemId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
     if (!org) { res.status(404).json({ error: "Organisation not found" }); return; }
@@ -2117,12 +2080,11 @@ router.get("/api/crm/organisations/:id/pricing/history/:itemId", requireAuth, as
       .orderBy(desc(vendorPricingCatalogs.createdAt));
     res.json(items);
   } catch (error) {
-    logError("Get pricing history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/organisations/:id/pricing/current", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing/current", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const now = new Date();
     const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
@@ -2139,12 +2101,11 @@ router.get("/api/crm/organisations/:id/pricing/current", requireAuth, async (req
     
     res.json(items);
   } catch (error) {
-    logError("Get current vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [org] = await db.select().from(crmOrganisations).where(eq(crmOrganisations.id, req.params.id)).limit(1);
     if (!org) {
@@ -2179,12 +2140,11 @@ router.post("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthR
 
     res.status(201).json(newItem);
   } catch (error) {
-    logError("Create vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db.select().from(vendorPricingCatalogs).where(eq(vendorPricingCatalogs.id, req.params.id)).limit(1);
     if (!existing) {
@@ -2221,12 +2181,11 @@ router.put("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res) =>
 
     res.json(updated);
   } catch (error) {
-    logError("Update vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db.select().from(vendorPricingCatalogs).where(eq(vendorPricingCatalogs.id, req.params.id)).limit(1);
     if (!existing) {
@@ -2246,12 +2205,11 @@ router.delete("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res)
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2300,12 +2258,11 @@ router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, r
 
     res.json(items);
   } catch (error) {
-    logError("Search vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor-pricing/bulk-import", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/vendor-pricing/bulk-import", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2353,12 +2310,11 @@ router.post("/api/vendor-pricing/bulk-import", requireAuth, async (req: AuthRequ
 
     res.json({ imported, skipped, total: items.length });
   } catch (error) {
-    logError("Bulk import vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor-pricing/history/:itemCode", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/vendor-pricing/history/:itemCode", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2382,12 +2338,11 @@ router.get("/api/vendor-pricing/history/:itemCode", requireAuth, async (req: Aut
 
     res.json(entries);
   } catch (error) {
-    logError("Vendor pricing history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2412,12 +2367,11 @@ router.get("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req:
     
     res.json(items);
   } catch (error) {
-    logError("Get CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2462,12 +2416,11 @@ router.post("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req
 
     res.status(201).json(newItem);
   } catch (error) {
-    logError("Create CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2516,12 +2469,11 @@ router.put("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, 
 
     res.json(updated);
   } catch (error) {
-    logError("Update CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2558,12 +2510,11 @@ router.delete("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthReques
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/rental-catalog/search", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/rental-catalog/search", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2615,12 +2566,11 @@ router.get("/api/rental-catalog/search", requireAuth, async (req: AuthRequest, r
 
     res.json(items);
   } catch (error) {
-    logError("Search rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/organisations/:id/pricing/pending", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing/pending", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2654,12 +2604,11 @@ router.get("/api/crm/organisations/:id/pricing/pending", requireAuth, async (req
 
     res.json(pendingPricing);
   } catch (error) {
-    logError("Get pending pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/pricing/:id/approve", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/crm/pricing/:id/approve", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2703,12 +2652,11 @@ router.post("/api/crm/pricing/:id/approve", requireAuth, async (req: AuthRequest
 
     res.json(updated);
   } catch (error) {
-    logError("Approve pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/pricing/:id/reject", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/crm/pricing/:id/reject", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2752,12 +2700,11 @@ router.post("/api/crm/pricing/:id/reject", requireAuth, async (req: AuthRequest,
 
     res.json(updated);
   } catch (error) {
-    logError("Reject pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/crm/pricing-reviews", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/crm/pricing-reviews", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2792,12 +2739,11 @@ router.get("/api/crm/pricing-reviews", requireAuth, async (req: AuthRequest, res
 
     res.json(items);
   } catch (error) {
-    logError("Get pricing reviews error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/crm/pricing-reviews/:id/:action", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/crm/pricing-reviews/:id/:action", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2835,12 +2781,11 @@ router.post("/api/crm/pricing-reviews/:id/:action", requireAuth, async (req: Aut
 
     res.json(updated);
   } catch (error) {
-    logError("Review pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/ai-features/vendor-pricebooks", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/ai-features/vendor-pricebooks", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2868,12 +2813,11 @@ router.get("/api/ai-features/vendor-pricebooks", requireAuth, async (req: AuthRe
 
     res.json({ pricebooks });
   } catch (error) {
-    logError("Get vendor pricebooks error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2901,12 +2845,11 @@ router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth,
 
     res.json({ items });
   } catch (error) {
-    logError("Get pricebook items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res) => {
+router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2999,12 +2942,11 @@ router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, upload.sin
       message: `Successfully imported ${itemsCreated} items`,
     });
   } catch (error) {
-    logError("Upload pricebook error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to process pricebook file" });
+    next(error);
   }
 });
 
-router.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -3042,12 +2984,11 @@ router.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth
 
     res.status(201).json(item);
   } catch (error) {
-    logError("Add pricebook item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -3082,12 +3023,11 @@ router.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, async 
 
     res.json(updated);
   } catch (error) {
-    logError("Update pricebook item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -3164,8 +3104,7 @@ router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth,
       message: `Successfully synced ${syncedCount} items to catalog`,
     });
   } catch (error) {
-    logError("Sync pricebook error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -3173,7 +3112,7 @@ router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth,
 // Vendor Messaging Routes
 // ========================================
 
-router.get("/api/vendor/messages/conversations", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/messages/conversations", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -3285,11 +3224,11 @@ router.get("/api/vendor/messages/conversations", requireAuth, requireRole("VENDO
     res.json(result);
   } catch (error) {
     console.error("Get vendor conversations error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/messages/conversations/:id/messages", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/messages/conversations/:id/messages", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -3367,11 +3306,11 @@ router.get("/api/vendor/messages/conversations/:id/messages", requireAuth, requi
     res.json(convMessages);
   } catch (error) {
     console.error("Get vendor messages error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/vendor/messages/conversations/:id/messages", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.post("/api/vendor/messages/conversations/:id/messages", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -3501,7 +3440,7 @@ router.post("/api/vendor/messages/conversations/:id/messages", requireAuth, requ
     res.status(201).json(newMessage);
   } catch (error) {
     console.error("Send vendor message error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -3509,7 +3448,7 @@ router.post("/api/vendor/messages/conversations/:id/messages", requireAuth, requ
 // Vendor Documents Routes (Read-only)
 // ========================================
 
-router.get("/api/vendor/documents", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/documents", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -3600,34 +3539,34 @@ router.get("/api/vendor/documents", requireAuth, requireRole("VENDOR"), async (r
     res.json(result);
   } catch (error) {
     console.error("Get vendor documents error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/compliance-documents", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/compliance-documents", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     res.json([]);
   } catch (error) {
     console.error("Get vendor compliance documents error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/purchase-orders", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/purchase-orders", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     res.json([]);
   } catch (error) {
     console.error("Get vendor purchase orders error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/vendor/schedule", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor/schedule", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
     res.json([]);
   } catch (error) {
     console.error("Get vendor schedule error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import {
@@ -45,7 +45,7 @@ async function verifyContractAccessForMgmt(contractId: string, req: AuthRequest)
   return { contract: contract.contract, hasAccess: true };
 }
 
-router.get("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -59,8 +59,7 @@ router.get("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["
 
     res.json(items);
   } catch (error) {
-    logError("Get subcontract SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -71,7 +70,7 @@ const createSovLineItemSchema = z.object({
   changeOrderRef: z.string().optional().nullable(),
 });
 
-router.post("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -114,8 +113,7 @@ router.post("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature([
 
     res.status(201).json(newItem);
   } catch (error) {
-    logError("Create SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -126,7 +124,7 @@ const updateSovLineItemSchema = z.object({
   changeOrderRef: z.string().optional().nullable(),
 });
 
-router.patch("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, itemId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -172,12 +170,11 @@ router.patch("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOr
 
     res.json(updated);
   } catch (error) {
-    logError("Update SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.delete("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, itemId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -204,12 +201,11 @@ router.delete("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleO
 
     res.status(204).send();
   } catch (error) {
-    logError("Delete SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -223,12 +219,11 @@ router.get("/subcontracts/:contractId/pay-applications", requireAuth, requireRol
 
     res.json(apps);
   } catch (error) {
-    logError("Get sub pay applications error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/:contractId/pay-applications/:payAppId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/pay-applications/:payAppId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -254,8 +249,7 @@ router.get("/subcontracts/:contractId/pay-applications/:payAppId", requireAuth, 
 
     res.json({ ...payApp, lineItems: lineItems.map(li => ({ ...li.lineItem, sovItem: li.sovItem })) });
   } catch (error) {
-    logError("Get sub pay application detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -272,7 +266,7 @@ function fmtDate(date: Date | string | null): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-router.get("/subcontracts/:contractId/pay-applications/:payAppId/pdf", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/pay-applications/:payAppId/pdf", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -407,8 +401,7 @@ router.get("/subcontracts/:contractId/pay-applications/:payAppId/pdf", requireAu
     res.setHeader("Content-Disposition", `attachment; filename="PayApp-${contract.contractNumber}-${payApp.applicationNumber}.pdf"`);
     stream.pipe(res);
   } catch (error) {
-    logError("Generate pay app PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -416,7 +409,7 @@ const createSubPayAppSchema = z.object({
   periodTo: z.string().optional(),
 });
 
-router.post("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/pay-applications", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -511,8 +504,7 @@ router.post("/subcontracts/:contractId/pay-applications", requireAuth, requireRo
 
     res.status(201).json(newApp);
   } catch (error) {
-    logError("Create sub pay application error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -524,7 +516,7 @@ const updateSubPayAppLineItemSchema = z.object({
   })),
 });
 
-router.patch("/subcontracts/:contractId/pay-applications/:payAppId/line-items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/pay-applications/:payAppId/line-items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -628,8 +620,7 @@ router.patch("/subcontracts/:contractId/pay-applications/:payAppId/line-items", 
 
     res.json(updated);
   } catch (error) {
-    logError("Update sub pay app line items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -647,7 +638,7 @@ const updateSubPayAppStatusSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, payAppId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -721,12 +712,11 @@ router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requ
 
     res.json(updated);
   } catch (error) {
-    logError("Update sub pay app status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -765,12 +755,11 @@ router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeat
       releases,
     });
   } catch (error) {
-    logError("Get retention summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json({ totals: { totalRetentionHeld: "0.00", totalReleased: "0.00", balanceRemaining: "0.00" }, contracts: [] });
@@ -841,8 +830,7 @@ router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(
       contracts: summaries,
     });
   } catch (error) {
-    logError("Get retention dashboard error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -877,7 +865,7 @@ async function getRetentionBalance(contractId: string): Promise<number> {
   return totalHeld - totalReleased;
 }
 
-router.post("/subcontracts/:contractId/retention/release", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/retention/release", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -910,8 +898,7 @@ router.post("/subcontracts/:contractId/retention/release", requireAuth, requireR
 
     res.status(201).json(newRelease);
   } catch (error) {
-    logError("Create retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -920,7 +907,7 @@ const retentionReleaseActionSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-router.patch("/subcontracts/:contractId/retention/release/:releaseId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:contractId/retention/release/:releaseId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, releaseId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -966,12 +953,11 @@ router.patch("/subcontracts/:contractId/retention/release/:releaseId", requireAu
 
     res.json(updated);
   } catch (error) {
-    logError("Update retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -995,8 +981,7 @@ router.get("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFe
       history: scores,
     });
   } catch (error) {
-    logError("Get performance scores error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1010,7 +995,7 @@ const createPerformanceScoreSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.post("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1046,12 +1031,11 @@ router.post("/subcontracts/:contractId/performance", requireAuth, requireRoleOrF
 
     res.status(201).json(newScore);
   } catch (error) {
-    logError("Create performance score error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -1117,8 +1101,7 @@ router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeatur
 
     res.json(summaries);
   } catch (error) {
-    logError("Get performance summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1126,7 +1109,7 @@ router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeatur
 // Contract Attachments
 // =====================
 
-router.get("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1143,12 +1126,11 @@ router.get("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFe
 
     res.json(attachments.map(a => ({ ...a.attachment, uploadedBy: a.uploadedBy })));
   } catch (error) {
-    logError("Get attachments error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1176,12 +1158,11 @@ router.post("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrF
 
     res.status(201).json(attachment);
   } catch (error) {
-    logError("Create attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId, attachmentId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1192,8 +1173,7 @@ router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1201,7 +1181,7 @@ router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth
 // SOV Revision History
 // =====================
 
-router.get("/subcontracts/:contractId/sov/revisions", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:contractId/sov/revisions", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const { contract, hasAccess } = await verifyContractAccessForMgmt(contractId, req);
@@ -1220,8 +1200,7 @@ router.get("/subcontracts/:contractId/sov/revisions", requireAuth, requireRoleOr
 
     res.json(revisions.map(r => ({ ...r.revision, sovItem: r.sovItem, changedBy: r.changedBy })));
   } catch (error) {
-    logError("Get SOV revisions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1387,8 +1366,7 @@ router.post("/portal/subcontracts/:contractId/pay-applications", requirePortalAu
 
     res.status(201).json(payApp);
   } catch (error) {
-    logError("Portal pay app submission error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

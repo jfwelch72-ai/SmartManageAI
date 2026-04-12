@@ -165,4 +165,45 @@ router.get('/api/ops/status', opsRateLimiter, (_req, res) => {
   });
 });
 
+router.get('/api/ops/health-check', opsRateLimiter, async (_req, res) => {
+  const checks: { name: string; status: 'ok' | 'fail'; detail?: string }[] = [];
+
+  const cspHeader = res.getHeader('content-security-policy');
+  checks.push({
+    name: 'csp',
+    status: cspHeader ? 'ok' : 'fail',
+    detail: cspHeader ? 'CSP headers active' : 'CSP headers not detected',
+  });
+
+  try {
+    const result = await db.execute(sql`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'error_logs') AS exists`);
+    const tableExists = result.rows?.[0]?.exists === true || result.rows?.[0]?.exists === 't';
+    checks.push({
+      name: 'error_logging',
+      status: tableExists ? 'ok' : 'fail',
+      detail: tableExists ? 'error_logs table exists' : 'error_logs table not found',
+    });
+  } catch (error) {
+    checks.push({
+      name: 'error_logging',
+      status: 'fail',
+      detail: 'Failed to verify error_logs table',
+    });
+  }
+
+  try {
+    await db.execute(sql`SELECT 1`);
+    checks.push({ name: 'database', status: 'ok' });
+  } catch {
+    checks.push({ name: 'database', status: 'fail', detail: 'Database unreachable' });
+  }
+
+  const allOk = checks.every((c) => c.status === 'ok');
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'healthy' : 'degraded',
+    checks,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 export default router;

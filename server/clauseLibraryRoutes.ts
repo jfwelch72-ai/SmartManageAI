@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { safeJsonParse } from "./responseHelper";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
@@ -27,7 +28,7 @@ function extractOrgId(req: AuthRequest): string | null {
   return filter.orgId || req.user?.organizationId || null;
 }
 
-router.get("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canView(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -39,12 +40,11 @@ router.get("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, 
 
     res.json(clauses);
   } catch (err) {
-    logError("[ClauseLibrary] List error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list clauses" });
+    next(err);
   }
 });
 
-router.post("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -69,12 +69,11 @@ router.post("/api/clause-library/clauses", requireAuth, async (req: AuthRequest,
 
     res.status(201).json(clause);
   } catch (err) {
-    logError("[ClauseLibrary] Create error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to create clause" });
+    next(err);
   }
 });
 
-router.patch("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -100,12 +99,11 @@ router.patch("/api/clause-library/clauses/:id", requireAuth, async (req: AuthReq
 
     res.json(updated);
   } catch (err) {
-    logError("[ClauseLibrary] Update error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update clause" });
+    next(err);
   }
 });
 
-router.delete("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -118,12 +116,11 @@ router.delete("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRe
     await db.delete(contractClauses).where(eq(contractClauses.id, req.params.id));
     res.json({ message: "Clause deleted" });
   } catch (err) {
-    logError("[ClauseLibrary] Delete error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to delete clause" });
+    next(err);
   }
 });
 
-router.get("/api/clause-library/templates", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/clause-library/templates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canView(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -135,12 +132,11 @@ router.get("/api/clause-library/templates", requireAuth, async (req: AuthRequest
 
     res.json(templates);
   } catch (err) {
-    logError("[ClauseLibrary] List templates error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list templates" });
+    next(err);
   }
 });
 
-router.get("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canView(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -150,7 +146,7 @@ router.get("/api/clause-library/templates/:id", requireAuth, async (req: AuthReq
       .where(and(eq(contractTemplates.id, req.params.id), eq(contractTemplates.organizationId, orgId)));
     if (!template) { res.status(404).json({ error: "Template not found" }); return; }
 
-    const clauseIds: string[] = JSON.parse(template.clauseIdsJson || "[]");
+    const clauseIds: string[] = safeJsonParse(template.clauseIdsJson, []);
     let clauses: ContractClause[] = [];
     if (clauseIds.length > 0) {
       clauses = await db.select().from(contractClauses)
@@ -160,12 +156,11 @@ router.get("/api/clause-library/templates/:id", requireAuth, async (req: AuthReq
 
     res.json({ ...template, clauses });
   } catch (err) {
-    logError("[ClauseLibrary] Get template error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to get template" });
+    next(err);
   }
 });
 
-router.post("/api/clause-library/templates", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/clause-library/templates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -188,12 +183,11 @@ router.post("/api/clause-library/templates", requireAuth, async (req: AuthReques
 
     res.status(201).json(template);
   } catch (err) {
-    logError("[ClauseLibrary] Create template error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to create template" });
+    next(err);
   }
 });
 
-router.patch("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -221,12 +215,11 @@ router.patch("/api/clause-library/templates/:id", requireAuth, async (req: AuthR
 
     res.json(updated);
   } catch (err) {
-    logError("[ClauseLibrary] Update template error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update template" });
+    next(err);
   }
 });
 
-router.delete("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -239,12 +232,11 @@ router.delete("/api/clause-library/templates/:id", requireAuth, async (req: Auth
     await db.delete(contractTemplates).where(eq(contractTemplates.id, req.params.id));
     res.json({ message: "Template deleted" });
   } catch (err) {
-    logError("[ClauseLibrary] Delete template error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to delete template" });
+    next(err);
   }
 });
 
-router.post("/api/clause-library/templates/:id/apply/:contractId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/clause-library/templates/:id/apply/:contractId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
     const orgId = extractOrgId(req);
@@ -263,7 +255,7 @@ router.post("/api/clause-library/templates/:id/apply/:contractId", requireAuth, 
       return;
     }
 
-    const clauseIds: string[] = JSON.parse(template.clauseIdsJson || "[]");
+    const clauseIds: string[] = safeJsonParse(template.clauseIdsJson, []);
     let scopeContent = contract.scopeSummary || "";
     if (clauseIds.length > 0) {
       const clauses = await db.select().from(contractClauses)
@@ -302,8 +294,7 @@ router.post("/api/clause-library/templates/:id/apply/:contractId", requireAuth, 
 
     res.json({ ...updated, currentVersion: newVersion });
   } catch (err) {
-    logError("[ClauseLibrary] Apply template error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to apply template" });
+    next(err);
   }
 });
 

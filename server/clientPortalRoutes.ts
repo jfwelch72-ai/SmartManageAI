@@ -35,7 +35,7 @@ const portalAccessSchema = z.object({
   name: z.string().optional(),
 });
 
-router.post("/portal/access/create", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/portal/access/create", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -72,12 +72,11 @@ router.post("/portal/access/create", requireAuth, requireRole("ADMIN", "MANAGER"
       expiresAt: expiresAt.toISOString(),
     });
   } catch (error) {
-    logError("Create portal access error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create access" });
+    next(error);
   }
 });
 
-router.get("/portal/access/:projectId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/portal/access/:projectId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -94,12 +93,11 @@ router.get("/portal/access/:projectId", requireAuth, requireRole("ADMIN", "MANAG
 
     res.json({ accessList });
   } catch (error) {
-    logError("Get portal access error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get access list" });
+    next(error);
   }
 });
 
-router.delete("/portal/access/:accessId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/portal/access/:accessId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -115,12 +113,11 @@ router.delete("/portal/access/:accessId", requireAuth, requireRole("ADMIN", "MAN
 
     successResponse(res);
   } catch (error) {
-    logError("Revoke portal access error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to revoke access" });
+    next(error);
   }
 });
 
-router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const orgId = req.user?.organizationId;
@@ -195,12 +192,11 @@ router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAG
       portalUrl,
     });
   } catch (error) {
-    logError("Error fetching client portal access:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch portal access" });
+    next(error);
   }
 });
 
-router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const orgId = req.user?.organizationId;
@@ -379,12 +375,11 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
       createdAt: newAccess.createdAt.toISOString(),
     });
   } catch (error) {
-    logError("Error creating portal invitation:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to send invitation" });
+    next(error);
   }
 });
 
-router.patch("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.patch("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const orgId = req.user?.organizationId;
@@ -428,12 +423,11 @@ router.patch("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MAN
       name: updated.name,
     });
   } catch (error) {
-    logError("Error updating portal access:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update portal access" });
+    next(error);
   }
 });
 
-router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const orgId = req.user?.organizationId;
@@ -464,12 +458,11 @@ router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MA
 
     successResponse(res, { message: "Portal access revoked" });
   } catch (error) {
-    logError("Error revoking portal access:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to revoke portal access" });
+    next(error);
   }
 });
 
-router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
+router.post("/client-portal/public/verify", authLimiter, async (req, res, next) => {
   try {
     const { projectId, email } = req.body;
 
@@ -529,12 +522,11 @@ router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
       permissions,
     });
   } catch (error) {
-    logError("Error verifying portal access:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to verify portal access" });
+    next(error);
   }
 });
 
-router.post("/client-portal/public/data", authLimiter, async (req, res) => {
+router.post("/client-portal/public/data", authLimiter, async (req, res, next) => {
   try {
     const { projectId, email } = req.body;
 
@@ -774,8 +766,7 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    logError("Error fetching portal data:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch portal data" });
+    next(error);
   }
 });
 
@@ -810,7 +801,7 @@ async function verifyPortalAccess(projectId: string, email: string) {
   return { access, permissions };
 }
 
-router.get("/client-portal/public/change-orders/:coId/comments", authLimiter, async (req, res) => {
+router.get("/client-portal/public/change-orders/:coId/comments", authLimiter, async (req, res, next) => {
   try {
     const { coId } = req.params;
     const projectId = req.headers["x-client-project-id"] as string;
@@ -843,12 +834,11 @@ router.get("/client-portal/public/change-orders/:coId/comments", authLimiter, as
 
     res.json(comments);
   } catch (error) {
-    logError("Error fetching CO comments:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch comments" });
+    next(error);
   }
 });
 
-router.post("/client-portal/public/change-orders/:coId/comments", authLimiter, async (req, res) => {
+router.post("/client-portal/public/change-orders/:coId/comments", authLimiter, async (req, res, next) => {
   try {
     const { coId } = req.params;
     const projectId = req.headers["x-client-project-id"] as string;
@@ -892,12 +882,11 @@ router.post("/client-portal/public/change-orders/:coId/comments", authLimiter, a
 
     res.json(comment);
   } catch (error) {
-    logError("Error posting CO comment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to post comment" });
+    next(error);
   }
 });
 
-router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter, async (req, res) => {
+router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter, async (req, res, next) => {
   try {
     const { coId } = req.params;
     const projectId = req.headers["x-client-project-id"] as string;
@@ -986,12 +975,11 @@ router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter
 
     res.json(updated);
   } catch (error) {
-    logError("Error acknowledging CO:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to acknowledge change order" });
+    next(error);
   }
 });
 
-router.post("/client-portal/public/change-orders/:coId/request-revision", authLimiter, async (req, res) => {
+router.post("/client-portal/public/change-orders/:coId/request-revision", authLimiter, async (req, res, next) => {
   try {
     const { coId } = req.params;
     const projectId = req.headers["x-client-project-id"] as string;
@@ -1085,12 +1073,11 @@ router.post("/client-portal/public/change-orders/:coId/request-revision", authLi
 
     res.json(updated);
   } catch (error) {
-    logError("Error requesting CO revision:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to request revision" });
+    next(error);
   }
 });
 
-router.get("/client-portal/public/change-orders/:coId/attachments/:attachmentId/download", async (req, res) => {
+router.get("/client-portal/public/change-orders/:coId/attachments/:attachmentId/download", async (req, res, next) => {
   try {
     const email = req.headers["x-client-email"] as string;
     const projectId = req.headers["x-client-project-id"] as string;
@@ -1141,8 +1128,7 @@ router.get("/client-portal/public/change-orders/:coId/attachments/:attachmentId/
 
     await objectStorageService.downloadObject(objectFile, res, 0);
   } catch (error) {
-    logError("Error downloading portal CO attachment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to download attachment" });
+    next(error);
   }
 });
 

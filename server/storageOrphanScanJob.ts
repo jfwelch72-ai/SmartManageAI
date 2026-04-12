@@ -1,4 +1,5 @@
 import { logError } from "./utils/logger";
+import { safeJsonParse } from "./responseHelper";
 import cron from "node-cron";
 import { db } from "./db";
 import { media, planDocuments, receipts, bidDocuments, userPhotos, changeOrders, userCertifications } from "@shared/schema";
@@ -53,7 +54,7 @@ async function getKnownObjectKeys(): Promise<Set<string>> {
     if (!row.attachmentsJson) continue;
     let attachments: any[] = [];
     try {
-      attachments = JSON.parse(row.attachmentsJson);
+      attachments = safeJsonParse(row.attachmentsJson, null);
     } catch (err) {
       logError("Failed to parse attachmentsJson during orphan scan:", { changeOrderId: row.id }, err instanceof Error ? err : new Error(String(err)));
     }

@@ -274,7 +274,7 @@ const updateBidSchema = insertBidSchema.extend({
   ),
 }).partial();
 
-router.get("/api/bids", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -380,12 +380,11 @@ router.get("/api/bids", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(bidsWithEstimates);
   } catch (error) {
-    logError("Get bids error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bids/:code", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     
@@ -398,12 +397,11 @@ router.get("/api/bids/:code", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(bid);
   } catch (error) {
-    logError("Get bid error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     console.log("[Create Bid] Received body:", JSON.stringify(req.body, null, 2));
 
@@ -486,12 +484,12 @@ router.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR
     if (error.code === '23505') {
       res.status(409).json({ error: "Unable to generate unique bid code - please try again" });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
-router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [existingBid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     
@@ -618,12 +616,12 @@ router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ES
     if (error.code === '23505') {
       res.status(409).json({ error: "Bid code already exists" });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
-router.delete("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     
@@ -673,12 +671,11 @@ router.delete("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), a
 
     res.json({ success: true, message: `Bid ${bid.code} deleted successfully` });
   } catch (error) {
-    logError("Delete bid error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bids/:id/estimate", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:id/estimate", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const bidId = req.params.id;
     console.log(`[GET /api/bids/:id/estimate] Fetching estimate for bid ID: ${bidId}`);
@@ -733,12 +730,11 @@ router.get("/api/bids/:id/estimate", requireAuth, async (req: AuthRequest, res) 
       }
     });
   } catch (error) {
-    logError("Get bid estimate error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const bidId = req.params.id;
     console.log(`[POST /api/bids/:id/estimate] Creating estimate for bid ID: ${bidId}`);
@@ -805,12 +801,11 @@ router.post("/api/bids/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER
       }
     });
   } catch (error) {
-    logError("Create bid estimate error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     
@@ -1592,7 +1587,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
     if (error.code === '23505') {
       res.status(409).json({ error: "Project with this code already exists" });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
@@ -1601,7 +1596,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 // Bid Subcontractor Quotes Routes
 // ====================
 
-router.get("/api/bids/:code/quotes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/quotes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -1621,12 +1616,11 @@ router.get("/api/bids/:code/quotes", requireAuth, async (req: AuthRequest, res) 
 
     res.json(quotes);
   } catch (error) {
-    logError("Get bid quotes error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids/:code/quotes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/quotes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -1669,7 +1663,7 @@ router.post("/api/bids/:code/quotes", requireAuth, requireRole("ADMIN", "MANAGER
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid quote data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
@@ -1691,7 +1685,7 @@ const updateSubQuoteSchema = z.object({
   isSelected: z.boolean().optional(),
 });
 
-router.patch("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.patch("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -1781,12 +1775,12 @@ router.patch("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN"
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid quote data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
-router.delete("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -1829,12 +1823,11 @@ router.delete("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete bid quote error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -1906,11 +1899,10 @@ router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole
 
       res.json(updated);
     } else {
-      res.status(500).json({ error: "Failed to send RFQ email" });
+      next(error);
     }
   } catch (error) {
-    logError("Send RFQ error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1918,7 +1910,7 @@ router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole
 // Bid Material Quotes Routes
 // ====================
 
-router.get("/api/bids/:code/material-quotes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/material-quotes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -1938,12 +1930,11 @@ router.get("/api/bids/:code/material-quotes", requireAuth, async (req: AuthReque
 
     res.json(materialQuotes);
   } catch (error) {
-    logError("Get bid material quotes error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -1987,7 +1978,7 @@ router.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN",
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid material quote data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
@@ -2006,7 +1997,7 @@ const updateMaterialQuoteSchema = z.object({
   isSelected: z.boolean().optional(),
 });
 
-router.patch("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.patch("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2093,12 +2084,12 @@ router.patch("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRol
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid material quote data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
-router.delete("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2141,12 +2132,11 @@ router.delete("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRo
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete bid material quote error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids/:code/material-quotes/:quoteId/send-rfq", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/material-quotes/:quoteId/send-rfq", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2208,11 +2198,10 @@ router.post("/api/bids/:code/material-quotes/:quoteId/send-rfq", requireAuth, re
 
       res.json(updated);
     } else {
-      res.status(500).json({ error: "Failed to send RFQ email" });
+      next(error);
     }
   } catch (error) {
-    logError("Send material RFQ error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2220,7 +2209,7 @@ router.post("/api/bids/:code/material-quotes/:quoteId/send-rfq", requireAuth, re
 // Handoff Packet Routes (Job Information for QuickBooks)
 // ====================
 
-router.get("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2240,12 +2229,11 @@ router.get("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "
 
     res.json(packet || null);
   } catch (error) {
-    logError("Get handoff packet error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2332,12 +2320,11 @@ router.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "
 
     res.json(result);
   } catch (error) {
-    logError("Save handoff packet error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {
@@ -2357,12 +2344,11 @@ router.get("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN
 
     res.json(packet || null);
   } catch (error) {
-    logError("Get project handoff packet error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     if (!project) {
@@ -2450,8 +2436,7 @@ router.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN
 
     res.json(result);
   } catch (error) {
-    logError("Update project handoff packet error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2459,7 +2444,7 @@ router.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN
 // Bid PDF Generation Routes
 // ====================
 
-router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2587,12 +2572,11 @@ router.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADM
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("Generate internal bid summary PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2678,12 +2662,11 @@ router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("Generate customer quote PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bids/:code/pdf/warranty-contract", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/pdf/warranty-contract", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -2770,8 +2753,7 @@ router.get("/api/bids/:code/pdf/warranty-contract", requireAuth, requireRole("AD
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("Generate warranty contract PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2779,7 +2761,7 @@ router.get("/api/bids/:code/pdf/warranty-contract", requireAuth, requireRole("AD
 // Bid Documents (Plans & Takeoff)
 // ==================
 
-router.get("/api/bids/:code/documents", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/documents", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -2788,12 +2770,11 @@ router.get("/api/bids/:code/documents", requireAuth, async (req: AuthRequest, re
     const docs = await db.select().from(bidDocuments).where(eq(bidDocuments.bidId, bid.id)).orderBy(desc(bidDocuments.uploadedAt));
     res.json(docs);
   } catch (error) {
-    logError("Get bid documents error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -2827,12 +2808,11 @@ router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANA
 
     res.status(201).json(doc);
   } catch (error) {
-    logError("Create bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -2855,12 +2835,11 @@ router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMI
     await db.delete(bidDocuments).where(eq(bidDocuments.id, req.params.docId));
     res.json({ success: true });
   } catch (error) {
-    logError("Delete bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -2880,12 +2859,12 @@ router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (r
   } catch (error) {
     logError("Bid document preview-url error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to generate preview URL" });
+      next(error);
     }
   }
 });
 
-router.get("/api/bids/:code/documents/:docId/stream", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/documents/:docId/stream", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -2905,12 +2884,12 @@ router.get("/api/bids/:code/documents/:docId/stream", requireAuth, async (req: A
   } catch (error) {
     logError("Bid document stream error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to stream document" });
+      next(error);
     }
   }
 });
 
-router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const bid = await db.query.bids.findFirst({ where: eq(bids.code, req.params.code) });
     if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -3174,12 +3153,11 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json({ success: true, submittedAt: updatedBid.submittedAt, emailSent });
   } catch (error) {
-    logError("Bid submit error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/public/rfq-response/:token", async (req, res) => {
+router.get("/api/public/rfq-response/:token", async (req, res, next) => {
   try {
     const { bidSubcontractorQuotes } = await import("@shared/schema");
     const { organizations } = await import("@shared/schema");
@@ -3215,8 +3193,7 @@ router.get("/api/public/rfq-response/:token", async (req, res) => {
       alreadyResponded: quote.rfqStatus === "responded",
     });
   } catch (error) {
-    logError("Public RFQ response lookup error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -3231,7 +3208,7 @@ interface MulterRequest extends Request {
   files?: MulterFile[];
 }
 
-router.post("/api/public/rfq-response/:token", async (req, res) => {
+router.post("/api/public/rfq-response/:token", async (req, res, next) => {
   let parsedFiles: MulterFile[] = [];
 
   try {
@@ -3323,12 +3300,11 @@ router.post("/api/public/rfq-response/:token", async (req, res) => {
 
     res.json({ success: true, message: "Quote submitted successfully" });
   } catch (error) {
-    logError("Public RFQ response submit error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bids/:code/bid-leveling", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:code/bid-leveling", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -3380,12 +3356,11 @@ router.get("/api/bids/:code/bid-leveling", requireAuth, async (req: AuthRequest,
 
     res.json({ bidId: bid.id, bidCode: bid.code, leveling });
   } catch (error) {
-    logError("Bid leveling error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/bids/:code/quotes/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.patch("/api/bids/:code/quotes/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
     if (!bid) {
@@ -3415,8 +3390,7 @@ router.patch("/api/bids/:code/quotes/:quoteId/select", requireAuth, requireRole(
 
     res.json({ success: true, selectedQuoteId: quoteId });
   } catch (error) {
-    logError("Quote selection error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

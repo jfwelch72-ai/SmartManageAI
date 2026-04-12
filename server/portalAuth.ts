@@ -80,8 +80,7 @@ export async function requirePortalAuth(req: PortalRequest, res: Response, next:
 
     next();
   } catch (error) {
-    logError("Portal auth error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Portal authentication failed" });
+    next(error);
   }
 }
 

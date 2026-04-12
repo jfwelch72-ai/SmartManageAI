@@ -496,7 +496,7 @@ const messagingSetup = (async () => {
   }
 
   // Get all conversations for current user
-  router.get("/api/conversations", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
 
@@ -577,13 +577,12 @@ const messagingSetup = (async () => {
 
       res.json(conversationsWithDetails);
     } catch (error) {
-      logError("Get conversations error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── CHANNELS: list all org channels (named, project, crew) ──
-  router.get("/api/channels", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/channels", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const organizationId = req.user!.organizationId;
       if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -606,8 +605,7 @@ const messagingSetup = (async () => {
 
       res.json(orgChannels);
     } catch (error) {
-      logError("Get channels error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -618,7 +616,7 @@ const messagingSetup = (async () => {
     slug: z.string().max(80).optional(),
   });
 
-  router.post("/api/channels", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/channels", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
@@ -666,13 +664,12 @@ const messagingSetup = (async () => {
 
       res.status(201).json(newChannel);
     } catch (error) {
-      logError("Create channel error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── CHANNELS: self-join a channel ──
-  router.post("/api/channels/:id/join", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/channels/:id/join", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -708,13 +705,12 @@ const messagingSetup = (async () => {
 
       res.json({ success: true });
     } catch (error) {
-      logError("Join channel error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── CHANNELS: archive a channel (admin only) ──
-  router.patch("/api/channels/:id/archive", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/channels/:id/archive", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
@@ -730,13 +726,12 @@ const messagingSetup = (async () => {
       await db.update(conversations).set({ isArchived: true }).where(eq(conversations.id, conversationId));
       res.json({ success: true });
     } catch (error) {
-      logError("Archive channel error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get or create company-wide channel (scoped to organization)
-  router.get("/api/conversations/company-channel", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/company-channel", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
@@ -820,8 +815,7 @@ const messagingSetup = (async () => {
 
       res.json(companyChannel);
     } catch (error) {
-      logError("Get company channel error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -834,7 +828,7 @@ const messagingSetup = (async () => {
     projectId: z.string().uuid().optional(),
   });
 
-  router.post("/api/conversations", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/conversations", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
@@ -931,8 +925,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json(newConversation);
     } catch (error) {
-      logError("Create conversation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -940,7 +933,7 @@ const messagingSetup = (async () => {
     userIds: z.array(z.string().uuid()).min(1),
   });
 
-  router.post("/api/conversations/:id/participants", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/conversations/:id/participants", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
@@ -1018,8 +1011,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json({ added: newUserIds.length });
     } catch (error) {
-      logError("Add participants error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -1027,7 +1019,7 @@ const messagingSetup = (async () => {
   // Query params:
   //   before=<messageId> — return the PAGE_SIZE messages immediately preceding this message
   // Response: { messages: Message[], hasMore: boolean }
-  router.get("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
@@ -1117,8 +1109,7 @@ const messagingSetup = (async () => {
 
       res.json({ messages: messagesWithExtras, hasMore });
     } catch (error) {
-      logError("Get messages error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -1138,7 +1129,7 @@ const messagingSetup = (async () => {
     })).optional(),
   });
 
-  router.post("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -1270,13 +1261,12 @@ const messagingSetup = (async () => {
 
       res.status(201).json(fullMessage);
     } catch (error) {
-      logError("Send message error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── FILE UPLOAD for messaging ──
-  router.post("/api/conversations/:id/upload", requireAuth, msgUpload.single("file"), async (req: AuthRequest, res) => {
+  router.post("/api/conversations/:id/upload", requireAuth, msgUpload.single("file"), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -1324,7 +1314,7 @@ const messagingSetup = (async () => {
 
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
-      if (publicPaths.length === 0) return res.status(500).json({ error: "Object storage not configured" });
+      if (publicPaths.length === 0) return next(new Error("Object storage not configured"));
 
       const basePath = publicPaths[0];
       const uniqueId = randomUUID();
@@ -1352,8 +1342,7 @@ const messagingSetup = (async () => {
         size: file.size,
       });
     } catch (error) {
-      logError("File upload error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to upload file" });
+      next(error);
     }
   });
 
@@ -1367,7 +1356,7 @@ const messagingSetup = (async () => {
       }
       next(err);
     });
-  }, async (req: AuthRequest, res) => {
+  }, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -1428,7 +1417,7 @@ const messagingSetup = (async () => {
 
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
-      if (publicPaths.length === 0) return res.status(500).json({ error: "Object storage not configured" });
+      if (publicPaths.length === 0) return next(new Error("Object storage not configured"));
 
       const basePath = publicPaths[0];
       const uniqueId = randomUUID();
@@ -1484,13 +1473,12 @@ const messagingSetup = (async () => {
 
       res.status(201).json(voiceMsg);
     } catch (error) {
-      logError("Voice upload error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to upload voice message" });
+      next(error);
     }
   });
 
   // ── SERVE FILES from object storage ──
-  router.get("/api/conversations/:id/files/:filename", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/:id/files/:filename", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = req.user!.organizationId;
       const userId = req.user!.id;
@@ -1505,7 +1493,7 @@ const messagingSetup = (async () => {
 
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
-      if (publicPaths.length === 0) return res.status(500).json({ error: "Storage not configured" });
+      if (publicPaths.length === 0) return next(new Error("Object storage not configured"));
 
       const basePath = publicPaths[0];
       const filePath = `messaging/${orgId}/${conversationId}/${filename}`;
@@ -1516,7 +1504,7 @@ const messagingSetup = (async () => {
     } catch (error: any) {
       logError("Serve file error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
-      res.status(500).json({ error: "Failed to serve file" });
+      next(error);
     }
   });
 
@@ -1536,14 +1524,14 @@ const messagingSetup = (async () => {
       res.set("Content-Length", String(fileSize));
     }
     const stream = file.createReadStream();
-    stream.on("error", (err: Error) => {
-      logError("Voice stream error:", {}, err instanceof Error ? err : new Error(String(err)));
-      if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+    stream.on("error", (streamErr: Error) => {
+      logError("Voice stream error:", {}, streamErr instanceof Error ? streamErr : new Error(String(streamErr)));
+      if (!res.headersSent) next(streamErr);
     });
     stream.pipe(res);
   }
 
-  router.get("/api/conversations/:id/voice/:filename", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/:id/voice/:filename", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = req.user!.organizationId;
       const userId = req.user!.id;
@@ -1558,7 +1546,7 @@ const messagingSetup = (async () => {
 
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
-      if (publicPaths.length === 0) return res.status(500).json({ error: "Storage not configured" });
+      if (publicPaths.length === 0) return next(new Error("Object storage not configured"));
 
       const primaryPath = `messaging/${orgId}/${conversationId}/voice-${filename}`;
       let file = await objectStorage.searchPublicObject(primaryPath);
@@ -1574,13 +1562,13 @@ const messagingSetup = (async () => {
     } catch (error: any) {
       logError("Serve voice error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
-      res.status(500).json({ error: "Failed to serve voice file" });
+      next(error);
     }
   });
 
   // ── TASK MENTION SEARCH — scoped to conversation (and its linked project if any) ──
   // Returns { id, title, projectName } for both project tasks and AI tasks
-  router.get("/api/conversations/:id/mention-search", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/:id/mention-search", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -1645,13 +1633,12 @@ const messagingSetup = (async () => {
 
       res.json(combined);
     } catch (error) {
-      logError("Task mention search error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Mark messages as read
-  router.post("/api/conversations/:id/read", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/conversations/:id/read", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
@@ -1710,12 +1697,11 @@ const messagingSetup = (async () => {
 
       res.json({ success: true, markedAsRead: unreadMessages.length });
     } catch (error) {
-      logError("Mark messages read error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/conversations/:id/leave", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/conversations/:id/leave", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
@@ -1763,13 +1749,12 @@ const messagingSetup = (async () => {
 
       res.json({ success: true });
     } catch (error) {
-      logError("Leave conversation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get total unread message count for navigation badge
-  router.get("/api/messages/unread-count", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/messages/unread-count", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
 
@@ -1805,13 +1790,12 @@ const messagingSetup = (async () => {
 
       res.json({ unreadCount: Number(unreadCount[0]?.count || 0) });
     } catch (error) {
-      logError("Get unread count error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get users available for messaging
-  router.get("/api/messaging/users", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/messaging/users", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
 
@@ -1843,8 +1827,7 @@ const messagingSetup = (async () => {
 
       res.json(availableUsers);
     } catch (error) {
-      logError("Get messaging users error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2017,7 +2000,7 @@ const messagingSetup = (async () => {
     content: z.string().min(1).max(10000),
   });
 
-  router.patch("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -2073,13 +2056,12 @@ const messagingSetup = (async () => {
 
       res.json(updatedMsg);
     } catch (error) {
-      logError("Edit message error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── DELETE MESSAGE (soft delete) — sender or channel admin only ──
-  router.delete("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -2123,8 +2105,7 @@ const messagingSetup = (async () => {
 
       res.json(deletedMsg);
     } catch (error) {
-      logError("Delete message error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2136,7 +2117,7 @@ const messagingSetup = (async () => {
     emoji: z.enum(ALLOWED_EMOJIS),
   });
 
-  router.post("/api/messages/:msgId/reactions", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/messages/:msgId/reactions", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -2183,14 +2164,13 @@ const messagingSetup = (async () => {
 
       res.json({ reactions });
     } catch (error) {
-      logError("Toggle reaction error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── REMOVE REACTION (explicit DELETE) — DELETE /api/messages/:msgId/reactions/:emoji ──
   // Removes the caller's specific emoji reaction. Returns updated reaction counts.
-  router.delete("/api/messages/:msgId/reactions/:emoji", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/messages/:msgId/reactions/:emoji", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -2225,8 +2205,7 @@ const messagingSetup = (async () => {
 
       res.json({ reactions });
     } catch (error) {
-      logError("Remove reaction error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2234,7 +2213,7 @@ const messagingSetup = (async () => {
   // Rate-limited server-side: ignores requests fired within 2 s of the last one per user+conversation.
   const typingLastSent = new Map<string, number>();
 
-  router.post("/api/conversations/:id/typing", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/conversations/:id/typing", requireAuth, async (req: AuthRequest, res, next) => {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
     const conversationId = req.params.id;
@@ -2277,7 +2256,7 @@ const messagingSetup = (async () => {
   });
 
   // ── ENTITY SEARCH — search RFIs, Change Orders, and Tasks for the entity link picker ──
-  router.get("/api/entity-project/:entityType/:entityId", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/entity-project/:entityType/:entityId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = req.user!.organizationId;
       if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -2313,12 +2292,11 @@ const messagingSetup = (async () => {
 
       res.json({ projectCode });
     } catch (error) {
-      logError("Entity project lookup error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/entity-search", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/entity-search", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const orgId = req.user!.organizationId;
       if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -2369,8 +2347,7 @@ const messagingSetup = (async () => {
 
       res.json(results);
     } catch (error) {
-      logError("Entity search error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2382,7 +2359,7 @@ const messagingSetup = (async () => {
     })).min(1),
   });
 
-  router.post("/api/messages/:msgId/entity-links", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/messages/:msgId/entity-links", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const { msgId } = req.params;
@@ -2418,13 +2395,12 @@ const messagingSetup = (async () => {
       const inserted = await db.insert(messageEntityLinks).values(values).onConflictDoNothing().returning();
       res.status(201).json(inserted);
     } catch (error) {
-      logError("Add entity links error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── REMOVE an entity link from a message ──
-  router.delete("/api/messages/:msgId/entity-links/:linkId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/messages/:msgId/entity-links/:linkId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const { msgId, linkId } = req.params;
@@ -2438,12 +2414,11 @@ const messagingSetup = (async () => {
       await db.delete(messageEntityLinks).where(and(eq(messageEntityLinks.id, linkId), eq(messageEntityLinks.messageId, msgId)));
       res.json({ success: true });
     } catch (error) {
-      logError("Remove entity link error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/messages/:msgId/entity-links", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/messages/:msgId/entity-links", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const { msgId } = req.params;
@@ -2457,12 +2432,11 @@ const messagingSetup = (async () => {
       const links = await db.select().from(messageEntityLinks).where(eq(messageEntityLinks.messageId, msgId));
       res.json(links);
     } catch (error) {
-      logError("Get entity links error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/entity-messages/:entityType/:entityId", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/entity-messages/:entityType/:entityId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -2517,13 +2491,12 @@ const messagingSetup = (async () => {
 
       res.json(result);
     } catch (error) {
-      logError("Get entity messages error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // ── GET or CREATE entity-scoped conversation thread ──
-  router.get("/api/entity-conversation/:entityType/:entityId", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/entity-conversation/:entityType/:entityId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -2546,8 +2519,7 @@ const messagingSetup = (async () => {
       }
       res.json(existing || null);
     } catch (error) {
-      logError("Entity conversation lookup error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2556,7 +2528,7 @@ const messagingSetup = (async () => {
     entityId: z.string().uuid(),
   });
 
-  router.post("/api/entity-conversation", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/entity-conversation", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -2653,8 +2625,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json(newConversation);
     } catch (error) {
-      logError("Entity conversation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2677,7 +2648,7 @@ const messagingSetup = (async () => {
     return conv?.organizationId ?? null;
   }
 
-  router.post("/api/conversations/:id/calls", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/conversations/:id/calls", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
@@ -2774,12 +2745,11 @@ const messagingSetup = (async () => {
 
       res.status(201).json(callWithInitiator);
     } catch (error) {
-      logError("Start call error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/calls/:callId/join", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/calls/:callId/join", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -2837,12 +2807,11 @@ const messagingSetup = (async () => {
         participants: allParticipants.map(p => ({ ...p.participant, user: p.user })),
       });
     } catch (error) {
-      logError("Join call error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/calls/:callId/leave", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/calls/:callId/leave", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -2932,12 +2901,11 @@ const messagingSetup = (async () => {
 
       res.json({ success: true });
     } catch (error) {
-      logError("Leave call error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/calls/:callId/end", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/calls/:callId/end", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -3014,12 +2982,11 @@ const messagingSetup = (async () => {
 
       res.json({ success: true });
     } catch (error) {
-      logError("End call error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/calls/:callId/livekit-token", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/calls/:callId/livekit-token", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -3074,8 +3041,7 @@ const messagingSetup = (async () => {
       const token = await at.toJwt();
       res.json({ token, url: livekitUrl });
     } catch (error) {
-      logError("LiveKit token error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -3083,7 +3049,7 @@ const messagingSetup = (async () => {
     content: z.string().max(50000),
   });
 
-  router.put("/api/calls/:callId/notes", requireAuth, async (req: AuthRequest, res) => {
+  router.put("/api/calls/:callId/notes", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -3114,12 +3080,11 @@ const messagingSetup = (async () => {
         .returning();
       res.status(201).json(note);
     } catch (error) {
-      logError("Save call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/calls/:callId/notes", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/calls/:callId/notes", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -3135,12 +3100,11 @@ const messagingSetup = (async () => {
         .orderBy(desc(videoCallNotes.createdAt));
       res.json(notes);
     } catch (error) {
-      logError("Get call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/calls/:callId/notes/summarize", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/calls/:callId/notes/summarize", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -3201,12 +3165,11 @@ const messagingSetup = (async () => {
 
       res.json({ summary });
     } catch (error) {
-      logError("Summarize call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/conversations/:id/calls", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/:id/calls", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
@@ -3251,12 +3214,11 @@ const messagingSetup = (async () => {
 
       res.json(callsWithDetails);
     } catch (error) {
-      logError("Get call history error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/calls/:callId", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/calls/:callId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const callId = req.params.callId;
@@ -3286,12 +3248,11 @@ const messagingSetup = (async () => {
         participants: participantsData.map(p => ({ ...p.participant, user: p.user })),
       });
     } catch (error) {
-      logError("Get call error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/conversations/active-calls", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/active-calls", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
 
@@ -3335,12 +3296,11 @@ const messagingSetup = (async () => {
 
       res.json(callsWithDetails);
     } catch (error) {
-      logError("Get active calls error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/conversations/:id/active-call", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/conversations/:id/active-call", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
@@ -3376,11 +3336,10 @@ const messagingSetup = (async () => {
         participants: participantsData.map(p => ({ ...p.participant, user: p.user })),
       });
     } catch (error) {
-      logError("Get active call error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
-  router.get("/api/call-notes", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/call-notes", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user!.id;
       const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -3511,8 +3470,7 @@ const messagingSetup = (async () => {
 
       res.json({ calls: callsWithDetails, total, page, limit });
     } catch (error) {
-      logError("Get all call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 

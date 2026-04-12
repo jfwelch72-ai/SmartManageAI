@@ -81,7 +81,7 @@ const webhooksBodySchema = z.object({
   slackWebhookUrl: z.string().nullable().optional(),
 });
 
-router.get("/api/notifications/preferences", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/notifications/preferences", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
 
@@ -132,12 +132,11 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
       enterpriseNotificationsEnabled,
     });
   } catch (error) {
-    logError("Get notification preferences error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/notifications/preferences", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/notifications/preferences", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
 
@@ -256,12 +255,11 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
 
     res.json({ success: true });
   } catch (error) {
-    logError("Update notification preferences error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
 
@@ -316,8 +314,7 @@ router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: A
 
     res.json({ success: true });
   } catch (error) {
-    logError("Update webhook preferences error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

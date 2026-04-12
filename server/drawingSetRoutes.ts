@@ -31,7 +31,7 @@ const bulkDrawingSetItemsSchema = z.object({
 
 const router = Router();
 
-router.get("/:projectId/drawing-sets", requireAuth, async (req: AuthRequest, res) => {
+router.get("/:projectId/drawing-sets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -48,12 +48,11 @@ router.get("/:projectId/drawing-sets", requireAuth, async (req: AuthRequest, res
       .orderBy(desc(drawingSets.createdAt));
     res.json(sets);
   } catch (err) {
-    logError("Failed to list drawing sets", { error: String(err) });
-    res.status(500).json({ error: "Failed to list drawing sets" });
+    next(err);
   }
 });
 
-router.post("/:projectId/drawing-sets", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
+router.post("/:projectId/drawing-sets", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
   try {
     const user = getUserOrThrow(req, res);
     if (!user) return;
@@ -77,12 +76,11 @@ router.post("/:projectId/drawing-sets", requireAuth, requireRoleOrFeature(["SUPE
     }).returning();
     res.status(201).json(set);
   } catch (err) {
-    logError("Failed to create drawing set", { error: String(err) });
-    res.status(500).json({ error: "Failed to create drawing set" });
+    next(err);
   }
 });
 
-router.patch("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
+router.patch("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -102,12 +100,11 @@ router.patch("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_A
     if (!updated) return res.status(404).json({ error: "Drawing set not found" });
     res.json(updated);
   } catch (err) {
-    logError("Failed to update drawing set", { error: String(err) });
-    res.status(500).json({ error: "Failed to update drawing set" });
+    next(err);
   }
 });
 
-router.delete("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
+router.delete("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -120,12 +117,11 @@ router.delete("/drawing-sets/:setId", requireAuth, requireRoleOrFeature(["SUPER_
     if (!deleted) return res.status(404).json({ error: "Drawing set not found" });
     res.json({ success: true });
   } catch (err) {
-    logError("Failed to delete drawing set", { error: String(err) });
-    res.status(500).json({ error: "Failed to delete drawing set" });
+    next(err);
   }
 });
 
-router.post("/drawing-sets/:setId/primary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
+router.post("/drawing-sets/:setId/primary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -150,12 +146,11 @@ router.post("/drawing-sets/:setId/primary", requireAuth, requireRoleOrFeature(["
       .returning();
     res.json(updated);
   } catch (err) {
-    logError("Failed to set primary drawing set", { error: String(err) });
-    res.status(500).json({ error: "Failed to set primary" });
+    next(err);
   }
 });
 
-router.get("/drawing-sets/:setId/items", requireAuth, async (req: AuthRequest, res) => {
+router.get("/drawing-sets/:setId/items", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -171,12 +166,11 @@ router.get("/drawing-sets/:setId/items", requireAuth, async (req: AuthRequest, r
       .where(eq(drawingSetItems.drawingSetId, req.params.setId));
     res.json(items);
   } catch (err) {
-    logError("Failed to list drawing set items", { error: String(err) });
-    res.status(500).json({ error: "Failed to list items" });
+    next(err);
   }
 });
 
-router.post("/drawing-sets/:setId/items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
+router.post("/drawing-sets/:setId/items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -209,12 +203,11 @@ router.post("/drawing-sets/:setId/items", requireAuth, requireRoleOrFeature(["SU
     if (err?.code === "23505") {
       return res.status(409).json({ error: "Sheet already in this drawing set" });
     }
-    logError("Failed to add drawing set item", { error: String(err) });
-    res.status(500).json({ error: "Failed to add item" });
+    next(error);
   }
 });
 
-router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
+router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -251,12 +244,11 @@ router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRoleOrFeature
     const inserted = await db.insert(drawingSetItems).values(values).returning();
     res.json(inserted);
   } catch (err) {
-    logError("Failed to bulk update drawing set items", { error: String(err) });
-    res.status(500).json({ error: "Failed to bulk update items" });
+    next(err);
   }
 });
 
-router.delete("/drawing-sets/:setId/items/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res) => {
+router.delete("/drawing-sets/:setId/items/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -277,12 +269,11 @@ router.delete("/drawing-sets/:setId/items/:itemId", requireAuth, requireRoleOrFe
     if (!deleted) return res.status(404).json({ error: "Item not found" });
     res.json({ success: true });
   } catch (err) {
-    logError("Failed to remove drawing set item", { error: String(err) });
-    res.status(500).json({ error: "Failed to remove item" });
+    next(err);
   }
 });
 
-router.get("/drawing-sets/:setId/compare", requireAuth, async (req: AuthRequest, res) => {
+router.get("/drawing-sets/:setId/compare", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -338,12 +329,11 @@ router.get("/drawing-sets/:setId/compare", requireAuth, async (req: AuthRequest,
 
     res.json({ items, comparison });
   } catch (err) {
-    logError("Failed to compare drawing set", { error: String(err) });
-    res.status(500).json({ error: "Failed to compare" });
+    next(err);
   }
 });
 
-router.get("/drawing-sets/:setId/sheet-status", requireAuth, async (req: AuthRequest, res) => {
+router.get("/drawing-sets/:setId/sheet-status", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -399,8 +389,7 @@ router.get("/drawing-sets/:setId/sheet-status", requireAuth, async (req: AuthReq
       }, {}),
     });
   } catch (err) {
-    logError("Failed to get sheet status", { error: String(err) });
-    res.status(500).json({ error: "Failed to get sheet status" });
+    next(err);
   }
 });
 

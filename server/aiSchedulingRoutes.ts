@@ -78,8 +78,7 @@ router.post("/ai-features/schedule/generate", requireAuth, requireRole("ADMIN", 
       aiNotes: `Generated ${tasks.length} tasks for ${tradeType} project.`,
     });
   } catch (error) {
-    logError("Schedule generate error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate schedule" });
+    next(error);
   }
 });
 
@@ -199,8 +198,7 @@ router.get("/ai-features/schedule/:projectId", requireAuth, async (req: AuthRequ
 
     res.json({ schedule, tasks });
   } catch (error) {
-    logError("Get schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get schedule" });
+    next(error);
   }
 });
 
@@ -267,8 +265,7 @@ router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "M
       estimatedTime: 60,
     });
   } catch (error) {
-    logError("Jobsite analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create analysis" });
+    next(error);
   }
 });
 
@@ -489,8 +486,7 @@ router.post("/ai-features/jobsite/:batchId/process", requireAuth, async (req: Au
 
     res.json({ success: true, status: "COMPLETE" });
   } catch (error) {
-    logError("Process jobsite analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to process analysis" });
+    next(error);
   }
 });
 
@@ -551,8 +547,7 @@ router.get("/ai-features/jobsite/results/:batchId", requireAuth, async (req: Aut
       photos,
     });
   } catch (error) {
-    logError("Get jobsite results error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get results" });
+    next(error);
   }
 });
 
@@ -610,8 +605,7 @@ router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: A
 
     res.json({ batches: batchesWithCounts });
   } catch (error) {
-    logError("Get jobsite history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get history" });
+    next(error);
   }
 });
 
@@ -648,8 +642,7 @@ router.get("/ai-features/jobsite/project-photos/:projectId", requireAuth, async 
 
     res.json({ photos: unanalyzed, total: allPhotos.length, unanalyzedCount: unanalyzed.length });
   } catch (error) {
-    logError("Get project photos error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get project photos" });
+    next(error);
   }
 });
 
@@ -736,8 +729,7 @@ router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireR
       logError("Background batch processing error:", {}, err instanceof Error ? err : new Error(String(err)));
     });
   } catch (error) {
-    logError("Attach photos error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to attach photos" });
+    next(error);
   }
 });
 

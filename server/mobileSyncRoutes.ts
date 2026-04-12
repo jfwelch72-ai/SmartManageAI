@@ -9,7 +9,7 @@ import crypto from "crypto";
 
 const router = Router();
 
-router.get("/api/ai-features/mobile-sync", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/ai-features/mobile-sync", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -70,12 +70,11 @@ router.get("/api/ai-features/mobile-sync", requireAuth, async (req: AuthRequest,
       },
     });
   } catch (error: any) {
-    logError("Mobile sync status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get mobile sync status" });
+    next(error);
   }
 });
 
-router.post("/api/ai-features/mobile-sync/sync", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/ai-features/mobile-sync/sync", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -110,12 +109,11 @@ router.post("/api/ai-features/mobile-sync/sync", requireAuth, async (req: AuthRe
 
     res.json({ success: true, syncedCount: pendingItems.length });
   } catch (error: any) {
-    logError("Mobile sync trigger error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to trigger sync" });
+    next(error);
   }
 });
 
-router.delete("/api/ai-features/mobile-sync/devices/:deviceId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/ai-features/mobile-sync/devices/:deviceId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(400).json({ error: "No organization" });
@@ -132,12 +130,11 @@ router.delete("/api/ai-features/mobile-sync/devices/:deviceId", requireAuth, asy
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Remove device error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to remove device" });
+    next(error);
   }
 });
 
-router.post("/api/ai-features/mobile-sync/clear-offline", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/ai-features/mobile-sync/clear-offline", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -152,12 +149,11 @@ router.post("/api/ai-features/mobile-sync/clear-offline", requireAuth, async (re
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Clear offline data error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to clear offline data" });
+    next(error);
   }
 });
 
-router.get("/api/ai-features/mobile-sync/conflicts", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/ai-features/mobile-sync/conflicts", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
@@ -183,12 +179,11 @@ router.get("/api/ai-features/mobile-sync/conflicts", requireAuth, async (req: Au
 
     res.json(conflicts);
   } catch (error: any) {
-    logError("Get conflicts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get conflicts" });
+    next(error);
   }
 });
 
-router.patch("/api/ai-features/mobile-sync/conflicts/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/ai-features/mobile-sync/conflicts/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(400).json({ error: "No organization" });
@@ -216,8 +211,7 @@ router.patch("/api/ai-features/mobile-sync/conflicts/:id", requireAuth, async (r
 
     res.json({ success: true, resolution });
   } catch (error: any) {
-    logError("Resolve conflict error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to resolve conflict" });
+    next(error);
   }
 });
 
@@ -229,7 +223,7 @@ const deviceRegisterSchema = z.object({
   pushToken: z.string().optional(),
 });
 
-router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -284,12 +278,11 @@ router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthReq
       syncEndpoint: "/api/ai-features/mobile/sync",
     });
   } catch (error) {
-    logError("Device register error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to register device" });
+    next(error);
   }
 });
 
-router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -339,12 +332,11 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
       },
     });
   } catch (error) {
-    logError("Mobile sync error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to sync" });
+    next(error);
   }
 });
 
-router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -378,12 +370,11 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       serverTime: new Date().toISOString(),
     });
   } catch (error) {
-    logError("Mobile upload sync error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to upload changes" });
+    next(error);
   }
 });
 
-router.get("/api/ai-features/mobile/devices", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/ai-features/mobile/devices", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -400,8 +391,7 @@ router.get("/api/ai-features/mobile/devices", requireAuth, async (req: AuthReque
 
     res.json({ devices });
   } catch (error) {
-    logError("Get devices error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get devices" });
+    next(error);
   }
 });
 

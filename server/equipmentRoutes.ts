@@ -771,7 +771,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // ============================================================
 
   // Get all equipment with optional filters
-  router.get("/api/equipment", async (req: AuthRequest, res) => {
+  router.get("/api/equipment", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -827,13 +827,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         res.json(result);
       }
     } catch (error) {
-      logError("Get equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Import equipment from CSV (batch create)
-  router.post("/api/equipment/import", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/import", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess || !req.user?.organizationId) {
@@ -942,13 +941,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
 
       res.json({ created, skipped, errors });
     } catch (error) {
-      logError("Import equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get available projects for equipment assignment (must be before :idOrCode route)
-  router.get("/api/equipment/available-projects", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/available-projects", async (req: AuthRequest, res, next) => {
     try {
       // Organization filtering: Only show projects from user's organization
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -975,13 +973,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(activeProjects);
     } catch (error) {
-      logError("Get available projects error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get single equipment by ID or code
-  router.get("/api/equipment/:idOrCode", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:idOrCode", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1017,13 +1014,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(result[0]);
     } catch (error) {
-      logError("Get equipment by ID error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Create new equipment
-  router.post("/api/equipment", async (req: AuthRequest, res) => {
+  router.post("/api/equipment", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1091,12 +1087,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         res.status(400).json({ error: "Equipment code already exists" });
         return;
       }
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Update equipment
-  router.patch("/api/equipment/:id", async (req: AuthRequest, res) => {
+  router.patch("/api/equipment/:id", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1166,13 +1162,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      logError("Update equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Delete equipment
-  router.delete("/api/equipment/:id", async (req: AuthRequest, res) => {
+  router.delete("/api/equipment/:id", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1211,13 +1206,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ success: true });
     } catch (error) {
-      logError("Delete equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get upcoming maintenance due (for alerts) — must be before /:equipmentId routes to avoid route shadowing
-  router.get("/api/equipment/maintenance/upcoming", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/maintenance/upcoming", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1266,13 +1260,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(upcomingMaintenance);
     } catch (error) {
-      logError("Get upcoming maintenance error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get equipment assignments for a piece of equipment
-  router.get("/api/equipment/:equipmentId/assignments", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/assignments", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1323,13 +1316,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(assignments);
     } catch (error) {
-      logError("Get equipment assignments error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Assign equipment to project
-  router.post("/api/equipment/:equipmentId/assign", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/assign", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1389,13 +1381,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(assignment);
     } catch (error) {
-      logError("Assign equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Return equipment from assignment
-  router.post("/api/equipment/:equipmentId/return", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/return", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1463,13 +1454,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      logError("Return equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get maintenance schedules for equipment
-  router.get("/api/equipment/:equipmentId/maintenance-schedules", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/maintenance-schedules", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1498,13 +1488,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(schedules);
     } catch (error) {
-      logError("Get maintenance schedules error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Create maintenance schedule
-  router.post("/api/equipment/:equipmentId/maintenance-schedules", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/maintenance-schedules", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1548,13 +1537,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(schedule);
     } catch (error) {
-      logError("Create maintenance schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Record maintenance completion
-  router.post("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1630,13 +1618,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(history);
     } catch (error) {
-      logError("Record maintenance error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get maintenance history for equipment
-  router.get("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1665,8 +1652,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(history);
     } catch (error) {
-      logError("Get maintenance history error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -1675,7 +1661,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // ============================================
 
   // Get rate profiles for equipment
-  router.get("/api/equipment/:equipmentId/rate-profiles", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/rate-profiles", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1722,12 +1708,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(profiles);
     } catch (error) {
-      logError("Get equipment rate profiles error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/equipment/:equipmentId/active-rate", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/active-rate", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1763,13 +1748,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(activeProfile);
     } catch (error) {
-      logError("Get active rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Create rate profile for equipment
-  router.post("/api/equipment/:equipmentId/rate-profiles", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/rate-profiles", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1827,12 +1811,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid input", details: error.errors });
       }
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Update rate profile
-  router.patch("/api/equipment/:equipmentId/rate-profiles/:profileId", async (req: AuthRequest, res) => {
+  router.patch("/api/equipment/:equipmentId/rate-profiles/:profileId", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1888,13 +1872,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updatedProfile);
     } catch (error) {
-      logError("Update equipment rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Activate rate profile (deactivates others for same equipment)
-  router.post("/api/equipment/:equipmentId/rate-profiles/:profileId/activate", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/rate-profiles/:profileId/activate", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1944,13 +1927,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updatedProfile);
     } catch (error) {
-      logError("Activate equipment rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Delete rate profile
-  router.delete("/api/equipment/rate-profiles/:profileId", async (req: AuthRequest, res) => {
+  router.delete("/api/equipment/rate-profiles/:profileId", async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1988,8 +1970,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Rate profile deleted successfully" });
     } catch (error) {
-      logError("Delete equipment rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2001,7 +1982,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // RENTAL VENDORS
   // ============================================
 
-  router.get("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2022,12 +2003,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(vendors);
     } catch (error) {
-      logError("Get rental vendors error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2050,12 +2030,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(vendor);
     } catch (error) {
-      logError("Get rental vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2082,11 +2061,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid input", details: error.errors });
       }
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.patch("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2116,12 +2095,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      logError("Update rental vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.delete("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2148,8 +2126,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Rental vendor deleted successfully" });
     } catch (error) {
-      logError("Delete rental vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2157,7 +2134,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // RENTAL EQUIPMENT CATALOG
   // ============================================
 
-  router.get("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2185,12 +2162,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(catalog);
     } catch (error) {
-      logError("Get rental equipment catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/rental-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.get("/api/rental-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2237,12 +2213,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(filtered);
     } catch (error) {
-      logError("Get rental equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2278,11 +2253,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid input", details: error.errors });
       }
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.patch("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2321,12 +2296,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      logError("Update rental equipment catalog item error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.delete("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2362,8 +2336,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Catalog item deleted successfully" });
     } catch (error) {
-      logError("Delete rental equipment catalog item error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2375,7 +2348,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // PROJECT EQUIPMENT (assigned to project)
   // ============================================
 
-  router.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2423,8 +2396,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(projectEquipment);
     } catch (error) {
-      logError("Get project equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2432,7 +2404,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // PROJECT EQUIPMENT PLANS
   // ============================================
 
-  router.get("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.get("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2460,12 +2432,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(plans);
     } catch (error) {
-      logError("Get project equipment plans error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2534,12 +2505,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newPlan);
     } catch (error) {
-      logError("Create project equipment plan error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.patch("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2664,12 +2634,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
 
       res.json(updated);
     } catch (error) {
-      logError("Update project equipment plan error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.delete("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2709,8 +2678,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(204).send();
     } catch (error) {
-      logError("Delete project equipment plan error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2718,7 +2686,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // GET EQUIPMENT ASSIGNED TO PROJECT (for project detail page)
   // ============================================
 
-  router.get("/api/projects/:projectId/assigned-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/projects/:projectId/assigned-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { projectId } = req.params;
       
@@ -2748,8 +2716,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(assignedEquipment);
     } catch (error) {
-      logError("Get project equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2757,7 +2724,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // BID EQUIPMENT SELECTIONS
   // ============================================
 
-  router.get("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { bidId } = req.params;
       
@@ -2776,12 +2743,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(selections);
     } catch (error) {
-      logError("Get bid equipment selections error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { bidId } = req.params;
       const userId = req.user?.id;
@@ -2840,12 +2806,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newSelection);
     } catch (error) {
-      logError("Create bid equipment selection error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.patch("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { bidId, selectionId } = req.params;
       const userId = req.user?.id;
@@ -2917,12 +2882,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      logError("Update bid equipment selection error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.delete("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { bidId, selectionId } = req.params;
       const userId = req.user?.id;
@@ -2953,8 +2917,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Equipment selection deleted successfully" });
     } catch (error) {
-      logError("Delete bid equipment selection error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -2962,7 +2925,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // EQUIPMENT FOR SELECTION (owned + rental)
   // ============================================
 
-  router.get("/api/equipment-for-selection", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment-for-selection", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3031,8 +2994,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         rental: rentalCatalog,
       });
     } catch (error) {
-      logError("Get equipment for selection error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -3041,7 +3003,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // ============================================
 
   // Get equipment repairs
-  router.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3085,13 +3047,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(repairs);
     } catch (error) {
-      logError("Get equipment repairs error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Report equipment repair
-  router.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3148,13 +3109,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(repair);
     } catch (error) {
-      logError("Create repair error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Update repair status
-  router.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3199,8 +3159,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      logError("Update repair error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -3209,7 +3168,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
   // ============================================
 
   // Submit weekly hour log for equipment
-  router.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3267,12 +3226,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         res.status(400).json({ error: "Hour log already exists for this week" });
         return;
       }
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get hour logs for equipment
-  router.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -3313,13 +3272,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(logs);
     } catch (error) {
-      logError("Get hour logs error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // AI-powered equipment maintenance recommendations
-  router.post("/api/equipment/:equipmentId/ai-recommendations", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/ai-recommendations", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { equipmentId } = req.params;
       const { problemDescription } = req.body;
@@ -3428,13 +3386,12 @@ Please provide:
 
       res.json(recommendations);
     } catch (error) {
-      logError("AI recommendations error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to generate AI recommendations" });
+      next(error);
     }
   });
 
   // Notify maintenance managers about new repair/maintenance requests
-  router.post("/api/equipment/notify-maintenance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/notify-maintenance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { equipmentId, repairId, message, type } = req.body;
       
@@ -3471,8 +3428,7 @@ Please provide:
       
       res.json({ success: true, notifiedCount: uniqueRecipientIds.length });
     } catch (error) {
-      logError("Notify maintenance error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -3480,7 +3436,7 @@ Please provide:
   // DEPRECIATION ENDPOINTS
   // ============================================================
 
-  router.get("/api/equipment/:equipmentId/depreciation", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/depreciation", async (req: AuthRequest, res, next) => {
     try {
       const { equipmentId } = req.params;
       const orgId = req.user?.organizationId;
@@ -3510,8 +3466,7 @@ Please provide:
         accumulatedDepreciation: result.totalDepreciation,
       });
     } catch (error) {
-      logError("Depreciation error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to calculate depreciation" });
+      next(error);
     }
   });
 
@@ -3519,7 +3474,7 @@ Please provide:
   // FUEL LOG ENDPOINTS
   // ============================================================
 
-  router.get("/api/equipment/:equipmentId/fuel-logs", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/fuel-logs", async (req: AuthRequest, res, next) => {
     try {
       const { equipmentId } = req.params;
       const orgId = req.user?.organizationId;
@@ -3554,12 +3509,11 @@ Please provide:
 
       res.json(logs);
     } catch (error) {
-      logError("Fuel logs fetch error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch fuel logs" });
+      next(error);
     }
   });
 
-  router.post("/api/equipment/:equipmentId/fuel-logs", async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/fuel-logs", async (req: AuthRequest, res, next) => {
     try {
       const { equipmentId } = req.params;
       const userId = req.user!.id;
@@ -3612,12 +3566,11 @@ Please provide:
 
       res.status(201).json(newLog);
     } catch (error) {
-      logError("Fuel log create error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to create fuel log" });
+      next(error);
     }
   });
 
-  router.patch("/api/equipment/fuel-logs/:logId", async (req: AuthRequest, res) => {
+  router.patch("/api/equipment/fuel-logs/:logId", async (req: AuthRequest, res, next) => {
     try {
       const { logId } = req.params;
       const orgId = req.user?.organizationId;
@@ -3687,12 +3640,11 @@ Please provide:
 
       res.json(updated);
     } catch (error) {
-      logError("Fuel log update error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to update fuel log" });
+      next(error);
     }
   });
 
-  router.delete("/api/equipment/fuel-logs/:logId", async (req: AuthRequest, res) => {
+  router.delete("/api/equipment/fuel-logs/:logId", async (req: AuthRequest, res, next) => {
     try {
       const { logId } = req.params;
       const orgId = req.user?.organizationId;
@@ -3711,12 +3663,11 @@ Please provide:
       await db.delete(equipmentFuelLogs).where(eq(equipmentFuelLogs.id, logId));
       res.json({ success: true });
     } catch (error) {
-      logError("Fuel log delete error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to delete fuel log" });
+      next(error);
     }
   });
 
-  router.get("/api/equipment/:equipmentId/fuel-summary", async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/fuel-summary", async (req: AuthRequest, res, next) => {
     try {
       const { equipmentId } = req.params;
       const orgId = req.user?.organizationId;
@@ -3777,12 +3728,11 @@ Please provide:
         })),
       });
     } catch (error) {
-      logError("Fuel summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch fuel summary" });
+      next(error);
     }
   });
 
-  router.get("/api/projects/:projectId/fuel-summary", requireAuth, requireFeaturePermission('canManageEquipment'), async (req: AuthRequest, res) => {
+  router.get("/api/projects/:projectId/fuel-summary", requireAuth, requireFeaturePermission('canManageEquipment'), async (req: AuthRequest, res, next) => {
     try {
       const { projectId } = req.params;
       const orgId = req.user?.organizationId;
@@ -3837,8 +3787,7 @@ Please provide:
         })),
       });
     } catch (error) {
-      logError("Project fuel summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch project fuel summary" });
+      next(error);
     }
   });
 

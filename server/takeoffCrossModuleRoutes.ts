@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { safeJsonParse } from "./responseHelper";
 import { db } from "./db";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -124,7 +125,7 @@ router.post(
         let metaUnit: string | undefined;
         if (m.metadata) {
           try {
-            const parsed = JSON.parse(m.metadata);
+            const parsed = safeJsonParse(m.metadata, null);
             if (parsed.unit) metaUnit = parsed.unit;
           } catch {}
         }

@@ -71,7 +71,7 @@
  *       200: { description: Inspection deleted }
  */
 import {logError, logWarn } from "./utils/logger";
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { exportLimiter } from "./rateLimiter";
 import { 
@@ -153,7 +153,7 @@ function enrichInspection(inspection: ProjectInspection) {
   };
 }
 
-router.get("/projects/:projectId/inspections", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/inspections", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -193,12 +193,11 @@ router.get("/projects/:projectId/inspections", requireAuth, async (req: AuthRequ
 
     res.json(enrichedInspections);
   } catch (error) {
-    logError("Error fetching project inspections:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch inspections" });
+    next(error);
   }
 });
 
-router.post("/projects/:projectId/inspections", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/inspections", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const userId = req.user!.id;
@@ -268,12 +267,11 @@ router.post("/projects/:projectId/inspections", requireAuth, requireRole("ADMIN"
 
     res.status(201).json(enrichInspection(newInspection));
   } catch (error) {
-    logError("Error creating inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create inspection" });
+    next(error);
   }
 });
 
-router.get("/inspections/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/inspections/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 
@@ -284,12 +282,11 @@ router.get("/inspections/:id", requireAuth, async (req: AuthRequest, res: Respon
 
     res.json(enrichInspection(inspection));
   } catch (error) {
-    logError("Error fetching inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch inspection" });
+    next(error);
   }
 });
 
-router.patch("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -354,12 +351,11 @@ router.patch("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER", "S
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    logError("Error updating inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update inspection" });
+    next(error);
   }
 });
 
-router.post("/inspections/:id/schedule", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/schedule", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -401,12 +397,11 @@ router.post("/inspections/:id/schedule", requireAuth, requireRole("ADMIN", "MANA
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    logError("Error scheduling inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to schedule inspection" });
+    next(error);
   }
 });
 
-router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -460,12 +455,11 @@ router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    logError("Error passing inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to pass inspection" });
+    next(error);
   }
 });
 
-router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -522,12 +516,11 @@ router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    logError("Error failing inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fail inspection" });
+    next(error);
   }
 });
 
-router.post("/inspections/:id/cancel", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/cancel", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -564,12 +557,11 @@ router.post("/inspections/:id/cancel", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    logError("Error cancelling inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to cancel inspection" });
+    next(error);
   }
 });
 
-router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -600,12 +592,11 @@ router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), 
 
     res.status(204).send();
   } catch (error) {
-    logError("Error deleting inspection:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete inspection" });
+    next(error);
   }
 });
 
-router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), exportLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 
@@ -677,12 +668,11 @@ router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADM
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("Error generating inspection PDF:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate PDF" });
+    next(error);
   }
 });
 
-router.get("/inspections/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/inspections/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 
@@ -754,8 +744,7 @@ router.get("/inspections/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "HUST
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("Error serving inspection PDF:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to serve PDF" });
+    next(error);
   }
 });
 

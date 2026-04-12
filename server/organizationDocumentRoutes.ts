@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { organizationDocuments, organizations, users, insertOrganizationDocumentSchema, type OrganizationDocument } from "@shared/schema";
 import { eq, desc, and, isNull, or, sql } from "drizzle-orm";
@@ -51,7 +51,7 @@ const COMPLIANCE_DOCUMENT_TYPES = [
   "TEMPLATE_OTHER"
 ];
 
-router.get("/organization-documents/types", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/organization-documents/types", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const types = Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => ({
       value,
@@ -73,12 +73,11 @@ router.get("/organization-documents/types", requireAuth, async (req: AuthRequest
       ]
     });
   } catch (error) {
-    logError("Get document types error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/organization-documents/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/organization-documents/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -131,12 +130,11 @@ router.get("/organization-documents/summary", requireAuth, async (req: AuthReque
 
     res.json(summary);
   } catch (error) {
-    logError("Get document summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/organization-documents/history/:type", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/organization-documents/history/:type", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { type } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -182,12 +180,11 @@ router.get("/organization-documents/history/:type", requireAuth, async (req: Aut
 
     res.json(enrichedDocuments);
   } catch (error) {
-    logError("Get document history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/organization-documents", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/organization-documents", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -249,12 +246,11 @@ router.get("/organization-documents", requireAuth, async (req: AuthRequest, res:
 
     res.json(enrichedDocuments);
   } catch (error) {
-    logError("Get organization documents error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/organization-documents/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/organization-documents/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -320,8 +316,7 @@ router.get("/organization-documents/:id", requireAuth, async (req: AuthRequest, 
 
     res.json(enrichedDocument);
   } catch (error) {
-    logError("Get organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -342,7 +337,7 @@ const createDocumentSchema = insertOrganizationDocumentSchema.extend({
   ),
 });
 
-router.post("/organization-documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.post("/organization-documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -412,8 +407,7 @@ router.post("/organization-documents", requireAuth, requireRole("SUPER_ADMIN", "
       visibilityLabel: VISIBILITY_LABELS[newDocument.visibility] || newDocument.visibility,
     });
   } catch (error) {
-    logError("Create organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -427,7 +421,7 @@ const updateDocumentSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-router.patch("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.patch("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -473,12 +467,11 @@ router.patch("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMI
       visibilityLabel: VISIBILITY_LABELS[updatedDoc.visibility] || updatedDoc.visibility,
     });
   } catch (error) {
-    logError("Update organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -515,12 +508,11 @@ router.delete("/organization-documents/:id", requireAuth, requireRole("SUPER_ADM
 
     res.json({ success: true, message: "Document deactivated" });
   } catch (error) {
-    logError("Delete organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/organization-documents/:id/download", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/organization-documents/:id/download", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const orgId = await getOrgIdForFilter(req);
@@ -560,8 +552,7 @@ router.get("/api/organization-documents/:id/download", requireAuth, async (req: 
 
     await objectStorage.downloadObject(objectFile, res, 3600);
   } catch (error) {
-    logError("Download organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

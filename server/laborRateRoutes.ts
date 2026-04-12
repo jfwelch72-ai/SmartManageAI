@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { 
   jobClassifications, 
@@ -26,7 +26,7 @@ const router = Router();
 
 // ==================== JOB CLASSIFICATIONS ====================
 
-router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -41,12 +41,11 @@ router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "EST
 
     res.json(classifications);
   } catch (error) {
-    logError("Error fetching job classifications:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch job classifications" });
+    next(error);
   }
 });
 
-router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -73,12 +72,11 @@ router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ES
 
     res.status(201).json(classification);
   } catch (error) {
-    logError("Error creating job classification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create job classification" });
+    next(error);
   }
 });
 
-router.patch("/classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -129,12 +127,11 @@ router.patch("/classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating job classification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update job classification" });
+    next(error);
   }
 });
 
-router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -172,14 +169,13 @@ router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting job classification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete job classification" });
+    next(error);
   }
 });
 
 // ==================== EMPLOYEE CLASSIFICATIONS ====================
 
-router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -255,12 +251,11 @@ router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAG
     const results = await query;
     res.json(results);
   } catch (error) {
-    logError("Error fetching employee classifications:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch employee classifications" });
+    next(error);
   }
 });
 
-router.get("/employee-classifications/my-rates", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/employee-classifications/my-rates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const organizationId = req.user!.organizationId;
@@ -292,12 +287,11 @@ router.get("/employee-classifications/my-rates", requireAuth, async (req: AuthRe
 
     res.json(results);
   } catch (error) {
-    logError("Error fetching my rates:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch your rates" });
+    next(error);
   }
 });
 
-router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -334,12 +328,11 @@ router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANA
 
     res.status(201).json(assignment);
   } catch (error) {
-    logError("Error creating employee classification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create employee classification" });
+    next(error);
   }
 });
 
-router.patch("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -396,12 +389,11 @@ router.patch("/employee-classifications/:id", requireAuth, requireRole("ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating employee classification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update employee classification" });
+    next(error);
   }
 });
 
-router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -436,14 +428,13 @@ router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN",
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting employee classification:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete employee classification" });
+    next(error);
   }
 });
 
 // ==================== PREVAILING WAGE RATES ====================
 
-router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -522,12 +513,11 @@ router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(results);
   } catch (error) {
-    logError("Error fetching prevailing wage rates:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch prevailing wage rates" });
+    next(error);
   }
 });
 
-router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -560,12 +550,11 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.status(201).json(rate);
   } catch (error) {
-    logError("Error creating prevailing wage rate:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create prevailing wage rate" });
+    next(error);
   }
 });
 
-router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -618,12 +607,11 @@ router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MA
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating prevailing wage rate:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update prevailing wage rate" });
+    next(error);
   }
 });
 
-router.delete("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -658,8 +646,7 @@ router.delete("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "M
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting prevailing wage rate:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete prevailing wage rate" });
+    next(error);
   }
 });
 
@@ -669,7 +656,7 @@ function computeBurdenedCost(baseSalary: number, burdenPercentage: number, fixed
   return baseSalary + (baseSalary * burdenPercentage / 100) + fixedBurdenAmount;
 }
 
-router.get("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -682,12 +669,11 @@ router.get("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER", "E
 
     res.json(categories);
   } catch (error) {
-    logError("Error fetching salary categories:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch salary categories" });
+    next(error);
   }
 });
 
-router.post("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -714,11 +700,11 @@ router.post("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER"), 
   } catch (error: any) {
     logError("Error creating salary category:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.code === "23505") return res.status(409).json({ error: "A salary category with this name already exists" });
-    res.status(500).json({ error: "Failed to create salary category" });
+    next(error);
   }
 });
 
-router.patch("/salary-categories/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/salary-categories/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -744,12 +730,11 @@ router.patch("/salary-categories/:id", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating salary category:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update salary category" });
+    next(error);
   }
 });
 
-router.delete("/salary-categories/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/salary-categories/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -771,14 +756,13 @@ router.delete("/salary-categories/:id", requireAuth, requireRole("ADMIN"), async
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting salary category:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete salary category" });
+    next(error);
   }
 });
 
 // ==================== BURDEN RATES ====================
 
-router.get("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -791,12 +775,11 @@ router.get("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMA
 
     res.json(rates);
   } catch (error) {
-    logError("Error fetching burden rates:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch burden rates" });
+    next(error);
   }
 });
 
-router.post("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -826,11 +809,11 @@ router.post("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async
   } catch (error: any) {
     logError("Error creating burden rate:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.code === "23505") return res.status(409).json({ error: "A burden rate with this name already exists" });
-    res.status(500).json({ error: "Failed to create burden rate" });
+    next(error);
   }
 });
 
-router.patch("/burden-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/burden-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -860,12 +843,11 @@ router.patch("/burden-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), 
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating burden rate:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update burden rate" });
+    next(error);
   }
 });
 
-router.delete("/burden-rates/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/burden-rates/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -887,14 +869,13 @@ router.delete("/burden-rates/:id", requireAuth, requireRole("ADMIN"), async (req
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting burden rate:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete burden rate" });
+    next(error);
   }
 });
 
 // ==================== EMPLOYEE COST ASSIGNMENTS ====================
 
-router.get("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -932,12 +913,11 @@ router.get("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER", "ES
 
     res.json(assignments);
   } catch (error) {
-    logError("Error fetching cost assignments:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch cost assignments" });
+    next(error);
   }
 });
 
-router.post("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -993,11 +973,11 @@ router.post("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER"), a
   } catch (error: any) {
     logError("Error creating cost assignment:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.code === "23505") return res.status(409).json({ error: "This employee already has an assignment for this salary category" });
-    res.status(500).json({ error: "Failed to create cost assignment" });
+    next(error);
   }
 });
 
-router.patch("/cost-assignments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/cost-assignments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -1057,12 +1037,11 @@ router.patch("/cost-assignments/:id", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating cost assignment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update cost assignment" });
+    next(error);
   }
 });
 
-router.delete("/cost-assignments/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/cost-assignments/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -1084,12 +1063,11 @@ router.delete("/cost-assignments/:id", requireAuth, requireRole("ADMIN"), async 
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting cost assignment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete cost assignment" });
+    next(error);
   }
 });
 
-router.post("/cost-assignments/recalculate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/cost-assignments/recalculate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
@@ -1140,8 +1118,7 @@ router.post("/cost-assignments/recalculate", requireAuth, requireRole("ADMIN", "
 
     res.json({ success: true, updated });
   } catch (error) {
-    logError("Error recalculating cost assignments:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to recalculate cost assignments" });
+    next(error);
   }
 });
 

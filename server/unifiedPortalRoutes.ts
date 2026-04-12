@@ -303,8 +303,7 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
 
     return res.status(400).json({ error: "Invalid portal type. Must be 'client', 'subcontractor', or 'vendor'." });
   } catch (error) {
-    logError("Portal auth resolve error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Portal authentication failed" });
+    next(error);
   }
 });
 
@@ -364,7 +363,7 @@ router.get("/portal/org-logo/:orgId", async (req: Request, res: Response) => {
     await portalObjectStorage.downloadObject(objectFile, res, 86400);
   } catch (error) {
     logError("Portal org logo proxy error:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (!res.headersSent) res.status(500).json({ error: "Failed to load logo" });
+    if (!res.headersSent) next(error);
   }
 });
 

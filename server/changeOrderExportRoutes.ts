@@ -88,6 +88,7 @@
  *       201: { description: Comment added }
  */
 import { Router, type Response , NextFunction } from "express";
+import { safeJsonParse } from "./responseHelper";
 import { db } from "./db";
 import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprovals, changeOrderComments, tmTickets, rfis, scheduleOfValues, sovLineItems, orgCostCodes } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -299,7 +300,7 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
     let costBreakdownData = null;
     try {
       if (order.costBreakdownJson) {
-        costBreakdownData = typeof order.costBreakdownJson === 'string' ? JSON.parse(order.costBreakdownJson) : order.costBreakdownJson;
+        costBreakdownData = typeof order.costBreakdownJson === 'string' ? safeJsonParse(order.costBreakdownJson, null) : order.costBreakdownJson;
       }
     } catch (e) {
       logError("Failed to parse costBreakdownJson:", {}, e instanceof Error ? e : new Error(String(e)));
@@ -382,7 +383,7 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
     stream.pipe(res);
   } catch (error) {
     console.error("PDF generation error:", error);
-    res.status(500).json({ error: "Failed to generate PDF" });
+    next(error);
   }
 });
 
@@ -448,7 +449,7 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRoleOrFeature(["A
         let costBreakdownData = null;
         try {
           if (co.costBreakdownJson) {
-            costBreakdownData = typeof co.costBreakdownJson === 'string' ? JSON.parse(co.costBreakdownJson) : co.costBreakdownJson;
+            costBreakdownData = typeof co.costBreakdownJson === 'string' ? safeJsonParse(co.costBreakdownJson, null) : co.costBreakdownJson;
           }
         } catch (parseErr) {
           console.warn(`Skipping malformed costBreakdownJson for CO ${co.changeOrderNumber}`);
@@ -534,7 +535,7 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRoleOrFeature(["A
   } catch (error) {
     console.error("Bulk PDF export error:", error);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to generate bulk PDF export" });
+      next(error);
     }
   }
 });

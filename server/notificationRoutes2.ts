@@ -55,7 +55,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 
 const router = Router();
 
-router.get("/api/notifications", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/notifications", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const conditions = orgId
@@ -71,12 +71,11 @@ router.get("/api/notifications", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(userNotifications);
   } catch (error) {
-    logError("Get notifications error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/notifications/unread-count", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/notifications/unread-count", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const orgFilter = orgId ? sql` AND ${notifications.organizationId} = ${orgId}` : sql` AND ${notifications.organizationId} IS NULL`;
@@ -88,12 +87,11 @@ router.get("/api/notifications/unread-count", requireAuth, async (req: AuthReque
 
     res.json({ count: result.count });
   } catch (error) {
-    logError("Get unread count error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/notifications/:id/read", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/notifications/:id/read", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const orgFilter = orgId ? sql` AND ${notifications.organizationId} = ${orgId}` : sql` AND ${notifications.organizationId} IS NULL`;
@@ -111,12 +109,11 @@ router.patch("/api/notifications/:id/read", requireAuth, async (req: AuthRequest
 
     res.json(notification);
   } catch (error: any) {
-    logError("Mark notification read error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/notifications/read-all", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/notifications/read-all", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const conditions = orgId
@@ -130,8 +127,7 @@ router.post("/api/notifications/read-all", requireAuth, async (req: AuthRequest,
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Mark all notifications read error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

@@ -1,4 +1,5 @@
 import { logError } from "./utils/logger";
+import { safeJsonParse } from "./responseHelper";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 import { db } from "./db";
@@ -364,8 +365,8 @@ Return format: { "insights": [ ... ] }`;
         // Parse JSON fields for response
         const recordWithParsedFields = {
           ...insertedRecord,
-          recommendedActions: JSON.parse(insertedRecord.recommendedActions || "[]"),
-          recipients: JSON.parse(insertedRecord.recipients || "[]"),
+          recommendedActions: safeJsonParse(insertedRecord.recommendedActions, []),
+          recipients: safeJsonParse(insertedRecord.recipients, []),
         };
 
         persistedRecords.push(recordWithParsedFields);
@@ -486,8 +487,8 @@ Return format: { "insights": [ ... ] }`;
 
     let parsedInsights = insights.map(insight => ({
       ...insight,
-      recommendedActions: JSON.parse(insight.recommendedActions || "[]"),
-      recipients: JSON.parse(insight.recipients || "[]"),
+      recommendedActions: safeJsonParse(insight.recommendedActions, []),
+      recipients: safeJsonParse(insight.recipients, []),
     }));
 
     // Filter by user role if provided (RBAC)
@@ -535,10 +536,10 @@ Return format: { "insights": [ ... ] }`;
           projectInfo = project[0] || null;
         }
 
-        const recipientsList = JSON.parse(insight.recipients || "[]");
+        const recipientsList = safeJsonParse(insight.recipients, []);
         return {
           ...insight,
-          recommendedActions: JSON.parse(insight.recommendedActions || "[]"),
+          recommendedActions: safeJsonParse(insight.recommendedActions, []),
           recipients: recipientsList,
           project: projectInfo,
         };

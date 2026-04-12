@@ -109,7 +109,7 @@ const router = Router();
   // Manage Workers Routes
   // ====================
 
-  router.get("/api/auth/manage-workers", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/manage-workers", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -218,12 +218,11 @@ const router = Router();
 
       res.json(results);
     } catch (error) {
-      logError("Error fetching manage-workers list:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/manage-workers/kpi-dashboard", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/manage-workers/kpi-dashboard", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -347,12 +346,11 @@ const router = Router();
         topPerformers,
       });
     } catch (error) {
-      logError("Error fetching KPI dashboard:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/manage-workers/:id", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/manage-workers/:id", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -474,12 +472,11 @@ const router = Router();
         currentShift: currentShiftRaw || null,
       });
     } catch (error) {
-      logError("Error fetching worker profile:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/manage-workers/:id/logs", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/manage-workers/:id/logs", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -526,12 +523,11 @@ const router = Router();
 
       res.status(201).json(newLog);
     } catch (error) {
-      logError("Error creating worker log:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/manage-workers/:id/notes", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/manage-workers/:id/notes", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -574,12 +570,11 @@ const router = Router();
 
       res.status(201).json(newNote);
     } catch (error) {
-      logError("Error creating supervisor note:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/manage-workers/:id/assign-project", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/manage-workers/:id/assign-project", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -657,12 +652,11 @@ const router = Router();
 
       res.status(201).json({ shift: newShift, projectName: project.name });
     } catch (error) {
-      logError("Error assigning worker to project:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/manage-workers/:id/skills", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/manage-workers/:id/skills", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -708,12 +702,11 @@ const router = Router();
 
       res.status(201).json({ userSkill: newUserSkill, skillName: existingSkill.name });
     } catch (error) {
-      logError("Error adding skill to worker:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/auth/manage-workers/:id/skills/:userSkillId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/auth/manage-workers/:id/skills/:userSkillId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -748,12 +741,11 @@ const router = Router();
       await db.delete(userSkills).where(eq(userSkills.id, userSkillId));
       res.json({ success: true });
     } catch (error) {
-      logError("Error removing skill from worker:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/auth/manage-workers/:id/skills/:userSkillId/rating", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/auth/manage-workers/:id/skills/:userSkillId/rating", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -801,12 +793,11 @@ const router = Router();
 
       res.json(updated);
     } catch (error) {
-      logError("Error updating skill rating:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/auth/manage-workers/:id/status", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/auth/manage-workers/:id/status", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -848,12 +839,11 @@ const router = Router();
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
     } catch (error) {
-      logError("Error updating worker status:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-equipment-competencies", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-equipment-competencies", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -863,12 +853,11 @@ const router = Router();
         .orderBy(desc(userEquipmentCompetencies.createdAt));
       res.json(competencies);
     } catch (error) {
-      logError("Error fetching equipment competencies:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/my-equipment-competencies", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/my-equipment-competencies", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -894,12 +883,11 @@ const router = Router();
 
       res.status(201).json(comp);
     } catch (error) {
-      logError("Error adding equipment competency:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/auth/my-equipment-competencies/:compId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/auth/my-equipment-competencies/:compId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -912,13 +900,12 @@ const router = Router();
       await db.delete(userEquipmentCompetencies).where(eq(userEquipmentCompetencies.id, compId));
       res.json({ message: "Equipment competency removed" });
     } catch (error) {
-      logError("Error removing equipment competency:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get trade features for current user's organization
-  router.get("/api/trade-features", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/trade-features", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -982,13 +969,12 @@ const router = Router();
 
       res.json({ features, tradeType: org.tradeType });
     } catch (error) {
-      logError("Error fetching trade features:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Initialize admin user (one-time setup)
-  router.post("/api/auth/init", async (req: AuthRequest, res) => {
+  router.post("/api/auth/init", async (req: AuthRequest, res, next) => {
     try {
       // Check if any users exist
       const existingUsers = await db.select().from(users).limit(1);
@@ -1016,13 +1002,12 @@ const router = Router();
         message: "Admin user created. Email: admin@tfrllc.com, Password: admin123. Please change this password!"
       });
     } catch (error) {
-      logError("Init error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Forgot Password - Request password reset email
-  router.post("/api/auth/forgot-password", authLimiter, async (req: AuthRequest, res) => {
+  router.post("/api/auth/forgot-password", authLimiter, async (req: AuthRequest, res, next) => {
     try {
       const schema = z.object({
         email: z.string().email(),
@@ -1079,13 +1064,12 @@ const router = Router();
       // Always return success message to prevent email enumeration attacks
       res.json({ message: "If an account with that email exists, a password reset link has been sent." });
     } catch (error) {
-      logError("Forgot password error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Reset Password - Set new password using token
-  router.post("/api/auth/reset-password", authLimiter, async (req: AuthRequest, res) => {
+  router.post("/api/auth/reset-password", authLimiter, async (req: AuthRequest, res, next) => {
     try {
       const schema = z.object({
         token: z.string().min(1),
@@ -1146,13 +1130,12 @@ const router = Router();
       logInfo(`Credential reset completed for user: ${completedUserId}`);
       res.json({ message: "Password has been reset successfully. Please login with your new password." });
     } catch (error) {
-      logError("Reset password error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Validate Reset Token - Check if token is valid without using it
-  router.get("/api/auth/validate-reset-token", async (req: AuthRequest, res) => {
+  router.get("/api/auth/validate-reset-token", async (req: AuthRequest, res, next) => {
     try {
       const token = req.query.token as string;
       
@@ -1186,8 +1169,7 @@ const router = Router();
 
       res.json({ valid: true });
     } catch (error) {
-      logError("Validate token error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ valid: false, error: "Internal server error" });
+      next(error);
     }
   });
 

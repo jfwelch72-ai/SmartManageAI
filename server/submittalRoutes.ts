@@ -408,7 +408,8 @@
  *       200: { description: Submittal resubmitted }
  */
 import {logError, logWarn } from "./utils/logger";
-import { Router, Response } from "express";
+import { safeJsonParse } from "./responseHelper";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import {
   insertSubmittalSchema,
@@ -438,7 +439,7 @@ const router = Router();
 // Routes from submittalRoutes.ts
 // ========================================
 
-router.get("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -487,12 +488,11 @@ router.get("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADM
 
     res.json(result);
   } catch (error) {
-    logError("Get submittals error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/submittals/stats", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/stats", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -529,12 +529,11 @@ router.get("/submittals/stats", requireAuth, requireRoleOrFeature(["SUPER_ADMIN"
 
     res.json(stats);
   } catch (error) {
-    logError("Get submittal stats error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/submittals/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -608,12 +607,11 @@ router.get("/submittals/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", 
       activity: activityLog,
     });
   } catch (error) {
-    logError("Get submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -680,12 +678,11 @@ router.post("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "AD
 
     res.status(201).json(newSubmittal);
   } catch (error) {
-    logError("Create submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/submittals/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.patch("/submittals/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -741,12 +738,11 @@ router.patch("/submittals/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN"
 
     res.json(updated);
   } catch (error) {
-    logError("Update submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/submittals/:id/link-rfi", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/link-rfi", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -804,12 +800,11 @@ router.post("/submittals/:id/link-rfi", requireAuth, requireRoleOrFeature(["SUPE
 
     res.json(updated);
   } catch (error) {
-    logError("Link RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/submittals/:id/activity", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/activity", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -854,12 +849,11 @@ router.post("/submittals/:id/activity", requireAuth, requireRoleOrFeature(["SUPE
 
     res.status(201).json(entry);
   } catch (error) {
-    logError("Add submittal activity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/submittals/:id/activity", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/activity", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -891,12 +885,11 @@ router.get("/submittals/:id/activity", requireAuth, requireRoleOrFeature(["SUPER
 
     res.json(activityLog);
   } catch (error) {
-    logError("Get submittal activity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -934,12 +927,11 @@ router.delete("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
 
     res.status(204).send();
   } catch (error) {
-    logError("Delete submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -992,7 +984,7 @@ router.post("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_A
     const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
 
     const currentAttachments = existing.submittal.attachmentsJson
-      ? JSON.parse(existing.submittal.attachmentsJson)
+      ? safeJsonParse(existing.submittal.attachmentsJson, [])
       : [];
 
     const newAttachment = {
@@ -1017,12 +1009,11 @@ router.post("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_A
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    logError("Upload submittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1050,17 +1041,16 @@ router.get("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_AD
     }
 
     const attachments = existing.submittal.attachmentsJson
-      ? JSON.parse(existing.submittal.attachmentsJson)
+      ? safeJsonParse(existing.submittal.attachmentsJson, [])
       : [];
 
     res.json(attachments);
   } catch (error) {
-    logError("Get submittal files error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/submittals/:id/files/:fileId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.delete("/submittals/:id/files/:fileId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1088,7 +1078,7 @@ router.delete("/submittals/:id/files/:fileId", requireAuth, requireRoleOrFeature
     }
 
     const currentAttachments = existing.submittal.attachmentsJson
-      ? JSON.parse(existing.submittal.attachmentsJson)
+      ? safeJsonParse(existing.submittal.attachmentsJson, [])
       : [];
 
     const fileIndex = currentAttachments.findIndex((f: any) => f.id === req.params.fileId);
@@ -1111,14 +1101,13 @@ router.delete("/submittals/:id/files/:fileId", requireAuth, requireRoleOrFeature
 
     res.status(204).send();
   } catch (error) {
-    logError("Delete submittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Submittal Items ====================
 
-router.get("/submittals/:id/items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1142,12 +1131,11 @@ router.get("/submittals/:id/items", requireAuth, requireRoleOrFeature(["SUPER_AD
 
     res.json(items);
   } catch (error) {
-    logError("Get submittal items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/submittals/:id/items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/items", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1189,12 +1177,11 @@ router.post("/submittals/:id/items", requireAuth, requireRoleOrFeature(["SUPER_A
 
     res.status(201).json(newItem);
   } catch (error) {
-    logError("Create submittal item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/submittals/:id/items/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.patch("/submittals/:id/items/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id, itemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1244,12 +1231,11 @@ router.patch("/submittals/:id/items/:itemId", requireAuth, requireRoleOrFeature(
     const [updated] = await db.update(submittalItems).set(updates).where(eq(submittalItems.id, itemId)).returning();
     res.json(updated);
   } catch (error) {
-    logError("Update submittal item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/submittals/:id/items/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.delete("/submittals/:id/items/:itemId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id, itemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1272,14 +1258,13 @@ router.delete("/submittals/:id/items/:itemId", requireAuth, requireRoleOrFeature
     await db.delete(submittalItems).where(eq(submittalItems.id, itemId));
     res.status(204).send();
   } catch (error) {
-    logError("Delete submittal item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Submittal Reviews ====================
 
-router.get("/submittals/:id/reviews", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/reviews", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1303,12 +1288,11 @@ router.get("/submittals/:id/reviews", requireAuth, requireRoleOrFeature(["SUPER_
 
     res.json(reviews);
   } catch (error) {
-    logError("Get submittal reviews error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/submittals/:id/reviews", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/reviews", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1342,12 +1326,11 @@ router.post("/submittals/:id/reviews", requireAuth, requireRoleOrFeature(["SUPER
 
     res.status(201).json(newReview);
   } catch (error) {
-    logError("Create submittal review error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/submittals/:id/reviews/:reviewId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.delete("/submittals/:id/reviews/:reviewId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id, reviewId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1370,15 +1353,14 @@ router.delete("/submittals/:id/reviews/:reviewId", requireAuth, requireRoleOrFea
     await db.delete(submittalReviews).where(eq(submittalReviews.id, reviewId));
     res.status(204).send();
   } catch (error) {
-    logError("Delete submittal review error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Submittal Attachments ====================
 
 
-router.get("/submittals/:id/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1402,12 +1384,11 @@ router.get("/submittals/:id/attachments", requireAuth, requireRoleOrFeature(["SU
 
     res.json(attachments);
   } catch (error) {
-    logError("Get submittal attachments error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/submittals/:id/attachments/:attachmentId/download", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/attachments/:attachmentId/download", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canAccessProjects"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id, attachmentId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1442,17 +1423,16 @@ router.get("/submittals/:id/attachments/:attachmentId/download", requireAuth, re
         expires: Date.now() + 60 * 60 * 1000,
       });
       res.json({ url: signedUrl });
-    } catch {
+    } catch (innerErr) {
       logWarn("Non-critical operation failed");
-      res.status(500).json({ error: "Failed to generate download URL" });
+      next(innerErr);
     }
   } catch (error) {
-    logError("Get submittal attachment download URL error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/submittals/:id/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/attachments", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1577,12 +1557,11 @@ router.post("/submittals/:id/attachments", requireAuth, requireRoleOrFeature(["S
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    logError("Upload submittal attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id, attachmentId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1632,8 +1611,7 @@ router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireR
     await db.delete(submittalAttachments).where(eq(submittalAttachments.id, attachmentId));
     res.status(204).send();
   } catch (error) {
-    logError("Delete submittal attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1785,7 +1763,7 @@ async function advanceChain(submittalId: string, actorUserId: string, organizati
 
 // ==================== Submit ====================
 
-router.post("/submittals/:id/submit", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/submit", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1851,14 +1829,13 @@ router.post("/submittals/:id/submit", requireAuth, requireRoleOrFeature(["SUPER_
 
     res.json(updated);
   } catch (error) {
-    logError("Submit submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Review (legacy — start review without chain) ====================
 
-router.post("/submittals/:id/review", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/review", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1917,14 +1894,13 @@ router.post("/submittals/:id/review", requireAuth, requireRoleOrFeature(["SUPER_
 
     res.json(updated);
   } catch (error) {
-    logError("Review submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Review Chain — Start ====================
 
-router.post("/submittals/:id/reviews/:reviewId/start", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/reviews/:reviewId/start", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id, reviewId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1996,8 +1972,7 @@ router.post("/submittals/:id/reviews/:reviewId/start", requireAuth, requireRoleO
 
     res.json(updatedReview);
   } catch (error) {
-    logError("Start review error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2008,7 +1983,7 @@ const stampBodySchema = z.object({
   comments: z.string().optional(),
 });
 
-router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id, reviewId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -2085,14 +2060,13 @@ router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: 
 
     res.json(updatedReview);
   } catch (error) {
-    logError("Stamp review error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Approve (legacy) ====================
 
-router.post("/submittals/:id/approve", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/approve", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -2165,14 +2139,13 @@ router.post("/submittals/:id/approve", requireAuth, requireRoleOrFeature(["SUPER
 
     res.json(updated);
   } catch (error) {
-    logError("Approve submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Approve As Noted (legacy) ====================
 
-router.post("/submittals/:id/approve-as-noted", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/approve-as-noted", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -2249,14 +2222,13 @@ router.post("/submittals/:id/approve-as-noted", requireAuth, requireRoleOrFeatur
 
     res.json(updated);
   } catch (error) {
-    logError("Approve as noted submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Reject (legacy) ====================
 
-router.post("/submittals/:id/reject", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/reject", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -2333,14 +2305,13 @@ router.post("/submittals/:id/reject", requireAuth, requireRoleOrFeature(["SUPER_
 
     res.json(updated);
   } catch (error) {
-    logError("Reject submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Revise (legacy) ====================
 
-router.post("/submittals/:id/revise", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/revise", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -2417,14 +2388,13 @@ router.post("/submittals/:id/revise", requireAuth, requireRoleOrFeature(["SUPER_
 
     res.json(updated);
   } catch (error) {
-    logError("Revise submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ==================== Resubmit ====================
 
-router.post("/submittals/:id/resubmit", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/resubmit", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageProcurement"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -2496,8 +2466,7 @@ router.post("/submittals/:id/resubmit", requireAuth, requireRoleOrFeature(["SUPE
 
     res.status(201).json(newSubmittal);
   } catch (error) {
-    logError("Resubmit submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

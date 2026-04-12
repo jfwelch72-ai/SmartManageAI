@@ -1,5 +1,5 @@
 import {logError, logWarn } from "./utils/logger";
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";
@@ -83,7 +83,7 @@ router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
     if (error instanceof ObjectNotFoundError) {
       return res.status(404).json({ error: "Logo file not found" });
     }
-    res.status(500).json({ error: "Failed to serve logo" });
+    next(error);
   }
 });
 
@@ -92,7 +92,7 @@ router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
 // ============================================
 
 // GET /api/website - Get organization's website
-router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -107,13 +107,12 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ hasWebsite: true, website });
   } catch (error) {
-    logError("Error fetching website:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch website" });
+    next(error);
   }
 });
 
 // POST /api/website - Create or update website configuration
-router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -163,13 +162,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(website);
   } catch (error) {
-    logError("Error saving website:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to save website" });
+    next(error);
   }
 });
 
 // POST /api/website/publish - Publish the website
-router.post("/publish", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/publish", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -216,8 +214,7 @@ router.post("/publish", requireAuth, async (req: AuthRequest, res: Response) => 
       siteUrl: `https://${website.subdomain}.smartmanageai-sites.com`,
     });
   } catch (error) {
-    logError("Error publishing website:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to publish website" });
+    next(error);
   }
 });
 
@@ -320,8 +317,7 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
       careersIntroText: website.careersIntroText || null,
     });
   } catch (error) {
-    logError("Error fetching public website:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch website" });
+    next(error);
   }
 });
 
@@ -440,7 +436,7 @@ router.get("/public/:subdomain/robots.txt", async (req: Request, res: Response) 
 });
 
 // GET /api/website/staging-token - Get current staging token
-router.get("/staging-token", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/staging-token", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -456,13 +452,12 @@ router.get("/staging-token", requireAuth, async (req: AuthRequest, res: Response
 
     res.json({ token: website.stagingToken || null, subdomain: website.subdomain });
   } catch (error) {
-    logError("Error fetching staging token:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch staging token" });
+    next(error);
   }
 });
 
 // POST /api/website/staging-token - Generate or regenerate staging token
-router.post("/staging-token", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/staging-token", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -483,8 +478,7 @@ router.post("/staging-token", requireAuth, async (req: AuthRequest, res: Respons
 
     res.json({ token, subdomain: website.subdomain });
   } catch (error) {
-    logError("Error generating staging token:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate staging token" });
+    next(error);
   }
 });
 
@@ -586,8 +580,7 @@ router.get("/staging/:subdomain", async (req: Request, res: Response) => {
       isStaging: true,
     });
   } catch (error) {
-    logError("Error fetching staging website:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch staging website" });
+    next(error);
   }
 });
 
@@ -596,7 +589,7 @@ router.get("/staging/:subdomain", async (req: Request, res: Response) => {
 // ============================================
 
 // GET /api/website/preview - Get all data needed for website preview
-router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/preview", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     
@@ -681,8 +674,7 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
-    logError("Error fetching preview data:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch preview data" });
+    next(error);
   }
 });
 
@@ -690,7 +682,7 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
 // Global / Reusable Components
 // ============================================
 
-router.get("/global-components", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/global-components", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (!orgId) return;
@@ -704,12 +696,11 @@ router.get("/global-components", requireAuth, async (req: AuthRequest, res: Resp
     const components = (website.globalComponentsConfig as any)?.components || [];
     res.json({ components });
   } catch (error) {
-    logError("Error fetching global components:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch global components" });
+    next(error);
   }
 });
 
-router.post("/global-components", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/global-components", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (!orgId) return;
@@ -740,12 +731,11 @@ router.post("/global-components", requireAuth, async (req: AuthRequest, res: Res
 
     res.json(newGlobalComp);
   } catch (error) {
-    logError("Error saving global component:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to save global component" });
+    next(error);
   }
 });
 
-router.patch("/global-components/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/global-components/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (!orgId) return;
@@ -774,12 +764,11 @@ router.patch("/global-components/:id", requireAuth, async (req: AuthRequest, res
 
     res.json(existing[idx]);
   } catch (error) {
-    logError("Error updating global component:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update global component" });
+    next(error);
   }
 });
 
-router.post("/global-components/:id/duplicate", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/global-components/:id/duplicate", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (!orgId) return;
@@ -813,12 +802,11 @@ router.post("/global-components/:id/duplicate", requireAuth, async (req: AuthReq
 
     res.json(duplicated);
   } catch (error) {
-    logError("Error duplicating global component:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to duplicate global component" });
+    next(error);
   }
 });
 
-router.delete("/global-components/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/global-components/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (!orgId) return;
@@ -843,8 +831,7 @@ router.delete("/global-components/:id", requireAuth, async (req: AuthRequest, re
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting global component:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete global component" });
+    next(error);
   }
 });
 
@@ -853,7 +840,7 @@ router.delete("/global-components/:id", requireAuth, async (req: AuthRequest, re
 // ============================================
 
 // POST /api/website/unpublish - Unpublish the website (set status back to DRAFT)
-router.post("/unpublish", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/unpublish", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -894,13 +881,12 @@ router.post("/unpublish", requireAuth, async (req: AuthRequest, res: Response) =
 
     res.json({ success: true, website: updated });
   } catch (error) {
-    logError("Error unpublishing website:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to unpublish website" });
+    next(error);
   }
 });
 
 // POST /api/website/maintenance - Toggle maintenance mode on/off
-router.post("/maintenance", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/maintenance", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -945,13 +931,12 @@ router.post("/maintenance", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, website: updated, maintenanceMode: !isCurrentlyMaintenance });
   } catch (error) {
-    logError("Error toggling maintenance mode:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to toggle maintenance mode" });
+    next(error);
   }
 });
 
 // POST /api/website/domain - Update custom domain settings
-router.post("/domain", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/domain", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -998,13 +983,12 @@ router.post("/domain", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, website: updated });
   } catch (error) {
-    logError("Error updating custom domain:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update custom domain" });
+    next(error);
   }
 });
 
 // POST /api/website/domain/verify - Simulate DNS verification for custom domain
-router.post("/domain/verify", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/domain/verify", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1104,13 +1088,12 @@ router.post("/domain/verify", requireAuth, async (req: AuthRequest, res: Respons
       },
     });
   } catch (error) {
-    logError("Error verifying domain:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to verify domain" });
+    next(error);
   }
 });
 
 // GET /api/website/deployments - Get deployment history
-router.get("/deployments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/deployments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const orgId = user.organizationId;
@@ -1134,13 +1117,12 @@ router.get("/deployments", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.json(deployments);
   } catch (error) {
-    logError("Error fetching deployments:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch deployment history" });
+    next(error);
   }
 });
 
 // POST /api/website/republish - Re-publish an already-published website
-router.post("/republish", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/republish", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1187,8 +1169,7 @@ router.post("/republish", requireAuth, async (req: AuthRequest, res: Response) =
       siteUrl: `https://${website.subdomain}.smartmanageai-sites.com`,
     });
   } catch (error) {
-    logError("Error republishing website:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to republish website" });
+    next(error);
   }
 });
 
@@ -1214,7 +1195,7 @@ const STORAGE_LIMIT_BYTES = 3 * 1024 * 1024 * 1024;
 // ============================================
 
 // POST /api/website/upload-image - Upload an image to object storage
-router.post("/upload-image", requireAuth, upload.single("image"), async (req: AuthRequest, res: Response) => {
+router.post("/upload-image", requireAuth, upload.single("image"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1233,7 +1214,7 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return res.status(500).json({ error: "Object storage not configured" });
+      return next(error);
     }
 
     const basePath = publicPaths[0];
@@ -1284,8 +1265,7 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
       mimeType: file.mimetype,
     });
   } catch (error) {
-    logError("Error uploading image:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to upload image" });
+    next(error);
   }
 });
 
@@ -1306,12 +1286,12 @@ router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
     if (error instanceof ObjectNotFoundError) {
       return res.status(404).json({ error: "Image not found" });
     }
-    res.status(500).json({ error: "Failed to serve image" });
+    next(error);
   }
 });
 
 // GET /api/website/media - List all media files for the organization
-router.get("/media", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/media", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role)) {
@@ -1361,13 +1341,12 @@ router.get("/media", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ files, totalSize, storageLimit: STORAGE_LIMIT_BYTES });
   } catch (error) {
-    logError("Error listing media files:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to list media files" });
+    next(error);
   }
 });
 
 // DELETE /api/website/media/:fileName - Delete a media file
-router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1387,7 +1366,7 @@ router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Res
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return res.status(500).json({ error: "Object storage not configured" });
+      return next(error);
     }
 
     const basePath = publicPaths[0];
@@ -1407,8 +1386,7 @@ router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Res
     await blob.delete();
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting media file:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete file" });
+    next(error);
   }
 });
 
@@ -1417,7 +1395,7 @@ router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Res
 // ============================================
 
 // GET /api/website/projects - List gallery projects
-router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -1438,13 +1416,12 @@ router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json(result.rows);
   } catch (error) {
-    logError("Error fetching gallery projects:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch gallery projects" });
+    next(error);
   }
 });
 
 // POST /api/website/projects - Create a gallery project
-router.post("/projects", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1493,13 +1470,12 @@ router.post("/projects", requireAuth, async (req: AuthRequest, res: Response) =>
 
     res.status(201).json(project);
   } catch (error) {
-    logError("Error creating gallery project:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create gallery project" });
+    next(error);
   }
 });
 
 // GET /api/website/projects/:id - Get a gallery project
-router.get("/projects/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const orgId = validateOrgAccess(req, res);
@@ -1523,13 +1499,12 @@ router.get("/projects/:id", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ ...project, images });
   } catch (error) {
-    logError("Error fetching gallery project:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch gallery project" });
+    next(error);
   }
 });
 
 // PATCH /api/website/projects/:id - Update a gallery project
-router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -1596,13 +1571,12 @@ router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Respons
     const updated = result.rows[0];
     res.json(updated);
   } catch (error) {
-    logError("Error updating gallery project:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update gallery project" });
+    next(error);
   }
 });
 
 // POST /api/website/projects/:id/images - Add image to project
-router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -1636,13 +1610,12 @@ router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: R
 
     res.status(201).json(image);
   } catch (error) {
-    logError("Error adding project image:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to add project image" });
+    next(error);
   }
 });
 
 // POST /api/website/projects/generate-description - AI generate project description
-router.post("/projects/generate-description", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/projects/generate-description", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1696,8 +1669,7 @@ Return a JSON object with:
 
     res.json(content);
   } catch (error) {
-    logError("Error generating project description:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate description" });
+    next(error);
   }
 });
 
@@ -1706,7 +1678,7 @@ Return a JSON object with:
 // ============================================
 
 // GET /api/website/social - Get social media links
-router.get("/social", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/social", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -1717,13 +1689,12 @@ router.get("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(links || {});
   } catch (error) {
-    logError("Error fetching social links:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch social links" });
+    next(error);
   }
 });
 
 // POST /api/website/social - Save social media links
-router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/social", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1757,13 +1728,12 @@ router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(links);
   } catch (error) {
-    logError("Error saving social links:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to save social links" });
+    next(error);
   }
 });
 
 // POST /api/website/social/generate-post - AI generate social media post
-router.post("/social/generate-post", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/social/generate-post", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1862,13 +1832,12 @@ Return a JSON object with:
 
     res.json(postContent);
   } catch (error) {
-    logError("Error generating social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate social post" });
+    next(error);
   }
 });
 
 // GET /api/website/social/history - Get social post history
-router.get("/social/history", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/social/history", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -1881,8 +1850,7 @@ router.get("/social/history", requireAuth, async (req: AuthRequest, res: Respons
 
     res.json(history);
   } catch (error) {
-    logError("Error fetching social history:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch social history" });
+    next(error);
   }
 });
 
@@ -2028,13 +1996,12 @@ router.post("/contact", async (req: Request, res: Response) => {
 
     res.json({ success: true, id: submission.id });
   } catch (error) {
-    logError("Error submitting contact form:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to submit contact form" });
+    next(error);
   }
 });
 
 // GET /api/website/contact/submissions - Get contact form submissions
-router.get("/contact/submissions", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/contact/submissions", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -2046,13 +2013,12 @@ router.get("/contact/submissions", requireAuth, async (req: AuthRequest, res: Re
 
     res.json(submissions);
   } catch (error) {
-    logError("Error fetching submissions:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch submissions" });
+    next(error);
   }
 });
 
 // PATCH /api/website/contact/submissions/:id - Update submission (mark read, responded)
-router.patch("/contact/submissions/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/contact/submissions/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -2093,13 +2059,12 @@ router.patch("/contact/submissions/:id", requireAuth, async (req: AuthRequest, r
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating submission:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update submission" });
+    next(error);
   }
 });
 
 // POST /api/website/contact/submissions/:id/convert-to-crm - Convert to CRM lead
-router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -2164,8 +2129,7 @@ router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: 
       crmContactId: crmContact.id,
     });
   } catch (error) {
-    logError("Error converting to CRM:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to convert to CRM" });
+    next(error);
   }
 });
 
@@ -2198,7 +2162,7 @@ function cleanExpiredPresence() {
 setInterval(cleanExpiredPresence, 15000);
 
 // GET /api/website/pages - List all pages
-router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/pages", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -2247,13 +2211,12 @@ router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(pages);
   } catch (error) {
-    logError("Error fetching pages:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch pages" });
+    next(error);
   }
 });
 
 // POST /api/website/pages - Create a new page
-router.post("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/pages", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -2314,13 +2277,12 @@ router.post("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(page);
   } catch (error) {
-    logError("Error creating page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create page" });
+    next(error);
   }
 });
 
 // GET /api/website/pages/:id - Get a specific page
-router.get("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/pages/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const orgId = validateOrgAccess(req, res);
@@ -2339,13 +2301,12 @@ router.get("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) =>
 
     res.json(page);
   } catch (error) {
-    logError("Error fetching page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch page" });
+    next(error);
   }
 });
 
 // PATCH /api/website/pages/:id - Update a page
-router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -2403,13 +2364,12 @@ router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update page" });
+    next(error);
   }
 });
 
 // DELETE /api/website/pages/:id - Delete a page
-router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -2442,8 +2402,7 @@ router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete page" });
+    next(error);
   }
 });
 
@@ -2451,7 +2410,7 @@ router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response)
 // Presence Routes
 // ==============================================
 
-router.post("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -2478,19 +2437,18 @@ router.post("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res
 
     res.json({ users: activeUsers });
   } catch (error) {
-    logError("Error updating presence:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update presence" });
+    next(error);
   }
 });
 
-router.delete("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
     presenceStore.delete(`${user.id}:${pageId}`);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: "Failed to remove presence" });
+    next(error);
   }
 });
 
@@ -2498,7 +2456,7 @@ router.delete("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, r
 // Conflict-Safe Save Check
 // ==============================================
 
-router.get("/pages/:pageId/check-conflict", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/pages/:pageId/check-conflict", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -2534,8 +2492,7 @@ router.get("/pages/:pageId/check-conflict", requireAuth, async (req: AuthRequest
       lastSaved: lastVersion?.createdAt || null,
     });
   } catch (error) {
-    logError("Error checking conflict:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to check conflict" });
+    next(error);
   }
 });
 
@@ -2543,7 +2500,7 @@ router.get("/pages/:pageId/check-conflict", requireAuth, async (req: AuthRequest
 // Version Diff Route
 // ==============================================
 
-router.get("/versions/diff/:versionIdA/:versionIdB", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/versions/diff/:versionIdA/:versionIdB", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { versionIdA, versionIdB } = req.params;
     const user = req.user!;
@@ -2639,8 +2596,7 @@ router.get("/versions/diff/:versionIdA/:versionIdB", requireAuth, async (req: Au
       },
     });
   } catch (error) {
-    logError("Error computing version diff:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to compute version diff" });
+    next(error);
   }
 });
 
@@ -2711,7 +2667,7 @@ function generateChangeSummary(oldContent: string | null, newContent: string | n
 // ==============================================
 
 // POST /api/website/pages/:pageId/preview-link - Generate a preview link
-router.post("/pages/:pageId/preview-link", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/pages/:pageId/preview-link", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -2742,13 +2698,12 @@ router.post("/pages/:pageId/preview-link", requireAuth, async (req: AuthRequest,
 
     res.json(link);
   } catch (error) {
-    logError("Error creating preview link:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create preview link" });
+    next(error);
   }
 });
 
 // GET /api/website/pages/:pageId/preview-links - List active preview links
-router.get("/pages/:pageId/preview-links", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/pages/:pageId/preview-links", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -2767,13 +2722,12 @@ router.get("/pages/:pageId/preview-links", requireAuth, async (req: AuthRequest,
 
     res.json(links);
   } catch (error) {
-    logError("Error listing preview links:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to list preview links" });
+    next(error);
   }
 });
 
 // DELETE /api/website/preview-links/:linkId - Revoke a preview link
-router.delete("/preview-links/:linkId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/preview-links/:linkId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { linkId } = req.params;
     const user = req.user!;
@@ -2789,8 +2743,7 @@ router.delete("/preview-links/:linkId", requireAuth, async (req: AuthRequest, re
     if (!updated) return res.status(404).json({ error: "Preview link not found" });
     res.json({ success: true });
   } catch (error) {
-    logError("Error revoking preview link:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to revoke preview link" });
+    next(error);
   }
 });
 
@@ -2842,8 +2795,7 @@ router.get("/shared-preview/:token", async (req: Request, res: Response) => {
       expiresAt: link.expiresAt,
     });
   } catch (error) {
-    logError("Error fetching shared preview:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch preview" });
+    next(error);
   }
 });
 
@@ -2852,7 +2804,7 @@ router.get("/shared-preview/:token", async (req: Request, res: Response) => {
 // ==============================================
 
 // POST /api/website/pages/:pageId/versions - Create a version snapshot manually
-router.post("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -2873,13 +2825,12 @@ router.post("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res
     const version = await createVersionSnapshot(page, user, req.body.trigger || "manual", changeSummary);
     res.json(version);
   } catch (error) {
-    logError("Error creating version:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create version" });
+    next(error);
   }
 });
 
 // GET /api/website/pages/:pageId/versions - List versions for a page
-router.get("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -2895,13 +2846,12 @@ router.get("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res:
 
     res.json(versions);
   } catch (error) {
-    logError("Error listing versions:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to list versions" });
+    next(error);
   }
 });
 
 // GET /api/website/versions/:versionId - Get a specific version
-router.get("/versions/:versionId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/versions/:versionId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { versionId } = req.params;
     const user = req.user!;
@@ -2916,13 +2866,12 @@ router.get("/versions/:versionId", requireAuth, async (req: AuthRequest, res: Re
     if (!version) return res.status(404).json({ error: "Version not found" });
     res.json(version);
   } catch (error) {
-    logError("Error fetching version:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch version" });
+    next(error);
   }
 });
 
 // POST /api/website/pages/:pageId/revert/:versionId - Revert to a version
-router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId, versionId } = req.params;
     const user = req.user!;
@@ -2972,8 +2921,7 @@ router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthReq
 
     res.json(updated);
   } catch (error) {
-    logError("Error reverting version:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to revert to version" });
+    next(error);
   }
 });
 
@@ -2982,7 +2930,7 @@ router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthReq
 // ========================================
 
 // GET /api/website/blog/posts - List blog posts
-router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -3022,13 +2970,12 @@ router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) =
     const result = await db.execute(query);
     res.json(result.rows);
   } catch (error) {
-    logError("Error fetching blog posts:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch blog posts" });
+    next(error);
   }
 });
 
 // POST /api/website/blog/posts - Create a blog post
-router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -3082,13 +3029,12 @@ router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.status(201).json(post);
   } catch (error) {
-    logError("Error creating blog post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create blog post" });
+    next(error);
   }
 });
 
 // GET /api/website/blog/posts/:id - Get a blog post
-router.get("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const orgId = validateOrgAccess(req, res);
@@ -3107,13 +3053,12 @@ router.get("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respons
 
     res.json(post);
   } catch (error) {
-    logError("Error fetching blog post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch blog post" });
+    next(error);
   }
 });
 
 // PATCH /api/website/blog/posts/:id - Update a blog post
-router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -3174,13 +3119,12 @@ router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respo
     const updated = result.rows[0];
     res.json(updated);
   } catch (error) {
-    logError("Error updating blog post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update blog post" });
+    next(error);
   }
 });
 
 // POST /api/website/blog/posts/:id/publish - Publish a blog post
-router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -3214,13 +3158,12 @@ router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res
 
     res.json(updated);
   } catch (error) {
-    logError("Error publishing blog post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to publish blog post" });
+    next(error);
   }
 });
 
 // POST /api/website/blog/posts/generate - AI-generate a blog post
-router.post("/blog/posts/generate", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/blog/posts/generate", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -3290,21 +3233,18 @@ Return a JSON object with:
 
     const rawContent = govResult;
     if (!rawContent) {
-      logError("OpenAI returned empty content");
-      return res.status(500).json({ error: "AI returned empty response. Please try again." });
+            return next(error);
     }
 
     let content;
     try {
       content = JSON.parse(rawContent);
     } catch (parseError) {
-      logError("Failed to parse OpenAI response:", {}, rawContent instanceof Error ? rawContent : new Error(String(rawContent)));
-      return res.status(500).json({ error: "Failed to parse AI response. Please try again." });
+            return next(parseError);
     }
 
     if (!content.title || !content.content) {
-      logError("OpenAI response missing required fields:", { detail: String(content) });
-      return res.status(500).json({ error: "AI response missing required fields. Please try again." });
+            return next(error);
     }
 
     res.json({ 
@@ -3317,12 +3257,12 @@ Return a JSON object with:
     const errorMessage = error?.message?.includes("API key") 
       ? "OpenAI API key not configured" 
       : "Failed to generate blog post. Please try again.";
-    res.status(500).json({ error: errorMessage });
+    next(error);
   }
 });
 
 // POST /api/website/blog/generate-image - AI-generate a featured image for a blog post
-router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -3369,14 +3309,14 @@ router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: A
     }
 
     if (!b64Data) {
-      return res.status(500).json({ error: "Failed to generate image" });
+      return next(error);
     }
 
     const imageBuffer = Buffer.from(b64Data, "base64");
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return res.status(500).json({ error: "Object storage not configured" });
+      return next(error);
     }
 
     const basePath = publicPaths[0];
@@ -3407,7 +3347,13 @@ router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: A
     if (error?.code === "content_policy_violation") {
       return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different title." });
     }
-    res.status(500).json({ error: error?.message || "Failed to generate blog featured image" });
+    if (error?.code === "unknown_model" || error?.message?.includes("Unknown model")) {
+      return res.status(501).json({ error: "AI image generation model is not available. Please upload an image manually." });
+    }
+    if (error?.status === 404 || error?.message?.includes("not found") || error?.message?.includes("does not exist")) {
+      return res.status(501).json({ error: "AI image generation is not available with your current configuration. Please upload an image manually." });
+    }
+    next(error);
   }
 });
 
@@ -3479,8 +3425,7 @@ router.get("/public/:subdomain/careers", async (req: Request, res: Response) => 
       introText: website.careersIntroText || null,
     });
   } catch (error) {
-    logError("Error fetching public careers:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch careers" });
+    next(error);
   }
 });
 
@@ -3529,8 +3474,7 @@ router.get("/public/:subdomain/careers/:jobId", async (req: Request, res: Respon
       publishedAt: job.publishedAt,
     });
   } catch (error) {
-    logError("Error fetching public job detail:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch job details" });
+    next(error);
   }
 });
 
@@ -3628,8 +3572,7 @@ router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.singl
         });
         resumeStorageKey = fullPath;
       } catch (uploadErr) {
-        logError("Resume upload failed:", {}, uploadErr instanceof Error ? uploadErr : new Error(String(uploadErr)));
-        return res.status(500).json({ error: "Failed to upload resume. Please try again." });
+        return next(uploadErr);
       }
     }
 
@@ -3678,8 +3621,7 @@ router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.singl
 
     res.status(201).json({ success: true, message: "Application submitted successfully" });
   } catch (error) {
-    logError("Error submitting job application:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to submit application" });
+    next(error);
   }
 });
 

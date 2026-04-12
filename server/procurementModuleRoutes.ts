@@ -514,7 +514,7 @@ const prCreateSchema = z.object({
   })).optional(),
 });
 
-router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -571,12 +571,11 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
 
     res.json(result);
   } catch (error) {
-    logError("Get purchase requests error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     await sequencesReady;
     const orgId = getOrgId(req, res);
@@ -634,12 +633,11 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
 
     res.status(201).json(pr);
   } catch (error) {
-    logError("Create purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -692,12 +690,11 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
 
     res.json(updated);
   } catch (error) {
-    logError("Update purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/procurement-module/requests/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.delete("/api/procurement-module/requests/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -711,12 +708,11 @@ router.delete("/api/procurement-module/requests/:id", requireAuth, requireRole(.
     await db.delete(purchaseRequests).where(eq(purchaseRequests.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    logError("Delete purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -741,12 +737,11 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
 
     res.json(updated);
   } catch (error) {
-    logError("Submit purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/requests/:id/approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -770,12 +765,11 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
 
     res.json(updated);
   } catch (error) {
-    logError("Approve purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -802,12 +796,11 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
 
     res.json(updated);
   } catch (error) {
-    logError("Reject purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     await sequencesReady;
     const orgId = getOrgId(req, res);
@@ -868,14 +861,13 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
 
     res.status(201).json(po);
   } catch (error) {
-    logError("Convert PR to PO error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ─── PURCHASE ORDERS ────────────────────────────────────────────────────────
 
-router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -931,12 +923,11 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
       items: itemsByPo[r.po.id] || [],
     })));
   } catch (error) {
-    logError("Get purchase orders error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1011,8 +1002,7 @@ router.get("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROL
 
     res.json({ ...po, items, project: proj || null, vendor, receipts: receiptsWithItems, invoices: invoicesWithMatch });
   } catch (error) {
-    logError("Get PO detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1033,7 +1023,7 @@ const poCreateSchema = z.object({
   })).optional(),
 });
 
-router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     await sequencesReady;
     const orgId = getOrgId(req, res);
@@ -1102,12 +1092,11 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
 
     res.status(201).json(po);
   } catch (error) {
-    logError("Create purchase order error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1170,12 +1159,11 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
 
     res.json(updated);
   } catch (error) {
-    logError("Update purchase order error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1189,12 +1177,11 @@ router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...
     await db.delete(purchaseOrders).where(eq(purchaseOrders.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    logError("Delete purchase order error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1219,12 +1206,11 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
 
     res.json(updated);
   } catch (error) {
-    logError("Submit PO error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1257,12 +1243,11 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
 
     res.json(updated);
   } catch (error) {
-    logError("Approve PO error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1294,12 +1279,11 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
 
     res.json(updated);
   } catch (error) {
-    logError("Reject PO error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1315,14 +1299,13 @@ router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(
       .where(eq(purchaseOrders.id, req.params.id)).returning();
     res.json(updated);
   } catch (error) {
-    logError("Send PO error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ─── BULK APPROVE ────────────────────────────────────────────────────────────
 
-router.post("/api/procurement-module/orders/bulk-approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/bulk-approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1379,14 +1362,13 @@ router.post("/api/procurement-module/orders/bulk-approve", requireAuth, requireR
 
     res.json({ approved: approved.length, orders: approved });
   } catch (error) {
-    logError("Bulk approve POs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ─── PROCUREMENT SUMMARY ─────────────────────────────────────────────────────
 
-router.get("/api/procurement-module/summary", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/summary", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1465,14 +1447,13 @@ router.get("/api/procurement-module/summary", requireAuth, requireRole(...ROLES)
       totalPaid: totalPaid.toFixed(2),
     });
   } catch (error) {
-    logError("Procurement summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ─── DELIVERY SCHEDULE ────────────────────────────────────────────────────────
 
-router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1518,14 +1499,13 @@ router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole
 
     res.json(deliveries);
   } catch (error) {
-    logError("Delivery schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ─── RECEIPTS ───────────────────────────────────────────────────────────────
 
-router.get("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1542,8 +1522,7 @@ router.get("/api/procurement-module/orders/:id/receipts", requireAuth, requireRo
     }));
     res.json(result);
   } catch (error) {
-    logError("Get PO receipts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1558,7 +1537,7 @@ const receiptCreateSchema = z.object({
   })),
 });
 
-router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1671,12 +1650,11 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
 
     res.status(201).json(receipt);
   } catch (error) {
-    logError("Create PO receipt error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1774,14 +1752,13 @@ router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES
 
     res.json(result);
   } catch (error) {
-    logError("Get all receipts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // ─── INVOICES ───────────────────────────────────────────────────────────────
 
-router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1852,8 +1829,7 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
 
     res.json(result);
   } catch (error) {
-    logError("Get vendor invoices error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1868,7 +1844,7 @@ const invoiceCreateSchema = z.object({
   fileUrl: z.string().nullable().optional(),
 });
 
-router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1928,12 +1904,11 @@ router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLE
 
     res.status(201).json(result);
   } catch (error) {
-    logError("Create vendor invoice error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1990,8 +1965,7 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
     });
     res.json(updated);
   } catch (error) {
-    logError("Update vendor invoice error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2088,7 +2062,7 @@ async function computeThreeWayMatch(invoice: any, po: any, orgId: string) {
   };
 }
 
-router.get("/api/procurement-module/invoices/:id/file-url", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/invoices/:id/file-url", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -2116,12 +2090,11 @@ router.get("/api/procurement-module/invoices/:id/file-url", requireAuth, require
     });
     res.json({ url: signedUrl });
   } catch (error) {
-    logError("Get invoice file URL error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate download URL" });
+    next(error);
   }
 });
 
-router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -2149,12 +2122,11 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
       ...matchResult,
     });
   } catch (error) {
-    logError("Get invoice match error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -2206,12 +2178,11 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
 
     res.json(result);
   } catch (error) {
-    logError("Create/update invoice match error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -2236,8 +2207,7 @@ router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, r
 
     res.json(updated);
   } catch (error) {
-    logError("Resolve match discrepancy error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2251,7 +2221,7 @@ const paymentCreateSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-router.get("/api/procurement-module/invoices/:id/payments", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.get("/api/procurement-module/invoices/:id/payments", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -2275,12 +2245,11 @@ router.get("/api/procurement-module/invoices/:id/payments", requireAuth, require
       recordedBy: p.recorderFirst ? { firstName: p.recorderFirst, lastName: p.recorderLast } : null,
     })));
   } catch (error) {
-    logError("Get invoice payments error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/procurement-module/invoices/:id/payments", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/invoices/:id/payments", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -2322,8 +2291,7 @@ router.post("/api/procurement-module/invoices/:id/payments", requireAuth, requir
 
     res.status(201).json({ payment, totalPaid: String(totalPaid) });
   } catch (error) {
-    logError("Create invoice payment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

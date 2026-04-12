@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectNotePages, projectNoteBlocks, users, projects, type ProjectNoteBlock } from "@shared/schema";
 import { insertProjectNotePageSchema, insertProjectNoteBlockSchema } from "@shared/schema";
@@ -71,7 +71,7 @@ async function verifyProjectAccess(req: AuthRequest, res: Response, projectId: s
   return verifyOrgAccess(req, res, projectOrgId);
 }
 
-router.get("/projects/:projectId/note-pages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/note-pages", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     if (!(await verifyProjectAccess(req, res, projectId))) return;
@@ -94,12 +94,11 @@ router.get("/projects/:projectId/note-pages", requireAuth, async (req: AuthReque
 
     res.json(pages);
   } catch (error: any) {
-    logError("Error fetching project note pages:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch note pages" });
+    next(error);
   }
 });
 
-router.post("/projects/:projectId/note-pages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/note-pages", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const userId = req.user?.id;
@@ -149,12 +148,11 @@ router.post("/projects/:projectId/note-pages", requireAuth, async (req: AuthRequ
 
     res.status(201).json(pageWithAuthor);
   } catch (error: any) {
-    logError("Error creating project note page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create note page" });
+    next(error);
   }
 });
 
-router.patch("/projects/:projectId/note-pages/:pageId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:projectId/note-pages/:pageId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, pageId } = req.params;
     const { title } = req.body;
@@ -177,12 +175,11 @@ router.patch("/projects/:projectId/note-pages/:pageId", requireAuth, async (req:
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Error updating note page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update note page" });
+    next(error);
   }
 });
 
-router.delete("/projects/:projectId/note-pages/:pageId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/projects/:projectId/note-pages/:pageId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, pageId } = req.params;
 
@@ -196,12 +193,11 @@ router.delete("/projects/:projectId/note-pages/:pageId", requireAuth, async (req
     await db.delete(projectNotePages).where(and(eq(projectNotePages.id, pageId), eq(projectNotePages.projectId, projectId)));
     res.json({ success: true });
   } catch (error: any) {
-    logError("Error deleting note page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete note page" });
+    next(error);
   }
 });
 
-router.get("/projects/:projectId/note-pages/:pageId/blocks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/note-pages/:pageId/blocks", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, pageId } = req.params;
 
@@ -220,12 +216,11 @@ router.get("/projects/:projectId/note-pages/:pageId/blocks", requireAuth, async 
 
     res.json(blocks);
   } catch (error: any) {
-    logError("Error fetching note blocks:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch note blocks" });
+    next(error);
   }
 });
 
-router.post("/projects/:projectId/note-pages/:pageId/blocks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/note-pages/:pageId/blocks", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, pageId } = req.params;
 
@@ -262,8 +257,7 @@ router.post("/projects/:projectId/note-pages/:pageId/blocks", requireAuth, async
 
     res.status(201).json(newBlock);
   } catch (error: any) {
-    logError("Error creating note block:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create note block" });
+    next(error);
   }
 });
 
@@ -274,7 +268,7 @@ const blockUpdateSchema = z.object({
   checked: z.boolean().optional(),
 });
 
-router.patch("/projects/:projectId/note-pages/:pageId/blocks/:blockId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:projectId/note-pages/:pageId/blocks/:blockId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, pageId, blockId } = req.params;
 
@@ -313,12 +307,11 @@ router.patch("/projects/:projectId/note-pages/:pageId/blocks/:blockId", requireA
 
     res.json(result[0]);
   } catch (error: any) {
-    logError("Error updating note block:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update note block" });
+    next(error);
   }
 });
 
-router.delete("/projects/:projectId/note-pages/:pageId/blocks/:blockId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/projects/:projectId/note-pages/:pageId/blocks/:blockId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, pageId, blockId } = req.params;
 
@@ -340,8 +333,7 @@ router.delete("/projects/:projectId/note-pages/:pageId/blocks/:blockId", require
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Error deleting note block:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete note block" });
+    next(error);
   }
 });
 
@@ -352,7 +344,7 @@ const reorderSchema = z.object({
   })),
 });
 
-router.put("/projects/:projectId/note-pages/:pageId/blocks/reorder", requireAuth, async (req: AuthRequest, res: Response) => {
+router.put("/projects/:projectId/note-pages/:pageId/blocks/reorder", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, pageId } = req.params;
 
@@ -382,8 +374,7 @@ router.put("/projects/:projectId/note-pages/:pageId/blocks/reorder", requireAuth
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Error reordering blocks:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to reorder blocks" });
+    next(error);
   }
 });
 

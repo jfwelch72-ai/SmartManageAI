@@ -1,4 +1,5 @@
 import { Router , NextFunction } from "express";
+import { safeJsonParse } from "./responseHelper";
 import { db, pool } from "./db";
 import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, users } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
@@ -155,9 +156,9 @@ router.get("/ai-pm/latest-run", requireAuth, async (req: AuthRequest, res, next)
 
     const parsedRun = {
       ...run,
-      snapshotData: run.snapshotData ? JSON.parse(run.snapshotData) : null,
-      profitabilityData: run.profitabilityData ? JSON.parse(run.profitabilityData) : null,
-      aiResponse: run.aiResponse ? JSON.parse(run.aiResponse) : null,
+      snapshotData: safeJsonParse(run.snapshotData, null),
+      profitabilityData: safeJsonParse(run.profitabilityData, null),
+      aiResponse: safeJsonParse(run.aiResponse, null),
     };
 
     res.json(parsedRun);
@@ -176,9 +177,9 @@ router.get("/ai-pm/runs/:runId", requireAuth, async (req: AuthRequest, res, next
 
     const parsedRun = {
       ...run,
-      snapshotData: run.snapshotData ? JSON.parse(run.snapshotData) : null,
-      profitabilityData: run.profitabilityData ? JSON.parse(run.profitabilityData) : null,
-      aiResponse: run.aiResponse ? JSON.parse(run.aiResponse) : null,
+      snapshotData: safeJsonParse(run.snapshotData, null),
+      profitabilityData: safeJsonParse(run.profitabilityData, null),
+      aiResponse: safeJsonParse(run.aiResponse, null),
     };
 
     res.json(parsedRun);
@@ -198,7 +199,7 @@ router.get("/ai-pm/tasks", requireAuth, async (req: AuthRequest, res, next) => {
 
     const parsedTasks = tasks.map(task => ({
       ...task,
-      metadata: task.metadata ? JSON.parse(task.metadata) : null,
+      metadata: safeJsonParse(task.metadata, null),
     }));
 
     res.json(parsedTasks);
@@ -218,7 +219,7 @@ router.get("/ai-pm/tasks/role/:role", requireAuth, async (req: AuthRequest, res,
 
     const parsedTasks = tasks.map(task => ({
       ...task,
-      metadata: task.metadata ? JSON.parse(task.metadata) : null,
+      metadata: safeJsonParse(task.metadata, null),
     }));
 
     res.json(parsedTasks);
@@ -483,8 +484,7 @@ router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res, nex
       responseType: "data",
     });
   } catch (error: any) {
-    logError("Ask AI chat error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get AI response. Please try again." });
+    next(error);
   }
 });
 
@@ -562,8 +562,7 @@ router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthReques
       savedInsightIds,
     });
   } catch (error: any) {
-    logError("AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to run AI analysis" });
+    next(error);
   }
 });
 
@@ -2281,7 +2280,7 @@ Example of a correct response:
       return res.status(503).json({ error: "The AI service is temporarily unavailable. Please try again shortly.", errorType: "ai_unavailable" });
     }
 
-    res.status(500).json({ error: "Something went wrong processing your question. Please try again.", errorType: "server_error" });
+    next(error);
   }
 });
 

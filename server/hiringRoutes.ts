@@ -128,7 +128,7 @@ router.use(requireAuth, requireFeaturePermission('canManageHiring'), async (req:
 // ============================================
 
 // /jobs/templates must be registered BEFORE /jobs/:id to prevent route shadowing
-router.get("/jobs/templates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/jobs/templates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const templates = await db
       .select()
@@ -137,12 +137,11 @@ router.get("/jobs/templates", requireAuth, requireRole(...HIRING_REVIEW), async 
       .orderBy(desc(hiringJobTemplates.createdAt));
     res.json(templates);
   } catch (err) {
-    logError("GET /api/hiring/jobs/templates", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch templates" });
+    next(err);
   }
 });
 
-router.post("/jobs/templates", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res) => {
+router.post("/jobs/templates", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res, next) => {
   try {
     const parsed = insertHiringJobTemplateSchema.safeParse({
       ...req.body,
@@ -153,12 +152,11 @@ router.post("/jobs/templates", requireAuth, requireRole(...HIRING_FULL), async (
     const [tpl] = await db.insert(hiringJobTemplates).values(parsed.data).returning();
     res.status(201).json(tpl);
   } catch (err) {
-    logError("POST /api/hiring/jobs/templates", { error: String(err) });
-    res.status(500).json({ error: "Failed to create template" });
+    next(err);
   }
 });
 
-router.get("/jobs", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/jobs", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const jobs = await db
       .select()
@@ -167,12 +165,11 @@ router.get("/jobs", requireAuth, requireRole(...HIRING_REVIEW), async (req: Auth
       .orderBy(desc(hiringJobs.createdAt));
     res.json(jobs);
   } catch (err) {
-    logError("GET /api/hiring/jobs", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch jobs" });
+    next(err);
   }
 });
 
-router.get("/jobs/:id", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/jobs/:id", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const [job] = await db
       .select()
@@ -182,8 +179,7 @@ router.get("/jobs/:id", requireAuth, requireRole(...HIRING_REVIEW), async (req: 
     if (!job) return res.status(404).json({ error: "Job not found" });
     res.json(job);
   } catch (err) {
-    logError("GET /api/hiring/jobs/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch job" });
+    next(err);
   }
 });
 
@@ -191,7 +187,7 @@ router.post(
   "/jobs",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const parsed = insertHiringJobSchema.safeParse({
         ...req.body,
@@ -208,8 +204,7 @@ router.post(
 
       res.status(201).json(job);
     } catch (err) {
-      logError("POST /api/hiring/jobs", { error: String(err) });
-      res.status(500).json({ error: "Failed to create job" });
+      next(err);
     }
   },
 );
@@ -257,8 +252,7 @@ async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<type
     void logUpdate(userId(req), "hiring_job", job.id, existing, job, req);
     res.json(job);
   } catch (err) {
-    logError("PATCH/PUT /api/hiring/jobs/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to update job" });
+    next(err);
   }
 }
 
@@ -269,7 +263,7 @@ router.post(
   "/jobs/:id/publish",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [existing] = await db
         .select()
@@ -298,8 +292,7 @@ router.post(
 
       res.json(job);
     } catch (err) {
-      logError("POST /api/hiring/jobs/:id/publish", { error: String(err) });
-      res.status(500).json({ error: "Failed to publish job" });
+      next(err);
     }
   },
 );
@@ -308,7 +301,7 @@ router.post(
   "/jobs/:id/archive",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [existing] = await db
         .select()
@@ -328,8 +321,7 @@ router.post(
 
       res.json(job);
     } catch (err) {
-      logError("POST /api/hiring/jobs/:id/archive", { error: String(err) });
-      res.status(500).json({ error: "Failed to archive job" });
+      next(err);
     }
   },
 );
@@ -338,7 +330,7 @@ router.delete(
   "/jobs/:id",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [existing] = await db
         .select()
@@ -357,8 +349,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (err) {
-      logError("DELETE /api/hiring/jobs/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to archive job" });
+      next(err);
     }
   },
 );
@@ -367,7 +358,7 @@ router.delete(
 // JOB TEMPLATES
 // ============================================
 
-router.get("/job-templates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/job-templates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const templates = await db
       .select()
@@ -381,8 +372,7 @@ router.get("/job-templates", requireAuth, requireRole(...HIRING_REVIEW), async (
       .orderBy(desc(hiringJobTemplates.createdAt));
     res.json(templates);
   } catch (err) {
-    logError("GET /api/hiring/job-templates", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch templates" });
+    next(err);
   }
 });
 
@@ -390,7 +380,7 @@ router.post(
   "/job-templates",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const parsed = insertHiringJobTemplateSchema.safeParse({
         ...req.body,
@@ -401,8 +391,7 @@ router.post(
       const [tpl] = await db.insert(hiringJobTemplates).values(parsed.data).returning();
       res.status(201).json(tpl);
     } catch (err) {
-      logError("POST /api/hiring/job-templates", { error: String(err) });
-      res.status(500).json({ error: "Failed to create template" });
+      next(err);
     }
   },
 );
@@ -415,7 +404,7 @@ router.post(
   "/job-templates/seed",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     const { trade } = req.body;
     const org = orgId(req);
 
@@ -487,8 +476,7 @@ router.post(
 
       res.json({ seeded, skipped, total: CONTRACTOR_TEMPLATES.length });
     } catch (err) {
-      logError("POST /api/hiring/job-templates/seed", { error: String(err) });
-      res.status(500).json({ error: "Failed to seed job templates" });
+      next(err);
     }
   },
 );
@@ -497,7 +485,7 @@ router.delete(
   "/job-templates/:id",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [tpl] = await db
         .select({ id: hiringJobTemplates.id, isGlobal: hiringJobTemplates.isGlobal })
@@ -509,8 +497,7 @@ router.delete(
       await db.delete(hiringJobTemplates).where(eq(hiringJobTemplates.id, req.params.id));
       res.json({ success: true });
     } catch (err) {
-      logError("DELETE /api/hiring/job-templates/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to delete template" });
+      next(err);
     }
   },
 );
@@ -519,7 +506,7 @@ router.delete(
 // CANDIDATES
 // ============================================
 
-router.get("/candidates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/candidates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
     const jobId = req.query.jobId as string | undefined;
@@ -555,12 +542,11 @@ router.get("/candidates", requireAuth, requireRole(...HIRING_REVIEW), async (req
 
     res.json(candidates);
   } catch (err) {
-    logError("GET /api/hiring/candidates", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch candidates" });
+    next(err);
   }
 });
 
-router.get("/candidates/:id", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/candidates/:id", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
     const [candidate] = await db
@@ -580,8 +566,7 @@ router.get("/candidates/:id", requireAuth, requireRole(...HIRING_REVIEW), async 
 
     res.json({ ...candidate, notes, documents, interviews, stageHistory, latestAiReview: aiReviews[0] ?? null });
   } catch (err) {
-    logError("GET /api/hiring/candidates/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch candidate" });
+    next(err);
   }
 });
 
@@ -589,7 +574,7 @@ router.post(
   "/candidates",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const body = req.body;
       const fullName = `${body.firstName || ""} ${body.lastName || ""}`.trim() || "Unknown";
@@ -636,8 +621,7 @@ router.post(
 
       res.status(201).json(candidate);
     } catch (err) {
-      logError("POST /api/hiring/candidates", { error: String(err) });
-      res.status(500).json({ error: "Failed to create candidate" });
+      next(err);
     }
   },
 );
@@ -678,8 +662,7 @@ async function handleCandidateUpdate(req: AuthRequest, res: Parameters<Parameter
     void logUpdate(userId(req), "hiring_candidate", candidate.id, existing, candidate, req);
     res.json(candidate);
   } catch (err) {
-    logError("PATCH/PUT /api/hiring/candidates/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to update candidate" });
+    next(err);
   }
 }
 
@@ -691,7 +674,7 @@ router.put(
   "/candidates/:id/stage",
   requireAuth,
   requireRole(...HIRING_REVIEW),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const { stage, reason } = req.body;
       if (!stage) return res.status(400).json({ error: "stage is required" });
@@ -804,8 +787,7 @@ router.put(
 
       res.json(candidate);
     } catch (err) {
-      logError("PUT /api/hiring/candidates/:id/stage", { error: String(err) });
-      res.status(500).json({ error: "Failed to update candidate stage" });
+      next(err);
     }
   },
 );
@@ -815,7 +797,7 @@ router.post(
   "/candidates/:id/documents",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [candidate] = await db
         .select({ id: hiringCandidates.id })
@@ -835,8 +817,7 @@ router.post(
       const [doc] = await db.insert(hiringCandidateDocuments).values(parsed.data).returning();
       res.status(201).json(doc);
     } catch (err) {
-      logError("POST /api/hiring/candidates/:id/documents", { error: String(err) });
-      res.status(500).json({ error: "Failed to register candidate document" });
+      next(err);
     }
   },
 );
@@ -845,7 +826,7 @@ router.delete(
   "/candidates/:candidateId/documents/:docId",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [doc] = await db
         .select()
@@ -856,8 +837,7 @@ router.delete(
       await db.delete(hiringCandidateDocuments).where(eq(hiringCandidateDocuments.id, req.params.docId));
       res.json({ success: true });
     } catch (err) {
-      logError("DELETE /api/hiring/candidates/:candidateId/documents/:docId", { error: String(err) });
-      res.status(500).json({ error: "Failed to delete document" });
+      next(err);
     }
   },
 );
@@ -870,7 +850,7 @@ router.get(
   "/candidates/:id/notes",
   requireAuth,
   requireRole(...HIRING_REVIEW),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [candidate] = await db
         .select({ id: hiringCandidates.id })
@@ -886,8 +866,7 @@ router.get(
         .orderBy(desc(hiringCandidateNotes.createdAt));
       res.json(notes);
     } catch (err) {
-      logError("GET /api/hiring/candidates/:id/notes", { error: String(err) });
-      res.status(500).json({ error: "Failed to fetch notes" });
+      next(err);
     }
   },
 );
@@ -896,7 +875,7 @@ router.post(
   "/candidates/:id/notes",
   requireAuth,
   requireRole(...HIRING_REVIEW),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [candidate] = await db
         .select({ id: hiringCandidates.id })
@@ -919,8 +898,7 @@ router.post(
 
       res.status(201).json(note);
     } catch (err) {
-      logError("POST /api/hiring/candidates/:id/notes", { error: String(err) });
-      res.status(500).json({ error: "Failed to add note" });
+      next(err);
     }
   },
 );
@@ -929,7 +907,7 @@ router.delete(
   "/candidates/:candidateId/notes/:noteId",
   requireAuth,
   requireRole(...HIRING_REVIEW),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [note] = await db
         .select()
@@ -943,8 +921,7 @@ router.delete(
       await db.delete(hiringCandidateNotes).where(eq(hiringCandidateNotes.id, req.params.noteId));
       res.json({ success: true });
     } catch (err) {
-      logError("DELETE /api/hiring/candidates/:candidateId/notes/:noteId", { error: String(err) });
-      res.status(500).json({ error: "Failed to delete note" });
+      next(err);
     }
   },
 );
@@ -954,7 +931,7 @@ router.get(
   "/candidates/:id/activity",
   requireAuth,
   requireRole(...HIRING_REVIEW),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const org = orgId(req);
       const logs = await db
@@ -968,8 +945,7 @@ router.get(
         .limit(50);
       res.json(logs);
     } catch (err) {
-      logError("GET /api/hiring/candidates/:id/activity", { error: String(err) });
-      res.status(500).json({ error: "Failed to fetch activity" });
+      next(err);
     }
   },
 );
@@ -978,7 +954,7 @@ router.get(
 // INTERVIEWS
 // ============================================
 
-router.get("/interviews", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res) => {
+router.get("/interviews", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
     const candidateId = req.query.candidateId as string | undefined;
@@ -1017,8 +993,7 @@ router.get("/interviews", requireAuth, requireRole(...HIRING_ADVANCED), async (r
 
     res.json(rows);
   } catch (err) {
-    logError("GET /api/hiring/interviews", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch interviews" });
+    next(err);
   }
 });
 
@@ -1026,7 +1001,7 @@ router.post(
   "/interviews",
   requireAuth,
   requireRole(...HIRING_MANAGER_LEVEL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       if (req.body.candidateId) {
         const [ownerCheck] = await db
@@ -1101,8 +1076,7 @@ router.post(
 
       res.status(201).json(interview);
     } catch (err) {
-      logError("POST /api/hiring/interviews", { error: String(err) });
-      res.status(500).json({ error: "Failed to schedule interview" });
+      next(err);
     }
   },
 );
@@ -1147,8 +1121,7 @@ async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameter
     void logUpdate(userId(req), "hiring_interview", interview.id, existing, interview, req);
     res.json(interview);
   } catch (err) {
-    logError("PATCH/PUT /api/hiring/interviews/:id", { error: String(err) });
-    res.status(500).json({ error: "Failed to update interview" });
+    next(err);
   }
 }
 
@@ -1159,7 +1132,7 @@ router.delete(
   "/interviews/:id",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [existing] = await db
         .select()
@@ -1175,8 +1148,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (err) {
-      logError("DELETE /api/hiring/interviews/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to cancel interview" });
+      next(err);
     }
   },
 );
@@ -1185,7 +1157,7 @@ router.delete(
 // HIRING TASKS
 // ============================================
 
-router.get("/tasks", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/tasks", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const candidateId = req.query.candidateId as string | undefined;
     const conditions = [eq(hiringTasks.organizationId, orgId(req))];
@@ -1198,8 +1170,7 @@ router.get("/tasks", requireAuth, requireRole(...HIRING_REVIEW), async (req: Aut
       .orderBy(desc(hiringTasks.createdAt));
     res.json(tasks);
   } catch (err) {
-    logError("GET /api/hiring/tasks", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch hiring tasks" });
+    next(err);
   }
 });
 
@@ -1207,7 +1178,7 @@ router.post(
   "/tasks",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       if (req.body.candidateId) {
         const [cand] = await db
@@ -1242,8 +1213,7 @@ router.post(
 
       res.status(201).json(task);
     } catch (err) {
-      logError("POST /api/hiring/tasks", { error: String(err) });
-      res.status(500).json({ error: "Failed to create hiring task" });
+      next(err);
     }
   },
 );
@@ -1252,7 +1222,7 @@ router.patch(
   "/tasks/:id",
   requireAuth,
   requireRole(...HIRING_FULL),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [existing] = await db
         .select()
@@ -1278,8 +1248,7 @@ router.patch(
 
       res.json(task);
     } catch (err) {
-      logError("PATCH /api/hiring/tasks/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to update task" });
+      next(err);
     }
   },
 );
@@ -1288,7 +1257,7 @@ router.patch(
 // ATS INTEGRATIONS
 // ============================================
 
-router.get("/integrations", requireAuth, requireRole(...HIRING_INTEGRATION), async (req: AuthRequest, res) => {
+router.get("/integrations", requireAuth, requireRole(...HIRING_INTEGRATION), async (req: AuthRequest, res, next) => {
   try {
     const integrations = await db
       .select({
@@ -1307,8 +1276,7 @@ router.get("/integrations", requireAuth, requireRole(...HIRING_INTEGRATION), asy
 
     res.json({ integrations, availableProviders: listATSProviders() });
   } catch (err) {
-    logError("GET /api/hiring/integrations", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch integrations" });
+    next(err);
   }
 });
 
@@ -1316,7 +1284,7 @@ router.post(
   "/integrations",
   requireAuth,
   requireRole(...HIRING_INTEGRATION),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const { providerName, credentials, defaultConfig } = req.body;
       if (!providerName || typeof credentials !== "object") {
@@ -1378,8 +1346,7 @@ router.post(
       const { encryptedCredentialsJson: _, ...safeIntegration } = integration as typeof integration & { encryptedCredentialsJson?: string };
       res.status(existing ? 200 : 201).json(safeIntegration);
     } catch (err) {
-      logError("POST /api/hiring/integrations", { error: String(err) });
-      res.status(500).json({ error: "Failed to connect ATS integration" });
+      next(err);
     }
   },
 );
@@ -1388,7 +1355,7 @@ router.post(
   "/integrations/:id/test",
   requireAuth,
   requireRole(...HIRING_INTEGRATION),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [integration] = await db
         .select()
@@ -1399,7 +1366,7 @@ router.post(
       if (!integration.encryptedCredentialsJson) return res.status(400).json({ error: "No credentials stored" });
 
       const provider = getATSProvider(integration.providerName);
-      if (!provider) return res.status(500).json({ error: "Provider implementation not found" });
+      if (!provider) return next(new Error("ATS provider not found"));
 
       const credentials = JSON.parse(decryptToken(integration.encryptedCredentialsJson)) as Record<string, string>;
       const ok = await provider.testConnection(credentials);
@@ -1410,8 +1377,7 @@ router.post(
 
       res.json({ connected: ok, testedAt: new Date() });
     } catch (err) {
-      logError("POST /api/hiring/integrations/:id/test", { error: String(err) });
-      res.status(500).json({ error: "Failed to test integration" });
+      next(err);
     }
   },
 );
@@ -1420,7 +1386,7 @@ router.delete(
   "/integrations/:id",
   requireAuth,
   requireRole(...HIRING_INTEGRATION),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [existing] = await db
         .select()
@@ -1436,8 +1402,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (err) {
-      logError("DELETE /api/hiring/integrations/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to disconnect integration" });
+      next(err);
     }
   },
 );
@@ -1446,7 +1411,7 @@ router.post(
   "/integrations/:id/sync",
   requireAuth,
   requireRole(...HIRING_INTEGRATION),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const [integration] = await db
         .select()
@@ -1459,7 +1424,7 @@ router.post(
       if (!integration.encryptedCredentialsJson) return res.status(400).json({ error: "No credentials stored" });
 
       const provider = getATSProvider(integration.providerName);
-      if (!provider) return res.status(500).json({ error: "Provider not found" });
+      if (!provider) return next(new Error("ATS provider not found"));
 
       const [syncLog] = await db.insert(hiringSyncLogs).values({
         organizationId: orgId(req),
@@ -1551,13 +1516,12 @@ router.post(
 
       res.json({ message: "Sync started", syncLogId: syncLog.id });
     } catch (err) {
-      logError("POST /api/hiring/integrations/:id/sync", { error: String(err) });
-      res.status(500).json({ error: "Failed to start sync" });
+      next(err);
     }
   },
 );
 
-router.get("/sync-logs", requireAuth, requireRole(...HIRING_INTEGRATION), async (req: AuthRequest, res) => {
+router.get("/sync-logs", requireAuth, requireRole(...HIRING_INTEGRATION), async (req: AuthRequest, res, next) => {
   try {
     const logs = await db
       .select()
@@ -1567,8 +1531,7 @@ router.get("/sync-logs", requireAuth, requireRole(...HIRING_INTEGRATION), async 
       .limit(50);
     res.json(logs);
   } catch (err) {
-    logError("GET /api/hiring/sync-logs", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch sync logs" });
+    next(err);
   }
 });
 
@@ -1576,7 +1539,7 @@ router.get("/sync-logs", requireAuth, requireRole(...HIRING_INTEGRATION), async 
 // PIPELINE CONFIG
 // ============================================
 
-router.get("/pipeline-config", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/pipeline-config", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const [config] = await db
       .select()
@@ -1585,8 +1548,7 @@ router.get("/pipeline-config", requireAuth, requireRole(...HIRING_REVIEW), async
       .limit(1);
     res.json(config ?? null);
   } catch (err) {
-    logError("GET /api/hiring/pipeline-config", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch pipeline config" });
+    next(err);
   }
 });
 
@@ -1594,7 +1556,7 @@ router.put(
   "/pipeline-config",
   requireAuth,
   requireRole(...HIRING_INTEGRATION),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const { stages } = req.body;
       if (!Array.isArray(stages)) return res.status(400).json({ error: "stages must be an array" });
@@ -1621,8 +1583,7 @@ router.put(
 
       res.status(201).json(config);
     } catch (err) {
-      logError("PUT /api/hiring/pipeline-config", { error: String(err) });
-      res.status(500).json({ error: "Failed to update pipeline config" });
+      next(err);
     }
   },
 );
@@ -1631,7 +1592,7 @@ router.put(
 // ACTIVITY LOG
 // ============================================
 
-router.get("/activity", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/activity", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const logs = await db
@@ -1642,8 +1603,7 @@ router.get("/activity", requireAuth, requireRole(...HIRING_REVIEW), async (req: 
       .limit(limit);
     res.json(logs);
   } catch (err) {
-    logError("GET /api/hiring/activity", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch activity log" });
+    next(err);
   }
 });
 
@@ -1671,7 +1631,7 @@ router.post(
   "/candidates/:id/ai-review",
   requireAuth,
   requireRole("ADMIN", "HUSTLER", "MANAGER"),
-  async (req: AuthRequest, res) => {
+  async (req: AuthRequest, res, next) => {
     try {
       const aiEnabled = await isFeatureEnabled(orgId(req), "HIRING_AI_SCORING");
       if (!aiEnabled) {
@@ -1863,8 +1823,7 @@ router.post(
         disclaimer: "This AI evaluation is one data point and must be reviewed by a human before any hiring decision is made. All final decisions must comply with applicable employment law.",
       });
     } catch (err) {
-      logError("POST /api/hiring/candidates/:id/ai-review", { error: String(err) });
-      res.status(500).json({ error: "Failed to generate AI review" });
+      next(err);
     }
   },
 );
@@ -1873,7 +1832,7 @@ router.post(
 // ANALYTICS
 // ============================================
 
-router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res) => {
+router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -1909,12 +1868,11 @@ router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_ADVANCED),
       overdueHiringTasks: 0,
     });
   } catch (err) {
-    logError("GET /api/hiring/analytics/dashboard", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch dashboard stats" });
+    next(err);
   }
 });
 
-router.get("/analytics", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res) => {
+router.get("/analytics", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -2145,8 +2103,7 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_ADVANCED), async (re
       recentActivity,
     });
   } catch (err) {
-    logError("GET /api/hiring/analytics", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch analytics" });
+    next(err);
   }
 });
 
@@ -2167,7 +2124,7 @@ const DEFAULT_PIPELINE_STAGES = [
   { key: "ARCHIVED", name: "Archived", color: "#6b7280", displayOrder: 9, isDefault: true, isTerminal: true },
 ];
 
-router.get("/pipeline-stages", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/pipeline-stages", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
     const stages = await db
@@ -2187,12 +2144,11 @@ router.get("/pipeline-stages", requireAuth, requireRole(...HIRING_REVIEW), async
 
     res.json(stages);
   } catch (err) {
-    logError("GET /api/hiring/pipeline-stages", { error: String(err) });
-    res.status(500).json({ error: "Failed to fetch pipeline stages" });
+    next(err);
   }
 });
 
-router.put("/pipeline-stages", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res) => {
+router.put("/pipeline-stages", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
     const { stages } = req.body;
@@ -2237,12 +2193,11 @@ router.put("/pipeline-stages", requireAuth, requireRole(...HIRING_FULL), async (
 
     res.json(inserted);
   } catch (err) {
-    logError("PUT /api/hiring/pipeline-stages", { error: String(err) });
-    res.status(500).json({ error: "Failed to update pipeline stages" });
+    next(err);
   }
 });
 
-router.post("/pipeline-stages/seed-defaults", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res) => {
+router.post("/pipeline-stages/seed-defaults", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res, next) => {
   try {
     const org = orgId(req);
 
@@ -2264,8 +2219,7 @@ router.post("/pipeline-stages/seed-defaults", requireAuth, requireRole(...HIRING
     const inserted = await db.insert(hiringPipelineStages).values(values).returning();
     res.json({ message: "Default stages seeded", seeded: true, stages: inserted });
   } catch (err) {
-    logError("POST /api/hiring/pipeline-stages/seed-defaults", { error: String(err) });
-    res.status(500).json({ error: "Failed to seed default stages" });
+    next(err);
   }
 });
 

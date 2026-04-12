@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, Response, Request } from "express";
+import { Router, Response, Request, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import { 
@@ -107,7 +107,7 @@ async function sendPayableNotifications(
   }
 }
 
-router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -183,12 +183,11 @@ router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 
 
     res.json(result);
   } catch (error) {
-    logError("Get payables error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -228,12 +227,11 @@ router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MAN
 
     res.json(summary);
   } catch (error) {
-    logError("Get payables summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response) => {
+router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canViewFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -276,8 +274,7 @@ router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER
       }
     });
   } catch (error) {
-    logError("Get payable error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -289,7 +286,7 @@ const createPayableSchema = z.object({
   invoiceNumber: z.string().optional().nullable()
 });
 
-router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -388,12 +385,11 @@ router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"],
       }
     });
   } catch (error) {
-    logError("Create payable error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -482,8 +478,7 @@ router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN",
       }
     });
   } catch (error) {
-    logError("Approve payable error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -491,7 +486,7 @@ const rejectPayableSchema = z.object({
   rejectionReason: z.string().min(1, "Rejection reason is required")
 });
 
-router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -591,8 +586,7 @@ router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", 
       }
     });
   } catch (error) {
-    logError("Reject payable error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -602,7 +596,7 @@ const markPaidSchema = z.object({
   paymentMethod: z.enum(["CHECK", "ACH", "WIRE", "CREDIT_CARD", "CASH"]).optional().nullable()
 });
 
-router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response) => {
+router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -713,12 +707,11 @@ router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN
       }
     });
   } catch (error) {
-    logError("Mark paid error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/payables/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/payables/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -750,8 +743,7 @@ router.delete("/payables/:id", requireAuth, requireRole("ADMIN"), async (req: Au
 
     res.json({ message: "Payable deleted successfully" });
   } catch (error) {
-    logError("Delete payable error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -839,7 +831,7 @@ export async function createAutoPayableFromContract(
 }
 
 // Backfill endpoint to create payables for completed contracts that are missing payments
-router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
     const userId = req.user?.id;
@@ -979,8 +971,7 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
       details: results
     });
   } catch (error) {
-    logError("Error running payables backfill:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to run payables backfill" });
+    next(error);
   }
 });
 

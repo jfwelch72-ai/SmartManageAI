@@ -20,7 +20,7 @@ function requireSuperAdmin(req: AuthRequest, res: any, next: any) {
   next();
 }
 
-router.get("/platform/subscriptions/stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/subscriptions/stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const byPlanTier = await db.select({
       planTier: organizationSubscriptions.planTier,
@@ -86,12 +86,11 @@ router.get("/platform/subscriptions/stats", requireAuth, requireSuperAdmin, asyn
       recentChanges,
     });
   } catch (error: any) {
-    logError("Subscription stats error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get subscription stats" });
+    next(error);
   }
 });
 
-router.get("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { planTier, status, search, page = "1", limit = "20" } = req.query;
     const pageNum = Math.max(1, parseInt(page as string) || 1);
@@ -201,12 +200,11 @@ router.get("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req
       },
     });
   } catch (error: any) {
-    logError("Subscriptions list error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to list subscriptions" });
+    next(error);
   }
 });
 
-router.get("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -249,12 +247,11 @@ router.get("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, asy
       recentAudit,
     });
   } catch (error: any) {
-    logError("Subscription detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get subscription details" });
+    next(error);
   }
 });
 
-router.get("/platform/subscriptions/:orgId/history", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/subscriptions/:orgId/history", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -301,12 +298,11 @@ router.get("/platform/subscriptions/:orgId/history", requireAuth, requireSuperAd
       pagination: { page, limit, total: totalRow.count, totalPages: Math.ceil(totalRow.count / limit) },
     });
   } catch (error: any) {
-    logError("Subscription history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch subscription history" });
+    next(error);
   }
 });
 
-router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const { planTier, status } = req.body;
@@ -374,12 +370,11 @@ router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, a
 
     res.json({ subscription: updated, changes });
   } catch (error: any) {
-    logError("Subscription update error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update subscription" });
+    next(error);
   }
 });
 
-router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId, addonKey } = req.params;
     const { status } = req.body;
@@ -430,12 +425,11 @@ router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, req
 
     res.json({ addon: result });
   } catch (error: any) {
-    logError("Addon update error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update addon" });
+    next(error);
   }
 });
 
-router.post("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { organizationId, planTier, status, billingProvider } = req.body;
 
@@ -496,12 +490,11 @@ router.post("/platform/subscriptions", requireAuth, requireSuperAdmin, async (re
 
     res.status(201).json({ subscription: newSub });
   } catch (error: any) {
-    logError("Create subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create subscription" });
+    next(error);
   }
 });
 
-router.post("/platform/subscriptions/:orgId/cancel", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/subscriptions/:orgId/cancel", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -542,12 +535,11 @@ router.post("/platform/subscriptions/:orgId/cancel", requireAuth, requireSuperAd
 
     res.json({ subscription: updated, message: "Subscription has been canceled" });
   } catch (error: any) {
-    logError("Cancel subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to cancel subscription" });
+    next(error);
   }
 });
 
-router.post("/platform/subscriptions/:orgId/pause", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/subscriptions/:orgId/pause", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -592,12 +584,11 @@ router.post("/platform/subscriptions/:orgId/pause", requireAuth, requireSuperAdm
 
     res.json({ subscription: updated, message: "Subscription has been paused" });
   } catch (error: any) {
-    logError("Pause subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to pause subscription" });
+    next(error);
   }
 });
 
-router.post("/platform/subscriptions/:orgId/downgrade", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/subscriptions/:orgId/downgrade", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const { targetPlan } = req.body;
@@ -650,12 +641,11 @@ router.post("/platform/subscriptions/:orgId/downgrade", requireAuth, requireSupe
 
     res.json({ subscription: updated, message: `Subscription downgraded from ${oldPlan} to ${targetPlan}` });
   } catch (error: any) {
-    logError("Downgrade subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to downgrade subscription" });
+    next(error);
   }
 });
 
-router.delete("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.delete("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -696,12 +686,11 @@ router.delete("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, 
 
     res.json({ success: true, message: "Subscription deleted" });
   } catch (error: any) {
-    logError("Delete subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete subscription" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations-without-subscription", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations-without-subscription", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const orgsWithSubs = db.select({ orgId: organizationSubscriptions.organizationId }).from(organizationSubscriptions);
 
@@ -717,8 +706,7 @@ router.get("/platform/organizations-without-subscription", requireAuth, requireS
 
     res.json(orgsWithoutSubs);
   } catch (error: any) {
-    logError("Fetch orgs without subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organizations" });
+    next(error);
   }
 });
 
@@ -726,7 +714,7 @@ router.get("/platform/organizations-without-subscription", requireAuth, requireS
 // Routes from platformAuditRoutes.ts
 // ========================================
 
-router.get("/platform/audit-report", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/audit-report", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const fs = await import("fs");
     const path = await import("path");
@@ -742,15 +730,14 @@ router.get("/platform/audit-report", requireAuth, requireSuperAdmin, async (req:
     
     res.json(report);
   } catch (error: any) {
-    logError("Audit report fetch error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch audit report" });
+    next(error);
   }
 });
 
 let lastAuditRun = 0;
 const AUDIT_COOLDOWN_MS = 60000;
 
-router.post("/platform/run-audit", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/run-audit", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const now = Date.now();
     if (now - lastAuditRun < AUDIT_COOLDOWN_MS) {
@@ -779,12 +766,11 @@ router.post("/platform/run-audit", requireAuth, requireSuperAdmin, async (req: A
     });
     
   } catch (error: any) {
-    logError("Audit run error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to run audit" });
+    next(error);
   }
 });
 
-router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const results = {
       scopeItemsUpdated: 0,
@@ -900,12 +886,11 @@ router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, asyn
       ...results,
     });
   } catch (error: any) {
-    logError("SOW backfill error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to backfill SOW links", details: error.message });
+    next(error);
   }
 });
 
-router.get("/platform/sow-link-stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/sow-link-stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const stats = await db.execute(sql`
       SELECT 
@@ -932,8 +917,7 @@ router.get("/platform/sow-link-stats", requireAuth, requireSuperAdmin, async (re
 
     res.json(stats.rows);
   } catch (error: any) {
-    logError("SOW stats error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get SOW link stats" });
+    next(error);
   }
 });
 

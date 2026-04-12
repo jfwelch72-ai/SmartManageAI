@@ -649,7 +649,7 @@ async function postCostLedger(payRunId: string, txDb?: typeof db) {
   }
 }
 
-router.get("/api/payroll/overview", requireAuth, async (req, res) => {
+router.get("/api/payroll/overview", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -735,12 +735,11 @@ router.get("/api/payroll/overview", requireAuth, async (req, res) => {
       recentPayRuns,
     });
   } catch (error) {
-    logError("Payroll overview error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/pay-runs", requireAuth, async (req, res) => {
+router.get("/api/payroll/pay-runs", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -754,12 +753,11 @@ router.get("/api/payroll/pay-runs", requireAuth, async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    logError("Get pay runs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
+router.get("/api/payroll/pay-runs/:id", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -786,12 +784,11 @@ router.get("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
 
     res.json({ ...payRun, lineItems });
   } catch (error) {
-    logError("Get pay run detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/payroll/pay-runs", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.post("/api/payroll/pay-runs", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1154,8 +1151,7 @@ router.post("/api/payroll/pay-runs", requireAuth, requireFeaturePermission("canM
 
     res.status(201).json(updatedPayRun);
   } catch (error) {
-    logError("Create pay run error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1303,14 +1299,13 @@ const payRunStatusHandler = async (req: any, res: Response) => {
 
     res.json(updated);
   } catch (error) {
-    logError("Update pay run status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 };
 router.put("/api/payroll/pay-runs/:id/status", requireAuth, requireFeaturePermission("canManagePayroll"), payRunStatusHandler);
 router.patch("/api/payroll/pay-runs/:id/status", requireAuth, requireFeaturePermission("canManagePayroll"), payRunStatusHandler);
 
-router.get("/api/payroll/workers", requireAuth, async (req, res) => {
+router.get("/api/payroll/workers", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1338,12 +1333,11 @@ router.get("/api/payroll/workers", requireAuth, async (req, res) => {
 
     res.json(workers);
   } catch (error) {
-    logError("Get payroll workers error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/time-entries", requireAuth, async (req, res) => {
+router.get("/api/payroll/time-entries", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1386,12 +1380,11 @@ router.get("/api/payroll/time-entries", requireAuth, async (req, res) => {
 
     res.json(entries);
   } catch (error) {
-    logError("Get payroll time entries error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:id/payroll-summary", requireAuth, async (req, res) => {
+router.get("/api/projects/:id/payroll-summary", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1459,8 +1452,7 @@ router.get("/api/projects/:id/payroll-summary", requireAuth, async (req, res) =>
       workers: workerResults,
     });
   } catch (error) {
-    logError("Project payroll summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1542,7 +1534,7 @@ async function calculateDeductionsForEmployee(
   return { deductions: results, totalDeductions: Math.round(totalDed * 100) / 100 };
 }
 
-router.get("/api/payroll/deduction-types", requireAuth, async (req, res) => {
+router.get("/api/payroll/deduction-types", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1554,12 +1546,11 @@ router.get("/api/payroll/deduction-types", requireAuth, async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    logError("Get deduction types error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/payroll/deduction-types", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.post("/api/payroll/deduction-types", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1593,12 +1584,11 @@ router.post("/api/payroll/deduction-types", requireAuth, requireFeaturePermissio
     const [created] = await db.insert(payrollDeductionTypes).values(body).returning();
     res.status(201).json(created);
   } catch (error) {
-    logError("Create deduction type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.patch("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1640,12 +1630,11 @@ router.patch("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePerm
       .where(eq(payrollDeductionTypes.id, req.params.id)).returning();
     res.json(updated);
   } catch (error) {
-    logError("Update deduction type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.delete("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1658,12 +1647,11 @@ router.delete("/api/payroll/deduction-types/:id", requireAuth, requireFeaturePer
     await db.delete(payrollDeductionTypes).where(eq(payrollDeductionTypes.id, req.params.id));
     successResponse(res);
   } catch (error) {
-    logError("Delete deduction type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/employee-deductions", requireAuth, async (req, res) => {
+router.get("/api/payroll/employee-deductions", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1686,12 +1674,11 @@ router.get("/api/payroll/employee-deductions", requireAuth, async (req, res) => 
 
     res.json(results);
   } catch (error) {
-    logError("Get employee deductions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/employee-deductions/:userId", requireAuth, async (req, res) => {
+router.get("/api/payroll/employee-deductions/:userId", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1716,12 +1703,11 @@ router.get("/api/payroll/employee-deductions/:userId", requireAuth, async (req, 
 
     res.json(results);
   } catch (error) {
-    logError("Get employee deductions by user error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/payroll/employee-deductions", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.post("/api/payroll/employee-deductions", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1756,12 +1742,11 @@ router.post("/api/payroll/employee-deductions", requireAuth, requireFeaturePermi
     const [created] = await db.insert(employeeDeductions).values(body).returning();
     res.status(201).json(created);
   } catch (error) {
-    logError("Create employee deduction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1793,12 +1778,11 @@ router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireFeature
       .where(eq(employeeDeductions.id, req.params.id)).returning();
     res.json(updated);
   } catch (error) {
-    logError("Update employee deduction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/payroll/employee-deductions/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.delete("/api/payroll/employee-deductions/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1811,12 +1795,11 @@ router.delete("/api/payroll/employee-deductions/:id", requireAuth, requireFeatur
     await db.delete(employeeDeductions).where(eq(employeeDeductions.id, req.params.id));
     successResponse(res);
   } catch (error) {
-    logError("Delete employee deduction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, async (req, res) => {
+router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1909,12 +1892,11 @@ router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, async (req, res) 
 
     res.json(Array.from(workerMap.values()));
   } catch (error) {
-    logError("Get pay stubs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, async (req, res) => {
+router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2002,12 +1984,11 @@ router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, async (re
 
     res.json(stub);
   } catch (error) {
-    logError("Get single pay stub error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req, res) => {
+router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2195,12 +2176,11 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       projectReports,
     });
   } catch (error) {
-    logError("Get certified payroll report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/payroll/pay-runs/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res) => {
+router.delete("/api/payroll/pay-runs/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2232,8 +2212,7 @@ router.delete("/api/payroll/pay-runs/:id", requireAuth, requireFeaturePermission
 
     successResponse(res);
   } catch (error) {
-    logError("Delete pay run error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2241,7 +2220,7 @@ router.delete("/api/payroll/pay-runs/:id", requireAuth, requireFeaturePermission
 // Routes from payrollNotificationRoutes.ts
 // ========================================
 
-router.get("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2289,12 +2268,11 @@ router.get("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANA
 
     res.json(formatted);
   } catch (error) {
-    logError("Get payroll notifications error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2369,12 +2347,11 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
 
     res.status(201).json(notification);
   } catch (error) {
-    logError("Create payroll notification error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/payroll-notifications/:id/process", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/api/payroll-notifications/:id/process", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -2409,8 +2386,7 @@ router.patch("/api/payroll-notifications/:id/process", requireAuth, requireRole(
 
     res.json(updated);
   } catch (error) {
-    logError("Process payroll notification error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2440,7 +2416,7 @@ function getWeekBounds(date: Date, startDay: typeof WORK_WEEK_DAYS[number]): { s
   return { start: weekStart, end: weekEnd };
 }
 
-router.get("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2465,12 +2441,11 @@ router.get("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADM
 
     res.json(settings);
   } catch (error) {
-    logError("Get payroll settings error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
+router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2524,12 +2499,11 @@ router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADM
 
     res.json(settings);
   } catch (error) {
-    logError("Update payroll settings error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/weekly-reports", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req, res) => {
+router.get("/api/payroll/weekly-reports", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2549,12 +2523,11 @@ router.get("/api/payroll/weekly-reports", requireAuth, requireRole("ADMIN", "SUP
 
     res.json(reports);
   } catch (error) {
-    logError("Get weekly reports error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req, res) => {
+router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2579,12 +2552,11 @@ router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", 
 
     res.json(report);
   } catch (error) {
-    logError("Get weekly report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), exportLimiter, async (req, res) => {
+router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), exportLimiter, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2770,12 +2742,11 @@ router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADM
       },
     });
   } catch (error) {
-    logError("Generate weekly report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/payroll/current-week-summary", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), async (req, res) => {
+router.get("/api/payroll/current-week-summary", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "SUPERINTENDENT", "MANAGER"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -2845,8 +2816,7 @@ router.get("/api/payroll/current-week-summary", requireAuth, requireRole("ADMIN"
       reportId: existingReport?.id,
     });
   } catch (error) {
-    logError("Get current week summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

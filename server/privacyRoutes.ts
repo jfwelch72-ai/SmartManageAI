@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { AuthRequest, requireAuth, requireRole } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
 import { db } from "./db";
@@ -9,7 +9,7 @@ import { logAudit } from "./auditLogger";
 
 const router = Router();
 
-router.get("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.get("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const orgId = user.organizationId;
@@ -22,12 +22,11 @@ router.get("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
 
     res.json(records);
   } catch (error) {
-    logError("Error fetching processing records:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch processing records" });
+    next(error);
   }
 });
 
-router.post("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.post("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const orgId = user.organizationId;
@@ -63,12 +62,11 @@ router.post("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMI
     await logAudit({ userId: user.id, entityType: "data_processing_records", entityId: record.id, action: "CREATE" }, req);
     res.status(201).json(record);
   } catch (error) {
-    logError("Error saving processing record:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to save processing record" });
+    next(error);
   }
 });
 
-router.delete("/processing-records/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.delete("/processing-records/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const orgId = user.organizationId;
@@ -84,12 +82,11 @@ router.delete("/processing-records/:id", requireAuth, requireRole("ADMIN", "SUPE
     await logAudit({ userId: user.id, entityType: "data_processing_records", entityId: id, action: "DELETE" }, req);
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting processing record:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete processing record" });
+    next(error);
   }
 });
 
-router.get("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.get("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const orgId = user.organizationId;
@@ -102,12 +99,11 @@ router.get("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN")
 
     res.json(requests);
   } catch (error) {
-    logError("Error fetching subject requests:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch subject requests" });
+    next(error);
   }
 });
 
-router.post("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.post("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const orgId = user.organizationId;
@@ -131,12 +127,11 @@ router.post("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"
     await logAudit({ userId: user.id, entityType: "data_subject_requests", entityId: request.id, action: "CREATE" }, req);
     res.status(201).json(request);
   } catch (error) {
-    logError("Error creating subject request:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create subject request" });
+    next(error);
   }
 });
 
-router.post("/subject-requests/:id/process", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.post("/subject-requests/:id/process", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("PRIVACY_COMPLIANCE"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const orgId = user.organizationId;
@@ -240,8 +235,7 @@ router.post("/subject-requests/:id/process", requireAuth, requireRole("ADMIN", "
     await logAudit({ userId: user.id, entityType: "data_subject_requests", entityId: id, action: "APPROVE" }, req);
     res.json(updated);
   } catch (error) {
-    logError("Error processing subject request:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to process subject request" });
+    next(error);
   }
 });
 

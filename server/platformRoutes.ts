@@ -161,7 +161,7 @@ function requireSuperAdmin(req: AuthRequest, res: any, next: any) {
   next();
 }
 
-router.get("/platform/health", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/health", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   const startTime = Date.now();
   const checks: Record<string, { status: string; latencyMs?: number; detail?: string }> = {};
 
@@ -207,7 +207,7 @@ router.get("/platform/health", requireAuth, requireSuperAdmin, async (req: AuthR
   });
 });
 
-router.get("/platform/stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const [orgCount] = await db.select({ count: count() }).from(organizations);
     const [userCount] = await db.select({ count: count() }).from(users).where(isNotNull(users.organizationId));
@@ -244,12 +244,11 @@ router.get("/platform/stats", requireAuth, requireSuperAdmin, async (req: AuthRe
       usersByRole: usersByRole.filter(u => u.role !== "SUPER_ADMIN"),
     });
   } catch (error: any) {
-    logError("Platform stats error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch platform stats" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const allOrgs = await db.select({
       id: organizations.id,
@@ -280,12 +279,11 @@ router.get("/platform/organizations", requireAuth, requireSuperAdmin, async (req
 
     res.json(orgsWithUserCounts);
   } catch (error: any) {
-    logError("Platform organizations error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organizations" });
+    next(error);
   }
 });
 
-router.post("/platform/organizations", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/organizations", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { name, slug, tradeType, region, email, phone } = req.body;
 
@@ -318,12 +316,11 @@ router.post("/platform/organizations", requireAuth, requireSuperAdmin, async (re
 
     res.status(201).json(newOrg);
   } catch (error: any) {
-    logError("Create organization error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create organization" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     
@@ -359,12 +356,11 @@ router.get("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, asy
       },
     });
   } catch (error: any) {
-    logError("Platform organization detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organization details" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/db-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/db-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -421,12 +417,11 @@ router.get("/platform/organizations/:orgId/db-usage", requireAuth, requireSuperA
       calendarEvents: row.calendar_events || 0,
     });
   } catch (error: any) {
-    logError("Platform org db-usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch database usage" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/sow-items", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/sow-items", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     
@@ -437,12 +432,11 @@ router.get("/platform/organizations/:orgId/sow-items", requireAuth, requireSuper
 
     res.json(items);
   } catch (error: any) {
-    logError("Get SOW items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch SOW items" });
+    next(error);
   }
 });
 
-router.post("/platform/organizations/:orgId/sow-items", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/organizations/:orgId/sow-items", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const { name, categoryName, code, description, unit } = req.body;
@@ -470,12 +464,11 @@ router.post("/platform/organizations/:orgId/sow-items", requireAuth, requireSupe
 
     res.json(newItem);
   } catch (error: any) {
-    logError("Create SOW item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create SOW item" });
+    next(error);
   }
 });
 
-router.patch("/platform/organizations/:orgId/sow-items/:itemId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/organizations/:orgId/sow-items/:itemId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId, itemId } = req.params;
     const updates = req.body;
@@ -497,12 +490,11 @@ router.patch("/platform/organizations/:orgId/sow-items/:itemId", requireAuth, re
 
     res.json(updated);
   } catch (error: any) {
-    logError("Update SOW item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update SOW item" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/work-types", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/work-types", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     
@@ -512,12 +504,11 @@ router.get("/platform/organizations/:orgId/work-types", requireAuth, requireSupe
 
     res.json(items);
   } catch (error: any) {
-    logError("Get work types error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch work types" });
+    next(error);
   }
 });
 
-router.post("/platform/organizations/:orgId/work-types", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/organizations/:orgId/work-types", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const { name, unit, defaultProductionRate } = req.body;
@@ -536,12 +527,11 @@ router.post("/platform/organizations/:orgId/work-types", requireAuth, requireSup
 
     res.json(newItem);
   } catch (error: any) {
-    logError("Create work type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create work type" });
+    next(error);
   }
 });
 
-router.post("/platform/organizations/:orgId/suspend", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/organizations/:orgId/suspend", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const { action } = req.body;
@@ -587,12 +577,11 @@ router.post("/platform/organizations/:orgId/suspend", requireAuth, requireSuperA
         : `Organization "${org.name}" has been suspended`,
     });
   } catch (error: any) {
-    logError("Org suspend/reactivate error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update organization status" });
+    next(error);
   }
 });
 
-router.patch("/platform/users/:userId/role", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/users/:userId/role", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
     const { role } = req.body;
@@ -642,12 +631,11 @@ router.patch("/platform/users/:userId/role", requireAuth, requireSuperAdmin, asy
     const { passwordHash: _, tokenVersion: _tv, ...userWithoutSensitive } = updated;
     res.json({ user: userWithoutSensitive, message: `Role changed from ${oldRole} to ${role}` });
   } catch (error: any) {
-    logError("Change user role error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to change user role" });
+    next(error);
   }
 });
 
-router.post("/platform/users/:userId/transfer", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/users/:userId/transfer", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
     const { targetOrganizationId } = req.body;
@@ -713,12 +701,11 @@ router.post("/platform/users/:userId/transfer", requireAuth, requireSuperAdmin, 
       message: `User transferred from "${oldOrgName}" to "${targetOrg.name}"`,
     });
   } catch (error: any) {
-    logError("Transfer user error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to transfer user" });
+    next(error);
   }
 });
 
-router.patch("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const updates = req.body;
@@ -737,12 +724,11 @@ router.patch("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, a
 
     res.json(updated);
   } catch (error: any) {
-    logError("Update organization error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update organization" });
+    next(error);
   }
 });
 
-router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const days = parseInt(req.query.days as string) || 30;
     const page = parseInt(req.query.page as string) || 1;
@@ -860,12 +846,11 @@ router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: Au
       days,
     });
   } catch (error: any) {
-    logError("Platform analytics error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch analytics" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/activity", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/activity", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const page = parseInt(req.query.page as string) || 1;
@@ -909,8 +894,7 @@ router.get("/platform/organizations/:orgId/activity", requireAuth, requireSuperA
       limit,
     });
   } catch (error: any) {
-    logError("Platform organization activity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organization activity" });
+    next(error);
   }
 });
 
@@ -923,7 +907,7 @@ const platformCreateUserSchema = insertUserSchema.omit({ passwordHash: true }).e
   organizationId: z.string().min(1, "Organization is required"),
 });
 
-router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -975,11 +959,11 @@ router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthR
     if (error.code === '23505') {
       return res.status(409).json({ error: "Email already exists" });
     }
-    res.status(500).json({ error: "Failed to create user" });
+    next(error);
   }
 });
 
-router.get("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const allUsers = await db.select({
       id: users.id,
@@ -1008,12 +992,11 @@ router.get("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRe
 
     res.json(usersWithOrgs);
   } catch (error: any) {
-    logError("Platform users error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch users" });
+    next(error);
   }
 });
 
-router.get("/platform/users/archived", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/users/archived", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const archivedUsers = await db.select({
       id: users.id,
@@ -1041,12 +1024,11 @@ router.get("/platform/users/archived", requireAuth, requireSuperAdmin, async (re
 
     res.json(usersWithOrgs);
   } catch (error: any) {
-    logError("Platform archived users error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch archived users" });
+    next(error);
   }
 });
 
-router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -1091,14 +1073,13 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
     console.log(`Admin-initiated credential reset for user: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `Password reset email sent to ${user.email}` });
   } catch (error: any) {
-    logError("Admin password reset error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to initiate password reset" });
+    next(error);
   }
 });
 
 const impersonationCodes = new Map<string, { token: string; adminEmail: string; targetEmail: string; expiresAt: number }>();
 
-router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -1149,12 +1130,11 @@ router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmi
       message: `Impersonation code generated for ${user.email}` 
     });
   } catch (error: any) {
-    logError("Impersonate user error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate impersonation token" });
+    next(error);
   }
 });
 
-router.post("/platform/impersonate/exchange", async (req, res) => {
+router.post("/platform/impersonate/exchange", async (req, res, next) => {
   try {
     const { code } = req.body;
     if (!code || typeof code !== "string") {
@@ -1191,12 +1171,11 @@ router.post("/platform/impersonate/exchange", async (req, res) => {
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Impersonation exchange error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to exchange impersonation code" });
+    next(error);
   }
 });
 
-router.post("/platform/users/:userId/restore", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/users/:userId/restore", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -1227,12 +1206,11 @@ router.post("/platform/users/:userId/restore", requireAuth, requireSuperAdmin, a
     console.log(`User restored: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been restored and reactivated` });
   } catch (error: any) {
-    logError("Restore user error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to restore user" });
+    next(error);
   }
 });
 
-router.post("/platform/users/:userId/soft-delete", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/users/:userId/soft-delete", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -1263,12 +1241,11 @@ router.post("/platform/users/:userId/soft-delete", requireAuth, requireSuperAdmi
     console.log(`User soft-deleted: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been deactivated and archived` });
   } catch (error: any) {
-    logError("Soft delete user error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to deactivate user" });
+    next(error);
   }
 });
 
-router.patch("/platform/users/:userId/verify-email", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/users/:userId/verify-email", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -1295,12 +1272,11 @@ router.patch("/platform/users/:userId/verify-email", requireAuth, requireSuperAd
 
     res.json({ emailVerified: updated.emailVerified, message: `Email ${newStatus ? 'verified' : 'unverified'} for ${user.email}` });
   } catch (error: any) {
-    logError("Toggle email verification error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update email verification status" });
+    next(error);
   }
 });
 
-router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -1339,8 +1315,7 @@ router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (
     console.log(`User permanently deleted: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been permanently deleted` });
   } catch (error: any) {
-    logError("Permanent delete user error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to permanently delete user" });
+    next(error);
   }
 });
 
@@ -1382,7 +1357,7 @@ function getApiMetricsForPeriod(orgId: string, sinceMs: number): { requests: num
   return { requests, errors };
 }
 
-router.get("/platform/monitoring/api-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/monitoring/api-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const period = req.query.period as string || "7d";
     const daysMap: Record<string, number> = { "24h": 1, "7d": 7, "30d": 30 };
@@ -1441,12 +1416,11 @@ router.get("/platform/monitoring/api-usage", requireAuth, requireSuperAdmin, asy
       organizations: result.sort((a, b) => (b.totalRequests + b.auditedActions) - (a.totalRequests + a.auditedActions)),
     });
   } catch (error: any) {
-    logError("Platform monitoring API usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch API usage metrics" });
+    next(error);
   }
 });
 
-router.get("/platform/monitoring/ai-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/monitoring/ai-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const period = req.query.period as string || "7d";
     const daysMap: Record<string, number> = { "24h": 1, "7d": 7, "30d": 30 };
@@ -1506,12 +1480,11 @@ router.get("/platform/monitoring/ai-usage", requireAuth, requireSuperAdmin, asyn
       organizations: merged.sort((a, b) => b.totalCalls - a.totalCalls),
     });
   } catch (error: any) {
-    logError("Platform monitoring AI usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch AI usage metrics" });
+    next(error);
   }
 });
 
-router.get("/platform/monitoring/storage-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/monitoring/storage-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const uploadStats = await db
       .select({
@@ -1534,12 +1507,11 @@ router.get("/platform/monitoring/storage-usage", requireAuth, requireSuperAdmin,
       })).sort((a, b) => b.totalSizeBytes - a.totalSizeBytes),
     });
   } catch (error: any) {
-    logError("Platform monitoring storage usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch storage usage metrics" });
+    next(error);
   }
 });
 
-router.get("/platform/monitoring/integration-health", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/monitoring/integration-health", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const connections = await db
       .select({
@@ -1612,12 +1584,11 @@ router.get("/platform/monitoring/integration-health", requireAuth, requireSuperA
       },
     });
   } catch (error: any) {
-    logError("Platform monitoring integration health error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch integration health" });
+    next(error);
   }
 });
 
-router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize as string) || 50));
@@ -1714,8 +1685,7 @@ router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, as
       },
     });
   } catch (error: any) {
-    logError("Platform monitoring audit logs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch audit logs" });
+    next(error);
   }
 });
 
@@ -1723,17 +1693,16 @@ router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, as
 // Platform Announcements
 // ========================================
 
-router.get("/platform/announcements", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/announcements", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const all = await db.select().from(platformAnnouncements).orderBy(desc(platformAnnouncements.createdAt));
     res.json(all);
   } catch (error: any) {
-    logError("Get announcements error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch announcements" });
+    next(error);
   }
 });
 
-router.post("/platform/announcements", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/announcements", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { title, message, targetOrgIds, isActive, expiresAt } = req.body;
     if (!title || !message) {
@@ -1749,12 +1718,11 @@ router.post("/platform/announcements", requireAuth, requireSuperAdmin, async (re
     }).returning();
     res.status(201).json(announcement);
   } catch (error: any) {
-    logError("Create announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create announcement" });
+    next(error);
   }
 });
 
-router.patch("/platform/announcements/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/announcements/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -1768,23 +1736,21 @@ router.patch("/platform/announcements/:id", requireAuth, requireSuperAdmin, asyn
     if (!updated) return res.status(404).json({ error: "Announcement not found" });
     res.json(updated);
   } catch (error: any) {
-    logError("Update announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update announcement" });
+    next(error);
   }
 });
 
-router.delete("/platform/announcements/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.delete("/platform/announcements/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     await db.delete(platformAnnouncements).where(eq(platformAnnouncements.id, id));
     res.json({ message: "Announcement deleted" });
   } catch (error: any) {
-    logError("Delete announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete announcement" });
+    next(error);
   }
 });
 
-router.get("/platform/announcements/active", requireAuth, async (req: AuthRequest, res) => {
+router.get("/platform/announcements/active", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const now = new Date();
     const active = await db.select().from(platformAnnouncements)
@@ -1811,12 +1777,11 @@ router.get("/platform/announcements/active", requireAuth, async (req: AuthReques
     const result = filtered.filter(a => !dismissedIds.has(a.id));
     res.json(result);
   } catch (error: any) {
-    logError("Get active announcements error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch active announcements" });
+    next(error);
   }
 });
 
-router.post("/platform/announcements/:id/dismiss", requireAuth, async (req: AuthRequest, res) => {
+router.post("/platform/announcements/:id/dismiss", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     await db.insert(announcementDismissals).values({
@@ -1825,8 +1790,7 @@ router.post("/platform/announcements/:id/dismiss", requireAuth, async (req: Auth
     }).onConflictDoNothing();
     res.json({ message: "Announcement dismissed" });
   } catch (error: any) {
-    logError("Dismiss announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to dismiss announcement" });
+    next(error);
   }
 });
 
@@ -1834,7 +1798,7 @@ router.post("/platform/announcements/:id/dismiss", requireAuth, async (req: Auth
 // Read-Only Org Data Browser
 // ========================================
 
-router.get("/platform/organizations/:orgId/projects", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/projects", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const orgProjects = await db.select({
@@ -1860,12 +1824,11 @@ router.get("/platform/organizations/:orgId/projects", requireAuth, requireSuperA
     const uniqueProjects = Array.from(new Map(orgProjects.map(p => [p.id, p])).values());
     res.json(uniqueProjects);
   } catch (error: any) {
-    logError("Get org projects error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organization projects" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/bids", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/bids", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const orgBids = await db.select({
@@ -1883,12 +1846,11 @@ router.get("/platform/organizations/:orgId/bids", requireAuth, requireSuperAdmin
 
     res.json(orgBids);
   } catch (error: any) {
-    logError("Get org bids error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organization bids" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/contracts", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/contracts", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const orgContracts = await db.select({
@@ -1906,12 +1868,11 @@ router.get("/platform/organizations/:orgId/contracts", requireAuth, requireSuper
 
     res.json(orgContracts);
   } catch (error: any) {
-    logError("Get org contracts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organization contracts" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/equipment", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/equipment", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const orgEquipment = await db.select({
@@ -1930,12 +1891,11 @@ router.get("/platform/organizations/:orgId/equipment", requireAuth, requireSuper
 
     res.json(orgEquipment);
   } catch (error: any) {
-    logError("Get org equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organization equipment" });
+    next(error);
   }
 });
 
-router.get("/platform/organizations/:orgId/financials", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/financials", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -1973,8 +1933,7 @@ router.get("/platform/organizations/:orgId/financials", requireAuth, requireSupe
       payrollRuns: row.payroll_runs || 0,
     });
   } catch (error: any) {
-    logError("Get org financials error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organization financials" });
+    next(error);
   }
 });
 
@@ -1982,17 +1941,16 @@ router.get("/platform/organizations/:orgId/financials", requireAuth, requireSupe
 // Global Workflow Templates
 // ========================================
 
-router.get("/platform/workflow-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/workflow-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const templates = await db.select().from(globalWorkflowTemplates).orderBy(desc(globalWorkflowTemplates.updatedAt));
     res.json(templates);
   } catch (error: any) {
-    logError("Get global workflow templates error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch workflow templates" });
+    next(error);
   }
 });
 
-router.post("/platform/workflow-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/workflow-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { name, description, entityType, isPublished, templateData } = req.body;
     if (!name || !entityType || !templateData) {
@@ -2008,12 +1966,11 @@ router.post("/platform/workflow-templates", requireAuth, requireSuperAdmin, asyn
     }).returning();
     res.status(201).json(template);
   } catch (error: any) {
-    logError("Create global workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create workflow template" });
+    next(error);
   }
 });
 
-router.patch("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.patch("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -2027,19 +1984,17 @@ router.patch("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin,
     if (!updated) return res.status(404).json({ error: "Template not found" });
     res.json(updated);
   } catch (error: any) {
-    logError("Update global workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update workflow template" });
+    next(error);
   }
 });
 
-router.delete("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.delete("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     await db.delete(globalWorkflowTemplates).where(eq(globalWorkflowTemplates.id, id));
     res.json({ message: "Template deleted" });
   } catch (error: any) {
-    logError("Delete global workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete workflow template" });
+    next(error);
   }
 });
 
@@ -2047,7 +2002,7 @@ router.delete("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin
 // Data Export & Deletion
 // ========================================
 
-router.get("/platform/organizations/:orgId/export", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/export", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -2111,12 +2066,11 @@ router.get("/platform/organizations/:orgId/export", requireAuth, requireSuperAdm
     res.setHeader("Content-Disposition", `attachment; filename="org-${org.slug}-export-${new Date().toISOString().split('T')[0]}.json"`);
     res.json(exportData);
   } catch (error: any) {
-    logError("Data export error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to export organization data" });
+    next(error);
   }
 });
 
-router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
     const { confirmationName } = req.body;
@@ -2166,8 +2120,7 @@ router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requi
     console.log(`COMPLIANCE: Full data deletion for org "${org.name}" (${orgId}) by admin: ${req.user!.email}`);
     res.json({ message: `All data for organization "${org.name}" has been permanently deleted` });
   } catch (error: any) {
-    logError("Data deletion error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete organization data. The operation was rolled back." });
+    next(error);
   }
 });
 
@@ -2175,7 +2128,7 @@ router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requi
 // View as Organization (Read-only dashboard for support)
 // ========================================
 
-router.get("/platform/organizations/:orgId/view-dashboard", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+router.get("/platform/organizations/:orgId/view-dashboard", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;
 
@@ -2269,7 +2222,7 @@ router.get("/platform/organizations/:orgId/view-dashboard", requireAuth, require
     });
   } catch (error: any) {
     console.error("View as organization error:", error.message);
-    res.status(500).json({ error: "Failed to load organization dashboard" });
+    next(error);
   }
 });
 

@@ -12,7 +12,7 @@ import { verifyOrgAccess } from "./orgFilter";
 
 const router = Router();
 
-router.get("/api/projects/:projectId/material-budgets", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/material-budgets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
@@ -38,12 +38,11 @@ router.get("/api/projects/:projectId/material-budgets", requireAuth, async (req:
 
     res.json(budgets);
   } catch (error) {
-    logError("Get material budgets error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:projectId/material-budgets/summary", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/material-budgets/summary", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
@@ -71,12 +70,11 @@ router.get("/api/projects/:projectId/material-budgets/summary", requireAuth, asy
       alertsTriggered,
     });
   } catch (error) {
-    logError("Get material budget summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
@@ -106,12 +104,11 @@ router.get("/api/projects/:projectId/material-usage", requireAuth, async (req: A
 
     res.json(usage);
   } catch (error) {
-    logError("Get material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
@@ -202,12 +199,11 @@ router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: 
 
     res.status(201).json(newUsage);
   } catch (error) {
-    logError("Create material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
@@ -282,12 +278,11 @@ router.patch("/api/projects/:projectId/material-usage/:usageId", requireAuth, as
 
     res.json(updated);
   } catch (error) {
-    logError("Update material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
@@ -348,8 +343,7 @@ router.delete("/api/projects/:projectId/material-usage/:usageId", requireAuth, a
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

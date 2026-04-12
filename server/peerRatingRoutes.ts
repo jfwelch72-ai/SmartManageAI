@@ -1,4 +1,4 @@
-import type { Express, Response } from "express";
+import type { Express, Response, NextFunction } from "express";
 import { requireAuth, requireFeaturePermission, type AuthRequest } from "./auth";
 import { db } from "./db";
 import { eq, and, sql, ne, inArray, isNull } from "drizzle-orm";
@@ -102,7 +102,7 @@ export function registerPeerRatingRoutes(app: Express) {
     return coworkerIds;
   }
 
-  app.get("/api/peer-ratings/settings", requireAuth, async (req: AuthRequest, res: Response) => {
+  app.get("/api/peer-ratings/settings", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -116,11 +116,11 @@ export function registerPeerRatingRoutes(app: Express) {
       if (!org) return res.status(404).json({ error: "Organization not found" });
       res.json(org);
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch peer rating settings" });
+      next(err);
     }
   });
 
-  app.patch("/api/peer-ratings/settings", requireAuth, async (req: AuthRequest, res: Response) => {
+  app.patch("/api/peer-ratings/settings", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -145,11 +145,11 @@ export function registerPeerRatingRoutes(app: Express) {
       res.json({ success: true });
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
-      res.status(500).json({ error: "Failed to update settings" });
+      next(err);
     }
   });
 
-  app.get("/api/peer-ratings/rateable-coworkers", requireAuth, requireFeaturePermission("canSubmitPeerRatings"), async (req: AuthRequest, res: Response) => {
+  app.get("/api/peer-ratings/rateable-coworkers", requireAuth, requireFeaturePermission("canSubmitPeerRatings"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -203,11 +203,11 @@ export function registerPeerRatingRoutes(app: Express) {
       res.json(result);
     } catch (err) {
       console.error("[ERROR] rateable-coworkers:", err);
-      res.status(500).json({ error: "Failed to fetch rateable coworkers" });
+      next(err);
     }
   });
 
-  app.post("/api/peer-ratings", requireAuth, requireFeaturePermission("canSubmitPeerRatings"), async (req: AuthRequest, res: Response) => {
+  app.post("/api/peer-ratings", requireAuth, requireFeaturePermission("canSubmitPeerRatings"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -275,11 +275,11 @@ export function registerPeerRatingRoutes(app: Express) {
       res.json({ success: true });
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
-      res.status(500).json({ error: "Failed to submit peer rating" });
+      next(err);
     }
   });
 
-  app.get("/api/peer-ratings/my-scores", requireAuth, requireFeaturePermission("canViewPeerRatings"), async (req: AuthRequest, res: Response) => {
+  app.get("/api/peer-ratings/my-scores", requireAuth, requireFeaturePermission("canViewPeerRatings"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -308,11 +308,11 @@ export function registerPeerRatingRoutes(app: Express) {
         totalRatings: parseInt(row.totalRatings || "0"),
       });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch peer scores" });
+      next(err);
     }
   });
 
-  app.get("/api/peer-ratings/user/:userId/scores", requireAuth, requireFeaturePermission("canViewPeerRatings"), async (req: AuthRequest, res: Response) => {
+  app.get("/api/peer-ratings/user/:userId/scores", requireAuth, requireFeaturePermission("canViewPeerRatings"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
@@ -423,7 +423,7 @@ export function registerPeerRatingRoutes(app: Express) {
         anonymityMode,
       });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch peer scores" });
+      next(err);
     }
   });
 }

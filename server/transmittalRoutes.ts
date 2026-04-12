@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { safeJsonParse } from "./responseHelper";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import {
   insertDocumentTransmittalSchema,
@@ -18,7 +19,7 @@ import { notifyDocumentEvent } from "./services/documentNotificationService";
 
 const router = Router();
 
-router.get("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -59,12 +60,11 @@ router.get("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
 
     res.json(result);
   } catch (error) {
-    logError("Get transmittals error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -104,12 +104,11 @@ router.get("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
       recipients,
     });
   } catch (error) {
-    logError("Get transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -185,12 +184,11 @@ router.post("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
     res.status(201).json(newTransmittal);
   } catch (error) {
-    logError("Create transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -239,12 +237,11 @@ router.patch("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN
 
     res.json(updated);
   } catch (error) {
-    logError("Update transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/transmittals/:id/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/transmittals/:id/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -300,12 +297,11 @@ router.post("/transmittals/:id/send", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(updated);
   } catch (error) {
-    logError("Send transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/transmittals/:id/supersede", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/transmittals/:id/supersede", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -349,12 +345,11 @@ router.post("/transmittals/:id/supersede", requireAuth, requireRole("SUPER_ADMIN
 
     res.json(updated);
   } catch (error) {
-    logError("Supersede transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/transmittals/:id/acknowledge", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/transmittals/:id/acknowledge", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { subcontractorId } = req.body;
@@ -413,12 +408,11 @@ router.post("/transmittals/:id/acknowledge", requireAuth, requireRole("SUPER_ADM
 
     res.json(updated);
   } catch (error) {
-    logError("Acknowledge transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -452,12 +446,11 @@ router.get("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMIN
 
     res.json(recipients);
   } catch (error) {
-    logError("Get transmittal recipients error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { subcontractorIds } = req.body;
@@ -509,12 +502,11 @@ router.post("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMI
 
     res.status(201).json(newRecipients);
   } catch (error) {
-    logError("Add transmittal recipients error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -555,12 +547,11 @@ router.delete("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMI
 
     res.status(204).send();
   } catch (error) {
-    logError("Delete transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -613,7 +604,7 @@ router.post("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "
     const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
 
     const currentAttachments = result.transmittal.attachmentsJson
-      ? JSON.parse(result.transmittal.attachmentsJson)
+      ? safeJsonParse(result.transmittal.attachmentsJson, [])
       : [];
 
     const newAttachment = {
@@ -638,12 +629,11 @@ router.post("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    logError("Upload transmittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -671,17 +661,16 @@ router.get("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "A
     }
 
     const attachments = result.transmittal.attachmentsJson
-      ? JSON.parse(result.transmittal.attachmentsJson)
+      ? safeJsonParse(result.transmittal.attachmentsJson, [])
       : [];
 
     res.json(attachments);
   } catch (error) {
-    logError("Get transmittal files error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
@@ -709,7 +698,7 @@ router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER
     }
 
     const currentAttachments = result.transmittal.attachmentsJson
-      ? JSON.parse(result.transmittal.attachmentsJson)
+      ? safeJsonParse(result.transmittal.attachmentsJson, [])
       : [];
 
     const fileIndex = currentAttachments.findIndex((f: any) => f.id === req.params.fileId);
@@ -732,8 +721,7 @@ router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER
 
     res.status(204).send();
   } catch (error) {
-    logError("Delete transmittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

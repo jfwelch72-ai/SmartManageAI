@@ -174,7 +174,7 @@
  *       200: { description: Billing hub summary }
  */
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import {
@@ -209,7 +209,7 @@ const validPayAppStatusTransitions: Record<string, string[]> = {
 // PAY APPLICATION CRUD
 // ========================================
 
-router.get("/pay-applications", async (req: AuthRequest, res: Response) => {
+router.get("/pay-applications", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -250,12 +250,11 @@ router.get("/pay-applications", async (req: AuthRequest, res: Response) => {
 
     res.json(apps);
   } catch (error) {
-    logError("Get pay applications error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/pay-applications/:id", async (req: AuthRequest, res: Response) => {
+router.get("/pay-applications/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -271,8 +270,7 @@ router.get("/pay-applications/:id", async (req: AuthRequest, res: Response) => {
 
     res.json({ ...app, lineItems, project, sov });
   } catch (error) {
-    logError("Get pay application error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -290,7 +288,7 @@ const createPayAppSchema = z.object({
   contractFor: z.string().optional(),
 });
 
-router.post("/pay-applications", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -370,8 +368,7 @@ router.post("/pay-applications", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "
 
     res.status(201).json(newApp);
   } catch (error) {
-    logError("Create pay application error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -380,7 +377,7 @@ const updatePayAppStatusSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
-router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const parsed = updatePayAppStatusSchema.safeParse(req.body);
@@ -470,8 +467,7 @@ router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN"
 
     res.json(updated);
   } catch (error) {
-    logError("Update pay app status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -481,7 +477,7 @@ const recordPaymentSchema = z.object({
   paymentMethod: z.enum(["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]).optional().default("CHECK"),
 });
 
-router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -551,8 +547,7 @@ router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER
 
     res.json(updated);
   } catch (error) {
-    logError("Record payment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -560,7 +555,7 @@ router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER
 // AIA G702/G703 PDF GENERATION
 // ========================================
 
-router.post("/pay-applications/:id/sync-totals", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications/:id/sync-totals", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -617,12 +612,11 @@ router.post("/pay-applications/:id/sync-totals", requireRoleOrFeature(["SUPER_AD
 
     res.json(updated);
   } catch (error) {
-    logError("Sync pay app totals error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/pay-applications/:id/g702-pdf", async (req: AuthRequest, res: Response) => {
+router.get("/pay-applications/:id/g702-pdf", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -676,12 +670,11 @@ router.get("/pay-applications/:id/g702-pdf", async (req: AuthRequest, res: Respo
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("G702 PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/pay-applications/:id/g703-pdf", async (req: AuthRequest, res: Response) => {
+router.get("/pay-applications/:id/g703-pdf", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -719,8 +712,7 @@ router.get("/pay-applications/:id/g703-pdf", async (req: AuthRequest, res: Respo
 
     pdfStream.pipe(res);
   } catch (error) {
-    logError("G703 PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -728,7 +720,7 @@ router.get("/pay-applications/:id/g703-pdf", async (req: AuthRequest, res: Respo
 // PERIOD ROLL-FORWARD
 // ========================================
 
-router.post("/pay-applications/roll-forward", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/pay-applications/roll-forward", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { sovId, periodTo } = req.body;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -890,8 +882,7 @@ router.post("/pay-applications/roll-forward", requireRoleOrFeature(["SUPER_ADMIN
     const [createdSOV] = await db.select().from(scheduleOfValues).where(eq(scheduleOfValues.id, newSOV.id)).limit(1);
     res.status(201).json({ sov: createdSOV, payApplication: newPayApp });
   } catch (error) {
-    logError("Roll-forward error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -899,7 +890,7 @@ router.post("/pay-applications/roll-forward", requireRoleOrFeature(["SUPER_ADMIN
 // STORED MATERIALS
 // ========================================
 
-router.get("/stored-materials", async (req: AuthRequest, res: Response) => {
+router.get("/stored-materials", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -935,8 +926,7 @@ router.get("/stored-materials", async (req: AuthRequest, res: Response) => {
 
     res.json(materials);
   } catch (error) {
-    logError("Get stored materials error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -954,7 +944,7 @@ const createStoredMaterialSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.post("/stored-materials", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/stored-materials", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1019,12 +1009,11 @@ router.post("/stored-materials", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "
 
     res.status(201).json(material);
   } catch (error) {
-    logError("Create stored material error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/stored-materials/:id/incorporate", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.patch("/stored-materials/:id/incorporate", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1073,8 +1062,7 @@ router.patch("/stored-materials/:id/incorporate", requireRoleOrFeature(["SUPER_A
 
     res.json(updated);
   } catch (error) {
-    logError("Incorporate material error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1082,7 +1070,7 @@ router.patch("/stored-materials/:id/incorporate", requireRoleOrFeature(["SUPER_A
 // CROSS-MODULE INTEGRATION
 // ========================================
 
-router.get("/billing-integration/change-orders/:projectId", async (req: AuthRequest, res: Response) => {
+router.get("/billing-integration/change-orders/:projectId", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1111,12 +1099,11 @@ router.get("/billing-integration/change-orders/:projectId", async (req: AuthRequ
 
     res.json(cos.map(co => ({ ...co, isLinkedToSOV: linkedCoIds.has(co.id) })));
   } catch (error) {
-    logError("Get billing COs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/billing-integration/add-co-to-sov", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/billing-integration/add-co-to-sov", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { sovId, changeOrderId } = req.body;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1159,12 +1146,11 @@ router.post("/billing-integration/add-co-to-sov", requireRoleOrFeature(["SUPER_A
 
     res.status(201).json(newItem);
   } catch (error) {
-    logError("Add CO to SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/billing-integration/tm-tickets/:projectId", async (req: AuthRequest, res: Response) => {
+router.get("/billing-integration/tm-tickets/:projectId", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1186,12 +1172,11 @@ router.get("/billing-integration/tm-tickets/:projectId", async (req: AuthRequest
 
     res.json(tickets);
   } catch (error) {
-    logError("Get billing T&M tickets error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/billing-integration/po-costs/:projectId", async (req: AuthRequest, res: Response) => {
+router.get("/billing-integration/po-costs/:projectId", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1227,8 +1212,7 @@ router.get("/billing-integration/po-costs/:projectId", async (req: AuthRequest, 
 
     res.json({ purchaseOrders: pos, committedByCostCode });
   } catch (error) {
-    logError("Get billing PO costs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1238,7 +1222,7 @@ const importTmTicketsSchema = z.object({
   groupByCostCode: z.boolean().optional().default(false),
 });
 
-router.post("/billing-integration/import-tm-tickets", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/billing-integration/import-tm-tickets", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const parsed = importTmTicketsSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
@@ -1317,8 +1301,7 @@ router.post("/billing-integration/import-tm-tickets", requireRoleOrFeature(["SUP
 
     res.status(201).json({ imported: newItems.length, message: `Imported ${newItems.length} T&M line item(s) into SOV` });
   } catch (error) {
-    logError("Import T&M tickets error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1326,7 +1309,7 @@ router.post("/billing-integration/import-tm-tickets", requireRoleOrFeature(["SUP
 // RETENTION RELEASES
 // ========================================
 
-router.get("/retention-releases", async (req: AuthRequest, res: Response) => {
+router.get("/retention-releases", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -1356,8 +1339,7 @@ router.get("/retention-releases", async (req: AuthRequest, res: Response) => {
 
     res.json(releases);
   } catch (error) {
-    logError("Get retention releases error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1369,7 +1351,7 @@ const createRetentionReleaseSchema = z.object({
   reason: z.string().optional(),
 });
 
-router.post("/retention-releases", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.post("/retention-releases", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1413,8 +1395,7 @@ router.post("/retention-releases", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN",
 
     res.status(201).json(release);
   } catch (error) {
-    logError("Create retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1429,7 +1410,7 @@ const validReleaseStatusTransitions: Record<string, string[]> = {
   RELEASED: [],
 };
 
-router.patch("/retention-releases/:id/status", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response) => {
+router.patch("/retention-releases/:id/status", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessProgressBilling"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const parsed = updateRetentionReleaseStatusSchema.safeParse(req.body);
@@ -1455,8 +1436,7 @@ router.patch("/retention-releases/:id/status", requireRoleOrFeature(["SUPER_ADMI
     const [updated] = await db.update(retentionReleases).set(updates).where(eq(retentionReleases.id, id)).returning();
     res.json(updated);
   } catch (error) {
-    logError("Update retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1464,7 +1444,7 @@ router.patch("/retention-releases/:id/status", requireRoleOrFeature(["SUPER_ADMI
 // BILLING HUB SUMMARY
 // ========================================
 
-router.get("/billing-hub/summary", async (req: AuthRequest, res: Response) => {
+router.get("/billing-hub/summary", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json({
@@ -1642,8 +1622,7 @@ router.get("/billing-hub/summary", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    logError("Billing hub summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

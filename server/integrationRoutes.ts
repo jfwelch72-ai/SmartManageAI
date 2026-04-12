@@ -34,18 +34,17 @@ router.get("/providers", requireAuth, (req, res) => {
   res.json(providers);
 });
 
-router.get("/connections", requireAuth, async (req, res) => {
+router.get("/connections", requireAuth, async (req, res, next) => {
   try {
     const orgId = (req as any).user.organizationId;
     const connections = await connectionService.listConnections(orgId);
     res.json(connectionService.sanitizeConnections(connections));
   } catch (err) {
-    logError("Failed to list connections", { error: String(err) });
-    res.status(500).json({ error: "Failed to list connections" });
+    next(err);
   }
 });
 
-router.post("/connections", requireAuth, async (req, res) => {
+router.post("/connections", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -74,12 +73,11 @@ router.post("/connections", requireAuth, async (req, res) => {
     logIntegrationAudit("connection.created", { orgId: user.organizationId, connectionId: connection.id, provider, userId: user.id });
     res.status(201).json(connectionService.sanitizeConnection(connection));
   } catch (err) {
-    logError("Failed to create connection", { error: String(err) });
-    res.status(500).json({ error: "Failed to create connection" });
+    next(err);
   }
 });
 
-router.post("/connections/:id/authorize", requireAuth, async (req, res) => {
+router.post("/connections/:id/authorize", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -94,12 +92,11 @@ router.post("/connections/:id/authorize", requireAuth, async (req, res) => {
     const authUrl = provider.getAuthUrl(connection.id, redirectUri, state);
     res.json({ authUrl });
   } catch (err) {
-    logError("Failed to start authorization", { error: String(err) });
-    res.status(500).json({ error: "Failed to start authorization" });
+    next(err);
   }
 });
 
-router.get("/connections/:id/callback", async (req, res) => {
+router.get("/connections/:id/callback", async (req, res, next) => {
   try {
     const { code, state } = req.query;
     if (!code || !state) return res.status(400).json({ error: "Missing code or state" });
@@ -119,7 +116,7 @@ router.get("/connections/:id/callback", async (req, res) => {
   }
 });
 
-router.post("/connections/:id/disconnect", requireAuth, async (req, res) => {
+router.post("/connections/:id/disconnect", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -130,12 +127,11 @@ router.post("/connections/:id/disconnect", requireAuth, async (req, res) => {
     logIntegrationAudit("connection.disconnected", { orgId: user.organizationId, connectionId: req.params.id, userId: user.id });
     res.json(connectionService.sanitizeConnection(updated));
   } catch (err) {
-    logError("Failed to disconnect", { error: String(err) });
-    res.status(500).json({ error: "Failed to disconnect" });
+    next(err);
   }
 });
 
-router.post("/connections/:id/test", requireAuth, async (req, res) => {
+router.post("/connections/:id/test", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -151,12 +147,11 @@ router.post("/connections/:id/test", requireAuth, async (req, res) => {
     const result = await provider.testConnection(connection);
     res.json(result);
   } catch (err) {
-    logError("Connection test failed", { error: String(err) });
-    res.status(500).json({ error: "Connection test failed" });
+    next(err);
   }
 });
 
-router.post("/import", requireAuth, async (req, res) => {
+router.post("/import", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -167,12 +162,11 @@ router.post("/import", requireAuth, async (req, res) => {
     const result = await importExportService.importFromCsv(user.organizationId, entityType, data);
     res.json(result);
   } catch (err) {
-    logError("Import failed", { error: String(err) });
-    res.status(500).json({ error: "Import failed" });
+    next(err);
   }
 });
 
-router.get("/export", requireAuth, async (req, res) => {
+router.get("/export", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -184,12 +178,11 @@ router.get("/export", requireAuth, async (req, res) => {
     res.setHeader("Content-Type", "text/csv");
     res.send(csv);
   } catch (err) {
-    logError("Export failed", { error: String(err) });
-    res.status(500).json({ error: "Export failed" });
+    next(err);
   }
 });
 
-router.get("/audit", requireAuth, async (req, res) => {
+router.get("/audit", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -198,12 +191,11 @@ router.get("/audit", requireAuth, async (req, res) => {
     const events = await outboxService.getOutboxEvents(user.organizationId, 200);
     res.json(events);
   } catch (err) {
-    logError("Failed to get audit log", { error: String(err) });
-    res.status(500).json({ error: "Failed to get audit log" });
+    next(err);
   }
 });
 
-router.get("/security-log", requireAuth, async (req, res) => {
+router.get("/security-log", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -213,8 +205,7 @@ router.get("/security-log", requireAuth, async (req, res) => {
     const entries = getSecurityAuditLog(Math.min(limit, 200));
     res.json(entries);
   } catch (err) {
-    logError("Failed to get security audit log", { error: String(err) });
-    res.status(500).json({ error: "Failed to get security log" });
+    next(err);
   }
 });
 
@@ -301,7 +292,7 @@ async function getValidAccessToken(provider: CloudProvider, orgId: string): Prom
   return { accessToken, connection };
 }
 
-router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { provider, folderId, query } = req.query as Record<string, string>;
 
@@ -537,8 +528,7 @@ router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
 
     return res.status(400).json({ error: "Unsupported provider" });
   } catch (err) {
-    logError("Cloud browse error", { error: String(err) });
-    res.status(500).json({ error: "Internal server error" });
+    next(err);
   }
 });
 
@@ -552,7 +542,7 @@ const syncSchema = z.object({
   data: z.any().optional(),
 });
 
-router.post("/connections/:id/sync", requireAuth, async (req, res) => {
+router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -682,12 +672,11 @@ router.post("/connections/:id/sync", requireAuth, async (req, res) => {
     logInfo("Sync operation completed", { operation, dryRun, duration, success: result?.success });
     res.json({ ...result, dryRun, duration });
   } catch (err) {
-    logError("Sync operation failed", { error: String(err), connectionId: req.params.id });
-    res.status(500).json({ error: "Sync operation failed", details: String(err) });
+    next(err);
   }
 });
 
-router.get("/connections/:id/sync-history", requireAuth, async (req, res) => {
+router.get("/connections/:id/sync-history", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -721,12 +710,11 @@ router.get("/connections/:id/sync-history", requireAuth, async (req, res) => {
 
     res.json({ history, chartOfAccounts: accountData, connectionId: connection.id, provider: connection.provider });
   } catch (err) {
-    logError("Failed to get sync history", { error: String(err) });
-    res.status(500).json({ error: "Failed to get sync history" });
+    next(err);
   }
 });
 
-router.get("/connections/:id/account-mappings", requireAuth, async (req, res) => {
+router.get("/connections/:id/account-mappings", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -744,12 +732,11 @@ router.get("/connections/:id/account-mappings", requireAuth, async (req, res) =>
 
     res.json(mappings);
   } catch (err) {
-    logError("Failed to get account mappings", { error: String(err) });
-    res.status(500).json({ error: "Failed to get account mappings" });
+    next(err);
   }
 });
 
-router.post("/connections/:id/account-mappings", requireAuth, async (req, res) => {
+router.post("/connections/:id/account-mappings", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -789,12 +776,11 @@ router.post("/connections/:id/account-mappings", requireAuth, async (req, res) =
       res.json(mapping);
     }
   } catch (err) {
-    logError("Failed to save account mapping", { error: String(err) });
-    res.status(500).json({ error: "Failed to save account mapping" });
+    next(err);
   }
 });
 
-router.delete("/connections/:id/account-mappings/:mappingId", requireAuth, async (req, res) => {
+router.delete("/connections/:id/account-mappings/:mappingId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -809,12 +795,11 @@ router.delete("/connections/:id/account-mappings/:mappingId", requireAuth, async
 
     res.json({ success: true });
   } catch (err) {
-    logError("Failed to delete account mapping", { error: String(err) });
-    res.status(500).json({ error: "Failed to delete account mapping" });
+    next(err);
   }
 });
 
-router.post("/connections/:id/account-mappings/auto-map", requireAuth, async (req, res) => {
+router.post("/connections/:id/account-mappings/auto-map", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -893,12 +878,11 @@ router.post("/connections/:id/account-mappings/auto-map", requireAuth, async (re
 
     res.json({ suggestions, created, total: costCodes.length });
   } catch (err) {
-    logError("Auto-map failed", { error: String(err) });
-    res.status(500).json({ error: "Auto-map failed" });
+    next(err);
   }
 });
 
-router.get("/connections/:id/schedules", requireAuth, async (req, res) => {
+router.get("/connections/:id/schedules", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -916,12 +900,11 @@ router.get("/connections/:id/schedules", requireAuth, async (req, res) => {
 
     res.json(schedules);
   } catch (err) {
-    logError("Failed to get sync schedules", { error: String(err) });
-    res.status(500).json({ error: "Failed to get sync schedules" });
+    next(err);
   }
 });
 
-router.post("/connections/:id/schedules", requireAuth, async (req, res) => {
+router.post("/connections/:id/schedules", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -974,12 +957,11 @@ router.post("/connections/:id/schedules", requireAuth, async (req, res) => {
       res.json(schedule);
     }
   } catch (err) {
-    logError("Failed to save sync schedule", { error: String(err) });
-    res.status(500).json({ error: "Failed to save sync schedule" });
+    next(err);
   }
 });
 
-router.delete("/connections/:id/schedules/:scheduleId", requireAuth, async (req, res) => {
+router.delete("/connections/:id/schedules/:scheduleId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -994,8 +976,7 @@ router.delete("/connections/:id/schedules/:scheduleId", requireAuth, async (req,
 
     res.json({ success: true });
   } catch (err) {
-    logError("Failed to delete sync schedule", { error: String(err) });
-    res.status(500).json({ error: "Failed to delete sync schedule" });
+    next(err);
   }
 });
 
@@ -1019,7 +1000,7 @@ function computeNextRunAt(frequency: string): Date {
 // Routes from integrationWebhookRoutes.ts
 // ========================================
 
-router.get("/events", requireAuth, async (req, res) => {
+router.get("/events", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1028,12 +1009,11 @@ router.get("/events", requireAuth, async (req, res) => {
     const events = await outboxService.getOutboxEvents(user.organizationId, 100);
     res.json(events);
   } catch (err) {
-    logError("Failed to list events", { error: String(err) });
-    res.status(500).json({ error: "Failed to list events" });
+    next(err);
   }
 });
 
-router.post("/webhooks/subscribe", requireAuth, async (req, res) => {
+router.post("/webhooks/subscribe", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1046,12 +1026,11 @@ router.post("/webhooks/subscribe", requireAuth, async (req, res) => {
     const sub = await webhookService.createSubscription(user.organizationId, connectionId, eventType, targetUrl);
     res.status(201).json({ id: sub.id, eventType: sub.eventType, targetUrl: sub.targetUrl });
   } catch (err) {
-    logError("Failed to create webhook subscription", { error: String(err) });
-    res.status(500).json({ error: "Failed to create subscription" });
+    next(err);
   }
 });
 
-router.post("/webhooks/test", requireAuth, async (req, res) => {
+router.post("/webhooks/test", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (user.role !== "SUPER_ADMIN") return res.status(403).json({ error: "Super admin access required" });
@@ -1060,7 +1039,7 @@ router.post("/webhooks/test", requireAuth, async (req, res) => {
     const result = await webhookService.deliverWebhook(targetUrl, { test: true, timestamp: new Date().toISOString() }, "test-secret");
     res.json({ delivered: result.ok, status: result.status });
   } catch (err) {
-    res.status(500).json({ error: "Webhook test failed", details: String(err) });
+    next(err);
   }
 });
 
@@ -1074,7 +1053,7 @@ const zapierWebhookSchema = z.object({
   )).min(1),
 });
 
-router.get("/zapier/webhooks", requireAuth, async (req, res) => {
+router.get("/zapier/webhooks", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1087,12 +1066,11 @@ router.get("/zapier/webhooks", requireAuth, async (req, res) => {
       .orderBy(desc(zapierWebhooks.createdAt));
     res.json(webhooks);
   } catch (err) {
-    logError("Failed to list Zapier webhooks", { error: String(err) });
-    res.status(500).json({ error: "Failed to list webhooks" });
+    next(err);
   }
 });
 
-router.post("/zapier/webhooks", requireAuth, async (req, res) => {
+router.post("/zapier/webhooks", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1126,12 +1104,11 @@ router.post("/zapier/webhooks", requireAuth, async (req, res) => {
     });
     res.status(201).json(webhook);
   } catch (err) {
-    logError("Failed to create Zapier webhook", { error: String(err) });
-    res.status(500).json({ error: "Failed to create webhook" });
+    next(err);
   }
 });
 
-router.patch("/zapier/webhooks/:webhookId", requireAuth, async (req, res) => {
+router.patch("/zapier/webhooks/:webhookId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1163,12 +1140,11 @@ router.patch("/zapier/webhooks/:webhookId", requireAuth, async (req, res) => {
     });
     res.json(updated);
   } catch (err) {
-    logError("Failed to update Zapier webhook", { error: String(err) });
-    res.status(500).json({ error: "Failed to update webhook" });
+    next(err);
   }
 });
 
-router.delete("/zapier/webhooks/:webhookId", requireAuth, async (req, res) => {
+router.delete("/zapier/webhooks/:webhookId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1192,12 +1168,11 @@ router.delete("/zapier/webhooks/:webhookId", requireAuth, async (req, res) => {
     });
     res.json({ success: true });
   } catch (err) {
-    logError("Failed to delete Zapier webhook", { error: String(err) });
-    res.status(500).json({ error: "Failed to delete webhook" });
+    next(err);
   }
 });
 
-router.post("/zapier/webhooks/:webhookId/test", requireAuth, async (req, res) => {
+router.post("/zapier/webhooks/:webhookId/test", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1222,8 +1197,7 @@ router.post("/zapier/webhooks/:webhookId/test", requireAuth, async (req, res) =>
     );
     res.json({ delivered: result.ok, status: result.status });
   } catch (err) {
-    logError("Zapier webhook test failed", { error: String(err) });
-    res.status(500).json({ error: "Webhook test failed" });
+    next(err);
   }
 });
 
@@ -1231,7 +1205,7 @@ router.get("/zapier/event-types", requireAuth, (_req, res) => {
   res.json(ZAPIER_EVENT_TYPES);
 });
 
-router.post("/zapier/incoming/:secretKey", async (req, res) => {
+router.post("/zapier/incoming/:secretKey", async (req, res, next) => {
   try {
     const { secretKey } = req.params;
     if (!secretKey) return res.status(400).json({ error: "Missing secret key" });
@@ -1253,8 +1227,7 @@ router.post("/zapier/incoming/:secretKey", async (req, res) => {
 
     res.json({ received: true, webhookId: webhook.id });
   } catch (err) {
-    logError("Zapier incoming webhook error", { error: String(err) });
-    res.status(500).json({ error: "Internal error" });
+    next(err);
   }
 });
 
@@ -1267,7 +1240,7 @@ const stackctCredentialSchema = z.object({
   clientSecret: z.string().min(1, "Client Secret is required"),
 });
 
-router.post("/connections/:id/stackct-authorize", requireAuth, async (req, res) => {
+router.post("/connections/:id/stackct-authorize", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -1332,7 +1305,7 @@ const stackctSyncSchema = z.object({
   localProjectId: z.string().optional(),
 });
 
-router.post("/connections/:id/stackct-sync", requireAuth, async (req, res) => {
+router.post("/connections/:id/stackct-sync", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -1469,12 +1442,11 @@ router.post("/connections/:id/stackct-sync", requireAuth, async (req, res) => {
     logInfo("STACK CT sync operation completed", { operation, dryRun, duration, success: result?.success });
     res.json({ ...result, dryRun, duration });
   } catch (err) {
-    logError("STACK CT sync operation failed", { error: String(err), connectionId: req.params.id });
-    res.status(500).json({ error: "STACK CT sync operation failed", details: String(err) });
+    next(err);
   }
 });
 
-router.get("/connections/:id/stackct-sync-history", requireAuth, async (req, res) => {
+router.get("/connections/:id/stackct-sync-history", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -1528,8 +1500,7 @@ router.get("/connections/:id/stackct-sync-history", requireAuth, async (req, res
       provider: connection.provider,
     });
   } catch (err) {
-    logError("Failed to get STACK CT sync history", { error: String(err) });
-    res.status(500).json({ error: "Failed to get STACK CT sync history" });
+    next(err);
   }
 });
 

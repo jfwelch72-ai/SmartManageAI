@@ -75,7 +75,7 @@ function sanitizeAccountForResponse(account: EmailAccount): Omit<EmailAccount, '
 }
 
 // GET /api/email/accounts - List linked accounts for current user
-router.get("/accounts", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/accounts", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -102,13 +102,12 @@ router.get("/accounts", requireAuth, requireInternalRole, async (req: AuthReques
 
     return res.json(sanitizedAccounts);
   } catch (error) {
-    logError("Error fetching email accounts:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch email accounts" });
+        return next(error);
   }
 });
 
 // GET /api/email/accounts/:id - Get single account
-router.get("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -137,13 +136,12 @@ router.get("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRe
 
     return res.json(sanitizeAccountForResponse(account));
   } catch (error) {
-    logError("Error fetching email account:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch email account" });
+        return next(error);
   }
 });
 
 // POST /api/email/accounts - Create/link a new email account
-router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -246,13 +244,12 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
 
     return res.status(201).json(sanitizeAccountForResponse(newAccount));
   } catch (error) {
-    logError("Error creating email account:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to create email account" });
+        return next(error);
   }
 });
 
 // PATCH /api/email/accounts/:id - Update an email account
-router.patch("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.patch("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -310,13 +307,12 @@ router.patch("/accounts/:id", requireAuth, requireInternalRole, async (req: Auth
 
     return res.json(sanitizeAccountForResponse(updated));
   } catch (error) {
-    logError("Error updating email account:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to update email account" });
+        return next(error);
   }
 });
 
 // DELETE /api/email/accounts/:id - Remove an email account
-router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -456,9 +452,7 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
         return result;
       });
     } catch (deleteError) {
-      logError("Error during account delete transaction:", {}, deleteError instanceof Error ? deleteError : new Error(String(deleteError)));
-      const message = deleteError instanceof Error ? deleteError.message : "Unknown error";
-      return res.status(500).json({ success: false, error: `Failed to delete email account: ${message}` });
+      return next(deleteError);
     }
 
     // Post-delete verification: confirm the account is actually gone
@@ -486,8 +480,7 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
         }
       }
       const [summaryCount] = await db.select({ count: sql<number>`count(*)` }).from(emailSummaries).where(and(eq(emailSummaries.userId, existing.userId), eq(emailSummaries.organizationId, existing.organizationId)));
-      logError(`Post-delete verification failed: account ${existing.id} still exists after transaction. Remaining rows — threads: ${remainingThreadIds.length}, messages: ${messageCount?.count ?? 0}, tasks: ${taskCount}, emailTasks: ${emailTaskCount}, attachments: ${attachmentCount}, summaries: ${summaryCount?.count ?? 0}`);
-      return res.status(500).json({ success: false, error: "Email account deletion appeared to succeed but the record still exists. Please try again." });
+            return next(error);
     }
 
     // Audit log (isolated so failures don't affect the success response)
@@ -506,14 +499,13 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
     return res.json({ success: true, message: "Email account removed" });
   } catch (error) {
     logError("Error deleting email account:", {}, error instanceof Error ? error : new Error(String(error)));
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return res.status(500).json({ success: false, error: `Failed to delete email account: ${message}` });
+    return next(error);
   }
 });
 
 // POST /api/email/accounts/:id/test - Test connection to an email account
 // Accepts optional body fields to override saved settings (for testing unsaved edits)
-router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -581,8 +573,7 @@ router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: 
       provider: account.provider
     });
   } catch (error) {
-    logError("Error testing email account:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to test email account" });
+        return next(error);
   }
 });
 
@@ -621,7 +612,7 @@ function getOutlookRedirectUri(req: import("express").Request): string {
 }
 
 // GET /api/email/oauth/gmail/initiate - Start Gmail OAuth flow
-router.get("/oauth/gmail/initiate", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/oauth/gmail/initiate", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -668,7 +659,7 @@ router.get("/oauth/gmail/initiate", requireAuth, requireInternalRole, async (req
 });
 
 // GET /api/email/oauth/gmail/callback - Handle Gmail OAuth callback
-router.get("/oauth/gmail/callback", async (req, res) => {
+router.get("/oauth/gmail/callback", async (req, res, next) => {
   try {
     const { code, state, error: oauthError } = req.query;
 
@@ -783,7 +774,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
 });
 
 // GET /api/email/oauth/outlook/initiate - Start Outlook/Microsoft OAuth flow
-router.get("/oauth/outlook/initiate", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/oauth/outlook/initiate", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -829,7 +820,7 @@ router.get("/oauth/outlook/initiate", requireAuth, requireInternalRole, async (r
 });
 
 // GET /api/email/oauth/outlook/callback - Handle Outlook OAuth callback
-router.get("/oauth/outlook/callback", async (req, res) => {
+router.get("/oauth/outlook/callback", async (req, res, next) => {
   try {
     const { code, state, error: oauthError, error_description } = req.query;
 
@@ -965,7 +956,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
 });
 
 // GET /api/email/oauth/status - Check if OAuth providers are configured
-router.get("/oauth/status", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/oauth/status", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   return res.json({
     gmail: {
       configured: !!(GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret),
@@ -980,7 +971,7 @@ router.get("/oauth/status", requireAuth, requireInternalRole, async (req: AuthRe
 // Routes from emailAiRoutes.ts
 // ========================================
 
-router.get("/threads", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/threads", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1017,12 +1008,11 @@ router.get("/threads", requireAuth, requireInternalRole, async (req: AuthRequest
 
     return res.json(threads);
   } catch (error) {
-    logError("Error fetching email threads:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch email threads" });
+        return next(error);
   }
 });
 
-router.get("/threads/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/threads/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1071,12 +1061,11 @@ router.get("/threads/:id", requireAuth, requireInternalRole, async (req: AuthReq
       tasks: linkedTasks,
     });
   } catch (error) {
-    logError("Error fetching email thread:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch email thread" });
+        return next(error);
   }
 });
 
-router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1184,12 +1173,11 @@ router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthR
 
     return res.json(updated);
   } catch (error) {
-    logError("Error updating email thread:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to update email thread" });
+        return next(error);
   }
 });
 
-router.get("/messages", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/messages", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1218,12 +1206,11 @@ router.get("/messages", requireAuth, requireInternalRole, async (req: AuthReques
 
     return res.json(messages);
   } catch (error) {
-    logError("Error fetching email messages:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch email messages" });
+        return next(error);
   }
 });
 
-router.get("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1259,8 +1246,7 @@ router.get("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRe
       attachments,
     });
   } catch (error) {
-    logError("Error fetching email message:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch email message" });
+        return next(error);
   }
 });
 
@@ -2249,7 +2235,7 @@ export async function syncImapAccount(
   return result;
 }
 
-router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2332,8 +2318,7 @@ router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, 
       details: syncResults,
     });
   } catch (error) {
-    logError("Error syncing emails:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to sync emails" });
+        return next(error);
   }
 });
 
@@ -2341,7 +2326,7 @@ router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, 
 // Routes from emailAnalysisRoutes.ts
 // ========================================
 
-router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2455,12 +2440,11 @@ router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (re
       taskId,
     });
   } catch (error) {
-    logError("Error analyzing email:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to analyze email" });
+        return next(error);
   }
 });
 
-router.post("/messages/:id/suggest-reply", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/messages/:id/suggest-reply", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2519,8 +2503,7 @@ router.post("/messages/:id/suggest-reply", requireAuth, requireInternalRole, asy
 
     return res.json({ drafts });
   } catch (error) {
-    logError("Error generating reply suggestions:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to generate reply suggestions" });
+        return next(error);
   }
 });
 
@@ -2537,7 +2520,7 @@ const sendEmailSchema = z.object({
   replyToMessageId: z.string().optional(),
 });
 
-router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2589,7 +2572,7 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
       });
 
       if (!sendResult.success) {
-        return res.status(500).json({ error: sendResult.error || "Failed to send email" });
+        return next(error);
       }
 
       let targetThreadId: string | null = null;
@@ -2680,12 +2663,11 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
 
     return res.status(400).json({ error: `Sending via ${account.provider} is not yet supported from this endpoint` });
   } catch (error) {
-    logError("Error sending email:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to send email" });
+        return next(error);
   }
 });
 
-router.post("/threads/:id/summarize", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/threads/:id/summarize", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2757,12 +2739,11 @@ router.post("/threads/:id/summarize", requireAuth, requireInternalRole, async (r
 
     return res.json(summary);
   } catch (error) {
-    logError("Error summarizing thread:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to summarize thread" });
+        return next(error);
   }
 });
 
-router.post("/summary/daily", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/summary/daily", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2848,12 +2829,11 @@ router.post("/summary/daily", requireAuth, requireInternalRole, async (req: Auth
 
     return res.json(summary);
   } catch (error) {
-    logError("Error generating daily summary:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to generate daily summary" });
+        return next(error);
   }
 });
 
-router.post("/summary/weekly", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/summary/weekly", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2939,12 +2919,11 @@ router.post("/summary/weekly", requireAuth, requireInternalRole, async (req: Aut
 
     return res.json(summary);
   } catch (error) {
-    logError("Error generating weekly summary:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to generate weekly summary" });
+        return next(error);
   }
 });
 
-router.get("/summary/latest", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/summary/latest", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2969,8 +2948,7 @@ router.get("/summary/latest", requireAuth, requireInternalRole, async (req: Auth
 
     return res.json(summaries);
   } catch (error) {
-    logError("Error fetching summaries:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch summaries" });
+        return next(error);
   }
 });
 
@@ -2978,7 +2956,7 @@ router.get("/summary/latest", requireAuth, requireInternalRole, async (req: Auth
 // Routes from emailTaskRoutes.ts
 // ========================================
 
-router.get("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.get("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3019,12 +2997,11 @@ router.get("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, 
 
     return res.json(taskResults);
   } catch (error) {
-    logError("Error fetching email tasks:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch email tasks" });
+        return next(error);
   }
 });
 
-router.post("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.post("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3080,12 +3057,11 @@ router.post("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest,
 
     return res.status(201).json(task);
   } catch (error) {
-    logError("Error creating email task:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to create email task" });
+        return next(error);
   }
 });
 
-router.patch("/tasks/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res) => {
+router.patch("/tasks/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3173,8 +3149,7 @@ router.patch("/tasks/:id", requireAuth, requireInternalRole, async (req: AuthReq
 
     return res.json(updated);
   } catch (error) {
-    logError("Error updating email task:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to update email task" });
+        return next(error);
   }
 });
 

@@ -1,6 +1,6 @@
 import { logError, logWarn } from "./utils/logger";
 import { sendValidationError } from "./utils/validation";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { eq, and, or, isNull, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
@@ -189,7 +189,7 @@ function matchesRule(rule: ScopeModifierRule, scopeName: string): boolean {
   }
 }
 
-router.get("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { layer, category, scopePattern } = req.query;
     const tradeIdsParam = req.query["tradeIds[]"] || req.query.tradeIds;
@@ -233,12 +233,11 @@ router.get("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response
 
     res.json(filtered);
   } catch (err: unknown) {
-    logError("[Modifiers] List error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list modifiers" });
+    next(error);
   }
 });
 
-router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { tradeId, scopeName } = req.query;
 
@@ -296,8 +295,7 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
       matchedRuleModifierIds: Array.from(matchedModifierIds),
     });
   } catch (err: unknown) {
-    logError("[Modifiers] for-scope error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to get modifiers for scope" });
+    next(error);
   }
 });
 
@@ -323,7 +321,7 @@ const createModifierSchema = z.object({
   displayOrder: z.number().int().optional().default(0),
 });
 
-router.post("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdminOrManager(req.user?.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -346,14 +344,13 @@ router.post("/api/modifiers", requireAuth, async (req: AuthRequest, res: Respons
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    logError("[Modifiers] Create error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to create modifier" });
+    next(error);
   }
 });
 
 const updateModifierSchema = createModifierSchema.partial();
 
-router.patch("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdminOrManager(req.user?.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -388,12 +385,11 @@ router.patch("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Re
 
     res.json(updated);
   } catch (err: unknown) {
-    logError("[Modifiers] Update error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to update modifier" });
+    next(error);
   }
 });
 
-router.delete("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdminOrManager(req.user?.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -423,8 +419,7 @@ router.delete("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: R
 
     res.json(updated);
   } catch (err: unknown) {
-    logError("[Modifiers] Delete error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to delete modifier" });
+    next(error);
   }
 });
 
@@ -438,8 +433,7 @@ router.get("/api/modifiers/rules", requireAuth, async (_req: AuthRequest, res: R
 
     res.json(results);
   } catch (err: unknown) {
-    logError("[Modifiers] List rules error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to list rules" });
+    next(error);
   }
 });
 
@@ -452,7 +446,7 @@ const createRuleSchema = z.object({
   isActive: z.boolean().optional().default(true),
 });
 
-router.post("/api/modifiers/rules", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/modifiers/rules", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (req.user?.role !== "SUPER_ADMIN") {
       return res.status(403).json({ error: "Only platform admins can create scope rules" });
@@ -470,8 +464,7 @@ router.post("/api/modifiers/rules", requireAuth, async (req: AuthRequest, res: R
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    logError("[Modifiers] Create rule error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to create rule" });
+    next(error);
   }
 });
 
@@ -483,7 +476,7 @@ const createSelectionSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const parsed = createSelectionSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -572,12 +565,11 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    logError("[Modifiers] Create selection error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to save selection" });
+    next(error);
   }
 });
 
-router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { lineItemId } = req.params;
     const orgId = req.user?.organizationId;
@@ -598,8 +590,7 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
 
     res.json(results);
   } catch (err: unknown) {
-    logError("[Modifiers] Get selections error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to get selections" });
+    next(error);
   }
 });
 
@@ -613,7 +604,7 @@ const aiSuggestSchema = z.object({
   existing_modifier_ids: z.array(z.string()).optional().default([]),
 });
 
-router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_AI_SUGGEST"), async (req: AuthRequest, res: Response) => {
+router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_AI_SUGGEST"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user?.organizationId;
     const userId = req.user?.id || null;
@@ -720,8 +711,7 @@ router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_A
 
     res.json(validated.data);
   } catch (err: unknown) {
-    logError("[Modifiers] AI suggest error:", {}, err instanceof Error ? err : new Error(String(err)));
-    res.status(500).json({ error: "Failed to generate AI modifier suggestions" });
+    next(error);
   }
 });
 

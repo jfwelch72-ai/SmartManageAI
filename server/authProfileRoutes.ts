@@ -496,7 +496,7 @@ const upload = multer({
   });
 
   // Register new user
-  router.post("/api/auth/register", authLimiter, async (req: AuthRequest, res) => {
+  router.post("/api/auth/register", authLimiter, async (req: AuthRequest, res, next) => {
     try {
       // SECURITY: Sanitize inputs before validation for data integrity
       const sanitizedBody = {
@@ -564,15 +564,14 @@ const upload = multer({
         needsOnboarding: true,
       });
     } catch (error) {
-      logError("Registration error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   const MAX_FAILED_ATTEMPTS = 5;
   const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
-  router.post("/api/auth/login", authLimiter, async (req: AuthRequest, res) => {
+  router.post("/api/auth/login", authLimiter, async (req: AuthRequest, res, next) => {
     try {
       const sanitizedBody = {
         email: sanitizeEmail(req.body.email),
@@ -673,8 +672,7 @@ const upload = multer({
       const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });
     } catch (error) {
-      logError("Login error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
@@ -708,7 +706,7 @@ const upload = multer({
     res.json({ success: true });
   });
 
-  router.get("/api/auth/verify-email", async (req: AuthRequest, res) => {
+  router.get("/api/auth/verify-email", async (req: AuthRequest, res, next) => {
     try {
       const { token, userId } = req.query;
       if (!token || !userId || typeof token !== "string" || typeof userId !== "string") {
@@ -736,12 +734,11 @@ const upload = multer({
 
       res.redirect("/?emailVerified=true");
     } catch (error) {
-      logError("Email verification error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Verification failed" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/resend-verification", requireAuth, authLimiter, async (req: AuthRequest, res) => {
+  router.post("/api/auth/resend-verification", requireAuth, authLimiter, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -769,13 +766,12 @@ const upload = multer({
 
       res.json({ message: "Verification email sent" });
     } catch (error) {
-      logError("Resend verification error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to send verification email" });
+      next(error);
     }
   });
 
   // DEV ONLY: Quick test login for development (gated by ENABLE_DEV_SEED / NODE_ENV)
-  router.post("/api/dev/test-login", requireDevSeed, async (req: AuthRequest, res) => {
+  router.post("/api/dev/test-login", requireDevSeed, async (req: AuthRequest, res, next) => {
 
     try {
       const { role } = req.body;
@@ -862,13 +858,12 @@ const upload = multer({
         isDevAccount: true
       });
     } catch (error) {
-      logError("[DEV] Test login error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // DEV ONLY: Create fresh admin for full onboarding experience (gated by ENABLE_DEV_SEED / NODE_ENV)
-  router.post("/api/dev/fresh-admin-login", requireDevSeed, async (req: AuthRequest, res) => {
+  router.post("/api/dev/fresh-admin-login", requireDevSeed, async (req: AuthRequest, res, next) => {
 
     try {
       const timestamp = Date.now();
@@ -915,13 +910,12 @@ const upload = multer({
         redirectTo: "/onboarding"
       });
     } catch (error) {
-      logError("[DEV] Fresh admin login error:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
   // Get current user (with organization name and onboarding status)
-  router.get("/api/auth/me", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/me", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       let organizationName = null;
       let organizationOnboardingStatus = null;
@@ -941,7 +935,7 @@ const upload = multer({
     }
   });
 
-  router.patch("/api/auth/profile", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/auth/profile", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -991,12 +985,11 @@ const upload = multer({
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
     } catch (error) {
-      logError("Error updating profile:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/change-password", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/change-password", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1040,12 +1033,11 @@ const upload = multer({
 
       res.json({ message: "Password changed successfully" });
     } catch (error) {
-      logError("Error changing password:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/upload-avatar", requireAuth, upload.single("avatar"), async (req: AuthRequest, res) => {
+  router.post("/api/auth/upload-avatar", requireAuth, upload.single("avatar"), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1081,12 +1073,11 @@ const upload = multer({
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
     } catch (error) {
-      logError("Error uploading avatar:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-photos", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-photos", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1094,12 +1085,11 @@ const upload = multer({
       const photos = await db.select().from(userPhotos).where(eq(userPhotos.userId, userId)).orderBy(desc(userPhotos.uploadedAt));
       res.json(photos);
     } catch (error) {
-      logError("Error fetching user photos:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/upload-photos", requireAuth, upload.array("photos", 10), async (req: AuthRequest, res) => {
+  router.post("/api/auth/upload-photos", requireAuth, upload.array("photos", 10), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1144,12 +1134,11 @@ const upload = multer({
 
       res.status(201).json(uploadedPhotos);
     } catch (error) {
-      logError("Error uploading photos:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/auth/my-photos/:photoId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/auth/my-photos/:photoId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1179,12 +1168,11 @@ const upload = multer({
       await db.delete(userPhotos).where(eq(userPhotos.id, photoId));
       res.json({ message: "Photo deleted" });
     } catch (error) {
-      logError("Error deleting photo:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/profile-files/*", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/profile-files/*", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const filePath = req.params[0];
       if (!filePath) { res.status(400).json({ error: "File path required" }); return; }
@@ -1224,11 +1212,11 @@ const upload = multer({
       objectFile.createReadStream().pipe(res);
     } catch (error) {
       logError("Error serving profile file:", {}, error instanceof Error ? error : new Error(String(error)));
-      if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
+      if (!res.headersSent) next(error);
     }
   });
 
-  router.get("/api/auth/my-skills", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-skills", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1265,12 +1253,11 @@ const upload = multer({
 
       res.json(enrichedResults);
     } catch (error) {
-      logError("Error fetching user skills:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/my-skills", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/my-skills", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1293,12 +1280,11 @@ const upload = multer({
       const [newUserSkill] = await db.insert(userSkills).values({ userId, skillId: existingSkill.id }).returning();
       res.status(201).json({ id: newUserSkill.id, skillId: existingSkill.id, skillName: existingSkill.name, category: existingSkill.category });
     } catch (error) {
-      logError("Error adding skill:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/auth/my-skills/:userSkillId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/auth/my-skills/:userSkillId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1311,12 +1297,11 @@ const upload = multer({
       await db.delete(userSkills).where(eq(userSkills.id, userSkillId));
       res.json({ message: "Skill removed" });
     } catch (error) {
-      logError("Error removing skill:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/auth/my-skills/:userSkillId/rating", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/auth/my-skills/:userSkillId/rating", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1336,12 +1321,11 @@ const upload = multer({
         .returning();
       res.json(updated);
     } catch (error) {
-      logError("Error updating skill rating:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/my-skills/:userSkillId/request-verification", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/my-skills/:userSkillId/request-verification", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1408,12 +1392,11 @@ const upload = multer({
 
       res.status(201).json({ message: "Verification request sent", requests: createdRequests });
     } catch (error) {
-      logError("Error requesting skill verification:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/skill-verification-requests", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/skill-verification-requests", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1454,12 +1437,11 @@ const upload = multer({
 
       res.json(enrichedRequests);
     } catch (error) {
-      logError("Error fetching verification requests:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/auth/skill-verification-requests/:requestId", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/auth/skill-verification-requests/:requestId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -1518,12 +1500,11 @@ const upload = multer({
 
       res.json({ message: `Verification request ${newStatus}` });
     } catch (error) {
-      logError("Error resolving verification request:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-certifications", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-certifications", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1533,12 +1514,11 @@ const upload = multer({
         .orderBy(desc(userCertifications.createdAt));
       res.json(certs);
     } catch (error) {
-      logError("Error fetching certifications:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/my-certifications", requireAuth, upload.single("file"), async (req: AuthRequest, res) => {
+  router.post("/api/auth/my-certifications", requireAuth, upload.single("file"), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1587,12 +1567,11 @@ const upload = multer({
 
       res.status(201).json(cert);
     } catch (error) {
-      logError("Error adding certification:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.patch("/api/auth/my-certifications/:certId", requireAuth, async (req: AuthRequest, res) => {
+  router.patch("/api/auth/my-certifications/:certId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1623,12 +1602,11 @@ const upload = multer({
         .returning();
       res.json(updated);
     } catch (error) {
-      logError("Error updating certification:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.delete("/api/auth/my-certifications/:certId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/auth/my-certifications/:certId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1658,12 +1636,11 @@ const upload = multer({
       await db.delete(userCertifications).where(eq(userCertifications.id, certId));
       res.json({ message: "Certification deleted" });
     } catch (error) {
-      logError("Error deleting certification:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/my-certifications/:certId/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res) => {
+  router.post("/api/auth/my-certifications/:certId/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1712,12 +1689,11 @@ const upload = multer({
 
       res.json(updated);
     } catch (error) {
-      logError("Error uploading certification file:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/certification-files/*", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/certification-files/*", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1755,25 +1731,24 @@ const upload = multer({
       objectFile.createReadStream().pipe(res);
     } catch (error) {
       logError("Error serving certification file:", {}, error instanceof Error ? error : new Error(String(error)));
-      if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
+      if (!res.headersSent) next(error);
     }
   });
 
   // ==================== Performance & History Routes ====================
 
-  router.get("/api/auth/my-performance-profile", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-performance-profile", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
       const [profile] = await db.select().from(employeePerformanceProfiles).where(eq(employeePerformanceProfiles.userId, userId));
       res.json(profile || null);
     } catch (error) {
-      logError("Error fetching performance profile:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.put("/api/auth/my-performance-profile", requireAuth, async (req: AuthRequest, res) => {
+  router.put("/api/auth/my-performance-profile", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1799,24 +1774,22 @@ const upload = multer({
         res.json(created);
       }
     } catch (error) {
-      logError("Error updating performance profile:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-attendance-logs", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-attendance-logs", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
       const logs = await db.select().from(attendanceLogs).where(eq(attendanceLogs.userId, userId)).orderBy(desc(attendanceLogs.date));
       res.json(logs);
     } catch (error) {
-      logError("Error fetching attendance logs:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/attendance-logs", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/attendance-logs", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1838,24 +1811,22 @@ const upload = multer({
       const [log] = await db.insert(attendanceLogs).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
       res.json(log);
     } catch (error) {
-      logError("Error creating attendance log:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-safety-incidents", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-safety-incidents", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
       const incidents = await db.select().from(safetyIncidents).where(eq(safetyIncidents.userId, userId)).orderBy(desc(safetyIncidents.date));
       res.json(incidents);
     } catch (error) {
-      logError("Error fetching safety incidents:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/safety-incidents", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/safety-incidents", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1892,24 +1863,22 @@ const upload = multer({
       } catch { logWarn("Non-critical operation failed"); }
       res.json(incident);
     } catch (error) {
-      logError("Error creating safety incident:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-quality-issues", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-quality-issues", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
       const issues = await db.select().from(qualityIssues).where(eq(qualityIssues.userId, userId)).orderBy(desc(qualityIssues.date));
       res.json(issues);
     } catch (error) {
-      logError("Error fetching quality issues:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/quality-issues", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/quality-issues", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1932,24 +1901,22 @@ const upload = multer({
       const [issue] = await db.insert(qualityIssues).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
       res.json(issue);
     } catch (error) {
-      logError("Error creating quality issue:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-performance-reviews", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-performance-reviews", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
       const reviews = await db.select().from(performanceReviews).where(eq(performanceReviews.userId, userId)).orderBy(desc(performanceReviews.reviewDate));
       res.json(reviews);
     } catch (error) {
-      logError("Error fetching performance reviews:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/performance-reviews", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/performance-reviews", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1981,24 +1948,22 @@ const upload = multer({
       const [review] = await db.insert(performanceReviews).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
       res.json(review);
     } catch (error) {
-      logError("Error creating performance review:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.get("/api/auth/my-supervisor-notes", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/auth/my-supervisor-notes", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
       const notes = await db.select().from(supervisorNotes).where(eq(supervisorNotes.userId, userId)).orderBy(desc(supervisorNotes.createdAt));
       res.json(notes);
     } catch (error) {
-      logError("Error fetching supervisor notes:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  router.post("/api/auth/supervisor-notes", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/auth/supervisor-notes", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -2026,8 +1991,7 @@ const upload = multer({
       }).returning();
       res.json(note);
     } catch (error) {
-      logError("Error creating supervisor note:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 

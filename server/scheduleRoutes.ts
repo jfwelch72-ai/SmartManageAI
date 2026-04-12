@@ -202,7 +202,7 @@
  *       200: { description: Recommendation dismissed }
  */
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, projects, changeOrders, projectDelays, crews, aiGanttRecommendations } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -232,7 +232,7 @@ function checkAccess(req: AuthRequest, project: { gcOrganizationId: string | nul
   return project.gcOrganizationId === orgId || req.user?.role === "SUPER_ADMIN";
 }
 
-router.post("/projects/:code/schedule/recalculate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:code/schedule/recalculate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -242,19 +242,18 @@ router.post("/projects/:code/schedule/recalculate", requireAuth, requireRole("AD
     if (!schedule) return res.status(404).json({ error: "No active schedule" });
 
     const result = await recalculateSchedule(schedule.id);
-    if (!result) return res.status(500).json({ error: "Failed to recalculate" });
+    if (!result) return next(new Error("Failed to recalculate schedule"));
 
     const updatedTasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
     const [updatedSchedule] = await db.select().from(projectSchedules).where(eq(projectSchedules.id, schedule.id));
 
     res.json({ schedule: updatedSchedule, tasks: updatedTasks, cpm: result });
   } catch (error) {
-    logError("Recalculate schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/projects/:code/schedule/lock-baseline", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:code/schedule/lock-baseline", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -299,12 +298,11 @@ router.post("/projects/:code/schedule/lock-baseline", requireAuth, requireRole("
 
     res.json({ schedule: updatedSchedule, tasks: updatedTasks });
   } catch (error) {
-    logError("Lock baseline error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/projects/:code/schedule/unlock-baseline", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:code/schedule/unlock-baseline", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -323,8 +321,7 @@ router.post("/projects/:code/schedule/unlock-baseline", requireAuth, requireRole
 
     res.json({ schedule: updatedSchedule });
   } catch (error) {
-    logError("Unlock baseline error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -332,7 +329,7 @@ const taskDependencySchema = z.object({
   dependencies: z.array(z.string()),
 });
 
-router.patch("/projects/:code/schedule/tasks/:taskId/dependencies", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:code/schedule/tasks/:taskId/dependencies", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -374,8 +371,7 @@ router.patch("/projects/:code/schedule/tasks/:taskId/dependencies", requireAuth,
 
     res.json({ schedule: updatedSchedule, tasks: updatedTasks, cpm: result });
   } catch (error) {
-    logError("Update dependencies error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -383,7 +379,7 @@ const taskCrewsSchema = z.object({
   crewIds: z.array(z.string()),
 });
 
-router.patch("/projects/:code/schedule/tasks/:taskId/crews", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:code/schedule/tasks/:taskId/crews", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -411,8 +407,7 @@ router.patch("/projects/:code/schedule/tasks/:taskId/crews", requireAuth, requir
 
     res.json(updatedTask);
   } catch (error) {
-    logError("Update task crews error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -428,7 +423,7 @@ const taskCreateSchema = z.object({
   parentTaskId: z.string().optional(),
 });
 
-router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -479,12 +474,11 @@ router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", 
 
     res.status(201).json({ task: newTask, tasks });
   } catch (error) {
-    logError("Create schedule task error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.delete("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -515,12 +509,11 @@ router.delete("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole
 
     res.json({ tasks: remainingTasks });
   } catch (error) {
-    logError("Delete schedule task error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/projects/:code/schedule/resource-loading", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/schedule/resource-loading", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -604,12 +597,11 @@ router.get("/projects/:code/schedule/resource-loading", requireAuth, async (req:
 
     res.json({ allocations, overAllocations, crews: allCrews });
   } catch (error) {
-    logError("Resource loading error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/projects/:code/schedule/forecast", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/schedule/forecast", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -658,12 +650,11 @@ router.get("/projects/:code/schedule/forecast", requireAuth, async (req: AuthReq
       snapshots: snapshots.reverse(),
     });
   } catch (error) {
-    logError("Forecast error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/projects/:code/schedule/delay-impact", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/:code/schedule/delay-impact", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -691,12 +682,11 @@ router.post("/projects/:code/schedule/delay-impact", requireAuth, async (req: Au
       criticalPathTaskCount: criticalTasks.length,
     });
   } catch (error) {
-    logError("Delay impact error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/projects/:code/schedule/delay-change-order", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:code/schedule/delay-change-order", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -739,12 +729,11 @@ router.post("/projects/:code/schedule/delay-change-order", requireAuth, requireR
 
     res.json({ changeOrder: newCO, delayId });
   } catch (error) {
-    logError("Delay change order error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/projects/:code/schedule/recommendations", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:code/schedule/recommendations", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -758,12 +747,11 @@ router.get("/projects/:code/schedule/recommendations", requireAuth, async (req: 
 
     res.json({ recommendations });
   } catch (error) {
-    logError("Get recommendations error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/projects/:code/schedule/recommendations/:recId/dismiss", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:code/schedule/recommendations/:recId/dismiss", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -777,8 +765,7 @@ router.patch("/projects/:code/schedule/recommendations/:recId/dismiss", requireA
     if (!updated) return res.status(404).json({ error: "Recommendation not found" });
     res.json({ recommendation: updated });
   } catch (error) {
-    logError("Dismiss recommendation error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -788,7 +775,7 @@ const manualScheduleSchema = z.object({
   workingDays: z.array(z.number().min(0).max(6)).optional(),
 });
 
-router.post("/projects/:code/schedule/create", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:code/schedule/create", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -825,8 +812,7 @@ router.post("/projects/:code/schedule/create", requireAuth, requireRole("ADMIN",
 
     res.status(201).json({ schedule: newSchedule, tasks: [] });
   } catch (error) {
-    logError("Create manual schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

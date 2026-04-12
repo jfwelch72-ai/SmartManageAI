@@ -1,5 +1,5 @@
 import { logError, logInfo } from "./utils/logger";
-import type { Express } from "express";
+import type { Express, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupSwagger } from "./swagger";
 import crypto from "crypto";
@@ -606,14 +606,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin endpoint: manually trigger orphan scan
-  app.post("/api/admin/storage/orphan-scan", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  app.post("/api/admin/storage/orphan-scan", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { runOrphanScan } = await import("./storageOrphanScanJob");
       const result = await runOrphanScan();
       res.json(result);
     } catch (err: any) {
-      logError("Orphan scan error:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Orphan scan failed", detail: err?.message });
+      next(err);
     }
   });
 

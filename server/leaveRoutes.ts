@@ -30,7 +30,7 @@ async function seedDefaultLeaveTypes(orgId: string) {
   );
 }
 
-router.get("/api/leave/types", async (req: AuthRequest, res) => {
+router.get("/api/leave/types", async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -47,12 +47,11 @@ router.get("/api/leave/types", async (req: AuthRequest, res) => {
 
     res.json(types);
   } catch (error: any) {
-    logError("Get leave types error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch leave types" });
+    next(error);
   }
 });
 
-router.post("/api/leave/types", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/leave/types", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -79,12 +78,11 @@ router.post("/api/leave/types", requireAuth, requireRole("ADMIN", "MANAGER"), as
 
     res.status(201).json(newType);
   } catch (error: any) {
-    logError("Create leave type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create leave type" });
+    next(error);
   }
 });
 
-router.patch("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -114,12 +112,11 @@ router.patch("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(updated);
   } catch (error: any) {
-    logError("Update leave type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update leave type" });
+    next(error);
   }
 });
 
-router.delete("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -155,12 +152,11 @@ router.delete("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Delete leave type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete leave type" });
+    next(error);
   }
 });
 
-router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin: isSA } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -234,12 +230,11 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => 
 
     res.json(balances);
   } catch (error: any) {
-    logError("Get leave balances error", { userId: req.user?.id, role: req.user?.role }, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch leave balances" });
+    next(error);
   }
 });
 
-router.get("/api/leave/requests", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/leave/requests", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -295,12 +290,11 @@ router.get("/api/leave/requests", requireAuth, async (req: AuthRequest, res) => 
 
     res.json(requests);
   } catch (error: any) {
-    logError("Get leave requests error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch leave requests" });
+    next(error);
   }
 });
 
-router.post("/api/leave/requests", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/leave/requests", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -368,12 +362,11 @@ router.post("/api/leave/requests", requireAuth, async (req: AuthRequest, res) =>
 
     res.status(201).json(newRequest);
   } catch (error: any) {
-    logError("Create leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create leave request" });
+    next(error);
   }
 });
 
-router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -437,12 +430,11 @@ router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN",
 
     res.json(updated);
   } catch (error: any) {
-    logError("Approve leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to approve leave request" });
+    next(error);
   }
 });
 
-router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -508,12 +500,11 @@ router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "M
 
     res.json(updated);
   } catch (error: any) {
-    logError("Deny leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to deny leave request" });
+    next(error);
   }
 });
 
-router.get("/api/leave/team-calendar", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/leave/team-calendar", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -543,12 +534,11 @@ router.get("/api/leave/team-calendar", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json(approvedLeave);
   } catch (error: any) {
-    logError("Get team calendar error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch team calendar" });
+    next(error);
   }
 });
 
-router.delete("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -590,12 +580,11 @@ router.delete("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, r
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("Cancel leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to cancel leave request" });
+    next(error);
   }
 });
 
-router.patch("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {
@@ -661,8 +650,7 @@ router.patch("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, re
 
     res.json(updated);
   } catch (error: any) {
-    logError("Update leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update leave request" });
+    next(error);
   }
 });
 

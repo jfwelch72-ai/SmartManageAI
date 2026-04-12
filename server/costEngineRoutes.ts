@@ -28,7 +28,7 @@ async function getProjectByCode(code: string) {
   return project;
 }
 
-router.get("/api/projects/:code/cost-transactions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/cost-transactions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canAccessCostEngine(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -51,12 +51,11 @@ router.get("/api/projects/:code/cost-transactions", requireAuth, async (req: Aut
 
     res.json(result);
   } catch (error) {
-    logError("Get cost transactions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/cost-transactions/summary", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/cost-transactions/summary", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canAccessCostEngine(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -79,12 +78,11 @@ router.get("/api/projects/:code/cost-transactions/summary", requireAuth, async (
 
     res.json(result);
   } catch (error) {
-    logError("Get cost summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/cost-transactions/by-cost-code/:costCode", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/cost-transactions/by-cost-code/:costCode", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canAccessCostEngine(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -96,8 +94,7 @@ router.get("/api/projects/:code/cost-transactions/by-cost-code/:costCode", requi
     const transactions = await getByCostCode(project.id, req.params.costCode);
     res.json(transactions);
   } catch (error) {
-    logError("Get cost transactions by cost code error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -111,7 +108,7 @@ const postTransactionSchema = z.object({
   description: z.string().optional(),
 });
 
-router.post("/api/projects/:code/cost-transactions", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/cost-transactions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const writeRoles = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER"];
     if (!writeRoles.includes(req.user!.role)) {
@@ -135,12 +132,11 @@ router.post("/api/projects/:code/cost-transactions", requireAuth, async (req: Au
 
     res.status(201).json(row);
   } catch (error) {
-    logError("Post cost transaction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/projects/:code/cost-transactions/:transactionId/void", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:code/cost-transactions/:transactionId/void", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const writeRoles = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER"];
     if (!writeRoles.includes(req.user!.role)) {
@@ -160,8 +156,7 @@ router.patch("/api/projects/:code/cost-transactions/:transactionId/void", requir
     if (!row) return res.status(404).json({ error: "Transaction not found or already voided" });
     res.json(row);
   } catch (error) {
-    logError("Void cost transaction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

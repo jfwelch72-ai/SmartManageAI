@@ -45,7 +45,7 @@ async function getProjectByCode(code: string) {
   return project;
 }
 
-router.get("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canAccessCostLedger(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -59,12 +59,11 @@ router.get("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
 
     res.json(lines);
   } catch (error) {
-    logError("Get budget lines error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canEditBudgetLines(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -95,8 +94,7 @@ router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthReq
     if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "23505") {
       return res.status(409).json({ error: "A budget line for that cost code already exists on this project" });
     }
-    logError("Create budget line error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -111,7 +109,7 @@ const bulkUpsertSchema = z.array(z.object({
   otherBudget: z.union([z.string(), z.number()]).transform(v => String(v)),
 }));
 
-router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canEditBudgetLines(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -158,12 +156,11 @@ router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
     evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.json(rows);
   } catch (error: unknown) {
-    logError("Bulk upsert budget lines error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canEditBudgetLines(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -214,12 +211,11 @@ router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req
     evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.json(row);
   } catch (error: unknown) {
-    logError("Update budget line error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canEditBudgetLines(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -235,12 +231,11 @@ router.delete("/api/projects/:code/budget-lines/:lineId", requireAuth, async (re
     if (!deleted) return res.status(404).json({ error: "Budget line not found" });
     successResponse(res);
   } catch (error) {
-    logError("Delete budget line error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/cost-ledger", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/cost-ledger", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canAccessCostLedger(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -278,8 +273,7 @@ router.get("/api/projects/:code/cost-ledger", requireAuth, async (req: AuthReque
       res.json(result);
     }
   } catch (error) {
-    logError("Cost ledger error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -289,7 +283,7 @@ const forecastAdjustmentSchema = z.object({
   note: z.string().optional().nullable(),
 });
 
-router.put("/api/projects/:code/forecast-adjustments", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/projects/:code/forecast-adjustments", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canEditBudgetLines(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -329,12 +323,11 @@ router.put("/api/projects/:code/forecast-adjustments", requireAuth, async (req: 
     evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.json(row);
   } catch (error) {
-    logError("Forecast adjustment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/projects/:code/forecast-adjustments/:costCode", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/projects/:code/forecast-adjustments/:costCode", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canEditBudgetLines(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -351,12 +344,11 @@ router.delete("/api/projects/:code/forecast-adjustments/:costCode", requireAuth,
     evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     successResponse(res);
   } catch (error) {
-    logError("Delete forecast adjustment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/projects/:code/budget-thresholds", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:code/budget-thresholds", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER") {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -388,12 +380,11 @@ router.patch("/api/projects/:code/budget-thresholds", requireAuth, async (req: A
       budgetCriticalThreshold: Number(updated.budgetCriticalThreshold || 95),
     });
   } catch (error) {
-    logError("Update budget thresholds error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/budget-alerts", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/budget-alerts", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canAccessCostLedger(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -407,12 +398,11 @@ router.get("/api/projects/:code/budget-alerts", requireAuth, async (req: AuthReq
 
     res.json(alerts);
   } catch (error) {
-    logError("Get budget alerts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/projects/:code/budget-alerts/:alertId/dismiss", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:code/budget-alerts/:alertId/dismiss", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!canEditBudgetLines(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
@@ -430,8 +420,7 @@ router.patch("/api/projects/:code/budget-alerts/:alertId/dismiss", requireAuth, 
     if (!updated) return res.status(404).json({ error: "Alert not found" });
     res.json(updated);
   } catch (error) {
-    logError("Dismiss budget alert error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

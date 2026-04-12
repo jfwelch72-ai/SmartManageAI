@@ -1,6 +1,6 @@
 import { logError } from "./utils/logger";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
-import { Router } from "express";
+import { Router, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
@@ -38,7 +38,7 @@ function validateOrgAccess(req: AuthRequest, res: Response): string | null {
 // ============================================
 
 // POST /api/website/assistant/ask - General AI conversation
-router.post("/assistant/ask", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/assistant/ask", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -107,13 +107,12 @@ Be helpful, professional, and focused on helping contractors present themselves 
       response: aiResponse,
     });
   } catch (error) {
-    logError("Error in AI assistant:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "AI assistant unavailable" });
+    next(error);
   }
 });
 
 // POST /api/website/assistant/generate-page - Generate a complete page
-router.post("/assistant/generate-page", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/assistant/generate-page", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -194,13 +193,12 @@ Include: Contact form, phone/email, business hours, service area map, FAQ.`,
 
     res.json(pageContent);
   } catch (error) {
-    logError("Error generating page:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate page content" });
+    next(error);
   }
 });
 
 // POST /api/website/assistant/suggest-colors - AI suggest brand colors
-router.post("/assistant/suggest-colors", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/assistant/suggest-colors", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -270,8 +268,7 @@ Consider:
 
     res.json(colors);
   } catch (error) {
-    logError("Error suggesting colors:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to suggest colors" });
+    next(error);
   }
 });
 
@@ -280,7 +277,7 @@ Consider:
 // ============================================
 
 // POST /api/website/seo/scan - Scan website for SEO issues
-router.post("/seo/scan", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/seo/scan", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -357,13 +354,12 @@ router.post("/seo/scan", requireAuth, async (req: AuthRequest, res: Response) =>
       pages: issues,
     });
   } catch (error) {
-    logError("Error scanning SEO:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to scan SEO" });
+    next(error);
   }
 });
 
 // POST /api/website/seo/optimize/:pageId - AI optimize page SEO
-router.post("/seo/optimize/:pageId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/seo/optimize/:pageId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -436,8 +432,7 @@ Generate optimized SEO content. Return JSON:
 
     res.json(seoContent);
   } catch (error) {
-    logError("Error optimizing SEO:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to optimize SEO" });
+    next(error);
   }
 });
 
@@ -475,13 +470,12 @@ router.post("/analytics/track", async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error tracking event:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to track event" });
+    next(error);
   }
 });
 
 // GET /api/website/analytics/summary - Get analytics summary
-router.get("/analytics/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/analytics/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -582,8 +576,7 @@ router.get("/analytics/summary", requireAuth, async (req: AuthRequest, res: Resp
       referrers,
     });
   } catch (error) {
-    logError("Error fetching analytics:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch analytics" });
+    next(error);
   }
 });
 
@@ -608,7 +601,7 @@ const AI_WIZARD_LABELS: Record<string, string> = {
   logo_showcase: "Logo Showcase", blog_section: "Blog Section",
 };
 
-router.post("/ai-wizard", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/ai-wizard", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -798,13 +791,13 @@ ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
     }
 
     if (!aiResult) {
-      return res.status(500).json({ error: "AI did not return a response" });
+      return next(error);
     }
 
     const { siteSettings, pages: aiPages } = aiResult;
 
     if (!siteSettings || !aiPages || !Array.isArray(aiPages)) {
-      return res.status(500).json({ error: "AI returned an incomplete response" });
+      return next(error);
     }
 
     await db.update(organizationWebsites).set({
@@ -896,8 +889,7 @@ ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
       },
     });
   } catch (error) {
-    logError("Error in AI website wizard:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "AI website wizard failed. Please try again." });
+    next(error);
   }
 });
 

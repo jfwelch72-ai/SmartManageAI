@@ -391,7 +391,7 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
@@ -447,7 +447,7 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
@@ -539,7 +539,7 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid markup data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
@@ -679,7 +679,7 @@ router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAG
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid link data", details: error.errors });
     } else {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });

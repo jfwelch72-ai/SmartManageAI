@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import {
   ppeComplianceLogs, projects, users,
@@ -23,7 +23,7 @@ async function getProjectByCode(code: string) {
 router.get(
   "/projects/:code/ppe-compliance",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -42,8 +42,7 @@ router.get(
 
       res.json(logs);
     } catch (err) {
-      logError("Error fetching PPE compliance logs:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to fetch PPE compliance logs" });
+      next(err);
     }
   },
 );
@@ -52,7 +51,7 @@ router.post(
   "/projects/:code/ppe-compliance",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -88,8 +87,7 @@ router.post(
 
       res.status(201).json(log);
     } catch (err) {
-      logError("Error creating PPE compliance log:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create PPE compliance log" });
+      next(err);
     }
   },
 );
@@ -98,7 +96,7 @@ router.post(
   "/projects/:code/ppe-compliance/batch",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -133,8 +131,7 @@ router.post(
 
       res.status(201).json(createdLogs);
     } catch (err) {
-      logError("Error batch creating PPE compliance logs:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to create PPE compliance logs" });
+      next(err);
     }
   },
 );
@@ -143,7 +140,7 @@ router.patch(
   "/projects/:code/ppe-compliance/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -186,8 +183,7 @@ router.patch(
 
       res.json(updated);
     } catch (err) {
-      logError("Error updating PPE compliance log:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to update PPE compliance log" });
+      next(err);
     }
   },
 );
@@ -196,7 +192,7 @@ router.delete(
   "/projects/:code/ppe-compliance/:id",
   requireAuth,
   requireRole(...MANAGEMENT_ROLES),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -227,8 +223,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (err) {
-      logError("Error deleting PPE compliance log:", {}, err instanceof Error ? err : new Error(String(err)));
-      res.status(500).json({ error: "Failed to delete PPE compliance log" });
+      next(err);
     }
   },
 );

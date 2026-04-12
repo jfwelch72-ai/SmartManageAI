@@ -332,7 +332,7 @@ router.get('/marketing-document', (req, res) => {
   } catch (error: any) {
     logError('Error generating marketing PDF:', {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to generate PDF' });
+      next(error);
     }
   }
 });

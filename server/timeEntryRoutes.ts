@@ -14,7 +14,7 @@ import * as workflowEngine from "./services/workflowEngine";
 
 const router = Router();
 
-router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -78,12 +78,11 @@ router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMI
 
     res.json(formattedEntries);
   } catch (error) {
-    logError("Get pending time entry approvals error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -169,12 +168,11 @@ router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "
 
     res.json(updatedEntry);
   } catch (error) {
-    logError("Approve time entry error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -250,8 +248,7 @@ router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "M
 
     res.json(updatedEntry);
   } catch (error) {
-    logError("Reject time entry error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -339,14 +336,13 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
       message: `Successfully approved ${accessibleIds.length} time entries`
     });
   } catch (error) {
-    logError("Bulk approve time entries error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 };
 router.post("/api/time-entries/bulk-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
 router.patch("/api/time-entries/batch-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
 
-router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -374,11 +370,11 @@ router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "
       .where(eq(timeEntries.projectId, projectId as string));
     res.json(rows.map(r => r.userId));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    next(error);
   }
 });
 
-router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -445,12 +441,11 @@ router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGE
     res.setHeader("Content-Disposition", `attachment; filename=time-entries-export-${new Date().toISOString().split('T')[0]}.csv`);
     res.send(csvHeader + csvRows);
   } catch (error) {
-    logError("Export time entries error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -532,8 +527,7 @@ router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN",
       },
     });
   } catch (error) {
-    logError("Get approval summary error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

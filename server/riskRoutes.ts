@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectRisks, projects, users, type Project } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql } from "drizzle-orm";
@@ -49,7 +49,7 @@ async function verifyProjectOrgAccess(req: AuthRequest, projectId: string, res: 
   return { project };
 }
 
-router.get("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { status, category, severity, sortBy } = req.query;
@@ -111,12 +111,11 @@ router.get("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANA
 
     res.json(result);
   } catch (error) {
-    logError("Error fetching risks:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/projects/:projectId/risks/summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/risks/summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const conditions = [eq(projectRisks.projectId, projectId)];
@@ -165,12 +164,11 @@ router.get("/projects/:projectId/risks/summary", requireAuth, requireRole("ADMIN
       trend: { newThisPeriod, resolvedThisPeriod, direction },
     });
   } catch (error) {
-    logError("Error fetching risk summary:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/projects/:projectId/risks/matrix", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/risks/matrix", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const conditions = [eq(projectRisks.projectId, projectId)];
@@ -206,12 +204,11 @@ router.get("/projects/:projectId/risks/matrix", requireAuth, requireRole("ADMIN"
 
     res.json(matrix);
   } catch (error) {
-    logError("Error fetching risk matrix:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
 
@@ -252,12 +249,11 @@ router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MAN
 
     res.status(201).json(risk);
   } catch (error) {
-    logError("Error creating risk:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, riskId } = req.params;
 
@@ -329,12 +325,11 @@ router.patch("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADM
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating risk:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, riskId } = req.params;
 
@@ -350,12 +345,11 @@ router.delete("/projects/:projectId/risks/:riskId", requireAuth, requireRole("AD
     await db.delete(projectRisks).where(eq(projectRisks.id, riskId));
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting risk:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/projects/:projectId/risks/ai-suggest", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/risks/ai-suggest", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
 
@@ -404,17 +398,16 @@ Suggest relevant construction project risks that haven't been identified yet.`;
     });
 
     const content = completion.choices[0]?.message?.content;
-    if (!content) { res.status(500).json({ error: "No response from AI" }); return; }
+    if (!content) { return res.status(500).json({ error: "No response from AI" }); }
 
     const parsed = JSON.parse(content);
     res.json(parsed.risks || []);
   } catch (error) {
-    logError("Error generating AI risk suggestions:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate risk suggestions" });
+    next(error);
   }
 });
 
-router.get("/risks/portfolio-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.get("/risks/portfolio-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) { res.status(403).json({ error: "Access denied" }); return; }
@@ -480,8 +473,7 @@ router.get("/risks/portfolio-summary", requireAuth, requireRole("ADMIN", "MANAGE
       })),
     });
   } catch (error) {
-    logError("Error fetching portfolio risk summary:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

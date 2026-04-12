@@ -1,5 +1,5 @@
 import {logError, logWarn } from "./utils/logger";
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";
 import { eq, and, desc, gte, lte, ilike, sql, asc, or } from "drizzle-orm";
@@ -54,7 +54,7 @@ function isAdmin(req: AuthRequest): boolean {
   return ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(req.user?.role || "");
 }
 
-router.get("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/posts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -84,12 +84,11 @@ router.get("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ data: posts, total, limit, offset });
   } catch (error) {
-    logError("Error fetching social posts:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch social posts" });
+    next(error);
   }
 });
 
-router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -153,12 +152,11 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(warning ? { ...post, warning } : post);
   } catch (error) {
-    logError("Error creating social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create social post" });
+    next(error);
   }
 });
 
-router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -197,13 +195,13 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
     }
 
     if (!b64Data) {
-      return res.status(500).json({ error: "Failed to generate image" });
+      return next(error);
     }
 
     const imageBuffer = Buffer.from(b64Data, "base64");
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return res.status(500).json({ error: "Object storage not configured" });
+      return next(error);
     }
 
     const basePath = publicPaths[0];
@@ -231,11 +229,14 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
     if (error?.code === "content_policy_violation") {
       return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different prompt." });
     }
-    res.status(500).json({ error: error?.message || "Failed to generate image" });
+    if (error?.code === "unknown_model" || error?.message?.includes("Unknown model") || error?.status === 404 || error?.message?.includes("not found")) {
+      return res.status(501).json({ error: "AI image generation is not available. Please upload an image manually." });
+    }
+    next(error);
   }
 });
 
-router.post("/upload-media", requireAuth, socialUpload.single("file"), async (req: AuthRequest, res: Response) => {
+router.post("/upload-media", requireAuth, socialUpload.single("file"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -246,7 +247,7 @@ router.post("/upload-media", requireAuth, socialUpload.single("file"), async (re
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return res.status(500).json({ error: "Object storage not configured" });
+      return next(new Error("Object storage not configured"));
     }
 
     const basePath = publicPaths[0];
@@ -291,8 +292,7 @@ router.post("/upload-media", requireAuth, socialUpload.single("file"), async (re
     const proxyUrl = `/api/social/image/${orgId}/social-${uniqueId}.${ext}`;
     res.json({ url: proxyUrl, fileName: file.originalname, size: file.size, mimeType: file.mimetype });
   } catch (error: any) {
-    logError("Error uploading social media file:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to upload file" });
+    next(error);
   }
 });
 
@@ -310,11 +310,11 @@ router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
     if (error instanceof ObjectNotFoundError) {
       return res.status(404).json({ error: "Image not found" });
     }
-    res.status(500).json({ error: "Failed to serve image" });
+    next(error);
   }
 });
 
-router.patch("/posts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/posts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -368,12 +368,11 @@ router.patch("/posts/:id", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update social post" });
+    next(error);
   }
 });
 
-router.delete("/posts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/posts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -390,12 +389,11 @@ router.delete("/posts/:id", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete social post" });
+    next(error);
   }
 });
 
-router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -453,12 +451,11 @@ router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Res
 
     res.json({ ...updated, warning: publishWarning });
   } catch (error) {
-    logError("Error publishing social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to publish social post" });
+    next(error);
   }
 });
 
-router.post("/posts/:id/approve", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts/:id/approve", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -479,12 +476,11 @@ router.post("/posts/:id/approve", requireAuth, async (req: AuthRequest, res: Res
     if (!updated) return res.status(404).json({ error: "Post not found" });
     res.json(updated);
   } catch (error) {
-    logError("Error approving social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to approve social post" });
+    next(error);
   }
 });
 
-router.post("/posts/:id/duplicate", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts/:id/duplicate", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -520,12 +516,11 @@ router.post("/posts/:id/duplicate", requireAuth, async (req: AuthRequest, res: R
 
     res.json(duplicate);
   } catch (error) {
-    logError("Error duplicating social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to duplicate social post" });
+    next(error);
   }
 });
 
-router.patch("/posts/:id/reschedule", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/posts/:id/reschedule", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -547,12 +542,11 @@ router.patch("/posts/:id/reschedule", requireAuth, async (req: AuthRequest, res:
     if (!updated) return res.status(404).json({ error: "Post not found" });
     res.json(updated);
   } catch (error) {
-    logError("Error rescheduling social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to reschedule social post" });
+    next(error);
   }
 });
 
-router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -583,12 +577,11 @@ router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json(updated);
   } catch (error) {
-    logError("Error rejecting social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to reject social post" });
+    next(error);
   }
 });
 
-router.post("/sync-engagement/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/sync-engagement/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -636,12 +629,11 @@ router.post("/sync-engagement/:id", requireAuth, async (req: AuthRequest, res: R
 
     res.json({ metrics: engagement });
   } catch (error) {
-    logError("Error syncing engagement:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to sync engagement data" });
+    next(error);
   }
 });
 
-router.post("/posts/bulk", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts/bulk", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -673,8 +665,7 @@ router.post("/posts/bulk", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.json({ created: created.length, posts: created });
   } catch (error) {
-    logError("Error bulk creating social posts:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to bulk create posts" });
+    next(error);
   }
 });
 
@@ -712,7 +703,7 @@ function getPlatformCredentials(platform: string): { clientId: string; clientSec
   }
 }
 
-router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -730,12 +721,11 @@ router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json(sanitized);
   } catch (error) {
-    logError("Error fetching social accounts:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch social accounts" });
+    next(error);
   }
 });
 
-router.post("/accounts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/accounts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -758,12 +748,11 @@ router.post("/accounts", requireAuth, async (req: AuthRequest, res: Response) =>
 
     res.json({ ...account, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" });
   } catch (error) {
-    logError("Error creating social account:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create social account" });
+    next(error);
   }
 });
 
-router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -791,12 +780,11 @@ router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res: Respons
     if (!updated) return res.status(404).json({ error: "Account not found" });
     res.json({ ...updated, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" });
   } catch (error) {
-    logError("Error updating social account:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update social account" });
+    next(error);
   }
 });
 
-router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -810,12 +798,11 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res: Respon
     if (!deleted) return res.status(404).json({ error: "Account not found" });
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting social account:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete social account" });
+    next(error);
   }
 });
 
-router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -842,12 +829,11 @@ router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Re
       expiresAt: account.tokenExpiresAt || null,
     });
   } catch (error) {
-    logError("Error checking account status:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to check account status" });
+    next(error);
   }
 });
 
-router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -891,8 +877,7 @@ router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: 
       account: { ...updated, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" },
     });
   } catch (error) {
-    logError("Error refreshing token:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to refresh token" });
+    next(error);
   }
 });
 
@@ -900,7 +885,7 @@ router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: 
 // Routes from socialAnalyticsRoutes.ts
 // ========================================
 
-router.get("/calendar", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/calendar", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -934,12 +919,11 @@ router.get("/calendar", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json({ month: m, year: y, posts: grouped });
   } catch (error) {
-    logError("Error fetching social calendar:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch calendar data" });
+    next(error);
   }
 });
 
-router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/stats", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
     if (!orgId) return res.status(400).json({ error: "Organization required" });
@@ -1013,12 +997,11 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
       totalEngagement,
     });
   } catch (error) {
-    logError("Error fetching social stats:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch social stats" });
+    next(error);
   }
 });
 
-router.post("/posts/generate", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/posts/generate", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
     const orgId = getOrgId(req);
@@ -1104,8 +1087,7 @@ Return a JSON object with:
 
     res.json(postContent);
   } catch (error) {
-    logError("Error generating social post:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate social post" });
+    next(error);
   }
 });
 
@@ -1205,7 +1187,7 @@ router.get("/auth/facebook", requireAuth, (req: AuthRequest, res: Response) => {
   res.redirect(url);
 });
 
-router.get("/auth/facebook/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/auth/facebook/callback", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { code, state, error } = req.query as Record<string, string>;
     if (error) return res.redirect("/social-media?error=facebook_denied");
@@ -1291,7 +1273,7 @@ router.get("/auth/linkedin", requireAuth, (req: AuthRequest, res: Response) => {
   res.redirect(url);
 });
 
-router.get("/auth/linkedin/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/auth/linkedin/callback", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { code, state, error } = req.query as Record<string, string>;
     if (error) return res.redirect("/social-media?error=linkedin_denied");
@@ -1362,7 +1344,7 @@ router.get("/auth/twitter", requireAuth, (req: AuthRequest, res: Response) => {
   res.redirect(url);
 });
 
-router.get("/auth/twitter/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/auth/twitter/callback", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { code, state, error } = req.query as Record<string, string>;
     if (error) return res.redirect("/social-media?error=twitter_denied");
@@ -1436,7 +1418,7 @@ router.get("/auth/tiktok", requireAuth, (req: AuthRequest, res: Response) => {
   res.redirect(url);
 });
 
-router.get("/auth/tiktok/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/auth/tiktok/callback", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { code, state, error } = req.query as Record<string, string>;
     if (error) return res.redirect("/social-media?error=tiktok_denied");
@@ -1500,7 +1482,7 @@ router.get("/auth/youtube", requireAuth, (req: AuthRequest, res: Response) => {
   res.redirect(url);
 });
 
-router.get("/auth/youtube/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/auth/youtube/callback", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { code, state, error } = req.query as Record<string, string>;
     if (error) return res.redirect("/social-media?error=youtube_denied");
@@ -1566,7 +1548,7 @@ router.get("/auth/pinterest", requireAuth, (req: AuthRequest, res: Response) => 
   res.redirect(url);
 });
 
-router.get("/auth/pinterest/callback", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/auth/pinterest/callback", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { code, state, error } = req.query as Record<string, string>;
     if (error) return res.redirect("/social-media?error=pinterest_denied");

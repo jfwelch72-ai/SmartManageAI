@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projects, changeOrders, bids, organizations, executiveDigests } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -65,7 +65,7 @@ function formatDigestResponse(digest: ExecutiveDigestRow) {
   };
 }
 
-router.get("/api/executive/digest/:period", requireAuth, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res: Response) => {
+router.get("/api/executive/digest/:period", requireAuth, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!(await checkDigestFeatureFlag(req, res))) return;
 
@@ -83,12 +83,11 @@ router.get("/api/executive/digest/:period", requireAuth, requireRole("ADMIN", "M
 
     res.json(formatDigestResponse(digest));
   } catch (error) {
-    logError("Error fetching executive digest:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch executive digest" });
+    next(error);
   }
 });
 
-router.post("/api/executive/digest/generate", requireAuth, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res: Response) => {
+router.post("/api/executive/digest/generate", requireAuth, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!(await checkDigestFeatureFlag(req, res))) return;
 
@@ -244,8 +243,7 @@ Requirements:
 
     const parseResult = digestOutputSchema.safeParse(aiResult.result);
     if (!parseResult.success) {
-      logError("AI returned invalid digest structure", { errors: parseResult.error.flatten() });
-      return res.status(500).json({ error: "AI generated an invalid digest. Please try again." });
+            return next(error);
     }
 
     const digestData = parseResult.data;
@@ -263,8 +261,7 @@ Requirements:
 
     res.json(formatDigestResponse(saved));
   } catch (error) {
-    logError("Error generating executive digest:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate executive digest" });
+    next(error);
   }
 });
 

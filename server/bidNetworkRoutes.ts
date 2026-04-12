@@ -1,4 +1,4 @@
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { 
   organizationNetworkSettings, 
@@ -32,7 +32,7 @@ router.use(requireAuth, requireAnyFeaturePermission('canAccessBidNetworkGC', 'ca
 
 // Get organization's network settings
 // Restricted to ADMIN, MANAGER, ESTIMATOR (roles that can use bid network) + SUPER_ADMIN for platform admin
-router.get("/settings/:organizationId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/settings/:organizationId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { organizationId } = req.params;
     const user = req.user!;
@@ -63,14 +63,13 @@ router.get("/settings/:organizationId", requireAuth, requireRole("SUPER_ADMIN", 
     
     res.json({ ...settings, exists: true });
   } catch (error) {
-    logError("Failed to get network settings", undefined, error as Error);
-    res.status(500).json({ error: "Failed to get network settings" });
+    next(error);
   }
 });
 
 // Create or update organization's network settings
 // Restricted to ADMIN only (SUPER_ADMIN handled separately in code)
-router.post("/settings", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.post("/settings", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const data = req.body;
@@ -123,8 +122,7 @@ router.post("/settings", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async
       return res.json(created);
     }
   } catch (error) {
-    logError("Failed to save network settings", undefined, error as Error);
-    res.status(500).json({ error: "Failed to save network settings" });
+    next(error);
   }
 });
 
@@ -134,7 +132,7 @@ router.post("/settings", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async
 
 // List bid requests for an organization (as GC)
 // Restricted to roles that can manage bids
-router.get("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { status, projectId } = req.query;
@@ -165,14 +163,13 @@ router.get("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", 
       project: r.project
     })));
   } catch (error) {
-    logError("Failed to list bid requests", undefined, error as Error);
-    res.status(500).json({ error: "Failed to list bid requests" });
+    next(error);
   }
 });
 
 // Get single bid request with invitations and responses
 // Restricted to roles that can manage bids
-router.get("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -223,14 +220,13 @@ router.get("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGE
       }))
     });
   } catch (error) {
-    logError("Failed to get bid request", undefined, error as Error);
-    res.status(500).json({ error: "Failed to get bid request" });
+    next(error);
   }
 });
 
 // Create a new bid request
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.post("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const data = req.body;
@@ -264,14 +260,13 @@ router.post("/requests", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER",
     logInfo("Bid request created", { requestId: request.id, organizationId: user.organizationId || undefined });
     res.status(201).json(request);
   } catch (error) {
-    logError("Failed to create bid request", undefined, error as Error);
-    res.status(500).json({ error: "Failed to create bid request" });
+    next(error);
   }
 });
 
 // Update a bid request
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.patch("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -325,14 +320,13 @@ router.patch("/requests/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANA
     logInfo("Bid request updated", { requestId: id, status: updated.status });
     res.json(updated);
   } catch (error) {
-    logError("Failed to update bid request", undefined, error as Error);
-    res.status(500).json({ error: "Failed to update bid request" });
+    next(error);
   }
 });
 
 // Delete a bid request (only if DRAFT)
 // Restricted to ADMIN, MANAGER only
-router.delete("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -355,8 +349,7 @@ router.delete("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER"), asy
     logInfo("Bid request deleted", { requestId: id });
     res.json({ success: true });
   } catch (error) {
-    logError("Failed to delete bid request", undefined, error as Error);
-    res.status(500).json({ error: "Failed to delete bid request" });
+    next(error);
   }
 });
 
@@ -366,7 +359,7 @@ router.delete("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER"), asy
 
 // Find subcontractors matching trade requirements
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.get("/match-subs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/match-subs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { trades } = req.query;
@@ -424,8 +417,7 @@ router.get("/match-subs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER"
       certifications: s.settings?.certifications || []
     })));
   } catch (error) {
-    logError("Failed to find matching subs", undefined, error as Error);
-    res.status(500).json({ error: "Failed to find matching subcontractors" });
+    next(error);
   }
 });
 
@@ -435,7 +427,7 @@ router.get("/match-subs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER"
 
 // Send invitations to subcontractors
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.post("/invitations/send", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.post("/invitations/send", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { bidRequestId, invitees, personalMessage } = req.body;
@@ -538,8 +530,7 @@ router.post("/invitations/send", requireAuth, requireRole("ADMIN", "HUSTLER", "M
     
     res.status(201).json(createdInvitations);
   } catch (error) {
-    logError("Failed to send invitations", undefined, error as Error);
-    res.status(500).json({ error: "Failed to send invitations" });
+    next(error);
   }
 });
 
@@ -549,7 +540,7 @@ router.post("/invitations/send", requireAuth, requireRole("ADMIN", "HUSTLER", "M
 
 // List invitations received by subcontractor
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR (roles that handle bid responses)
-router.get("/inbox", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.get("/inbox", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { status } = req.query;
@@ -589,14 +580,13 @@ router.get("/inbox", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ES
       }
     })));
   } catch (error) {
-    logError("Failed to list inbox", undefined, error as Error);
-    res.status(500).json({ error: "Failed to list bid invitations" });
+    next(error);
   }
 });
 
 // View invitation details (marks as viewed)
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.get("/inbox/:invitationId", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.get("/inbox/:invitationId", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { invitationId } = req.params;
@@ -673,14 +663,13 @@ router.get("/inbox/:invitationId", requireAuth, requireRole("ADMIN", "HUSTLER", 
       clarifications
     });
   } catch (error) {
-    logError("Failed to get invitation", undefined, error as Error);
-    res.status(500).json({ error: "Failed to get invitation details" });
+    next(error);
   }
 });
 
 // Decline invitation
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.post("/inbox/:invitationId/decline", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.post("/inbox/:invitationId/decline", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { invitationId } = req.params;
@@ -708,8 +697,7 @@ router.post("/inbox/:invitationId/decline", requireAuth, requireRole("ADMIN", "H
     logInfo("Bid invitation declined", { invitationId, organizationId: user.organizationId || undefined });
     res.json({ success: true });
   } catch (error) {
-    logError("Failed to decline invitation", undefined, error as Error);
-    res.status(500).json({ error: "Failed to decline invitation" });
+    next(error);
   }
 });
 
@@ -719,7 +707,7 @@ router.post("/inbox/:invitationId/decline", requireAuth, requireRole("ADMIN", "H
 
 // Create/update response
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.post("/responses", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.post("/responses", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const data = req.body;
@@ -969,14 +957,13 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER"
       return res.status(201).json(created);
     }
   } catch (error) {
-    logError("Failed to save response", undefined, error as Error);
-    res.status(500).json({ error: "Failed to save response" });
+    next(error);
   }
 });
 
 // Get response by ID
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.get("/responses/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.get("/responses/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -1016,14 +1003,13 @@ router.get("/responses/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAG
     
     res.json(result);
   } catch (error) {
-    logError("Failed to get response", undefined, error as Error);
-    res.status(500).json({ error: "Failed to get response" });
+    next(error);
   }
 });
 
 // GC updates response status (shortlist, award, etc.)
 // Restricted to ADMIN, MANAGER only
-router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -1106,8 +1092,7 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
     logInfo("Bid response status updated", { responseId: id, status });
     res.json(updated);
   } catch (error) {
-    logError("Failed to update response status", undefined, error as Error);
-    res.status(500).json({ error: "Failed to update response status" });
+    next(error);
   }
 });
 
@@ -1117,7 +1102,7 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
 
 // Ask a clarification question
 // Accessible by ADMIN, MANAGER, ESTIMATOR, VENDOR
-router.post("/clarifications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response) => {
+router.post("/clarifications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "VENDOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { bidRequestId, question } = req.body;
@@ -1179,14 +1164,13 @@ router.post("/clarifications", requireAuth, requireRole("ADMIN", "HUSTLER", "MAN
     logInfo("Clarification question asked", { clarificationId: clarification.id });
     res.status(201).json(clarification);
   } catch (error) {
-    logError("Failed to ask clarification", undefined, error as Error);
-    res.status(500).json({ error: "Failed to submit question" });
+    next(error);
   }
 });
 
 // Answer a clarification (GC only)
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { id } = req.params;
@@ -1251,14 +1235,13 @@ router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "HU
     
     res.json(updated);
   } catch (error) {
-    logError("Failed to answer clarification", undefined, error as Error);
-    res.status(500).json({ error: "Failed to submit answer" });
+    next(error);
   }
 });
 
 // Get clarifications for a request (GC view)
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.get("/requests/:requestId/clarifications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/requests/:requestId/clarifications", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { requestId } = req.params;
@@ -1291,8 +1274,7 @@ router.get("/requests/:requestId/clarifications", requireAuth, requireRole("ADMI
       } : null
     })));
   } catch (error) {
-    logError("Failed to get clarifications", undefined, error as Error);
-    res.status(500).json({ error: "Failed to get clarifications" });
+    next(error);
   }
 });
 
@@ -1303,7 +1285,7 @@ router.get("/requests/:requestId/clarifications", requireAuth, requireRole("ADMI
 // Get bid network stats for organization
 // Get bid network statistics
 // Restricted to ADMIN, MANAGER, ESTIMATOR
-router.get("/stats", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+router.get("/stats", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     
@@ -1338,8 +1320,7 @@ router.get("/stats", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ES
       }
     });
   } catch (error) {
-    logError("Failed to get bid network stats", undefined, error as Error);
-    res.status(500).json({ error: "Failed to get stats" });
+    next(error);
   }
 });
 

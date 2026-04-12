@@ -3,7 +3,7 @@
  * Manage organization subscriptions, add-ons, and entitlements
  */
 
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { 
   organizations,
@@ -33,7 +33,7 @@ const router = Router();
  * GET /api/billing/entitlements
  * Get current organization's entitlements, plan, and add-ons
  */
-router.get("/entitlements", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/entitlements", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     
@@ -75,8 +75,7 @@ router.get("/entitlements", requireAuth, async (req: AuthRequest, res: Response)
       isDevMode: isDevMode(),
     });
   } catch (error) {
-    logError("Failed to get entitlements", undefined, error as Error);
-    res.status(500).json({ error: "Failed to retrieve entitlements" });
+    next(error);
   }
 });
 
@@ -84,7 +83,7 @@ router.get("/entitlements", requireAuth, async (req: AuthRequest, res: Response)
  * GET /api/billing/plans
  * Get available plans and add-ons
  */
-router.get("/plans", async (req: AuthRequest, res: Response) => {
+router.get("/plans", async (req: AuthRequest, res: Response, next: NextFunction) => {
   res.json({
     plans: Object.entries(PLAN_INFO).map(([tier, info]) => ({
       tier,
@@ -103,7 +102,7 @@ router.get("/plans", async (req: AuthRequest, res: Response) => {
  * GET /api/billing/subscription
  * Get detailed subscription info (admin only)
  */
-router.get("/subscription", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.get("/subscription", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     
@@ -128,8 +127,7 @@ router.get("/subscription", requireAuth, requireRole("ADMIN"), async (req: AuthR
       isDevMode: isDevMode(),
     });
   } catch (error) {
-    logError("Failed to get subscription", undefined, error as Error);
-    res.status(500).json({ error: "Failed to retrieve subscription" });
+    next(error);
   }
 });
 
@@ -137,7 +135,7 @@ router.get("/subscription", requireAuth, requireRole("ADMIN"), async (req: AuthR
  * POST /api/billing/subscription
  * Create or update subscription (admin only, manual billing mode)
  */
-router.post("/subscription", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/subscription", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     
@@ -198,8 +196,7 @@ router.post("/subscription", requireAuth, requireRole("ADMIN"), sensitiveLimiter
 
     res.json(subscription);
   } catch (error) {
-    logError("Failed to update subscription", undefined, error as Error);
-    res.status(500).json({ error: "Failed to update subscription" });
+    next(error);
   }
 });
 
@@ -207,7 +204,7 @@ router.post("/subscription", requireAuth, requireRole("ADMIN"), sensitiveLimiter
  * POST /api/billing/addons/:addonKey/toggle
  * Enable or disable an add-on (admin only, manual billing mode)
  */
-router.post("/addons/:addonKey/toggle", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/addons/:addonKey/toggle", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { addonKey } = req.params;
@@ -276,8 +273,7 @@ router.post("/addons/:addonKey/toggle", requireAuth, requireRole("ADMIN"), sensi
 
     res.json(addon);
   } catch (error) {
-    logError("Failed to toggle add-on", undefined, error as Error);
-    res.status(500).json({ error: "Failed to toggle add-on" });
+    next(error);
   }
 });
 
@@ -285,7 +281,7 @@ router.post("/addons/:addonKey/toggle", requireAuth, requireRole("ADMIN"), sensi
  * POST /api/billing/backfill
  * Backfill subscriptions for existing orgs (admin/dev only)
  */
-router.post("/backfill", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/backfill", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     
@@ -322,8 +318,7 @@ router.post("/backfill", requireAuth, async (req: AuthRequest, res: Response) =>
       backfilledOrgs: backfilled 
     });
   } catch (error) {
-    logError("Failed to backfill subscriptions", undefined, error as Error);
-    res.status(500).json({ error: "Failed to backfill" });
+    next(error);
   }
 });
 
@@ -331,7 +326,7 @@ router.post("/backfill", requireAuth, async (req: AuthRequest, res: Response) =>
  * GET /api/billing/usage
  * Get current usage metrics
  */
-router.get("/usage", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/usage", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     
@@ -348,8 +343,7 @@ router.get("/usage", requireAuth, async (req: AuthRequest, res: Response) => {
       }
     });
   } catch (error) {
-    logError("Failed to get usage", undefined, error as Error);
-    res.status(500).json({ error: "Failed to retrieve usage" });
+    next(error);
   }
 });
 
@@ -357,7 +351,7 @@ router.get("/usage", requireAuth, async (req: AuthRequest, res: Response) => {
  * POST /api/billing/toggle-mode
  * Toggle between Dev Mode and Production Mode (super admin / admin only)
  */
-router.post("/toggle-mode", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+router.post("/toggle-mode", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { mode } = req.body;
     
@@ -379,8 +373,7 @@ router.post("/toggle-mode", requireAuth, requireRole("SUPER_ADMIN"), async (req:
       isDevMode: isDevMode(),
     });
   } catch (error) {
-    logError("Failed to toggle billing mode", undefined, error as Error);
-    res.status(500).json({ error: "Failed to toggle mode" });
+    next(error);
   }
 });
 

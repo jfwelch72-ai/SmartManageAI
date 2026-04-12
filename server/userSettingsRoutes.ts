@@ -25,7 +25,7 @@ function hashValue(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1);
@@ -40,11 +40,11 @@ router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res) => {
     }
     return res.json(settings);
   } catch (error) {
-    return res.status(500).json({ error: "Failed to fetch settings" });
+    return next(error);
   }
 });
 
-router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const schema = z.object({
@@ -80,11 +80,11 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res) =>
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid settings data", details: error.errors });
     }
-    return res.status(500).json({ error: "Failed to update settings" });
+    return next(error);
   }
 });
 
-router.get("/api/activity-log", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/activity-log", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
@@ -100,7 +100,7 @@ router.get("/api/activity-log", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(logs);
   } catch (error) {
-    return res.status(500).json({ error: "Failed to fetch activity log" });
+    return next(error);
   }
 });
 
@@ -108,7 +108,7 @@ const deactivationRequestSchema = z.object({
   reason: z.string().max(1000).optional(),
 });
 
-router.post("/api/account/deactivation-request", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/account/deactivation-request", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const parsed = deactivationRequestSchema.safeParse(req.body || {});
@@ -128,11 +128,11 @@ router.post("/api/account/deactivation-request", requireAuth, async (req: AuthRe
 
     return res.json({ success: true, message: "Deactivation request submitted. An administrator will review your request." });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to submit deactivation request" });
+    return next(error);
   }
 });
 
-router.get("/api/account/export", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/account/export", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
 
@@ -199,12 +199,12 @@ router.get("/api/account/export", requireAuth, async (req: AuthRequest, res) => 
     await archive.finalize();
   } catch (error) {
     if (!res.headersSent) {
-      return res.status(500).json({ error: "Failed to export account data" });
+      return next(error);
     }
   }
 });
 
-router.get("/api/account/sessions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/account/sessions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const currentIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "";
@@ -251,11 +251,11 @@ router.get("/api/account/sessions", requireAuth, async (req: AuthRequest, res) =
       isCurrent: s.ipAddress === currentIp && s.userAgent === currentUa,
     })));
   } catch (error) {
-    return res.status(500).json({ error: "Failed to fetch sessions" });
+    return next(error);
   }
 });
 
-router.post("/api/account/sessions/revoke-all", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/account/sessions/revoke-all", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const currentIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "";
@@ -307,13 +307,13 @@ router.post("/api/account/sessions/revoke-all", requireAuth, async (req: AuthReq
 
     return res.json({ success: true, message: "All other sessions have been revoked." });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to revoke sessions" });
+    return next(error);
   }
 });
 
 const pendingTotpSetups = new Map<string, { secret: string; backupCodes: string[] }>();
 
-router.post("/api/account/2fa/setup", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/account/2fa/setup", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
 
@@ -341,7 +341,7 @@ router.post("/api/account/2fa/setup", requireAuth, async (req: AuthRequest, res)
       otpauthUrl,
     });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to setup 2FA" });
+    return next(error);
   }
 });
 
@@ -349,7 +349,7 @@ const totpVerifySchema = z.object({
   token: z.string().min(1).max(10),
 });
 
-router.post("/api/account/2fa/verify", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/account/2fa/verify", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const validation = totpVerifySchema.safeParse(req.body);
@@ -402,11 +402,11 @@ router.post("/api/account/2fa/verify", requireAuth, async (req: AuthRequest, res
 
     return res.json({ success: true, message: "Two-factor authentication has been enabled." });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to verify 2FA" });
+    return next(error);
   }
 });
 
-router.get("/api/account/2fa/status", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/account/2fa/status", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const [record] = await db.select().from(userTotpSecrets)
@@ -415,11 +415,11 @@ router.get("/api/account/2fa/status", requireAuth, async (req: AuthRequest, res)
 
     return res.json({ enabled: !!record, verifiedAt: record?.verifiedAt?.toISOString() || null });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to check 2FA status" });
+    return next(error);
   }
 });
 
-router.post("/api/account/2fa/disable", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/account/2fa/disable", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
 
@@ -438,11 +438,11 @@ router.post("/api/account/2fa/disable", requireAuth, async (req: AuthRequest, re
 
     return res.json({ success: true, message: "Two-factor authentication has been disabled." });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to disable 2FA" });
+    return next(error);
   }
 });
 
-router.get("/api/account/api-keys", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/account/api-keys", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!requireAdminRole(req, res)) return;
     const userId = req.user!.id;
@@ -458,7 +458,7 @@ router.get("/api/account/api-keys", requireAuth, async (req: AuthRequest, res) =
       lastUsed: k.lastUsedAt?.toISOString() || null,
     })));
   } catch (error) {
-    return res.status(500).json({ error: "Failed to fetch API keys" });
+    return next(error);
   }
 });
 
@@ -466,7 +466,7 @@ const apiKeyCreateSchema = z.object({
   name: z.string().min(1).max(100),
 });
 
-router.post("/api/account/api-keys", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/account/api-keys", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!requireAdminRole(req, res)) return;
     const userId = req.user!.id;
@@ -500,11 +500,11 @@ router.post("/api/account/api-keys", requireAuth, async (req: AuthRequest, res) 
 
     return res.json({ key: rawKey, name: name.trim(), message: "Copy this key now. It will not be shown again." });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to create API key" });
+    return next(error);
   }
 });
 
-router.delete("/api/account/api-keys/:keyId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/account/api-keys/:keyId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!requireAdminRole(req, res)) return;
     const userId = req.user!.id;
@@ -529,11 +529,11 @@ router.delete("/api/account/api-keys/:keyId", requireAuth, async (req: AuthReque
 
     return res.json({ success: true });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to delete API key" });
+    return next(error);
   }
 });
 
-router.get("/api/account/integrations-status", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/account/integrations-status", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!requireAdminRole(req, res)) return;
     const orgId = req.user!.organizationId;

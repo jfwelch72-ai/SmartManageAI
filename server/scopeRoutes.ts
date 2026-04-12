@@ -23,7 +23,7 @@ type TradeType = (typeof tradeTypeEnum.enumValues)[number];
 // ====================
 
 // Get all work type categories with their work types - organization-specific
-router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -151,13 +151,12 @@ router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) =
     const categoriesWithTypes = Array.from(categoryMap.values());
     res.json(categoriesWithTypes);
   } catch (error) {
-    logError("Get scope work types error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Get all modifier categories with their modifiers - organization trade-specific
-router.get("/api/scope/modifiers", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/scope/modifiers", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -230,13 +229,12 @@ router.get("/api/scope/modifiers", requireAuth, async (req: AuthRequest, res) =>
     console.log(`[Modifiers] No trade-specific modifiers found for trade: ${org.tradeType}`);
     res.json([]);
   } catch (error) {
-    logError("Get scope modifiers error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Create work type category
-router.post("/api/scope/work-type-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/scope/work-type-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertScopeWorkTypeCategorySchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -251,13 +249,12 @@ router.post("/api/scope/work-type-categories", requireAuth, requireRole("ADMIN",
 
     res.status(201).json(newCategory);
   } catch (error) {
-    logError("Create work type category error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Create work type (creates in organizationSowItems for multi-tenant support)
-router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -360,13 +357,12 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
       res.status(400).json({ error: "A work type with this code already exists in your organization" });
       return;
     }
-    logError("Create work type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Update work type
-router.put("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.put("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -426,13 +422,12 @@ router.put("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN", "MANAG
 
     res.json(updated);
   } catch (error) {
-    logError("Update work type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Soft delete work type (set inactive)
-router.delete("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.delete("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db
       .select()
@@ -453,13 +448,12 @@ router.delete("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN"), as
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete work type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Create modifier category
-router.post("/api/scope/modifier-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/scope/modifier-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertScopeModifierCategorySchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -474,13 +468,12 @@ router.post("/api/scope/modifier-categories", requireAuth, requireRole("ADMIN", 
 
     res.status(201).json(newCategory);
   } catch (error) {
-    logError("Create modifier category error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Create modifier
-router.post("/api/scope/modifiers", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/scope/modifiers", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertScopeModifierSchema.safeParse({
       ...req.body,
@@ -502,13 +495,12 @@ router.post("/api/scope/modifiers", requireAuth, requireRole("ADMIN", "MANAGER")
       res.status(400).json({ error: "A modifier with this code already exists" });
       return;
     }
-    logError("Create modifier error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Update modifier
-router.put("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.put("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db
       .select()
@@ -532,13 +524,12 @@ router.put("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json(updated);
   } catch (error) {
-    logError("Update modifier error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Admin: Soft delete modifier (set inactive)
-router.delete("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.delete("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db
       .select()
@@ -559,8 +550,7 @@ router.delete("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN"), asy
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete modifier error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -569,7 +559,7 @@ router.delete("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN"), asy
 // Returns Trade → Subcategory → Work Types structure for GC and specialty trades
 // ====================
 
-router.get("/api/scope/hierarchical", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/scope/hierarchical", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -665,12 +655,11 @@ router.get("/api/scope/hierarchical", requireAuth, async (req: AuthRequest, res)
       hierarchy,
     });
   } catch (error) {
-    logError("Get hierarchical scope error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/scope/work-types-by-cost-code", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/scope/work-types-by-cost-code", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -712,8 +701,7 @@ router.get("/api/scope/work-types-by-cost-code", requireAuth, async (req: AuthRe
 
     res.json(mapping);
   } catch (error) {
-    logError("Get work types by cost code error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -723,7 +711,7 @@ router.get("/api/scope/work-types-by-cost-code", requireAuth, async (req: AuthRe
 // ====================
 
 // Get all presets for the organization
-router.get("/api/material-calculator/presets", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/material-calculator/presets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -739,13 +727,12 @@ router.get("/api/material-calculator/presets", requireAuth, async (req: AuthRequ
 
     res.json(result.rows);
   } catch (error) {
-    logError("Get material calculator presets error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Get presets for a specific work type code
-router.get("/api/material-calculator/presets/by-work-type/:workTypeCode", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/material-calculator/presets/by-work-type/:workTypeCode", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -765,13 +752,12 @@ router.get("/api/material-calculator/presets/by-work-type/:workTypeCode", requir
 
     res.json(result.rows);
   } catch (error) {
-    logError("Get presets by work type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Create a new preset
-router.post("/api/material-calculator/presets", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/material-calculator/presets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -824,13 +810,12 @@ router.post("/api/material-calculator/presets", requireAuth, async (req: AuthReq
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    logError("Create material calculator preset error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Update a preset
-router.put("/api/material-calculator/presets/:id", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/material-calculator/presets/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -896,13 +881,12 @@ router.put("/api/material-calculator/presets/:id", requireAuth, async (req: Auth
 
     res.json(result.rows[0]);
   } catch (error) {
-    logError("Update material calculator preset error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Delete a preset
-router.delete("/api/material-calculator/presets/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/material-calculator/presets/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -924,8 +908,7 @@ router.delete("/api/material-calculator/presets/:id", requireAuth, async (req: A
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete material calculator preset error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1163,7 +1146,7 @@ function mapCategoryToLegacyEnum(categoryName: string): { legacyEnum: string; is
 }
 
 // Get organization-specific work categories from their SOW items
-router.get("/api/organization/work-categories", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/organization/work-categories", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -1354,8 +1337,7 @@ router.get("/api/organization/work-categories", requireAuth, async (req: AuthReq
     // Ultimate fallback - return default construction categories using legacy enums
     return res.json(defaultCategories);
   } catch (error) {
-    logError("Get organization work categories error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1364,7 +1346,7 @@ router.get("/api/organization/work-categories", requireAuth, async (req: AuthReq
 // ====================
 
 // Get organization trade configuration
-router.get("/api/organization/trade-config", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/organization/trade-config", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -1410,13 +1392,12 @@ router.get("/api/organization/trade-config", requireAuth, async (req: AuthReques
       tradeTypes
     });
   } catch (error) {
-    logError("Get trade config error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Update organization trade type
-router.post("/api/organization/update-trade-type", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/api/organization/update-trade-type", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -1477,13 +1458,12 @@ router.post("/api/organization/update-trade-type", requireAuth, requireRole("ADM
       newTradeType
     });
   } catch (error) {
-    logError("Update trade type error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Reinitialize SOW items based on current trade type
-router.post("/api/organization/reinitialize-sow", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/api/organization/reinitialize-sow", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -1658,13 +1638,12 @@ router.post("/api/organization/reinitialize-sow", requireAuth, requireRole("ADMI
       categories: newCategories,
     });
   } catch (error) {
-    logError("Reinitialize SOW error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Get SOW preview for a trade type (for onboarding review)
-router.get("/api/organization/sow-preview/:tradeType", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/organization/sow-preview/:tradeType", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { tradeType } = req.params;
 
@@ -1732,8 +1711,7 @@ router.get("/api/organization/sow-preview/:tradeType", requireAuth, async (req: 
       categories
     });
   } catch (error) {
-    logError("Get SOW preview error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1742,7 +1720,7 @@ router.get("/api/organization/sow-preview/:tradeType", requireAuth, async (req: 
 // Returns Universal + Trade + Scope-Suggested modifiers merged
 // ====================
 
-router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -1948,13 +1926,12 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
       persistenceEnabled: usedModifiersTable,
     });
   } catch (error) {
-    logError("Get modifiers for scope error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Get saved modifier selections for a line item
-router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2018,12 +1995,11 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
 
     res.json(selections);
   } catch (error) {
-    logError("Get bid modifier selections error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bid-modifier-selections/by-bid/:bidId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bid-modifier-selections/by-bid/:bidId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2063,13 +2039,12 @@ router.get("/api/bid-modifier-selections/by-bid/:bidId", requireAuth, async (req
 
     res.json({ selections });
   } catch (error) {
-    logError("Get bid modifier selections by bid error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 // Save modifier selections for a line item
-router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2171,8 +2146,7 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
 
     res.json(saved);
   } catch (error) {
-    logError("Save bid modifier selections error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -2255,7 +2229,7 @@ async function syncMaterialBudgetsFromScopeItem(scopeItemId: string, completedQu
   }
 }
 
-router.get("/api/projects/:code/scope", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/scope", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2306,12 +2280,11 @@ router.get("/api/projects/:code/scope", requireAuth, async (req: AuthRequest, re
 
     res.json(enrichedItems);
   } catch (error) {
-    logError("Get scope items error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/projects/:code/scope", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/scope", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2340,12 +2313,11 @@ router.post("/api/projects/:code/scope", requireAuth, requireRole("ADMIN", "MANA
     const [newScopeItem] = await db.insert(scopeItems).values([insertData]).returning();
     res.status(201).json(newScopeItem);
   } catch (error: any) {
-    logError("Create scope item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.patch("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -2412,12 +2384,11 @@ router.patch("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(updatedItem);
   } catch (error: any) {
-    logError("Update scope item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.delete("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [scopeItem] = await db
       .select()
@@ -2446,12 +2417,11 @@ router.delete("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete scope item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const materialsSchema = z.object({
       actualConcreteYards: z.string().nullable().optional(),
@@ -2566,12 +2536,11 @@ router.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN",
 
     res.json(updatedItem);
   } catch (error: any) {
-    logError("Update scope item materials error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:projectId/material-overages", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/material-overages", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const projectId = req.params.projectId;
     
@@ -2618,12 +2587,11 @@ router.get("/api/projects/:projectId/material-overages", requireAuth, requireRol
 
     res.json({ overages: overageItems, count: overageItems.length });
   } catch (error) {
-    logError("Get material overages error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const progressEntries = await db
       .select({
@@ -2641,12 +2609,11 @@ router.get("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: Au
 
     res.json(progressEntries);
   } catch (error) {
-    logError("Get daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [scopeItem] = await db
       .select()
@@ -2763,12 +2730,11 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
 
     res.status(201).json(newProgress);
   } catch (error: any) {
-    logError("Create daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [existingProgress] = await db
       .select()
@@ -2893,12 +2859,11 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
 
     res.json(updatedProgress);
   } catch (error: any) {
-    logError("Update daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [existingProgress] = await db
       .select()
@@ -2944,8 +2909,7 @@ router.delete("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth,
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

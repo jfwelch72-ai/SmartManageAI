@@ -10,6 +10,25 @@ import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
+const paginationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(500).default(100),
+});
+
+const multipartParamsSchema = z.object({
+  partNumber: z.coerce.number().int().min(1),
+});
+
+const multipartQuerySchema = z.object({
+  chunkSize: z.coerce.number().int().min(1).optional(),
+});
+
+const uploadByteRangeSchema = z.object({
+  start: z.coerce.number().int().min(0),
+  end: z.coerce.number().int().min(0),
+  total: z.coerce.number().int().min(1),
+});
+
 const uploadPartQueues = new Map<string, Promise<void>>();
 
 function serializePartUpload(uploadId: string, task: () => Promise<void>): Promise<void> {
@@ -20,7 +39,7 @@ function serializePartUpload(uploadId: string, task: () => Promise<void>): Promi
   return queued;
 }
 
-router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { scopeItems } = await import("@shared/schema");
     const events = await db
@@ -35,12 +54,11 @@ router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("
 
     res.json(events);
   } catch (error) {
-    logError("Get billing events error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       scopeItemId: z.string(),
@@ -62,17 +80,17 @@ router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"),
 
     res.status(201).json(newEvent);
   } catch (error) {
-    logError("Create billing event error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/audit-logs", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.get("/api/audit-logs", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const { entityType, entityId, userId, action, page = "1", pageSize = "100" } = req.query;
+    const { entityType, entityId, userId, action } = req.query;
 
-    const pageNum = parseInt(page as string);
-    const pageSizeNum = parseInt(pageSize as string);
+    const pq = paginationQuerySchema.safeParse(req.query);
+    if (!pq.success) { res.status(400).json({ error: "Invalid pagination parameters", details: pq.error.errors }); return; }
+    const { page: pageNum, pageSize: pageSizeNum } = pq.data;
     const offset = (pageNum - 1) * pageSizeNum;
 
     const validActions = ["CREATE", "READ", "UPDATE", "DELETE", "APPROVE", "REJECT", "LOGIN", "LOGOUT", "STATUS_CHANGE"];
@@ -112,12 +130,11 @@ router.get("/api/audit-logs", requireAuth, requireRole("ADMIN"), async (req: Aut
 
     res.json(logs);
   } catch (error) {
-    logError("Get audit logs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/audit-logs/:entityType/:entityId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/audit-logs/:entityType/:entityId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const logs = await db
       .select()
@@ -131,8 +148,7 @@ router.get("/api/audit-logs/:entityType/:entityId", requireAuth, requireRole("AD
 
     res.json(logs);
   } catch (error) {
-    logError("Get entity audit logs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -151,7 +167,7 @@ const uploadRequestSchema = z.object({
   fileType: z.enum(["MEDIA", "DOCUMENT", "RECEIPT", "BIM", "LIDAR"]).optional(),
 });
 
-router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -206,13 +222,12 @@ router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res) =>
 
     res.json({ uploadURL, intentId: intent.id, objectKey });
   } catch (error: any) {
-    logError("Get upload URL error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
 
-router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -254,12 +269,11 @@ router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res)
 
     res.json({ uploadId: intent.id, key: objectKey });
   } catch (error: any) {
-    logError("createMultipartUpload error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { uploadId } = req.params;
     const { uploadIntents } = await import("@shared/schema");
@@ -297,12 +311,11 @@ router.get("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthRequ
     }
     res.json({ parts: [] });
   } catch (error: any) {
-    logError("listParts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/objects/multipart/:uploadId/:partNumber", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/objects/multipart/:uploadId/:partNumber", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { uploadId, partNumber } = req.params;
     const { chunkSize } = req.query;
@@ -312,8 +325,11 @@ router.get("/api/objects/multipart/:uploadId/:partNumber", requireAuth, async (r
     if (!intent) { res.status(404).json({ error: "Upload intent not found" }); return; }
     if (intent.uploadedById !== req.user!.id) { res.status(403).json({ error: "Access denied" }); return; }
 
-    const partNum = parseInt(partNumber, 10);
-    const clientChunkSize = chunkSize ? parseInt(chunkSize as string, 10) : null;
+    const mpParams = multipartParamsSchema.safeParse({ partNumber });
+    if (!mpParams.success) { res.status(400).json({ error: "Invalid part number" }); return; }
+    const partNum = mpParams.data.partNumber;
+    const mqParsed = multipartQuerySchema.safeParse(req.query);
+    const clientChunkSize = mqParsed.success ? (mqParsed.data.chunkSize ?? null) : null;
     const resolvedChunkSize = intent.chunkSize ?? clientChunkSize ?? 8 * 1024 * 1024;
 
     if (!intent.chunkSize && clientChunkSize) {
@@ -327,12 +343,11 @@ router.get("/api/objects/multipart/:uploadId/:partNumber", requireAuth, async (r
     const proxyUrl = `/api/objects/multipart/${uploadId}/${partNumber}/upload?start=${partStart}&end=${partEnd}&total=${intent.fileSize}`;
     res.json({ url: proxyUrl, headers: {} });
   } catch (error: any) {
-    logError("signPart error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { uploadId } = req.params;
     const { start, end, total } = req.query;
@@ -343,9 +358,9 @@ router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, a
     if (intent.uploadedById !== req.user!.id) { res.status(403).json({ error: "Access denied" }); return; }
     if (!intent.resumableUri) { res.status(400).json({ error: "No resumable URI for this intent" }); return; }
 
-    const startByte = parseInt(start as string, 10);
-    const endByte = parseInt(end as string, 10);
-    const totalBytes = parseInt(total as string, 10);
+    const byteRange = uploadByteRangeSchema.safeParse({ start, end, total });
+    if (!byteRange.success) { res.status(400).json({ error: "Invalid byte range parameters" }); return; }
+    const { start: startByte, end: endByte, total: totalBytes } = byteRange.data;
     const contentRange = `bytes ${startByte}-${endByte}/${totalBytes}`;
 
     const chunks: Buffer[] = [];
@@ -377,12 +392,11 @@ router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, a
     res.setHeader("ETag", etag);
     res.json({ ETag: etag });
   } catch (error: any) {
-    logError("multipart part upload proxy error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { uploadId } = req.params;
     const { aclPolicy } = req.body;
@@ -409,12 +423,11 @@ router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req
     uploadPartQueues.delete(uploadId);
     res.json({ location: normalizedPath, objectPath: normalizedPath });
   } catch (error: any) {
-    logError("completeMultipartUpload error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { uploadId } = req.params;
     const { uploadIntents } = await import("@shared/schema");
@@ -435,12 +448,11 @@ router.delete("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthR
     uploadPartQueues.delete(uploadId);
     res.status(204).send();
   } catch (error: any) {
-    logError("abortMultipartUpload error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/objects/confirm", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/objects/confirm", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { intentId, aclPolicy } = req.body;
     if (!intentId) {
@@ -491,12 +503,11 @@ router.post("/api/objects/confirm", requireAuth, async (req: AuthRequest, res) =
 
     res.json({ objectPath: normalizedPath, intentId });
   } catch (error: any) {
-    logError("Confirm upload error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res) => {
+router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { ObjectStorageService, ObjectNotFoundError } = await objectStoragePromise;
     const { ObjectPermission } = await objectAclPromise;
@@ -544,7 +555,7 @@ router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res)
       res.status(404).json({ error: "Object not found" });
       return;
     }
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectNotes, companyDailyNotes, users, projects } from "@shared/schema";
 import { insertProjectNoteSchema, insertCompanyDailyNoteSchema } from "@shared/schema";
@@ -9,7 +9,7 @@ import { requireAuth, type AuthRequest } from "./auth";
 const router = Router();
 
 // Get project notes with optional filters
-router.get("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { authorId, startDate, endDate } = req.query;
@@ -50,16 +50,12 @@ router.get("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, r
 
     res.json(notes);
   } catch (error: any) {
-    logError("Error fetching project notes:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ 
-      error: "Failed to fetch project notes",
-      details: error.message 
-    });
+    next(error);
   }
 });
 
 // Update a project note (creator OR admin only)
-router.patch("/projects/:projectId/notes/:noteId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:projectId/notes/:noteId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { noteId } = req.params;
     const userId = req.user?.id;
@@ -118,16 +114,12 @@ router.patch("/projects/:projectId/notes/:noteId", requireAuth, async (req: Auth
 
     res.json(updatedNote);
   } catch (error: any) {
-    logError("Error updating project note:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ 
-      error: "Failed to update project note",
-      details: error.message 
-    });
+    next(error);
   }
 });
 
 // Create a project note
-router.post("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const userId = req.user?.id;
@@ -173,16 +165,12 @@ router.post("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, 
 
     res.status(201).json(noteWithUser);
   } catch (error: any) {
-    logError("Error creating project note:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ 
-      error: "Failed to create project note",
-      details: error.message 
-    });
+    next(error);
   }
 });
 
 // Get company daily notes with optional filters
-router.get("/company-notes", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/company-notes", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { authorId, projectId, startDate, endDate } = req.query;
     const userOrgId = req.user?.organizationId;
@@ -244,16 +232,12 @@ router.get("/company-notes", requireAuth, async (req: AuthRequest, res: Response
 
     res.json(notes);
   } catch (error: any) {
-    logError("Error fetching company notes:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ 
-      error: "Failed to fetch company notes",
-      details: error.message 
-    });
+    next(error);
   }
 });
 
 // Update a company daily note (creator OR admin only)
-router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { noteId } = req.params;
     const userId = req.user?.id;
@@ -327,16 +311,12 @@ router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res
 
     res.json(updatedNote);
   } catch (error: any) {
-    logError("Error updating company note:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ 
-      error: "Failed to update company note",
-      details: error.message 
-    });
+    next(error);
   }
 });
 
 // Create a company daily note
-router.post("/company-notes", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/company-notes", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;
     const userOrgId = req.user?.organizationId;
@@ -402,11 +382,7 @@ router.post("/company-notes", requireAuth, async (req: AuthRequest, res: Respons
 
     res.status(201).json(noteWithDetails);
   } catch (error: any) {
-    logError("Error creating company note:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ 
-      error: "Failed to create company note",
-      details: error.message 
-    });
+    next(error);
   }
 });
 

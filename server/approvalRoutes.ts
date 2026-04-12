@@ -6,7 +6,7 @@ import { notifySubmitter } from "./services/approvalNotificationService";
 
 const router = Router();
 
-router.get("/", requireAuth, async (req: AuthRequest, res) => {
+router.get("/", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
@@ -16,12 +16,11 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
     const approvals = await approvalService.getPendingApprovals(user.organizationId, entityType);
     res.json(approvals);
   } catch (err) {
-    logError("Failed to list approvals", { error: String(err) });
-    res.status(500).json({ error: "Failed to list approvals" });
+    next(err);
   }
 });
 
-router.get("/stats", requireAuth, async (req: AuthRequest, res) => {
+router.get("/stats", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -30,12 +29,11 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res) => {
     const stats = await approvalService.getApprovalStats(user.organizationId);
     res.json(stats);
   } catch (err) {
-    logError("Failed to get approval stats", { error: String(err) });
-    res.status(500).json({ error: "Failed to get approval stats" });
+    next(err);
   }
 });
 
-router.get("/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
@@ -45,11 +43,11 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res) => {
     if (!approval) return res.status(404).json({ error: "Not found" });
     res.json(approval);
   } catch (err) {
-    res.status(500).json({ error: "Failed to get approval" });
+    next(err);
   }
 });
 
-router.post("/:id/approve", requireAuth, async (req: AuthRequest, res) => {
+router.post("/:id/approve", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -71,12 +69,11 @@ router.post("/:id/approve", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(result);
   } catch (err) {
-    logError("Failed to approve", { error: String(err) });
-    res.status(500).json({ error: "Failed to approve" });
+    next(err);
   }
 });
 
-router.post("/:id/reject", requireAuth, async (req: AuthRequest, res) => {
+router.post("/:id/reject", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -98,8 +95,7 @@ router.post("/:id/reject", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(result);
   } catch (err) {
-    logError("Failed to reject", { error: String(err) });
-    res.status(500).json({ error: "Failed to reject" });
+    next(err);
   }
 });
 

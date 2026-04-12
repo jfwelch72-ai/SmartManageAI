@@ -345,7 +345,7 @@ async function captureKpiFromShift(userId: string, orgId: string, totalHours: nu
   }
 }
 
-router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -490,12 +490,11 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
 
     res.status(201).json({ ...newShift, geofenceWarning });
   } catch (error) {
-    logError("Clock-in error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -631,12 +630,11 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
 
     res.json({ ...updatedShift, geofenceWarning });
   } catch (error) {
-    logError("Clock-out error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/my-current-shift", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/time-clock/my-current-shift", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [activeShift] = await db
       .select()
@@ -664,17 +662,17 @@ router.get("/api/time-clock/my-current-shift", requireAuth, async (req: AuthRequ
 
     res.json({ shift: activeShift, project });
   } catch (error) {
-    logError("Get current shift error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/my-shifts", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/time-clock/my-shifts", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const { startDate, endDate, page = "1", pageSize = "50" } = req.query;
+    const { startDate, endDate } = req.query;
 
-    const pageNum = parseInt(page as string);
-    const pageSizeNum = parseInt(pageSize as string);
+    const pq = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(50) }).safeParse(req.query);
+    if (!pq.success) { res.status(400).json({ error: "Invalid pagination parameters" }); return; }
+    const { page: pageNum, pageSize: pageSizeNum } = pq.data;
     const offset = (pageNum - 1) * pageSizeNum;
 
     const conditions = [eq(timeClockShifts.userId, req.user!.id)];
@@ -710,12 +708,11 @@ router.get("/api/time-clock/my-shifts", requireAuth, async (req: AuthRequest, re
 
     res.json(enriched);
   } catch (error) {
-    logError("Get my shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -750,12 +747,11 @@ router.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: Aut
 
     res.json(updatedShift);
   } catch (error) {
-    logError("Update notes error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       costCode: z.string().nullable(),
@@ -802,12 +798,11 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
 
     res.json(updatedShift);
   } catch (error) {
-    logError("Update cost code error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const pendingShifts = await db
@@ -848,12 +843,11 @@ router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN"
 
     res.json(formattedShifts);
   } catch (error) {
-    logError("Get pending approvals error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const activeShifts = await db
@@ -893,17 +887,17 @@ router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "M
 
     res.json(formattedShifts);
   } catch (error) {
-    logError("Get active shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
-    const { startDate, endDate, page = "1", pageSize = "50" } = req.query;
+    const { startDate, endDate } = req.query;
 
-    const pageNum = parseInt(page as string);
-    const pageSizeNum = parseInt(pageSize as string);
+    const pq = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(50) }).safeParse(req.query);
+    if (!pq.success) { res.status(400).json({ error: "Invalid pagination parameters" }); return; }
+    const { page: pageNum, pageSize: pageSizeNum } = pq.data;
     const offset = (pageNum - 1) * pageSizeNum;
 
     const [targetUser] = await db.select({ id: users.id, organizationId: users.organizationId })
@@ -931,12 +925,11 @@ router.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("
 
     res.json(shifts);
   } catch (error) {
-    logError("Get employee shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1032,12 +1025,11 @@ router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN
 
     res.json(updatedShift);
   } catch (error) {
-    logError("Adjust shift error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1107,12 +1099,11 @@ router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRol
 
     res.json(updatedShift);
   } catch (error) {
-    logError("Admin clock-out error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       createTimeEntry: z.boolean().optional(),
@@ -1219,12 +1210,11 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
 
     res.json({ ...updatedShift, timeEntryCreated: !!timeEntryId, timeEntryId });
   } catch (error) {
-    logError("Approve shift error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1284,12 +1274,11 @@ router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN
 
     res.json(updatedShift);
   } catch (error) {
-    logError("Reject shift error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const activeShifts = await db
@@ -1316,12 +1305,11 @@ router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"),
 
     res.json(activeShifts);
   } catch (error) {
-    logError("Get live shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/time-clock/auto-clock-out-worker", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.post("/api/time-clock/auto-clock-out-worker", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const cutoffTime = new Date(Date.now() - MAX_SHIFT_HOURS * 60 * 60 * 1000);
 
@@ -1365,12 +1353,11 @@ router.post("/api/time-clock/auto-clock-out-worker", requireAuth, requireRole("A
 
     res.json({ count: results.length, shifts: results });
   } catch (error) {
-    logError("Auto clock-out worker error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:projectId/labor-hours", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/labor-hours", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const { startDate, endDate, approvalStatus, userId, sortBy } = req.query;
@@ -1435,12 +1422,11 @@ router.get("/api/projects/:projectId/labor-hours", requireAuth, requireRole("ADM
       summary: { totalShifts: shiftsWithCosts.length, totalHours, totalLaborCost, averageHourlyRate },
     });
   } catch (error) {
-    logError("Get project labor hours error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const { startDate, endDate } = req.query;
@@ -1506,8 +1492,7 @@ router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth
       summary: { totalShifts, clockInViolations, clockOutViolations },
     });
   } catch (error) {
-    logError("Get geofence compliance error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

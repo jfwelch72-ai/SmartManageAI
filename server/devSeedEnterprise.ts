@@ -21,7 +21,7 @@ import { requireDevSeed } from "./utils/devSeedFlag";
 
 const router = Router();
 
-router.post("/seed-enterprise", requireDevSeed, requireAuth, async (req, res) => {
+router.post("/seed-enterprise", requireDevSeed, requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
@@ -257,11 +257,11 @@ router.post("/seed-enterprise", requireDevSeed, requireAuth, async (req, res) =>
       results,
     });
   } catch (err) {
-    res.status(500).json({ error: "Seed failed", details: String(err) });
+    next(err);
   }
 });
 
-router.post("/clear-enterprise", requireAuth, async (req, res) => {
+router.post("/clear-enterprise", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
     if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
@@ -279,7 +279,7 @@ router.post("/clear-enterprise", requireAuth, async (req, res) => {
 
     res.json({ success: true, message: "Enterprise seed data cleared" });
   } catch (err) {
-    res.status(500).json({ error: "Clear failed", details: String(err) });
+    next(err);
   }
 });
 

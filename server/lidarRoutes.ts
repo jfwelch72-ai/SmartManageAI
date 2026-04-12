@@ -49,7 +49,7 @@ const updateScanSchema = z.object({
 
 const LIDAR_READ_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "HUSTLER"] as const;
 
-router.get("/api/projects/:projectId/lidar-scans", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/lidar-scans", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -62,12 +62,11 @@ router.get("/api/projects/:projectId/lidar-scans", requireAuth, requireLidarFeat
 
     res.json(scans);
   } catch (error) {
-    logError("Get LiDAR scans error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/lidar-scans", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/lidar-scans", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
@@ -78,12 +77,11 @@ router.get("/api/lidar-scans", requireAuth, requireLidarFeature, requireRole(...
 
     res.json(scans);
   } catch (error) {
-    logError("Get all LiDAR scans error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const [scan] = await db.select().from(lidarScans).where(eq(lidarScans.id, req.params.id)).limit(1);
     if (!scan) { res.status(404).json({ error: "Scan not found" }); return; }
@@ -91,12 +89,11 @@ router.get("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRole
 
     res.json(scan);
   } catch (error) {
-    logError("Get LiDAR scan error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/lidar-scans", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "FIELD_WORKER", "HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/api/lidar-scans", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "FIELD_WORKER", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const parsed = createScanSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -114,12 +111,11 @@ router.post("/api/lidar-scans", requireAuth, requireLidarFeature, requireRole("A
 
     res.status(201).json(scan);
   } catch (error) {
-    logError("Create LiDAR scan error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res) => {
+router.patch("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const [scan] = await db.select().from(lidarScans).where(eq(lidarScans.id, req.params.id)).limit(1);
     if (!scan) { res.status(404).json({ error: "Scan not found" }); return; }
@@ -135,12 +131,11 @@ router.patch("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRo
 
     res.json(updated);
   } catch (error) {
-    logError("Update LiDAR scan error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res) => {
+router.delete("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const [scan] = await db.select().from(lidarScans).where(eq(lidarScans.id, req.params.id)).limit(1);
     if (!scan) { res.status(404).json({ error: "Scan not found" }); return; }
@@ -149,8 +144,7 @@ router.delete("/api/lidar-scans/:id", requireAuth, requireLidarFeature, requireR
     await db.delete(lidarScans).where(eq(lidarScans.id, req.params.id));
     res.status(204).send();
   } catch (error) {
-    logError("Delete LiDAR scan error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -165,7 +159,7 @@ const createAnnotationSchema = z.object({
   color: z.string().optional(),
 });
 
-router.get("/api/lidar-scans/:scanId/annotations", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/lidar-scans/:scanId/annotations", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const [scan] = await db.select().from(lidarScans).where(eq(lidarScans.id, req.params.scanId)).limit(1);
     if (!scan) { res.status(404).json({ error: "Scan not found" }); return; }
@@ -177,12 +171,11 @@ router.get("/api/lidar-scans/:scanId/annotations", requireAuth, requireLidarFeat
 
     res.json(annotations);
   } catch (error) {
-    logError("Get LiDAR annotations error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/lidar-scans/:scanId/annotations", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "FIELD_WORKER", "HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/api/lidar-scans/:scanId/annotations", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "FIELD_WORKER", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const [scan] = await db.select().from(lidarScans).where(eq(lidarScans.id, req.params.scanId)).limit(1);
     if (!scan) { res.status(404).json({ error: "Scan not found" }); return; }
@@ -198,12 +191,11 @@ router.post("/api/lidar-scans/:scanId/annotations", requireAuth, requireLidarFea
 
     res.status(201).json(annotation);
   } catch (error) {
-    logError("Create LiDAR annotation error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/lidar-annotations/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res) => {
+router.delete("/api/lidar-annotations/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const [annotation] = await db.select().from(lidarAnnotations).where(eq(lidarAnnotations.id, req.params.id)).limit(1);
     if (!annotation) { res.status(404).json({ error: "Annotation not found" }); return; }
@@ -215,8 +207,7 @@ router.delete("/api/lidar-annotations/:id", requireAuth, requireLidarFeature, re
     await db.delete(lidarAnnotations).where(eq(lidarAnnotations.id, req.params.id));
     res.status(204).send();
   } catch (error) {
-    logError("Delete LiDAR annotation error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -232,7 +223,7 @@ const createComparisonSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/api/projects/:projectId/lidar-comparisons", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/lidar-comparisons", requireAuth, requireLidarFeature, requireRole(...LIDAR_READ_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
@@ -244,12 +235,11 @@ router.get("/api/projects/:projectId/lidar-comparisons", requireAuth, requireLid
 
     res.json(comparisons);
   } catch (error) {
-    logError("Get LiDAR comparisons error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/lidar-comparisons", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/api/lidar-comparisons", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const parsed = createComparisonSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -299,12 +289,11 @@ router.post("/api/lidar-comparisons", requireAuth, requireLidarFeature, requireR
 
     res.status(201).json(comparison);
   } catch (error) {
-    logError("Create LiDAR comparison error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/lidar-comparisons/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res) => {
+router.delete("/api/lidar-comparisons/:id", requireAuth, requireLidarFeature, requireRole("ADMIN", "MANAGER", "HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     const [comparison] = await db.select().from(lidarComparisons).where(eq(lidarComparisons.id, req.params.id)).limit(1);
     if (!comparison) { res.status(404).json({ error: "Comparison not found" }); return; }
@@ -313,8 +302,7 @@ router.delete("/api/lidar-comparisons/:id", requireAuth, requireLidarFeature, re
     await db.delete(lidarComparisons).where(eq(lidarComparisons.id, req.params.id));
     res.status(204).send();
   } catch (error) {
-    logError("Delete LiDAR comparison error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

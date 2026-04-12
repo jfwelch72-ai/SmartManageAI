@@ -31,7 +31,7 @@ const switchOrganizationSchema = z.object({
 // 3. No cross-tenant data leakage since org IDs come from validated links only
 // ============================================================================
 
-router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -176,13 +176,12 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
       organizationBreakdown: orgBreakdown,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch portfolio stats", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch portfolio stats" });
+    next(error);
   }
 });
 
 // Get AI-powered executive summary for HUSTLER portfolio
-router.get("/hustler/portfolio/ai-summary", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/portfolio/ai-summary", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -290,12 +289,11 @@ router.get("/hustler/portfolio/ai-summary", requireAuth, requireRole("HUSTLER"),
       }
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to generate AI summary", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to generate portfolio summary" });
+    next(error);
   }
 });
 
-router.get("/hustler/organizations", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/organizations", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -336,12 +334,11 @@ router.get("/hustler/organizations", requireAuth, requireRole("HUSTLER"), async 
       count: linkedOrgs.length,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch organizations", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch organizations" });
+    next(error);
   }
 });
 
-router.post("/hustler/link-organization", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/hustler/link-organization", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -401,12 +398,11 @@ router.post("/hustler/link-organization", requireAuth, requireRole("HUSTLER"), a
       message: "Organization linked successfully",
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to link organization", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to link organization" });
+    next(error);
   }
 });
 
-router.post("/hustler/switch-organization", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/hustler/switch-organization", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -463,12 +459,11 @@ router.post("/hustler/switch-organization", requireAuth, requireRole("HUSTLER"),
       message: `Switched to ${org.name}`,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to switch organization", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to switch organization" });
+    next(error);
   }
 });
 
-router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -506,12 +501,11 @@ router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requi
       message: "Organization unlinked successfully",
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to unlink organization", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to unlink organization" });
+    next(error);
   }
 });
 
-router.get("/hustler/current-role", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/current-role", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(400).json({ error: "No active organization" });
@@ -538,8 +532,7 @@ router.get("/hustler/current-role", requireAuth, requireRole("HUSTLER"), async (
       isHustler: true,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to get current role", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get current role" });
+    next(error);
   }
 });
 
@@ -565,7 +558,7 @@ function generateInviteToken(): { token: string; hash: string } {
 }
 
 // Admin invites a HUSTLER to have oversight of their organization
-router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthRequest, res) => {
+router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -697,13 +690,12 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
       message: "Invite created and email sent to the user.",
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to create invite", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create invite" });
+    next(error);
   }
 });
 
 // Get pending invites for the current user (HUSTLER viewing invites to them)
-router.get("/hustler/link-requests/pending", requireAuth, async (req: AuthRequest, res) => {
+router.get("/hustler/link-requests/pending", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -750,13 +742,12 @@ router.get("/hustler/link-requests/pending", requireAuth, async (req: AuthReques
 
     res.json({ invites: pendingInvites });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch pending invites", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch pending invites" });
+    next(error);
   }
 });
 
 // Get all link requests for an organization (for admins only)
-router.get("/hustler/link-requests/organization", requireAuth, async (req: AuthRequest, res) => {
+router.get("/hustler/link-requests/organization", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -785,13 +776,12 @@ router.get("/hustler/link-requests/organization", requireAuth, async (req: AuthR
 
     res.json({ requests });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch org requests", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch requests" });
+    next(error);
   }
 });
 
 // Accept or decline an invite (HUSTLER responding)
-router.post("/hustler/link-requests/:requestId/respond", requireAuth, async (req: AuthRequest, res) => {
+router.post("/hustler/link-requests/:requestId/respond", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -896,13 +886,12 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, async (req
       });
     }
   } catch (error: any) {
-    logError("[Hustler] Failed to respond to request", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to process response" });
+    next(error);
   }
 });
 
 // Accept invite via token (public - for email links, auto-creates user if needed)
-router.post("/hustler/link-requests/accept-invite", sensitiveLimiter, async (req, res) => {
+router.post("/hustler/link-requests/accept-invite", sensitiveLimiter, async (req, res, next) => {
   try {
     const { token } = req.body;
     if (!token) {
@@ -1017,13 +1006,12 @@ router.post("/hustler/link-requests/accept-invite", sensitiveLimiter, async (req
       message: `Successfully joined ${org?.name || "the organization"}!`,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to accept invite via link", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to accept invite" });
+    next(error);
   }
 });
 
 // Accept invite via token (authenticated - for logged-in users)
-router.post("/hustler/link-requests/accept-token", requireAuth, async (req: AuthRequest, res) => {
+router.post("/hustler/link-requests/accept-token", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1110,13 +1098,12 @@ router.post("/hustler/link-requests/accept-token", requireAuth, async (req: Auth
       message: `Successfully linked to ${org?.name || "organization"}!`,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to accept token", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to accept invite" });
+    next(error);
   }
 });
 
 // Revoke an invite (admin only)
-router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req: AuthRequest, res) => {
+router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1161,8 +1148,7 @@ router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req:
       message: "Invite revoked.",
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to revoke invite", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to revoke invite" });
+    next(error);
   }
 });
 
@@ -1181,7 +1167,7 @@ const inviteDelegateSchema = z.object({
 });
 
 // Get all delegates for a HUSTLER
-router.get("/hustler/delegates", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/delegates", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1215,13 +1201,12 @@ router.get("/hustler/delegates", requireAuth, requireRole("HUSTLER"), async (req
 
     res.json({ delegates });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch delegates", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch delegates" });
+    next(error);
   }
 });
 
 // Invite a delegate (COO, CFO, etc.)
-router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1285,13 +1270,12 @@ router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), as
       inviteToken: token, // For testing - in production this would be emailed
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to invite delegate", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to invite delegate" });
+    next(error);
   }
 });
 
 // Get pending delegate invites for the current user
-router.get("/hustler/delegates/invites", requireAuth, async (req: AuthRequest, res) => {
+router.get("/hustler/delegates/invites", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1329,13 +1313,12 @@ router.get("/hustler/delegates/invites", requireAuth, async (req: AuthRequest, r
 
     res.json({ invites });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch delegate invites", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch delegate invites" });
+    next(error);
   }
 });
 
 // Accept a delegate invite
-router.post("/hustler/delegates/:delegateId/accept", requireAuth, async (req: AuthRequest, res) => {
+router.post("/hustler/delegates/:delegateId/accept", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1386,13 +1369,12 @@ router.post("/hustler/delegates/:delegateId/accept", requireAuth, async (req: Au
       message: `You are now a ${invite.delegateRole} for this HUSTLER's portfolio`,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to accept delegate invite", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to accept invite" });
+    next(error);
   }
 });
 
 // Decline a delegate invite
-router.post("/hustler/delegates/:delegateId/decline", requireAuth, async (req: AuthRequest, res) => {
+router.post("/hustler/delegates/:delegateId/decline", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1434,13 +1416,12 @@ router.post("/hustler/delegates/:delegateId/decline", requireAuth, async (req: A
       message: "Invite declined",
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to decline delegate invite", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to decline invite" });
+    next(error);
   }
 });
 
 // Revoke a delegate (HUSTLER only)
-router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1479,8 +1460,7 @@ router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("H
       message: "Delegate access revoked",
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to revoke delegate", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to revoke delegate" });
+    next(error);
   }
 });
 
@@ -1488,7 +1468,7 @@ router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("H
 // UNIFIED INBOX - Aggregate tasks and notifications across all linked orgs
 // ============================================================================
 
-router.get("/hustler/unified-inbox", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/unified-inbox", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1687,13 +1667,12 @@ router.get("/hustler/unified-inbox", requireAuth, requireRole("HUSTLER"), async 
       },
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch unified inbox", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch unified inbox" });
+    next(error);
   }
 });
 
 // Mark notification as read (for unified inbox)
-router.post("/hustler/notifications/:notificationId/read", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/hustler/notifications/:notificationId/read", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1740,13 +1719,12 @@ router.post("/hustler/notifications/:notificationId/read", requireAuth, requireR
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("[Hustler] Failed to mark notification read", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to mark notification as read" });
+    next(error);
   }
 });
 
 // Mark all notifications as read for a HUSTLER user across all orgs
-router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1783,8 +1761,7 @@ router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HU
 
     res.json({ success: true });
   } catch (error: any) {
-    logError("[Hustler] Failed to mark all notifications read", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to mark notifications as read" });
+    next(error);
   }
 });
 
@@ -1792,7 +1769,7 @@ router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HU
 // BENCHMARKING - Cross-Organization Comparison
 // ========================================
 
-router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1921,8 +1898,7 @@ router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (
       portfolioTotals,
     });
   } catch (error: any) {
-    logError("[Hustler] Failed to fetch benchmarking data", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch benchmarking data" });
+    next(error);
   }
 });
 
@@ -1930,7 +1906,7 @@ router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (
 // CONSOLIDATED PORTFOLIO EXPORT - CSV Download
 // ============================================================================
 
-router.get("/hustler/portfolio/export", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+router.get("/hustler/portfolio/export", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2067,8 +2043,7 @@ router.get("/hustler/portfolio/export", requireAuth, requireRole("HUSTLER"), asy
     res.setHeader("Content-Disposition", `attachment; filename="portfolio-report-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(csv);
   } catch (error: any) {
-    logError("[Hustler] Failed to export portfolio", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to export portfolio report" });
+    next(error);
   }
 });
 

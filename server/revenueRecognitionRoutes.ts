@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { z } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -17,7 +17,7 @@ import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
 
-router.get("/api/revenue-recognition/project/:projectId", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/project/:projectId", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -43,12 +43,11 @@ router.get("/api/revenue-recognition/project/:projectId", requireAuth, requireFe
     const wipData = await calculateProjectWip(projectId);
     res.json(wipData);
   } catch (error) {
-    logError("Get project WIP error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/revenue-recognition/project-by-code/:code", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/project-by-code/:code", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { code } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -74,12 +73,11 @@ router.get("/api/revenue-recognition/project-by-code/:code", requireAuth, requir
     const wipData = await calculateProjectWip(project.id);
     res.json(wipData);
   } catch (error) {
-    logError("Get project WIP by code error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/revenue-recognition/wip-report", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/wip-report", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -131,12 +129,11 @@ router.get("/api/revenue-recognition/wip-report", requireAuth, requireFeaturePer
       },
     });
   } catch (error) {
-    logError("WIP report error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/revenue-recognition/snapshot", requireAuth, requireFeaturePermission("canEditFinancials"), async (req: AuthRequest, res: Response) => {
+router.post("/api/revenue-recognition/snapshot", requireAuth, requireFeaturePermission("canEditFinancials"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -147,12 +144,11 @@ router.post("/api/revenue-recognition/snapshot", requireAuth, requireFeaturePerm
     const count = await generateMonthlySnapshot(orgId);
     res.json({ message: `Snapshot generated for ${count} projects`, count });
   } catch (error) {
-    logError("Generate snapshot error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/revenue-recognition/history", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/history", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -168,12 +164,11 @@ router.get("/api/revenue-recognition/history", requireAuth, requireFeaturePermis
     const snapshots = await getHistoricalSnapshots(orgId, projectId, months, startDate, endDate);
     res.json(snapshots);
   } catch (error) {
-    logError("Get history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/revenue-recognition/wip-report/csv", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/wip-report/csv", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -299,12 +294,11 @@ router.get("/api/revenue-recognition/wip-report/csv", requireAuth, requireFeatur
     res.setHeader("Content-Disposition", `attachment; filename="wip-report-${new Date().toISOString().split("T")[0]}.csv"`);
     res.send(csv);
   } catch (error) {
-    logError("WIP CSV export error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/revenue-recognition/wip-report/pdf", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response) => {
+router.get("/api/revenue-recognition/wip-report/pdf", requireAuth, requireFeaturePermission("canViewFinancials"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -475,8 +469,7 @@ router.get("/api/revenue-recognition/wip-report/pdf", requireAuth, requireFeatur
     res.setHeader("Content-Disposition", `attachment; filename="wip-report-${new Date().toISOString().split("T")[0]}.pdf"`);
     res.send(pdfBuffer);
   } catch (error) {
-    logError("WIP PDF export error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

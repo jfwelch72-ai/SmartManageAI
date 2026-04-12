@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { safeJsonParse } from "./responseHelper";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { tasks, aiNoteInsights, users, projects, taskSubtasks, taskComments, taskAttachments } from "@shared/schema";
 import { eq, and, desc, asc, isNull, or } from "drizzle-orm";
@@ -55,7 +56,7 @@ async function authorizeTaskAccess(req: AuthRequest, taskId: string): Promise<{ 
 /**
  * Update AI insight status (acknowledge, start progress, complete, dismiss)
  */
-router.patch("/api/insights/:insightId/status", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/insights/:insightId/status", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { insightId } = req.params;
     const { status, dismissReason } = req.body;
@@ -115,21 +116,20 @@ router.patch("/api/insights/:insightId/status", requireAuth, async (req: AuthReq
     // Parse JSON fields for response
     const response = {
       ...updated,
-      recommendedActions: JSON.parse(updated.recommendedActions || "[]"),
-      recipients: JSON.parse(updated.recipients || "[]"),
+      recommendedActions: safeJsonParse(updated.recommendedActions, []),
+      recipients: safeJsonParse(updated.recipients, []),
     };
 
     res.json(response);
   } catch (error) {
-    logError("Error updating insight status:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update insight status" });
+    next(error);
   }
 });
 
 /**
  * Acknowledge an AI insight (mark as seen)
  */
-router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { insightId } = req.params;
     const userId = req.user!.id;
@@ -150,14 +150,13 @@ router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: Aut
 
     const response = {
       ...updated,
-      recommendedActions: JSON.parse(updated.recommendedActions || "[]"),
-      recipients: JSON.parse(updated.recipients || "[]"),
+      recommendedActions: safeJsonParse(updated.recommendedActions, []),
+      recipients: safeJsonParse(updated.recipients, []),
     };
 
     res.json(response);
   } catch (error) {
-    logError("Error acknowledging insight:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to acknowledge insight" });
+    next(error);
   }
 });
 
@@ -168,7 +167,7 @@ router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: Aut
 /**
  * Get all tasks (with filters)
  */
-router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/tasks", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { status, assignedToId, projectId, createdById, context, hiringCandidateId, hiringJobId } = req.query;
     const userRole = req.user!.role;
@@ -274,15 +273,14 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(taskList);
   } catch (error) {
-    logError("Error fetching tasks:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch tasks" });
+    next(error);
   }
 });
 
 /**
  * Get a single task by ID
  */
-router.get("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const userId = req.user!.id;
@@ -306,15 +304,14 @@ router.get("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json(task);
   } catch (error) {
-    logError("Error fetching task:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch task" });
+    next(error);
   }
 });
 
 /**
  * Create a new manual task
  */
-router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const organizationId = req.user!.organizationId;
@@ -367,15 +364,14 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    logError("Error creating task:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create task" });
+    next(error);
   }
 });
 
 /**
  * Update a task
  */
-router.patch("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const userId = req.user!.id;
@@ -449,15 +445,14 @@ router.patch("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Re
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    logError("Error updating task:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update task" });
+    next(error);
   }
 });
 
 /**
  * Delete a task
  */
-router.delete("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const userId = req.user!.id;
@@ -484,8 +479,7 @@ router.delete("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: R
 
     res.status(204).send();
   } catch (error) {
-    logError("Error deleting task:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete task" });
+    next(error);
   }
 });
 
@@ -493,7 +487,7 @@ router.delete("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: R
 // TASK SUBTASKS ENDPOINTS
 // ============================
 
-router.get("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -506,12 +500,11 @@ router.get("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, 
       .orderBy(asc(taskSubtasks.createdAt));
     res.json(subtaskList);
   } catch (error) {
-    logError("Error fetching subtasks:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch subtasks" });
+    next(error);
   }
 });
 
-router.post("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -530,12 +523,11 @@ router.post("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest,
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    logError("Error creating subtask:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create subtask" });
+    next(error);
   }
 });
 
-router.patch("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId, subtaskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -559,12 +551,11 @@ router.patch("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: 
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    logError("Error updating subtask:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update subtask" });
+    next(error);
   }
 });
 
-router.delete("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId, subtaskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -577,8 +568,7 @@ router.delete("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req:
     if (!deleted) return res.status(404).json({ error: "Subtask not found" });
     res.status(204).send();
   } catch (error) {
-    logError("Error deleting subtask:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete subtask" });
+    next(error);
   }
 });
 
@@ -586,7 +576,7 @@ router.delete("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req:
 // TASK COMMENTS ENDPOINTS
 // ============================
 
-router.get("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -610,12 +600,11 @@ router.get("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, 
       .orderBy(desc(taskComments.createdAt));
     res.json(commentList);
   } catch (error) {
-    logError("Error fetching comments:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch comments" });
+    next(error);
   }
 });
 
-router.post("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -651,8 +640,7 @@ router.post("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest,
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    logError("Error creating comment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create comment" });
+    next(error);
   }
 });
 
@@ -660,7 +648,7 @@ router.post("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest,
 // TASK ATTACHMENTS ENDPOINTS
 // ============================
 
-router.get("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -686,12 +674,11 @@ router.get("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthReques
       .orderBy(desc(taskAttachments.createdAt));
     res.json(attachmentList);
   } catch (error) {
-    logError("Error fetching attachments:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch attachments" });
+    next(error);
   }
 });
 
-router.post("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -715,12 +702,11 @@ router.post("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthReque
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    logError("Error creating attachment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create attachment" });
+    next(error);
   }
 });
 
-router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.single("file"), async (req: AuthRequest, res: Response) => {
+router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.single("file"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -740,7 +726,7 @@ router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.sin
       headers: { "Content-Type": file.mimetype },
     });
     if (!uploadRes.ok) {
-      return res.status(500).json({ error: "Failed to upload file to storage" });
+      return next(error);
     }
     const fileUrl = objectKey;
 
@@ -757,12 +743,11 @@ router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.sin
       .returning();
     res.status(201).json(attachment);
   } catch (error) {
-    logError("Error uploading attachment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to upload attachment" });
+    next(error);
   }
 });
 
-router.delete("/api/tasks/:taskId/attachments/:attachmentId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/api/tasks/:taskId/attachments/:attachmentId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId, attachmentId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -775,8 +760,7 @@ router.delete("/api/tasks/:taskId/attachments/:attachmentId", requireAuth, async
     if (!deleted) return res.status(404).json({ error: "Attachment not found" });
     res.status(204).send();
   } catch (error) {
-    logError("Error deleting attachment:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete attachment" });
+    next(error);
   }
 });
 
@@ -784,7 +768,7 @@ router.delete("/api/tasks/:taskId/attachments/:attachmentId", requireAuth, async
 // TASK ACTIVITY LOG ENDPOINT
 // ============================
 
-router.get("/api/tasks/:taskId/activity", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/api/tasks/:taskId/activity", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -851,8 +835,7 @@ router.get("/api/tasks/:taskId/activity", requireAuth, async (req: AuthRequest, 
 
     res.json(activity);
   } catch (error) {
-    logError("Error fetching activity:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch activity" });
+    next(error);
   }
 });
 

@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { safeJsonParse } from "./responseHelper";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { insertNotifications } from "./services/notificationService";
 import { subcontractorPortalTokens, portalActivityLog, projects, users, crmOrganisations, bidDocumentDistributions, notifications, portalChatThreads, portalChatMessages, clientPortalAccess, rfis, submittals, documentTransmittals, transmittalRecipients, rfiActivity, submittalActivity } from "@shared/schema";
@@ -62,7 +63,7 @@ export async function notifyGcTeamOfPortalActivity(
   }
 }
 
-router.get("/portal/manage/activity/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/portal/manage/activity/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { tokenId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -90,12 +91,11 @@ router.get("/portal/manage/activity/:tokenId", requireAuth, requireRole("SUPER_A
 
     res.json(activity);
   } catch (error) {
-    logError("Get portal activity error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/bid-docs/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/bid-docs/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -203,12 +203,11 @@ router.post("/bid-docs/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     res.status(201).json({ ...distribution, portalLink });
   } catch (error) {
-    logError("Send bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/bid-docs/distributions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/bid-docs/distributions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -232,12 +231,11 @@ router.get("/bid-docs/distributions", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(distributions);
   } catch (error) {
-    logError("List bid doc distributions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/bid-docs/distributions/:id/status", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/bid-docs/distributions/:id/status", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -278,8 +276,7 @@ router.patch("/bid-docs/distributions/:id/status", requireAuth, requireRole("SUP
 
     res.json(updated);
   } catch (error) {
-    logError("Update distribution status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -314,7 +311,7 @@ export async function notifyChatTeamMembers(orgId: string, projectId: string, se
   }
 }
 
-router.post("/team/chat/threads/:threadId/read", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/team/chat/threads/:threadId/read", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(404).json({ error: "Not found" });
@@ -355,12 +352,11 @@ router.post("/team/chat/threads/:threadId/read", requireAuth, async (req: AuthRe
 
     res.json({ success: true });
   } catch (error) {
-    logError("Team portal chat mark read error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/team/chat/threads", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/team/chat/threads", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(404).json({ error: "Not found" });
@@ -422,12 +418,11 @@ router.get("/team/chat/threads", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json(mapped);
   } catch (error) {
-    logError("Team portal chat threads list error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/team/chat/threads/:threadId/messages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/team/chat/threads/:threadId/messages", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(404).json({ error: "Not found" });
@@ -474,12 +469,11 @@ router.get("/team/chat/threads/:threadId/messages", requireAuth, async (req: Aut
 
     res.json(messages);
   } catch (error) {
-    logError("Team portal chat get messages error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/team/chat/threads/:threadId/messages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/team/chat/threads/:threadId/messages", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(404).json({ error: "Not found" });
@@ -575,12 +569,11 @@ router.post("/team/chat/threads/:threadId/messages", requireAuth, async (req: Au
 
     res.status(201).json(msg);
   } catch (error) {
-    logError("Team portal chat send message error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/team/chat/threads/:threadId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/team/chat/threads/:threadId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(404).json({ error: "Not found" });
@@ -615,12 +608,11 @@ router.patch("/team/chat/threads/:threadId", requireAuth, requireRole("SUPER_ADM
 
     res.json(updated);
   } catch (error) {
-    logError("Team portal chat update thread error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/team/chat/unread", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/team/chat/unread", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json({ unreadCount: 0 });
@@ -637,8 +629,7 @@ router.get("/team/chat/unread", requireAuth, async (req: AuthRequest, res: Respo
 
     res.json({ unreadCount: result[0]?.count || 0 });
   } catch (error) {
-    logError("Team portal chat unread count error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -670,8 +661,7 @@ router.get("/portal/info", requirePortalAuth, async (req: PortalRequest, res: Re
       contactEmail: token.contactEmail,
     });
   } catch (error) {
-    logError("Portal info error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -707,8 +697,7 @@ router.get("/portal/rfis", requirePortalAuth, requirePortalPermission("view"), a
 
     res.json(mapped);
   } catch (error) {
-    logError("Portal get RFIs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -753,8 +742,7 @@ router.get("/portal/rfis/:id", requirePortalAuth, requirePortalPermission("view"
       activity,
     });
   } catch (error) {
-    logError("Portal get RFI detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -800,8 +788,7 @@ router.post("/portal/rfis/:id/comment", requirePortalAuth, requirePortalPermissi
 
     res.status(201).json({ success: true });
   } catch (error) {
-    logError("Portal RFI comment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -837,8 +824,7 @@ router.get("/portal/submittals", requirePortalAuth, requirePortalPermission("vie
 
     res.json(mapped);
   } catch (error) {
-    logError("Portal get submittals error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -883,8 +869,7 @@ router.get("/portal/submittals/:id", requirePortalAuth, requirePortalPermission(
       activity,
     });
   } catch (error) {
-    logError("Portal get submittal detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -930,8 +915,7 @@ router.post("/portal/submittals/:id/comment", requirePortalAuth, requirePortalPe
 
     res.status(201).json({ success: true });
   } catch (error) {
-    logError("Portal submittal comment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -960,7 +944,7 @@ router.post("/portal/submittals/:id/upload", requirePortalAuth, requirePortalPer
     }
 
     const currentAttachments = submittal.attachmentsJson
-      ? JSON.parse(submittal.attachmentsJson)
+      ? safeJsonParse(submittal.attachmentsJson, null)
       : [];
 
     const newAttachment = {
@@ -994,8 +978,7 @@ router.post("/portal/submittals/:id/upload", requirePortalAuth, requirePortalPer
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    logError("Portal submittal upload error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1037,8 +1020,7 @@ router.get("/portal/transmittals", requirePortalAuth, requirePortalPermission("v
 
     res.json(mapped);
   } catch (error) {
-    logError("Portal get transmittals error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1095,8 +1077,7 @@ router.get("/portal/transmittals/:id", requirePortalAuth, requirePortalPermissio
       },
     });
   } catch (error) {
-    logError("Portal get transmittal detail error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1155,8 +1136,7 @@ router.post("/portal/transmittals/:id/acknowledge", requirePortalAuth, requirePo
 
     res.json(updated);
   } catch (error) {
-    logError("Portal acknowledge transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1164,7 +1144,7 @@ router.post("/portal/transmittals/:id/acknowledge", requirePortalAuth, requirePo
 // Routes from portalTokenRoutes.ts
 // ========================================
 
-router.get("/portal/manage/tokens", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/portal/manage/tokens", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin: isSA } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1218,12 +1198,11 @@ router.get("/portal/manage/tokens", requireAuth, requireRole("SUPER_ADMIN", "ADM
 
     res.json(mapped);
   } catch (error) {
-    logError("Get portal tokens error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/portal/manage/invite", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/portal/manage/invite", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1307,12 +1286,11 @@ router.post("/portal/manage/invite", requireAuth, requireRole("SUPER_ADMIN", "AD
       portalLink,
     });
   } catch (error) {
-    logError("Create portal invite error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/portal/manage/revoke/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/portal/manage/revoke/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { tokenId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1343,12 +1321,11 @@ router.post("/portal/manage/revoke/:tokenId", requireAuth, requireRole("SUPER_AD
 
     res.json(updated);
   } catch (error) {
-    logError("Revoke portal token error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { tokenId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1390,12 +1367,11 @@ router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_AD
       rawToken,
     });
   } catch (error) {
-    logError("Resend portal token error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/portal/manage/link/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/portal/manage/link/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { tokenId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1438,8 +1414,7 @@ router.post("/portal/manage/link/:tokenId", requireAuth, requireRole("SUPER_ADMI
 
     res.json({ portalLink });
   } catch (error) {
-    logError("Get portal link error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

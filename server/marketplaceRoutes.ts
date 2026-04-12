@@ -74,8 +74,7 @@ router.get("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res:
 
     res.json(scores);
   } catch (error) {
-    logError("Error fetching vendor scores:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch vendor scores" });
+    next(error);
   }
 });
 
@@ -104,8 +103,7 @@ router.get("/vendor-scores/summary/by-vendor", requireAuth, async (req: Authenti
 
     res.json(summary);
   } catch (error) {
-    logError("Error fetching vendor score summary:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch vendor score summary" });
+    next(error);
   }
 });
 
@@ -146,8 +144,7 @@ router.get("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, 
 
     res.json(score);
   } catch (error) {
-    logError("Error fetching vendor score:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch vendor score" });
+    next(error);
   }
 });
 
@@ -187,8 +184,7 @@ router.post("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res
 
     res.status(201).json(newScore);
   } catch (error) {
-    logError("Error creating vendor score:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create vendor score" });
+    next(error);
   }
 });
 
@@ -228,8 +224,7 @@ router.patch("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating vendor score:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update vendor score" });
+    next(error);
   }
 });
 
@@ -249,8 +244,7 @@ router.delete("/vendor-scores/:id", requireAuth, async (req: AuthenticatedReques
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting vendor score:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete vendor score" });
+    next(error);
   }
 });
 
@@ -301,8 +295,7 @@ router.get("/material-prices", requireAuth, async (req: AuthenticatedRequest, re
 
     res.json(prices);
   } catch (error) {
-    logError("Error fetching material prices:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch material prices" });
+    next(error);
   }
 });
 
@@ -318,8 +311,7 @@ router.get("/material-prices/categories/list", requireAuth, async (req: Authenti
 
     res.json(categories.filter(c => c.category).map(c => c.category));
   } catch (error) {
-    logError("Error fetching categories:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch categories" });
+    next(error);
   }
 });
 
@@ -346,8 +338,7 @@ router.get("/material-prices/history/:materialName", requireAuth, async (req: Au
 
     res.json(history);
   } catch (error) {
-    logError("Error fetching price history:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch price history" });
+    next(error);
   }
 });
 
@@ -375,8 +366,7 @@ router.get("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest
 
     res.json(price);
   } catch (error) {
-    logError("Error fetching material price:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch material price" });
+    next(error);
   }
 });
 
@@ -403,8 +393,7 @@ router.post("/material-prices", requireAuth, async (req: AuthenticatedRequest, r
 
     res.status(201).json(newPrice);
   } catch (error) {
-    logError("Error creating material price:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create material price" });
+    next(error);
   }
 });
 
@@ -431,8 +420,7 @@ router.patch("/material-prices/:id", requireAuth, async (req: AuthenticatedReque
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating material price:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update material price" });
+    next(error);
   }
 });
 
@@ -452,8 +440,7 @@ router.delete("/material-prices/:id", requireAuth, async (req: AuthenticatedRequ
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting material price:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete material price" });
+    next(error);
   }
 });
 
@@ -502,8 +489,7 @@ router.get("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res:
 
     res.json(listings);
   } catch (error) {
-    logError("Error fetching crew listings:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch crew listings" });
+    next(error);
   }
 });
 
@@ -546,8 +532,7 @@ router.get("/crew-listings/search/available", requireAuth, async (req: Authentic
 
     res.json(results);
   } catch (error) {
-    logError("Error searching crews:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to search crews" });
+    next(error);
   }
 });
 
@@ -567,8 +552,7 @@ router.get("/crew-listings/stats/by-trade", requireAuth, async (req: Authenticat
 
     res.json(stats);
   } catch (error) {
-    logError("Error fetching crew stats:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch crew stats" });
+    next(error);
   }
 });
 
@@ -602,8 +586,7 @@ router.get("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, 
 
     res.json(listing);
   } catch (error) {
-    logError("Error fetching crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch crew listing" });
+    next(error);
   }
 });
 
@@ -628,8 +611,7 @@ router.post("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res
 
     res.status(201).json(newListing);
   } catch (error) {
-    logError("Error creating crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create crew listing" });
+    next(error);
   }
 });
 
@@ -656,8 +638,7 @@ router.patch("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update crew listing" });
+    next(error);
   }
 });
 
@@ -677,8 +658,7 @@ router.delete("/crew-listings/:id", requireAuth, async (req: AuthenticatedReques
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete crew listing" });
+    next(error);
   }
 });
 
@@ -689,7 +669,7 @@ router.delete("/crew-listings/:id", requireAuth, async (req: AuthenticatedReques
 // ============================================
 // LIST DIRECTORY - public browse (auth required but no org restriction)
 // ============================================
-router.get("/contractors", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/contractors", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { search, trade, location, minRating } = req.query;
 
@@ -759,15 +739,14 @@ router.get("/contractors", requireAuth, async (req: AuthRequest, res: Response) 
       }))
     );
   } catch (error) {
-    logError("Failed to list contractor directory", undefined, error as Error);
-    res.status(500).json({ error: "Failed to list contractor directory" });
+    next(error);
   }
 });
 
 // ============================================
 // GET SINGLE CONTRACTOR PROFILE
 // ============================================
-router.get("/contractors/:orgId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/contractors/:orgId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId } = req.params;
 
@@ -807,8 +786,7 @@ router.get("/contractors/:orgId", requireAuth, async (req: AuthRequest, res: Res
 
     res.json(buildProfile(result));
   } catch (error) {
-    logError("Failed to get contractor profile", undefined, error as Error);
-    res.status(500).json({ error: "Failed to get contractor profile" });
+    next(error);
   }
 });
 
@@ -839,7 +817,7 @@ function buildProfile(r: {
 // ============================================
 // UPDATE OWN MARKETPLACE PROFILE
 // ============================================
-router.patch("/contractors/:orgId/profile", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/contractors/:orgId/profile", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId } = req.params;
     const user = req.user!;
@@ -889,15 +867,14 @@ router.patch("/contractors/:orgId/profile", requireAuth, async (req: AuthRequest
       return res.json(created);
     }
   } catch (error) {
-    logError("Failed to update marketplace profile", undefined, error as Error);
-    res.status(500).json({ error: "Failed to update marketplace profile" });
+    next(error);
   }
 });
 
 // ============================================
 // SUBMIT REVIEW
 // ============================================
-router.post("/contractors/:orgId/reviews", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/contractors/:orgId/reviews", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId } = req.params;
     const user = req.user!;
@@ -970,15 +947,14 @@ router.post("/contractors/:orgId/reviews", requireAuth, async (req: AuthRequest,
     logInfo("Marketplace review submitted", { reviewId: review.id, orgId, reviewerOrgId: user.organizationId });
     res.status(201).json(review);
   } catch (error) {
-    logError("Failed to submit review", undefined, error as Error);
-    res.status(500).json({ error: "Failed to submit review" });
+    next(error);
   }
 });
 
 // ============================================
 // LIST REVIEWS FOR A CONTRACTOR
 // ============================================
-router.get("/contractors/:orgId/reviews", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/contractors/:orgId/reviews", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId } = req.params;
 
@@ -1007,8 +983,7 @@ router.get("/contractors/:orgId/reviews", requireAuth, async (req: AuthRequest, 
       }))
     );
   } catch (error) {
-    logError("Failed to list reviews", undefined, error as Error);
-    res.status(500).json({ error: "Failed to list reviews" });
+    next(error);
   }
 });
 
@@ -1071,8 +1046,7 @@ router.get("/crews", requireAuth, async (req: AuthenticatedRequest, res: Respons
 
     res.json(listings);
   } catch (error) {
-    logError("Error fetching crew listings:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch crew listings" });
+    next(error);
   }
 });
 
@@ -1096,8 +1070,7 @@ router.get("/crews/my", requireAuth, async (req: AuthenticatedRequest, res: Resp
 
     res.json(listings);
   } catch (error) {
-    logError("Error fetching own crew listings:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch crew listings" });
+    next(error);
   }
 });
 
@@ -1132,8 +1105,7 @@ router.get("/crews/:id", requireAuth, async (req: AuthenticatedRequest, res: Res
 
     res.json(listing);
   } catch (error) {
-    logError("Error fetching crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch crew listing" });
+    next(error);
   }
 });
 
@@ -1159,8 +1131,7 @@ router.post("/crews", requireAuth, requireOrgRole, async (req: AuthenticatedRequ
 
     res.status(201).json(newListing);
   } catch (error) {
-    logError("Error creating crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create crew listing" });
+    next(error);
   }
 });
 
@@ -1190,8 +1161,7 @@ router.patch("/crews/:id", requireAuth, requireOrgRole, async (req: Authenticate
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update crew listing" });
+    next(error);
   }
 });
 
@@ -1212,8 +1182,7 @@ router.delete("/crews/:id", requireAuth, requireOrgRole, async (req: Authenticat
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting crew listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete crew listing" });
+    next(error);
   }
 });
 
@@ -1256,8 +1225,7 @@ router.get("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Res
 
     res.json(listings);
   } catch (error) {
-    logError("Error fetching equipment listings:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch equipment listings" });
+    next(error);
   }
 });
 
@@ -1281,8 +1249,7 @@ router.get("/equipment/my", requireAuth, async (req: AuthenticatedRequest, res: 
 
     res.json(listings);
   } catch (error) {
-    logError("Error fetching own equipment listings:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch your listings" });
+    next(error);
   }
 });
 
@@ -1310,8 +1277,7 @@ router.get("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res:
 
     res.json(listing);
   } catch (error) {
-    logError("Error fetching equipment listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch listing" });
+    next(error);
   }
 });
 
@@ -1333,8 +1299,7 @@ router.post("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Re
 
     res.status(201).json(created);
   } catch (error) {
-    logError("Error creating equipment listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create listing" });
+    next(error);
   }
 });
 
@@ -1362,8 +1327,7 @@ router.patch("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, re
 
     res.json(updated);
   } catch (error) {
-    logError("Error updating equipment listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update listing" });
+    next(error);
   }
 });
 
@@ -1384,8 +1348,7 @@ router.delete("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, r
 
     res.json({ success: true });
   } catch (error) {
-    logError("Error deleting equipment listing:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete listing" });
+    next(error);
   }
 });
 
@@ -1445,8 +1408,7 @@ router.post("/equipment/:id/requests", requireAuth, async (req: AuthenticatedReq
 
     res.status(201).json(created);
   } catch (error) {
-    logError("Error submitting rental request:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to submit rental request" });
+    next(error);
   }
 });
 
@@ -1481,8 +1443,7 @@ router.get("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequ
 
     res.json(requests);
   } catch (error) {
-    logError("Error fetching rental requests:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch rental requests" });
+    next(error);
   }
 });
 
@@ -1515,8 +1476,7 @@ router.get("/equipment/requests/my", requireAuth, async (req: AuthenticatedReque
 
     res.json(requests);
   } catch (error) {
-    logError("Error fetching my rental requests:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch your rental requests" });
+    next(error);
   }
 });
 
@@ -1582,8 +1542,7 @@ router.patch("/equipment/:id/requests/:reqId", requireAuth, async (req: Authenti
 
     res.json(updated);
   } catch (error) {
-    logError("Error responding to rental request:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to respond to rental request" });
+    next(error);
   }
 });
 
@@ -1624,8 +1583,7 @@ router.get("/contractors/:orgId/team-members", requireAuth, async (req: Authenti
 
     res.json(members);
   } catch (error) {
-    logError("Error fetching team members:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch team members" });
+    next(error);
   }
 });
 

@@ -90,7 +90,7 @@
  *       200: { description: Pay application generated }
  */
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import { scheduleOfValues, sovLineItems, projects, estimateLineItems, organizations, changeOrders, users, notifications, lienWaivers, sovPayments } from "@shared/schema";
@@ -112,7 +112,7 @@ const router = Router();
 
 router.use("/sov", requireAuth, requireFeaturePermission('canViewFinancials'));
 
-router.get("/sov", async (req: AuthRequest, res: Response) => {
+router.get("/sov", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -145,12 +145,11 @@ router.get("/sov", async (req: AuthRequest, res: Response) => {
 
     res.json(sovsWithLineItems);
   } catch (error) {
-    logError("Get SOVs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/sov/project/:projectId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/sov/project/:projectId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -173,12 +172,11 @@ router.get("/sov/project/:projectId", requireAuth, async (req: AuthRequest, res:
 
     res.json(sovList);
   } catch (error) {
-    logError("Get project SOVs error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/sov/projects", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/sov/projects", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -204,12 +202,11 @@ router.get("/sov/projects", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json(projectList);
   } catch (error) {
-    logError("Get SOV projects error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/sov/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/sov/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -232,8 +229,7 @@ router.get("/sov/:id", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ ...sov, lineItems });
   } catch (error) {
-    logError("Get SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -261,7 +257,7 @@ const createSOVSchema = z.object({
   })).optional(),
 });
 
-router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -400,12 +396,11 @@ router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
 
     res.status(201).json({ ...createdSOV, lineItems: createdLineItems });
   } catch (error) {
-    logError("Create SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -428,8 +423,7 @@ router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
 
     res.json({ message: "SOV deleted successfully" });
   } catch (error) {
-    logError("Delete SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -437,7 +431,7 @@ router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
 // Routes from sovBillingRoutes.ts
 // ========================================
 
-router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json({ changeOrders: [], sovSummary: [] });
@@ -528,8 +522,7 @@ router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
     res.json(reconciliation);
   } catch (error) {
-    logError("CO tie-out error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch CO tie-out data" });
+    next(error);
   }
 });
 
@@ -572,7 +565,7 @@ const updateSOVStatusSchema = z.object({
   status: z.enum(["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED", "UNDER_REVIEW", "REJECTED"]),
 });
 
-router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -686,12 +679,11 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
 
     res.json(updated);
   } catch (error) {
-    logError("Update SOV status error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const billingMode = (req.query.billingMode as string) || 'all';
@@ -745,7 +737,7 @@ router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) 
     pdfStream.on('error', (err) => {
       logError("PDF stream error:", {}, err instanceof Error ? err : new Error(String(err)));
       if (!res.headersSent) {
-        res.status(500).json({ error: "Failed to generate PDF" });
+        next(error);
       }
     });
 
@@ -753,12 +745,12 @@ router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) 
   } catch (error) {
     logError("Generate SOV PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   }
 });
 
-router.post("/sov/:id/send", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/sov/:id/send", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { email, billingMode = 'all' } = req.body;
@@ -856,13 +848,12 @@ router.post("/sov/:id/send", requireAuth, async (req: AuthRequest, res: Response
     });
 
     if (!sent) {
-      return res.status(500).json({ error: "Failed to send email. Please try downloading the PDF instead." });
+      return next(error);
     }
 
     res.json({ success: true, message: `PDF sent to ${email}` });
   } catch (error) {
-    logError("Send SOV PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -880,7 +871,7 @@ const addLineItemSchema = z.object({
   organizationSowItemId: z.string().optional(),
 });
 
-router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id: sovId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -969,12 +960,11 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     res.status(201).json(newItem);
   } catch (error) {
-    logError("Add SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/sov/:sovId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.delete("/sov/:sovId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { sovId, itemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1025,8 +1015,7 @@ router.delete("/sov/:sovId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1037,7 +1026,7 @@ const updateLineItemSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { sovId, lineItemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1197,8 +1186,7 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
 
     res.json(updated);
   } catch (error) {
-    logError("Update SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -1206,7 +1194,7 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
 // Routes from sovPaymentRoutes.ts
 // ========================================
 
-router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -1243,12 +1231,11 @@ router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(waivers);
   } catch (error) {
-    logError("Get lien waivers error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch lien waivers" });
+    next(error);
   }
 });
 
-router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1292,12 +1279,11 @@ router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
 
     res.status(201).json(waiver);
   } catch (error) {
-    logError("Create lien waiver error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create lien waiver" });
+    next(error);
   }
 });
 
-router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -1323,12 +1309,11 @@ router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "A
     const [updated] = await db.update(lienWaivers).set(updates).where(eq(lienWaivers.id, id)).returning();
     res.json(updated);
   } catch (error) {
-    logError("Update lien waiver error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to update lien waiver" });
+    next(error);
   }
 });
 
-router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -1363,12 +1348,11 @@ router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
 
     res.json(payments);
   } catch (error) {
-    logError("Get SOV payments error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch payments" });
+    next(error);
   }
 });
 
-router.post("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -1414,8 +1398,7 @@ router.post("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
     res.status(201).json(payment);
   } catch (error) {
-    logError("Create SOV payment error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create payment" });
+    next(error);
   }
 });
 

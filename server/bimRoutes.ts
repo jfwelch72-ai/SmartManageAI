@@ -26,7 +26,7 @@ const extractionDataSchema = z.object({
   extractedData: z.string(),
 });
 
-router.post("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.post("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const bidId = req.params.id;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -51,12 +51,11 @@ router.post("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, asy
 
     res.status(201).json(extraction);
   } catch (error) {
-    logError("Create BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.get("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const bidId = req.params.id;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -74,8 +73,7 @@ router.get("/api/bids/:id/bim-extractions", requireAuth, requireBimFeature, asyn
 
     res.json(extractions);
   } catch (error) {
-    logError("Get BIM extractions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -94,7 +92,7 @@ const importSchema = z.object({
   sheetName: z.string().optional(),
 });
 
-router.post("/api/bids/:id/bim-extractions/import", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.post("/api/bids/:id/bim-extractions/import", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const bidId = req.params.id;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -194,12 +192,11 @@ router.post("/api/bids/:id/bim-extractions/import", requireAuth, requireBimFeatu
       count: measurements.length,
     });
   } catch (error) {
-    logError("Import BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/bids/:bidId/bim-extractions/:id/mappings", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.patch("/api/bids/:bidId/bim-extractions/:id/mappings", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const { bidId, id } = req.params;
     const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
@@ -234,12 +231,11 @@ router.patch("/api/bids/:bidId/bim-extractions/:id/mappings", requireAuth, requi
 
     res.json(updated);
   } catch (error) {
-    logError("Update BIM mappings error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.post("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const projectId = req.params.id;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -264,12 +260,11 @@ router.post("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature,
 
     res.status(201).json(extraction);
   } catch (error) {
-    logError("Create project BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.get("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const projectId = req.params.id;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -287,12 +282,11 @@ router.get("/api/projects/:id/bim-extractions", requireAuth, requireBimFeature, 
 
     res.json(extractions);
   } catch (error) {
-    logError("Get project BIM extractions error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/projects/:id/bim-extractions/import", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.post("/api/projects/:id/bim-extractions/import", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const projectId = req.params.id;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -392,12 +386,11 @@ router.post("/api/projects/:id/bim-extractions/import", requireAuth, requireBimF
       count: measurements.length,
     });
   } catch (error) {
-    logError("Import project BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/projects/:projectId/bim-extractions/:id/mappings", requireAuth, requireBimFeature, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:projectId/bim-extractions/:id/mappings", requireAuth, requireBimFeature, async (req: AuthRequest, res, next) => {
   try {
     const { projectId, id } = req.params;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -432,8 +425,7 @@ router.patch("/api/projects/:projectId/bim-extractions/:id/mappings", requireAut
 
     res.json(updated);
   } catch (error) {
-    logError("Update project BIM mappings error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 

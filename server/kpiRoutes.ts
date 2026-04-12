@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import {
   kpiTemplates,
@@ -47,7 +47,7 @@ const entrySchema = z.object({
   notes: z.string().max(1000).optional().nullable(),
 });
 
-router.get("/templates", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/templates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -70,12 +70,11 @@ router.get("/templates", requireAuth, async (req: AuthRequest, res: Response) =>
     }
     return res.json(templates);
   } catch (error) {
-    logError("Error fetching KPI templates:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch KPI templates" });
+        return next(error);
   }
 });
 
-router.post("/templates", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/templates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -96,12 +95,11 @@ router.post("/templates", requireAuth, async (req: AuthRequest, res: Response) =
 
     return res.status(201).json(template);
   } catch (error) {
-    logError("Error creating KPI template:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to create KPI template" });
+        return next(error);
   }
 });
 
-router.patch("/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/templates/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -118,12 +116,11 @@ router.patch("/templates/:id", requireAuth, async (req: AuthRequest, res: Respon
     if (!updated) return res.status(404).json({ error: "Template not found" });
     return res.json(updated);
   } catch (error) {
-    logError("Error updating KPI template:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to update KPI template" });
+        return next(error);
   }
 });
 
-router.delete("/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/templates/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -137,12 +134,11 @@ router.delete("/templates/:id", requireAuth, async (req: AuthRequest, res: Respo
     if (!updated) return res.status(404).json({ error: "Template not found" });
     return res.json({ success: true });
   } catch (error) {
-    logError("Error deleting KPI template:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to delete KPI template" });
+        return next(error);
   }
 });
 
-router.get("/assignments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/assignments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -187,12 +183,11 @@ router.get("/assignments", requireAuth, async (req: AuthRequest, res: Response) 
 
     return res.json(result);
   } catch (error) {
-    logError("Error fetching KPI assignments:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch KPI assignments" });
+        return next(error);
   }
 });
 
-router.get("/assignments/my", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/assignments/my", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -225,12 +220,11 @@ router.get("/assignments/my", requireAuth, async (req: AuthRequest, res: Respons
 
     return res.json(result);
   } catch (error) {
-    logError("Error fetching my KPIs:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch your KPIs" });
+        return next(error);
   }
 });
 
-router.post("/assignments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/assignments", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -252,12 +246,11 @@ router.post("/assignments", requireAuth, async (req: AuthRequest, res: Response)
 
     return res.status(201).json(assignment);
   } catch (error) {
-    logError("Error creating KPI assignment:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to create KPI assignment" });
+        return next(error);
   }
 });
 
-router.patch("/assignments/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/assignments/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -282,12 +275,11 @@ router.patch("/assignments/:id", requireAuth, async (req: AuthRequest, res: Resp
     if (!updated) return res.status(404).json({ error: "Assignment not found" });
     return res.json(updated);
   } catch (error) {
-    logError("Error updating KPI assignment:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to update KPI assignment" });
+        return next(error);
   }
 });
 
-router.delete("/assignments/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/assignments/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -300,12 +292,11 @@ router.delete("/assignments/:id", requireAuth, async (req: AuthRequest, res: Res
     if (!deleted) return res.status(404).json({ error: "Assignment not found" });
     return res.json({ success: true });
   } catch (error) {
-    logError("Error deleting KPI assignment:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to delete KPI assignment" });
+        return next(error);
   }
 });
 
-router.get("/entries", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/entries", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -332,12 +323,11 @@ router.get("/entries", requireAuth, async (req: AuthRequest, res: Response) => {
 
     return res.json(entries);
   } catch (error) {
-    logError("Error fetching KPI entries:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch KPI entries" });
+        return next(error);
   }
 });
 
-router.post("/entries", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/entries", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -369,12 +359,11 @@ router.post("/entries", requireAuth, async (req: AuthRequest, res: Response) => 
 
     return res.status(201).json(entry);
   } catch (error) {
-    logError("Error creating KPI entry:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to create KPI entry" });
+        return next(error);
   }
 });
 
-router.patch("/entries/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/entries/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -410,12 +399,11 @@ router.patch("/entries/:id", requireAuth, async (req: AuthRequest, res: Response
     if (!updated) return res.status(404).json({ error: "Entry not found" });
     return res.json(updated);
   } catch (error) {
-    logError("Error updating KPI entry:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to update KPI entry" });
+        return next(error);
   }
 });
 
-router.delete("/entries/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/entries/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -428,12 +416,11 @@ router.delete("/entries/:id", requireAuth, async (req: AuthRequest, res: Respons
     if (!deleted) return res.status(404).json({ error: "Entry not found" });
     return res.json({ success: true });
   } catch (error) {
-    logError("Error deleting KPI entry:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to delete KPI entry" });
+        return next(error);
   }
 });
 
-router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/summary", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -501,8 +488,7 @@ router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
 
     return res.json(summary);
   } catch (error) {
-    logError("Error fetching KPI summary:", {}, error instanceof Error ? error : new Error(String(error)));
-    return res.status(500).json({ error: "Failed to fetch KPI summary" });
+        return next(error);
   }
 });
 

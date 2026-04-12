@@ -306,7 +306,7 @@ function normalizeLineItemData(data: any): any {
 const router = Router();
 
 // Get active estimate for a project
-router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -388,13 +388,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json({ estimate: { ...estimate, lineItems, totals } });
     } catch (error) {
-      logError("Error fetching estimate:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch estimate" });
+      next(error);
     }
   });
 
   // Create new estimate for project
-  router.post("/api/projects/:projectId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/projects/:projectId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       console.log("[Estimate] Create estimate request:", { projectId: req.params.projectId, user: req.user?.email });
       const { projectId } = req.params;
@@ -437,13 +436,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       console.log("[Estimate] Created estimate:", newEstimate.id);
       res.status(201).json(newEstimate);
     } catch (error) {
-      logError("[Estimate] Error creating estimate:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to create estimate" });
+      next(error);
     }
   });
 
   // Get active estimate for a bid
-  router.get("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { bidId } = req.params;
 
@@ -513,13 +511,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json({ estimate: { ...estimate, lineItems, totals } });
     } catch (error) {
-      logError("Error fetching bid estimate:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch estimate" });
+      next(error);
     }
   });
 
   // Create new estimate for bid
-  router.post("/api/bids/:bidId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/bids/:bidId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       console.log("[Estimate] Create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
       const { bidId } = req.params;
@@ -562,13 +559,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       console.log("[Estimate] Created bid estimate:", newEstimate.id);
       res.status(201).json(newEstimate);
     } catch (error) {
-      logError("[Estimate] Error creating bid estimate:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to create estimate" });
+      next(error);
     }
   });
 
   // Import takeoff quantities into estimate
-  router.post("/api/projects/:projectId/estimate/import-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/projects/:projectId/estimate/import-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { projectId } = req.params;
       const { estimateId, categoryIds } = req.body as { estimateId: string, categoryIds: string[] };
@@ -1015,13 +1011,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         res.json({ lineItems: [], count: 0, message });
       }
     } catch (error) {
-      logError("Error importing takeoff:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to import takeoff" });
+      next(error);
     }
   });
 
   // Import takeoff measurements into a bid estimate
-  router.post("/api/bids/:bidId/estimate/import-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/bids/:bidId/estimate/import-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { bidId } = req.params;
       const { estimateId, categoryIds, jobClassificationId, checkDuplicates, duplicateAction } = req.body as {
@@ -1607,13 +1602,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         res.json({ lineItems: [], count: 0, laborRateAppliedCount: 0, classificationName: null, message });
       }
     } catch (error) {
-      logError("Error importing bid takeoff:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to import takeoff" });
+      next(error);
     }
   });
 
   // Production rate labor estimation — must be before /:estimateId routes to avoid route shadowing
-  router.post("/api/estimates/production-rates/estimate-labor", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/estimates/production-rates/estimate-labor", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -1671,7 +1665,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   // Add manual line item
-  router.post("/api/estimates/:estimateId/line-items", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId } = req.params;
       const lineItem = req.body;
@@ -1844,13 +1838,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.status(201).json(newLineItem);
     } catch (error) {
-      logError("Error creating line item:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to create line item" });
+      next(error);
     }
   });
 
   // Update line item
-  router.put("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.put("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId, lineItemId } = req.params;
       const updates = req.body;
@@ -2037,13 +2030,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json(updatedLineItem);
     } catch (error) {
-      logError("Error updating line item:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to update line item" });
+      next(error);
     }
   });
 
   // Delete line item
-  router.delete("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.delete("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId, lineItemId } = req.params;
 
@@ -2074,13 +2066,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       successResponse(res);
     } catch (error) {
-      logError("Error deleting line item:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to delete line item" });
+      next(error);
     }
   });
 
   // Get subcontractor assignments for a line item
-  router.get("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { estimateId, lineItemId } = req.params;
       const { shouldFilter, orgId } = getOrgIdForFilter(req);
@@ -2142,13 +2133,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json(assignments);
     } catch (error) {
-      logError("Error fetching subcontractor assignments:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch subcontractor assignments" });
+      next(error);
     }
   });
 
   // Set subcontractor assignments for a line item (replaces all existing)
-  router.post("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId, lineItemId } = req.params;
       const { shouldFilter, orgId } = getOrgIdForFilter(req);
@@ -2239,13 +2229,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json(newAssignments);
     } catch (error) {
-      logError("Error setting subcontractor assignments:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to set subcontractor assignments" });
+      next(error);
     }
   });
 
   // Delete a single subcontractor assignment
-  router.delete("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors/:assignmentId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.delete("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors/:assignmentId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId, lineItemId, assignmentId } = req.params;
       const { shouldFilter, orgId } = getOrgIdForFilter(req);
@@ -2320,13 +2309,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       successResponse(res);
     } catch (error) {
-      logError("Error deleting subcontractor assignment:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to delete subcontractor assignment" });
+      next(error);
     }
   });
 
   // Get estimate version history
-  router.get("/api/bids/:code/estimates/:estimateId/versions", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/bids/:code/estimates/:estimateId/versions", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { code, estimateId } = req.params;
 
@@ -2370,13 +2358,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json(result);
     } catch (error) {
-      logError("Error fetching estimate versions:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch estimate versions" });
+      next(error);
     }
   });
 
   // Get a specific estimate version snapshot
-  router.get("/api/bids/:code/estimates/:estimateId/versions/:versionId", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/bids/:code/estimates/:estimateId/versions/:versionId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { code, estimateId, versionId } = req.params;
 
@@ -2407,13 +2394,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const parsed = safeJsonParse(version.snapshot, {});
       res.json({ ...version, parsed });
     } catch (error) {
-      logError("Error fetching estimate version:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to fetch estimate version" });
+      next(error);
     }
   });
 
   // Approve estimate and sync to project budget, create procurement items and scope items
-  router.post("/api/estimates/:estimateId/approve", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/approve", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId } = req.params;
       const userId = req.user!.id;
@@ -2532,13 +2518,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         successResponse(res, { total, estimateId, projectId: null });
       }
     } catch (error) {
-      logError("Error approving estimate:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to approve estimate" });
+      next(error);
     }
   });
 
   // AI CFO estimate analysis
-  router.post("/api/estimates/:estimateId/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId } = req.params;
 
@@ -2717,12 +2702,11 @@ Provide comprehensive financial analysis and recommendations.`
         categoryBreakdown,
       });
     } catch (error) {
-      logError("Error analyzing estimate:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to analyze estimate" });
+      next(error);
     }
   });
 
-  router.get("/api/estimates/production-rates/suggestions", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/estimates/production-rates/suggestions", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -2776,7 +2760,7 @@ Provide comprehensive financial analysis and recommendations.`
     }
   });
 
-  router.get("/api/estimates/production-rates/lookup", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/estimates/production-rates/lookup", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -2835,7 +2819,7 @@ Provide comprehensive financial analysis and recommendations.`
 
   // Unified SOW Tracking: Get production rate by organizationSowItemId
   // This provides more reliable historical data than description-based matching
-  router.get("/api/estimates/production-rates/by-sow-item/:sowItemId", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/estimates/production-rates/by-sow-item/:sowItemId", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -2897,12 +2881,11 @@ Provide comprehensive financial analysis and recommendations.`
       if (error instanceof OrganizationRequiredError) {
         return res.status(404).json({ error: "Not found" });
       }
-      logError("Error looking up production rate by SOW item:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to lookup production rate" });
+      next(error);
     }
   });
 
-  router.post("/api/estimates/:estimateId/line-items/auto-populate-labor", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/auto-populate-labor", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId } = req.params;
       const { lineItemId, applyRate } = req.body;
@@ -3027,7 +3010,7 @@ Provide comprehensive financial analysis and recommendations.`
   });
 
   // Sync material calculator results to estimate line item
-  router.post("/api/estimates/:estimateId/line-items/:lineItemId/sync-materials", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/:lineItemId/sync-materials", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
       const { estimateId, lineItemId } = req.params;
       
@@ -3111,12 +3094,11 @@ Provide comprehensive financial analysis and recommendations.`
         lineItem: updatedLineItem,
       });
     } catch (error) {
-      logError("Error syncing material calculations:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(500).json({ error: "Failed to sync material calculations" });
+      next(error);
     }
   });
 
-router.get("/api/historical-costs", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/historical-costs", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -3143,12 +3125,11 @@ router.get("/api/historical-costs", requireAuth, async (req: AuthRequest, res) =
 
     res.json(results);
   } catch (error) {
-    logError("Historical costs fetch error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch historical costs" });
+    next(error);
   }
 });
 
-router.get("/api/historical-costs/aggregated", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/historical-costs/aggregated", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -3206,12 +3187,11 @@ router.get("/api/historical-costs/aggregated", requireAuth, async (req: AuthRequ
       },
     });
   } catch (error) {
-    logError("Historical costs aggregation error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to aggregate historical costs" });
+    next(error);
   }
 });
 
-router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -3227,12 +3207,11 @@ router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "HUSTLER"
     const [result] = await db.insert(historicalCosts).values(data).returning();
     res.json(result);
   } catch (error) {
-    logError("Historical cost create error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to create historical cost record" });
+    next(error);
   }
 });
 
-router.delete("/api/historical-costs/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.delete("/api/historical-costs/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -3243,12 +3222,11 @@ router.delete("/api/historical-costs/:id", requireAuth, requireRole("ADMIN", "HU
       .where(and(eq(historicalCosts.id, req.params.id), eq(historicalCosts.organizationId, orgId)));
     successResponse(res);
   } catch (error) {
-    logError("Historical cost delete error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to delete historical cost record" });
+    next(error);
   }
 });
 
-router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { estimateId } = req.params;
     const { assemblyId, quantity: baseQuantity } = req.body;
@@ -3347,12 +3325,11 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRo
       lineItems: createdLineItems,
     });
   } catch (error) {
-    logError("Assembly insertion error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to insert assembly into estimate" });
+    next(error);
   }
 });
 
-router.get("/api/estimates/:estimateId/match-review", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/estimates/:estimateId/match-review", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -3411,12 +3388,11 @@ router.get("/api/estimates/:estimateId/match-review", requireAuth, async (req: A
 
     res.json({ items: reviewItems });
   } catch (error) {
-    logError("Match review queue error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to get match review queue" });
+    next(error);
   }
 });
 
-router.post("/api/estimates/:estimateId/match-review/:lineItemId/accept", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/estimates/:estimateId/match-review/:lineItemId/accept", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -3459,8 +3435,7 @@ router.post("/api/estimates/:estimateId/match-review/:lineItemId/accept", requir
 
     res.json({ success: true });
   } catch (error) {
-    logError("Match review accept error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to accept match" });
+    next(error);
   }
 });
 

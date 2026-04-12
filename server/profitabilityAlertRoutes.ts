@@ -13,7 +13,7 @@ function canAccessProfitability(role?: string): boolean {
     role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR";
 }
 
-router.get("/api/projects/:code/profitability/live", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/profitability/live", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { code } = req.params;
     const orgId = req.user!.organizationId;
@@ -49,12 +49,11 @@ router.get("/api/projects/:code/profitability/live", requireAuth, async (req: Au
       } : null,
     });
   } catch (error) {
-    logError("Live profitability error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to calculate profitability" });
+    next(error);
   }
 });
 
-router.get("/api/projects/:code/profitability/history", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/profitability/history", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { code } = req.params;
     const orgId = req.user!.organizationId;
@@ -79,8 +78,7 @@ router.get("/api/projects/:code/profitability/history", requireAuth, async (req:
 
     return res.json(snapshots);
   } catch (error) {
-    logError("Profitability history error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Failed to fetch profitability history" });
+    next(error);
   }
 });
 

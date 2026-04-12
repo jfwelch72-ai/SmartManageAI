@@ -147,7 +147,7 @@ import { z } from "zod";
 
 const router = Router();
 
-router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const approvers = await db
@@ -160,12 +160,11 @@ router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequ
       .orderBy(users.firstName);
     res.json(approvers);
   } catch (error) {
-    logError("Get OT approvers error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"), async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"), async (req: AuthRequest, res, next) => {
   try {
     const otCreateSchema = z.object({
       shiftId: z.string().min(1, "shiftId is required"),
@@ -226,12 +225,11 @@ router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.status(201).json(otRequest);
   } catch (error) {
-    logError("Create OT request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/overtime-requests/my", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/overtime-requests/my", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const requests = await db.select().from(overtimeRequests)
       .where(eq(overtimeRequests.userId, req.user!.id))
@@ -251,12 +249,11 @@ router.get("/api/overtime-requests/my", requireAuth, async (req: AuthRequest, re
 
     res.json(enriched);
   } catch (error) {
-    logError("Get my OT requests error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const byShiftsSchema = z.object({
       shiftIds: z.array(z.string().min(1)).min(1),
@@ -274,12 +271,11 @@ router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN"
       ));
     res.json(requests);
   } catch (error) {
-    logError("Get OT by shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const requests = await db.select().from(overtimeRequests)
@@ -323,12 +319,11 @@ router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "
 
     res.json(enriched);
   } catch (error) {
-    logError("Get pending OT requests error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const otApproveSchema = z.object({
@@ -373,12 +368,11 @@ router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMI
 
     res.json(updated);
   } catch (error) {
-    logError("Approve OT request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const otRejectSchema = z.object({
@@ -421,12 +415,11 @@ router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN
 
     res.json(updated);
   } catch (error) {
-    logError("Reject OT request error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const rules = await db.select().from(overtimeRules)
@@ -434,20 +427,18 @@ router.get("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), 
       .orderBy(desc(overtimeRules.createdAt));
     res.json(rules.map(formatRuleResponse));
   } catch (error) {
-    logError("Get overtime rules error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.get("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [rule] = await db.select().from(overtimeRules)
       .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, req.user!.organizationId)));
     if (!rule) { res.status(404).json({ error: "Rule not found" }); return; }
     res.json(formatRuleResponse(rule));
   } catch (error) {
-    logError("Get overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
@@ -470,7 +461,7 @@ function formatRuleResponse(rule: Record<string, unknown>) {
   };
 }
 
-router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       projectId: z.string().optional().nullable(),
@@ -566,12 +557,11 @@ router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"),
       res.status(400).json({ error: "Invalid input", details: error.errors });
       return;
     }
-    logError("Create overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       dailyOtThreshold: z.number().optional(),
@@ -658,12 +648,11 @@ router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAG
       res.status(400).json({ error: "Invalid input", details: error.errors });
       return;
     }
-    logError("Update overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
-router.delete("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const [existing] = await db.select().from(overtimeRules)
@@ -683,8 +672,7 @@ router.delete("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANA
 
     res.json({ success: true });
   } catch (error) {
-    logError("Delete overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
-    res.status(500).json({ error: "Internal server error" });
+    next(error);
   }
 });
 
