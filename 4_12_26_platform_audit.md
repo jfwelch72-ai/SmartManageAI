@@ -28,7 +28,7 @@
 
 SmartManageAI is a white-label, multi-tenant SaaS platform for construction project lifecycle management. It serves multiple trades through AI-driven onboarding, dynamic navigation, trade-specific dashboards, and a comprehensive suite spanning project management, estimating, CRM, compliance, workforce, financial management, hiring, and more.
 
-The platform is built on a React + Express + PostgreSQL stack with Drizzle ORM, deployed on Replit. As of this audit date, the codebase contains **357,000+ lines of code**, **417 database tables**, **127 route files**, **115 frontend pages**, and **19 AI modules**. The system is operational in development mode with all core features functional. Production-only features (AI schedulers, background jobs) are gated behind `NODE_ENV=production`.
+The platform is built on a React + Express + PostgreSQL stack with Drizzle ORM, deployed on Replit. As of this audit date, the codebase contains **357,000+ lines of code**, **417 database tables**, **128 route files**, **115 frontend pages**, **447 component files**, and **19 AI modules**. The system is operational in development mode with all core features functional. Production-only features (AI schedulers, background jobs) are gated behind `NODE_ENV=production`.
 
 ---
 
@@ -39,9 +39,9 @@ The platform is built on a React + Express + PostgreSQL stack with Drizzle ORM, 
 | Total Lines of Code | ~357,454 |
 | Database Tables (pgTable definitions) | 417 |
 | Schema Files (shared/schema/) | 5 files, 12,707 lines |
-| Backend Route Files | 127 |
+| Backend Route Files | 128 |
 | Frontend Pages (client/src/pages/) | 115 |
-| Frontend Components (client/src/components/) | 157 directories/files |
+| Frontend Component Files (client/src/components/) | 447 |
 | AI Modules (server/ai/) | 19 |
 | Background Cron Jobs | 16 |
 | Domain Event Types | 33 |
@@ -330,7 +330,7 @@ requireAuth → requireRole(...roles) → verifyOrgAccess(req, res, orgId)
 ### Route Registration Order (in `registerRoutes`)
 All routes are registered after auth middleware and API rate limiter. Organization suspension check applies globally.
 
-### Route File Inventory (127 files)
+### Route File Inventory (128 files)
 
 **Core CRUD & Project**
 - `projectCrudRoutes` — Project create/read/update/delete
@@ -895,7 +895,7 @@ All have real API publishing implementations in `server/social/publishService.ts
 ```
 ├── client/src/
 │   ├── pages/          (115 page components)
-│   ├── components/     (157 component directories)
+│   ├── components/     (447 component files)
 │   ├── hooks/          (custom React hooks)
 │   ├── lib/            (utilities, queryClient, apiRequest)
 │   └── App.tsx         (route registration)
@@ -909,16 +909,598 @@ All have real API publishing implementations in `server/social/publishService.ts
 │   ├── social/         (social publishing to 7 platforms)
 │   ├── utils/          (logger, helpers, ensure* scripts)
 │   ├── auth.ts         (JWT auth, RBAC, feature permissions)
-│   ├── routes.ts       (route registration hub - 127 route files)
+│   ├── routes.ts       (route registration hub - 128 route files)
 │   ├── index.ts        (server entry point)
 │   └── [*Routes.ts]    (individual route modules)
 ├── shared/
 │   ├── schema/         (5 files, 12,707 lines, 417 tables)
 │   ├── billing/        (plan tiers, add-ons, feature keys)
 │   └── utils/          (shared utilities)
-├── migrations/         (49 Drizzle Kit SQL migrations)
+├── migrations/         (48 Drizzle Kit SQL migrations)
 └── references/         (UI/UX guidelines)
 ```
+
+---
+
+## Appendix C: Complete Database Table Inventory (417 tables)
+
+```
+  1. active_sessions                    2. activity_log
+  3. addenda                            4. addendum_acknowledgments
+  5. ai_action_audit                    6. ai_bid_document_analysis
+  7. ai_co_drafts                       8. ai_contract_document_analysis
+  9. ai_data_quality                   10. ai_gantt_recommendations
+ 11. ai_insights                       12. ai_note_insights
+ 13. ai_runs                           14. ai_settings
+ 15. ai_takeoff_analyses               16. ai_tasks
+ 17. ai_vendor_comparisons             18. announcement_dismissals
+ 19. annual_salary_categories          20. approval_requests
+ 21. asset_handover_items              22. asset_handover_signoffs
+ 23. attendance_logs                   24. audit_log
+ 25. bid_document_distributions        26. bid_documents
+ 27. bid_equipment_selections          28. bid_material_quotes
+ 29. bid_modifier_selections           30. bid_request_clarifications
+ 31. bids                              32. bid_subcontractor_quotes
+ 33. billing_events                    34. bim_extractions
+ 35. bim_storey_associations           36. budget_alerts
+ 37. budget_line_items                 38. burden_rates
+ 39. calendar_events                   40. change_order_approvals
+ 41. change_order_attachments          42. change_order_comments
+ 43. change_order_equipment_entries    44. change_order_labor_entries
+ 45. change_order_material_entries     46. change_order_revisions
+ 47. change_orders                     48. change_order_scope_modifiers
+ 49. client_portal_access              50. client_portal_activity
+ 51. company_daily_notes               52. contract_approvals
+ 53. contract_clauses                  54. contract_redlines
+ 55. contract_risk_analyses            56. contracts
+ 57. contract_templates                58. contract_versions
+ 59. conversation_participants         60. conversations
+ 61. cost_ledger_postings              62. cost_transactions
+ 63. crew_marketplace                  64. crew_members
+ 65. crew_project_assignments          66. crews
+ 67. crm_contacts                      68. crm_opportunities
+ 69. crm_opportunity_activities        70. crm_organisation_notes
+ 71. crm_organisations                 72. custom_libraries
+ 73. daily_report_locks                74. daily_scope_progress
+ 75. data_processing_records           76. data_subject_requests
+ 77. delay_claims                      78. delay_notifications
+ 79. document_revisions                80. document_transmittals
+ 81. domain_events                     82. drawing_set_items
+ 83. drawing_sets                      84. email_accounts
+ 85. email_attachments                 86. email_campaign_contacts
+ 87. email_campaigns                   88. email_campaign_templates
+ 89. email_messages                    90. email_summaries
+ 91. email_tasks                       92. email_threads
+ 93. email_verification_tokens         94. employee_classifications
+ 95. employee_cost_assignments         96. employee_deductions
+ 97. employee_performance_profiles     98. employee_ratings
+ 99. equipment                        100. equipment_assignments
+101. equipment_fuel_logs              102. equipment_hour_logs
+103. equipment_hour_reminders         104. equipment_listings
+105. equipment_maintenance_history    106. equipment_maintenance_schedules
+107. equipment_rate_profiles          108. equipment_rental_requests
+109. equipment_repairs                110. error_logs
+111. estimate_crews                   112. estimate_history
+113. estimate_line_items              114. estimate_line_item_subcontractors
+115. estimates                        116. estimate_settings
+117. estimate_vendor_quotes           118. estimate_versions
+119. executive_digests                120. file_permissions
+121. forecast_adjustments             122. global_workflow_templates
+123. handoff_packets                  124. hiring_activity_logs
+125. hiring_ai_reviews                126. hiring_candidate_documents
+127. hiring_candidate_notes           128. hiring_candidates
+129. hiring_candidate_stage_history   130. hiring_integrations
+131. hiring_interviews                132. hiring_jobs
+133. hiring_job_templates             134. hiring_pipeline_configs
+135. hiring_pipeline_stages           136. hiring_sync_logs
+137. hiring_tasks                     138. historical_costs
+139. hustler_delegates                140. hustler_link_requests
+141. hustler_organizations            142. integration_connections
+143. integration_events_outbox        144. integration_sync_state
+145. integration_webhook_subscriptions 146. invoice_matches
+147. invoice_payments                 148. issue_captures
+149. job_classifications              150. jobsite_analysis_batches
+151. jobsite_analysis_items           152. labor_analytics
+153. leave_balances                   154. leave_policies
+155. leave_requests                   156. lidar_annotations
+157. lidar_measurements               158. lidar_overlays
+159. lidar_scans                      160. location_cost_breakdowns
+161. maintenance_logs                 162. maintenance_schedules
+163. markup_configs                   164. master_modifier_categories
+165. master_modifiers                 166. master_sow_items
+167. material_assignments             168. material_price_history
+169. material_price_index             170. material_test_logs
+171. material_tracking                172. media
+173. messages                         174. method_statement_tasks
+175. method_statements                176. mobilization_checklists
+177. mobilization_items               178. modifier_preset_configs
+179. network_bid_requests             180. network_bid_responses
+181. notifications                    182. notification_preferences
+183. onboarding_scope_selections      184. organization_documents
+185. organization_network_settings    186. organization_sow_items
+187. organizations                    188. overhead_allocations
+189. overhead_cost_items              190. overhead_cost_pools
+191. overtime_requests                192. overtime_rules
+193. passkey_credentials              194. password_reset_tokens
+195. payroll_entries                  196. payroll_runs
+197. peer_coworker_ratings            198. performance_reviews
+199. permits_licenses                 200. plan_documents
+201. plan_sheets                      202. po_approvals
+203. po_comments                      204. po_line_items
+205. po_receipts                      206. po_receipt_items
+207. production_rate_entries          208. production_rate_templates
+209. profitability_thresholds         210. project_budgets
+211. project_cost_codes               212. project_delays
+213. project_employee_rates           214. project_equipment_plans
+215. project_labor_rates              216. project_note_blocks
+217. project_note_pages               218. project_notes
+219. project_plans                    220. project_profitability_snapshots
+221. project_risks                    222. projects
+223. project_scopes                   224. punch_list_items
+225. purchase_orders                  226. purchase_requests
+227. push_subscriptions               228. qbo_chart_of_accounts
+229. qbo_sync_schedules               230. quality_issues
+231. quantity_categories               232. receipts
+233. rental_equipment_catalog         234. rental_equipment_usages
+235. rental_vendors                   236. retention_policies
+237. revenue_recognition_entries      238. revenue_schedules
+239. rfis                             240. rfi_responses
+241. risk_mitigation_actions          242. safety_incidents
+243. safety_trainings                 244. schedule_baselines
+245. schedule_of_values               246. schedule_resource_assignments
+247. schedule_task_constraints        248. schedule_tasks
+249. scope_items                      250. scope_modifier_categories
+251. scope_modifiers                  252. scope_work_type_categories
+253. scope_work_types                 254. shift_cost_codes
+255. skill_verification_requests     256. skills
+257. social_accounts                  258. social_media_posts
+259. sov_line_items                   260. sso_configs
+261. subcontract_change_orders        262. subcontract_compliance_items
+263. subcontract_pay_applications     264. subcontract_pay_app_items
+265. subcontractor_contracts          266. subcontractor_documents
+267. subcontractor_payments           268. subcontractor_performance_reviews
+269. subcontractors                   270. submittals
+271. submittal_attachments            272. submittal_revisions
+273. supervisor_notes                 274. takeoff_issues
+275. takeoff_location_assignments     276. takeoff_locations
+277. takeoff_measurements             278. takeoff_sheets
+279. talent_profiles                  280. task_dependencies
+281. tasks                            282. three_way_match_results
+283. time_clock_shifts                284. time_entries
+285. tm_daily_sheets                  286. tm_ticket_attachments
+287. tm_ticket_equipment              288. tm_ticket_labor
+289. tm_ticket_materials              290. tm_tickets
+291. trade_features                   292. trade_templates
+293. transmittal_recipients           294. units_of_measure
+295. upload_intents                   296. user_api_keys
+297. user_certifications              298. user_color_palettes
+299. user_dashboard_layouts           300. user_dashboard_permissions
+301. user_equipment_competencies      302. user_photos
+303. users                            304. user_sessions
+305. user_settings                    306. user_skills
+307. user_totp_secrets                308. vendor_enrollments
+309. vendor_invoice_items             310. vendor_invoices
+311. vendor_pricebook_items           312. vendor_pricebooks
+313. vendor_price_history             314. vendor_pricing_catalogs
+315. vendor_scores                    316. vendor_service_catalog
+317. vendor_users                     318. video_call_notes
+319. video_call_participants          320. video_calls
+321. voice_logs                       322. warranty_cases
+323. warranty_documents               324. warranty_tasks
+325. website_analytics_daily          326. website_analytics_events
+327. website_blog_comments            328. website_blog_posts
+329. website_contact_submissions      330. website_deployments
+331. website_project_images           332. website_projects
+333. weekly_payroll_reports           334. worker_logs
+335. workflow_approval_steps          336. workflow_instances
+337. workflow_notification_rules      338. workflow_stages
+339. workflow_templates               340. zapier_webhooks
+```
+
+Note: Tables 335–339 (workflow_*) are defined in the Drizzle schema but their database migration (`migrations/0024_create_workflow_tables.sql`) has NOT been applied. These tables do not exist in the running database. See Known Gap #1.
+
+Additional tables created by startup migrations and ensure* scripts that may not appear in the pgTable schema:
+- Tables from `/server/migrations/` (32 SQL files applied on startup)
+- Columns/indexes added by `/server/utils/ensure*.ts` (21 scripts)
+
+---
+
+## Appendix D: Complete Route File Inventory (128 files)
+
+```
+  1. server/addendaRoutes.ts
+  2. server/aiaBillingRoutes.ts
+  3. server/aiCfoAnalyticsRoutes.ts
+  4. server/aiDocumentRoutes.ts
+  5. server/aiOnboardingRoutes.ts
+  6. server/aiOrchestrationRoutes.ts
+  7. server/aiSchedulingRoutes.ts
+  8. server/aiTakeoffFeatureRoutes.ts
+  9. server/approvalRoutes.ts
+ 10. server/assemblyRoutes.ts
+ 11. server/assetManagementRoutes.ts
+ 12. server/auditBillingStorageRoutes.ts
+ 13. server/auditExportRoutes.ts
+ 14. server/authProfileRoutes.ts
+ 15. server/bidNetworkRoutes.ts
+ 16. server/bidRoutes2.ts
+ 17. server/billingRoutes.ts
+ 18. server/bimRoutes.ts
+ 19. server/calculatorRoutes.ts
+ 20. server/changeOrderApprovalRoutes.ts
+ 21. server/changeOrderCrudRoutes.ts
+ 22. server/changeOrderExportRoutes.ts
+ 23. server/clauseLibraryRoutes.ts
+ 24. server/clientChatRoutes.ts
+ 25. server/clientPortalRoutes.ts
+ 26. server/contractRoutes.ts
+ 27. server/costEngineRoutes.ts
+ 28. server/costLedgerRoutes.ts
+ 29. server/crewRoutes2.ts
+ 30. server/crmRoutes.ts
+ 31. server/dashboardRoutes.ts
+ 32. server/delayRoutes.ts
+ 33. server/documentRevisionRoutes.ts
+ 34. server/drawingSetRoutes.ts
+ 35. server/emailCampaignRoutes.ts
+ 36. server/emailRoutes.ts
+ 37. server/equipmentRoutes.ts
+ 38. server/estimateRoutes.ts
+ 39. server/executiveDigestRoutes.ts
+ 40. server/featureFlagRoutes.ts
+ 41. server/fieldProductivityRoutes.ts
+ 42. server/hiringRoutes.ts
+ 43. server/hustlerRoutes.ts
+ 44. server/inspectionRoutes.ts
+ 45. server/integrationRoutes.ts
+ 46. server/kpiRoutes.ts
+ 47. server/laborRateRoutes.ts
+ 48. server/leaveRoutes.ts
+ 49. server/libraryRoutes.ts
+ 50. server/lidarRoutes.ts
+ 51. server/locationRoutes.ts
+ 52. server/marketingPdfRoute.ts
+ 53. server/marketplaceRoutes.ts
+ 54. server/materialTestRoutes.ts
+ 55. server/materialTrackingRoutes.ts
+ 56. server/messagingRoutes.ts
+ 57. server/mobileSyncRoutes.ts
+ 58. server/mobilizationRoutes.ts
+ 59. server/modifierRoutes.ts
+ 60. server/notesRoutes.ts
+ 61. server/notificationPreferencesRoutes.ts
+ 62. server/notificationRoutes2.ts
+ 63. server/oauthRoutes.ts
+ 64. server/onboardingLibraryRoutes.ts
+ 65. server/opsRoutes.ts
+ 66. server/organizationDocumentRoutes.ts
+ 67. server/overheadRoutes.ts
+ 68. server/overtimeRoutes.ts
+ 69. server/passkeyRoutes.ts
+ 70. server/payrollRoutes.ts
+ 71. server/peerRatingRoutes.ts
+ 72. server/performanceRoutes.ts
+ 73. server/permitRoutes.ts
+ 74. server/platformBillingRoutes.ts
+ 75. server/platformRoutes.ts
+ 76. server/portalRoutes.ts
+ 77. server/ppeComplianceRoutes.ts
+ 78. server/privacyRoutes.ts
+ 79. server/procurementModuleRoutes.ts
+ 80. server/productionRateRoutes.ts
+ 81. server/profitabilityAlertRoutes.ts
+ 82. server/projectContentRoutes.ts
+ 83. server/projectCrudRoutes.ts
+ 84. server/projectFinancialRoutes.ts
+ 85. server/projectNotePagesRoutes.ts
+ 86. server/projectOpsRoutes.ts
+ 87. server/projectReportRoutes.ts
+ 88. server/punchListRoutes.ts
+ 89. server/pushSubscriptionRoutes.ts
+ 90. server/reportRoutes.ts
+ 91. server/retentionRoutes.ts
+ 92. server/revenueRecognitionRoutes.ts
+ 93. server/rfiRoutes.ts
+ 94. server/riskRoutes.ts
+ 95. server/routes.ts
+ 96. server/safetyTrainingRoutes.ts
+ 97. server/safetyWorkflowRoutes.ts
+ 98. server/scheduleRoutes.ts
+ 99. server/scopeRoutes.ts
+100. server/skillRoutes.ts
+101. server/socialRoutes.ts
+102. server/sovRoutes.ts
+103. server/ssoRoutes.ts
+104. server/subChatRoutes.ts
+105. server/subcontractManagementRoutes.ts
+106. server/subcontractorPayablesRoutes.ts
+107. server/subcontractRoutes.ts
+108. server/submittalRoutes.ts
+109. server/takeoffCategoryRoutes.ts
+110. server/takeoffCrossModuleRoutes.ts
+111. server/takeoffIssueRoutes.ts
+112. server/takeoffMeasurementRoutes.ts
+113. server/takeoffSheetRoutes.ts
+114. server/talentPoolRoutes.ts
+115. server/taskRoutes.ts
+116. server/timeClockRoutes.ts
+117. server/timeEntryRoutes.ts
+118. server/tmRoutes.ts
+119. server/transmittalRoutes.ts
+120. server/unifiedPortalRoutes.ts
+121. server/userSettingsRoutes.ts
+122. server/vendorRoutes.ts
+123. server/warrantyRoutes.ts
+124. server/weatherRoutes.ts
+125. server/websiteAiRoutes.ts
+126. server/websiteRoutes.ts
+127. server/workflowRoutes.ts
+128. server/workforceRoutes.ts
+```
+
+---
+
+## Appendix E: Complete Frontend Page Inventory (115 pages)
+
+```
+  1. accept-hustler-invite.tsx          2. ai-bid-analysis.tsx
+  3. ai-contract-analysis.tsx           4. ai-document-analysis.tsx
+  5. ai-governance.tsx                  6. ai-pm-dashboard.tsx
+  7. ai-settings.tsx                    8. approvals.tsx
+  9. audit-logs.tsx                    10. bid-detail.tsx
+ 11. bid-estimate.tsx                  12. bid-inbox.tsx
+ 13. bid-network-detail.tsx            14. bid-network.tsx
+ 15. bids.tsx                          16. bid-wizard.tsx
+ 17. billing.tsx                       18. calculator.tsx
+ 19. calendar.tsx                      20. cfo-dashboard.tsx
+ 21. clause-library.tsx                22. client-portal-public.tsx
+ 23. company-communications.tsx        24. company-health.tsx
+ 25. company-settings.tsx              26. contracts.tsx
+ 27. cost-codes.tsx                    28. cost-rates.tsx
+ 29. crew-marketplace.tsx              30. crews.tsx
+ 31. crm.tsx                           32. daily-report-locks.tsx
+ 33. dashboard.tsx                     34. dispatch-board.tsx
+ 35. email-assistant.tsx               36. email-campaigns.tsx
+ 37. enterprise-settings.tsx           38. equipment-detail.tsx
+ 39. equipment-rental-marketplace.tsx  40. equipment.tsx
+ 41. executive-digest.tsx              42. forgot-password.tsx
+ 43. historical-costs.tsx              44. hustler-benchmarking.tsx
+ 45. hustler-dashboard.tsx             46. hustler-org-detail.tsx
+ 47. hustler-unified-inbox.tsx         48. impersonate.tsx
+ 49. integrations.tsx                  50. issue-captures.tsx
+ 51. kpi-management.tsx                52. landing.tsx
+ 53. leave-management.tsx              54. lidar-scans.tsx
+ 55. login.tsx                         56. manage-workers.tsx
+ 57. marketplace.tsx                   58. material-price-index.tsx
+ 59. messages.tsx                      60. mobile-sync.tsx
+ 61. my-kpis.tsx                       62. not-found.tsx
+ 63. offline-sync.tsx                  64. onboarding.tsx
+ 65. overhead-costs.tsx                66. overtime-rules.tsx
+ 67. payroll-management.tsx            68. permits.tsx
+ 69. PlatformAdminDashboard.tsx        70. PlatformAnalyticsMonitoring.tsx
+ 71. PlatformOrganizationDetail.tsx    72. PlatformOrganizations.tsx
+ 73. PlatformTools.tsx                 74. portal-chat.tsx
+ 75. pricebook-import.tsx              76. procurement-module.tsx
+ 77. production-rates.tsx              78. profile.tsx
+ 79. progress-billing.tsx              80. project-detail.tsx
+ 81. projects.tsx                      82. public-website.tsx
+ 83. register.tsx                      84. rental-vendors.tsx
+ 85. reports.tsx                       86. reset-password.tsx
+ 87. rfq-response.tsx                  88. safety-training.tsx
+ 89. scope-settings.tsx                90. settings.tsx
+ 91. shared-preview.tsx                92. social-media.tsx
+ 93. subcontractor-payables.tsx        94. subcontracts.tsx
+ 95. sub-portal.tsx                    96. talent-pool.tsx
+ 97. tasks.tsx                         98. time-clock-manager.tsx
+ 99. time-clock.tsx                   100. time-entry.tsx
+101. time-log-tab.tsx                 102. tm-billing.tsx
+103. tm-daily.tsx                     104. unified-messages.tsx
+105. unified-portal.tsx               106. users.tsx
+107. vendor-pricing.tsx               108. vendor-scores.tsx
+109. view-as-organization.tsx         110. voice-logs.tsx
+111. website-builder.tsx              112. what-if-simulator.tsx
+113. wip-report.tsx                   114. worker-detail.tsx
+115. workflow-builder.tsx
+```
+
+---
+
+## Appendix F: Complete Component File Inventory (447 files)
+
+```
+  1. ActualMaterialsInput.tsx                    2. AIAnalysisButton.tsx
+  3. AIAssistantWidget.tsx                       4. AIBidAnalysisPanel.tsx
+  5. AiChangeOrderGenerator.tsx                  6. AIContractAnalysisPanel.tsx
+  7. AIDashboardPanel.tsx                        8. ai-document/DocumentAnalysisPage.tsx
+  9. AIFeatureDialog.tsx                        10. AIInsights.tsx
+ 11. AIInsightsWidget.tsx                       12. AiJobsiteAnalysis.tsx
+ 13. AiSchedulingPanel.tsx                      14. AISowAssistantDialog.tsx
+ 15. AiTakeoffPanel.tsx                         16. AIUomAssistantDialog.tsx
+ 17. AnnouncementBanner.tsx                     18. AppHeader.tsx
+ 19. AppSidebar.tsx                             20. AskQuestionsContent.tsx
+ 21. AssemblyPanel.tsx                          22. AssetHandoverTab.tsx
+ 23. bid/BidDetailDialogs.tsx                   24. bid/BidEquipmentStep.tsx
+ 25. bid/BidLevelingSection.tsx                 26. bid/BidLibrarySection.tsx
+ 27. bid/BidMaterialsStep.tsx                   28. bid/BidPlansStep.tsx
+ 29. bid/BidPlansTab.tsx                        30. bid/BidScopeStep.tsx
+ 31. bid/BidSubcontractorsStep.tsx              32. bid/BidSummaryStep.tsx
+ 33. bid/BimViewer.tsx                          34. BidCard.tsx
+ 35. bid/CostBuilderSidebar.tsx                 36. BidDocumentDistribution.tsx
+ 37. bim/BimDiffDialog.tsx                      38. bim/BimQuantityDialog.tsx
+ 39. branding-color-picker.tsx
+ 40–51. calculators/ (12 calculator components)
+ 52–57. cfo/ (5 CFO dashboard components + types)
+ 58. ChangeOrderDialog.tsx                      59. ChangeOrderFiles.tsx
+ 60. ChangeOrderFileUploader.tsx
+ 61–72. client-portal/ (12 portal components)
+ 73. ClientPortal.tsx                           74. ComplianceTracker.tsx
+ 75. ContractDetail.tsx                         76. CostCodeEstimator.tsx
+ 77–78. crm/ (2 CRM components)
+ 79. DailyNotes.tsx                             80. DashboardEditor.tsx
+ 81–83. delay/ (3 delay components)
+ 84. DigitalSiteplan.tsx
+ 85–86. dispatch/ (2 dispatch components)
+ 87. DocumentsTab.tsx                           88. DrawingSets.tsx
+ 89–91. email/ (3 email components)
+ 92. EquipmentTab.tsx                           93. ErrorBoundary.tsx
+ 94–96. estimate/ (3 estimate components)
+ 97. EstimateHeader.tsx                         98. EstimateSubcontractors.tsx
+ 99. FieldTakeoffTab.tsx                       100. FinancialTab.tsx
+101. GanttChart.tsx                            102. GpsMapView.tsx
+103–106. hiring/ (4 hiring components)
+107. HustlerOrgSwitcher.tsx                    108. ImportPricebookDialog.tsx
+109. InspectionsTab.tsx                        110. InteractiveTakeoffCanvas.tsx
+111. IntegrationConnections.tsx                112. IssueTracker.tsx
+113. LaborTab.tsx                              114. LeadSourceStats.tsx
+115. lidar/ (LidarViewer.tsx + types.ts)
+116. LinearLineItemBuilder.tsx                 117. LocationBreakdownPanel.tsx
+118. LocationTakeoffPanel.tsx                  119. MaintenanceTab.tsx
+120. ManualDocTypeDialog.tsx                   121. MarkupProfitConfigPanel.tsx
+122. MaterialFormHelper.tsx                    123. MaterialModifiersPanel.tsx
+124. MeasurementTypeMap.tsx                    125. MediaGallery.tsx
+126. MediaTab.tsx
+127–131. messaging/ (5 messaging components)
+132. MobileSyncSettings.tsx                    133. ModifierPresetDialog.tsx
+134. MultiUserCollabBar.tsx
+135–139. onboarding/ (5 onboarding components)
+140. OverviewTab.tsx                           141. OvertimeConfigPanel.tsx
+142. PayrollTab.tsx                            143. PdfPreviewSlider.tsx
+144. PeerRatings.tsx                           145. PermitsTab.tsx
+146. platform/ (SuperAdminSidebar.tsx)
+147–151. procurement/ (5 procurement components)
+152. ProductionRatesTab.tsx                    153. ProfitabilityChart.tsx
+154. ProgressBillingTab.tsx
+155–160. project/ (6 project components)
+161. ProjectCalendar.tsx                       162. ProjectHealthScore.tsx
+163. ProjectMediaGrid.tsx                      164. ProjectNotesTab.tsx
+165. ProjectScopeTab.tsx
+166–168. project-settings/ (3 settings components)
+169. ProtectedRoute.tsx                        170. PunchListTab.tsx
+171. RFIs.tsx                                  172. RiskHeatMapWidget.tsx
+173. RiskRegisterTab.tsx
+174–175. safety/ (2 safety components)
+176. SafetyDashboardSection.tsx                177. SafetyOfficerAssignment.tsx
+178. SafetyTab.tsx                             179. ScheduleTab.tsx
+180–183. scheduling/ (4 scheduling components)
+184. ScopeItemsPanel.tsx                       185. ScopeModifiersPanel.tsx
+186. ScopeWorkTypeManager.tsx                  187. SharedPreviewHeader.tsx
+188–189. social/ (2 social components)
+190. SOVTab.tsx                                191. Submittals.tsx
+192–195. subcontract/ (4 subcontract components)
+196. SubcontractTab.tsx
+197–200. takeoff/ (4 takeoff components)
+201. TaskDetailModal.tsx                       202. TasksTab.tsx
+203. theme-provider.tsx                        204. TmAnalyticsPanel.tsx
+205. TMDailySheetManager.tsx                   206. TMTicketExpansion.tsx
+207–210. transmittals/ (3 transmittal + 1 type file)
+211–252. ui/ (42 shadcn UI primitives)
+253. UomSelect.tsx                             254. UploadSourcePicker.tsx
+255. VendorPricebookUpload.tsx                 256. VendorPricingSync.tsx
+257. VoiceDictation.tsx                        258. WarrantyTab.tsx
+259. WeatherEvidenceCard.tsx                   260. WeatherForecastWidget.tsx
+261–267. website-blocks/ (7 website block components)
+268. website-body-components.tsx
+269–274. website-builder/ (6 website builder components)
+275. website-components-tab.tsx                276. website-preview-renderer.tsx
+277. WidgetLibrary.tsx                         278. WidgetSettingsDialog.tsx
+279–281. worker/ (3 worker components)
+282. workflow-tracker.tsx
+```
+
+(Full individual file listing available via `find client/src/components -name "*.tsx" -o -name "*.ts" | sort`)
+
+---
+
+## Appendix G: Complete Environment Variable Inventory (80 variables)
+
+### SET (Configured in Environment)
+| Variable | Source |
+|---|---|
+| `DATABASE_URL` | Replit PostgreSQL integration |
+| `GOOGLE_CLIENT_ID` | User secret |
+| `GOOGLE_CLIENT_SECRET` | User secret |
+| `LIVEKIT_API_KEY` | User secret |
+| `LIVEKIT_URL` | User secret |
+| `METERED_API_KEY` | User secret |
+| `QBO_CLIENT_ID` | User secret |
+| `QBO_CLIENT_SECRET` | User secret |
+| `RESEND_API_KEY` | User secret |
+| `AI_INTEGRATIONS_OPENAI_API_KEY` | Replit OpenAI integration |
+| `SESSION_SECRET` | Auto-generated (required for startup) |
+| `PORT` | Replit environment |
+| `NODE_ENV` | Replit environment |
+| `REPLIT_DEV_DOMAIN` | Replit environment |
+| `REPLIT_DOMAINS` | Replit environment |
+| `REPL_OWNER` | Replit environment |
+| `REPL_SLUG` | Replit environment |
+| `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | Replit Object Storage integration |
+
+### NOT SET (Referenced in Code but Missing)
+| Variable | Feature Affected |
+|---|---|
+| `LIVEKIT_API_SECRET` | LiveKit video calling (blocks integration status) |
+| `FB_APP_ID` | Facebook/Instagram social publishing |
+| `FB_APP_SECRET` | Facebook/Instagram social publishing |
+| `LINKEDIN_CLIENT_ID` | LinkedIn social publishing |
+| `LINKEDIN_CLIENT_SECRET` | LinkedIn social publishing |
+| `TWITTER_CLIENT_ID` | Twitter/X social publishing |
+| `TWITTER_CLIENT_SECRET` | Twitter/X social publishing |
+| `TIKTOK_CLIENT_ID` | TikTok social publishing |
+| `TIKTOK_CLIENT_SECRET` | TikTok social publishing |
+| `YOUTUBE_CLIENT_ID` | YouTube social publishing |
+| `YOUTUBE_CLIENT_SECRET` | YouTube social publishing |
+| `PINTEREST_APP_ID` | Pinterest social publishing |
+| `PINTEREST_APP_SECRET` | Pinterest social publishing |
+| `APPLE_CLIENT_ID` | Apple Sign-In |
+| `APPLE_TEAM_ID` | Apple Sign-In |
+| `APPLE_KEY_ID` | Apple Sign-In |
+| `APPLE_PRIVATE_KEY` | Apple Sign-In |
+| `MICROSOFT_CLIENT_ID` | Microsoft 365 integration |
+| `MICROSOFT_CLIENT_SECRET` | Microsoft 365 integration |
+| `MICROSOFT_TENANT_ID` | Microsoft 365 integration |
+| `MICROSOFT_REDIRECT_URI` | Microsoft 365 integration |
+| `DOCUSIGN_CLIENT_ID` | DocuSign e-signature |
+| `DOCUSIGN_CLIENT_SECRET` | DocuSign e-signature |
+| `DOCUSIGN_ACCOUNT_ID` | DocuSign e-signature |
+| `DOCUSIGN_BASE_URL` | DocuSign e-signature |
+| `DROPBOX_CLIENT_ID` | Dropbox cloud storage |
+| `DROPBOX_CLIENT_SECRET` | Dropbox cloud storage |
+| `GDRIVE_CLIENT_ID` | Google Drive cloud storage |
+| `GDRIVE_CLIENT_SECRET` | Google Drive cloud storage |
+| `ONEDRIVE_CLIENT_ID` | OneDrive cloud storage |
+| `ONEDRIVE_CLIENT_SECRET` | OneDrive cloud storage |
+| `BOX_CLIENT_ID` | Box cloud storage |
+| `BOX_CLIENT_SECRET` | Box cloud storage |
+| `TWILIO_ACCOUNT_SID` | SMS notifications |
+| `TWILIO_AUTH_TOKEN` | SMS notifications |
+| `TWILIO_FROM_NUMBER` | SMS notifications |
+| `VAPID_PUBLIC_KEY` | Web push notifications |
+| `VAPID_PRIVATE_KEY` | Web push notifications |
+| `VAPID_SUBJECT` | Web push notifications |
+| `ENCRYPTION_KEY` | General encryption |
+| `INTEGRATION_ENCRYPTION_KEY` | Integration token encryption |
+| `SENTRY_DSN` | Error monitoring (Sentry) |
+| `OPS_STATUS_TOKEN` | Ops health check authentication |
+| `WEBAUTHN_RP_ID` | WebAuthn/Passkey relying party |
+| `WEBAUTHN_ORIGIN` | WebAuthn/Passkey origin |
+| `GOOGLE_REDIRECT_URI` | Google OAuth callback |
+| `BILLING_MODE` | Billing mode configuration |
+| `EMAIL_FROM_ADDRESS` | Custom email sender address |
+| `ENABLE_DEV_SEED` | Dev seed data toggle |
+| `FRONTEND_URL` | Frontend URL override |
+| `APP_BASE_URL` | Application base URL |
+| `APP_URL` | Application URL |
+| `QBO_ENVIRONMENT` | QuickBooks sandbox/production |
+| `DEBUG_LINE_ITEMS` | Debug logging for line items |
+| `AI_INTEGRATIONS_OPENAI_BASE_URL` | Custom OpenAI API base URL |
+| `OPENAI_API_KEY` | Fallback OpenAI key |
+| `JWT_SECRET` | Alternative JWT secret reference |
+| `PRIVATE_OBJECT_DIR` | Private object storage directory |
+| `PUBLIC_OBJECT_SEARCH_PATHS` | Public object storage paths |
+| `REPLIT_OBJECT_STORAGE_PRIVATE_DIR` | Replit private storage dir |
+| `REPLIT_DEPLOYED_URL` | Deployed URL (set in production) |
+| `REPLIT_DEPLOYMENT` | Deployment indicator |
+| `npm_package_version` | Package version (auto-set) |
 
 ---
 
