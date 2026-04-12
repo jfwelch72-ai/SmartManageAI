@@ -326,7 +326,7 @@ router.delete("/api/media/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SU
         const objectFile = await objectStorageService.getObjectEntityFile(mediaItem.objectKey);
         await objectFile.delete();
       } catch (error) {
-        console.error("Error deleting media file from object storage:", error);
+        logError("Error deleting media file from object storage:", {}, error instanceof Error ? error : new Error(String(error)));
       }
     }
 
@@ -422,7 +422,7 @@ router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest,
 
     res.json(merged);
   } catch (error) {
-    console.error("Error fetching project cost codes:", error);
+    logError("Error fetching project cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -473,7 +473,7 @@ router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), a
       .where(and(eq(projectCostCodes.projectId, projectId), eq(projectCostCodes.isActive, true)));
     res.json(updated);
   } catch (error) {
-    console.error("Error updating project cost codes:", error);
+    logError("Error updating project cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -515,7 +515,7 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res, next) =
 
     res.json(merged);
   } catch (error) {
-    console.error("Error fetching cost codes:", error);
+    logError("Error fetching cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -542,7 +542,7 @@ router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res, nex
       .where(eq(orgCostCodes.organizationId, orgId));
     res.json(rows);
   } catch (error) {
-    console.error("Error fetching org cost codes:", error);
+    logError("Error fetching org cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -574,7 +574,7 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
     if (error?.code === "23505") {
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
-    console.error("Error creating org cost code:", error);
+    logError("Error creating org cost code:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -611,7 +611,7 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
     if (error?.code === "23505") {
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
-    console.error("Error updating org cost code:", error);
+    logError("Error updating org cost code:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });

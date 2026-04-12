@@ -2221,7 +2221,7 @@ router.get("/platform/organizations/:orgId/view-dashboard", requireAuth, require
       users: orgUsers,
     });
   } catch (error: any) {
-    console.error("View as organization error:", error.message);
+    logError("View as organization error:", {}, error.message instanceof Error ? error.message : new Error(String(error.message)));
     next(error);
   }
 });

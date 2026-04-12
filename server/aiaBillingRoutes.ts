@@ -460,9 +460,9 @@ router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN"
               <p><strong>Amount Due:</strong> $${parseFloat(app.currentPaymentDue || "0").toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
               <p>Please log in to review and approve this application.</p>`,
             text: `Pay Application #${app.applicationNumber} for ${project.name || "project"} has been submitted for your review. Amount due: $${parseFloat(app.currentPaymentDue || "0").toFixed(2)}. Please log in to review.`,
-          }).catch(e => console.error("[aiaBilling] email send failed:", e));
+          }).catch(e => logError("[aiaBilling] email send failed:", {}, e instanceof Error ? e : new Error(String(e))));
         }
-      } catch (e) { console.error("[aiaBilling] client notification failed:", e); }
+      } catch (e) { logError("[aiaBilling] client notification failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
 
     res.json(updated);

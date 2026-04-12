@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensurePermissionPresetsTable(): Promise<void> {
   try {
@@ -31,6 +32,6 @@ export async function ensurePermissionPresetsTable(): Promise<void> {
       console.log(`[migration] permission_presets table — already exists, skipped`);
     }
   } catch (err) {
-    console.error(`[migration] Failed to ensure permission_presets table:`, err);
+    logError(`[migration] Failed to ensure permission_presets table:`, {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

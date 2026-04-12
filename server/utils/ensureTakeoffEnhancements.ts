@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureTakeoffEnhancements(): Promise<void> {
   try {
@@ -88,6 +89,6 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
     }
 
   } catch (err) {
-    console.error("[migration] Failed to ensure takeoff enhancement columns:", err);
+    logError("[migration] Failed to ensure takeoff enhancement columns:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

@@ -1,3 +1,4 @@
+import { logError } from "./logger";
 import { pool } from "../db";
 
 export async function ensureScopeModifierTables(): Promise<void> {
@@ -55,7 +56,7 @@ export async function ensureScopeModifierTables(): Promise<void> {
 
     console.log("[migration] scope modifier junction tables — created and backfilled");
   } catch (err) {
-    console.error("[migration] scope modifier junction tables — failed:", err);
+    logError("[migration] scope modifier junction tables — failed:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -86,7 +87,7 @@ async function backfillScopeModifiers(backfillTickets: boolean, backfillCOs: boo
         );
         ticketCount++;
       } catch (e) {
-        console.error(`[migration] scope modifier backfill failed for ticket ${ticket.id}:`, e);
+        logError(`[migration] scope modifier backfill failed for ticket ${ticket.id}:`, {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
   }
@@ -114,7 +115,7 @@ async function backfillScopeModifiers(backfillTickets: boolean, backfillCOs: boo
         );
         coCount++;
       } catch (e) {
-        console.error(`[migration] scope modifier backfill failed for change order ${co.id}:`, e);
+        logError(`[migration] scope modifier backfill failed for change order ${co.id}:`, {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
   }

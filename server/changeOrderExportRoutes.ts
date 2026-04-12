@@ -382,7 +382,7 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
     res.setHeader('Content-Disposition', `attachment; filename="ChangeOrder_${safeNumber}.pdf"`);
     stream.pipe(res);
   } catch (error) {
-    console.error("PDF generation error:", error);
+    logError("PDF generation error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -527,13 +527,13 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRoleOrFeature(["A
         const safeNumber = co.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_');
         archive.append(stream, { name: `${safeNumber}.pdf` });
       } catch (coErr) {
-        console.error(`Failed to generate PDF for CO ${co.changeOrderNumber}:`, coErr);
+        logError(`Failed to generate PDF for CO ${co.changeOrderNumber}:`, {}, coErr instanceof Error ? coErr : new Error(String(coErr)));
       }
     }
 
     await archive.finalize();
   } catch (error) {
-    console.error("Bulk PDF export error:", error);
+    logError("Bulk PDF export error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
       next(error);
     }

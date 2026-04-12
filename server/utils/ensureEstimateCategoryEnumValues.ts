@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 const REQUIRED_CATEGORIES = [
   "METALS",
@@ -52,6 +53,6 @@ export async function ensureEstimateCategoryEnumValues(): Promise<void> {
       console.log("[migration] estimate_item_category enum — all values present, skipped");
     }
   } catch (err) {
-    console.error("[migration] Failed to ensure estimate_item_category enum values:", err);
+    logError("[migration] Failed to ensure estimate_item_category enum values:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureEquipmentColumns(): Promise<void> {
   try {
@@ -21,6 +22,6 @@ export async function ensureEquipmentColumns(): Promise<void> {
       console.log("[migration] equipment depreciation columns — already present, skipped");
     }
   } catch (err) {
-    console.error("[migration] Failed to ensure equipment depreciation columns:", err);
+    logError("[migration] Failed to ensure equipment depreciation columns:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

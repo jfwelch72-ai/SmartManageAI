@@ -3223,7 +3223,7 @@ router.get("/api/vendor/messages/conversations", requireAuth, requireRole("VENDO
 
     res.json(result);
   } catch (error) {
-    console.error("Get vendor conversations error:", error);
+    logError("Get vendor conversations error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -3305,7 +3305,7 @@ router.get("/api/vendor/messages/conversations/:id/messages", requireAuth, requi
 
     res.json(convMessages);
   } catch (error) {
-    console.error("Get vendor messages error:", error);
+    logError("Get vendor messages error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -3439,7 +3439,7 @@ router.post("/api/vendor/messages/conversations/:id/messages", requireAuth, requ
 
     res.status(201).json(newMessage);
   } catch (error) {
-    console.error("Send vendor message error:", error);
+    logError("Send vendor message error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -3538,7 +3538,7 @@ router.get("/api/vendor/documents", requireAuth, requireRole("VENDOR"), async (r
 
     res.json(result);
   } catch (error) {
-    console.error("Get vendor documents error:", error);
+    logError("Get vendor documents error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -3547,7 +3547,7 @@ router.get("/api/vendor/compliance-documents", requireAuth, requireRole("VENDOR"
   try {
     res.json([]);
   } catch (error) {
-    console.error("Get vendor compliance documents error:", error);
+    logError("Get vendor compliance documents error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -3556,7 +3556,7 @@ router.get("/api/vendor/purchase-orders", requireAuth, requireRole("VENDOR"), as
   try {
     res.json([]);
   } catch (error) {
-    console.error("Get vendor purchase orders error:", error);
+    logError("Get vendor purchase orders error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });
@@ -3565,7 +3565,7 @@ router.get("/api/vendor/schedule", requireAuth, requireRole("VENDOR"), async (re
   try {
     res.json([]);
   } catch (error) {
-    console.error("Get vendor schedule error:", error);
+    logError("Get vendor schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
   }
 });

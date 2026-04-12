@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureSocialEngagementColumns(): Promise<void> {
   try {
@@ -24,6 +25,6 @@ export async function ensureSocialEngagementColumns(): Promise<void> {
       console.log("[migration] social engagement columns — already present, skipped");
     }
   } catch (err) {
-    console.error("[migration] Failed to ensure social engagement columns:", err);
+    logError("[migration] Failed to ensure social engagement columns:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

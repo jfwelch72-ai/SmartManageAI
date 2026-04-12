@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureEmailCampaignTables(): Promise<void> {
   try {
@@ -74,6 +75,6 @@ export async function ensureEmailCampaignTables(): Promise<void> {
       console.log("[migration] email campaign tables — already present, skipped");
     }
   } catch (err) {
-    console.error("[migration] Failed to ensure email campaign tables:", err);
+    logError("[migration] Failed to ensure email campaign tables:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

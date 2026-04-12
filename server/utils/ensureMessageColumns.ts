@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureMessageColumns(): Promise<void> {
   try {
@@ -18,6 +19,6 @@ export async function ensureMessageColumns(): Promise<void> {
       console.log("[migration] messages.is_field_note — already present, skipped");
     }
   } catch (err) {
-    console.error("[migration] Failed to ensure messages columns:", err);
+    logError("[migration] Failed to ensure messages columns:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

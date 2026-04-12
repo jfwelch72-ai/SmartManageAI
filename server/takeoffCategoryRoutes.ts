@@ -7,6 +7,7 @@ import { logCreate } from "./auditLogger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { verifyOrgAccess, requireOrgOwnership } from "./orgFilter";
 import { verifySheetAccess, safeParsePoints } from "./takeoffHelpers";
+import { logError } from "./utils/logger";
 
 const router = Router();
 
@@ -387,7 +388,7 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
 
     res.status(201).json(category);
   } catch (error) {
-    console.error("Error creating quantity category:", error);
+    logError("Error creating quantity category:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
@@ -443,7 +444,7 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating quantity category:", error);
+    logError("Error updating quantity category:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
@@ -535,7 +536,7 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
       authorName: req.user!.name,
     });
   } catch (error) {
-    console.error("Error creating markup:", error);
+    logError("Error creating markup:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid markup data", details: error.errors });
     } else {
@@ -675,7 +676,7 @@ router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAG
 
     res.status(201).json(link);
   } catch (error) {
-    console.error("Error creating sheet link:", error);
+    logError("Error creating sheet link:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid link data", details: error.errors });
     } else {
@@ -898,7 +899,7 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
             }
         }
       } catch (pdfError) {
-        console.error("PDF link detection error:", pdfError);
+        logError("PDF link detection error:", {}, pdfError instanceof Error ? pdfError : new Error(String(pdfError)));
       }
     }
 

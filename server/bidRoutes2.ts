@@ -2951,7 +2951,7 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
         }
       }
     } catch (e) {
-      console.error("[bid] scope of work fetch failed, using defaults:", e);
+      logError("[bid] scope of work fetch failed, using defaults:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     if (!scopeOfWorkHtml) {

@@ -1,3 +1,4 @@
+import { logError } from "./logger";
 import { pool } from "../db";
 
 export async function ensureErrorLogsTable(): Promise<void> {
@@ -32,6 +33,6 @@ export async function ensureErrorLogsTable(): Promise<void> {
       ? "[migration] error_logs table — already present, skipped"
       : "[migration] error_logs table — created");
   } catch (err) {
-    console.error("[migration] Failed to ensure error_logs table:", err);
+    logError("[migration] Failed to ensure error_logs table:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

@@ -332,7 +332,7 @@ router.patch("/api/takeoff/measurements/:measurementId/installed", requireAuth, 
             projectId,
           });
         } catch (e) {
-          console.error("Failed to create overrun notification:", e);
+          logError("Failed to create overrun notification:", {}, e instanceof Error ? e : new Error(String(e)));
         }
       }
     }

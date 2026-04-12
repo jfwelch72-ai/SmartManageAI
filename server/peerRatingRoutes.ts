@@ -5,6 +5,7 @@ import { eq, and, sql, ne, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { peerRatings, users, crewMembers, crewProjectAssignments, organizations } from "@shared/schema";
 import { timeClockShifts } from "@shared/schema";
+import { logError } from "./utils/logger";
 
 const currentPeriod = () => {
   const now = new Date();
@@ -202,7 +203,7 @@ export function registerPeerRatingRoutes(app: Express) {
 
       res.json(result);
     } catch (err) {
-      console.error("[ERROR] rateable-coworkers:", err);
+      logError("[ERROR] rateable-coworkers:", {}, err instanceof Error ? err : new Error(String(err)));
       next(err);
     }
   });

@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 const REQUIRED_NOTIFICATION_TYPES = [
   "BID_SUBMITTED",
@@ -29,6 +30,6 @@ export async function ensureNotificationEnumValues(): Promise<void> {
       console.log("[migration] notification_type enum — all values present, skipped");
     }
   } catch (err) {
-    console.error("[migration] Failed to ensure notification_type enum values:", err);
+    logError("[migration] Failed to ensure notification_type enum values:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

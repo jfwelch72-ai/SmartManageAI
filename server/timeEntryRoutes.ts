@@ -318,7 +318,7 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
             `Bulk approved ${accessibleIds.length} time entries`
           );
         }
-      } catch (e) { console.error("[timeEntry] approval request failed:", e); }
+      } catch (e) { logError("[timeEntry] approval request failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
 
     const projectIds = new Set(entries.filter(e => e.entry.projectId).map(e => e.entry.projectId!));
@@ -327,7 +327,7 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
         for (const pid of projectIds) {
           m.evaluateBudgetAlerts(pid).catch(e => logError("Budget alert eval after bulk time approval:", {}, e instanceof Error ? e : new Error(String(e))));
         }
-      }).catch(e => console.error("[timeEntry] costLedger import failed:", e));
+      }).catch(e => logError("[timeEntry] costLedger import failed:", {}, e instanceof Error ? e : new Error(String(e))));
     }
 
     res.json({ 

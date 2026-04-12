@@ -665,7 +665,7 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
             `SOV/Pay App submitted for approval`
           );
         }
-      } catch (e) { console.error("[sov] approval request failed:", e); }
+      } catch (e) { logError("[sov] approval request failed:", {}, e instanceof Error ? e : new Error(String(e))); }
 
       try {
         await workflowEngine.startWorkflow(
@@ -674,7 +674,7 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
           id,
           req.user.id
         );
-      } catch (e) { console.error("[sov] workflow start failed:", e); }
+      } catch (e) { logError("[sov] workflow start failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
 
     res.json(updated);

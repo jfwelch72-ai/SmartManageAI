@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureNullablePermissions(): Promise<void> {
   try {
@@ -23,6 +24,6 @@ export async function ensureNullablePermissions(): Promise<void> {
     }
     console.log(`[migration] user_dashboard_permissions nullable — applied to ${columnsToFix.length} columns`);
   } catch (err) {
-    console.error("[migration] Failed to ensure nullable permissions:", err);
+    logError("[migration] Failed to ensure nullable permissions:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

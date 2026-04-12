@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensurePeerRatingColumns(): Promise<void> {
   const orgColumns = [
@@ -33,7 +34,7 @@ export async function ensurePeerRatingColumns(): Promise<void> {
         console.log(`[migration] ${col.table}.${col.name} — already present, skipped`);
       }
     } catch (err) {
-      console.error(`[migration] Failed to ensure ${col.table}.${col.name}:`, err);
+      logError(`[migration] Failed to ensure ${col.table}.${col.name}:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 }

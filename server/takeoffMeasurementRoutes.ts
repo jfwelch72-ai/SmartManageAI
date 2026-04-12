@@ -8,6 +8,7 @@ import { sanitizeShortText } from "./sanitization";
 import { createArcSegment, computeDistanceInFeet, computePolygonAreaInFt2, computePolygonPerimeterInFt, computeVolumeInCY, computePitchedAreaFt2 } from "@shared/utils/geometry";
 import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, getDefaultVersionIdsBatch, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
+import { logError } from "./utils/logger";
 
 const router = Router();
 
@@ -237,11 +238,11 @@ async function computeMeasurementGeometry(
       if (arcSegment) {
         finalValues.computedLengthFt = arcSegment.arcLength;
       }
-    } catch (e) { console.error("Error computing arc length:", e); }
+    } catch (e) { logError("Error computing arc length:", {}, e instanceof Error ? e : new Error(String(e))); }
   } else if (mType === "LINEAR" && points.length >= 2 && !finalValues.computedLengthFt) {
     try {
       finalValues.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
-    } catch (e) { console.error("Error computing linear distance:", e); }
+    } catch (e) { logError("Error computing linear distance:", {}, e instanceof Error ? e : new Error(String(e))); }
   }
 
   if ((mType === "AREA" || mType === "PITCHED_AREA" || mType === "SURFACE_AREA") && points.length >= 3 && !finalValues.computedAreaFt2) {
@@ -254,7 +255,7 @@ async function computeMeasurementGeometry(
       if (mType === "SURFACE_AREA") {
         finalValues.computedSurfaceAreaFt2 = areaFt2;
       }
-    } catch (e) { console.error("Error computing area:", e); }
+    } catch (e) { logError("Error computing area:", {}, e instanceof Error ? e : new Error(String(e))); }
   }
 
   if (mType === "VOLUME" && points.length >= 3 && !finalValues.computedVolumeCy) {
@@ -264,7 +265,7 @@ async function computeMeasurementGeometry(
       if (validated.depthFeet) {
         finalValues.computedVolumeCy = computeVolumeInCY(areaFt2, validated.depthFeet as number);
       }
-    } catch (e) { console.error("Error computing volume:", e); }
+    } catch (e) { logError("Error computing volume:", {}, e instanceof Error ? e : new Error(String(e))); }
   }
 
   if (["AREA", "PITCHED_AREA", "SURFACE_AREA", "VOLUME"].includes(mType) && points.length >= 3) {
@@ -278,7 +279,7 @@ async function computeMeasurementGeometry(
         } catch { return {}; }
       })();
       finalValues.metadata = JSON.stringify({ ...existingMeta, perimeterFt });
-    } catch (e) { console.error("Error computing perimeter:", e); }
+    } catch (e) { logError("Error computing perimeter:", {}, e instanceof Error ? e : new Error(String(e))); }
   }
 
   return finalValues;
@@ -877,7 +878,7 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
             .where(eq(takeoffMeasurements.id, measurement.id));
         }
       } catch (error) {
-        console.error(`Error recalculating measurement ${measurement.id}:`, error);
+        logError(`Error recalculating measurement ${measurement.id}:`, {}, error instanceof Error ? error : new Error(String(error)));
       }
     }
 
@@ -1021,7 +1022,7 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
                   .where(eq(takeoffMeasurements.id, measurement.id));
               }
             } catch (error) {
-              console.error(`Error recalculating measurement ${measurement.id}:`, error);
+              logError(`Error recalculating measurement ${measurement.id}:`, {}, error instanceof Error ? error : new Error(String(error)));
             }
           }
         }

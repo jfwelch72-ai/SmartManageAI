@@ -737,7 +737,7 @@ router.post(
         throw genErr;
       }
     } catch (err) {
-      console.error("[progress-reports] Generate error:", err);
+      logError("[progress-reports] Generate error:", {}, err instanceof Error ? err : new Error(String(err)));
       next(err);
     }
   }

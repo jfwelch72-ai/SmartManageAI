@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureEstimateSubcontractorTables(): Promise<void> {
   try {
@@ -25,7 +26,7 @@ export async function ensureEstimateSubcontractorTables(): Promise<void> {
       ? "[migration] notifications.organization_id — already present, skipped"
       : "[migration] notifications.organization_id — applied");
   } catch (err) {
-    console.error("[migration] Failed to ensure notifications.organization_id:", err);
+    logError("[migration] Failed to ensure notifications.organization_id:", {}, err instanceof Error ? err : new Error(String(err)));
     throw err;
   }
 
@@ -63,7 +64,7 @@ export async function ensureEstimateSubcontractorTables(): Promise<void> {
       ? "[migration] estimate_line_item_subcontractors — already present, skipped"
       : "[migration] estimate_line_item_subcontractors — applied");
   } catch (err) {
-    console.error("[migration] Failed to ensure estimate_line_item_subcontractors:", err);
+    logError("[migration] Failed to ensure estimate_line_item_subcontractors:", {}, err instanceof Error ? err : new Error(String(err)));
     throw err;
   }
 }

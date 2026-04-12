@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { logError } from "./logger";
 
 export async function ensureFieldWorkerPermColumns(): Promise<void> {
   const columns = [
@@ -26,7 +27,7 @@ export async function ensureFieldWorkerPermColumns(): Promise<void> {
         console.log(`[migration] ${col.table}.${col.name} — already present, skipped`);
       }
     } catch (err) {
-      console.error(`[migration] Failed to ensure ${col.table}.${col.name}:`, err);
+      logError(`[migration] Failed to ensure ${col.table}.${col.name}:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
@@ -75,7 +76,7 @@ async function ensureProjectScopeColumn(): Promise<void> {
       console.log(`[migration] ${table}.project_scope — already present, skipped`);
     }
   } catch (err) {
-    console.error(`[migration] Failed to ensure ${table}.project_scope:`, err);
+    logError(`[migration] Failed to ensure ${table}.project_scope:`, {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -135,6 +136,6 @@ async function ensureFinancialsAccessColumn(table: string, defaultVal: string): 
       END $$;
     `));
   } catch (err) {
-    console.error(`[migration] Failed to ensure ${table}.financials_access:`, err);
+    logError(`[migration] Failed to ensure ${table}.financials_access:`, {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
