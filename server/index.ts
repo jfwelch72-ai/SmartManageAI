@@ -290,15 +290,13 @@ app.use((req, res, next) => {
     log(`serving on port ${port}`);
     logOAuthRedirectUris();
     
-    // AI Schedulers only run in production mode (isProduction declared at top level)
-    
-    if (isProduction) {
-      // Initialize AI PM + CFO scheduler (runs at configured daily time, default 6:00 AM)
+    const schedulersEnabled = isProduction || process.env.ENABLE_SCHEDULERS === "true";
+
+    if (schedulersEnabled) {
       initializeAIScheduler().catch(error => {
         logError('Failed to initialize AI scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       });
-      
-      // Initialize AI Notes Analysis scheduler (hourly + daily at 6 PM)
+
       try {
         aiNotesScheduler.start();
         logInfo('AI Notes Scheduler started successfully');
@@ -306,25 +304,23 @@ app.use((req, res, next) => {
         logError('Failed to start AI Notes Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
-      // Initialize nightly GCS orphan scan (runs at 02:00 daily)
       try {
         startOrphanScanScheduler();
       } catch (error) {
         logError('Failed to start Storage Orphan Scan Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
-      // Start background job runner (outbox, retention, orphan uploads, etc.)
       try {
         startJobRunner();
       } catch (error) {
         logError('Failed to start background job runner:', {}, error instanceof Error ? error : new Error(String(error)));
       }
-      
-      logInfo('AI auto-scan schedulers ENABLED (production mode)');
+
+      logInfo(`Background schedulers ENABLED (${isProduction ? 'production' : 'ENABLE_SCHEDULERS=true'})`);
     } else {
-      logInfo('AI auto-scan schedulers are DISABLED (development mode)');
-      logInfo('   Use the manual "Run AI Analysis" button to trigger scans');
-      logInfo('   Set NODE_ENV=production to enable schedulers');
+      logInfo('Background schedulers are DISABLED (development mode)');
+      logInfo('   Set ENABLE_SCHEDULERS=true to enable in dev, or use the manual trigger API');
+      logInfo('   POST /api/admin/jobs/:jobName/run — trigger any job on demand (Super Admin)');
     }
   });
 })();

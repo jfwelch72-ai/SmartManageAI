@@ -1,1 +1,1 @@
-export { startJobRunner, stopJobRunner } from "./jobRunner";
+export { startJobRunner, stopJobRunner, jobRegistry } from "./jobRunner";

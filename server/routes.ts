@@ -620,6 +620,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/jobs", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
+    const { jobRegistry } = await import("./jobs");
+    const jobs = Object.entries(jobRegistry).map(([name, entry]) => ({
+      name,
+      description: entry.description,
+      schedule: entry.schedule,
+    }));
+    const schedulersRunning = process.env.NODE_ENV === "production" || process.env.ENABLE_SCHEDULERS === "true";
+    res.json({ schedulersRunning, jobs });
+  });
+
+  app.post("/api/admin/jobs/ai-scheduler/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { runAIAnalysis } = await import("./ai/orchestrator");
+      const start = Date.now();
+      const runId = await runAIAnalysis(req.user!.id);
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: "EXECUTE", entityType: "background_job", entityId: "ai_scheduler", newValue: `Manual AI analysis trigger` }, req);
+      res.json({ job: "ai_scheduler", status: "completed", runId, durationMs: Date.now() - start });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.post("/api/admin/jobs/ai-notes/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { aiNotesScheduler } = await import("./aiNotesScheduler");
+      const start = Date.now();
+      await aiNotesScheduler.runNow();
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: "EXECUTE", entityType: "background_job", entityId: "ai_notes", newValue: `Manual AI notes trigger` }, req);
+      res.json({ job: "ai_notes", status: "completed", durationMs: Date.now() - start });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { jobName } = req.params;
+      const { jobRegistry } = await import("./jobs");
+      const entry = jobRegistry[jobName];
+      if (!entry) {
+        res.status(404).json({ error: `Job '${jobName}' not found`, available: Object.keys(jobRegistry) });
+        return;
+      }
+      const start = Date.now();
+      await entry.fn();
+      const durationMs = Date.now() - start;
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: "EXECUTE", entityType: "background_job", entityId: jobName, newValue: `Manual trigger completed in ${durationMs}ms` }, req);
+      res.json({ job: jobName, status: "completed", durationMs });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
   const httpServer = createServer(app);
 
   const { setupTakeoffCollaboration } = await import("./takeoffCollaboration");

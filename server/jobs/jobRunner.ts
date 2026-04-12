@@ -224,6 +224,24 @@ export function stopJobRunner() {
   logInfo("Background job runner stopped");
 }
 
+export const jobRegistry: Record<string, { fn: () => Promise<void>; description: string; schedule: string }> = {
+  outbox:              { fn: () => processOutbox(),                    description: "Process integration outbox events",      schedule: "*/2 * * * *" },
+  retention:           { fn: () => processRetentionPolicies(),         description: "Apply data retention policies",           schedule: "0 2 * * *" },
+  sync_schedules:      { fn: () => processSyncSchedules(),             description: "Run QBO / integration sync schedules",   schedule: "*/15 * * * *" },
+  social_posts:        { fn: () => processScheduledSocialPosts(),      description: "Publish scheduled social media posts",    schedule: "*/2 * * * *" },
+  token_expiry:        { fn: () => checkSocialTokenExpiry(),           description: "Check social account token expiry",       schedule: "0 3 * * *" },
+  compliance:          { fn: () => processComplianceExpirations(),     description: "Check compliance/cert expirations",       schedule: "0 7 * * *" },
+  profitability:       { fn: () => processProfitabilityMonitor(),      description: "Monitor project profitability",           schedule: "*/15 * * * *" },
+  idle_opportunities:  { fn: () => processIdleOpportunities(),         description: "Flag idle CRM opportunities",            schedule: "0 8 * * *" },
+  orphan_uploads:      { fn: () => processOrphanUploads(),             description: "Clean up orphaned file uploads",          schedule: "*/30 * * * *" },
+  bid_due_dates:       { fn: () => processBidDueDateApproaching(),     description: "Notify on approaching bid due dates",     schedule: "0 * * * *" },
+  imap_sync:           { fn: () => processImapEmailSync(),             description: "Sync IMAP email accounts",               schedule: "*/15 * * * *" },
+  weekly_report:       { fn: () => processPeriodicReports("WEEKLY"),   description: "Generate weekly reports",                 schedule: "0 7 * * 1" },
+  monthly_report:      { fn: () => processPeriodicReports("MONTHLY"),  description: "Generate monthly reports",                schedule: "0 7 1 * *" },
+  db_health_check:     { fn: () => runDbHealthCheck(),                 description: "Run database health check",              schedule: "0 */6 * * *" },
+  social_engagement:   { fn: () => processSocialEngagement(),          description: "Sync social media engagement metrics",    schedule: "0 */4 * * *" },
+};
+
 async function processOutbox() {
   const events = await outboxService.getQueuedEvents(25);
   if (events.length === 0) return;

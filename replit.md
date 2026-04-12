@@ -39,7 +39,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Auto Change Orders from Takeoff Deltas**: Automatic generation of draft PCOs from detected quantity/cost deltas in superseded takeoff sheets.
 *   **Internal Domain Event Bus**: Typed, in-process EventBus for decoupling business actions.
 *   **Notification Delivery Framework**: Multi-channel notification service (email, web push, SMS, Teams, Slack) with per-user preferences.
-*   **Background Jobs Framework**: node-cron based job runner with an outbox dispatcher.
+*   **Background Jobs Framework**: node-cron based job runner with an outbox dispatcher, job registry for on-demand execution, and `ENABLE_SCHEDULERS` env var for dev/staging opt-in. Super Admin API: `GET /api/admin/jobs` (list), `POST /api/admin/jobs/:jobName/run` (trigger).
 *   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support.
 *   **Account Settings Hub**: Unified settings page (`/settings`) with URL-based sidebar routing.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
