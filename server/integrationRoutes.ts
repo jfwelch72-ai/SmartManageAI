@@ -562,8 +562,12 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
 
     const { operation, dryRun, data } = parsed.data;
 
-    if (connection.provider !== "qbo") {
-      return res.status(400).json({ error: `Sync not yet supported for provider: ${connection.provider}` });
+    const SYNC_CAPABLE_PROVIDERS = ["qbo"] as const;
+    if (!SYNC_CAPABLE_PROVIDERS.includes(connection.provider as any)) {
+      const hint = connection.provider === "stackct"
+        ? " Use the STACK CT sync endpoint instead."
+        : "";
+      return res.status(400).json({ error: `This sync endpoint only supports QuickBooks Online. Provider '${connection.provider}' does not have accounting sync operations.${hint}` });
     }
 
     const metadata = (connection.metadata as Record<string, any>) || {};
