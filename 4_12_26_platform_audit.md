@@ -49,8 +49,10 @@ The platform is built on a React + Express + PostgreSQL stack with Drizzle ORM, 
 | Billing Feature Keys | 44 |
 | Add-On Keys | 9 |
 | Startup Migration Scripts (server/migrations/) | 32 |
-| Drizzle Kit Migrations (migrations/) | 49 |
+| Drizzle Kit Migrations (migrations/) | 48 |
 | TypeScript ensure* Scripts (server/utils/) | 21 |
+| Integration Providers (registered) | 10 |
+| Remaining `console.error` Usages | 72 |
 
 ---
 
@@ -653,18 +655,29 @@ All routes are registered after auth middleware and API rate limiter. Organizati
 - Token refresh handling in sync scheduler
 - Outbox pattern for webhook delivery
 
-### Configured Integration Providers
+### Registered Integration Providers (10)
+All providers are registered in `server/integrations/providers/index.ts` via `registerAllProviders()`:
 
-| Provider | Status | Capabilities |
+| # | Provider | Registry Key | Status | Capabilities |
+|---|---|---|---|---|
+| 1 | **QuickBooks Online** | `qbo` | Active | Chart of accounts import, customer export, subcontractor payment export, PO export, payment reconciliation. Scheduled sync support. Only provider with sync operations implemented. |
+| 2 | **Google Workspace** | `google` | Configured (OAuth) | Gmail (email sync), Calendar integration. Google Sign-In for auth. |
+| 3 | **Microsoft 365** | `microsoft` | Code exists | Outlook email sync, Calendar. Requires credentials. |
+| 4 | **DocuSign** | `esign` | Code exists | E-signature for contracts. Requires credentials. |
+| 5 | **Zapier** | `zapier` | Code exists | Automation webhooks. Requires credentials. |
+| 6 | **Dropbox** | `dropbox` | Code exists | Cloud file storage sync. Requires credentials. |
+| 7 | **Google Drive** | `gdrive` | Code exists | Cloud file storage sync. Requires credentials. |
+| 8 | **OneDrive** | `onedrive` | Code exists | Cloud file storage sync. Requires credentials. |
+| 9 | **Box** | `box` | Code exists | Cloud file storage sync. Requires credentials. |
+| 10 | **STACK CT** | `stackct` | Active | Construction technology data sync |
+
+### Non-Registry Services (Not Integration Providers, But Core Dependencies)
+| Service | Status | Purpose |
 |---|---|---|
-| **QuickBooks Online** | Active | Chart of accounts import, customer export, subcontractor payment export, PO export, payment reconciliation. Scheduled sync support. |
-| **STACK CT** | Active | Construction technology data sync |
-| **Google Workspace** | Configured (OAuth) | Gmail (email sync), Calendar integration. Google Sign-In for auth. |
-| **Microsoft 365** | Code exists | Outlook email sync, Calendar. Requires credentials. |
-| **DocuSign** | Code exists | E-signature for contracts. Requires credentials. |
-| **LiveKit** | Partially configured | Video calling. See Known Gaps — `LIVEKIT_API_SECRET` missing. |
-| **Resend** | Active | Transactional email delivery |
-| **OpenAI** | Active (via integration) | GPT-4/4o for all AI features |
+| **OpenAI** | Active (via Replit integration) | GPT-4/4o for all AI features |
+| **Resend** | Active | Transactional + campaign email delivery |
+| **LiveKit** | Partially configured | Video calling (see Known Gaps — `LIVEKIT_API_SECRET` missing) |
+| **Metered** | Configured | TURN/STUN server for WebRTC |
 
 ### Integration Status Service
 Checks environment variables at startup and reports status:
@@ -754,74 +767,93 @@ All have real API publishing implementations in `server/social/publishService.ts
 
 ### CRITICAL
 
-#### 1. Workflow Builder Tables Missing
-- **Impact**: The No-Code Workflow Builder feature is non-functional
-- **Details**: `migrations/0024_create_workflow_tables.sql` exists but was never applied. The tables `workflow_definitions`, `workflow_instances`, `workflow_transitions`, `workflow_action_logs` do not exist in the database.
-- **Feature gated**: `WORKFLOW_BUILDER` feature key exists in billing plans (Scale tier default)
-- **Routes registered**: `workflowRoutes` is mounted at `/api/workflows`
-- **Fix**: Apply migration `0024` or add tables to startup migrations
+#### 1. Workflow Builder Database Tables Missing
+- **Impact**: The No-Code Workflow Builder feature is entirely non-functional; any API call to `/api/workflows` will throw a database error
+- **Details**: `migrations/0024_create_workflow_tables.sql` defines 5 tables (`workflow_templates`, `workflow_stages`, `workflow_approval_steps`, `workflow_notification_rules`, `workflow_instances`) plus 4 enum types (`workflow_entity_type`, `workflow_template_status`, `workflow_instance_status`, `workflow_notification_channel`). This migration was never applied to the database.
+- **Feature gated**: `WORKFLOW_BUILDER` feature key exists in billing plans as a Scale-tier default
+- **Routes registered**: `workflowRoutes` is mounted at `/api/workflows` in `server/routes.ts`
+- **Fix**: Run `psql "$DATABASE_URL" -f migrations/0024_create_workflow_tables.sql` or add equivalent to `server/utils/runStartupMigrations.ts`
 
 ### HIGH
 
-#### 2. LiveKit Video Calling — Partially Configured
-- **Impact**: Video call buttons may be disabled; integration reports "NOT configured"
-- **Details**: Environment has `LIVEKIT_API_KEY` and `LIVEKIT_URL` but `integrationStatusService.ts` requires all three: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `LIVEKIT_URL`. The secret `LIVEKIT_API_SECRET` is not in the available secrets list.
-- **Behavior**: Integration status shows `livekit: NOT configured`, video call UI gracefully degrades (button disabled)
+#### 2. LiveKit Video Calling — `LIVEKIT_API_SECRET` Missing
+- **Impact**: Video call buttons disabled platform-wide; startup log reports `livekit: NOT configured`
+- **Details**: Environment has `LIVEKIT_API_KEY` and `LIVEKIT_URL` configured, but `server/services/integrationStatusService.ts` requires all three: `LIVEKIT_API_KEY` AND `LIVEKIT_API_SECRET` AND `LIVEKIT_URL`. The secret `LIVEKIT_API_SECRET` is not in the available secrets list.
+- **File**: `server/services/integrationStatusService.ts` lines 11–15
+- **Behavior**: `getIntegrationStatus()` returns `livekit: false`, video call UI gracefully degrades (button disabled via integration gating)
 
-#### 3. Apple Sign-In — Not Configured
+#### 3. Apple Sign-In — Environment Variables Not Configured
 - **Impact**: Apple OAuth login option non-functional
-- **Details**: OAuth routes for Apple exist but no Apple-related environment variables (`APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`) are configured
-- **Behavior**: Apple sign-in button likely hidden or produces an error
+- **Details**: OAuth routes for Apple exist in `server/oauthRoutes.ts` but no Apple-related environment variables (`APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`) are configured
+- **Behavior**: Apple sign-in button likely hidden or returns an error on click
 
-#### 4. Social Platform API Keys — Not Configured
-- **Impact**: Social media publishing to external platforms will fail
-- **Details**: Facebook (`FB_APP_ID`, `FB_APP_SECRET`), LinkedIn (`LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`), Twitter (`TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET`) are all listed as missing secrets
-- **Behavior**: Posts can be created/scheduled in-app, but actual publishing requires API keys. Local-only publishing fallback exists.
+#### 4. Social Platform `publishStub()` Fallback for Unsupported Platforms
+- **Impact**: Any social platform not explicitly handled in the switch statement (all 7 are handled, but future platforms) falls through to `publishStub()` which marks the post as "published locally" without actually publishing
+- **Details**: In `server/social/publishService.ts`, the `default` case in `publishToPlatform()` calls `publishStub(platform)` which returns `{ success: true, platformSupported: false }` and logs a console message. This means new platforms added to the enum but not to the switch will silently appear to succeed.
+- **File**: `server/social/publishService.ts` lines 484–552
+- **Current platforms handled**: Facebook, Instagram, LinkedIn, Twitter, TikTok, YouTube, Pinterest
+- **Risk**: Silent false-positive publishing if new platforms are added without implementation
+
+#### 5. Integration Sync Only Supported for QBO Provider
+- **Impact**: The `/api/integrations/:connectionId/sync` endpoint only supports QuickBooks Online; all other providers return 400
+- **Details**: In `server/integrationRoutes.ts`, the sync trigger route explicitly checks `if (connection.provider !== "qbo")` and returns `{ error: "Sync not yet supported for provider: ${connection.provider}" }`. The 9 other registered providers (Google, Microsoft, DocuSign, Zapier, Dropbox, GDrive, OneDrive, Box, STACK CT) cannot be synced via this endpoint.
+- **File**: `server/integrationRoutes.ts` line 576
+- **Impact**: Integration hub UI may show sync buttons for all providers, but only QBO sync operations actually execute
 
 ### MEDIUM
 
-#### 5. Dual Migration System Complexity
-- **Impact**: Risk of schema drift between Drizzle Kit and startup migrations
-- **Details**: Three parallel migration systems:
-  - 49 SQL files in `/migrations/` (Drizzle Kit managed)
-  - 32 SQL files in `/server/migrations/` (startup migrations via `runStartupMigrations`)
-  - 21 TypeScript `ensure*` scripts in `/server/utils/`
-- **Risk**: A table could be defined in schema but not created by the correct migration path
+#### 6. 72 Remaining `console.error` Usages Across Server Code
+- **Impact**: Production errors logged via `console.error` bypass the structured `logError()` system, meaning they are not persisted to the `error_logs` table and lack context (user ID, org ID, request ID, stack trace)
+- **Details**: 72 instances of `console.error` remain across server `.ts` files. The platform has a dedicated `logError(message, context, error)` function and `persistErrorLog()` service, but these `console.error` calls predate or were missed during the production hardening pass.
+- **Recommendation**: Replace all `console.error` with `logError()` calls for consistent structured error capture
 
-#### 6. Multi-Page PDF Splitting — Incomplete
-- **Impact**: Plan document upload with multi-page splitting shows notice-only
-- **Details**: The UI shows a notice that multi-page PDF splitting is a future feature; documents are stored as single files
+#### 7. Email Send Endpoint Uses Resend Only — No Per-Account SMTP
+- **Impact**: When users compose/send emails from the Email Assistant, messages are always sent via Resend API from the platform's default sender address, not from the user's own email address/account
+- **Details**: `server/services/emailService.ts` uses `new Resend(process.env.RESEND_API_KEY)` with `DEFAULT_FROM_EMAIL = 'SmartManageAI <onboarding@resend.dev>'`. IMAP sync in `server/emailRoutes.ts` is receive-only (imports incoming mail). The email send endpoint does not route through the user's configured IMAP/SMTP account.
+- **File**: `server/services/emailService.ts` lines 2–6, 73
+- **User Impact**: Recipients see emails from `SmartManageAI` rather than the user's actual business email address
 
-#### 7. IMAP Email — Send-Only via Resend
-- **Impact**: Email composition sends via Resend; IMAP sync is receive-only
-- **Details**: The IMAP sync job fetches emails from configured accounts but outgoing email always goes through Resend API, not via the user's actual SMTP server
+#### 8. Dual Migration System Complexity
+- **Impact**: Risk of schema drift between Drizzle Kit and startup migrations; operational complexity for new developers
+- **Details**: Three parallel migration systems coexist:
+  - 48 SQL files in `/migrations/` (Drizzle Kit managed, applied via `npm run db:push`)
+  - 32 SQL files in `/server/migrations/` (startup migrations via `runStartupMigrations()`, applied on every server start with idempotent `IF NOT EXISTS` guards)
+  - 21 TypeScript `ensure*` scripts in `/server/utils/` (backfill/alter scripts)
+- **Risk**: A table could be defined in the Drizzle schema (`shared/schema/`) but only created by a startup migration, or vice versa. The workflow builder gap (item #1) is a direct consequence.
+- **File**: `server/utils/runStartupMigrations.ts`
 
-#### 8. AI Schedulers Disabled in Development
-- **Impact**: No automated AI analysis in dev/staging
-- **Details**: AI PM+CFO scheduler, AI notes scheduler, GCS orphan scan, and job runner only start when `NODE_ENV=production`
-- **Workaround**: Manual "Run AI Analysis" button available in UI
+#### 9. Multi-Page PDF Splitting — Incomplete
+- **Impact**: Plan document upload with multi-page splitting shows notice-only in the UI
+- **Details**: The takeoff workspace shows a notice that multi-page PDF splitting is a future feature; uploaded multi-page PDFs are stored as single files without page-level separation
+
+#### 10. AI Schedulers Disabled in Development
+- **Impact**: No automated AI analysis, no background jobs, no social post publishing, no compliance checks run in dev/staging
+- **Details**: AI PM+CFO scheduler, AI notes scheduler, GCS orphan scan, and the entire job runner (16 cron jobs) only start when `NODE_ENV=production`. This is intentional but means dev/staging environments have no automated processing.
+- **File**: `server/index.ts` lines 262–297
+- **Workaround**: Manual "Run AI Analysis" button available in UI; social posts and sync schedules must be triggered manually
 
 ### LOW
 
-#### 9. Twilio SMS — Not Configured
+#### 11. Social Platform API Keys Not Configured
+- **Impact**: Social media publishing to Facebook, LinkedIn, and Twitter will fail with API errors
+- **Details**: `FB_APP_ID`, `FB_APP_SECRET`, `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET` are all listed as missing secrets. Posts can be created and scheduled in the app, but actual API publishing requires these keys. Posts to these platforms will fail and retry up to 3 times before being marked as `FAILED`.
+- **Behavior**: The social post publisher job catches failures and notifies post owners
+
+#### 12. Twilio SMS — Not Configured
 - **Impact**: SMS notification channel non-functional
-- **Details**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` not in available secrets
-- **Behavior**: Notification framework supports SMS channel but delivery silently skips
+- **Details**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` not in available secrets. The notification delivery framework supports SMS as a channel but delivery silently skips when Twilio is unconfigured.
 
-#### 10. Microsoft 365 / DocuSign — Credentials Not Provided
-- **Impact**: Outlook email sync and e-signature features non-functional
-- **Details**: Code exists for both integrations but no credentials configured
-- **Behavior**: Integration connections will fail to establish
+#### 13. Microsoft 365 / DocuSign / Cloud Storage — Credentials Not Provided
+- **Impact**: Outlook email sync, e-signature, and cloud file storage features non-functional for 6 of 10 registered providers
+- **Details**: Code and provider registrations exist for Microsoft 365, DocuSign, Zapier, Dropbox, Google Drive, OneDrive, and Box. None have credentials configured. Integration connection attempts will fail.
 
-#### 11. CSP Headers Disabled
-- **Impact**: No Content-Security-Policy protection
-- **Details**: Helmet's `contentSecurityPolicy: false` allows any inline scripts/styles and external resource loading
-- **Note**: Common in development; should be enabled and configured for production
+#### 14. CSP Headers Disabled
+- **Impact**: No Content-Security-Policy protection in HTTP responses
+- **Details**: Helmet's `contentSecurityPolicy: false` in `server/index.ts` allows any inline scripts/styles and external resource loading. Common in development but should be enabled and configured for production deployment.
 
-#### 12. Password Complexity Not Enforced
+#### 15. Password Complexity Not Enforced
 - **Impact**: Users can set weak passwords
-- **Details**: No visible minimum length, uppercase/lowercase/digit/special character requirements in the auth flow
-- **Note**: bcrypt hashing is strong, but weak passwords remain guessable
+- **Details**: No visible minimum length, uppercase/lowercase/digit/special character requirements in the auth registration or password change flows. bcrypt hashing (10 rounds) is strong against offline attacks, but weak passwords remain guessable via credential stuffing.
 
 ---
 
