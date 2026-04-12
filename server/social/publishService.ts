@@ -481,12 +481,12 @@ async function publishToPinterest(post: PostData, token: string, boardId: string
   }
 }
 
-function publishStub(platform: string): PublishResult {
-  console.log(`[Social Publish] ${platform} publishing is not yet supported — post was marked as published locally only.`);
+function publishUnsupportedPlatform(platform: string): PublishResult {
+  logError(`[Social Publish] Unsupported platform: ${platform} — publish rejected`, {});
   return {
-    success: true,
+    success: false,
     platformSupported: false,
-    error: `${platform} API publishing is not yet available. Post saved as published locally.`,
+    error: `${platform} is not a supported publishing platform. Please contact support or check for updates.`,
   };
 }
 
@@ -548,7 +548,7 @@ export async function publishToPlatform(post: PostData, account: AccountData): P
       return publishToPinterest(post, token, accountId);
 
     default:
-      return publishStub(platform);
+      return publishUnsupportedPlatform(platform);
   }
 }
 
