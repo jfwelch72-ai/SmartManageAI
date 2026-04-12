@@ -147,6 +147,7 @@ import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } 
 import { logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { z } from "zod";
+import { passwordSchema } from "@shared/utils/passwordPolicy";
 
 const router = Router();
 
@@ -903,7 +904,7 @@ router.get("/platform/organizations/:orgId/activity", requireAuth, requireSuperA
 // ========================================
 
 const platformCreateUserSchema = insertUserSchema.omit({ passwordHash: true }).extend({
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: passwordSchema,
   organizationId: z.string().min(1, "Organization is required"),
 });
 

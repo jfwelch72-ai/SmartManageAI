@@ -464,6 +464,7 @@ import { insertNotification } from "./services/notificationService";
 import { setAllFeatureFlags } from "./services/featureFlagService";
 import { FEATURE_FLAG_KEYS } from "@shared/schema";
 import { requireDevSeed } from "./utils/devSeedFlag";
+import { passwordSchema } from "@shared/utils/passwordPolicy";
 
 const router = Router();
 
@@ -480,12 +481,6 @@ const upload = multer({
     email: z.string().email("Invalid email address"),
     password: z.string().min(1, "Password is required"),
   });
-
-  const passwordSchema = z.string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number");
 
   const registerSchema = z.object({
     firstName: z.string().min(1, "First name is required"),

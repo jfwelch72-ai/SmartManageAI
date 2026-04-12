@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, Lock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Lock, CheckCircle, XCircle, Loader2, Check, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { passwordSchema as sharedPasswordSchema, getPasswordChecks, isPasswordValid } from "@shared/utils/passwordPolicy";
 
 const resetPasswordSchema = z.object({
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: sharedPasswordSchema,
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -175,6 +176,16 @@ export default function ResetPasswordPage() {
                         {...field}
                       />
                     </FormControl>
+                    {field.value && field.value.length > 0 && (
+                      <ul className="space-y-1 mt-1" data-testid="password-requirements">
+                        {getPasswordChecks(field.value).map((check, i) => (
+                          <li key={i} className={`flex items-center gap-1.5 text-xs ${check.met ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+                            {check.met ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                            {check.label}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

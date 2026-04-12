@@ -4,10 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import { Fingerprint, Loader2 } from "lucide-react";
+import { Fingerprint, Loader2, Check, X } from "lucide-react";
 import { SiGoogle, SiApple } from "react-icons/si";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useToast } from "@/hooks/use-toast";
+import { getPasswordChecks, isPasswordValid } from "@shared/utils/passwordPolicy";
 
 interface RegisterFormProps {
   onRegister: (data: {
@@ -102,8 +103,8 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
       return;
     }
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+    if (!isPasswordValid(password)) {
+      setError("Password does not meet all requirements");
       return;
     }
 
@@ -238,15 +239,26 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
             <Input
               id="password"
               type="password"
-              placeholder="Min. 8 characters"
+              placeholder="Enter a strong password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={8}
               disabled={isSubmitting}
               data-testid="input-password"
             />
-            <p className="text-xs text-muted-foreground" data-testid="text-password-hint">Must be at least 8 characters</p>
+            {password.length > 0 && (
+              <ul className="space-y-1 mt-1" data-testid="password-requirements">
+                {getPasswordChecks(password).map((check, i) => (
+                  <li key={i} className={`flex items-center gap-1.5 text-xs ${check.met ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+                    {check.met ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                    {check.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {password.length === 0 && (
+              <p className="text-xs text-muted-foreground" data-testid="text-password-hint">Must include uppercase, lowercase, number, and special character</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">Confirm Password</Label>

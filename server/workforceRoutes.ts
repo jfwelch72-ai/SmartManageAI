@@ -102,6 +102,7 @@ import { z } from "zod";
 import { logAudit } from "./auditLogger";
 import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { sanitizeEmail } from "./sanitization";
+import { passwordSchema } from "@shared/utils/passwordPolicy";
 
 const router = Router();
 
@@ -1073,7 +1074,7 @@ const router = Router();
     try {
       const schema = z.object({
         token: z.string().min(1),
-        password: z.string().min(8, "Password must be at least 8 characters"),
+        password: passwordSchema,
       });
 
       const validationResult = schema.safeParse(req.body);

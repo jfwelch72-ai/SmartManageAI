@@ -198,6 +198,7 @@ import { logAudit, logUpdate } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyUserOrgAccess } from "./orgFilter";
 import { orgScopedCache } from "./cache";
+import { passwordSchema } from "@shared/utils/passwordPolicy";
 
 const router = Router();
 
@@ -2817,12 +2818,11 @@ router.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("
 
 // Create user schema (omit passwordHash, add password)
 const createUserSchema = insertUserSchema.omit({ passwordHash: true }).extend({
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: passwordSchema,
 });
 
-// Update user schema
 const updateUserSchema = insertUserSchema.omit({ passwordHash: true }).partial().extend({
-  password: z.string().min(8, "Password must be at least 8 characters").optional(),
+  password: passwordSchema.optional(),
   roleLabel: z.string().max(100, "Display title must be 100 characters or less").optional().nullable(),
 });
 
@@ -3094,7 +3094,7 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
   try {
     const schema = z.object({
       currentPassword: z.string().min(1),
-      newPassword: z.string().min(8, "Password must be at least 8 characters"),
+      newPassword: passwordSchema,
     });
 
     const data = schema.parse(req.body);
@@ -3129,7 +3129,7 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
 router.post("/api/auth/set-initial-password", requireAuth, sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
-      password: z.string().min(8, "Password must be at least 8 characters"),
+      password: passwordSchema,
     });
 
     const data = schema.parse(req.body);

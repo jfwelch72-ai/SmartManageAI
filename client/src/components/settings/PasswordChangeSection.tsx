@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, Eye, EyeOff } from "lucide-react";
+import { Lock, Eye, EyeOff, Check, X } from "lucide-react";
+import { getPasswordChecks, isPasswordValid } from "@shared/utils/passwordPolicy";
 
 export default function PasswordChangeSection() {
   const { toast } = useToast();
@@ -44,8 +45,8 @@ export default function PasswordChangeSection() {
       toast({ title: "New passwords do not match", variant: "destructive" });
       return;
     }
-    if (newPassword.length < 8) {
-      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+    if (!isPasswordValid(newPassword)) {
+      toast({ title: "Password does not meet all requirements", variant: "destructive" });
       return;
     }
     changePasswordMutation.mutate();
@@ -106,9 +107,21 @@ export default function PasswordChangeSection() {
                 {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Password must be at least 8 characters with uppercase, lowercase, and number
-            </p>
+            {newPassword.length > 0 && (
+              <ul className="space-y-1 mt-1" data-testid="password-requirements">
+                {getPasswordChecks(newPassword).map((check, i) => (
+                  <li key={i} className={`flex items-center gap-1.5 text-xs ${check.met ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+                    {check.met ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                    {check.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {newPassword.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Must include uppercase, lowercase, number, and special character
+              </p>
+            )}
           </div>
 
           <div>
