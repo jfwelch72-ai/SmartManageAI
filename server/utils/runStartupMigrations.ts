@@ -1,4 +1,5 @@
-import { logInfo, logError } from "./logger";
+import { logInfo, logError, logWarn } from "./logger";
+import { detectSchemaDrift } from "./schemaDriftDetector";
 
 import { ensureVideoCallTables } from "./ensureVideoCallTables";
 import { ensureEstimateSubcontractorTables } from "./ensureEstimateSubcontractorTables";
@@ -22,35 +23,40 @@ import { ensureReportsTables } from "./ensureReportsTables";
 import { ensureSocialEngagementColumns } from "./ensureSocialEngagementColumns";
 import { ensureEmailCampaignTables } from "./ensureEmailCampaignTables";
 import { ensureWorkflowTables } from "./ensureWorkflowTables";
+import { ensureMissingDrizzleTables } from "./ensureMissingDrizzleTables";
+
+type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
 interface MigrationStep {
   name: string;
+  category: MigrationCategory;
   fn: () => Promise<void>;
 }
 
 const migrations: MigrationStep[] = [
-  { name: "video_call_tables", fn: ensureVideoCallTables },
-  { name: "estimate_subcontractor_tables", fn: ensureEstimateSubcontractorTables },
-  { name: "equipment_columns", fn: ensureEquipmentColumns },
-  { name: "message_columns", fn: ensureMessageColumns },
-  { name: "notification_enum_values", fn: ensureNotificationEnumValues },
-  { name: "estimate_category_enum_values", fn: ensureEstimateCategoryEnumValues },
-  { name: "takeoff_enhancements", fn: ensureTakeoffEnhancements },
-  { name: "field_worker_perm_columns", fn: ensureFieldWorkerPermColumns },
-  { name: "peer_rating_columns", fn: ensurePeerRatingColumns },
-  { name: "nullable_permissions", fn: ensureNullablePermissions },
-  { name: "permission_presets_table", fn: ensurePermissionPresetsTable },
-  { name: "lidar_tables", fn: ensureLidarTables },
-  { name: "error_logs_table", fn: ensureErrorLogsTable },
-  { name: "scope_modifier_tables", fn: ensureScopeModifierTables },
-  { name: "stackct_provider_enum", fn: ensureStackctProviderEnum },
-  { name: "mobilization_tables", fn: ensureMobilizationTables },
-  { name: "permit_tables", fn: ensurePermitTables },
-  { name: "material_test_tables", fn: ensureMaterialTestTables },
-  { name: "project_reports_table", fn: ensureReportsTables },
-  { name: "social_engagement_columns", fn: ensureSocialEngagementColumns },
-  { name: "email_campaign_tables", fn: ensureEmailCampaignTables },
-  { name: "workflow_tables", fn: ensureWorkflowTables },
+  { name: "video_call_tables", category: "CREATE_TABLE", fn: ensureVideoCallTables },
+  { name: "estimate_subcontractor_tables", category: "CREATE_TABLE", fn: ensureEstimateSubcontractorTables },
+  { name: "equipment_columns", category: "ADD_COLUMN", fn: ensureEquipmentColumns },
+  { name: "message_columns", category: "ADD_COLUMN", fn: ensureMessageColumns },
+  { name: "notification_enum_values", category: "ADD_ENUM", fn: ensureNotificationEnumValues },
+  { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
+  { name: "takeoff_enhancements", category: "ADD_COLUMN", fn: ensureTakeoffEnhancements },
+  { name: "field_worker_perm_columns", category: "ADD_COLUMN", fn: ensureFieldWorkerPermColumns },
+  { name: "peer_rating_columns", category: "ADD_COLUMN", fn: ensurePeerRatingColumns },
+  { name: "nullable_permissions", category: "ALTER_TABLE", fn: ensureNullablePermissions },
+  { name: "permission_presets_table", category: "CREATE_TABLE", fn: ensurePermissionPresetsTable },
+  { name: "lidar_tables", category: "CREATE_TABLE", fn: ensureLidarTables },
+  { name: "error_logs_table", category: "CREATE_TABLE", fn: ensureErrorLogsTable },
+  { name: "scope_modifier_tables", category: "CREATE_TABLE", fn: ensureScopeModifierTables },
+  { name: "stackct_provider_enum", category: "ADD_ENUM", fn: ensureStackctProviderEnum },
+  { name: "mobilization_tables", category: "CREATE_TABLE", fn: ensureMobilizationTables },
+  { name: "permit_tables", category: "CREATE_TABLE", fn: ensurePermitTables },
+  { name: "material_test_tables", category: "CREATE_TABLE", fn: ensureMaterialTestTables },
+  { name: "project_reports_table", category: "CREATE_TABLE", fn: ensureReportsTables },
+  { name: "social_engagement_columns", category: "ADD_COLUMN", fn: ensureSocialEngagementColumns },
+  { name: "email_campaign_tables", category: "CREATE_TABLE", fn: ensureEmailCampaignTables },
+  { name: "workflow_tables", category: "CREATE_TABLE", fn: ensureWorkflowTables },
+  { name: "missing_drizzle_tables", category: "CREATE_TABLE", fn: ensureMissingDrizzleTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
@@ -89,13 +95,13 @@ export async function runStartupMigrations(): Promise<void> {
       await step.fn();
       const stepElapsed = Date.now() - stepStart;
       if (stepElapsed > 5000) {
-        originalLog(`[migration] ${step.name} completed in ${stepElapsed}ms (slow)`);
+        originalLog(`[migration] ${step.name} (${step.category}) completed in ${stepElapsed}ms (slow)`);
       }
     } catch (err) {
       const stepElapsed = Date.now() - stepStart;
       failed.push(step.name);
-      originalError(`[migration] ${step.name} failed after ${stepElapsed}ms:`, err);
-      logError(`Migration step failed: ${step.name}`, { stepElapsed }, err instanceof Error ? err : new Error(String(err)));
+      originalError(`[migration] ${step.name} (${step.category}) failed after ${stepElapsed}ms:`, err);
+      logError(`Migration step failed: ${step.name} (${step.category})`, { stepElapsed }, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
@@ -106,9 +112,21 @@ export async function runStartupMigrations(): Promise<void> {
   const total = migrations.length;
   const skipped = total - appliedCount - failed.length;
 
+  const categoryCounts = migrations.reduce((acc, m) => {
+    acc[m.category] = (acc[m.category] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const categoryBreakdown = Object.entries(categoryCounts).map(([k, v]) => `${v} ${k}`).join(", ");
+
   if (failed.length > 0) {
-    logError(`[migrations] ${total} checks complete in ${elapsed}ms: ${appliedCount} applied, ${skipped} skipped, ${failed.length} FAILED (${failed.join(", ")})`);
+    logError(`[migrations] ${total} checks complete in ${elapsed}ms: ${appliedCount} applied, ${skipped} skipped, ${failed.length} FAILED (${failed.join(", ")}) — breakdown: ${categoryBreakdown}`);
   } else {
-    logInfo(`[migrations] ${total} checks complete in ${elapsed}ms — ${appliedCount} applied, ${skipped} up-to-date`);
+    logInfo(`[migrations] ${total} checks complete in ${elapsed}ms — ${appliedCount} applied, ${skipped} up-to-date — breakdown: ${categoryBreakdown}`);
+  }
+
+  try {
+    await detectSchemaDrift();
+  } catch {
+    logWarn("[migrations] Schema drift detection skipped due to error");
   }
 }

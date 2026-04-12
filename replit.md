@@ -32,7 +32,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, and feature flags.
 *   **Integration Gating**: Feature flags gate unconfigured third-party services, providing graceful degradation (e.g., video call button disables if LiveKit is not configured).
 *   **Structured Error Logging**: Captures production errors with stack trace, user context, route, and request ID to a dedicated table.
-*   **Consolidated Startup Migrations**: Idempotent schema migration checks managed by a single runner, logging only applied migrations.
+*   **Consolidated Startup Migrations**: Idempotent schema migration checks managed by a single categorized runner (`runStartupMigrations.ts`) with 23 steps across 4 categories (CREATE_TABLE, ADD_COLUMN, ADD_ENUM, ALTER_TABLE). Includes automatic schema drift detection (`schemaDriftDetector.ts`) that warns when Drizzle-defined tables are missing from the database. Note: `drizzle-kit push` is unreliable with this schema size (300+ tables); the startup ensure* scripts are the authoritative migration mechanism.
 *   **Integration Hub**: Provider-agnostic framework for centralized connection management, including STACK CT integration.
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, history, and comparisons.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs.
