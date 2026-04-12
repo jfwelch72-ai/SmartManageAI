@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,16 +62,48 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
 
   const connectMutation = useMutation({
     mutationFn: async (providerKey: string) => {
-      const res = await apiRequest("POST", `/api/integrations/connections`, { provider: providerKey, devMode: true });
-      return res.json();
+      const provider = (providers || []).find(p => p.key === providerKey);
+      const isOAuth = provider?.authType === "oauth";
+
+      const res = await apiRequest("POST", `/api/integrations/connections`, {
+        provider: providerKey,
+        ...(isOAuth ? {} : { devMode: true }),
+      });
+      const connection = await res.json();
+
+      if (isOAuth && connection.id) {
+        const authRes = await apiRequest("POST", `/api/integrations/connections/${connection.id}/authorize`);
+        const { authUrl } = await authRes.json();
+        if (authUrl) {
+          window.location.href = authUrl;
+          return null;
+        }
+      }
+
+      return connection;
     },
-    onSuccess: () => {
-      toast({ title: "Connected", description: "Integration connected successfully (dev mode)." });
+    onSuccess: (data) => {
+      if (data === null) return;
+      toast({ title: "Connected", description: "Integration connected successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/integrations/providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/integrations/connections"] });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "Connection Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const authorizeMutation = useMutation({
+    mutationFn: async (connectionId: string) => {
+      const authRes = await apiRequest("POST", `/api/integrations/connections/${connectionId}/authorize`);
+      const { authUrl } = await authRes.json();
+      if (authUrl) {
+        window.location.href = authUrl;
+      }
+      return null;
+    },
+    onError: (error: Error) => {
+      toast({ title: "Authorization Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -88,6 +121,19 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connected") === "true") {
+      toast({ title: "Integration Connected", description: "OAuth authorization completed successfully." });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/providers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/connections"] });
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (params.get("error")) {
+      toast({ title: "Connection Failed", description: "OAuth authorization failed. Please try again.", variant: "destructive" });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [toast]);
 
   const isLoading = providersLoading || connectionsLoading;
 
@@ -122,6 +168,7 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
         connections={connections || []}
         onConnect={(key) => connectMutation.mutate(key)}
         onDisconnect={(id) => disconnectMutation.mutate(id)}
+        onAuthorize={(id) => authorizeMutation.mutate(id)}
         connectPending={connectMutation.isPending}
         disconnectPending={disconnectMutation.isPending}
       />

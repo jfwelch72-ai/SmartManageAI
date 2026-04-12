@@ -112,4 +112,8 @@ export const PROVIDER_DESCRIPTIONS: Record<string, string> = {
   docusign: "Send contracts and change orders for electronic signature.",
   zapier: "Connect SmartManageAI to 5,000+ apps via webhooks and automation triggers.",
   stackct: "Sync projects, plans, and takeoff/estimate data with STACK Construction Technologies.",
+  gdrive: "Store and browse project documents in Google Drive.",
+  dropbox: "Store and browse project documents in Dropbox.",
+  onedrive: "Store and browse project documents in Microsoft OneDrive.",
+  box: "Store and browse project documents in Box.",
 };

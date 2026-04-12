@@ -205,6 +205,7 @@ export function ProviderCardGrid({
   connections,
   onConnect,
   onDisconnect,
+  onAuthorize,
   connectPending,
   disconnectPending,
 }: {
@@ -212,6 +213,7 @@ export function ProviderCardGrid({
   connections: Connection[];
   onConnect: (providerKey: string) => void;
   onDisconnect: (connectionId: string) => void;
+  onAuthorize?: (connectionId: string) => void;
   connectPending: boolean;
   disconnectPending: boolean;
 }) {
@@ -223,6 +225,8 @@ export function ProviderCardGrid({
       {providers.map((provider) => {
         const conn = getConnectionForProvider(provider.key);
         const isConnected = conn?.status === "active";
+        const isPending = conn?.status === "pending";
+        const isOAuth = provider.authType === "oauth";
         return (
           <Card key={provider.key} data-testid={`card-provider-${provider.key}`}>
             <CardHeader className="pb-3">
@@ -230,12 +234,17 @@ export function ProviderCardGrid({
                 <div className="flex items-center gap-2">
                   {isConnected ? (
                     <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : isPending ? (
+                    <Info className="h-5 w-5 text-yellow-500" />
                   ) : (
                     <XCircle className="h-5 w-5 text-muted-foreground" />
                   )}
                   <CardTitle className="text-base">{provider.displayName}</CardTitle>
                 </div>
-                <Badge variant={isConnected ? "default" : "secondary"} data-testid={`badge-provider-status-${provider.key}`}>
+                <Badge
+                  variant={isConnected ? "default" : isPending ? "outline" : "secondary"}
+                  data-testid={`badge-provider-status-${provider.key}`}
+                >
                   {isConnected ? "Connected" : conn ? conn.status : "Disconnected"}
                 </Badge>
               </div>
@@ -245,21 +254,38 @@ export function ProviderCardGrid({
               {isConnected && conn && (
                 <TokenStatusBadge status={conn.tokenStatus} encrypted={conn.tokensEncrypted} />
               )}
+              {isPending && isOAuth && (
+                <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                  Authorization required — click below to complete setup.
+                </p>
+              )}
               {conn ? (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => onDisconnect(conn.id)}
-                  disabled={disconnectPending}
-                  data-testid={`button-disconnect-${provider.key}`}
-                >
-                  {disconnectPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Unlink className="h-4 w-4 mr-2" />
+                <div className="flex flex-col gap-2">
+                  {isPending && isOAuth && onAuthorize && (
+                    <Button
+                      className="w-full"
+                      onClick={() => onAuthorize(conn.id)}
+                      data-testid={`button-authorize-${provider.key}`}
+                    >
+                      <Link2 className="h-4 w-4 mr-2" />
+                      Authorize
+                    </Button>
                   )}
-                  Disconnect
-                </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => onDisconnect(conn.id)}
+                    disabled={disconnectPending}
+                    data-testid={`button-disconnect-${provider.key}`}
+                  >
+                    {disconnectPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Unlink className="h-4 w-4 mr-2" />
+                    )}
+                    Disconnect
+                  </Button>
+                </div>
               ) : (
                 <Button
                   className="w-full"

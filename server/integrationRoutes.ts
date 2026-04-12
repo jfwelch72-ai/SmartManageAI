@@ -87,6 +87,8 @@ router.post("/connections/:id/authorize", requireAuth, async (req, res, next) =>
     if (!connection) return res.status(404).json({ error: "Connection not found" });
     const provider = getProvider(connection.provider);
     if (!provider) return res.status(400).json({ error: "Provider not registered" });
+    if (provider.authType !== "oauth") return res.status(400).json({ error: "Provider does not use OAuth authorization" });
+    if (!["pending", "error"].includes(connection.status)) return res.status(400).json({ error: `Connection is already ${connection.status}` });
     const state = Buffer.from(JSON.stringify({ connectionId: connection.id, orgId: user.organizationId, redirectUri: `${getCanonicalBaseUrl(req)}/api/integrations/connections/${connection.id}/callback` })).toString("base64url");
     const redirectUri = `${getCanonicalBaseUrl(req)}/api/integrations/connections/${connection.id}/callback`;
     const authUrl = provider.getAuthUrl(connection.id, redirectUri, state);
@@ -102,6 +104,10 @@ router.get("/connections/:id/callback", async (req, res, next) => {
     if (!code || !state) return res.status(400).json({ error: "Missing code or state" });
     const stateData = JSON.parse(Buffer.from(state as string, "base64url").toString());
     const { connectionId, orgId } = stateData;
+    if (connectionId !== req.params.id) {
+      logError("OAuth callback state mismatch", { expected: req.params.id, received: connectionId });
+      return res.redirect("/settings/integrations?error=state_mismatch");
+    }
     const connection = await connectionService.getDecryptedConnection(connectionId, orgId);
     if (!connection) return res.status(404).json({ error: "Connection not found" });
     const provider = getProvider(connection.provider);
