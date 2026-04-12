@@ -12,7 +12,9 @@ export async function ensureWorkflowTables(): Promise<void> {
   `);
 
   const row = result.rows[0] as Record<string, boolean>;
-  if (row.templates_exist && row.stages_exist && row.approval_steps_exist && row.notification_rules_exist && row.instances_exist) {
+  const allExist = row.templates_exist && row.stages_exist && row.approval_steps_exist && row.notification_rules_exist && row.instances_exist;
+
+  if (allExist) {
     console.log("[migration] workflow tables — already present, skipped");
     return;
   }
