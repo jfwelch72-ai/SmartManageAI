@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { safeJsonParse } from "../responseHelper";
 import { organizations, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
+import { getFeaturePresetForTrade } from "@shared/tradeFeaturePresets";
 import { eq, or, isNull, sql } from "drizzle-orm";
 import {logInfo, logWarn } from "../utils/logger";
 
@@ -88,4 +89,16 @@ export async function backfillMissingFeatureFlags(): Promise<void> {
   if (count > 0) {
     logInfo(`Feature flag backfill: enabled all flags for ${count} org(s) with missing data`);
   }
+}
+
+export async function applyTradePreset(orgId: string, tradeType: string): Promise<FeatureFlagsMap> {
+  const preset = getFeaturePresetForTrade(tradeType);
+  const flagsJson = JSON.stringify(preset);
+
+  await db.update(organizations)
+    .set({ featureFlags: flagsJson, updatedAt: new Date() })
+    .where(eq(organizations.id, orgId));
+
+  logInfo(`[FeatureFlags] Applied trade preset for "${tradeType}"`, { organizationId: orgId });
+  return preset;
 }

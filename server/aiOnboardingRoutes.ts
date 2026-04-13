@@ -13,6 +13,7 @@ import { openai, researchCustomTrade, TradeResearchResult } from "./ai/openaiCli
 import { getTotalStepsForRole, getWalkthroughStep, getPersonalizedWalkthrough, personalizeContent } from "./ai/walkthroughContent";
 import { governedAiCall } from "./services/aiGovernance";
 import { seedScopeStandardizationForTrade } from "./seedTradeExpansion";
+import { applyTradePreset } from "./services/featureFlagService";
 import { getTradeCategories, getTradesByCategory, getMaterialGroups, getMaterialsByGroup } from "./data/onboarding";
 
 const router = Router();
@@ -507,6 +508,13 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
           isActive: true 
         })
         .where(eq(users.id, req.user.id));
+    }
+
+    try {
+      await applyTradePreset(newOrg.id, tradeType);
+      logInfo(`[Onboarding] Feature flags set via trade preset for "${tradeType}"`, { organizationId: newOrg.id });
+    } catch (presetErr: any) {
+      logWarn(`[Onboarding] Trade feature preset failed (non-fatal): ${presetErr.message}`);
     }
 
     const isGeneralContractor = tradeType === 'GENERAL_CONTRACTOR';
