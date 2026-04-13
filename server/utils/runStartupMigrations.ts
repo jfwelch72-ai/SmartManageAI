@@ -24,6 +24,7 @@ import { ensureSocialEngagementColumns } from "./ensureSocialEngagementColumns";
 import { ensureEmailCampaignTables } from "./ensureEmailCampaignTables";
 import { ensureWorkflowTables } from "./ensureWorkflowTables";
 import { ensureMissingDrizzleTables } from "./ensureMissingDrizzleTables";
+import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -57,6 +58,7 @@ const migrations: MigrationStep[] = [
   { name: "email_campaign_tables", category: "CREATE_TABLE", fn: ensureEmailCampaignTables },
   { name: "workflow_tables", category: "CREATE_TABLE", fn: ensureWorkflowTables },
   { name: "missing_drizzle_tables", category: "CREATE_TABLE", fn: ensureMissingDrizzleTables },
+  { name: "geofence_enhancements", category: "ADD_COLUMN", fn: ensureGeofenceEnhancements },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

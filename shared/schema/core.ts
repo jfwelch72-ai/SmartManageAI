@@ -371,6 +371,22 @@ export const projects = pgTable("projects", {
   gcOrgIdx: index("projects_gc_org_id_idx").on(table.gcOrganizationId),
 }));
 
+export const projectGeofenceZones = pgTable("project_geofence_zones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: varchar("type", { length: 10 }).notNull().default("circle"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  radius: integer("radius"),
+  polygon: text("polygon"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("geofence_zones_project_id_idx").on(table.projectId),
+}));
+
 // Bids table (separate from projects)
 export const bids = pgTable("bids", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

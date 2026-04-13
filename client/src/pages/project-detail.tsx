@@ -1080,6 +1080,9 @@ export default function ProjectDetailPage() {
               setActiveTab={handleSetActiveTab}
             />
             <GeofenceEnforcementCard project={project} projectCode={projectCode} />
+            {hasManagementAccess(user?.role) && (
+              <GeofenceZonesPanel projectId={project.id as string} />
+            )}
             <AutoChangeOrderSettingsCard project={project} projectCode={projectCode} />
             {hasManagementAccess(user?.role) && (
               <GeofenceComplianceSection projectId={project.id as string} />
@@ -1526,13 +1529,20 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
   const { toast } = useToast();
   const canManage = user && hasManagementAccess(user.role, FeaturePermissions.PROJECT_MANAGEMENT);
   const currentMode = (project.geofenceEnforcement as string) || "OFF";
+
+  const [editingCoords, setEditingCoords] = useState(false);
+  const [siteLat, setSiteLat] = useState(String(project.siteLatitude || ""));
+  const [siteLng, setSiteLng] = useState(String(project.siteLongitude || ""));
+  const [radius, setRadius] = useState(String(project.geofenceRadius || "200"));
+
   const updateMutation = useMutation({
-    mutationFn: async (mode: string) => {
-      await apiRequest("PATCH", `/api/projects/${projectCode}`, { geofenceEnforcement: mode });
+    mutationFn: async (updates: Record<string, unknown>) => {
+      await apiRequest("PATCH", `/api/projects/${projectCode}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
-      toast({ title: "Geofence enforcement updated" });
+      toast({ title: "Geofence settings updated" });
+      setEditingCoords(false);
     },
     onError: (err: Error) => {
       toast({ title: "Update Failed", description: err.message, variant: "destructive" });
@@ -1557,7 +1567,7 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
         <CardDescription>{current.desc}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Label className="text-sm font-medium">Enforcement Mode:</Label>
             <Badge variant={currentMode === "BLOCK" ? "destructive" : currentMode === "WARN" ? "outline" : "secondary"} data-testid="badge-geofence-mode">
@@ -1575,7 +1585,7 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
                     variant={currentMode === mode ? "default" : "outline"}
                     size="sm"
                     disabled={updateMutation.isPending}
-                    onClick={() => updateMutation.mutate(mode)}
+                    onClick={() => updateMutation.mutate({ geofenceEnforcement: mode })}
                     data-testid={`button-geofence-${mode.toLowerCase()}`}
                   >
                     <ModeIcon className="w-4 h-4 mr-1" />
@@ -1585,10 +1595,106 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
               })}
             </div>
           )}
-          {project.siteLatitude && project.siteLongitude && (
-            <div className="text-xs text-muted-foreground mt-2" data-testid="text-geofence-site-coords">
-              Site: {(project.siteLatitude as number).toFixed(6)}, {(project.siteLongitude as number).toFixed(6)}
-              {project.geofenceRadius && ` · Radius: ${project.geofenceRadius}m`}
+
+          {!editingCoords ? (
+            <div className="space-y-3">
+              {project.siteLatitude && project.siteLongitude ? (
+                <>
+                  <div className="text-xs text-muted-foreground" data-testid="text-geofence-site-coords">
+                    Site: {(project.siteLatitude as number).toFixed(6)}, {(project.siteLongitude as number).toFixed(6)}
+                    {" · "}Radius: {(project.geofenceRadius as number) || 200}m
+                  </div>
+                  <div className="border rounded-lg p-3 bg-muted/30" data-testid="geofence-boundary-preview">
+                    <svg viewBox="0 0 200 200" className="w-full max-w-[180px] mx-auto" aria-label="Geofence boundary preview">
+                      <circle cx="100" cy="100" r="70" fill="none" stroke={currentMode === "BLOCK" ? "#ef4444" : currentMode === "WARN" ? "#f59e0b" : "#94a3b8"} strokeWidth="2" strokeDasharray="6 3" opacity="0.6" />
+                      <circle cx="100" cy="100" r="4" fill="#3b82f6" />
+                      <text x="100" y="120" textAnchor="middle" fontSize="8" fill="currentColor" opacity="0.6">Site Center</text>
+                      <text x="100" y="180" textAnchor="middle" fontSize="7" fill="currentColor" opacity="0.5">
+                        Radius: {(project.geofenceRadius as number) || 200}m
+                      </text>
+                    </svg>
+                  </div>
+                </>
+              ) : (
+                <div className="text-xs text-muted-foreground" data-testid="text-no-site-coords">
+                  No site coordinates configured
+                </div>
+              )}
+              {canManage && (
+                <Button variant="outline" size="sm" onClick={() => setEditingCoords(true)} data-testid="button-edit-geofence-coords">
+                  {project.siteLatitude ? "Edit Site Coordinates" : "Set Site Coordinates"}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Latitude</Label>
+                  <Input
+                    type="number"
+                    step="0.000001"
+                    value={siteLat}
+                    onChange={(e) => setSiteLat(e.target.value)}
+                    placeholder="e.g., 40.7128"
+                    className="h-8 text-sm"
+                    data-testid="input-site-latitude"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Longitude</Label>
+                  <Input
+                    type="number"
+                    step="0.000001"
+                    value={siteLng}
+                    onChange={(e) => setSiteLng(e.target.value)}
+                    placeholder="e.g., -74.0060"
+                    className="h-8 text-sm"
+                    data-testid="input-site-longitude"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Geofence Radius (meters)</Label>
+                <Input
+                  type="number"
+                  min="10"
+                  max="10000"
+                  value={radius}
+                  onChange={(e) => setRadius(e.target.value)}
+                  className="h-8 text-sm w-32"
+                  data-testid="input-geofence-radius"
+                />
+                <p className="text-xs text-muted-foreground">
+                  50m for tight sites, 200m typical, 2000m+ for highway/civil projects
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={updateMutation.isPending}
+                  onClick={() => {
+                    const lat = parseFloat(siteLat);
+                    const lng = parseFloat(siteLng);
+                    const r = parseInt(radius, 10);
+                    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                      toast({ title: "Invalid coordinates", variant: "destructive" });
+                      return;
+                    }
+                    if (isNaN(r) || r < 10 || r > 10000) {
+                      toast({ title: "Radius must be between 10m and 10,000m", variant: "destructive" });
+                      return;
+                    }
+                    updateMutation.mutate({ siteLatitude: lat, siteLongitude: lng, geofenceRadius: r });
+                  }}
+                  data-testid="button-save-geofence-coords"
+                >
+                  Save
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setEditingCoords(false)} data-testid="button-cancel-geofence-coords">
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -1691,6 +1797,226 @@ function AutoChangeOrderSettingsCard({ project, projectCode }: { project: Record
   );
 }
 
+function GeofenceZonesPanel({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const canManage = user && hasManagementAccess(user.role, FeaturePermissions.PROJECT_MANAGEMENT);
+
+  const [newZoneName, setNewZoneName] = useState("");
+  const [newZoneType, setNewZoneType] = useState<"circle" | "polygon">("circle");
+  const [newZoneLat, setNewZoneLat] = useState("");
+  const [newZoneLng, setNewZoneLng] = useState("");
+  const [newZoneRadius, setNewZoneRadius] = useState("200");
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const { data: zones = [], isLoading } = useQuery<Array<{
+    id: string;
+    name: string;
+    type: string;
+    latitude: number | null;
+    longitude: number | null;
+    radius: number | null;
+    polygon: string | null;
+    isActive: boolean;
+    createdAt: string;
+  }>>({
+    queryKey: ["/api/projects", projectId, "geofence-zones"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/geofence-zones`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch zones");
+      return res.json();
+    },
+  });
+
+  const addZoneMutation = useMutation({
+    mutationFn: async (data: { name: string; type: string; latitude?: number; longitude?: number; radius?: number }) => {
+      const res = await fetch(`/api/projects/${projectId}/geofence-zones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to add zone");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "geofence-zones"] });
+      toast({ title: "Geofence zone added" });
+      setNewZoneName("");
+      setNewZoneLat("");
+      setNewZoneLng("");
+      setNewZoneRadius("200");
+      setShowAddForm(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to add zone", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteZoneMutation = useMutation({
+    mutationFn: async (zoneId: string) => {
+      const res = await fetch(`/api/projects/${projectId}/geofence-zones/${zoneId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete zone");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "geofence-zones"] });
+      toast({ title: "Geofence zone deleted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleAddZone = () => {
+    if (!newZoneName.trim()) {
+      toast({ title: "Zone name is required", variant: "destructive" });
+      return;
+    }
+    if (newZoneType === "circle") {
+      const lat = parseFloat(newZoneLat);
+      const lng = parseFloat(newZoneLng);
+      const r = parseInt(newZoneRadius, 10);
+      if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        toast({ title: "Invalid coordinates", variant: "destructive" });
+        return;
+      }
+      if (isNaN(r) || r < 10 || r > 10000) {
+        toast({ title: "Radius must be 10-10,000m", variant: "destructive" });
+        return;
+      }
+      addZoneMutation.mutate({ name: newZoneName, type: "circle", latitude: lat, longitude: lng, radius: r });
+    }
+  };
+
+  return (
+    <Card data-testid="card-geofence-zones">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-primary" />
+            <CardTitle className="text-base">Geofence Zones</CardTitle>
+          </div>
+          {canManage && !showAddForm && (
+            <Button variant="outline" size="sm" onClick={() => setShowAddForm(true)} data-testid="button-add-geofence-zone">
+              Add Zone
+            </Button>
+          )}
+        </div>
+        <CardDescription>Additional geofence boundaries for this project (e.g., staging areas, parking lots)</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {showAddForm && (
+          <div className="space-y-3 p-3 border rounded-lg bg-muted/30 mb-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Zone Name</Label>
+              <Input
+                value={newZoneName}
+                onChange={(e) => setNewZoneName(e.target.value)}
+                placeholder="e.g., Staging Area, Parking Lot"
+                className="h-8 text-sm"
+                data-testid="input-zone-name"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Latitude</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  value={newZoneLat}
+                  onChange={(e) => setNewZoneLat(e.target.value)}
+                  placeholder="40.7128"
+                  className="h-8 text-sm"
+                  data-testid="input-zone-latitude"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Longitude</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  value={newZoneLng}
+                  onChange={(e) => setNewZoneLng(e.target.value)}
+                  placeholder="-74.0060"
+                  className="h-8 text-sm"
+                  data-testid="input-zone-longitude"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Radius (m)</Label>
+                <Input
+                  type="number"
+                  min="10"
+                  max="10000"
+                  value={newZoneRadius}
+                  onChange={(e) => setNewZoneRadius(e.target.value)}
+                  className="h-8 text-sm"
+                  data-testid="input-zone-radius"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleAddZone} disabled={addZoneMutation.isPending} data-testid="button-save-zone">
+                {addZoneMutation.isPending ? "Adding..." : "Add Zone"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowAddForm(false)} data-testid="button-cancel-zone">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-4 text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            Loading zones...
+          </div>
+        ) : zones.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2" data-testid="text-no-zones">
+            No additional geofence zones configured. The primary site coordinates are used as the default zone.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {zones.map((zone) => (
+              <div key={zone.id} className="flex items-center justify-between p-3 border rounded-lg" data-testid={`zone-${zone.id}`}>
+                <div>
+                  <p className="text-sm font-medium">{zone.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {zone.type === "circle" && zone.latitude && zone.longitude
+                      ? `${zone.latitude.toFixed(6)}, ${zone.longitude.toFixed(6)} · Radius: ${zone.radius}m`
+                      : zone.type === "polygon"
+                      ? "Polygon zone"
+                      : "No coordinates"}
+                  </p>
+                </div>
+                {canManage && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => deleteZoneMutation.mutate(zone.id)}
+                    disabled={deleteZoneMutation.isPending}
+                    data-testid={`button-delete-zone-${zone.id}`}
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function GeofenceComplianceSection({ projectId }: { projectId: string }) {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -1719,12 +2045,18 @@ function GeofenceComplianceSection({ projectId }: { projectId: string }) {
       clockOut: string | null;
       geofenceStatus: string | null;
       clockOutGeofenceStatus: string | null;
+      spoofingFlag: boolean | null;
+      geofenceOverride: boolean | null;
     }>;
     summary: {
       totalShifts: number;
       clockInViolations: number;
       clockOutViolations: number;
+      spoofingFlagged?: number;
+      overrides?: number;
+      complianceRate?: number;
     };
+    repeatOffenders?: Array<{ userId: string; name: string; violations: number }>;
   }>({
     queryKey: [`/api/time-clock/project/${projectId}/geofence-compliance`, queryParams],
     queryFn: async () => {
@@ -1790,20 +2122,46 @@ function GeofenceComplianceSection({ projectId }: { projectId: string }) {
           </div>
         ) : data && data.shifts.length > 0 ? (
           <>
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-2xl font-bold" data-testid="text-total-shifts">{data.summary.totalShifts}</p>
                 <p className="text-xs text-muted-foreground">Total Shifts</p>
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-compliance-rate">{data.summary.complianceRate ?? "—"}%</p>
+                <p className="text-xs text-muted-foreground">Compliance</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-2xl font-bold text-red-600 dark:text-red-400" data-testid="text-clockin-violations">{data.summary.clockInViolations}</p>
-                <p className="text-xs text-muted-foreground">Clock-In Violations</p>
+                <p className="text-xs text-muted-foreground">Clock-In Issues</p>
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-2xl font-bold text-red-600 dark:text-red-400" data-testid="text-clockout-violations">{data.summary.clockOutViolations}</p>
-                <p className="text-xs text-muted-foreground">Clock-Out Violations</p>
+                <p className="text-xs text-muted-foreground">Clock-Out Issues</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400" data-testid="text-spoofing-flagged">{data.summary.spoofingFlagged ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Spoofing Flags</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400" data-testid="text-overrides">{data.summary.overrides ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Overrides</p>
               </div>
             </div>
+
+            {data.repeatOffenders && data.repeatOffenders.length > 0 && (
+              <div className="mb-4 p-3 border border-red-200 dark:border-red-900 rounded-lg bg-red-50 dark:bg-red-950/20">
+                <p className="text-sm font-medium text-red-700 dark:text-red-400 mb-2">Repeat Offenders (2+ violations)</p>
+                <div className="space-y-1">
+                  {data.repeatOffenders.map((o) => (
+                    <div key={o.userId} className="flex justify-between text-sm" data-testid={`repeat-offender-${o.userId}`}>
+                      <span>{o.name}</span>
+                      <Badge variant="destructive" className="text-xs">{o.violations} violations</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
@@ -1811,9 +2169,10 @@ function GeofenceComplianceSection({ projectId }: { projectId: string }) {
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">Employee</th>
                     <th className="text-left p-2 font-medium">Clock In</th>
-                    <th className="text-left p-2 font-medium">Clock In Status</th>
+                    <th className="text-left p-2 font-medium">In Status</th>
                     <th className="text-left p-2 font-medium">Clock Out</th>
-                    <th className="text-left p-2 font-medium">Clock Out Status</th>
+                    <th className="text-left p-2 font-medium">Out Status</th>
+                    <th className="text-left p-2 font-medium">Flags</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1838,6 +2197,16 @@ function GeofenceComplianceSection({ projectId }: { projectId: string }) {
                           {shift.clockOut ? format(new Date(shift.clockOut), "MMM d, h:mm a") : "Active"}
                         </td>
                         <td className="p-2">{getStatusBadge(shift.clockOutGeofenceStatus, `clockout-${shift.id}`)}</td>
+                        <td className="p-2">
+                          <div className="flex gap-1">
+                            {shift.spoofingFlag && (
+                              <Badge variant="destructive" className="text-xs" data-testid={`badge-spoofing-${shift.id}`}>Spoof</Badge>
+                            )}
+                            {shift.geofenceOverride && (
+                              <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs" data-testid={`badge-override-${shift.id}`}>Override</Badge>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}

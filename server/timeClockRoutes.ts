@@ -240,7 +240,8 @@ import { db } from "./db";
 import { eventBus } from "./events";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
-  kpiAssignments, kpiTemplates, kpiEntries, orgCostCodes, organizations, projectCostCodes
+  kpiAssignments, kpiTemplates, kpiEntries, orgCostCodes, organizations, projectCostCodes,
+  projectGeofenceZones
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -252,7 +253,11 @@ import {
   checkAndNotifyWeeklyReport, 
   MAX_SHIFT_HOURS 
 } from "./timeClockHelpers";
-import { GEOFENCE_RADIUS, calculateDistance } from "@shared/utils/geofence";
+import {
+  GEOFENCE_RADIUS, calculateDistance, isAccuracyAcceptable,
+  GPS_ACCURACY_THRESHOLD, checkForSpoofing, isPointInAnyZone,
+  BLOCK_OVERRIDE_MAX_ATTEMPTS, type GeofenceZone
+} from "@shared/utils/geofence";
 
 const router = Router();
 
@@ -297,6 +302,66 @@ async function validateCostCode(organizationId: string, costCode: string, projec
   return eligible.has(costCode);
 }
 
+
+async function resolveGeofenceCheck(
+  projectId: string,
+  lat: number | null | undefined,
+  lon: number | null | undefined,
+  accuracy: number | null | undefined,
+  project: { siteLatitude: number | null; siteLongitude: number | null; geofenceRadius: number | null }
+): Promise<{ status: string; warning: string | null; accuracyWarning: string | null; distance: number | null }> {
+  let status = "NOT_CONFIGURED";
+  let warning: string | null = null;
+  let accuracyWarning: string | null = null;
+  let distance: number | null = null;
+
+  if (lat == null || lon == null) {
+    status = "NO_GPS";
+    return { status, warning, accuracyWarning, distance };
+  }
+
+  if (accuracy != null && !isAccuracyAcceptable(accuracy)) {
+    accuracyWarning = `GPS accuracy is ${Math.round(accuracy)}m which exceeds the ${GPS_ACCURACY_THRESHOLD}m threshold. Location data may be unreliable.`;
+  }
+
+  const zones = await db.select().from(projectGeofenceZones)
+    .where(and(eq(projectGeofenceZones.projectId, projectId), eq(projectGeofenceZones.isActive, true)));
+
+  if (zones.length > 0) {
+    const geoZones: GeofenceZone[] = zones.map(z => ({
+      id: z.id,
+      name: z.name,
+      type: z.type as "circle" | "polygon",
+      latitude: z.latitude ?? undefined,
+      longitude: z.longitude ?? undefined,
+      radius: z.radius ?? undefined,
+      polygon: z.polygon ? JSON.parse(z.polygon) : undefined,
+    }));
+
+    const result = isPointInAnyZone(lat, lon, geoZones);
+    if (result.inRange) {
+      status = "WITHIN_RANGE";
+    } else {
+      status = "OUT_OF_RANGE";
+      distance = result.nearestDistance;
+      warning = `You are approximately ${Math.round(result.nearestDistance || 0)}m outside the nearest geofence zone.`;
+    }
+    return { status, warning, accuracyWarning, distance };
+  }
+
+  if (project.siteLatitude != null && project.siteLongitude != null) {
+    distance = calculateDistance(lat, lon, project.siteLatitude, project.siteLongitude);
+    const radius = project.geofenceRadius || GEOFENCE_RADIUS;
+    if (distance <= radius) {
+      status = "WITHIN_RANGE";
+    } else {
+      status = "OUT_OF_RANGE";
+      warning = `You are approximately ${Math.round(distance)}m from the project site (allowed: ${radius}m).`;
+    }
+  }
+
+  return { status, warning, accuracyWarning, distance };
+}
 
 async function captureKpiFromShift(userId: string, orgId: string, totalHours: number, shiftDate: Date) {
   try {
@@ -357,7 +422,10 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       costCode: z.string().optional().nullable(),
       latitude: z.number().optional().nullable(),
       longitude: z.number().optional().nullable(),
+      accuracy: z.number().optional().nullable(),
       notes: z.string().optional().nullable(),
+      geofenceOverride: z.boolean().optional(),
+      geofenceOverrideReason: z.string().optional().nullable(),
     });
 
     const data = schema.parse(sanitizedBody);
@@ -380,6 +448,9 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
 
     let geofenceStatus: string = "NOT_CONFIGURED";
     let geofenceWarning: string | null = null;
+    let accuracyWarning: string | null = null;
+    let spoofingFlag = false;
+    let spoofingDetails: string | null = null;
 
     let enforcementMode: string = "OFF";
 
@@ -392,23 +463,36 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
         return;
       }
       enforcementMode = project?.geofenceEnforcement || "OFF";
-      if (project?.siteLatitude != null && project?.siteLongitude != null) {
-        if (data.latitude != null && data.longitude != null) {
-          const distance = calculateDistance(data.latitude, data.longitude, project.siteLatitude, project.siteLongitude);
-          const radius = project.geofenceRadius || GEOFENCE_RADIUS;
-          if (distance <= radius) {
-            geofenceStatus = "WITHIN_RANGE";
-          } else {
-            geofenceStatus = "OUT_OF_RANGE";
-            geofenceWarning = `You are approximately ${Math.round(distance)}m from the project site (allowed: ${radius}m).`;
+
+      const geoCheck = await resolveGeofenceCheck(data.projectId, data.latitude, data.longitude, data.accuracy, project);
+      geofenceStatus = geoCheck.status;
+      geofenceWarning = geoCheck.warning;
+      accuracyWarning = geoCheck.accuracyWarning;
+
+      if (data.latitude != null && data.longitude != null) {
+        const lastEvent = await db.select()
+          .from(timeClockEvents)
+          .where(eq(timeClockEvents.performedById, req.user!.id))
+          .orderBy(desc(timeClockEvents.timestamp))
+          .limit(1);
+
+        if (lastEvent.length > 0 && lastEvent[0].latitude != null && lastEvent[0].longitude != null) {
+          const spoofCheck = checkForSpoofing(
+            data.latitude, data.longitude, now,
+            lastEvent[0].latitude, lastEvent[0].longitude, new Date(lastEvent[0].timestamp),
+            data.accuracy
+          );
+          if (spoofCheck.isSuspicious) {
+            spoofingFlag = true;
+            spoofingDetails = spoofCheck.reason;
           }
-        } else {
-          geofenceStatus = "NO_GPS";
         }
       }
     }
 
-    if (enforcementMode === "BLOCK" && (geofenceStatus === "OUT_OF_RANGE" || geofenceStatus === "NO_GPS")) {
+    const isOverride = data.geofenceOverride === true && data.geofenceOverrideReason;
+
+    if (enforcementMode === "BLOCK" && (geofenceStatus === "OUT_OF_RANGE" || geofenceStatus === "NO_GPS") && !isOverride) {
       await logAudit({
         userId: req.user!.id,
         entityType: "TIME_CLOCK_SHIFT",
@@ -420,6 +504,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
           geofenceStatus,
           reason: geofenceStatus === "NO_GPS" ? "GPS unavailable" : geofenceWarning,
           location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null,
+          accuracy: data.accuracy,
         }),
       }, req);
 
@@ -429,6 +514,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
           : `Clock-in blocked: ${geofenceWarning}`,
         geofenceStatus,
         blocked: true,
+        canOverride: true,
       });
       return;
     }
@@ -448,9 +534,14 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       clockIn: now,
       clockInLatitude: data.latitude != null ? data.latitude : null,
       clockInLongitude: data.longitude != null ? data.longitude : null,
+      clockInAccuracy: data.accuracy != null ? data.accuracy : null,
       notes: data.notes || null,
       autoClockOut: false,
       geofenceStatus,
+      spoofingFlag,
+      spoofingDetails,
+      geofenceOverride: isOverride ? true : false,
+      geofenceOverrideReason: isOverride ? data.geofenceOverrideReason! : null,
       approvalStatus: "PENDING",
     }).returning();
 
@@ -460,6 +551,9 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       timestamp: now,
       latitude: data.latitude != null ? data.latitude : null,
       longitude: data.longitude != null ? data.longitude : null,
+      accuracy: data.accuracy != null ? data.accuracy : null,
+      geofenceStatus,
+      spoofingFlag,
       notes: data.notes || null,
       performedById: req.user!.id,
     });
@@ -468,9 +562,16 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       userId: req.user!.id,
       entityType: "TIME_CLOCK_SHIFT",
       entityId: newShift.id,
-      action: "CLOCK_IN",
+      action: isOverride ? "CLOCK_IN_OVERRIDE" : "CLOCK_IN",
       oldValue: null,
-      newValue: JSON.stringify({ projectId: data.projectId, location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null }),
+      newValue: JSON.stringify({
+        projectId: data.projectId,
+        location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null,
+        accuracy: data.accuracy,
+        geofenceStatus,
+        spoofingFlag,
+        override: isOverride ? data.geofenceOverrideReason : undefined,
+      }),
     }, req);
 
     await eventBus.emit({
@@ -488,7 +589,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       },
     });
 
-    res.status(201).json({ ...newShift, geofenceWarning });
+    res.status(201).json({ ...newShift, geofenceWarning, accuracyWarning, spoofingFlag });
   } catch (error) {
     next(error);
   }
@@ -504,7 +605,10 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
     const schema = z.object({
       latitude: z.number().optional().nullable(),
       longitude: z.number().optional().nullable(),
+      accuracy: z.number().optional().nullable(),
       notes: z.string().optional().nullable(),
+      geofenceOverride: z.boolean().optional(),
+      geofenceOverrideReason: z.string().optional().nullable(),
     });
 
     const data = schema.parse(sanitizedBody);
@@ -529,7 +633,10 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
 
     let clockOutGeofenceStatus: string | null = null;
     let geofenceWarning: string | null = null;
+    let accuracyWarning: string | null = null;
     let enforcementMode: string = "OFF";
+    let spoofingFlag = false;
+    let spoofingDetails: string | null = null;
 
     if (activeShift.projectId) {
       const [project] = await db.select().from(projects).where(
@@ -539,24 +646,36 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       if (project) {
         enforcementMode = project.geofenceEnforcement || "OFF";
 
-        if (project.siteLatitude != null && project.siteLongitude != null) {
-          if (data.latitude != null && data.longitude != null) {
-            const distance = calculateDistance(data.latitude, data.longitude, project.siteLatitude, project.siteLongitude);
-            const radius = project.geofenceRadius || GEOFENCE_RADIUS;
-            if (distance <= radius) {
-              clockOutGeofenceStatus = "WITHIN_RANGE";
-            } else {
-              clockOutGeofenceStatus = "OUT_OF_RANGE";
-              geofenceWarning = `You are approximately ${Math.round(distance)}m from the project site (allowed: ${radius}m).`;
+        const geoCheck = await resolveGeofenceCheck(activeShift.projectId, data.latitude, data.longitude, data.accuracy, project);
+        clockOutGeofenceStatus = geoCheck.status;
+        geofenceWarning = geoCheck.warning;
+        accuracyWarning = geoCheck.accuracyWarning;
+
+        if (data.latitude != null && data.longitude != null) {
+          const lastEvent = await db.select()
+            .from(timeClockEvents)
+            .where(and(eq(timeClockEvents.shiftId, activeShift.id)))
+            .orderBy(desc(timeClockEvents.timestamp))
+            .limit(1);
+
+          if (lastEvent.length > 0 && lastEvent[0].latitude != null && lastEvent[0].longitude != null) {
+            const spoofCheck = checkForSpoofing(
+              data.latitude, data.longitude, now,
+              lastEvent[0].latitude, lastEvent[0].longitude, new Date(lastEvent[0].timestamp),
+              data.accuracy
+            );
+            if (spoofCheck.isSuspicious) {
+              spoofingFlag = true;
+              spoofingDetails = spoofCheck.reason;
             }
-          } else {
-            clockOutGeofenceStatus = "NO_GPS";
           }
         }
       }
     }
 
-    if (enforcementMode === "BLOCK" && (clockOutGeofenceStatus === "OUT_OF_RANGE" || clockOutGeofenceStatus === "NO_GPS")) {
+    const isOverride = data.geofenceOverride === true && data.geofenceOverrideReason;
+
+    if (enforcementMode === "BLOCK" && (clockOutGeofenceStatus === "OUT_OF_RANGE" || clockOutGeofenceStatus === "NO_GPS") && !isOverride) {
       await logAudit({
         userId: req.user!.id,
         entityType: "TIME_CLOCK_SHIFT",
@@ -568,6 +687,7 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
           geofenceStatus: clockOutGeofenceStatus,
           reason: clockOutGeofenceStatus === "NO_GPS" ? "GPS unavailable" : geofenceWarning,
           location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null,
+          accuracy: data.accuracy,
         }),
       }, req);
 
@@ -577,6 +697,7 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
           : `Clock-out blocked: ${geofenceWarning}`,
         geofenceStatus: clockOutGeofenceStatus,
         blocked: true,
+        canOverride: true,
       });
       return;
     }
@@ -587,9 +708,18 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
         clockOut: now,
         clockOutLatitude: data.latitude != null ? data.latitude : null,
         clockOutLongitude: data.longitude != null ? data.longitude : null,
+        clockOutAccuracy: data.accuracy != null ? data.accuracy : null,
         clockOutGeofenceStatus,
         totalHours: totalHours.toString(),
         notes: data.notes || activeShift.notes,
+        spoofingFlag: spoofingFlag || activeShift.spoofingFlag || false,
+        spoofingDetails: spoofingDetails
+          ? (activeShift.spoofingDetails ? `${activeShift.spoofingDetails}; Clock-out: ${spoofingDetails}` : spoofingDetails)
+          : activeShift.spoofingDetails,
+        geofenceOverride: isOverride ? true : activeShift.geofenceOverride || false,
+        geofenceOverrideReason: isOverride
+          ? (activeShift.geofenceOverrideReason ? `${activeShift.geofenceOverrideReason}; Clock-out: ${data.geofenceOverrideReason}` : data.geofenceOverrideReason!)
+          : activeShift.geofenceOverrideReason,
         updatedAt: now,
       })
       .where(eq(timeClockShifts.id, activeShift.id))
@@ -601,6 +731,9 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       timestamp: now,
       latitude: data.latitude != null ? data.latitude : null,
       longitude: data.longitude != null ? data.longitude : null,
+      accuracy: data.accuracy != null ? data.accuracy : null,
+      geofenceStatus: clockOutGeofenceStatus,
+      spoofingFlag,
       notes: data.notes || null,
       performedById: req.user!.id,
     });
@@ -609,9 +742,9 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       userId: req.user!.id,
       entityType: "TIME_CLOCK_SHIFT",
       entityId: activeShift.id,
-      action: "CLOCK_OUT",
+      action: isOverride ? "CLOCK_OUT_OVERRIDE" : "CLOCK_OUT",
       oldValue: JSON.stringify({ clockIn: activeShift.clockIn }),
-      newValue: JSON.stringify({ clockOut: now, totalHours }),
+      newValue: JSON.stringify({ clockOut: now, totalHours, accuracy: data.accuracy, spoofingFlag }),
     }, req);
 
     await eventBus.emit({
@@ -1309,6 +1442,285 @@ router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"),
   }
 });
 
+router.post("/api/time-clock/location-ping", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const schema = z.object({
+      latitude: z.number(),
+      longitude: z.number(),
+      accuracy: z.number().optional().nullable(),
+    });
+
+    const data = schema.parse(req.body);
+
+    const [activeShift] = await db
+      .select()
+      .from(timeClockShifts)
+      .where(and(
+        eq(timeClockShifts.userId, req.user!.id),
+        isNull(timeClockShifts.clockOut)
+      ))
+      .limit(1);
+
+    if (!activeShift) {
+      res.status(400).json({ error: "No active shift" });
+      return;
+    }
+
+    const now = new Date();
+
+    let pingGeofenceStatus: string | null = null;
+    let spoofingFlag = false;
+    let spoofingDetails: string | null = null;
+
+    if (activeShift.projectId) {
+      const [project] = await db.select().from(projects).where(eq(projects.id, activeShift.projectId)).limit(1);
+      if (project) {
+        const geoCheck = await resolveGeofenceCheck(activeShift.projectId, data.latitude, data.longitude, data.accuracy, project);
+        pingGeofenceStatus = geoCheck.status;
+      }
+
+      const lastEvent = await db.select()
+        .from(timeClockEvents)
+        .where(eq(timeClockEvents.shiftId, activeShift.id))
+        .orderBy(desc(timeClockEvents.timestamp))
+        .limit(1);
+
+      if (lastEvent.length > 0 && lastEvent[0].latitude != null && lastEvent[0].longitude != null) {
+        const spoofCheck = checkForSpoofing(
+          data.latitude, data.longitude, now,
+          lastEvent[0].latitude, lastEvent[0].longitude, new Date(lastEvent[0].timestamp),
+          data.accuracy
+        );
+        if (spoofCheck.isSuspicious) {
+          spoofingFlag = true;
+          spoofingDetails = spoofCheck.reason;
+
+          await db.update(timeClockShifts).set({
+            spoofingFlag: true,
+            spoofingDetails: activeShift.spoofingDetails
+              ? `${activeShift.spoofingDetails}; Ping: ${spoofCheck.reason}`
+              : spoofCheck.reason,
+            updatedAt: now,
+          }).where(eq(timeClockShifts.id, activeShift.id));
+        }
+      }
+    }
+
+    await db.insert(timeClockEvents).values({
+      shiftId: activeShift.id,
+      eventType: "LOCATION_PING" as any,
+      timestamp: now,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      accuracy: data.accuracy ?? null,
+      geofenceStatus: pingGeofenceStatus,
+      spoofingFlag,
+      notes: spoofingDetails,
+      performedById: req.user!.id,
+    });
+
+    res.json({ status: "ok", geofenceStatus: pingGeofenceStatus, spoofingFlag });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/projects/:projectId/geofence-zones", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const [project] = await db.select({ id: projects.id }).from(projects)
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+      .limit(1);
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+    const zones = await db.select().from(projectGeofenceZones)
+      .where(eq(projectGeofenceZones.projectId, req.params.projectId))
+      .orderBy(desc(projectGeofenceZones.createdAt));
+    res.json(zones);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/projects/:projectId/geofence-zones", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const [project] = await db.select({ id: projects.id }).from(projects)
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+      .limit(1);
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+    const schema = z.object({
+      name: z.string().min(1),
+      type: z.enum(["circle", "polygon"]),
+      latitude: z.number().optional().nullable(),
+      longitude: z.number().optional().nullable(),
+      radius: z.number().int().positive().optional().nullable(),
+      polygon: z.array(z.object({ lat: z.number(), lng: z.number() })).optional().nullable(),
+    });
+
+    const data = schema.parse(req.body);
+
+    const [zone] = await db.insert(projectGeofenceZones).values({
+      projectId: req.params.projectId,
+      name: data.name,
+      type: data.type,
+      latitude: data.latitude ?? null,
+      longitude: data.longitude ?? null,
+      radius: data.radius ?? null,
+      polygon: data.polygon ? JSON.stringify(data.polygon) : null,
+    }).returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "GEOFENCE_ZONE",
+      entityId: zone.id,
+      action: "CREATE",
+      oldValue: null,
+      newValue: JSON.stringify({ name: data.name, type: data.type }),
+    }, req);
+
+    res.status(201).json(zone);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/api/projects/:projectId/geofence-zones/:zoneId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const [project] = await db.select({ id: projects.id }).from(projects)
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+      .limit(1);
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+    const [deleted] = await db.delete(projectGeofenceZones)
+      .where(and(
+        eq(projectGeofenceZones.id, req.params.zoneId),
+        eq(projectGeofenceZones.projectId, req.params.projectId)
+      ))
+      .returning();
+
+    if (!deleted) {
+      res.status(404).json({ error: "Zone not found" });
+      return;
+    }
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "GEOFENCE_ZONE",
+      entityId: req.params.zoneId,
+      action: "DELETE",
+      oldValue: JSON.stringify({ name: deleted.name }),
+      newValue: null,
+    }, req);
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/time-clock/shift/:shiftId/location-pings", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const [shift] = await db.select({ id: timeClockShifts.id, userId: timeClockShifts.userId })
+      .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
+      .where(and(
+        eq(timeClockShifts.id, req.params.shiftId),
+        eq(users.organizationId, req.user!.organizationId)
+      ))
+      .limit(1);
+    if (!shift) { res.status(404).json({ error: "Shift not found" }); return; }
+
+    const pings = await db.select()
+      .from(timeClockEvents)
+      .where(and(
+        eq(timeClockEvents.shiftId, req.params.shiftId),
+        sql`${timeClockEvents.eventType} IN ('LOCATION_PING', 'CLOCK_IN', 'CLOCK_OUT')`
+      ))
+      .orderBy(timeClockEvents.timestamp);
+    res.json(pings);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/time-clock/geofence-compliance-report", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const orgId = req.user!.organizationId;
+
+    const conditions = [eq(users.organizationId, orgId)];
+    if (startDate) conditions.push(gte(timeClockShifts.clockIn, new Date(startDate as string)));
+    if (endDate) conditions.push(lte(timeClockShifts.clockIn, new Date(endDate as string)));
+
+    const shiftsData = await db
+      .select({
+        id: timeClockShifts.id,
+        userId: timeClockShifts.userId,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        projectId: timeClockShifts.projectId,
+        projectName: projects.name,
+        clockIn: timeClockShifts.clockIn,
+        clockOut: timeClockShifts.clockOut,
+        geofenceStatus: timeClockShifts.geofenceStatus,
+        clockOutGeofenceStatus: timeClockShifts.clockOutGeofenceStatus,
+        spoofingFlag: timeClockShifts.spoofingFlag,
+        spoofingDetails: timeClockShifts.spoofingDetails,
+        geofenceOverride: timeClockShifts.geofenceOverride,
+        clockInAccuracy: timeClockShifts.clockInAccuracy,
+        clockOutAccuracy: timeClockShifts.clockOutAccuracy,
+      })
+      .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
+      .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
+      .where(and(...conditions))
+      .orderBy(desc(timeClockShifts.clockIn))
+      .limit(500);
+
+    const shifts = shiftsData.map(s => ({
+      ...s,
+      userName: `${s.userFirstName} ${s.userLastName}`,
+    }));
+
+    const totalShifts = shifts.length;
+    const clockInViolations = shifts.filter(s => s.geofenceStatus === "OUT_OF_RANGE" || s.geofenceStatus === "NO_GPS").length;
+    const clockOutViolations = shifts.filter(s => s.clockOutGeofenceStatus === "OUT_OF_RANGE" || s.clockOutGeofenceStatus === "NO_GPS").length;
+    const spoofingFlagged = shifts.filter(s => s.spoofingFlag).length;
+    const overrides = shifts.filter(s => s.geofenceOverride).length;
+    const withinRange = shifts.filter(s => s.geofenceStatus === "WITHIN_RANGE").length;
+    const complianceRate = totalShifts > 0 ? Math.round((withinRange / totalShifts) * 100) : 100;
+
+    const violatorMap = new Map<string, { name: string; violations: number }>();
+    shifts.forEach(s => {
+      if (s.geofenceStatus === "OUT_OF_RANGE" || s.geofenceStatus === "NO_GPS" ||
+          s.clockOutGeofenceStatus === "OUT_OF_RANGE" || s.clockOutGeofenceStatus === "NO_GPS") {
+        const existing = violatorMap.get(s.userId) || { name: s.userName, violations: 0 };
+        existing.violations++;
+        violatorMap.set(s.userId, existing);
+      }
+    });
+    const repeatOffenders = Array.from(violatorMap.entries())
+      .filter(([, v]) => v.violations >= 2)
+      .map(([userId, v]) => ({ userId, ...v }))
+      .sort((a, b) => b.violations - a.violations);
+
+    res.json({
+      summary: {
+        totalShifts,
+        clockInViolations,
+        clockOutViolations,
+        spoofingFlagged,
+        overrides,
+        complianceRate,
+      },
+      repeatOffenders,
+      shifts,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/api/time-clock/auto-clock-out-worker", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const cutoffTime = new Date(Date.now() - MAX_SHIFT_HOURS * 60 * 60 * 1000);
@@ -1334,6 +1746,7 @@ router.post("/api/time-clock/auto-clock-out-worker", requireAuth, requireRole("A
           clockOut: now,
           totalHours: totalHours.toString(),
           autoClockOut: true,
+          clockOutGeofenceStatus: "NOT_CONFIGURED",
           updatedAt: now,
           notes: shift.notes ? `${shift.notes}\nAuto-clocked out after ${MAX_SHIFT_HOURS} hours` : `Auto-clocked out after ${MAX_SHIFT_HOURS} hours`,
         })
@@ -1344,6 +1757,7 @@ router.post("/api/time-clock/auto-clock-out-worker", requireAuth, requireRole("A
         shiftId: shift.id,
         eventType: "AUTO_CLOCK_OUT",
         timestamp: now,
+        geofenceStatus: "NOT_CONFIGURED",
         notes: `Auto-clocked out after ${MAX_SHIFT_HOURS} hours`,
         performedById: req.user!.id,
       });
@@ -1449,19 +1863,6 @@ router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth
       conditions.push(lte(timeClockShifts.clockIn, new Date(endDate as string)));
     }
 
-    const allShiftsData = await db
-      .select({
-        id: timeClockShifts.id,
-        geofenceStatus: timeClockShifts.geofenceStatus,
-        clockOutGeofenceStatus: timeClockShifts.clockOutGeofenceStatus,
-      })
-      .from(timeClockShifts)
-      .where(and(...conditions));
-
-    const totalShifts = allShiftsData.length;
-    const clockInViolations = allShiftsData.filter(s => s.geofenceStatus === "OUT_OF_RANGE" || s.geofenceStatus === "NO_GPS").length;
-    const clockOutViolations = allShiftsData.filter(s => s.clockOutGeofenceStatus === "OUT_OF_RANGE" || s.clockOutGeofenceStatus === "NO_GPS").length;
-
     const shiftsData = await db
       .select({
         shift: timeClockShifts,
@@ -1475,7 +1876,30 @@ router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth
       .leftJoin(users, eq(timeClockShifts.userId, users.id))
       .where(and(...conditions))
       .orderBy(desc(timeClockShifts.clockIn))
-      .limit(100);
+      .limit(300);
+
+    const totalShifts = shiftsData.length;
+    const clockInViolations = shiftsData.filter(s => s.shift.geofenceStatus === "OUT_OF_RANGE" || s.shift.geofenceStatus === "NO_GPS").length;
+    const clockOutViolations = shiftsData.filter(s => s.shift.clockOutGeofenceStatus === "OUT_OF_RANGE" || s.shift.clockOutGeofenceStatus === "NO_GPS").length;
+    const spoofingFlagged = shiftsData.filter(s => s.shift.spoofingFlag).length;
+    const overrides = shiftsData.filter(s => s.shift.geofenceOverride).length;
+    const withinRange = shiftsData.filter(s => s.shift.geofenceStatus === "WITHIN_RANGE").length;
+    const complianceRate = totalShifts > 0 ? Math.round((withinRange / totalShifts) * 100) : 100;
+
+    const violatorMap = new Map<string, { name: string; violations: number }>();
+    shiftsData.forEach(({ shift, user }) => {
+      if (shift.geofenceStatus === "OUT_OF_RANGE" || shift.geofenceStatus === "NO_GPS" ||
+          shift.clockOutGeofenceStatus === "OUT_OF_RANGE" || shift.clockOutGeofenceStatus === "NO_GPS") {
+        const name = user ? `${user.firstName} ${user.lastName}` : "Unknown";
+        const existing = violatorMap.get(shift.userId) || { name, violations: 0 };
+        existing.violations++;
+        violatorMap.set(shift.userId, existing);
+      }
+    });
+    const repeatOffenders = Array.from(violatorMap.entries())
+      .filter(([, v]) => v.violations >= 2)
+      .map(([userId, v]) => ({ userId, ...v }))
+      .sort((a, b) => b.violations - a.violations);
 
     const shifts = shiftsData.map(({ shift, user }) => ({
       id: shift.id,
@@ -1485,11 +1909,14 @@ router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth
       clockOut: shift.clockOut,
       geofenceStatus: shift.geofenceStatus,
       clockOutGeofenceStatus: shift.clockOutGeofenceStatus,
+      spoofingFlag: shift.spoofingFlag,
+      geofenceOverride: shift.geofenceOverride,
     }));
 
     res.json({
       shifts,
-      summary: { totalShifts, clockInViolations, clockOutViolations },
+      summary: { totalShifts, clockInViolations, clockOutViolations, spoofingFlagged, overrides, complianceRate },
+      repeatOffenders,
     });
   } catch (error) {
     next(error);

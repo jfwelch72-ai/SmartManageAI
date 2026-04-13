@@ -65,8 +65,13 @@ export default function TimeClockPage() {
   const [coordinates, setCoordinates] = useState<{
     latitude: number;
     longitude: number;
+    accuracy?: number;
   } | null>(null);
   const watchIdRef = useRef<number | null>(null);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const coordsRef = useRef<{ latitude: number; longitude: number; accuracy?: number } | null>(null);
+  const [showOverrideDialog, setShowOverrideDialog] = useState<"clock-in" | "clock-out" | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const [otDialogOpen, setOtDialogOpen] = useState(false);
   const [otShift, setOtShift] = useState<any>(null);
@@ -122,18 +127,7 @@ export default function TimeClockPage() {
     return (currentShift.project as Record<string, unknown>)?.geofenceEnforcement as string || "OFF";
   }, [currentShift]);
 
-  const clockOutBlockedByGeofence = useMemo(() => {
-    if (activeProjectEnforcement !== "BLOCK") return false;
-    const proj = currentShift?.project as Record<string, unknown> | null;
-    if (!proj) return false;
-    const siteLat = proj.siteLatitude as number | null;
-    const siteLng = proj.siteLongitude as number | null;
-    if (siteLat == null || siteLng == null) return false;
-    if (!coordinates) return true;
-    const distance = calculateDistance(coordinates.latitude, coordinates.longitude, siteLat, siteLng);
-    const radius = (proj.geofenceRadius as number) || GEOFENCE_RADIUS;
-    return distance > radius;
-  }, [activeProjectEnforcement, currentShift, coordinates]);
+  const clockOutBlockedByGeofence = false;
 
   const clockOutGeofenceMessage = useMemo(() => {
     if (activeProjectEnforcement !== "BLOCK") return null;
@@ -142,10 +136,10 @@ export default function TimeClockPage() {
     const siteLat = proj.siteLatitude as number | null;
     const siteLng = proj.siteLongitude as number | null;
     if (siteLat == null || siteLng == null) return null;
-    if (!coordinates) return "Clock-out is blocked: GPS is required for this project but is unavailable.";
+    if (!coordinates) return "GPS is required for this project. Clock-out may be blocked by the server.";
     const distance = calculateDistance(coordinates.latitude, coordinates.longitude, siteLat, siteLng);
     const radius = (proj.geofenceRadius as number) || GEOFENCE_RADIUS;
-    if (distance > radius) return `Clock-out is blocked: You are ${Math.round(distance)}m from the project site (allowed: ${radius}m).`;
+    if (distance > radius) return `You appear to be ${Math.round(distance)}m from the primary site (allowed: ${radius}m). The server will check all zones.`;
     return null;
   }, [activeProjectEnforcement, currentShift, coordinates]);
 
@@ -166,10 +160,13 @@ export default function TimeClockPage() {
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        setCoordinates({
+        const newCoords = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-        });
+          accuracy: position.coords.accuracy,
+        };
+        setCoordinates(newCoords);
+        coordsRef.current = newCoords;
         setGpsError("");
         setGpsAcquiring(false);
       },
@@ -196,7 +193,51 @@ export default function TimeClockPage() {
     };
   }, [startGpsWatch]);
 
-  const handleClockIn = async () => {
+  useEffect(() => {
+    if (isClockedIn) {
+      pingIntervalRef.current = setInterval(async () => {
+        const c = coordsRef.current;
+        if (c) {
+          try {
+            await fetch("/api/time-clock/location-ping", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                latitude: c.latitude,
+                longitude: c.longitude,
+                accuracy: c.accuracy,
+              }),
+            });
+          } catch {}
+        }
+      }, 15 * 60 * 1000);
+    }
+
+    return () => {
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+    };
+  }, [isClockedIn]);
+
+  const handleOverrideSubmit = () => {
+    if (!overrideReason.trim()) {
+      toast({ title: "Reason Required", description: "Please provide a reason for the override", variant: "destructive" });
+      return;
+    }
+    const action = showOverrideDialog;
+    setShowOverrideDialog(null);
+    if (action === "clock-in") {
+      handleClockIn({ reason: overrideReason.trim() });
+    } else if (action === "clock-out") {
+      handleClockOut({ reason: overrideReason.trim() });
+    }
+    setOverrideReason("");
+  };
+
+  const handleClockIn = async (override?: { reason: string }) => {
     if (!selectedProjectId) {
       toast({
         title: "Project Required",
@@ -212,12 +253,28 @@ export default function TimeClockPage() {
         costCode: selectedCostCode || undefined,
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
+        accuracy: coordinates?.accuracy,
+        ...(override ? { geofenceOverride: true, geofenceOverrideReason: override.reason } : {}),
       });
       toast({
         title: "Clocked In",
-        description: "You have successfully clocked in",
+        description: override ? "Clocked in with geofence override" : "You have successfully clocked in",
       });
       const clockInResult = result as Record<string, unknown>;
+      if (clockInResult?.accuracyWarning) {
+        toast({
+          title: "GPS Accuracy Warning",
+          description: clockInResult.accuracyWarning as string,
+          variant: "destructive",
+        });
+      }
+      if (clockInResult?.spoofingFlag) {
+        toast({
+          title: "Location Anomaly Detected",
+          description: "Your location data has been flagged for review by management.",
+          variant: "destructive",
+        });
+      }
       if (
         clockInResult?.geofenceWarning ||
         clockInResult?.geofenceStatus === "OUT_OF_RANGE"
@@ -232,7 +289,12 @@ export default function TimeClockPage() {
       }
       setSelectedProjectId("");
       setSelectedCostCode("");
-    } catch (error) {
+    } catch (error: any) {
+      const errorData = error?.data || error;
+      if (errorData?.canOverride) {
+        setShowOverrideDialog("clock-in");
+        return;
+      }
       toast({
         title: "Clock In Failed",
         description: error instanceof Error ? error.message : "Failed to clock in",
@@ -241,15 +303,17 @@ export default function TimeClockPage() {
     }
   };
 
-  const handleClockOut = async () => {
+  const handleClockOut = async (override?: { reason: string }) => {
     try {
       const result = await clockOut.mutateAsync({
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
+        accuracy: coordinates?.accuracy,
+        ...(override ? { geofenceOverride: true, geofenceOverrideReason: override.reason } : {}),
       });
       toast({
         title: "Clocked Out",
-        description: "You have successfully clocked out",
+        description: override ? "Clocked out with geofence override" : "You have successfully clocked out",
       });
       const clockOutResult = result as Record<string, unknown>;
       if (
@@ -267,7 +331,12 @@ export default function TimeClockPage() {
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      const errorData = error?.data || error;
+      if (errorData?.canOverride) {
+        setShowOverrideDialog("clock-out");
+        return;
+      }
       toast({
         title: "Clock Out Failed",
         description: error instanceof Error ? error.message : "Failed to clock out",
@@ -565,9 +634,20 @@ export default function TimeClockPage() {
                         )}
 
                         {clockOutGeofenceMessage && (
-                          <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400" data-testid="text-clockout-blocked-message">
-                            <ShieldAlert className="w-4 h-4" />
-                            <span>{clockOutGeofenceMessage}</span>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400" data-testid="text-clockout-blocked-message">
+                              <ShieldAlert className="w-4 h-4" />
+                              <span>{clockOutGeofenceMessage}</span>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => setShowOverrideDialog("clock-out")}
+                              data-testid="button-clockout-override"
+                            >
+                              Request Override
+                            </Button>
                           </div>
                         )}
 
@@ -575,7 +655,7 @@ export default function TimeClockPage() {
                           size="lg"
                           variant="destructive"
                           className="w-full min-h-[52px] text-base"
-                          onClick={handleClockOut}
+                          onClick={() => handleClockOut()}
                           disabled={clockOut.isPending || clockOutBlockedByGeofence}
                           data-testid="button-clock-out"
                         >
@@ -716,10 +796,17 @@ export default function TimeClockPage() {
                         {coordinates && (
                           <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 text-sm text-green-700 dark:text-green-400">
                             <MapPin className="w-5 h-5 shrink-0" />
-                            <span data-testid="text-gps-coordinates">
-                              GPS: {coordinates.latitude.toFixed(6)},{" "}
-                              {coordinates.longitude.toFixed(6)}
-                            </span>
+                            <div>
+                              <span data-testid="text-gps-coordinates">
+                                GPS: {coordinates.latitude.toFixed(6)},{" "}
+                                {coordinates.longitude.toFixed(6)}
+                              </span>
+                              {coordinates.accuracy != null && (
+                                <span className={`ml-2 text-xs ${coordinates.accuracy > 50 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`} data-testid="text-gps-accuracy">
+                                  ±{Math.round(coordinates.accuracy)}m
+                                </span>
+                              )}
+                            </div>
                           </div>
                         )}
 
@@ -743,7 +830,7 @@ export default function TimeClockPage() {
                         <Button
                           size="lg"
                           className="w-full min-h-[52px] text-base"
-                          onClick={handleClockIn}
+                          onClick={() => handleClockIn()}
                           disabled={!selectedProjectId || clockIn.isPending || clockInDisabledByGps}
                           data-testid="button-clock-in"
                         >
@@ -1092,6 +1179,50 @@ export default function TimeClockPage() {
             >
               <Send className="w-4 h-4 mr-2" />
               {createOtRequest.isPending ? "Submitting..." : "Submit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showOverrideDialog !== null} onOpenChange={(open) => { if (!open) { setShowOverrideDialog(null); setOverrideReason(""); } }}>
+        <DialogContent data-testid="dialog-geofence-override">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-500" />
+              Geofence Override Request
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              You are {showOverrideDialog === "clock-in" ? "clocking in" : "clocking out"} outside the geofence boundary. 
+              Provide a reason to proceed. This will be logged and reviewed by management.
+            </p>
+            <div className="space-y-2">
+              <Label>Reason for override</Label>
+              <Textarea
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="e.g., GPS signal lost in building, meeting at off-site location, equipment staging area..."
+                className="resize-none"
+                data-testid="textarea-override-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowOverrideDialog(null); setOverrideReason(""); }}
+              data-testid="button-override-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleOverrideSubmit}
+              disabled={!overrideReason.trim()}
+              data-testid="button-override-submit"
+            >
+              <Shield className="w-4 h-4 mr-2" />
+              {showOverrideDialog === "clock-in" ? "Clock In with Override" : "Clock Out with Override"}
             </Button>
           </DialogFooter>
         </DialogContent>
