@@ -14,6 +14,7 @@ import { getTotalStepsForRole, getWalkthroughStep, getPersonalizedWalkthrough, p
 import { governedAiCall } from "./services/aiGovernance";
 import { seedScopeStandardizationForTrade } from "./seedTradeExpansion";
 import { applyTradePreset } from "./services/featureFlagService";
+import { getFeaturePresetForTrade } from "@shared/tradeFeaturePresets";
 import { getTradeCategories, getTradesByCategory, getMaterialGroups, getMaterialsByGroup } from "./data/onboarding";
 
 const router = Router();
@@ -516,7 +517,6 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
     } catch (presetErr: any) {
       logWarn(`[Onboarding] Trade feature preset failed, applying fallback defaults: ${presetErr.message}`);
       try {
-        const { getFeaturePresetForTrade } = await import("@shared/tradeFeaturePresets");
         const fallbackFlags = JSON.stringify(getFeaturePresetForTrade("OTHER"));
         await db.update(organizations)
           .set({ featureFlags: fallbackFlags, updatedAt: new Date() })
