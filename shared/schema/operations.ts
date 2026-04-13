@@ -1349,6 +1349,36 @@ export const timeClockEvents = pgTable("time_clock_events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const siteLeaves = pgTable("site_leaves", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  shiftId: varchar("shift_id").notNull().references(() => timeClockShifts.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  reason: text("reason").notNull(),
+  category: varchar("category", { length: 30 }).notNull().default("OTHER"),
+  estimatedReturnMinutes: integer("estimated_return_minutes"),
+  departedAt: timestamp("departed_at").notNull().defaultNow(),
+  returnedAt: timestamp("returned_at"),
+  returnNotes: text("return_notes"),
+  departLatitude: doublePrecision("depart_latitude"),
+  departLongitude: doublePrecision("depart_longitude"),
+  returnLatitude: doublePrecision("return_latitude"),
+  returnLongitude: doublePrecision("return_longitude"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  shiftIdx: index("site_leaves_shift_idx").on(table.shiftId),
+  userIdx: index("site_leaves_user_idx").on(table.userId),
+  projectIdx: index("site_leaves_project_idx").on(table.projectId),
+}));
+
+export const insertSiteLeaveSchema = createInsertSchema(siteLeaves).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type SiteLeave = typeof siteLeaves.$inferSelect;
+export type InsertSiteLeave = z.infer<typeof insertSiteLeaveSchema>;
+
 // Overtime Request Status enum
 export const overtimeRequests = pgTable("overtime_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

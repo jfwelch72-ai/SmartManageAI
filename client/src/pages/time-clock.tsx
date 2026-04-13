@@ -35,6 +35,7 @@ import {
   useProjectCostCodes,
 } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
 import {
   Clock,
   MapPin,
@@ -52,7 +53,17 @@ import {
   Tag,
   Loader2,
   RefreshCw,
+  DoorOpen,
+  CornerDownLeft,
+  Package,
+  Wrench,
+  Users,
+  ClipboardCheck,
+  Truck,
+  MoreHorizontal,
 } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { format, formatDistanceToNow } from "date-fns";
 import TimeLogTab from "./time-log-tab";
 
@@ -80,6 +91,13 @@ export default function TimeClockPage() {
 
   const [selectedCostCode, setSelectedCostCode] = useState<string>("");
 
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [leaveCategory, setLeaveCategory] = useState<string>("MATERIAL_PICKUP");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveEstMinutes, setLeaveEstMinutes] = useState<string>("");
+  const [showReturnDialog, setShowReturnDialog] = useState(false);
+  const [returnNotes, setReturnNotes] = useState("");
+
   const { data: currentShift, isLoading: currentShiftLoading } =
     useCurrentShift();
   const { data: myShifts = [], isLoading: shiftsLoading } = useMyShifts();
@@ -99,6 +117,50 @@ export default function TimeClockPage() {
   const { data: otRequests = [] } = useOvertimeRequestsByShifts(shiftIds);
   const { data: approvers = [] } = useOvertimeApprovers();
   const createOtRequest = useCreateOvertimeRequest();
+
+  const { data: activeSiteLeave, isLoading: siteLeaveLoading } = useQuery({
+    queryKey: ["/api/time-clock/site-leave/active"],
+    enabled: Boolean(currentShift?.shift),
+    refetchInterval: 30000,
+  });
+
+  const siteLeaveStart = useMutation({
+    mutationFn: async (data: { reason: string; category: string; estimatedReturnMinutes?: number; latitude?: number; longitude?: number }) => {
+      const res = await fetch("/api/time-clock/site-leave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to start site leave");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/site-leave/active"] });
+    },
+  });
+
+  const siteLeaveReturn = useMutation({
+    mutationFn: async ({ id, returnNotes: notes, latitude, longitude }: { id: string; returnNotes?: string; latitude?: number; longitude?: number }) => {
+      const res = await fetch(`/api/time-clock/site-leave/${id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ returnNotes: notes, latitude, longitude }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to log return");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/site-leave/active"] });
+    },
+  });
 
   const otRequestMap = useMemo(() => {
     const map = new Map<string, Record<string, unknown>>();
@@ -235,6 +297,56 @@ export default function TimeClockPage() {
       handleClockOut({ reason: overrideReason.trim() });
     }
     setOverrideReason("");
+  };
+
+  const handleSiteLeave = async () => {
+    if (!leaveReason.trim()) {
+      toast({ title: "Reason Required", description: "Please provide a reason for leaving the site", variant: "destructive" });
+      return;
+    }
+    try {
+      await siteLeaveStart.mutateAsync({
+        reason: leaveReason.trim(),
+        category: leaveCategory,
+        estimatedReturnMinutes: leaveEstMinutes ? parseInt(leaveEstMinutes) : undefined,
+        latitude: coordinates?.latitude,
+        longitude: coordinates?.longitude,
+      });
+      toast({ title: "Site Leave Logged", description: "Your departure has been recorded. Geofence violations will be suppressed." });
+      setShowLeaveDialog(false);
+      setLeaveReason("");
+      setLeaveCategory("MATERIAL_PICKUP");
+      setLeaveEstMinutes("");
+    } catch (error) {
+      toast({ title: "Failed", description: error instanceof Error ? error.message : "Failed to log site leave", variant: "destructive" });
+    }
+  };
+
+  const handleSiteReturn = async () => {
+    const leave = activeSiteLeave?.leave;
+    if (!leave) return;
+    try {
+      await siteLeaveReturn.mutateAsync({
+        id: leave.id,
+        returnNotes: returnNotes.trim() || undefined,
+        latitude: coordinates?.latitude,
+        longitude: coordinates?.longitude,
+      });
+      toast({ title: "Return Logged", description: "Welcome back! Your return has been recorded." });
+      setShowReturnDialog(false);
+      setReturnNotes("");
+    } catch (error) {
+      toast({ title: "Failed", description: error instanceof Error ? error.message : "Failed to log return", variant: "destructive" });
+    }
+  };
+
+  const leaveCategoryLabels: Record<string, { label: string; icon: typeof Package }> = {
+    MATERIAL_PICKUP: { label: "Material Pickup", icon: Package },
+    EQUIPMENT_RETRIEVAL: { label: "Equipment Retrieval", icon: Wrench },
+    MEETING: { label: "Off-site Meeting", icon: Users },
+    INSPECTION: { label: "Inspection", icon: ClipboardCheck },
+    DELIVERY: { label: "Delivery Run", icon: Truck },
+    OTHER: { label: "Other", icon: MoreHorizontal },
   };
 
   const handleClockIn = async (override?: { reason: string }) => {
@@ -649,6 +761,44 @@ export default function TimeClockPage() {
                               Request Override
                             </Button>
                           </div>
+                        )}
+
+                        {activeSiteLeave?.leave ? (
+                          <div className="border border-amber-300 dark:border-amber-700 rounded-lg p-4 bg-amber-50 dark:bg-amber-950/30 space-y-3" data-testid="card-active-site-leave">
+                            <div className="flex items-center gap-2">
+                              <DoorOpen className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                              <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Off-Site — {leaveCategoryLabels[activeSiteLeave.leave.category]?.label || activeSiteLeave.leave.category}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{activeSiteLeave.leave.reason}</p>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>Left {formatDistanceToNow(new Date(activeSiteLeave.leave.departedAt))} ago</span>
+                              {activeSiteLeave.leave.estimatedReturnMinutes && (
+                                <span>Est. return: {activeSiteLeave.leave.estimatedReturnMinutes} min</span>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                              onClick={() => setShowReturnDialog(true)}
+                              disabled={siteLeaveReturn.isPending}
+                              data-testid="button-log-return"
+                            >
+                              <CornerDownLeft className="w-4 h-4 mr-2" />
+                              {siteLeaveReturn.isPending ? "Logging..." : "Log Return to Site"}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => setShowLeaveDialog(true)}
+                            data-testid="button-leave-site"
+                          >
+                            <DoorOpen className="w-4 h-4 mr-2" />
+                            Leave Site (Material Run, etc.)
+                          </Button>
                         )}
 
                         <Button
@@ -1179,6 +1329,117 @@ export default function TimeClockPage() {
             >
               <Send className="w-4 h-4 mr-2" />
               {createOtRequest.isPending ? "Submitting..." : "Submit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLeaveDialog} onOpenChange={(open) => { if (!open) { setShowLeaveDialog(false); setLeaveReason(""); setLeaveEstMinutes(""); } }}>
+        <DialogContent data-testid="dialog-site-leave">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DoorOpen className="w-5 h-5 text-amber-500" />
+              Leave Site
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Log your departure before leaving the project site. Geofence violations will be suppressed while you're away.
+            </p>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={leaveCategory} onValueChange={setLeaveCategory}>
+                <SelectTrigger data-testid="select-leave-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(leaveCategoryLabels).map(([key, { label }]) => (
+                    <SelectItem key={key} value={key} data-testid={`option-leave-${key}`}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Textarea
+                value={leaveReason}
+                onChange={(e) => setLeaveReason(e.target.value)}
+                placeholder="e.g., Picking up drywall from HD Supply warehouse..."
+                className="resize-none"
+                data-testid="textarea-leave-reason"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Estimated Return (minutes)</Label>
+              <Input
+                type="number"
+                min="1"
+                max="480"
+                value={leaveEstMinutes}
+                onChange={(e) => setLeaveEstMinutes(e.target.value)}
+                placeholder="e.g., 45"
+                data-testid="input-leave-est-minutes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowLeaveDialog(false); setLeaveReason(""); setLeaveEstMinutes(""); }}
+              data-testid="button-leave-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSiteLeave}
+              disabled={!leaveReason.trim() || siteLeaveStart.isPending}
+              data-testid="button-leave-submit"
+            >
+              <DoorOpen className="w-4 h-4 mr-2" />
+              {siteLeaveStart.isPending ? "Logging..." : "Log Departure"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showReturnDialog} onOpenChange={(open) => { if (!open) { setShowReturnDialog(false); setReturnNotes(""); } }}>
+        <DialogContent data-testid="dialog-site-return">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CornerDownLeft className="w-5 h-5 text-green-500" />
+              Log Return to Site
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Welcome back! Log your return to resume normal geofence tracking.
+            </p>
+            <div className="space-y-2">
+              <Label>Return Notes (optional)</Label>
+              <Textarea
+                value={returnNotes}
+                onChange={(e) => setReturnNotes(e.target.value)}
+                placeholder="e.g., Materials delivered to loading dock..."
+                className="resize-none"
+                data-testid="textarea-return-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowReturnDialog(false); setReturnNotes(""); }}
+              data-testid="button-return-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSiteReturn}
+              disabled={siteLeaveReturn.isPending}
+              data-testid="button-return-submit"
+            >
+              <CornerDownLeft className="w-4 h-4 mr-2" />
+              {siteLeaveReturn.isPending ? "Logging..." : "Confirm Return"}
             </Button>
           </DialogFooter>
         </DialogContent>

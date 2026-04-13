@@ -241,7 +241,7 @@ import { eventBus } from "./events";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
   kpiAssignments, kpiTemplates, kpiEntries, orgCostCodes, organizations, projectCostCodes,
-  projectGeofenceZones
+  projectGeofenceZones, siteLeaves
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -1472,36 +1472,50 @@ router.post("/api/time-clock/location-ping", requireAuth, async (req: AuthReques
     let spoofingFlag = false;
     let spoofingDetails: string | null = null;
 
+    let onApprovedLeave = false;
+
     if (activeShift.projectId) {
+      const [activeLeave] = await db.select().from(siteLeaves)
+        .where(and(eq(siteLeaves.shiftId, activeShift.id), isNull(siteLeaves.returnedAt)))
+        .limit(1);
+
+      if (activeLeave) {
+        onApprovedLeave = true;
+      }
+
       const [project] = await db.select().from(projects).where(eq(projects.id, activeShift.projectId)).limit(1);
       if (project) {
         const geoCheck = await resolveGeofenceCheck(activeShift.projectId, data.latitude, data.longitude, data.accuracy, project);
-        pingGeofenceStatus = geoCheck.status;
+        pingGeofenceStatus = onApprovedLeave && geoCheck.status === "OUT_OF_RANGE"
+          ? "APPROVED_ABSENCE"
+          : geoCheck.status;
       }
 
-      const lastEvent = await db.select()
-        .from(timeClockEvents)
-        .where(eq(timeClockEvents.shiftId, activeShift.id))
-        .orderBy(desc(timeClockEvents.timestamp))
-        .limit(1);
+      if (!onApprovedLeave) {
+        const lastEvent = await db.select()
+          .from(timeClockEvents)
+          .where(eq(timeClockEvents.shiftId, activeShift.id))
+          .orderBy(desc(timeClockEvents.timestamp))
+          .limit(1);
 
-      if (lastEvent.length > 0 && lastEvent[0].latitude != null && lastEvent[0].longitude != null) {
-        const spoofCheck = checkForSpoofing(
-          data.latitude, data.longitude, now,
-          lastEvent[0].latitude, lastEvent[0].longitude, new Date(lastEvent[0].timestamp),
-          data.accuracy
-        );
-        if (spoofCheck.isSuspicious) {
-          spoofingFlag = true;
-          spoofingDetails = spoofCheck.reason;
+        if (lastEvent.length > 0 && lastEvent[0].latitude != null && lastEvent[0].longitude != null) {
+          const spoofCheck = checkForSpoofing(
+            data.latitude, data.longitude, now,
+            lastEvent[0].latitude, lastEvent[0].longitude, new Date(lastEvent[0].timestamp),
+            data.accuracy
+          );
+          if (spoofCheck.isSuspicious) {
+            spoofingFlag = true;
+            spoofingDetails = spoofCheck.reason;
 
-          await db.update(timeClockShifts).set({
-            spoofingFlag: true,
-            spoofingDetails: activeShift.spoofingDetails
-              ? `${activeShift.spoofingDetails}; Ping: ${spoofCheck.reason}`
-              : spoofCheck.reason,
-            updatedAt: now,
-          }).where(eq(timeClockShifts.id, activeShift.id));
+            await db.update(timeClockShifts).set({
+              spoofingFlag: true,
+              spoofingDetails: activeShift.spoofingDetails
+                ? `${activeShift.spoofingDetails}; Ping: ${spoofCheck.reason}`
+                : spoofCheck.reason,
+              updatedAt: now,
+            }).where(eq(timeClockShifts.id, activeShift.id));
+          }
         }
       }
     }
@@ -1515,11 +1529,11 @@ router.post("/api/time-clock/location-ping", requireAuth, async (req: AuthReques
       accuracy: data.accuracy ?? null,
       geofenceStatus: pingGeofenceStatus,
       spoofingFlag,
-      notes: spoofingDetails,
+      notes: onApprovedLeave ? "Approved site leave" : spoofingDetails,
       performedById: req.user!.id,
     });
 
-    res.json({ status: "ok", geofenceStatus: pingGeofenceStatus, spoofingFlag });
+    res.json({ status: "ok", geofenceStatus: pingGeofenceStatus, spoofingFlag, onApprovedLeave });
   } catch (error) {
     next(error);
   }
@@ -1918,6 +1932,205 @@ router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth
       summary: { totalShifts, clockInViolations, clockOutViolations, spoofingFlagged, overrides, complianceRate },
       repeatOffenders,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/time-clock/site-leave", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as AuthRequest).user!;
+    const schema = z.object({
+      reason: z.string().min(1).max(500),
+      category: z.enum(["MATERIAL_PICKUP", "EQUIPMENT_RETRIEVAL", "MEETING", "INSPECTION", "DELIVERY", "OTHER"]),
+      estimatedReturnMinutes: z.number().int().min(1).max(480).optional(),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+    });
+
+    const data = schema.parse(req.body);
+
+    const activeShift = await db.select().from(timeClockShifts)
+      .where(and(eq(timeClockShifts.userId, user.id), isNull(timeClockShifts.clockOut)))
+      .orderBy(desc(timeClockShifts.clockIn))
+      .limit(1);
+
+    if (!activeShift.length) {
+      res.status(400).json({ error: "No active shift found. You must be clocked in to leave site." });
+      return;
+    }
+
+    const shift = activeShift[0];
+    if (!shift.projectId) {
+      res.status(400).json({ error: "Active shift has no project assigned." });
+      return;
+    }
+
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.id, shift.projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .limit(1);
+
+    if (!project) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
+
+    const existingLeave = await db.select().from(siteLeaves)
+      .where(and(eq(siteLeaves.shiftId, shift.id), isNull(siteLeaves.returnedAt)))
+      .limit(1);
+
+    if (existingLeave.length > 0) {
+      res.status(400).json({ error: "You already have an active site leave. Please log your return first." });
+      return;
+    }
+
+    const [leave] = await db.insert(siteLeaves).values({
+      shiftId: shift.id,
+      userId: user.id,
+      projectId: shift.projectId,
+      reason: sanitizeText(data.reason),
+      category: data.category,
+      estimatedReturnMinutes: data.estimatedReturnMinutes ?? null,
+      departedAt: new Date(),
+      departLatitude: data.latitude ?? null,
+      departLongitude: data.longitude ?? null,
+    }).returning();
+
+    await logAudit({
+      userId: user.id,
+      entityType: "SITE_LEAVE",
+      entityId: leave.id,
+      action: "SITE_LEAVE_STARTED",
+      oldValue: null,
+      newValue: JSON.stringify({
+        projectId: shift.projectId,
+        category: data.category,
+        reason: data.reason,
+        estimatedReturnMinutes: data.estimatedReturnMinutes,
+      }),
+    }, req);
+
+    res.json({ success: true, leave });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/time-clock/site-leave/:id/return", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as AuthRequest).user!;
+    const schema = z.object({
+      returnNotes: z.string().max(500).optional(),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+    });
+
+    const data = schema.parse(req.body);
+    const leaveId = req.params.id;
+
+    const [leave] = await db.select().from(siteLeaves)
+      .where(and(eq(siteLeaves.id, leaveId), eq(siteLeaves.userId, user.id)))
+      .limit(1);
+
+    if (!leave) {
+      res.status(404).json({ error: "Site leave not found." });
+      return;
+    }
+
+    if (leave.returnedAt) {
+      res.status(400).json({ error: "This site leave has already been closed." });
+      return;
+    }
+
+    const [updated] = await db.update(siteLeaves)
+      .set({
+        returnedAt: new Date(),
+        returnNotes: data.returnNotes ? sanitizeText(data.returnNotes) : null,
+        returnLatitude: data.latitude ?? null,
+        returnLongitude: data.longitude ?? null,
+      })
+      .where(eq(siteLeaves.id, leaveId))
+      .returning();
+
+    await logAudit({
+      userId: user.id,
+      entityType: "SITE_LEAVE",
+      entityId: leave.id,
+      action: "SITE_LEAVE_RETURNED",
+      oldValue: null,
+      newValue: JSON.stringify({
+        departedAt: leave.departedAt,
+        returnedAt: updated.returnedAt,
+        durationMinutes: Math.round((new Date().getTime() - new Date(leave.departedAt).getTime()) / 60000),
+      }),
+    }, req);
+
+    res.json({ success: true, leave: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/time-clock/site-leave/active", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as AuthRequest).user!;
+
+    const activeShift = await db.select().from(timeClockShifts)
+      .where(and(eq(timeClockShifts.userId, user.id), isNull(timeClockShifts.clockOut)))
+      .orderBy(desc(timeClockShifts.clockIn))
+      .limit(1);
+
+    if (!activeShift.length) {
+      res.json({ leave: null });
+      return;
+    }
+
+    const [activeLeave] = await db.select().from(siteLeaves)
+      .where(and(eq(siteLeaves.shiftId, activeShift[0].id), isNull(siteLeaves.returnedAt)))
+      .limit(1);
+
+    res.json({ leave: activeLeave || null });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/time-clock/site-leave/shift/:shiftId", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as AuthRequest).user!;
+    const { shiftId } = req.params;
+
+    const shiftResult = await db.select({ shift: timeClockShifts, shiftUser: users })
+      .from(timeClockShifts)
+      .innerJoin(users, eq(users.id, timeClockShifts.userId))
+      .where(eq(timeClockShifts.id, shiftId))
+      .limit(1);
+
+    if (!shiftResult.length) {
+      res.status(404).json({ error: "Shift not found." });
+      return;
+    }
+
+    const { shift, shiftUser } = shiftResult[0];
+
+    if (shiftUser.organizationId !== user.organizationId) {
+      res.status(404).json({ error: "Shift not found." });
+      return;
+    }
+
+    if (shift.userId !== user.id) {
+      const managerRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
+      if (!managerRoles.includes(user.role)) {
+        res.status(403).json({ error: "Access denied." });
+        return;
+      }
+    }
+
+    const leaves = await db.select().from(siteLeaves)
+      .where(eq(siteLeaves.shiftId, shiftId))
+      .orderBy(desc(siteLeaves.departedAt));
+
+    res.json({ leaves });
   } catch (error) {
     next(error);
   }
