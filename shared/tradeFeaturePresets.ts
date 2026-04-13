@@ -11,8 +11,11 @@ const CORE_FLAGS: FeatureFlagKey[] = [
   "SESSION_MANAGEMENT",
 ];
 
-const FINANCE_FLAGS: FeatureFlagKey[] = [
+const FINANCE_CORE_FLAGS: FeatureFlagKey[] = [
   "INTEGRATION_QBO",
+];
+
+const FINANCE_ENTERPRISE_FLAGS: FeatureFlagKey[] = [
   "REVENUE_RECOGNITION",
 ];
 
@@ -62,7 +65,8 @@ function buildPreset(enabledGroups: FeatureFlagKey[][]): TradeFeaturePreset {
 
 const GC_PRESET = buildPreset([
   CORE_FLAGS,
-  FINANCE_FLAGS,
+  FINANCE_CORE_FLAGS,
+  FINANCE_ENTERPRISE_FLAGS,
   ENTERPRISE_FLAGS,
   HIRING_FLAGS,
   ADVANCED_TECH_FLAGS,
@@ -78,7 +82,7 @@ const SPECIALTY_TRADE_PRESET = buildPreset([
 const TECH_TRADE_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
-  FINANCE_FLAGS,
+  FINANCE_CORE_FLAGS,
   ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
 ]);
 
@@ -97,14 +101,14 @@ const CIVIL_PRESET = buildPreset([
 const STRUCTURAL_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
-  FINANCE_FLAGS,
+  FINANCE_CORE_FLAGS,
   ["MOBILE_OFFLINE_V2", "BIM_VIEWER"] as FeatureFlagKey[],
 ]);
 
 const MEP_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
-  FINANCE_FLAGS,
+  FINANCE_CORE_FLAGS,
   ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
 ]);
 
@@ -122,7 +126,7 @@ const EXPLICIT_PRESETS: Record<string, TradeFeaturePreset> = {
   SOLAR: buildPreset([
     CORE_FLAGS,
     INTEGRATION_FLAGS,
-    FINANCE_FLAGS,
+    FINANCE_CORE_FLAGS,
     ["BIM_VIEWER", "MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
   ]),
 
@@ -194,7 +198,7 @@ const EXPLICIT_PRESETS: Record<string, TradeFeaturePreset> = {
   SOLAR_INSTALLATION: buildPreset([
     CORE_FLAGS,
     INTEGRATION_FLAGS,
-    FINANCE_FLAGS,
+    FINANCE_CORE_FLAGS,
     ["BIM_VIEWER", "MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
   ]),
   TEMPORARY_POWER: MEP_PRESET,
