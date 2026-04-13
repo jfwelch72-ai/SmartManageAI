@@ -514,7 +514,16 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
       await applyTradePreset(newOrg.id, tradeType);
       logInfo(`[Onboarding] Feature flags set via trade preset for "${tradeType}"`, { organizationId: newOrg.id });
     } catch (presetErr: any) {
-      logWarn(`[Onboarding] Trade feature preset failed (non-fatal): ${presetErr.message}`);
+      logWarn(`[Onboarding] Trade feature preset failed, applying fallback defaults: ${presetErr.message}`);
+      try {
+        const { getFeaturePresetForTrade } = await import("@shared/tradeFeaturePresets");
+        const fallbackFlags = JSON.stringify(getFeaturePresetForTrade("OTHER"));
+        await db.update(organizations)
+          .set({ featureFlags: fallbackFlags, updatedAt: new Date() })
+          .where(eq(organizations.id, newOrg.id));
+      } catch (fallbackErr: any) {
+        logWarn(`[Onboarding] Fallback feature flags also failed: ${fallbackErr.message}`);
+      }
     }
 
     const isGeneralContractor = tradeType === 'GENERAL_CONTRACTOR';
