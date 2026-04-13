@@ -66,6 +66,8 @@ METERED_API_KEY = "9531b6f9c696376f33e386c16e1e4c3847ec"
 MICROSOFT_CLIENT_ID = "bd1df7d9-202b-4840-8134-d614722ea446"
 MICROSOFT_CLIENT_SECRET = "frX8Q~F2x6BtmI8KimrnEX~-zeghMdllAfj~Na.4"
 MICROSOFT_TENANT_ID = "1f872408-e900-462d-9de4-69938cc13826"
+LIVEKIT_URL = "wss://traffic-llhwfwqo.livekit.cloud"
+LIVEKIT_API_KEY = "APIf6ndSUbgdyfi"
 
 [postMerge]
 path = "scripts/post-merge.sh"
