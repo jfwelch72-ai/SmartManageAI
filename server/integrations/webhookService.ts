@@ -4,6 +4,41 @@ import { eq, and } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
 import crypto from "crypto";
 
+const BLOCKED_IP_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2[0-9]|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\./,
+  /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./,
+  /^::1$/,
+  /^fc00:/i,
+  /^fe80:/i,
+  /^localhost$/i,
+];
+
+function isBlockedUrl(urlString: string): { blocked: boolean; reason?: string } {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== "https:") {
+      return { blocked: true, reason: "Only HTTPS URLs are allowed for webhooks" };
+    }
+    const hostname = parsed.hostname;
+    for (const pattern of BLOCKED_IP_RANGES) {
+      if (pattern.test(hostname)) {
+        return { blocked: true, reason: "Webhook URLs targeting internal/private networks are not allowed" };
+      }
+    }
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+      return { blocked: true, reason: "Raw IP addresses are not allowed for webhooks — use a domain name" };
+    }
+    return { blocked: false };
+  } catch {
+    return { blocked: true, reason: "Invalid webhook URL" };
+  }
+}
+
 export function signPayload(payload: string, secret: string): string {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
 }
@@ -31,6 +66,11 @@ export async function createSubscription(
   eventType: string,
   targetUrl: string
 ) {
+  const urlCheck = isBlockedUrl(targetUrl);
+  if (urlCheck.blocked) {
+    throw new Error(urlCheck.reason || "Invalid webhook URL");
+  }
+
   const secret = crypto.randomBytes(32).toString("hex");
   const [sub] = await db.insert(integrationWebhookSubscriptions).values({
     organizationId: orgId,
@@ -44,6 +84,11 @@ export async function createSubscription(
 }
 
 export async function deliverWebhook(targetUrl: string, payload: Record<string, any>, secret: string) {
+  const urlCheck = isBlockedUrl(targetUrl);
+  if (urlCheck.blocked) {
+    throw new Error(urlCheck.reason || "Blocked webhook URL");
+  }
+
   const body = JSON.stringify(payload);
   const signature = signPayload(body, secret);
   

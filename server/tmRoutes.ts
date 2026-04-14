@@ -7,6 +7,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { notifyApprovers, notifySubmitter, getApproverUserIds, notifyUsers } from "./services/approvalNotificationService";
 import { eventBus } from "./events";
 import { z } from "zod";
+import { validateBody } from "./utils/validation";
 import { 
   tmTickets, 
   tmTicketLaborEntries,
@@ -19,6 +20,93 @@ import {
   users,
   auditLog,
 } from "@shared/schema";
+
+const laborEntrySchema = z.object({
+  employeeName: z.string().min(1).max(500).optional(),
+  workerName: z.string().min(1).max(500).optional(),
+  name: z.string().min(1).max(500).optional(),
+  position: z.string().max(200).optional(),
+  role: z.string().max(200).optional(),
+  crewMemberCount: z.number().int().min(1).max(999).optional(),
+  regularHours: z.union([z.string(), z.number()]).optional(),
+  hoursWorked: z.union([z.string(), z.number()]).optional(),
+  overtimeHours: z.union([z.string(), z.number()]).optional(),
+  rate: z.union([z.string(), z.number()]).optional(),
+  hourlyRate: z.union([z.string(), z.number()]).optional(),
+  overtimeRate: z.union([z.string(), z.number()]).optional(),
+  totalCost: z.union([z.string(), z.number()]).optional(),
+  totalHours: z.union([z.string(), z.number()]).optional(),
+});
+
+const equipmentEntrySchema = z.object({
+  equipmentType: z.string().min(1).max(500).optional(),
+  equipmentName: z.string().min(1).max(500).optional(),
+  name: z.string().min(1).max(500).optional(),
+  quantity: z.union([z.string(), z.number()]).optional(),
+  hours: z.union([z.string(), z.number()]).optional(),
+  hoursUsed: z.union([z.string(), z.number()]).optional(),
+  rate: z.union([z.string(), z.number()]).optional(),
+  hourlyRate: z.union([z.string(), z.number()]).optional(),
+  totalCost: z.union([z.string(), z.number()]).optional(),
+});
+
+const materialEntrySchema = z.object({
+  description: z.string().min(1).max(1000).optional(),
+  materialDescription: z.string().min(1).max(1000).optional(),
+  materialName: z.string().min(1).max(1000).optional(),
+  name: z.string().min(1).max(1000).optional(),
+  quantity: z.union([z.string(), z.number()]).optional(),
+  unit: z.string().max(50).optional(),
+  unitCost: z.union([z.string(), z.number()]).optional(),
+  totalCost: z.union([z.string(), z.number()]).optional(),
+});
+
+const createTmTicketSchema = z.object({
+  laborEntries: z.array(laborEntrySchema).optional().default([]),
+  equipmentEntries: z.array(equipmentEntrySchema).optional().default([]),
+  materialEntries: z.array(materialEntrySchema).optional().default([]),
+  description: z.string().max(5000).optional(),
+  scopeDescription: z.string().max(5000).optional(),
+  workTypeId: z.string().uuid().optional().nullable(),
+  organizationSowItemId: z.string().uuid().optional().nullable(),
+  workTypeCode: z.string().max(100).optional().nullable(),
+  workTypeName: z.string().max(500).optional().nullable(),
+  categoryName: z.string().max(500).optional().nullable(),
+  scopeModifierIds: z.array(z.string()).optional().nullable(),
+  scopeModifierNames: z.array(z.string()).optional().nullable(),
+  canonicalName: z.string().max(500).optional().nullable(),
+  scopeUnit: z.string().max(100).optional().nullable(),
+  scopeQuantity: z.union([z.string(), z.number()]).optional().nullable(),
+  costCode: z.string().max(100).optional().nullable(),
+  tfrRepresentativeId: z.string().uuid().optional().nullable(),
+  workDate: z.string().optional().nullable(),
+  notes: z.string().max(5000).optional().nullable(),
+  clientRepresentativeName: z.string().max(500).optional().nullable(),
+  signatureDataUrl: z.string().optional().nullable(),
+});
+
+const updateTmTicketSchema = z.object({
+  laborEntries: z.array(laborEntrySchema).optional().default([]),
+  equipmentEntries: z.array(equipmentEntrySchema).optional().default([]),
+  materialEntries: z.array(materialEntrySchema).optional().default([]),
+  scopeDescription: z.string().max(5000).optional(),
+  description: z.string().max(5000).optional(),
+  workTypeCode: z.string().max(100).optional().nullable(),
+  workTypeName: z.string().max(500).optional().nullable(),
+  categoryName: z.string().max(500).optional().nullable(),
+  scopeModifierIds: z.array(z.string()).optional().nullable(),
+  scopeModifierNames: z.array(z.string()).optional().nullable(),
+  canonicalName: z.string().max(500).optional().nullable(),
+  scopeUnit: z.string().max(100).optional().nullable(),
+  scopeQuantity: z.union([z.string(), z.number()]).optional().nullable(),
+  costCode: z.string().max(100).optional().nullable(),
+  organizationSowItemId: z.string().uuid().optional().nullable(),
+  tfrRepresentativeId: z.string().uuid().optional().nullable(),
+  workDate: z.string().optional().nullable(),
+  notes: z.string().max(5000).optional().nullable(),
+  clientRepresentativeName: z.string().max(500).optional().nullable(),
+  signatureDataUrl: z.string().optional().nullable(),
+});
 
 // ========================================
 // T&M Billing Lock Helper
@@ -1148,6 +1236,9 @@ export function registerTMTicketRoutes(app: Express) {
       if (!hasTMCreateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions to create T&M tickets" });
       }
+
+      const validated = validateBody(createTmTicketSchema, req.body, res);
+      if (!validated) return;
       
       const project = await db.query.projects.findFirst({
         where: eq(projects.id, projectId),
@@ -1179,7 +1270,7 @@ export function registerTMTicketRoutes(app: Express) {
         scopeQuantity,
         costCode,
         ...restTicketData 
-      } = req.body;
+      } = validated;
       
       const sowItemId = organizationSowItemId || workTypeId || null;
 
@@ -1320,8 +1411,11 @@ export function registerTMTicketRoutes(app: Express) {
       if (!hasTMCreateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
+
+      const validated = validateBody(updateTmTicketSchema, req.body, res);
+      if (!validated) return;
       
-      const { laborEntries, equipmentEntries, materialEntries, ...ticketData } = req.body;
+      const { laborEntries, equipmentEntries, materialEntries, ...ticketData } = validated;
       
       const [updatedTicket] = await db.update(tmTickets)
         .set({

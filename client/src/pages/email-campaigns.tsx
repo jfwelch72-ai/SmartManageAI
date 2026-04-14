@@ -17,6 +17,7 @@ import {
   Mail, Calendar, Loader2, BarChart3, Clock, X
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import DOMPurify from "dompurify";
 
 interface Campaign {
   id: string;
@@ -478,7 +479,7 @@ export default function EmailCampaignsPage() {
                 <div className="space-y-2">
                   <p className="text-sm"><span className="font-medium">Subject:</span> {campaignDetailQuery.data.subject}</p>
                   <div className="border rounded-md p-4 text-sm bg-muted/30 max-h-64 overflow-y-auto" data-testid="text-campaign-content">
-                    <div dangerouslySetInnerHTML={{ __html: campaignDetailQuery.data.htmlContent }} />
+                    <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(campaignDetailQuery.data.htmlContent || "") }} />
                   </div>
                 </div>
               </CardContent>
