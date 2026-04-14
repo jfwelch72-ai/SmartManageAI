@@ -12,6 +12,11 @@ import { logAudit } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
 
+function escHtml(str: string | null | undefined): string {
+  if (!str) return "";
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 const router = Router();
 
 const PRIORITY_ORDER: Record<string, number> = {
@@ -515,12 +520,12 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, exportLimiter, 
       .map((i) => `
         <tr>
           <td>${i.itemNumber}</td>
-          <td>${i.title.replace(/</g, "&lt;")}</td>
-          <td>${(i.location ?? "").replace(/</g, "&lt;")}</td>
-          <td>${i.trade}</td>
-          <td class="${i.priority}">${i.priority}</td>
-          <td class="status-${i.status}">${i.status.replace("_", " ")}</td>
-          <td>${(i.assignedToName ?? "").replace(/</g, "&lt;")}</td>
+          <td>${escHtml(i.title)}</td>
+          <td>${escHtml(i.location)}</td>
+          <td>${escHtml(i.trade)}</td>
+          <td class="${escHtml(i.priority)}">${escHtml(i.priority)}</td>
+          <td class="status-${escHtml(i.status)}">${escHtml(i.status).replace("_", " ")}</td>
+          <td>${escHtml(i.assignedToName)}</td>
           <td>${i.dueDate ? new Date(i.dueDate).toLocaleDateString() : ""}</td>
         </tr>`,
       )
@@ -530,7 +535,7 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, exportLimiter, 
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Punch List – ${project.name}</title>
+  <title>Punch List – ${escHtml(project.name)}</title>
   <style>
     body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; }
     h1 { font-size: 16px; margin-bottom: 4px; }
@@ -556,8 +561,8 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, exportLimiter, 
   </style>
 </head>
 <body>
-  <h1>Punch List – ${project.name}</h1>
-  <h2>Project: ${project.code} &nbsp;|&nbsp; Generated: ${new Date().toLocaleDateString()} &nbsp;|&nbsp; Total: ${items.length} items</h2>
+  <h1>Punch List – ${escHtml(project.name)}</h1>
+  <h2>Project: ${escHtml(project.code)} &nbsp;|&nbsp; Generated: ${new Date().toLocaleDateString()} &nbsp;|&nbsp; Total: ${items.length} items</h2>
   <div class="summary">
     ${["OPEN","IN_PROGRESS","RESOLVED","VERIFIED","REJECTED"].map(s => {
       const count = items.filter(i => i.status === s).length;

@@ -452,7 +452,7 @@ import {
   requireAuth, hashPassword, verifyPassword, generateToken,
   setAuthCookie, clearAuthCookie, type AuthRequest
 } from "./auth";
-import { authLimiter } from "./rateLimiter";
+import { authLimiter, sensitiveLimiter } from "./rateLimiter";
 import { eq, desc, sql, and, or, inArray, isNull, gt } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
@@ -1032,7 +1032,7 @@ const upload = multer({
     }
   });
 
-  router.post("/api/auth/upload-avatar", requireAuth, upload.single("avatar"), async (req: AuthRequest, res, next) => {
+  router.post("/api/auth/upload-avatar", requireAuth, sensitiveLimiter, upload.single("avatar"), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1084,7 +1084,7 @@ const upload = multer({
     }
   });
 
-  router.post("/api/auth/upload-photos", requireAuth, upload.array("photos", 10), async (req: AuthRequest, res, next) => {
+  router.post("/api/auth/upload-photos", requireAuth, sensitiveLimiter, upload.array("photos", 10), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1513,7 +1513,7 @@ const upload = multer({
     }
   });
 
-  router.post("/api/auth/my-certifications", requireAuth, upload.single("file"), async (req: AuthRequest, res, next) => {
+  router.post("/api/auth/my-certifications", requireAuth, sensitiveLimiter, upload.single("file"), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       const orgId = req.user?.organizationId;
@@ -1534,6 +1534,10 @@ const upload = multer({
       const file = req.file;
 
       if (file) {
+        const certAllowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+        if (!certAllowedTypes.includes(file.mimetype)) {
+          res.status(400).json({ error: "Invalid file type. Only images (JPEG, PNG, GIF, WebP) and PDFs are allowed." }); return;
+        }
         const { objectStorageClient } = await import("./objectStorage");
         const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
         const objectId = `certifications/${userId}/${Date.now()}-${file.originalname}`;
@@ -1635,7 +1639,7 @@ const upload = multer({
     }
   });
 
-  router.post("/api/auth/my-certifications/:certId/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res, next) => {
+  router.post("/api/auth/my-certifications/:certId/upload", requireAuth, sensitiveLimiter, upload.single("file"), async (req: AuthRequest, res, next) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
@@ -1647,6 +1651,11 @@ const upload = multer({
 
       const file = req.file;
       if (!file) { res.status(400).json({ error: "No file provided" }); return; }
+
+      const certUploadAllowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+      if (!certUploadAllowedTypes.includes(file.mimetype)) {
+        res.status(400).json({ error: "Invalid file type. Only images (JPEG, PNG, GIF, WebP) and PDFs are allowed." }); return;
+      }
 
       if (existing.fileObjectKey) {
         try {

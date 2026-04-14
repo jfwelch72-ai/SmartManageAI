@@ -1195,7 +1195,7 @@ const STORAGE_LIMIT_BYTES = 3 * 1024 * 1024 * 1024;
 // ============================================
 
 // POST /api/website/upload-image - Upload an image to object storage
-router.post("/upload-image", requireAuth, upload.single("image"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post("/upload-image", requireAuth, sensitiveLimiter, upload.single("image"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1205,6 +1205,11 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
     const file = req.file;
     if (!file) {
       return res.status(400).json({ error: "No image file provided" });
+    }
+
+    const imageAllowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
+    if (!imageAllowedTypes.includes(file.mimetype)) {
+      return res.status(400).json({ error: "Invalid file type. Only JPEG, PNG, GIF, WebP, and SVG images are allowed." });
     }
 
     const orgId = user.organizationId;

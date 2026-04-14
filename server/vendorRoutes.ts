@@ -9,6 +9,7 @@ import { logAudit } from "./auditLogger";
 import { logInfo, logError } from "./utils/logger";
 import { z } from "zod";
 import multer from "multer";
+import { sensitiveLimiter } from "./rateLimiter";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
@@ -1601,7 +1602,7 @@ router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, re
   }
 });
 
-router.post("/pricebook-imports", requireAuth, upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -2849,7 +2850,7 @@ router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth,
   }
 });
 
-router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res, next) => {
+router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, sensitiveLimiter, upload.single("file"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {

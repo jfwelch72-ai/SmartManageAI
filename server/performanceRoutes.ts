@@ -18,6 +18,23 @@ const createCriteriaSchema = z.object({
   sortOrder: z.coerce.number().optional(),
 });
 
+const updateCriteriaSchema = z.object({
+  name: z.string().min(1).max(500).optional(),
+  description: z.string().max(2000).optional(),
+  weight: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
+  maxScore: z.coerce.number().min(1).max(100).optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.coerce.number().optional(),
+});
+
+const updateRewardTypeSchema = z.object({
+  name: z.string().min(1).max(500).optional(),
+  description: z.string().max(2000).optional().nullable(),
+  category: z.string().max(100).optional(),
+  value: z.union([z.string(), z.number()]).optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
 const createRatingSchema = z.object({
   employeeId: z.string().min(1, "Employee ID is required"),
   projectId: z.string().optional(),
@@ -206,7 +223,8 @@ export function registerPerformanceRoutes(app: Express) {
       if (!orgId) return;
 
       const { id } = req.params;
-      const { name, description, weight, maxScore, isActive, sortOrder } = req.body;
+      const parsed = updateCriteriaSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }); return; }
 
       const [existing] = await db.select().from(ratingCriteria)
         .where(and(eq(ratingCriteria.id, id), eq(ratingCriteria.organizationId, orgId)))
@@ -214,6 +232,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       if (!existing) { res.status(404).json({ error: "Criteria not found" }); return; }
 
+      const { name, description, weight, maxScore, isActive, sortOrder } = parsed.data;
       const updateData: Record<string, unknown> = {};
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
@@ -626,7 +645,8 @@ export function registerPerformanceRoutes(app: Express) {
       if (!orgId) return;
 
       const { id } = req.params;
-      const { name, description, category, value, isActive } = req.body;
+      const parsed = updateRewardTypeSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors }); return; }
 
       const [existing] = await db.select().from(rewardTypes)
         .where(and(eq(rewardTypes.id, id), eq(rewardTypes.organizationId, orgId)))
@@ -634,6 +654,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       if (!existing) { res.status(404).json({ error: "Reward type not found" }); return; }
 
+      const { name, description, category, value, isActive } = parsed.data;
       const updateData: Record<string, unknown> = {};
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;

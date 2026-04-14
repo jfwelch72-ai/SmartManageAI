@@ -353,10 +353,34 @@ function registerTMApprovalRoutes(app: Express) {
     }
   });
 
+  const signedDocumentSchema = z.object({
+    url: z.string().min(1).max(2000),
+    fileName: z.string().min(1).max(500),
+    objectKey: z.string().min(1).max(1000),
+  });
+
+  const createInvoiceSchema = z.object({
+    ticketIds: z.array(z.string().uuid()).min(1, "At least one ticket is required"),
+    projectId: z.string().uuid().optional(),
+    clientName: z.string().max(500).optional(),
+    clientAddress: z.string().max(1000).optional().nullable(),
+    clientEmail: z.string().email().max(320).optional().nullable(),
+    dueDate: z.string().optional().nullable(),
+    notes: z.string().max(5000).optional().nullable(),
+    taxRate: z.union([z.string(), z.number()]).optional(),
+  });
+
+  const clientSignoffSchema = z.object({
+    clientName: z.string().min(1).max(200),
+    signature: z.string().min(1).max(500000),
+  });
+
   app.post("/api/tm-tickets/:ticketId/signed-document", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
-      const { url, fileName, objectKey } = req.body;
+      const validated = validateBody(signedDocumentSchema, req.body, res);
+      if (!validated) return;
+      const { url, fileName, objectKey } = validated;
       const userId = req.user!.id;
       
       if (!hasTMApprovalAccess(req.user!.role)) {
@@ -646,16 +670,15 @@ function registerTMInvoiceRoutes(app: Express) {
 
   app.post("/api/tm-invoices", requireAuth, requireFeaturePermission('canEditFinancials'), async (req: AuthRequest, res, next) => {
     try {
-      const { ticketIds, projectId, clientName, clientAddress, clientEmail, dueDate, notes, taxRate } = req.body;
       const effectiveRole = req.user?.effectiveRole || req.user?.role;
       
       if (!hasBillingApprovalAccess(effectiveRole || "")) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
-        return res.status(400).json({ error: "At least one ticket is required" });
-      }
+      const validated = validateBody(createInvoiceSchema, req.body, res);
+      if (!validated) return;
+      const { ticketIds, projectId, clientName, clientAddress, clientEmail, dueDate, notes, taxRate } = validated;
 
       const tickets = await db.query.tmTickets.findMany({
         where: inArray(tmTickets.id, ticketIds),
@@ -796,11 +819,9 @@ function registerTMInvoiceRoutes(app: Express) {
   app.post("/api/tm-tickets/:ticketId/client-signoff", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { ticketId } = req.params;
-      const { clientName, signature } = req.body;
-
-      if (!clientName || !signature) {
-        return res.status(400).json({ error: "Client name and signature are required" });
-      }
+      const validated = validateBody(clientSignoffSchema, req.body, res);
+      if (!validated) return;
+      const { clientName, signature } = validated;
 
       const ticket = await db.query.tmTickets.findFirst({ where: eq(tmTickets.id, ticketId) });
       if (!ticket) {
@@ -817,14 +838,6 @@ function registerTMInvoiceRoutes(app: Express) {
 
       if (isTicketLocked(ticket.billingStatus)) {
         return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be modified" });
-      }
-
-      if (typeof clientName !== "string" || clientName.length > 200) {
-        return res.status(400).json({ error: "Client name must be a string under 200 characters" });
-      }
-
-      if (typeof signature !== "string" || signature.length > 500000) {
-        return res.status(400).json({ error: "Signature data is too large" });
       }
 
       const [updated] = await db.update(tmTickets)
@@ -1553,6 +1566,11 @@ export function registerTMTicketRoutes(app: Express) {
         db.query.users.findFirst({ where: eq(users.id, ticket.createdById) }),
       ]);
       
+      const escHtml = (str: string | null | undefined): string => {
+        if (!str) return "";
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      };
+
       const formatCurrency = (val: string | number | null) => {
         const num = typeof val === 'string' ? parseFloat(val) : (val || 0);
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
@@ -1613,17 +1631,17 @@ export function registerTMTicketRoutes(app: Express) {
   <div class="info-grid">
     <div class="info-row">
       <span class="info-label">Ticket Number:</span>
-      <span class="info-value">${ticket.ticketNumber}</span>
+      <span class="info-value">${escHtml(ticket.ticketNumber)}</span>
     </div>
     <div class="info-row">
       <span class="info-label">Status:</span>
       <span class="info-value">
-        <span class="status-badge status-${ticket.status.toLowerCase()}">${ticket.status}</span>
+        <span class="status-badge status-${escHtml(ticket.status.toLowerCase())}">${escHtml(ticket.status)}</span>
       </span>
     </div>
     <div class="info-row">
       <span class="info-label">Project:</span>
-      <span class="info-value">${project?.name || 'N/A'} (${project?.code || 'N/A'})</span>
+      <span class="info-value">${escHtml(project?.name || 'N/A')} (${escHtml(project?.code || 'N/A')})</span>
     </div>
     <div class="info-row">
       <span class="info-label">Work Date:</span>
@@ -1631,27 +1649,27 @@ export function registerTMTicketRoutes(app: Express) {
     </div>
     <div class="info-row">
       <span class="info-label">Client:</span>
-      <span class="info-value">${project?.clientName || 'N/A'}</span>
+      <span class="info-value">${escHtml(project?.clientName || 'N/A')}</span>
     </div>
     <div class="info-row">
       <span class="info-label">Company Rep:</span>
-      <span class="info-value">${rep ? `${rep.firstName} ${rep.lastName}` : 'N/A'}</span>
+      <span class="info-value">${rep ? escHtml(`${rep.firstName} ${rep.lastName}`) : 'N/A'}</span>
     </div>
     ${ticket.workOrderReference ? `
     <div class="info-row">
       <span class="info-label">Work Order Ref:</span>
-      <span class="info-value">${ticket.workOrderReference}</span>
+      <span class="info-value">${escHtml(ticket.workOrderReference)}</span>
     </div>
     ` : ''}
   </div>
   
   <div class="section">
     <div class="section-title">SCOPE OF WORK</div>
-    <div class="notes">${ticket.scopeDescription}</div>
+    <div class="notes">${escHtml(ticket.scopeDescription)}</div>
     ${ticket.notes ? `
     <div style="margin-top: 10px;">
       <strong>Notes:</strong>
-      <div class="notes">${ticket.notes}</div>
+      <div class="notes">${escHtml(ticket.notes)}</div>
     </div>
     ` : ''}
   </div>
@@ -1673,8 +1691,8 @@ export function registerTMTicketRoutes(app: Express) {
       <tbody>
         ${laborEntries.map(entry => `
         <tr>
-          <td>${entry.employeeName}</td>
-          <td>${entry.position}</td>
+          <td>${escHtml(entry.employeeName)}</td>
+          <td>${escHtml(entry.position)}</td>
           <td class="text-right">${entry.crewMemberCount}</td>
           <td class="text-right">${entry.hoursWorked}</td>
           <td class="text-right">${formatCurrency(entry.hourlyRate)}</td>
@@ -1702,7 +1720,7 @@ export function registerTMTicketRoutes(app: Express) {
       <tbody>
         ${equipmentEntries.map(entry => `
         <tr>
-          <td>${entry.equipmentType}</td>
+          <td>${escHtml(entry.equipmentType)}</td>
           <td class="text-right">${entry.quantity}</td>
           <td class="text-right">${entry.hoursUsed}</td>
           <td class="text-right">${formatCurrency(entry.hourlyRate)}</td>
@@ -1730,9 +1748,9 @@ export function registerTMTicketRoutes(app: Express) {
       <tbody>
         ${materialEntries.map(entry => `
         <tr>
-          <td>${entry.materialDescription}</td>
+          <td>${escHtml(entry.materialDescription)}</td>
           <td class="text-right">${entry.quantity}</td>
-          <td>${entry.unit || '-'}</td>
+          <td>${escHtml(entry.unit) || '-'}</td>
           <td class="text-right">${formatCurrency(entry.unitCost)}</td>
           <td class="text-right">${formatCurrency(entry.totalCost)}</td>
         </tr>
@@ -1765,7 +1783,7 @@ export function registerTMTicketRoutes(app: Express) {
     <div>
       <p><strong>Contractor Representative</strong></p>
       <div class="signature-line">
-        <p>Name: ${rep ? `${rep.firstName} ${rep.lastName}` : '_________________'}</p>
+        <p>Name: ${rep ? escHtml(`${rep.firstName} ${rep.lastName}`) : '_________________'}</p>
         <p>Date: _________________</p>
       </div>
     </div>

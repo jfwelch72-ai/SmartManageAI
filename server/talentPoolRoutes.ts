@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { sensitiveLimiter } from "./rateLimiter";
 import { eq, and, desc, sql, ilike, or, inArray } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
@@ -727,7 +728,7 @@ router.delete("/my-certifications/:id", requireAuth, async (req: AuthRequest, re
   }
 });
 
-router.post("/api/talent-pool/upload-portfolio-photos", requireAuth, talentUpload.array("photos", 10), async (req: AuthRequest, res, next) => {
+router.post("/api/talent-pool/upload-portfolio-photos", requireAuth, sensitiveLimiter, talentUpload.array("photos", 10), async (req: AuthRequest, res, next) => {
   try {
     const uid = userId(req);
     const files = req.files as Express.Multer.File[];

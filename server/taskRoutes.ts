@@ -10,6 +10,7 @@ import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
+import { sensitiveLimiter } from "./rateLimiter";
 import { ObjectStorageService } from "./objectStorage";
 
 const taskUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -706,7 +707,7 @@ router.post("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthReque
   }
 });
 
-router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.single("file"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post("/api/tasks/:taskId/attachments/upload", requireAuth, sensitiveLimiter, taskUpload.single("file"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { taskId } = req.params;
     const auth = await authorizeTaskAccess(req, taskId);
@@ -714,6 +715,17 @@ router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.sin
 
     const file = req.file;
     if (!file) return res.status(400).json({ error: "No file provided" });
+
+    const allowedTypes = [
+      "image/jpeg", "image/png", "image/gif", "image/webp",
+      "application/pdf",
+      "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain", "text/csv",
+    ];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return res.status(400).json({ error: `File type '${file.mimetype}' is not allowed. Accepted: images, PDFs, Office documents, and text files.` });
+    }
 
     const userId = req.user!.id;
     const organizationId = req.user!.organizationId;

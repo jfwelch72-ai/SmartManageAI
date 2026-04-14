@@ -298,9 +298,34 @@ import {
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
+import { validateBody } from "./utils/validation";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+
+const rfiPatchSchema = z.object({
+  subject: z.string().min(1).max(500).optional(),
+  question: z.string().max(5000).optional(),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
+  category: z.string().max(200).optional(),
+  assignedToId: z.string().uuid().optional().nullable(),
+  dateRequired: z.string().optional().nullable(),
+  drawingReference: z.string().max(500).optional().nullable(),
+  specReference: z.string().max(500).optional().nullable(),
+  impactDescription: z.string().max(5000).optional().nullable(),
+  costImpact: z.string().max(200).optional().nullable(),
+  scheduleImpact: z.string().max(200).optional().nullable(),
+  linkedSubmittalId: z.string().uuid().optional().nullable(),
+});
+
+const rfiForwardSchema = z.object({
+  forwardedToId: z.string().uuid("forwardedToId must be a valid UUID"),
+});
+
+const rfiAnswerSchema = z.object({
+  answer: z.string().min(1, "Answer is required").max(10000),
+  answerAttachmentsJson: z.any().optional().nullable(),
+});
 
 const router = Router();
 
@@ -588,19 +613,16 @@ router.patch("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
     if (denied) return res.status(403).json({ error: "Access denied" });
     if (!rfi) return res.status(404).json({ error: "RFI not found" });
 
-    const allowedFields = [
-      "subject", "question", "priority", "category", "assignedToId", "dateRequired",
-      "drawingReference", "specReference", "impactDescription", "costImpact", "scheduleImpact",
-      "linkedSubmittalId",
-    ];
+    const validated = validateBody(rfiPatchSchema, req.body, res);
+    if (!validated) return;
 
     const updates: Record<string, any> = { updatedAt: new Date() };
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        if (field === "dateRequired" && req.body[field]) {
-          updates[field] = new Date(req.body[field]);
+    for (const [field, value] of Object.entries(validated)) {
+      if (value !== undefined) {
+        if (field === "dateRequired" && value) {
+          updates[field] = new Date(value as string);
         } else {
-          updates[field] = req.body[field];
+          updates[field] = value;
         }
       }
     }
@@ -691,10 +713,9 @@ router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
       return res.status(400).json({ error: `Cannot forward from ${rfi.status} status` });
     }
 
-    const { forwardedToId } = req.body;
-    if (!forwardedToId || typeof forwardedToId !== "string") {
-      return res.status(400).json({ error: "forwardedToId is required" });
-    }
+    const validated = validateBody(rfiForwardSchema, req.body, res);
+    if (!validated) return;
+    const { forwardedToId } = validated;
 
     const [forwardedToUser] = await db
       .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
@@ -739,10 +760,9 @@ router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
       return res.status(400).json({ error: `Cannot answer from ${rfi.status} status` });
     }
 
-    const { answer, answerAttachmentsJson } = req.body;
-    if (!answer || typeof answer !== "string" || answer.trim().length === 0) {
-      return res.status(400).json({ error: "Answer is required" });
-    }
+    const validated = validateBody(rfiAnswerSchema, req.body, res);
+    if (!validated) return;
+    const { answer, answerAttachmentsJson } = validated;
 
     const user = req.user!;
     const [updated] = await db
