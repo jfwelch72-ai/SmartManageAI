@@ -735,7 +735,7 @@ function SafetyChecklistsTab({ isAdmin }: { isAdmin: boolean }) {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {templates.map(t => {
               let items: string[] = [];
-              try { items = JSON.parse(t.itemsJson); } catch {}
+              try { items = JSON.parse(t.itemsJson); } catch (err) { console.warn("[SafetyTraining] Failed to parse template items:", err); }
               return (
                 <Card key={t.id} className="group hover:shadow-md transition-shadow" data-testid={`card-template-${t.id}`}>
                   <CardHeader className="pb-2">
@@ -1144,7 +1144,7 @@ function TemplateFormDialog({ open, onClose, onSave, isSaving, title, defaultVal
   open: boolean; onClose: () => void; onSave: (data: Record<string, unknown>) => void; isSaving: boolean; title: string; defaultValues?: Partial<ChecklistTemplate>;
 }) {
   let defaultItems: string[] = [];
-  try { if (defaultValues?.itemsJson) defaultItems = JSON.parse(defaultValues.itemsJson); } catch {}
+  try { if (defaultValues?.itemsJson) defaultItems = JSON.parse(defaultValues.itemsJson); } catch (err) { console.warn("[SafetyTraining] Failed to parse default items:", err); }
   const [form, setForm] = useState({
     name: defaultValues?.name ?? "", category: defaultValues?.category ?? "",
     itemsText: defaultItems.join("\n"),
@@ -1183,7 +1183,7 @@ function StartChecklistDialog({ open, onClose, templates, onSave, isSaving }: {
 
   const selectedTemplate = templates.find(t => t.id === templateId);
   let items: string[] = [];
-  try { if (selectedTemplate) items = JSON.parse(selectedTemplate.itemsJson); } catch {}
+  try { if (selectedTemplate) items = JSON.parse(selectedTemplate.itemsJson); } catch (err) { console.warn("[SafetyTraining] Failed to parse template items:", err); }
 
   const setResponse = (idx: number, val: string) => setResponses(prev => ({ ...prev, [idx]: val }));
   const allAnswered = items.length > 0 && items.every((_, i) => responses[i]);
@@ -1254,7 +1254,7 @@ function StartChecklistDialog({ open, onClose, templates, onSave, isSaving }: {
 
 function ViewInstanceDialog({ instance, onClose }: { instance: ChecklistInstance; onClose: () => void }) {
   let responses: { item: string; result: string; notes?: string; photoUrl?: string }[] = [];
-  try { responses = JSON.parse(instance.responsesJson); } catch {}
+  try { responses = JSON.parse(instance.responsesJson); } catch (err) { console.warn("[SafetyTraining] Failed to parse instance responses:", err); }
 
   const passCount = responses.filter(r => r.result === "PASS").length;
   const failCount = responses.filter(r => r.result === "FAIL").length;

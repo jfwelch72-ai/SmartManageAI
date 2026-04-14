@@ -101,7 +101,7 @@ export default function LoginPage() {
                 return;
               }
             }
-          } catch {}
+          } catch (err) { console.warn("[Login] Failed to fetch company settings:", err); }
         }
         setLocation(defaultPath);
       }

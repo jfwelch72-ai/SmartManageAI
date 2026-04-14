@@ -97,7 +97,9 @@ export function useGlobalCallEvents(): GlobalCallState {
         if (roomRef.current) {
           try {
             roomRef.current.disconnect();
-          } catch {}
+          } catch (err) {
+            console.warn("[CallEvents] Failed to disconnect room on call_ended:", err);
+          }
         }
         updateActiveCall(prev => {
           if (prev?.id === data.callId) return null;

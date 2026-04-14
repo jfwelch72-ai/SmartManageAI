@@ -110,7 +110,8 @@ export async function parseIfcFile(
     let allTypes: any[] = [];
     try {
       allTypes = ifcApi.GetAllTypesOfModel(modelID) || [];
-    } catch {
+    } catch (err) {
+      console.warn("[IFC] Failed to get all types from model:", err);
       allTypes = [];
     }
 
@@ -134,7 +135,8 @@ export async function parseIfcFile(
       let elementIds: any;
       try {
         elementIds = ifcApi.GetLineIDsWithType(modelID, typeId);
-      } catch {
+      } catch (err) {
+        console.warn(`[IFC] Failed to get line IDs for type ${typeId}:`, err);
         continue;
       }
 
@@ -145,7 +147,8 @@ export async function parseIfcFile(
         let props: any = {};
         try {
           props = ifcApi.GetLine(modelID, expressId, true);
-        } catch {
+        } catch (err) {
+          console.warn(`[IFC] Failed to get line for element ${expressId}:`, err);
           continue;
         }
 
@@ -167,14 +170,18 @@ export async function parseIfcFile(
                     try {
                       const matLine = ifcApi.GetLine(modelID, mat.value, false);
                       material = matLine?.Name?.value || matLine?.Name || "Unknown";
-                    } catch {}
+                    } catch (err) {
+                      console.warn(`[IFC] Failed to read material for element ${expressId}:`, err);
+                    }
                   }
                   break;
                 }
               }
             }
           }
-        } catch {}
+        } catch (err) {
+          console.warn(`[IFC] Failed to extract material for element ${expressId}:`, err);
+        }
 
         let length: number | null = null;
         let area: number | null = null;
@@ -211,13 +218,17 @@ export async function parseIfcFile(
                           }
                         }
                       }
-                    } catch {}
+                    } catch (err) {
+                      console.warn(`[IFC] Failed to parse quantity definition for element ${expressId}:`, err);
+                    }
                   }
                 }
               }
             }
           }
-        } catch {}
+        } catch (err) {
+          console.warn(`[IFC] Failed to extract quantities for element ${expressId}:`, err);
+        }
 
         const displayType = IFC_TYPE_DISPLAY_NAMES[typeName] || typeName;
         const groupKey = displayType;
@@ -276,7 +287,9 @@ export async function parseIfcFile(
   } finally {
     try {
       ifcApi.CloseModel(modelID);
-    } catch {}
+    } catch (err) {
+      console.warn("[IFC] Failed to close model:", err);
+    }
   }
 }
 

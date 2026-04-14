@@ -271,7 +271,7 @@ export default function TimeClockPage() {
                 accuracy: c.accuracy,
               }),
             });
-          } catch {}
+          } catch (err) { console.warn("[TimeClock] Failed to send location update:", err); }
         }
       }, 15 * 60 * 1000);
     }

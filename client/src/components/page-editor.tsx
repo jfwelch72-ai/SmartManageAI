@@ -132,7 +132,7 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
         const res = await apiRequest("POST", `/api/website/pages/${pageId}/presence`, { activity });
         const data = await res.json();
         setPresenceUsers(data.users || []);
-      } catch {}
+      } catch (err) { console.warn("[PageEditor] Failed to send presence:", err); }
     };
     sendPresence();
     interval = setInterval(sendPresence, 10000);
@@ -202,7 +202,7 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
       try {
         const data = await res.json();
         sessionUpdatedAt.current = data.updatedAt || new Date().toISOString();
-      } catch {}
+      } catch (err) { console.warn("[PageEditor] Failed to parse save response:", err); }
       queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId] });
       queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
       setHasUnsavedChanges(false);

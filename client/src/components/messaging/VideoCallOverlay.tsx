@@ -273,14 +273,14 @@ function CallContent({
   const handleEndCall = async () => {
     try {
       await room?.disconnect();
-    } catch {}
+    } catch (err) { console.warn("[VideoCall] Failed to disconnect room on end:", err); }
     onEndCall();
   };
 
   const handleLeaveCall = async () => {
     try {
       await room?.disconnect();
-    } catch {}
+    } catch (err) { console.warn("[VideoCall] Failed to disconnect room on leave:", err); }
     onLeaveCall();
   };
 

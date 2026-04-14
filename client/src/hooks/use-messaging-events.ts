@@ -134,7 +134,9 @@ export function useMessagingEvents(
         }
 
         queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle message_new event:", err);
+      }
     };
 
     const handleMessageEdited = (e: MessageEvent) => {
@@ -151,7 +153,9 @@ export function useMessagingEvents(
         );
 
         updaterRef.current?.(message.id, (m) => applyEdit(m));
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle message_edited event:", err);
+      }
     };
 
     const handleMessageDeleted = (e: MessageEvent) => {
@@ -168,7 +172,9 @@ export function useMessagingEvents(
         );
 
         updaterRef.current?.(messageId, (m) => applyDelete(m));
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle message_deleted event:", err);
+      }
     };
 
     const handleMessageReaction = (e: MessageEvent) => {
@@ -184,7 +190,9 @@ export function useMessagingEvents(
         );
 
         updaterRef.current?.(messageId, (m) => applyReaction(m));
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle message_reaction event:", err);
+      }
     };
 
     const handleTyping = (e: MessageEvent) => {
@@ -206,35 +214,45 @@ export function useMessagingEvents(
           });
           delete typingTimersRef.current[uid];
         }, 3000);
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle typing event:", err);
+      }
     };
 
     const handleCallStarted = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as CallStartedEvent;
         callHandlerRef.current?.onCallStarted?.(data);
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle call_started event:", err);
+      }
     };
 
     const handleCallJoined = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as CallJoinedEvent;
         callHandlerRef.current?.onCallJoined?.(data);
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle call_joined event:", err);
+      }
     };
 
     const handleCallLeft = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as CallLeftEvent;
         callHandlerRef.current?.onCallLeft?.(data);
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle call_left event:", err);
+      }
     };
 
     const handleCallEnded = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as CallEndedEvent;
         callHandlerRef.current?.onCallEnded?.(data);
-      } catch {}
+      } catch (err) {
+        console.warn("[MessagingEvents] Failed to handle call_ended event:", err);
+      }
     };
 
     addListener("message_new", handleMessageNew);

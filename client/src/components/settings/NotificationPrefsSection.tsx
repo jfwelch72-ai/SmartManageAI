@@ -187,7 +187,7 @@ export default function NotificationPrefsSection() {
           await sub.unsubscribe();
         }
       }
-    } catch {}
+    } catch (err) { console.warn("[NotificationPrefs] Failed to toggle push subscription:", err); }
   }
 
   async function handlePushToggle(enabled: boolean) {

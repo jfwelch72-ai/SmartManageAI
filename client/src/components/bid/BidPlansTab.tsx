@@ -3,6 +3,7 @@ import PdfPreview from "@/components/PdfPreview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
+import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import BidLibrarySection from "./BidLibrarySection";
 import {
@@ -1324,7 +1325,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                   </Button>
                 </div>
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />
+                  <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
+                    <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />
+                  </WidgetErrorBoundary>
                 </div>
               </div>
               <div className="w-1/2 flex flex-col min-w-0" data-testid="split-view-bim">
@@ -1369,15 +1372,17 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                       </div>
                     }>
-                      <BimViewer
-                        fileUrl={splitBimUrl.url}
-                        fileName={splitBimDoc.title || splitBimDoc.fileName}
-                        fileSize={splitBimDoc.fileSize}
-                        uploadDate={splitBimDoc.uploadedAt}
-                        onAddToTakeoff={handleBimAddToTakeoff}
-                        onElementSelect={handleBimElementSelect}
-                        highlightStoreyId={highlightStoreyId}
-                      />
+                      <WidgetErrorBoundary fallbackTitle="BIM Viewer">
+                        <BimViewer
+                          fileUrl={splitBimUrl.url}
+                          fileName={splitBimDoc.title || splitBimDoc.fileName}
+                          fileSize={splitBimDoc.fileSize}
+                          uploadDate={splitBimDoc.uploadedAt}
+                          onAddToTakeoff={handleBimAddToTakeoff}
+                          onElementSelect={handleBimElementSelect}
+                          highlightStoreyId={highlightStoreyId}
+                        />
+                      </WidgetErrorBoundary>
                     </Suspense>
                   ) : splitBimDoc ? (
                     <div className="flex items-center justify-center h-full">
@@ -1395,7 +1400,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           ) : previewDocId ? (
             (() => {
               const doc = documents.find((d) => d.id === previewDocId);
-              if (!doc) return <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />;
+              if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} /></WidgetErrorBoundary>;
               const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
               const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
               const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
@@ -1436,15 +1441,17 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                         </div>
                       }>
-                        <BimViewer
-                          fileUrl={previewUrlData.url}
-                          fileName={doc.title || doc.fileName}
-                          fileSize={doc.fileSize}
-                          uploadDate={doc.uploadedAt}
-                          onAddToTakeoff={handleBimAddToTakeoff}
-                          onElementSelect={handleBimElementSelect}
-                          highlightStoreyId={highlightStoreyId}
-                        />
+                        <WidgetErrorBoundary fallbackTitle="BIM Viewer">
+                          <BimViewer
+                            fileUrl={previewUrlData.url}
+                            fileName={doc.title || doc.fileName}
+                            fileSize={doc.fileSize}
+                            uploadDate={doc.uploadedAt}
+                            onAddToTakeoff={handleBimAddToTakeoff}
+                            onElementSelect={handleBimElementSelect}
+                            highlightStoreyId={highlightStoreyId}
+                          />
+                        </WidgetErrorBoundary>
                       </Suspense>
                     </div>
                   </div>
@@ -1554,7 +1561,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 </div>
               )}
               <div className="flex-1 min-h-0">
-                <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />
+                <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
+                  <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />
+                </WidgetErrorBoundary>
               </div>
             </div>
           )}

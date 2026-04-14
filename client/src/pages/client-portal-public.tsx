@@ -200,7 +200,7 @@ export default function ClientPortalPublic({ projectIdOverride }: { projectIdOve
         const portalDataResult: PortalData = await dataRes.json();
         setPortalData(portalDataResult);
       }
-    } catch {}
+    } catch (err) { console.warn("[ClientPortal] Failed to load portal data:", err); }
     setLoadingData(false);
   };
 

@@ -66,7 +66,8 @@ export default function BimQuantityDialog({
     if (!imported) return null;
     try {
       return JSON.parse(imported.extractedData) as BimExtractionResult;
-    } catch {
+    } catch (err) {
+      console.warn("[BimQuantity] Failed to parse prior extraction data:", err);
       return null;
     }
   }, [previousExtractions]);
@@ -82,7 +83,9 @@ export default function BimQuantityDialog({
               map.set(m.displayName, m.categoryId);
             }
           }
-        } catch {}
+        } catch (err) {
+          console.warn("[BimQuantity] Failed to parse previous extraction mappings:", err);
+        }
       }
     }
     return map;

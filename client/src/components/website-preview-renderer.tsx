@@ -1406,7 +1406,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
               });
               
               let result: any = {};
-              try { result = await response.json(); } catch {}
+              try { result = await response.json(); } catch (err) { console.warn("[WebsitePreview] Failed to parse form response:", err); }
               
               if (response.ok && result.success !== false) {
                 formEl.reset();
@@ -2321,7 +2321,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
         if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
           return renderBodyComponents(parsedConfig);
         }
-      } catch {}
+      } catch (err) { console.warn("[WebsitePreview] Failed to parse page contentJson:", err); }
     }
     if (data.bodyConfig && data.bodyConfig.components && data.bodyConfig.components.filter(c => c.enabled).length > 0) {
       return renderBodyComponents(data.bodyConfig);
@@ -2576,7 +2576,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
         if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
           return renderBodyComponents(parsedConfig);
         }
-      } catch {}
+      } catch (err) { console.warn("[WebsitePreview] Failed to parse page contentJson:", err); }
     }
     
     return (
@@ -2633,7 +2633,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
         if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
           return renderBodyComponents(parsedConfig);
         }
-      } catch {}
+      } catch (err) { console.warn("[WebsitePreview] Failed to parse page contentJson:", err); }
     }
     const aboutContent = customAbout?.content || customAbout?.metaDescription;
     
@@ -2700,7 +2700,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
         if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
           return renderBodyComponents(parsedConfig);
         }
-      } catch {}
+      } catch (err) { console.warn("[WebsitePreview] Failed to parse page contentJson:", err); }
     }
     return (
     <section className={`${isMobile ? 'py-12' : 'py-20'}`} style={{ backgroundColor: bgColor }}>
@@ -3024,7 +3024,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
         if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
           return renderBodyComponents(parsedConfig);
         }
-      } catch {}
+      } catch (err) { console.warn("[WebsitePreview] Failed to parse page contentJson:", err); }
     }
     return (
     <section className={`${isMobile ? 'py-12' : 'py-20'}`} style={{ backgroundColor: bgColor }}>

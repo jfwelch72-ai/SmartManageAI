@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useDashboardCustomization, type DashboardSection as DashboardSectionType } from "@/hooks/use-dashboard-customization";
 import { getWidgetDefinition, getWidgetComponent, type WidgetCategory } from "@/components/dashboard-widgets/WidgetRegistry";
+import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList, Settings2, Copy, Plus, RefreshCw, PackageOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -450,7 +451,9 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                         </Tooltip>
                       </div>
                     )}
-                    <WidgetComponent config={widget.config} />
+                    <WidgetErrorBoundary fallbackTitle={widgetDef?.label || "Widget"}>
+                      <WidgetComponent config={widget.config} />
+                    </WidgetErrorBoundary>
                   </div>
                 );
               })}

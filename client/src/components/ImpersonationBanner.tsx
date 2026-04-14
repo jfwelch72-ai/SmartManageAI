@@ -10,7 +10,7 @@ function getCookie(name: string): string | null {
 async function endImpersonation() {
   try {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-  } catch {}
+  } catch (err) { console.warn("[Impersonation] Failed to logout:", err); }
   document.cookie = "impersonation_info=; path=/; max-age=0";
   window.location.href = "/login";
 }
@@ -23,7 +23,7 @@ export default function ImpersonationBanner() {
     if (raw) {
       try {
         setInfo(JSON.parse(raw));
-      } catch {}
+      } catch (err) { console.warn("[Impersonation] Failed to parse impersonation cookie:", err); }
     }
   }, []);
 

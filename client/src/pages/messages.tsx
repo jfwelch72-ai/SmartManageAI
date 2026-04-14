@@ -331,7 +331,9 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
           const conv = convs.find(c => c.id === callToRestore!.conversationId);
           if (conv) startGlobalCall(callToRestore, conv);
         }
-      } catch {}
+      } catch (err) {
+        console.warn("[Messages] Failed to restore active calls on mount:", err);
+      }
     })();
     return () => { cancelled = true; };
   }, [user?.id]);
@@ -366,7 +368,9 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
           next.add(callData.conversationId);
           return next;
         });
-      } catch {}
+      } catch (err) {
+        console.warn("[Messages] Failed to fetch active call for conversation:", err);
+      }
     })();
     return () => { cancelled = true; };
   }, [selectedConversationId]);

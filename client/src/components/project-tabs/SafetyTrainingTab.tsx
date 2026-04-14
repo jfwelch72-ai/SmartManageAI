@@ -272,7 +272,7 @@ function ProjectChecklistDialog({ projectId, templates, onClose, onSave, isSavin
 
   const selectedTemplate = templates.find(t => t.id === templateId);
   let items: string[] = [];
-  try { if (selectedTemplate) items = JSON.parse(selectedTemplate.itemsJson); } catch {}
+  try { if (selectedTemplate) items = JSON.parse(selectedTemplate.itemsJson); } catch (err) { console.warn("[SafetyTraining] Failed to parse template items:", err); }
 
   const setResponse = (idx: number, val: string) => setResponses(prev => ({ ...prev, [idx]: val }));
   const allAnswered = items.length > 0 && items.every((_, i) => responses[i]);

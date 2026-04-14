@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useIntegrationStatus, hasAnySocialIntegration } from "@/hooks/use-integration-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,9 +11,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Plus, Calendar as CalendarIcon, List, LayoutDashboard, Loader2,
-  AlertCircle, Megaphone, Users, Filter, Search
+  AlertCircle, Megaphone, Users, Filter, Search, Settings
 } from "lucide-react";
 import { type SocialPost } from "@/components/social-media/types";
 import { PLATFORMS } from "@/components/social-media/types";
@@ -24,6 +26,8 @@ import { PostCard } from "@/components/social-media/SocialPostCard";
 
 export default function SocialMediaPage() {
   const { toast } = useToast();
+  const { status: integrationStatus } = useIntegrationStatus();
+  const socialConfigured = hasAnySocialIntegration(integrationStatus);
   const [activeView, setActiveView] = useState<"dashboard" | "list" | "calendar" | "accounts">("dashboard");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
@@ -158,6 +162,15 @@ export default function SocialMediaPage() {
 
   return (
     <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6" data-testid="page-social-media">
+      {!socialConfigured && (
+        <Alert variant="default" data-testid="alert-social-not-configured">
+          <Settings className="h-4 w-4" />
+          <AlertTitle>Social Media Not Configured</AlertTitle>
+          <AlertDescription>
+            No social media platforms have been connected yet. Go to the Accounts tab to connect your Facebook, LinkedIn, Twitter, or other social accounts before creating posts.
+          </AlertDescription>
+        </Alert>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Social Media Manager</h1>
@@ -198,7 +211,12 @@ export default function SocialMediaPage() {
               <Users className="h-4 w-4" />
             </Button>
           </div>
-          <Button onClick={() => { setEditingPost(null); setPrefilledDate(null); setShowCreateDialog(true); }} data-testid="button-new-post">
+          <Button
+            onClick={() => { setEditingPost(null); setPrefilledDate(null); setShowCreateDialog(true); }}
+            disabled={!socialConfigured}
+            title={!socialConfigured ? "Connect a social media account first" : undefined}
+            data-testid="button-new-post"
+          >
             <Plus className="h-4 w-4 mr-2" />
             New Post
           </Button>
@@ -225,10 +243,10 @@ export default function SocialMediaPage() {
                     post={post}
                     onEdit={handleEdit}
                     onDelete={id => deleteMutation.mutate(id)}
-                    onPublish={id => publishMutation.mutate(id)}
-                    onDuplicate={id => duplicateMutation.mutate(id)}
+                    onPublish={socialConfigured ? (id => publishMutation.mutate(id)) : undefined}
+                    onDuplicate={socialConfigured ? (id => duplicateMutation.mutate(id)) : undefined}
                     onReject={handleRejectClick}
-                    onApprove={id => approveMutation.mutate(id)}
+                    onApprove={socialConfigured ? (id => approveMutation.mutate(id)) : undefined}
                   />
                 ))
               ) : (
@@ -296,10 +314,10 @@ export default function SocialMediaPage() {
                   post={post}
                   onEdit={handleEdit}
                   onDelete={id => deleteMutation.mutate(id)}
-                  onPublish={id => publishMutation.mutate(id)}
-                  onDuplicate={id => duplicateMutation.mutate(id)}
+                  onPublish={socialConfigured ? (id => publishMutation.mutate(id)) : undefined}
+                  onDuplicate={socialConfigured ? (id => duplicateMutation.mutate(id)) : undefined}
                   onReject={handleRejectClick}
-                  onApprove={id => approveMutation.mutate(id)}
+                  onApprove={socialConfigured ? (id => approveMutation.mutate(id)) : undefined}
                 />
               ))}
             </div>
@@ -328,7 +346,7 @@ export default function SocialMediaPage() {
                 currentDate={calendarDate}
                 onDateChange={setCalendarDate}
                 onEdit={handleEdit}
-                onCreateForDate={handleCreateForDate}
+                onCreateForDate={socialConfigured ? handleCreateForDate : undefined}
               />
             )}
           </CardContent>

@@ -85,7 +85,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     if (sheetStorageKey) {
       try {
         return sessionStorage.getItem(sheetStorageKey);
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.warn("[Takeoff] Failed to read sheet from sessionStorage:", err);
+      }
     }
     return null;
   });
@@ -96,7 +98,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         try {
           const stored = sessionStorage.getItem(sheetStorageKey);
           setSelectedSheet(stored);
-        } catch { setSelectedSheet(null); }
+        } catch (err) {
+          console.warn("[Takeoff] Failed to read sheet from sessionStorage:", err);
+          setSelectedSheet(null);
+        }
       } else {
         setSelectedSheet(null);
       }
@@ -110,7 +115,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         } else {
           sessionStorage.removeItem(sheetStorageKey);
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.warn("[Takeoff] Failed to persist selected sheet:", err);
+      }
     }
   }, [selectedSheet, sheetStorageKey]);
   const [localRotation, setLocalRotation] = useState<number | null>(null);
@@ -129,7 +136,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const prevAutoImportKeyRef = useRef<string | null>(autoImportStorageKey);
   const [autoImportEnabled, setAutoImportEnabled] = useState<boolean>(() => {
     if (autoImportStorageKey) {
-      try { return sessionStorage.getItem(autoImportStorageKey) === "true"; } catch { /* ignore */ }
+      try { return sessionStorage.getItem(autoImportStorageKey) === "true"; } catch (err) { console.warn("[Takeoff] Failed to read auto-import setting:", err); }
     }
     return false;
   });
@@ -137,7 +144,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     if (prevAutoImportKeyRef.current !== autoImportStorageKey) {
       prevAutoImportKeyRef.current = autoImportStorageKey;
       if (autoImportStorageKey) {
-        try { setAutoImportEnabled(sessionStorage.getItem(autoImportStorageKey) === "true"); } catch { setAutoImportEnabled(false); }
+        try { setAutoImportEnabled(sessionStorage.getItem(autoImportStorageKey) === "true"); } catch (err) { console.warn("[Takeoff] Failed to read auto-import setting:", err); setAutoImportEnabled(false); }
       } else {
         setAutoImportEnabled(false);
       }
@@ -145,7 +152,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   }, [autoImportStorageKey]);
   useEffect(() => {
     if (autoImportStorageKey) {
-      try { sessionStorage.setItem(autoImportStorageKey, String(autoImportEnabled)); } catch { /* ignore */ }
+      try { sessionStorage.setItem(autoImportStorageKey, String(autoImportEnabled)); } catch (err) { console.warn("[Takeoff] Failed to persist auto-import setting:", err); }
     }
   }, [autoImportEnabled, autoImportStorageKey]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -217,25 +224,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [flashMeasurementId, setFlashMeasurementId] = useState<string | null>(null);
   const [flashPulse, setFlashPulse] = useState(0);
   const [gridEnabled, setGridEnabled] = useState(() => {
-    try { return localStorage.getItem("takeoff-grid-enabled") === "true"; } catch { return false; }
+    try { return localStorage.getItem("takeoff-grid-enabled") === "true"; } catch (err) { console.warn("[Takeoff] Failed to read grid setting:", err); return false; }
   });
   const [crossModulePanelOpen, setCrossModulePanelOpen] = useState(false);
   const [showMeasurementLabels, setShowMeasurementLabels] = useState(() => {
-    try { return localStorage.getItem("takeoff-show-labels") !== "false"; } catch { return true; }
+    try { return localStorage.getItem("takeoff-show-labels") !== "false"; } catch (err) { console.warn("[Takeoff] Failed to read label visibility setting:", err); return true; }
   });
   const [typicals, setTypicals] = useState<Array<{ id: string; name: string; measurementIds: string[]; sheetId: string; geometry?: Array<{ type: string; points: Array<{ x: number; y: number }>; label?: string; categoryId?: string | null; computedAreaFt2?: number | null; computedLengthFt?: number | null; computedVolumeCy?: number | null; count?: number | null; metadata?: string | Record<string, unknown> | null }> }>>(() => {
-    try { return JSON.parse(localStorage.getItem("takeoff-typicals") || "[]"); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem("takeoff-typicals") || "[]"); } catch (err) { console.warn("[Takeoff] Failed to read typicals:", err); return []; }
   });
   const [typicalPlacementCount, setTypicalPlacementCount] = useState(0);
   const [structuralGridlines, setStructuralGridlines] = useState<{
     horizontal: Array<{ label: string; position: number }>;
     vertical: Array<{ label: string; position: number }>;
   }>(() => {
-    try { return JSON.parse(localStorage.getItem("takeoff-gridlines") || '{"horizontal":[],"vertical":[]}'); } catch { return { horizontal: [], vertical: [] }; }
+    try { return JSON.parse(localStorage.getItem("takeoff-gridlines") || '{"horizontal":[],"vertical":[]}'); } catch (err) { console.warn("[Takeoff] Failed to read gridlines:", err); return { horizontal: [], vertical: [] }; }
   });
   const [showStructuralGridlines, setShowStructuralGridlines] = useState(false);
   const [labelHiddenCategories, setLabelHiddenCategories] = useState<Set<string>>(() => {
-    try { const stored = localStorage.getItem("takeoff-label-hidden-categories"); return stored ? new Set(JSON.parse(stored)) : new Set(); } catch { return new Set(); }
+    try { const stored = localStorage.getItem("takeoff-label-hidden-categories"); return stored ? new Set(JSON.parse(stored)) : new Set(); } catch (err) { console.warn("[Takeoff] Failed to read label hidden categories:", err); return new Set(); }
   });
   const [showCostPanel, setShowCostPanel] = useState(false);
   const [showMeasurementTable, setShowMeasurementTable] = useState(false);
@@ -451,7 +458,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const handleToggleGrid = (v: boolean) => {
     setGridEnabled(v);
-    try { localStorage.setItem("takeoff-grid-enabled", v ? "true" : "false"); } catch {}
+    try { localStorage.setItem("takeoff-grid-enabled", v ? "true" : "false"); } catch (err) {
+      console.warn("[Takeoff] Failed to persist grid setting:", err);
+    }
   };
 
   const selectedIssue = issues.find((i: any) => i.id === selectedIssueId) || null;
@@ -576,7 +585,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
           const getMeta = (): Record<string, unknown> => {
             if (!enriched.metadata) return {};
-            try { return typeof enriched.metadata === "string" ? JSON.parse(enriched.metadata as string) : enriched.metadata as Record<string, unknown>; } catch { return {}; }
+            try { return typeof enriched.metadata === "string" ? JSON.parse(enriched.metadata as string) : enriched.metadata as Record<string, unknown>; } catch (err) { console.warn("[Takeoff] Failed to parse measurement metadata:", err); return {}; }
           };
 
           if (activeCondition.formula) {
@@ -600,7 +609,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 };
                 meta.assemblyResults = computeAssemblyResults(components, ctx);
               }
-            } catch { /* assembly parse error */ }
+            } catch (err) { console.warn("[Takeoff] Failed to compute assembly results:", err); }
             enriched.metadata = JSON.stringify(meta);
           }
         }
@@ -687,7 +696,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         color: markupColor,
         thickness: markupThickness,
       });
-    } catch {
+    } catch (err) {
+      console.warn("[Takeoff] Failed to save markup:", err);
     }
   };
 
@@ -707,7 +717,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         thickness: markupThickness,
         text: text.trim(),
       });
-    } catch {
+    } catch (err) {
+      console.warn("[Takeoff] Failed to save text markup:", err);
     }
   };
 
@@ -764,7 +775,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     try {
       const pts = typeof m.points === "string" ? JSON.parse(m.points) : m.points;
       return Array.isArray(pts) ? pts : [];
-    } catch { return []; }
+    } catch (err) { console.warn("[Takeoff] Failed to parse measurement points:", err); return []; }
   };
 
   const getMeasurementCenter = (m: any): { x: number; y: number } | null => {
@@ -993,7 +1004,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         hiddenCategoryIds,
       });
       toast({ title: "Export complete", description: `All sheets exported to Excel (${allMeasurements.length} measurements)` });
-    } catch {
+    } catch (err) {
+      console.warn("[Takeoff] Export failed:", err);
       toast({ title: "Error", description: "Failed to fetch measurements for export", variant: "destructive" });
     }
   };
@@ -1030,7 +1042,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         newRevision: "Current",
       });
       toast({ title: "Export complete", description: "Quantity delta report exported" });
-    } catch {
+    } catch (err) {
+      console.warn("[Takeoff] Quantity delta export failed:", err);
       toast({ title: "Error", description: "Failed to generate quantity delta report", variant: "destructive" });
     }
   };
@@ -1064,7 +1077,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       setBidPackageDialogOpen(false);
       setBidPackageTradeScope("");
       toast({ title: "Export complete", description: "Bid package exported" });
-    } catch {
+    } catch (err) {
+      console.warn("[Takeoff] Bid package export failed:", err);
       toast({ title: "Error", description: "Failed to generate bid package export", variant: "destructive" });
     }
   };
@@ -1121,7 +1135,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         </html>
       `);
       printWindow.document.close();
-    } catch {
+    } catch (err) {
+      console.warn("[Takeoff] Print view generation failed:", err);
       toast({ title: "Error", description: "Failed to generate print view", variant: "destructive" });
     }
   }, [currentSheet, measurements, categories, projectCode, toast]);
@@ -1241,8 +1256,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   .filter((item: any) => item.str && item.str.trim())
                   .map((item: any) => item.str as string);
                 batchInput.push({ id: s.id, textItems });
-              } catch {
-                // skip sheets that fail to load
+              } catch (err) {
+                console.warn(`[Takeoff] Failed to load sheet for scale detection:`, err);
               }
             }
 
@@ -1479,7 +1494,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
                     toast({ title: "Scale Applied", description: `Auto-detected scale ${detectedScale.label} applied` });
                     setDetectedScale(null);
-                  } catch {
+                  } catch (err) {
+                    console.warn("[Takeoff] Failed to apply detected scale:", err);
                     toast({ title: "Error", description: "Failed to apply detected scale", variant: "destructive" });
                   }
                 }}
@@ -2355,7 +2371,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         )}
                       </Fragment>
                     );
-                  } catch { return null; }
+                  } catch (err) { console.warn("[Takeoff] Failed to render AI count measurement:", err); return null; }
                 })}
 
                 {gridEnabled && currentSheet?.scalePxPerFoot && pdfImage && (() => {
@@ -2543,7 +2559,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       try {
                         const parsed = m.deductions ? JSON.parse(m.deductions as string) : [];
                         return Array.isArray(parsed) ? parsed.filter((d: { points?: Array<{ x: number; y: number }>; areaFt2?: number; label?: string }) => d.points && Array.isArray(d.points)) : [];
-                      } catch { return []; }
+                      } catch (err) { console.warn("[Takeoff] Failed to parse area deductions:", err); return []; }
                     })();
                     return (
                       <Fragment key={m.id}>
@@ -2579,7 +2595,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       try {
                         const parsed = m.deductions ? JSON.parse(m.deductions as string) : [];
                         return Array.isArray(parsed) ? parsed.filter((d: { points?: Array<{ x: number; y: number }>; areaFt2?: number; label?: string }) => d.points && Array.isArray(d.points)) : [];
-                      } catch { return []; }
+                      } catch (err) { console.warn("[Takeoff] Failed to parse area deductions:", err); return []; }
                     })();
                     return (
                       <Fragment key={m.id}>
@@ -2613,7 +2629,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     if (isAiMeasurement) {
                       const aiColor = "#8b5cf6";
                       let meta: any = {};
-                      try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+                      try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch (err) { console.warn("[Takeoff] Failed to parse count metadata:", err); }
                       const qtyText = `${m.count ?? meta.quantity ?? 1} ${meta.unit || "EA"}`;
                       const labelText = m.label || "AI Item";
                       const displayText = `${labelText} — ${qtyText}`;
@@ -2759,7 +2775,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       try {
                         const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
                         return meta?.segmentProperties || [];
-                      } catch { return []; }
+                      } catch (err) { console.warn("[Takeoff] Failed to parse segment properties:", err); return []; }
                     })();
                     const segmentColors = ["#2563eb", "#dc2626", "#16a34a", "#ea580c", "#8b5cf6", "#0891b2", "#d97706", "#be185d"];
                     return (
@@ -2860,7 +2876,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         }
                         displayArea = Math.max(0, displayArea - wHDeductionSf - polyDeductionSf);
                       }
-                    } catch {}
+                    } catch (err) {
+                      console.warn("[Takeoff] Failed to compute deduction area:", err);
+                    }
                     labelText += `\n${displayArea.toFixed(1)} SF`;
                   }
                   const mRecord = m as Record<string, unknown>;
@@ -2870,7 +2888,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   try {
                     const meta = m.metadata ? (typeof m.metadata === "string" ? JSON.parse(m.metadata) : m.metadata) : null;
                     if (meta?.perimeterFt) labelText += `\n${Number(meta.perimeterFt).toFixed(1)} LF perim`;
-                  } catch {}
+                  } catch (err) {
+                    console.warn("[Takeoff] Failed to parse measurement metadata:", err);
+                  }
                   if (!labelText.trim()) return null;
                   const fontSize = Math.max(10, Math.min(14, 12 / stageScale));
                   const lines = labelText.trim().split("\n");
@@ -3273,7 +3293,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   if (!issue.position) return null;
                   if (hideResolvedIssues && issue.status === "RESOLVED") return null;
                   let pos: { x: number; y: number };
-                  try { pos = typeof issue.position === "string" ? JSON.parse(issue.position) : issue.position; } catch { return null; }
+                  try { pos = typeof issue.position === "string" ? JSON.parse(issue.position) : issue.position; } catch (err) { console.warn("[Takeoff] Failed to parse issue position:", err); return null; }
                   const x = pos.x;
                   const y = pos.y;
                   const isSelected = selectedIssueId === issue.id;

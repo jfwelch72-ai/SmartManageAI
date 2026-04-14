@@ -18,7 +18,7 @@ export default function OfflineStatusBanner() {
     try {
       const count = await getPendingCount();
       setPendingCount(count);
-    } catch {}
+    } catch (err) { console.warn("[OfflineStatus] Failed to get pending count:", err); }
   }, []);
 
   useEffect(() => {

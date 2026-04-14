@@ -214,7 +214,7 @@ export async function processQueue(): Promise<{ synced: number; failed: number }
           try {
             const errorData = await response.json();
             errorDetail = errorData.error || errorDetail;
-          } catch (_e) {}
+          } catch (_e) { console.warn("[OfflineQueue] Failed to parse error response body:", _e); }
           await markAsNonRetryable(item.id!, `${errorDetail} — not retryable`);
           results.failed++;
           errors.push(errorDetail);

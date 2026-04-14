@@ -429,7 +429,8 @@ function getElementProperties(ifcApi: WebIFC.IfcAPI, modelID: number, expressID:
     }
 
     return { expressID, type: typeName, name, properties: properties.slice(0, 40) };
-  } catch {
+  } catch (err) {
+    console.warn(`[BIM] Failed to get element properties for ${expressID}:`, err);
     return null;
   }
 }
@@ -450,9 +451,13 @@ function findElementStorey(ifcApi: WebIFC.IfcAPI, modelID: number, expressID: nu
         if (struct?.type === WebIFC.IFCBUILDINGSTOREY) {
           return { expressID: structRef, name: struct?.Name?.value || struct?.LongName?.value || `Storey #${structRef}` };
         }
-      } catch {}
+      } catch (err) {
+        console.warn(`[BIM] Failed to check spatial containment for element ${expressID}:`, err);
+      }
     }
-  } catch {}
+  } catch (err) {
+    console.warn(`[BIM] Failed to load spatial structure for element ${expressID}:`, err);
+  }
   return null;
 }
 
@@ -481,9 +486,13 @@ function getElementsInStorey(ifcApi: WebIFC.IfcAPI, modelID: number, storeyExpre
         if (Array.isArray(elements)) {
           elements.forEach((e: any) => { if (e.value) elementIds.push(e.value); });
         }
-      } catch {}
+      } catch (err) {
+        console.warn(`[BIM] Failed to parse spatial containment entry for storey ${storeyExpressId}:`, err);
+      }
     }
-  } catch {}
+  } catch (err) {
+    console.warn(`[BIM] Failed to load spatial structure for storey ${storeyExpressId}:`, err);
+  }
   return elementIds;
 }
 

@@ -83,7 +83,7 @@ export default function OfflineSyncPage() {
           description: `${pendingItems.length} item${pendingItems.length !== 1 ? 's' : ''} waiting to sync`,
         });
       }
-    } catch {}
+    } catch (err) { console.warn("[OfflineSync] Failed to check online status:", err); }
   };
 
   useEffect(() => {
@@ -110,7 +110,7 @@ export default function OfflineSyncPage() {
       setLocalQueue(items);
       const history = await getSyncHistory(20);
       setSyncHistory(history);
-    } catch {}
+    } catch (err) { console.warn("[OfflineSync] Failed to load local queue/history:", err); }
   };
 
   const handleLocalSync = async () => {

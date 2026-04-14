@@ -15,9 +15,9 @@ export function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate, onRej
   post: SocialPost;
   onEdit: (post: SocialPost) => void;
   onDelete: (id: string) => void;
-  onPublish: (id: string) => void;
-  onDuplicate: (id: string) => void;
-  onReject: (id: string) => void;
+  onPublish?: (id: string) => void;
+  onDuplicate?: (id: string) => void;
+  onReject?: (id: string) => void;
   onApprove?: (id: string) => void;
 }) {
   const info = getPlatformInfo(post.platform || "FACEBOOK");
@@ -111,26 +111,28 @@ export function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate, onRej
                   <Edit className="h-4 w-4 mr-2" />Edit
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => onDuplicate(post.id)} data-testid={`duplicate-post-${post.id}`}>
-                <Copy className="h-4 w-4 mr-2" />Duplicate
-              </DropdownMenuItem>
+              {onDuplicate && (
+                <DropdownMenuItem onClick={() => onDuplicate(post.id)} data-testid={`duplicate-post-${post.id}`}>
+                  <Copy className="h-4 w-4 mr-2" />Duplicate
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               {post.status === "PENDING_APPROVAL" && onApprove && (
                 <DropdownMenuItem onClick={() => onApprove(post.id)} className="text-green-600 focus:text-green-600" data-testid={`approve-post-${post.id}`}>
                   <ThumbsUp className="h-4 w-4 mr-2" />Approve
                 </DropdownMenuItem>
               )}
-              {post.status === "PENDING_APPROVAL" && (
+              {post.status === "PENDING_APPROVAL" && onReject && (
                 <DropdownMenuItem onClick={() => onReject(post.id)} className="text-amber-600 focus:text-amber-600" data-testid={`reject-post-${post.id}`}>
                   <AlertCircle className="h-4 w-4 mr-2" />Reject
                 </DropdownMenuItem>
               )}
-              {post.status === "FAILED" && (
+              {post.status === "FAILED" && onPublish && (
                 <DropdownMenuItem onClick={() => onPublish(post.id)} className="text-blue-600 focus:text-blue-600" data-testid={`publish-post-${post.id}`}>
                   <RefreshCw className="h-4 w-4 mr-2" />Retry Publish
                 </DropdownMenuItem>
               )}
-              {post.status !== "POSTED" && post.status !== "PENDING_APPROVAL" && post.status !== "FAILED" && (
+              {post.status !== "POSTED" && post.status !== "PENDING_APPROVAL" && post.status !== "FAILED" && onPublish && (
                 <DropdownMenuItem onClick={() => onPublish(post.id)} data-testid={`publish-post-${post.id}`}>
                   <Send className="h-4 w-4 mr-2" />Publish Now
                 </DropdownMenuItem>

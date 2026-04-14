@@ -9,7 +9,7 @@ export function SocialCalendarView({ posts, currentDate, onDateChange, onEdit, o
   currentDate: Date;
   onDateChange: (d: Date) => void;
   onEdit: (post: SocialPost) => void;
-  onCreateForDate: (date: Date) => void;
+  onCreateForDate?: (date: Date) => void;
 }) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -45,7 +45,7 @@ export function SocialCalendarView({ posts, currentDate, onDateChange, onEdit, o
             <div
               key={i}
               className={`bg-background min-h-[100px] p-1.5 cursor-pointer hover:bg-muted/50 transition-colors ${!isCurrentMonth ? "opacity-40" : ""} ${isCurrentDay ? "ring-2 ring-primary ring-inset" : ""}`}
-              onClick={() => onCreateForDate(day)}
+              onClick={() => onCreateForDate?.(day)}
               data-testid={`cal-day-${key}`}
             >
               <div className="flex items-center justify-between mb-1">

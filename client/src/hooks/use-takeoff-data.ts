@@ -589,7 +589,7 @@ export function useTakeoffData({
       } else if (m.type === "COUNT") {
         byType.count.push(m);
         let meta: any = {};
-        try { meta = typeof (m as any).metadata === 'string' ? JSON.parse((m as any).metadata) : ((m as any).metadata || {}); } catch {}
+        try { meta = typeof (m as any).metadata === 'string' ? JSON.parse((m as any).metadata) : ((m as any).metadata || {}); } catch (err) { console.warn("[TakeoffData] Failed to parse count metadata:", err); }
         const rawQty = Number(m.count ?? meta.quantity ?? 1);
         const qty = Number.isFinite(rawQty) ? rawQty : 1;
         const unit = (meta.unit || "EA").toUpperCase();

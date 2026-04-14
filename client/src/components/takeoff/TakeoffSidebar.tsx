@@ -1551,7 +1551,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         {m.type === "SEGMENT" && (() => {
                           const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
                           let segProps: any[] = [];
-                          try { const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; segProps = meta?.segmentProperties || []; } catch {}
+                          try { const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; segProps = meta?.segmentProperties || []; } catch (err) { console.warn("[TakeoffSidebar] Failed to parse segment metadata:", err); }
                           if (points.length < 2 || !currentSheet?.scalePxPerFoot) return null;
                           return (
                             <Collapsible>
@@ -1759,7 +1759,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             </div>
                           );
                         }
-                      } catch {}
+                      } catch (err) { console.warn("[TakeoffSidebar] Failed to parse area metadata:", err); }
                       return null;
                     })()}
                     {structuralGridlines && (structuralGridlines.vertical.length > 0 || structuralGridlines.horizontal.length > 0) && (() => {
@@ -1893,7 +1893,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   {selM.type === "SEGMENT" && selectedSegmentIndex !== null && (() => {
                     const pts = typeof selM.points === 'string' ? JSON.parse(selM.points) : selM.points;
                     let segProps: any[] = [];
-                    try { const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata) : selM.metadata; segProps = meta?.segmentProperties || []; } catch {}
+                    try { const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata) : selM.metadata; segProps = meta?.segmentProperties || []; } catch (err) { console.warn("[TakeoffSidebar] Failed to parse selected segment metadata:", err); }
                     if (selectedSegmentIndex >= pts.length - 1) return null;
                     const p1 = pts[selectedSegmentIndex];
                     const p2 = pts[selectedSegmentIndex + 1];
@@ -2210,7 +2210,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   let countTotal = 0;
                   categoryMeasurements.filter((m: any) => m.type === "COUNT").forEach((m: any) => {
                     let meta: any = {};
-                    try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+                    try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch (err) { console.warn("[TakeoffSidebar] Failed to parse count metadata:", err); }
                     const rawQty = Number(m.count ?? meta.quantity ?? 1);
                     const qty = Number.isFinite(rawQty) ? rawQty : 1;
                     const unit = (meta.unit || "EA").toUpperCase();
@@ -2243,7 +2243,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   let uncatCount = 0;
                   aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "COUNT").forEach((m: any) => {
                     let meta: any = {};
-                    try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+                    try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {}); } catch (err) { console.warn("[TakeoffSidebar] Failed to parse count metadata:", err); }
                     const rawQty = Number(m.count ?? meta.quantity ?? 1);
                     const qty = Number.isFinite(rawQty) ? rawQty : 1;
                     const unit = (meta.unit || "EA").toUpperCase();

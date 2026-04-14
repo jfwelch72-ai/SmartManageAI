@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +83,7 @@ export default function LidarScansPage() {
             const data = await res.json();
             all.push(...data);
           }
-        } catch {}
+        } catch (err) { console.warn("[LidarScans] Failed to fetch comparisons for project:", pid, err); }
       }
       return all;
     },
@@ -196,6 +197,7 @@ export default function LidarScansPage() {
             <p className="text-sm text-muted-foreground">Loading 3D engine...</p>
           </div>
         }>
+          <WidgetErrorBoundary fallbackTitle="Point Cloud Viewer">
           <PointCloudViewer
             fileUrl={viewingScan.fileUrl}
             fileName={viewingScan.fileName}
@@ -215,6 +217,7 @@ export default function LidarScansPage() {
               });
             }}
           />
+          </WidgetErrorBoundary>
         </Suspense>
       </div>
     );
