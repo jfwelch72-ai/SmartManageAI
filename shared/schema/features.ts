@@ -4524,6 +4524,7 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canManageTimeClock: boolean("can_manage_time_clock").default(false),
   canApproveTime: boolean("can_approve_time").default(false),
   canAccessTMDaily: boolean("can_access_tm_daily").default(false),
+  canAccessTimeMaterial: boolean("can_access_time_material").default(false),
   canManagePayroll: boolean("can_manage_payroll").default(false),
   canManageCrews: boolean("can_manage_crews").default(false),
   canManageWorkforce: boolean("can_manage_workforce").default(false),

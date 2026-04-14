@@ -229,7 +229,8 @@ type FeaturePermissionKeys =
   | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
   | 'canViewProjectReceipts' | 'canViewProjectTimeEntries' | 'canViewProjectSubcontractors'
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
-  | 'canSubmitPeerRatings' | 'canViewPeerRatings';
+  | 'canSubmitPeerRatings' | 'canViewPeerRatings'
+  | 'canAccessTimeMaterial';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean> & { projectScope: "ALL" | "ACTIVE_ONLY" };
 
@@ -261,6 +262,7 @@ const ALL_FALSE: PermissionSet = {
   canViewProjectReceipts: false, canViewProjectTimeEntries: false, canViewProjectSubcontractors: false,
   canCreateChangeOrders: false, canDeleteScopeItems: false, canEditProjectHandoff: false,
   canSubmitPeerRatings: false, canViewPeerRatings: false,
+  canAccessTimeMaterial: false,
 };
 
 const ALL_TRUE: PermissionSet = {
@@ -291,6 +293,7 @@ const ALL_TRUE: PermissionSet = {
   canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
   canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
   canSubmitPeerRatings: true, canViewPeerRatings: true,
+  canAccessTimeMaterial: true,
 };
 
 export const ROLE_HIERARCHY: UserRole[] = [
@@ -344,7 +347,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessProductionRates: true, canAccessScopeSettings: true,
     canAccessCFODashboard: true,
     canAccessTimeClock: true, canManageTimeClock: true, canApproveTime: true,
-    canAccessTMDaily: true, canManageWorkforce: true, canManageSafety: true,
+    canAccessTMDaily: true, canAccessTimeMaterial: true, canManageWorkforce: true, canManageSafety: true,
     canManageScheduling: true, canManageCrews: true, canManageLeave: true,
     canAccessKPIs: true, canLockDailyReports: true,
     canManageEquipment: true, canManageProcurement: true,
@@ -365,7 +368,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canCreateProjects: true, canEditProjects: true,
     canViewFinancials: true, canEditFinancials: false,
     canAccessCostRates: true, canAccessProductionRates: true,
-    canAccessTimeClock: true,
+    canAccessTimeClock: true, canAccessTimeMaterial: true,
     canAccessCRM: true, canCreateCRMContacts: true,
     canAccessMarketplace: true,
     canManageEquipment: true, canManageProcurement: true,

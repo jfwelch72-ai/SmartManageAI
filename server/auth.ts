@@ -254,7 +254,8 @@ export type FeaturePermissionKey =
   | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
   | 'canViewProjectReceipts' | 'canViewProjectTimeEntries' | 'canViewProjectSubcontractors'
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
-  | 'canSubmitPeerRatings' | 'canViewPeerRatings';
+  | 'canSubmitPeerRatings' | 'canViewPeerRatings'
+  | 'canAccessTimeMaterial';
 
 export async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean | string>> {
   if (role === "SUPER_ADMIN") return getRoleDefaults("SUPER_ADMIN");
