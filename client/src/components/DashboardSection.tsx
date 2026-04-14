@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useRef, useCallback } from "react";
+import { useMemo, useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 import { useDashboardCustomization, type DashboardSection as DashboardSectionType } from "@/hooks/use-dashboard-customization";
 import { getWidgetDefinition, getWidgetComponent, type WidgetCategory } from "@/components/dashboard-widgets/WidgetRegistry";
 import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
@@ -47,6 +47,17 @@ const CATEGORY_ACCENT_COLORS: Record<WidgetCategory, string> = {
   AI: "border-t-purple-500/60",
   General: "border-t-slate-400/60",
 };
+
+function StaggeredWidget({ children, delay }: { children: ReactNode; delay: number }) {
+  const [shouldMount, setShouldMount] = useState(delay === 0);
+  useEffect(() => {
+    if (delay === 0) return;
+    const timer = setTimeout(() => setShouldMount(true), delay);
+    return () => clearTimeout(timer);
+  }, [delay]);
+  if (!shouldMount) return null;
+  return <>{children}</>;
+}
 
 export function DashboardSectionComponent({ section, sectionIndex, totalSections, onAddWidget }: DashboardSectionProps) {
   const { isEditMode, permissions, removeWidget, duplicateWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, duplicateSection, reorderSections } = useDashboardCustomization();
@@ -332,8 +343,8 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                 const hasSettings = WIDGETS_WITH_SETTINGS.has(widget.type);
                 const isRefreshing = refreshingWidget === widget.id;
                 return (
+                  <StaggeredWidget key={widget.id} delay={widgetIndex * 150}>
                   <div
-                    key={widget.id}
                     className={cn(
                       "relative group rounded-lg border-t-2 transition-all",
                       CATEGORY_ACCENT_COLORS[widgetDef?.category || "General"],
@@ -455,6 +466,7 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                       <WidgetComponent config={widget.config} />
                     </WidgetErrorBoundary>
                   </div>
+                  </StaggeredWidget>
                 );
               })}
 

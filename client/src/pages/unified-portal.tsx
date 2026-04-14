@@ -358,7 +358,7 @@ function ClientPortalContent({
       return res.json();
     },
     enabled: !!email && !!projectId,
-    refetchInterval: 10000,
+    refetchInterval: 60000,
   });
 
   if (loadingData) {
@@ -496,7 +496,7 @@ function SubPortalContent({ session, token }: { session: PortalSession; token: s
       if (!res.ok) throw new Error("Failed to load chat threads");
       return res.json();
     },
-    refetchInterval: 20000,
+    refetchInterval: 60000,
   });
 
   return (

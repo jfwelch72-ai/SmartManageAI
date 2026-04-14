@@ -4,6 +4,7 @@ import { db } from "./db";
 import { portalChatThreads, portalChatMessages, clientPortalAccess } from "@shared/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { notifyChatTeamMembers } from "./portalRoutes";
+import { registerPortalSseClient, emitPortalChatMessage, emitPortalChatThreadUpdate } from "./portalChatEvents";
 
 const router = Router();
 
@@ -128,6 +129,10 @@ router.post("/client-portal/chat/threads", requireClientPortalAuth as any, async
 
     notifyChatTeamMembers(access.organizationId, access.projectId, senderName, message.trim());
 
+    const clientIdentifier = `${access.email}:${access.projectId}`;
+    emitPortalChatMessage("client", clientIdentifier, thread.id, msg);
+    emitPortalChatThreadUpdate("client", clientIdentifier, thread.id);
+
     res.status(201).json({ ...thread, message: msg });
   } catch (error) {
     next(error);
@@ -234,6 +239,10 @@ router.post("/client-portal/chat/threads/:threadId/messages", requireClientPorta
 
     notifyChatTeamMembers(thread.organizationId, thread.projectId, senderName, content.trim());
 
+    const clientIdentifier = `${access.email}:${access.projectId}`;
+    emitPortalChatMessage("client", clientIdentifier, threadId, msg);
+    emitPortalChatThreadUpdate("client", clientIdentifier, threadId);
+
     res.status(201).json(msg);
   } catch (error) {
     next(error);
@@ -275,6 +284,56 @@ router.post("/client-portal/chat/threads/:threadId/read", requireClientPortalAut
     res.json({ success: true });
   } catch (error) {
     next(error);
+  }
+});
+
+router.get("/client-portal/chat/events", async (req: ClientPortalChatRequest, res: Response) => {
+  const clientEmail = (req.query.email as string) || (req.headers["x-client-email"] as string);
+  const clientProjectId = (req.query.projectId as string) || (req.headers["x-client-project-id"] as string);
+
+  if (!clientEmail || !clientProjectId) {
+    res.status(401).json({ error: "Client portal authentication required" });
+    return;
+  }
+
+  try {
+    const [access] = await db
+      .select()
+      .from(clientPortalAccess)
+      .where(and(
+        eq(clientPortalAccess.email, clientEmail),
+        eq(clientPortalAccess.projectId, clientProjectId),
+        eq(clientPortalAccess.isActive, true)
+      ))
+      .limit(1);
+
+    if (!access) {
+      res.status(401).json({ error: "Invalid client portal access" });
+      return;
+    }
+
+    const identifier = `${access.email}:${access.projectId}`;
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    res.write(`event: connected\ndata: {}\n\n`);
+
+    const unregister = registerPortalSseClient("client", identifier, res);
+
+    const keepAlive = setInterval(() => {
+      res.write(": keepalive\n\n");
+    }, 30000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      unregister();
+    });
+  } catch {
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

@@ -8,6 +8,7 @@ import { eq, and, desc, inArray, sql, asc, gt, or } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { generatePortalToken, hashPortalToken, requirePortalAuth, requirePortalPermission, type PortalRequest } from "./portalAuth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { emitPortalChatMessage, emitPortalChatThreadUpdate } from "./portalChatEvents";
 import { sendEmail } from "./email";
 
 const router = Router();
@@ -531,6 +532,22 @@ router.post("/team/chat/threads/:threadId/messages", requireAuth, async (req: Au
           updatedAt: new Date(),
         })
         .where(eq(portalChatThreads.id, threadId));
+
+      if (thread.portalTokenId) {
+        emitPortalChatMessage("sub", thread.portalTokenId, threadId, msg);
+        emitPortalChatThreadUpdate("sub", thread.portalTokenId, threadId);
+      } else if (thread.clientPortalAccessId) {
+        const [ca] = await db
+          .select({ email: clientPortalAccess.email, projectId: clientPortalAccess.projectId })
+          .from(clientPortalAccess)
+          .where(eq(clientPortalAccess.id, thread.clientPortalAccessId))
+          .limit(1);
+        if (ca) {
+          const clientIdentifier = `${ca.email}:${ca.projectId}`;
+          emitPortalChatMessage("client", clientIdentifier, threadId, msg);
+          emitPortalChatThreadUpdate("client", clientIdentifier, threadId);
+        }
+      }
 
       try {
         if (thread.portalTokenId) {

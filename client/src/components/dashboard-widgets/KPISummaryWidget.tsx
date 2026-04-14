@@ -106,7 +106,7 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
       if (!res.ok) throw new Error("Failed to fetch KPI data");
       return res.json();
     },
-    refetchInterval: 60000,
+    refetchInterval: 120000,
   });
 
   const comparisonLabel = KPI_COMPARISONS.find(c => c.value === merged.comparison)?.label || "vs previous";

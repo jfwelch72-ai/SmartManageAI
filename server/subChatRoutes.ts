@@ -5,6 +5,7 @@ import { portalChatThreads, portalChatMessages } from "@shared/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { requirePortalAuth, type PortalRequest } from "./portalAuth";
 import { notifyChatTeamMembers } from "./portalRoutes";
+import { registerPortalSseClient, emitPortalChatMessage, emitPortalChatThreadUpdate } from "./portalChatEvents";
 
 const router = Router();
 
@@ -79,6 +80,9 @@ router.post("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest
     }).returning();
 
     notifyChatTeamMembers(token.organizationId, token.projectId, token.contactName, message.trim());
+
+    emitPortalChatMessage("sub", token.id, thread.id, msg);
+    emitPortalChatThreadUpdate("sub", token.id, thread.id);
 
     res.status(201).json({ ...thread, message: msg });
   } catch (error) {
@@ -184,6 +188,9 @@ router.post("/portal/chat/threads/:threadId/messages", requirePortalAuth, async 
 
     notifyChatTeamMembers(thread.organizationId, thread.projectId, token.contactName, content.trim());
 
+    emitPortalChatMessage("sub", token.id, threadId, msg);
+    emitPortalChatThreadUpdate("sub", token.id, threadId);
+
     res.status(201).json(msg);
   } catch (error) {
     next(error);
@@ -226,6 +233,30 @@ router.post("/portal/chat/threads/:threadId/read", requirePortalAuth, async (req
   } catch (error) {
     next(error);
   }
+});
+
+router.get("/portal/chat/events", requirePortalAuth, (req: PortalRequest, res: Response) => {
+  const token = req.portalToken!;
+  const identifier = token.id;
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  res.write(`event: connected\ndata: {}\n\n`);
+
+  const unregister = registerPortalSseClient("sub", identifier, res);
+
+  const keepAlive = setInterval(() => {
+    res.write(": keepalive\n\n");
+  }, 30000);
+
+  req.on("close", () => {
+    clearInterval(keepAlive);
+    unregister();
+  });
 });
 
 export default router;

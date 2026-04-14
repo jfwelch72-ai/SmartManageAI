@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -19,6 +19,82 @@ interface SubPortalChatTabProps {
   chatLoading: boolean;
 }
 
+const FALLBACK_POLL_INTERVAL = 30000;
+
+function useSubPortalChatSSE(
+  token: string,
+  queryClient: ReturnType<typeof useQueryClient>
+) {
+  const [sseConnected, setSseConnected] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isCleanedUpRef = useRef(false);
+
+  useEffect(() => {
+    if (!token) return;
+    isCleanedUpRef.current = false;
+
+    const url = `/api/portal/chat/events?token=${encodeURIComponent(token)}`;
+
+    function createConnection() {
+      if (isCleanedUpRef.current) return;
+
+      const es = new EventSource(url);
+      esRef.current = es;
+
+      es.addEventListener("connected", () => {
+        setSseConnected(true);
+      });
+
+      es.addEventListener("portal_chat_message", (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.threadId) {
+            queryClient.invalidateQueries({ queryKey: ["/api/portal/chat/threads", data.threadId, "messages"] });
+          }
+        } catch {}
+      });
+
+      es.addEventListener("portal_chat_thread_update", () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/portal/chat/threads", { token }] });
+      });
+
+      es.onerror = () => {
+        setSseConnected(false);
+        es.close();
+        esRef.current = null;
+
+        if (!isCleanedUpRef.current) {
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!isCleanedUpRef.current && !esRef.current) {
+              createConnection();
+            }
+          }, 5000);
+        }
+      };
+    }
+
+    createConnection();
+
+    return () => {
+      isCleanedUpRef.current = true;
+      setSseConnected(false);
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (esRef.current) {
+        esRef.current.onerror = null;
+        esRef.current.close();
+        esRef.current = null;
+      }
+    };
+  }, [token, queryClient]);
+
+  return sseConnected;
+}
+
 export function SubPortalChatTab({ token, chatThreads, chatLoading }: SubPortalChatTabProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -27,6 +103,8 @@ export function SubPortalChatTab({ token, chatThreads, chatLoading }: SubPortalC
   const [newThreadSubject, setNewThreadSubject] = useState("");
   const [newThreadMessage, setNewThreadMessage] = useState("");
   const [showNewThread, setShowNewThread] = useState(false);
+
+  const sseConnected = useSubPortalChatSSE(token, queryClient);
 
   const { data: threadMessages = [], isLoading: messagesLoading } = useQuery({
     queryKey: ["/api/portal/chat/threads", selectedThread?.id, "messages"],
@@ -38,7 +116,7 @@ export function SubPortalChatTab({ token, chatThreads, chatLoading }: SubPortalC
       return res.json();
     },
     enabled: !!token && !!selectedThread,
-    refetchInterval: 4000,
+    refetchInterval: sseConnected ? false : FALLBACK_POLL_INTERVAL,
   });
 
   const createThreadMutation = useMutation({

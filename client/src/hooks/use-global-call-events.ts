@@ -3,10 +3,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useGlobalSSE } from "@/contexts/GlobalSSEContext";
 import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
+import { useLocation } from "wouter";
 import type { VideoCallData, Conversation } from "@/components/messaging/types";
 
 const INCOMING_CALL_TIMEOUT_MS = 30000;
 const ACTIVE_CALLS_POLL_INTERVAL_MS = 15000;
+const IDLE_CALLS_POLL_INTERVAL_MS = 60000;
+
+const MESSAGING_PATHS = ["/messages", "/portal-chat"];
 
 interface GlobalCallState {
   incomingCall: VideoCallData | null;
@@ -21,8 +25,11 @@ export function useGlobalCallEvents(): GlobalCallState {
   const [conversationName, setConversationName] = useState("");
   const { startGlobalCall, updateActiveCall, activeCall, roomRef } = useGlobalVideoCall();
   const { addListener, removeListener, isConnected } = useGlobalSSE();
+  const [location] = useLocation();
   const userRef = useRef(user);
   const activeCallRef = useRef(activeCall);
+  const locationRef = useRef(location);
+  useEffect(() => { locationRef.current = location; }, [location]);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPolledCallIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { userRef.current = user; }, [user]);
@@ -254,11 +261,17 @@ export function useGlobalCallEvents(): GlobalCallState {
       }
     };
 
-    const interval = setInterval(pollActiveCalls, ACTIVE_CALLS_POLL_INTERVAL_MS);
+    const isOnMessagingPage = MESSAGING_PATHS.some(p => locationRef.current.startsWith(p));
+    const hasActiveCall = !!activeCall;
+    const pollInterval = isOnMessagingPage || hasActiveCall
+      ? ACTIVE_CALLS_POLL_INTERVAL_MS
+      : IDLE_CALLS_POLL_INTERVAL_MS;
+
+    const interval = setInterval(pollActiveCalls, pollInterval);
     pollActiveCalls();
 
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, location, activeCall]);
 
   const acceptCall = useCallback(async () => {
     if (!incomingCall) return;

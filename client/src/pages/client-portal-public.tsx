@@ -151,7 +151,7 @@ export default function ClientPortalPublic({ projectIdOverride }: { projectIdOve
       return res.json();
     },
     enabled: !!accessInfo && !!email && !!projectId,
-    refetchInterval: 10000,
+    refetchInterval: 60000,
   });
 
   const handleVerify = async (e: React.FormEvent) => {

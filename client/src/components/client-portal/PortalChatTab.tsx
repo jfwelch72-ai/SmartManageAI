@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,83 @@ interface PortalChatTabProps {
   projectId: string;
 }
 
+const FALLBACK_POLL_INTERVAL = 30000;
+
+function usePortalChatSSE(
+  email: string,
+  projectId: string,
+  queryClient: ReturnType<typeof useQueryClient>
+) {
+  const [sseConnected, setSseConnected] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isCleanedUpRef = useRef(false);
+
+  useEffect(() => {
+    if (!email || !projectId) return;
+    isCleanedUpRef.current = false;
+
+    const url = `/api/client-portal/chat/events?email=${encodeURIComponent(email)}&projectId=${encodeURIComponent(projectId)}`;
+
+    function createConnection() {
+      if (isCleanedUpRef.current) return;
+
+      const es = new EventSource(url);
+      esRef.current = es;
+
+      es.addEventListener("connected", () => {
+        setSseConnected(true);
+      });
+
+      es.addEventListener("portal_chat_message", (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.threadId) {
+            queryClient.invalidateQueries({ queryKey: ["/api/client-portal/chat/threads", data.threadId, "messages"] });
+          }
+        } catch {}
+      });
+
+      es.addEventListener("portal_chat_thread_update", () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/client-portal/chat/threads", { email, projectId }] });
+      });
+
+      es.onerror = () => {
+        setSseConnected(false);
+        es.close();
+        esRef.current = null;
+
+        if (!isCleanedUpRef.current) {
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!isCleanedUpRef.current && !esRef.current) {
+              createConnection();
+            }
+          }, 5000);
+        }
+      };
+    }
+
+    createConnection();
+
+    return () => {
+      isCleanedUpRef.current = true;
+      setSseConnected(false);
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (esRef.current) {
+        esRef.current.onerror = null;
+        esRef.current.close();
+        esRef.current = null;
+      }
+    };
+  }, [email, projectId, queryClient]);
+
+  return sseConnected;
+}
+
 export function PortalChatTab({ email, projectId }: PortalChatTabProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -32,6 +109,8 @@ export function PortalChatTab({ email, projectId }: PortalChatTabProps) {
   const [newThreadSubject, setNewThreadSubject] = useState("");
   const [newThreadMessage, setNewThreadMessage] = useState("");
   const [chatMessage, setChatMessage] = useState("");
+
+  const sseConnected = usePortalChatSSE(email, projectId, queryClient);
 
   const clientHeaders: Record<string, string> = {
     "x-client-email": email,
@@ -48,7 +127,7 @@ export function PortalChatTab({ email, projectId }: PortalChatTabProps) {
       return res.json();
     },
     enabled: !!email && !!projectId,
-    refetchInterval: 10000,
+    refetchInterval: sseConnected ? false : FALLBACK_POLL_INTERVAL,
   });
 
   const { data: threadMessages = [], isLoading: messagesLoading } = useQuery({
@@ -61,7 +140,7 @@ export function PortalChatTab({ email, projectId }: PortalChatTabProps) {
       return res.json();
     },
     enabled: !!selectedThread,
-    refetchInterval: 4000,
+    refetchInterval: sseConnected ? false : FALLBACK_POLL_INTERVAL,
   });
 
   const createThreadMutation = useMutation({
