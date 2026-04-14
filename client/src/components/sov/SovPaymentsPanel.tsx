@@ -168,7 +168,7 @@ export function SovPaymentsPanel({ sovs }: { sovs: SOV[] }) {
       )}
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>Record a full or partial payment against an SOV pay app</DialogDescription>

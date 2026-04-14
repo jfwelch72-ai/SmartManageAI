@@ -102,7 +102,7 @@ export function TransmittalDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 flex-wrap">
               <span data-testid={`${p}text-detail-tx-number`}>{transmittal?.transmittalNumber}</span>
@@ -258,7 +258,7 @@ export function TransmittalDetailDialog({
       </Dialog>
 
       <Dialog open={showAddRecipientsDialog} onOpenChange={setShowAddRecipientsDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add Recipients</DialogTitle>
             <DialogDescription>
@@ -330,7 +330,7 @@ export function TransmittalEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit Transmittal</DialogTitle>
           <DialogDescription>
@@ -479,7 +479,7 @@ export function TransmittalCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create Transmittal</DialogTitle>
           <DialogDescription>

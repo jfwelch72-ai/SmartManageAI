@@ -236,7 +236,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
       </Sheet>
 
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Rename Sheet</DialogTitle><DialogDescription>Enter a new name for this sheet.</DialogDescription></DialogHeader>
           <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} placeholder="Sheet name..." onKeyDown={(e) => { if (e.key === "Enter" && renameValue.trim() && selectedSheet) renameSheetMutation.mutate({ sheetId: selectedSheet, sheetName: renameValue.trim() }); }} data-testid="input-rename-sheet" />
           <DialogFooter>
@@ -249,7 +249,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
       </Dialog>
 
       <Dialog open={deleteSheetConfirmOpen} onOpenChange={setDeleteSheetConfirmOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Delete Sheet</DialogTitle><DialogDescription>Are you sure you want to delete "{currentSheet?.sheetName}"? This will also remove all measurements on this sheet. This action cannot be undone.</DialogDescription></DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteSheetConfirmOpen(false)} data-testid="button-cancel-delete-sheet">Cancel</Button>
@@ -390,7 +390,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
       </DialogPrimitive.Root>
 
       <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" data-testid="dialog-keyboard-shortcuts">
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto" data-testid="dialog-keyboard-shortcuts">
           <DialogHeader><DialogTitle>Keyboard Shortcuts</DialogTitle><DialogDescription>Speed up your workflow with these keyboard shortcuts</DialogDescription></DialogHeader>
           <div className="grid gap-6">
             <div>
@@ -460,7 +460,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
       </Dialog>
 
       <Dialog open={uploadDialogOpen} onOpenChange={(open) => { setUploadDialogOpen(open); if (!open) resetImportState(); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Import Plan Sheet</DialogTitle>
             <DialogDescription>

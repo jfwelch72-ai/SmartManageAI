@@ -340,7 +340,7 @@ function RemapDialog({ open, onClose, seededLines, nonSeededLines, projectCode, 
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="dialog-remap-csi">
+      <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="dialog-remap-csi">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowLeftRight className="h-5 w-5" />

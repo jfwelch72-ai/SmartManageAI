@@ -423,7 +423,7 @@ export default function PermitsTab({ projectId, userRole }: PermitsTabProps) {
       </Card>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Permit</DialogTitle>
             <DialogDescription>Add a new permit or license to this project</DialogDescription>
@@ -439,7 +439,7 @@ export default function PermitsTab({ projectId, userRole }: PermitsTabProps) {
       </Dialog>
 
       <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setSelectedPermit(null); }}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Permit</DialogTitle>
             <DialogDescription>Update permit details</DialogDescription>
@@ -457,7 +457,7 @@ export default function PermitsTab({ projectId, userRole }: PermitsTabProps) {
       </Dialog>
 
       <Dialog open={showDetailDialog} onOpenChange={(open) => { setShowDetailDialog(open); if (!open) setSelectedPermit(null); }}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Permit Details</DialogTitle>
             <DialogDescription>View and manage permit status</DialogDescription>

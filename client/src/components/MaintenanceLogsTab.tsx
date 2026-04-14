@@ -533,7 +533,7 @@ export default function MaintenanceLogsTab({ projectId, projectCode, userRole, h
       </Tabs>
 
       <Dialog open={showLogDialog} onOpenChange={setShowLogDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Log Maintenance Entry</DialogTitle>
             <DialogDescription>Record a maintenance event for this property.</DialogDescription>
@@ -636,7 +636,7 @@ export default function MaintenanceLogsTab({ projectId, projectCode, userRole, h
       </Dialog>
 
       <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Recurring Schedule</DialogTitle>
             <DialogDescription>Set up a recurring maintenance schedule.</DialogDescription>
@@ -696,7 +696,7 @@ export default function MaintenanceLogsTab({ projectId, projectCode, userRole, h
       </Dialog>
 
       <Dialog open={!!editingLog} onOpenChange={v => { if (!v) setEditingLog(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Maintenance Entry</DialogTitle>
             <DialogDescription>Update the details of this maintenance log.</DialogDescription>

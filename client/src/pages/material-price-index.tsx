@@ -454,7 +454,7 @@ function CreatePriceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add Material Price</DialogTitle>
           <DialogDescription>

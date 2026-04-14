@@ -196,7 +196,7 @@ export default function RfiDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setEditMode(false); setShowAnswerInput(false); } }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid={`${p}dialog-rfi-detail`}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid={`${p}dialog-rfi-detail`}>
           {rfi && (
             <div className="space-y-6">
               <DialogHeader>

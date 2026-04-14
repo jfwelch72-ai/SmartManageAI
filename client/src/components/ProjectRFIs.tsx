@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  HelpCircle, Plus, Eye, CheckCircle2, XCircle, AlertTriangle, Clock,
+  HelpCircle, Plus, Eye, CheckCircle2, XCircle, AlertTriangle, Clock, FileQuestion,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { format } from "date-fns";
 import DocumentAttachments from "@/components/DocumentAttachments";
 import {
@@ -165,7 +166,12 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
       {loadingRFIs ? (
         <div className="space-y-4">{[1, 2, 3].map((i) => (<Skeleton key={i} className="h-16" />))}</div>
       ) : filteredRFIs.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-muted-foreground" data-testid="proj-text-empty-state">No RFIs found for this project. Create your first RFI to get started.</CardContent></Card>
+        <EmptyState
+          icon={FileQuestion}
+          title="No RFIs yet"
+          description="Create your first RFI to track requests for information on this project."
+          testId="empty-state-rfis"
+        />
       ) : (
         <Card>
           <CardContent className="p-0">
@@ -234,7 +240,7 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
       )}
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-lg" data-testid="proj-dialog-create-rfi">
+        <DialogContent className="sm:max-w-lg" data-testid="proj-dialog-create-rfi">
           <DialogHeader>
             <DialogTitle>Create RFI</DialogTitle>
             <DialogDescription>Submit a new Request for Information for {projectCode}</DialogDescription>

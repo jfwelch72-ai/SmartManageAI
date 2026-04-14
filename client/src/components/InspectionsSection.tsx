@@ -521,7 +521,7 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
       </Card>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Inspection Request</DialogTitle>
             <DialogDescription>Schedule an inspection with city officials, GC, or owner representatives</DialogDescription>
@@ -753,7 +753,7 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
       </Dialog>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Inspection</DialogTitle>
             <DialogDescription>Update inspection details</DialogDescription>
@@ -852,7 +852,7 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
       </Dialog>
 
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardCheck className="h-5 w-5" />

@@ -225,7 +225,7 @@ export function SovLienWaiverPanel({ projects, sovs }: { projects: SovProject[];
       )}
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create Lien Waiver</DialogTitle>
             <DialogDescription>Track a conditional or unconditional lien waiver</DialogDescription>

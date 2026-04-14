@@ -91,7 +91,7 @@ export function PayableApprovalDialogs({
       <Dialog open={isDetailOpen} onOpenChange={(open) => {
         onDetailOpenChange(open);
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="payable-detail-description">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="payable-detail-description">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />

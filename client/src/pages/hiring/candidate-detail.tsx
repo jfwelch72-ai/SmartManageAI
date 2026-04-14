@@ -827,7 +827,7 @@ export default function CandidateDetailPage() {
       </AlertDialog>
 
       <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Add Task</DialogTitle>
           </DialogHeader>

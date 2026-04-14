@@ -279,7 +279,7 @@ export default function PpeComplianceSection({ projectId, projectCode, userRole 
 
       {showCreate && (
         <Dialog open={true} onOpenChange={() => setShowCreate(false)}>
-          <DialogContent className="max-w-md" data-testid="dialog-ppe-compliance-form">
+          <DialogContent className="sm:max-w-md" data-testid="dialog-ppe-compliance-form">
             <DialogHeader>
               <DialogTitle>Log PPE Compliance Check</DialogTitle>
               <DialogDescription>Record a PPE compliance check for a worker.</DialogDescription>

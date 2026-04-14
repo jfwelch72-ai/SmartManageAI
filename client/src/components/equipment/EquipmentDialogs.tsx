@@ -55,7 +55,7 @@ interface EditEquipmentDialogProps {
 export function EditEquipmentDialog({ open, onOpenChange, form, onSubmit, isPending }: EditEquipmentDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Equipment</DialogTitle>
           <DialogDescription>Update the equipment details.</DialogDescription>
@@ -235,7 +235,7 @@ interface AssignEquipmentDialogProps {
 export function AssignEquipmentDialog({ open, onOpenChange, form, availableProjects, onSubmit, isPending }: AssignEquipmentDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Assign Equipment to Project</DialogTitle>
           <DialogDescription>Select a project to assign this equipment to.</DialogDescription>
@@ -324,7 +324,7 @@ interface ReturnEquipmentDialogProps {
 export function ReturnEquipmentDialog({ open, onOpenChange, form, activeAssignment, onSubmit, isPending }: ReturnEquipmentDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Return Equipment</DialogTitle>
           <DialogDescription>Mark this equipment as returned from {activeAssignment?.projectName}.</DialogDescription>
@@ -390,7 +390,7 @@ interface RepairDialogProps {
 export function RepairDialog({ open, onOpenChange, form, onSubmit, isPending, aiRecommendations, loadingAI, onFetchAI }: RepairDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Report Equipment Issue</DialogTitle>
           <DialogDescription>Describe the problem and get AI-powered repair recommendations.</DialogDescription>
@@ -627,7 +627,7 @@ interface HourLogDialogProps {
 export function HourLogDialog({ open, onOpenChange, form, availableProjects, onSubmit, isPending }: HourLogDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Log Equipment Hours</DialogTitle>
           <DialogDescription>Record weekly equipment usage.</DialogDescription>
@@ -787,7 +787,7 @@ export function CompleteMaintenanceDialog({ open, onOpenChange, selectedSchedule
       onOpenChange(val);
       if (!val) setFormData({ notes: "", laborCost: "", partsCost: "", performedByVendor: "" });
     }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Complete Maintenance</DialogTitle>
           <DialogDescription>
@@ -867,7 +867,7 @@ interface RateProfileDialogProps {
 export function RateProfileDialog({ open, onOpenChange, form, editingRate, onSubmit, isPending }: RateProfileDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingRate ? "Edit Rate Profile" : "Add Rate Profile"}</DialogTitle>
           <DialogDescription>Configure internal hourly, daily, and weekly rates for this equipment</DialogDescription>
@@ -1006,7 +1006,7 @@ interface FuelLogDialogProps {
 export function FuelLogDialog({ open, onOpenChange, form, availableProjects, onSubmit, isPending }: FuelLogDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Log Fuel Fill-Up</DialogTitle>
           <DialogDescription>Record fuel usage for this equipment.</DialogDescription>

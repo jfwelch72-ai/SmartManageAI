@@ -1571,7 +1571,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
       </div>
 
       <Dialog open={createFolderOpen} onOpenChange={(open) => { setCreateFolderOpen(open); if (!open) { setNewFolderName(""); setCreateFolderParent(null); } }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Create Folder{createFolderParent ? ` inside ${createFolderParent}` : ""}</DialogTitle>
           </DialogHeader>
@@ -1664,7 +1664,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
       />
 
       <Dialog open={storeyAssocDialogOpen} onOpenChange={(open) => { setStoreyAssocDialogOpen(open); if (!open) { setStoreyAssocSheetId(null); setStoreyAssocStoreyId(""); setStoreyAssocStoreyName(""); } }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Link Sheet to BIM Storey</DialogTitle>
           </DialogHeader>

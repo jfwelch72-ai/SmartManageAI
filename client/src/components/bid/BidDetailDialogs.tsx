@@ -68,7 +68,7 @@ interface BidEditDialogProps {
 export function BidEditDialog({ open, onOpenChange, form, onSubmit, isPending }: BidEditDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Bid</DialogTitle>
           <DialogDescription>Update the bid details</DialogDescription>
@@ -246,7 +246,7 @@ export function SubcontractorQuoteDialog({
 }: SubcontractorQuoteDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingQuote ? "Edit Quote" : "Add Subcontractor Quote"}</DialogTitle>
           <DialogDescription>
@@ -494,7 +494,7 @@ export function MaterialQuoteDialog({
 }: MaterialQuoteDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingQuote ? "Edit Material Quote" : "Add Material Quote"}</DialogTitle>
           <DialogDescription>
@@ -709,7 +709,7 @@ export function EquipmentSelectionDialog({
 }: EquipmentSelectionDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingSelection ? "Edit Equipment" : "Add Equipment"}</DialogTitle>
           <DialogDescription>
@@ -980,7 +980,7 @@ export function AwardBidDialog({
 }: AwardBidDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCog className="h-5 w-5" />

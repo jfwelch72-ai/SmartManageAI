@@ -56,6 +56,7 @@ import {
   AlertTriangle,
   Briefcase,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 
 interface Crew {
   id: string;
@@ -822,11 +823,13 @@ export default function CrewsPage() {
                     Loading crews...
                   </div>
                 ) : filteredCrews.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    {hasCrewFilters
-                      ? "No crews match your filters"
-                      : "No crews found"}
-                  </div>
+                  <EmptyState
+                    icon={Users}
+                    title={hasCrewFilters ? "No crews match your filters" : "No crews yet"}
+                    description={hasCrewFilters
+                      ? "Try adjusting your search or filter criteria."
+                      : "Create your first crew to organize team members for jobsite assignments."}
+                  />
                 ) : isMobile ? (
                   <div className="space-y-3 p-4">
                     {filteredCrews.map((crew) => (
@@ -1438,7 +1441,7 @@ export default function CrewsPage() {
 
       {/* Crew Members Dialog */}
       <Dialog open={showMembersDialog} onOpenChange={setShowMembersDialog}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-crew-members">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-crew-members">
           <DialogHeader>
             <DialogTitle>{selectedCrewForMembers?.name} - Members</DialogTitle>
             <DialogDescription>

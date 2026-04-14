@@ -1286,7 +1286,7 @@ export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } 
       </Tabs>
 
       <Dialog open={showAIAssistant} onOpenChange={setShowAIAssistant}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
@@ -1336,7 +1336,7 @@ export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } 
       </Dialog>
 
       <Dialog open={showAIWizard} onOpenChange={(open) => { if (!open && !wizardGenerating) setShowAIWizard(false); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wand2 className="h-5 w-5 text-primary" />

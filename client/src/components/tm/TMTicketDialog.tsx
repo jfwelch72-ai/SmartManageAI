@@ -152,7 +152,7 @@ export default function TMTicketDialog({ projectId, open, onOpenChange }: TMTick
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-tm-ticket">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-tm-ticket">
         <DialogHeader>
           <DialogTitle>Create T&M Work Ticket</DialogTitle>
         </DialogHeader>

@@ -635,7 +635,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       )}
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-contract">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-contract">
           <DialogHeader>
             <DialogTitle>Create Contract</DialogTitle>
           </DialogHeader>
@@ -705,7 +705,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       </Dialog>
 
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="dialog-contract-detail">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="dialog-contract-detail">
           {selectedContract && (
             <div className="space-y-6">
               <DialogHeader>
@@ -1240,7 +1240,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       </Dialog>
 
       <Dialog open={showExecutionDialog} onOpenChange={setShowExecutionDialog}>
-        <DialogContent className="max-w-md" data-testid="dialog-record-execution">
+        <DialogContent className="sm:max-w-md" data-testid="dialog-record-execution">
           <DialogHeader>
             <DialogTitle>Record Contract Execution</DialogTitle>
           </DialogHeader>
@@ -1283,7 +1283,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       </Dialog>
 
       <Dialog open={showRequestApprovalDialog} onOpenChange={setShowRequestApprovalDialog}>
-        <DialogContent className="max-w-md" data-testid="dialog-request-approval">
+        <DialogContent className="sm:max-w-md" data-testid="dialog-request-approval">
           <DialogHeader>
             <DialogTitle>Request Contract Approval</DialogTitle>
           </DialogHeader>
@@ -1336,7 +1336,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       </Dialog>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-contract">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-contract">
           <DialogHeader>
             <DialogTitle>Edit Contract</DialogTitle>
           </DialogHeader>
@@ -1423,7 +1423,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       </Dialog>
 
       <Dialog open={showRedlineDialog} onOpenChange={setShowRedlineDialog}>
-        <DialogContent className="max-w-md" data-testid="dialog-add-redline">
+        <DialogContent className="sm:max-w-md" data-testid="dialog-add-redline">
           <DialogHeader>
             <DialogTitle>Add Redline</DialogTitle>
           </DialogHeader>
@@ -1450,7 +1450,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       </Dialog>
 
       <Dialog open={showSignatureDialog} onOpenChange={setShowSignatureDialog}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="dialog-signature-request">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" data-testid="dialog-signature-request">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PenTool className="h-5 w-5" /> Send for E-Signature
@@ -1563,7 +1563,7 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
       </Dialog>
 
       <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
-        <DialogContent className="max-w-md" data-testid="dialog-apply-template">
+        <DialogContent className="sm:max-w-md" data-testid="dialog-apply-template">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <LayoutTemplate className="h-5 w-5" /> Apply Template

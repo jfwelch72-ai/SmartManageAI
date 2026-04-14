@@ -158,7 +158,7 @@ export function CompanyUserInviteTab() {
       </div>
 
       <Dialog open={showInviteHustlerDialog} onOpenChange={setShowInviteHustlerDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Invite HUSTLER</DialogTitle>
             <DialogDescription>Send an invite to a business owner to give them oversight access to your organization</DialogDescription>

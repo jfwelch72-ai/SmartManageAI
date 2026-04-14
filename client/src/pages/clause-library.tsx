@@ -411,7 +411,7 @@ export default function ClauseLibraryPage() {
       </Tabs>
 
       <Dialog open={showClauseDialog} onOpenChange={setShowClauseDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-clause-form">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-clause-form">
           <DialogHeader>
             <DialogTitle>{editingClause ? "Edit Clause" : "Create Clause"}</DialogTitle>
           </DialogHeader>
@@ -490,7 +490,7 @@ export default function ClauseLibraryPage() {
       </Dialog>
 
       <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-template-form">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-template-form">
           <DialogHeader>
             <DialogTitle>{editingTemplate ? "Edit Template" : "Create Template"}</DialogTitle>
           </DialogHeader>
@@ -606,7 +606,7 @@ export default function ClauseLibraryPage() {
       </Dialog>
 
       <Dialog open={showTemplatePreview} onOpenChange={setShowTemplatePreview}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="dialog-template-preview">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="dialog-template-preview">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />

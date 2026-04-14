@@ -702,7 +702,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
       </Dialog>
 
       <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Task</DialogTitle>
             <DialogDescription>Update task details, status, and progress</DialogDescription>

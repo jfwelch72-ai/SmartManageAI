@@ -112,7 +112,7 @@ export function TakeoffSheetCompareDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] flex flex-col p-0 gap-0" data-testid="dialog-compare-revisions">
+      <DialogContent className="sm:max-w-[95vw] w-[95vw] h-[90vh] flex flex-col p-0 gap-0" data-testid="dialog-compare-revisions">
         <DialogHeader className="shrink-0 px-4 py-3 border-b flex-row items-center justify-between">
           <DialogTitle className="flex items-center gap-2">
             Compare Revisions

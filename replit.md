@@ -47,6 +47,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination, N+1 query prevention, DB health check monitoring, Zod validation on all POST/PATCH/PUT routes via shared `validateBody` helper (`server/utils/validation.ts`), safe financial math utilities, and password complexity policy.
 *   **Dashboard Widget Permission Guards**: All dashboard widgets gate their API calls with `enabled` permission checks (`useFeaturePermission` or role-based) to prevent unauthorized fetches. Pattern: `enabled: hasPermission` in `useQuery`.
 *   **Email Marketing Campaigns**: Full email campaign lifecycle with template management, contact lists, bulk sending, scheduling, and analytics.
+*   **Empty States & Mobile Polish**: Reusable `EmptyState` component (`client/src/components/EmptyState.tsx`) with icon, title, description, optional CTA button, and testId prop. Applied across Projects, Bids, CRM, Procurement, Permits, Crews, Users/Team, Contracts, Equipment, Tasks, Leave Management, Approvals, Email Campaigns, and project tabs (Change Orders, RFIs, Submittals, Subcontractors). All `DialogContent` components use `sm:max-w-*` for mobile-first full-screen dialogs (`< sm`) and centered on desktop. CRM tabs are horizontally scrollable on mobile.
 
 ## External Dependencies
 *   PostgreSQL (Neon)

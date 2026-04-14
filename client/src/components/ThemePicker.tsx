@@ -358,7 +358,7 @@ export function ThemePicker() {
             Theme
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-w-2xl max-h-[85vh]">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle>Color Scheme</DialogTitle>
             <DialogDescription>

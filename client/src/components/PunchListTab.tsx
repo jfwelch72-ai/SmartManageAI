@@ -541,7 +541,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
       {/* CREATE DIALOG                                                   */}
       {/* ─────────────────────────────────────────────────────────────── */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Punch List Item</DialogTitle>
             <DialogDescription>Describe the deficiency and assign it for resolution.</DialogDescription>
@@ -673,7 +673,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
       {/* ─────────────────────────────────────────────────────────────── */}
       {selected && (
         <Dialog open={showDetail} onOpenChange={(o) => { setShowDetail(o); if (!o) setSelected(null); }}>
-          <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-sm text-muted-foreground">{selected.itemNumber}</span>
@@ -938,7 +938,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
       {/* ─────────────────────────────────────────────────────────────── */}
       {selected && (
         <Dialog open={showEdit} onOpenChange={(o) => { setShowEdit(o); if (!o) setSelected(null); }}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Punch List Item</DialogTitle>
               <DialogDescription>{selected.itemNumber} — {selected.title}</DialogDescription>

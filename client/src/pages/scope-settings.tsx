@@ -1987,7 +1987,7 @@ export default function ScopeSettings() {
           if (!open) closeLibraryModal();
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle data-testid="text-library-modal-title">
               {libraryStep === "select"

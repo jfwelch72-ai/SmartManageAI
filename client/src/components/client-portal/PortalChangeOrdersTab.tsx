@@ -290,7 +290,7 @@ export function PortalChangeOrdersTab({ changeOrders, projectId, email, onRefres
       </Card>
 
       <Dialog open={!!selectedCO} onOpenChange={(open) => { if (!open) setSelectedCO(null); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-portal-co-detail">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-portal-co-detail">
           {selectedCO && (
             <>
               <DialogHeader>

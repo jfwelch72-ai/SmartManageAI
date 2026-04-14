@@ -2837,7 +2837,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
       )}
 
       <Dialog open={propagateDialogOpen} onOpenChange={setPropagateDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Apply Scale to Other Sheets</DialogTitle>
             <DialogDescription>
@@ -3146,7 +3146,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
       </Dialog>
 
       <Dialog open={showSummaryReport} onOpenChange={setShowSummaryReport}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto print:max-w-none print:max-h-none print:overflow-visible print:shadow-none" data-testid="measurement-summary-dialog">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto print:max-w-none print:max-h-none print:overflow-visible print:shadow-none" data-testid="measurement-summary-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BookOpen className="h-5 w-5 text-primary" />

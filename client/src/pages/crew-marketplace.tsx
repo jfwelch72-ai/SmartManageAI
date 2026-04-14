@@ -390,7 +390,7 @@ function ListingDetailDialog({
 
   return (
     <Dialog open={!!listing} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HardHat className="h-5 w-5" />
@@ -620,7 +620,7 @@ function CreateListingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh]">
+      <DialogContent className="sm:max-w-lg max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>List Your Crew</DialogTitle>
           <DialogDescription>

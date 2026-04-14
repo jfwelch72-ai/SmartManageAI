@@ -85,7 +85,7 @@ export function DocumentUploadDialog({ open, onOpenChange, selectedDocType, type
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Upload {typesData?.types.find(t => t.value === selectedDocType)?.label}</DialogTitle>
           <DialogDescription>
@@ -182,7 +182,7 @@ interface DocumentHistoryDialogProps {
 export function DocumentHistoryDialog({ open, onOpenChange, historyDocType, typesData, historyDocs }: DocumentHistoryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Version History - {typesData?.types.find(t => t.value === historyDocType)?.label}</DialogTitle>
           <DialogDescription>View previous versions of this document</DialogDescription>

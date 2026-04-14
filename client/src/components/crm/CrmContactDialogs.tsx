@@ -183,7 +183,7 @@ export function CrmContactDialogs({
   return (
     <>
       <Dialog open={createContactOpen} onOpenChange={setCreateContactOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Contact</DialogTitle>
             <DialogDescription>
@@ -207,7 +207,7 @@ export function CrmContactDialogs({
       </Dialog>
 
       <Dialog open={editContactOpen} onOpenChange={setEditContactOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Contact</DialogTitle>
             <DialogDescription>
@@ -231,7 +231,7 @@ export function CrmContactDialogs({
       </Dialog>
 
       <Dialog open={viewContactOpen} onOpenChange={setViewContactOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <div className="flex items-start justify-between gap-4">
               <div>

@@ -262,7 +262,7 @@ function HistoricalCostImportButton({ form }: { form: UseFormReturn<LineItemForm
           Import from History
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import from Historical Costs</DialogTitle>
           <DialogDescription>Select a historical cost record to populate line item fields</DialogDescription>

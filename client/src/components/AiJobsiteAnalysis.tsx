@@ -841,7 +841,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       </Tabs>
 
       <Dialog open={photoDialogOpen} onOpenChange={(open) => { if (!analysisInProgress) setPhotoDialogOpen(open); }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Select Photos for Analysis</DialogTitle>
             <DialogDescription>
@@ -1030,7 +1030,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       </Dialog>
 
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Review Photo Analysis</DialogTitle>
             <DialogDescription>

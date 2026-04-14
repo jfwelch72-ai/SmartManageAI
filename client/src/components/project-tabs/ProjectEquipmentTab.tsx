@@ -84,7 +84,7 @@ function AddEquipmentPlanDialog({ open, onOpenChange, projectId }: { open: boole
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add Equipment to Plan</DialogTitle>
           <DialogDescription>Add planned equipment for this project</DialogDescription>
@@ -283,7 +283,7 @@ function AssignEquipmentDialog({ open, onOpenChange, projectId, plan }: { open: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Assign Equipment to Plan</DialogTitle>
           <DialogDescription>
@@ -454,7 +454,7 @@ function RentalBookingDialog({ open, onOpenChange, projectId, plan }: { open: bo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Book Rental</DialogTitle>
           <DialogDescription>
@@ -671,7 +671,7 @@ function RentalTrackingDialog({ open, onOpenChange, projectId, plan }: { open: b
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Track Rental</DialogTitle>
           <DialogDescription>
@@ -826,7 +826,7 @@ function EditEquipmentPlanDialog({ open, onOpenChange, projectId, plan }: { open
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Equipment Plan</DialogTitle>
           <DialogDescription>Update equipment plan details</DialogDescription>

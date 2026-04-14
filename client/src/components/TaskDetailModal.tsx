@@ -318,7 +318,7 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0" data-testid="task-detail-modal">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-hidden p-0" data-testid="task-detail-modal">
         <div className="flex flex-col md:flex-row h-full max-h-[90vh]">
           <div className="flex-1 overflow-y-auto p-6 border-r border-border" data-testid="task-detail-main">
             <div className="mb-4">

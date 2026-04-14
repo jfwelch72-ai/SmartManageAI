@@ -1006,7 +1006,7 @@ export default function CrmPipelineView() {
 
       {/* Add Opportunity Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="dialog-add-opportunity">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-add-opportunity">
           <DialogHeader>
             <DialogTitle>Add Opportunity</DialogTitle>
             <DialogDescription>Create a new sales opportunity in the pipeline.</DialogDescription>
@@ -1030,7 +1030,7 @@ export default function CrmPipelineView() {
 
       {/* Edit Opportunity Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-opportunity">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-edit-opportunity">
           <DialogHeader>
             <DialogTitle>Edit Opportunity</DialogTitle>
             <DialogDescription>Update the details of this opportunity.</DialogDescription>

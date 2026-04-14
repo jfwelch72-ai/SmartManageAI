@@ -40,7 +40,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, X, Trash2 } from "lucide-react";
+import { Search, Plus, X, Trash2, FolderKanban } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -61,6 +61,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProjectSchema } from "@shared/schema";
 import type { CrmOrganisation, CrmContact } from "@shared/schema";
 import { z } from "zod";
+import { EmptyState } from "@/components/EmptyState";
 
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
@@ -443,11 +444,15 @@ export default function ProjectsPage() {
             Loading projects...
           </div>
         ) : filteredProjects.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            {searchTerm || statusFilter !== "ALL"
-              ? "No projects match your filters"
-              : "No projects yet"}
-          </div>
+          <EmptyState
+            icon={FolderKanban}
+            title={searchTerm || statusFilter !== "ALL" ? "No projects match your filters" : "No projects yet"}
+            description={searchTerm || statusFilter !== "ALL"
+              ? "Try adjusting your search or filter criteria."
+              : "Create your first project to start tracking construction work."}
+            actionLabel={!(searchTerm || statusFilter !== "ALL") && FeaturePermissions.CREATE_PROJECT(user?.role) ? "New Project" : undefined}
+            onAction={!(searchTerm || statusFilter !== "ALL") && FeaturePermissions.CREATE_PROJECT(user?.role) ? () => setShowCreateDialog(true) : undefined}
+          />
         ) : (
           <ProjectsTable
             projects={filteredProjects}
@@ -460,7 +465,7 @@ export default function ProjectsPage() {
 
       <Dialog open={showCreateDialog} onOpenChange={handleDialogOpenChange}>
         <DialogContent
-          className="max-w-2xl max-h-[90vh] overflow-y-auto"
+          className="sm:max-w-2xl"
           data-testid="dialog-create-project"
         >
           <DialogHeader>

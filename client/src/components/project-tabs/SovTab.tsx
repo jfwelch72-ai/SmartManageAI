@@ -319,7 +319,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
       </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create Schedule of Values</DialogTitle>
             <DialogDescription>Create a new SOV pay application for project {projectCode}</DialogDescription>
@@ -360,7 +360,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
       </Dialog>
 
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           {selectedSOV && (
             <>
               <WorkflowTracker entityType="SOV_PAY_APP" entityId={selectedSOV.id} compact data-testid={`workflow-tracker-sov-${selectedSOV.id}`} />

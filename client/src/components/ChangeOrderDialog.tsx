@@ -1056,7 +1056,7 @@ export function ChangeOrderDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="dialog-view-change-order">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="dialog-view-change-order">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-2">
@@ -1723,7 +1723,7 @@ export function ChangeOrderDialog({
       </DialogContent>
 
       <Dialog open={showTmPicker} onOpenChange={setShowTmPicker}>
-        <DialogContent className="max-w-lg" data-testid="dialog-tm-picker">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-tm-picker">
           <DialogHeader><DialogTitle>Link T&M Ticket</DialogTitle></DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {tmTickets.length === 0 ? (
@@ -1742,7 +1742,7 @@ export function ChangeOrderDialog({
       </Dialog>
 
       <Dialog open={showRfiPicker} onOpenChange={setShowRfiPicker}>
-        <DialogContent className="max-w-lg" data-testid="dialog-rfi-picker">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-rfi-picker">
           <DialogHeader><DialogTitle>Link RFI</DialogTitle></DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {projectRfis.length === 0 ? (
@@ -1761,7 +1761,7 @@ export function ChangeOrderDialog({
       </Dialog>
 
       <Dialog open={showContractPicker} onOpenChange={setShowContractPicker}>
-        <DialogContent className="max-w-lg" data-testid="dialog-contract-picker">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-contract-picker">
           <DialogHeader><DialogTitle>Link Contract</DialogTitle></DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {projectContracts.length === 0 ? (
@@ -1781,7 +1781,7 @@ export function ChangeOrderDialog({
     </Dialog>
 
     <Dialog open={showVoidDialog} onOpenChange={setShowVoidDialog}>
-      <DialogContent className="max-w-md" data-testid="dialog-void-change-order">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-void-change-order">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Ban className="w-5 h-5 text-destructive" />Void Change Order</DialogTitle>
         </DialogHeader>

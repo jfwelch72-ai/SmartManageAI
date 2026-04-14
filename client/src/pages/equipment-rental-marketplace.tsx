@@ -960,7 +960,7 @@ export default function EquipmentRentalMarketplacePage() {
           if (!open) setEditingListing(null);
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingListing
@@ -1267,7 +1267,7 @@ export default function EquipmentRentalMarketplacePage() {
           if (!open) setRequestListing(null);
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Request Rental</DialogTitle>
             <DialogDescription>
@@ -1364,7 +1364,7 @@ export default function EquipmentRentalMarketplacePage() {
           if (!open) setRespondingRequest(null);
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Respond to Rental Request</DialogTitle>
             <DialogDescription>

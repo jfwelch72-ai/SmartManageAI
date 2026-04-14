@@ -41,7 +41,7 @@ function AIFeatureContent({ feature }: { feature: AIFeatureType }) {
 export function AIFeatureDialog({ feature, open, onOpenChange }: AIFeatureDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto" data-testid={`dialog-${feature}`}>
+      <DialogContent className="sm:max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto" data-testid={`dialog-${feature}`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />

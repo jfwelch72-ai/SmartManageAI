@@ -75,7 +75,7 @@ import {
   CheckCircle2,
   XCircle,
   FileText,
-  Users,
+  Users as UsersIcon,
   Shield,
   CalendarClock,
   Network,
@@ -90,6 +90,7 @@ import {
   RotateCcw,
   Pencil,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import type { SelectUser } from "@shared/schema";
 
 interface PermissionSet {
@@ -526,7 +527,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
       label: "Contracts & Hiring",
       permissions: [
         { key: "canManageContracts" as const, label: "Contracts", icon: FileText, description: "Manage contracts, clause library, and approvals" },
-        { key: "canManageHiring" as const, label: "Hiring & ATS", icon: Users, description: "Manage job postings, candidates, and hiring pipeline" },
+        { key: "canManageHiring" as const, label: "Hiring & ATS", icon: UsersIcon, description: "Manage job postings, candidates, and hiring pipeline" },
       ],
     },
     {
@@ -917,13 +918,16 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                     Loading users...
                   </div>
                 ) : filteredUsers.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {searchTerm ||
-                    roleFilter !== "ALL" ||
-                    statusFilter !== "ALL"
+                  <EmptyState
+                    icon={UsersIcon}
+                    title={searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL"
                       ? "No users match your filters"
-                      : "No users found"}
-                  </div>
+                      : "No team members yet"}
+                    description={searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL"
+                      ? "Try adjusting your search or filter criteria."
+                      : "Invite team members to collaborate on projects."}
+                    testId="empty-state-users"
+                  />
                 ) : isMobile ? (
                   <div className="space-y-3">
                     {filteredUsers.map((u) => (
@@ -1137,9 +1141,12 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                     ))}
                   </div>
                 ) : filteredPermUsers.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {permSearchTerm ? "No users match your search" : "No users found"}
-                  </div>
+                  <EmptyState
+                    icon={UsersIcon}
+                    title={permSearchTerm ? "No users match your search" : "No users found"}
+                    description="Try adjusting your search criteria."
+                    testId="empty-state-permissions"
+                  />
                 ) : (
                   <div className="space-y-3">
                     {filteredPermUsers.map((u) => {

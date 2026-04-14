@@ -301,7 +301,7 @@ export default function CrmOrganizationSelector({
       )}
 
       <Dialog open={addCrmDialogOpen} onOpenChange={setAddCrmDialogOpen}>
-        <DialogContent className="max-w-md" data-testid="dialog-add-to-crm">
+        <DialogContent className="sm:max-w-md" data-testid="dialog-add-to-crm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="w-5 h-5" />

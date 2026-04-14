@@ -311,7 +311,7 @@ export default function RevisionCompareDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="dialog-revision-compare">
+      <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="dialog-revision-compare">
         <DialogHeader>
           <DialogTitle>Compare Revisions</DialogTitle>
         </DialogHeader>

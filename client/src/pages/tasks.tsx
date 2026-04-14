@@ -14,7 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar as CalendarIcon, User, Search, X, Filter, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar as CalendarIcon, User, Search, X, Filter, ArrowUp, ArrowDown, ArrowUpDown, CheckSquare as CheckSquareIcon } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { FormDatePicker } from "@/components/ui/date-picker";
 import { format, parseISO } from "date-fns";
 import {
@@ -299,7 +300,7 @@ export default function Tasks() {
               Create Task
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle data-testid="heading-create-task">Create New Task</DialogTitle>
               <DialogDescription data-testid="text-create-task-description">
@@ -624,15 +625,14 @@ export default function Tasks() {
       {isLoading ? (
         <div className="text-center py-8" data-testid="loading-tasks">Loading tasks...</div>
       ) : filteredTasks.length === 0 ? (
-        <Card>
-          <CardContent className="py-8">
-            <div className="text-center text-muted-foreground" data-testid="empty-state-tasks">
-              {hasActiveFilters 
-                ? "No tasks match your filters. Try adjusting your search criteria."
-                : "No tasks found. Create your first task to get started."}
-            </div>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={CheckSquareIcon}
+          title={hasActiveFilters ? "No tasks match your filters" : "No tasks yet"}
+          description={hasActiveFilters
+            ? "Try adjusting your search or filter criteria."
+            : "Create your first task to track and manage work."}
+          testId="empty-state-tasks"
+        />
       ) : (
         <>
         {/* Mobile card view */}

@@ -246,7 +246,7 @@ function CreateBidRequestDialog({ onSuccess }: { onSuccess: () => void }) {
           New Bid Request
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Bid Request</DialogTitle>
           <DialogDescription>

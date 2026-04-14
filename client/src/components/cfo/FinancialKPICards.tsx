@@ -55,7 +55,7 @@ export function FinancialKPICards({ profitability, formatCurrency, onProjectClic
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Total Budget</CardTitle>

@@ -215,7 +215,7 @@ export default function HiringPipelinePage() {
       </div>
 
       <AlertDialog open={!!confirmMove} onOpenChange={(open) => { if (!open) setConfirmMove(null); }}>
-        <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
+        <AlertDialogContent className="sm:max-w-[calc(100vw-2rem)] sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Move</AlertDialogTitle>
             <AlertDialogDescription>

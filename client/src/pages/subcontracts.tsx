@@ -643,7 +643,7 @@ export default function SubcontractsPage() {
       </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-lg create-sub-contract-modal">
+        <DialogContent className="sm:max-w-lg create-sub-contract-modal">
           <DialogHeader>
             <DialogTitle>Create Subcontract Agreement</DialogTitle>
             <DialogDescription>
@@ -908,7 +908,7 @@ export default function SubcontractsPage() {
       )}
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Subcontract</DialogTitle>
           </DialogHeader>

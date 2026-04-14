@@ -279,7 +279,7 @@ function ProjectChecklistDialog({ projectId, templates, onClose, onSave, isSavin
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-project-checklist">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-project-checklist">
         <DialogHeader><DialogTitle>Complete Safety Checklist</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">

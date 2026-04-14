@@ -670,7 +670,7 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
       )}
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Report New Delay</DialogTitle>
             <DialogDescription>Document a delay that has impacted project schedule or costs</DialogDescription>
@@ -874,7 +874,7 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
       </Dialog>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Delay Report</DialogTitle>
             <DialogDescription>Update the delay details before submitting</DialogDescription>
@@ -1067,7 +1067,7 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
           setNotificationMode("create");
         }
       }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5" />

@@ -182,7 +182,7 @@ export default function CFODashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       <main className="mx-auto max-w-full px-4 sm:px-6 py-6 sm:py-8">
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
@@ -243,7 +243,7 @@ export default function CFODashboard() {
 
         {isLoading ? (
           <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
               {[1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} className="h-32 w-full" />
               ))}
@@ -361,9 +361,9 @@ function PortfolioRiskSummary({ formatCurrency }: PortfolioRiskSummaryProps) {
             </p>
             <div className="space-y-2">
               {data.highRiskProjects.map((proj) => (
-                <div key={proj.projectId} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`row-high-risk-project-${proj.projectId}`}>
-                  <span className="font-medium truncate max-w-[60%]">{proj.projectName}</span>
-                  <div className="flex items-center gap-2">
+                <div key={proj.projectId} className="flex flex-col sm:flex-row sm:items-center justify-between p-2 rounded border text-sm gap-1 sm:gap-2" data-testid={`row-high-risk-project-${proj.projectId}`}>
+                  <span className="font-medium truncate">{proj.projectName}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
                     {proj.high > 0 && <Badge variant="destructive">{proj.high} high</Badge>}
                     {proj.occurred > 0 && <Badge variant="outline" className="text-amber-600 border-amber-300">{proj.occurred} occurred</Badge>}
                     <span className="text-muted-foreground font-mono">{formatCurrency(proj.costExposure)}</span>

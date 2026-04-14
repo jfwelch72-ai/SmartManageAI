@@ -371,7 +371,7 @@ export function CrmOrgDialogs({
   return (
     <>
       <Dialog open={createOrgOpen} onOpenChange={setCreateOrgOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add New Organization</DialogTitle>
             <DialogDescription>
@@ -395,7 +395,7 @@ export function CrmOrgDialogs({
       </Dialog>
 
       <Dialog open={editOrgOpen} onOpenChange={setEditOrgOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Organization</DialogTitle>
             <DialogDescription>

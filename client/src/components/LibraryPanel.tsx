@@ -534,7 +534,7 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
       </Dialog>
 
       <Dialog open={showLibraryManager} onOpenChange={setShowLibraryManager}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Manage Libraries</DialogTitle>
             <DialogDescription>Create and organize custom libraries to group your items and assemblies.</DialogDescription>

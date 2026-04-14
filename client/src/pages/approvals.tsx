@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { CheckCircle, XCircle, Clock, FileCheck, Loader2, Inbox } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -130,12 +131,12 @@ export default function ApprovalsPage() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold" data-testid="text-pending-heading">Pending Approvals</h2>
         {pendingApprovals.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <Inbox className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground" data-testid="text-no-approvals">No pending approvals at this time.</p>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={Inbox}
+            title="No pending approvals"
+            description="All caught up! There are no items waiting for your approval."
+            testId="empty-state-approvals"
+          />
         ) : (
           <div className="space-y-3">
             {pendingApprovals.map((approval) => (

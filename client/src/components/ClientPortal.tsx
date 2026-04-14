@@ -219,7 +219,7 @@ export default function ClientPortal({ projectId, projectName }: ClientPortalPro
                 Invite Client
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Invite to Client Portal</DialogTitle>
                 <DialogDescription>

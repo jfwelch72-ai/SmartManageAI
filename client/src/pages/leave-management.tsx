@@ -24,6 +24,7 @@ import {
   type TeamLeaveEntry,
 } from "@/hooks/use-data";
 import { Plus, Calendar, CheckCircle, XCircle, Clock, TreePalm, Stethoscope, User, Briefcase, Scale, HelpCircle, AlertCircle, type LucideIcon } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { format, parseISO, differenceInCalendarDays, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, startOfMonth, endOfMonth } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -260,10 +261,12 @@ function RequestHistory() {
 
   if (requests.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-        <p>No leave requests yet. Submit your first request above.</p>
-      </div>
+      <EmptyState
+        icon={Calendar}
+        title="No leave requests yet"
+        description="Submit your first leave request above to get started."
+        testId="empty-state-leave"
+      />
     );
   }
 

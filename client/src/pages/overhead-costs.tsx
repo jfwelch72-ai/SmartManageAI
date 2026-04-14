@@ -289,7 +289,7 @@ function ItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg" data-testid="dialog-overhead-item">
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-overhead-item">
         <DialogHeader>
           <DialogTitle>{editItem ? "Edit Cost Item" : "Add Cost Item"}</DialogTitle>
           <DialogDescription>

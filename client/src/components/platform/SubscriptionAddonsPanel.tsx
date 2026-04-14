@@ -264,7 +264,7 @@ export function SubscriptionDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2" data-testid="text-detail-org-name">
               <Building2 className="w-5 h-5" />
@@ -547,7 +547,7 @@ export function SubscriptionDetailDialog({
       </Dialog>
 
       <Dialog open={!!confirmAction} onOpenChange={(v) => !v && setConfirmAction(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Confirm Change</DialogTitle>
             <DialogDescription>
@@ -620,7 +620,7 @@ export function AssignSubscriptionDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle data-testid="text-assign-dialog-title">Assign Subscription</DialogTitle>
           <DialogDescription>Assign a subscription plan to an organization that doesn't have one.</DialogDescription>

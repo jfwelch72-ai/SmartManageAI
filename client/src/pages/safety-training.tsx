@@ -956,7 +956,7 @@ function TrainingFormDialog({ open, onClose, onSave, isSaving, title, defaultVal
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg" data-testid="dialog-training-form">
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-training-form">
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5"><Label htmlFor="training-title">Training Title *</Label><Input id="training-title" value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g., Fall Protection Basics" data-testid="input-training-title" /></div>
@@ -988,7 +988,7 @@ function AssignDialog({ open, onClose, trainings, employees, defaultTrainingId, 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-assign">
+      <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-assign">
         <DialogHeader><DialogTitle>Assign Training to Employees</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5"><Label>Training Program *</Label><Select value={trainingId} onValueChange={setTrainingId}><SelectTrigger data-testid="select-assign-training"><SelectValue placeholder="Select training" /></SelectTrigger><SelectContent>{trainings.map(t => <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>)}</SelectContent></Select></div>
@@ -1023,7 +1023,7 @@ function CompleteDialog({ open, assignment, onClose, onSave, isSaving, isAdmin }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md" data-testid="dialog-complete">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-complete">
         <DialogHeader><DialogTitle>Mark Training Complete</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="bg-muted/40 rounded-lg p-3"><p className="font-medium text-sm">{assignment.trainingTitle}</p><p className="text-xs text-muted-foreground mt-0.5">{assignment.employeeFirstName} {assignment.employeeLastName}</p></div>
@@ -1051,7 +1051,7 @@ function TopicFormDialog({ open, onClose, onSave, isSaving, title, defaultValues
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg" data-testid="dialog-topic-form">
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-topic-form">
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5"><Label>Topic Title *</Label><Input value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g., Heat Stress Prevention" data-testid="input-topic-title" /></div>
@@ -1078,7 +1078,7 @@ function ScheduleTalkDialog({ open, onClose, topics, onSave, isSaving }: {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md" data-testid="dialog-schedule-talk">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-schedule-talk">
         <DialogHeader><DialogTitle>Schedule Toolbox Talk</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5"><Label>Topic *</Label><Select value={form.topicId} onValueChange={v => set("topicId", v)}><SelectTrigger data-testid="select-schedule-topic"><SelectValue placeholder="Select topic" /></SelectTrigger><SelectContent>{topics.map(t => <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>)}</SelectContent></Select></div>
@@ -1112,7 +1112,7 @@ function AttendanceDialog({ talkId, onClose, onRecord, isSaving }: {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-md" data-testid="dialog-attendance">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-attendance">
         <DialogHeader><DialogTitle>Toolbox Talk Attendance</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           {isLoading ? <Skeleton className="h-24" /> : attendance.length === 0 ? (
@@ -1153,7 +1153,7 @@ function TemplateFormDialog({ open, onClose, onSave, isSaving, title, defaultVal
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg" data-testid="dialog-template-form">
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-template-form">
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5"><Label>Template Name *</Label><Input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g., Daily Pre-Task Safety Checklist" data-testid="input-template-name" /></div>
@@ -1190,7 +1190,7 @@ function StartChecklistDialog({ open, onClose, templates, onSave, isSaving }: {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-start-checklist">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-start-checklist">
         <DialogHeader><DialogTitle>Complete Safety Checklist</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
@@ -1262,7 +1262,7 @@ function ViewInstanceDialog({ instance, onClose }: { instance: ChecklistInstance
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-view-instance">
+      <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-view-instance">
         <DialogHeader><DialogTitle>{instance.templateName}</DialogTitle></DialogHeader>
         <div className="space-y-3 py-2">
           <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
@@ -1326,7 +1326,7 @@ function OshaIncidentFormDialog({ open, onClose, onSave, isSaving, title, defaul
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="dialog-osha-form">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="dialog-osha-form">
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-3">

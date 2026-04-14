@@ -39,7 +39,7 @@ export function CreateClaimDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create New Delay Claim</DialogTitle>
           <DialogDescription>Submit a claim for time extension or cost impact due to project delays</DialogDescription>
@@ -124,7 +124,7 @@ export function ClaimDetailDialog({
   if (!claim) return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span>{claim.claimNumber}</span>

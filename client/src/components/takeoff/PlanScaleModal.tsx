@@ -97,7 +97,7 @@ export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && resetAndClose()}>
-      <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle data-testid="text-plan-scale-title">Plan Scale</DialogTitle>
           <DialogDescription>

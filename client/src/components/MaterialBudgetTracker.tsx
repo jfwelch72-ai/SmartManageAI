@@ -370,7 +370,7 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
       )}
 
       <Dialog open={addUsageOpen} onOpenChange={setAddUsageOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Record Material Usage</DialogTitle>
             <DialogDescription>

@@ -416,7 +416,7 @@ function SubmitResponseDialog({
           {invitation.myResponse ? "Update Response" : "Submit Response"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Submit Bid Response</DialogTitle>
           <DialogDescription>

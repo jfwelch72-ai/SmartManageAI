@@ -875,7 +875,7 @@ export default function RentalVendorsPage() {
             }
           }}
         >
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>
                 {editingVendor ? "Edit Vendor" : "Add Rental Vendor"}
@@ -1130,7 +1130,7 @@ export default function RentalVendorsPage() {
             }
           }}
         >
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>
                 {editingCatalog ? "Edit Equipment" : "Add Equipment to Catalog"}

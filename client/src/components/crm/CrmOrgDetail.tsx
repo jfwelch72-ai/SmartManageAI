@@ -446,7 +446,7 @@ export function CrmOrgDetail({
   return (
     <>
       <Dialog open={detailOrgOpen} onOpenChange={setDetailOrgOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -1464,7 +1464,7 @@ export function CrmOrgDetail({
       </Dialog>
 
       <Dialog open={inviteVendorOpen} onOpenChange={setInviteVendorOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Invite Vendor to Portal</DialogTitle>
             <DialogDescription>
@@ -1526,7 +1526,7 @@ export function CrmOrgDetail({
       </Dialog>
 
       <Dialog open={pricingDialogOpen} onOpenChange={(open) => { setPricingDialogOpen(open); if (!open) { setEditingPricing(null); setIsCustomItemName(false); } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingPricing ? "Edit Pricing Item" : "Add Pricing Item"}</DialogTitle>
             <DialogDescription>
@@ -1795,7 +1795,7 @@ export function CrmOrgDetail({
       </Dialog>
 
       <Dialog open={rentalDialogOpen} onOpenChange={(open) => { setRentalDialogOpen(open); if (!open) setEditingRental(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingRental ? "Edit Rental Equipment" : "Add Rental Equipment"}</DialogTitle>
             <DialogDescription>

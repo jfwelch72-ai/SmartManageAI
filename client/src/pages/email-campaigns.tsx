@@ -16,6 +16,7 @@ import {
   Plus, Send, Copy, Trash2, Pencil, ArrowLeft, Users,
   Mail, Calendar, Loader2, BarChart3, Clock, X
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 
 interface Campaign {
   id: string;
@@ -573,13 +574,12 @@ export default function EmailCampaignsPage() {
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Mail className="h-12 w-12 mx-auto mb-3 opacity-30 text-muted-foreground" />
-                <p className="text-muted-foreground">No campaigns yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Create your first email campaign to get started</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={Mail}
+              title="No campaigns yet"
+              description="Create your first email campaign to get started."
+              testId="empty-state-campaigns"
+            />
           )}
         </TabsContent>
 
@@ -623,19 +623,18 @@ export default function EmailCampaignsPage() {
               ))}
             </div>
           ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Mail className="h-12 w-12 mx-auto mb-3 opacity-30 text-muted-foreground" />
-                <p className="text-muted-foreground">No templates yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Create reusable email templates</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={Mail}
+              title="No templates yet"
+              description="Create reusable email templates."
+              testId="empty-state-templates"
+            />
           )}
         </TabsContent>
       </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle data-testid="dialog-title-campaign">{editingCampaign ? "Edit Campaign" : "Create Campaign"}</DialogTitle>
             <DialogDescription>Fill in the campaign details below.</DialogDescription>
@@ -683,7 +682,7 @@ export default function EmailCampaignsPage() {
       </Dialog>
 
       <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle data-testid="dialog-title-template">{editingTemplate ? "Edit Template" : "Create Template"}</DialogTitle>
             <DialogDescription>Create a reusable email template.</DialogDescription>
@@ -732,7 +731,7 @@ export default function EmailCampaignsPage() {
       </Dialog>
 
       <Dialog open={showContactsDialog} onOpenChange={setShowContactsDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle data-testid="dialog-title-contacts">Add Contacts</DialogTitle>
             <DialogDescription>Enter email addresses separated by commas or new lines. Format: email or Name {"<email>"}.</DialogDescription>
@@ -762,7 +761,7 @@ export default function EmailCampaignsPage() {
       </Dialog>
 
       <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle data-testid="dialog-title-schedule">Schedule Campaign</DialogTitle>
             <DialogDescription>Choose when to send this campaign.</DialogDescription>

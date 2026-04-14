@@ -10,6 +10,7 @@ import { format, differenceInDays, parseISO } from "date-fns";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect } from "react";
+import { EmptyState } from "@/components/EmptyState";
 
 interface PermitWithProject {
   id: string;
@@ -106,9 +107,11 @@ export default function PermitsPage() {
               Loading permits...
             </div>
           ) : expiringPermits.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground" data-testid="text-no-expiring">
-              No permits expiring within the next 30 days.
-            </div>
+            <EmptyState
+              icon={Shield}
+              title="No expiring permits"
+              description="No permits are expiring within the next 30 days. All clear!"
+            />
           ) : (
             <div className="space-y-3">
               {expiringPermits.map((permit) => {

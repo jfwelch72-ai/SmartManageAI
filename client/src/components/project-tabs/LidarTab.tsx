@@ -236,7 +236,7 @@ export default function LidarTab({ projectId, projectCode, userRole }: LidarTabP
       )}
 
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-        <DialogContent className="max-w-lg" data-testid="dialog-tab-upload">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-tab-upload">
           <DialogHeader>
             <DialogTitle>Upload LiDAR Scan</DialogTitle>
             <DialogDescription>Add a new point cloud scan. Supported: LAS, LAZ, PLY. E57 files can be uploaded but require conversion for browser viewing.</DialogDescription>

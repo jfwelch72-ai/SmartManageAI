@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Clock, CheckCircle, DollarSign, FileText, Users, Package, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, User, Building2, Calendar as CalendarIcon } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useCreateSubcontractorPayment } from "@/hooks/use-data";
@@ -206,7 +207,12 @@ export default function SubcontractorsTab({ projectCode }: SubcontractorsTabProp
           {subcontractorsLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading subcontractors...</div>
           ) : subcontractors.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No subcontractor contracts yet</div>
+            <EmptyState
+              icon={Users}
+              title="No subcontractor contracts yet"
+              description="Add subcontractor contracts to track work and payments."
+              testId="empty-state-subcontractors"
+            />
           ) : (
             <div className="space-y-4">
               {subcontractors.map((contract) => (
@@ -483,7 +489,7 @@ export default function SubcontractorsTab({ projectCode }: SubcontractorsTabProp
         setShowQuoteDetailDialog(open);
         if (!open) setSelectedQuote(null);
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-quote-detail">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-quote-detail">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {selectedQuote?.type === "subcontractor" ? (

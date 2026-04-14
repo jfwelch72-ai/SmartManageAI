@@ -15,7 +15,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown, Calendar, CalendarDays } from "lucide-react";
+import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown, Calendar, CalendarDays, ShoppingCart, Receipt } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
@@ -382,7 +383,11 @@ function PurchaseRequestsTab() {
             {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)}
           </div>
         ) : prs.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">No purchase requests found</div>
+          <EmptyState
+            icon={ClipboardCheck}
+            title="No purchase requests"
+            description="Create a purchase request to start the procurement process."
+          />
         ) : (
           <>
             <div className="space-y-3">
@@ -462,7 +467,7 @@ function PurchaseRequestsTab() {
       </CardContent>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-create-pr">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-create-pr">
           <DialogHeader>
             <DialogTitle>New Purchase Request</DialogTitle>
             <DialogDescription>Create a purchase request with line items for approval.</DialogDescription>
@@ -478,7 +483,7 @@ function PurchaseRequestsTab() {
       </Dialog>
 
       <Dialog open={!!editingPR} onOpenChange={o => { if (!o) setEditingPR(null); }}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-edit-pr">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-edit-pr">
           <DialogHeader>
             <DialogTitle>Edit Purchase Request — {editingPR?.prNumber}</DialogTitle>
             <DialogDescription>Update the details and line items.</DialogDescription>
@@ -648,7 +653,11 @@ function PurchaseOrdersTab() {
               {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)}
             </div>
           ) : pos.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No purchase orders found</div>
+            <EmptyState
+              icon={ShoppingCart}
+              title="No purchase orders"
+              description="Purchase orders will appear here once purchase requests are approved and converted."
+            />
           ) : (
             <>
             <div className="space-y-3">
@@ -727,7 +736,7 @@ function PurchaseOrdersTab() {
       </Card>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-create-po">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-create-po">
           <DialogHeader>
             <DialogTitle>New Purchase Order</DialogTitle>
             <DialogDescription>Create a purchase order with line items.</DialogDescription>
@@ -1200,7 +1209,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
       </Sheet>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-edit-po">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-edit-po">
           <DialogHeader>
             <DialogTitle>Edit Purchase Order</DialogTitle>
             <DialogDescription>Update PO details and line items.</DialogDescription>
@@ -1283,7 +1292,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
       </Dialog>
 
       <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent className="max-w-lg" data-testid="dialog-record-receipt">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-record-receipt">
           <DialogHeader>
             <DialogTitle>Record Delivery Receipt</DialogTitle>
             <DialogDescription>Enter quantities received for each line item.</DialogDescription>
@@ -1334,7 +1343,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
       </Dialog>
 
       <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-add-invoice">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-add-invoice">
           <DialogHeader>
             <DialogTitle>Add Vendor Invoice</DialogTitle>
             <DialogDescription>Record an invoice from the vendor for this PO. Line items are auto-populated from PO items for per-item matching.</DialogDescription>
@@ -1583,7 +1592,11 @@ function InvoicesTab() {
               {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)}
             </div>
           ) : invoices.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No vendor invoices found. Add invoices from a PO detail view.</div>
+            <EmptyState
+              icon={FileText}
+              title="No vendor invoices"
+              description="Add invoices from a purchase order detail view to start tracking payments."
+            />
           ) : (
             <>
             <div className="space-y-3">
@@ -1947,7 +1960,11 @@ function ReceiptsTab() {
             {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-md" />)}
           </div>
         ) : receipts.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">No delivery receipts yet. Record receipts from a PO detail view.</div>
+          <EmptyState
+            icon={Receipt}
+            title="No delivery receipts"
+            description="Record receipts from a purchase order detail view to track deliveries."
+          />
         ) : (
           <>
           <div className="space-y-3">

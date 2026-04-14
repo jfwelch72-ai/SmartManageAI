@@ -920,7 +920,7 @@ function CreatePayAppDialog({ open, onOpenChange, sovList, projectsList, existin
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" data-testid="dialog-create-pay-app">
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-create-pay-app">
         <DialogHeader>
           <DialogTitle>{hasExistingPayApp ? "New Billing Period (Roll Forward)" : "New Pay Application"}</DialogTitle>
           <DialogDescription>
@@ -1037,7 +1037,7 @@ function CreateStoredMaterialDialog({ open, onOpenChange, sovList, projectsList 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" data-testid="dialog-create-material">
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-create-material">
         <DialogHeader>
           <DialogTitle>Add Stored Material</DialogTitle>
           <DialogDescription>Track materials stored on or off-site for AIA G703 billing.</DialogDescription>
@@ -1155,7 +1155,7 @@ function CreateRetentionReleaseDialog({ open, onOpenChange, projectsList }: { op
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" data-testid="dialog-create-release">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-create-release">
         <DialogHeader>
           <DialogTitle>Request Retention Release</DialogTitle>
           <DialogDescription>Submit a request to release held retainage.</DialogDescription>

@@ -184,7 +184,7 @@ function BulkUploadDialog({ open, onClose, templateUrl, templateFilename, upload
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>Upload multiple pricing items at once using a CSV file</DialogDescription></DialogHeader>
         {uploadSuccess ? (
           <div className="py-6">
@@ -308,7 +308,7 @@ function MaterialPricingContent({ activeEnrollments, addDialogOpen, setAddDialog
       </Card>
 
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Add Material Pricing Item</DialogTitle><DialogDescription>Add a new pricing item to submit to your enrolled contractor clients</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
@@ -387,7 +387,7 @@ function RentalPricingContent({ activeEnrollments, addDialogOpen, setAddDialogOp
       </Card>
 
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Add Rental Equipment Item</DialogTitle><DialogDescription>Add rental equipment pricing to submit to your enrolled contractor clients</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
@@ -471,7 +471,7 @@ function ServicePricingContent({ activeEnrollments, addDialogOpen, setAddDialogO
       </Card>
 
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Add Service Pricing Item</DialogTitle><DialogDescription>Add service pricing to submit to your enrolled contractor clients</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">

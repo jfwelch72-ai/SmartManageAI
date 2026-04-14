@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban, AlertTriangle, Calendar, FileText, Clock, Download, Send, RotateCcw } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -386,7 +387,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                     New Change Order
                   </Button>
                 </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-change-order">
+              <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-change-order">
                 <DialogHeader>
                   <DialogTitle>Create Change Order</DialogTitle>
                 </DialogHeader>
@@ -546,9 +547,19 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading change orders...</div>
           ) : filteredChangeOrders.length === 0 && changeOrders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No change orders yet</div>
+            <EmptyState
+              icon={FileText}
+              title="No change orders yet"
+              description="Change orders will appear here as they are created for this project."
+              testId="empty-state-change-orders"
+            />
           ) : filteredChangeOrders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No change orders match the selected filter</div>
+            <EmptyState
+              icon={FileText}
+              title="No change orders match your filter"
+              description="Try selecting a different status filter."
+              testId="empty-state-change-orders-filtered"
+            />
           ) : (
             <div className="space-y-3">
               {filteredChangeOrders.map((co) => (
@@ -755,7 +766,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       />
 
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
-        <DialogContent className="max-w-sm" data-testid="dialog-submit-co">
+        <DialogContent className="sm:max-w-sm" data-testid="dialog-submit-co">
           <DialogHeader>
             <DialogTitle>Submit to Client</DialogTitle>
           </DialogHeader>

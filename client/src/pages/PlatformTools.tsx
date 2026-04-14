@@ -538,7 +538,7 @@ function WorkflowTemplatesSection() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Template" : "New Global Workflow Template"}</DialogTitle>
           </DialogHeader>

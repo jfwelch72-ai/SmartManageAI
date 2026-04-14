@@ -62,6 +62,7 @@ import {
   Upload,
   FileUp,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import {
   Table,
   TableBody,
@@ -668,10 +669,16 @@ export default function EquipmentPage() {
                 Loading equipment...
               </div>
             ) : equipmentList.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground">
-                No equipment found.{" "}
-                {canManageEquipment && "Click 'Add Equipment' to create one."}
-              </div>
+              <EmptyState
+                icon={Settings2}
+                title="No equipment yet"
+                description={canManageEquipment
+                  ? "Add your first piece of equipment to track assets and maintenance."
+                  : "No equipment has been added to the system."}
+                actionLabel={canManageEquipment ? "Add Equipment" : undefined}
+                onAction={canManageEquipment ? () => setShowCreateDialog(true) : undefined}
+                testId="empty-state-equipment"
+              />
             ) : isMobile ? (
               <div className="space-y-3">
                 {equipmentList.map((eq) => {
@@ -855,7 +862,7 @@ export default function EquipmentPage() {
       </main>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Equipment</DialogTitle>
             <DialogDescription>
@@ -1235,7 +1242,7 @@ export default function EquipmentPage() {
       </AlertDialog>
 
       <Dialog open={showImportDialog} onOpenChange={(open) => { if (!open) { setShowImportDialog(false); setImportPreviewRows([]); setImportErrors([]); } }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               <div className="flex items-center gap-2">

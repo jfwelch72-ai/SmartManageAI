@@ -34,7 +34,7 @@ export function AttachmentRenderer({ url, name, type, size }: AttachmentRenderer
             />
           </button>
           <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-            <DialogContent className="max-w-3xl p-2 bg-black/90">
+            <DialogContent className="sm:max-w-3xl p-2 bg-black/90">
               <DialogHeader className="sr-only">
                 <DialogTitle>{name || "Image preview"}</DialogTitle>
               </DialogHeader>

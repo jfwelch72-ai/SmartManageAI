@@ -391,7 +391,7 @@ export default function PricebookImportPage() {
       </Dialog>
 
       <Dialog open={showJobDetailDialog} onOpenChange={setShowJobDetailDialog}>
-        <DialogContent className="max-w-4xl max-h-[80vh]">
+        <DialogContent className="sm:max-w-4xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />

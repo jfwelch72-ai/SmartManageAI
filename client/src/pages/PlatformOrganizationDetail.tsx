@@ -1231,7 +1231,7 @@ export default function PlatformOrganizationDetail() {
         </Dialog>
 
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Organization</DialogTitle>
               <DialogDescription>Update organization details below.</DialogDescription>

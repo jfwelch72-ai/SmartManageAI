@@ -412,7 +412,7 @@ export default function SubcontractorPortalManager({
       </Card>
 
       <Dialog open={showInviteDialog} onOpenChange={handleCloseInviteDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Invite Subcontractor to Portal</DialogTitle>
           </DialogHeader>
@@ -561,7 +561,7 @@ export default function SubcontractorPortalManager({
         setShowActivityDialog(open);
         if (!open) setSelectedTokenId(null);
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Activity Log - {selectedTokenName}</DialogTitle>
           </DialogHeader>

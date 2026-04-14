@@ -300,7 +300,7 @@ export default function HiringJobsPage() {
       </Card>
 
       <Dialog open={showCreate} onOpenChange={(v) => { setShowCreate(v); if (!v) { setStep(1); setForm(EMPTY_FORM); } }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create Job — Step {step} of 4</DialogTitle>
           </DialogHeader>

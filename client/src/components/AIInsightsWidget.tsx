@@ -342,7 +342,7 @@ export function AIInsightsWidget({
       </Card>
 
       <Dialog open={!!selectedInsight} onOpenChange={() => setSelectedInsight(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
           {selectedInsight && (
             <>
               <DialogHeader>

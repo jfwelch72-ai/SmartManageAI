@@ -788,7 +788,7 @@ export function SubmittalDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 flex-wrap" data-testid={`${testIdPrefix}text-detail-title`}>
               <FileCheck className="h-5 w-5" />
@@ -1339,7 +1339,7 @@ export function SubmittalDetailDialog({
 
       {/* Legacy Review Dialog */}
       <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {reviewAction === "approve" && "Approve Submittal"}
@@ -1390,7 +1390,7 @@ export function SubmittalDetailDialog({
       </Dialog>
 
       <Dialog open={showLinkRfiDialog} onOpenChange={setShowLinkRfiDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Link to RFI</DialogTitle>
             <DialogDescription>Select an RFI to link to this submittal</DialogDescription>

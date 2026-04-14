@@ -56,6 +56,7 @@ import type {
   Project,
 } from "@shared/schema";
 import { useCrmMutations } from "@/hooks/useCrmMutations";
+import { EmptyState } from "@/components/EmptyState";
 import {
   CrmOrgDialogs,
   type OrgFormState,
@@ -903,14 +904,14 @@ export default function CRMPage() {
           </div>
 
           {/* Tab Switcher */}
-          <div className="flex gap-1 border-b" data-testid="crm-tab-switcher">
+          <div className="flex gap-1 border-b overflow-x-auto" data-testid="crm-tab-switcher">
             <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "orgs" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
               onClick={() => setCrmTab("orgs")}
               data-testid="tab-organizations"
             >
               <Building2 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-              Organizations
+              <span className="whitespace-nowrap">Organizations</span>
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "contacts" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
@@ -918,7 +919,7 @@ export default function CRMPage() {
               data-testid="tab-contacts"
             >
               <Users className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-              Contacts
+              <span className="whitespace-nowrap">Contacts</span>
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "pipeline" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
@@ -926,7 +927,7 @@ export default function CRMPage() {
               data-testid="tab-sales-pipeline"
             >
               <TrendingUp className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-              Sales Pipeline
+              <span className="whitespace-nowrap">Pipeline</span>
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "reports" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
@@ -934,7 +935,7 @@ export default function CRMPage() {
               data-testid="tab-pipeline-reports"
             >
               <BarChart2 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-              Reports
+              <span className="whitespace-nowrap">Reports</span>
             </button>
           </div>
 
@@ -973,13 +974,11 @@ export default function CRMPage() {
                     ))}
                   </div>
                 ) : allContacts.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="font-medium">No contacts found</p>
-                    <p className="text-sm mt-1">
-                      {contactSearch ? "Try a different search term." : "Add contacts inside an organization to see them here."}
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={Users}
+                    title="No contacts found"
+                    description={contactSearch ? "Try a different search term." : "Add contacts inside an organization to see them here."}
+                  />
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="table-contacts">
@@ -1406,13 +1405,15 @@ export default function CRMPage() {
                   ))}
                 </div>
               ) : filteredOrganizations.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No organizations found</p>
-                  <p className="text-sm">
-                    Try adjusting your search or filters
-                  </p>
-                </div>
+                <EmptyState
+                  icon={Building2}
+                  title="No organizations found"
+                  description={searchTerm || selectedType !== "all" || statusFilter !== "all"
+                    ? "Try adjusting your search or filters."
+                    : "Add your first organization to start building your CRM."}
+                  actionLabel={!(searchTerm || selectedType !== "all" || statusFilter !== "all") ? "Add Organization" : undefined}
+                  onAction={!(searchTerm || selectedType !== "all" || statusFilter !== "all") ? () => setCreateOrgOpen(true) : undefined}
+                />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredOrganizations.map((org) => {
@@ -1621,7 +1622,7 @@ export default function CRMPage() {
 
       {/* Duplicate Detection Dialog */}
       <Dialog open={dupOpen} onOpenChange={setDupOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col" data-testid="dialog-duplicates">
+        <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col" data-testid="dialog-duplicates">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Copy className="w-5 h-5" />
@@ -1701,7 +1702,7 @@ export default function CRMPage() {
       {/* Merge Confirmation Dialog */}
       {mergePair && (
         <Dialog open={!!mergePair} onOpenChange={(open) => { if (!open) { setMergePair(null); setMergeWinnerId(""); } }}>
-          <DialogContent className="max-w-xl" data-testid="dialog-merge">
+          <DialogContent className="sm:max-w-xl" data-testid="dialog-merge">
             <DialogHeader>
               <DialogTitle>Merge Organizations</DialogTitle>
               <DialogDescription>

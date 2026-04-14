@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { FileText, Search, Filter, Eye, Plus, ArrowRight } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { AIContractAnalysisPanel } from "@/components/AIContractAnalysisPanel";
 import { AIFeatureTrigger } from "@/components/AIFeatureDialog";
 
@@ -209,14 +210,14 @@ export default function ContractsPage() {
         {isLoading ? (
           <div className="text-center py-12 text-muted-foreground">Loading contracts...</div>
         ) : filtered.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center space-y-3">
-              <FileText className="h-10 w-10 mx-auto text-muted-foreground" />
-              <p className="text-muted-foreground" data-testid="text-no-contracts">
-                {allContracts.length === 0 ? "No contracts created yet." : "No contracts match your filters."}
-              </p>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={FileText}
+            title={allContracts.length === 0 ? "No contracts yet" : "No contracts match your filters"}
+            description={allContracts.length === 0
+              ? "Create your first contract to track project agreements."
+              : "Try adjusting your search or filter criteria."}
+            testId="empty-state-contracts"
+          />
         ) : (
           <div className="space-y-3">
             {filtered.map((contract) => {

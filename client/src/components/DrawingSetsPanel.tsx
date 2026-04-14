@@ -412,7 +412,7 @@ export default function DrawingSetsPanel({
       </Dialog>
 
       <Dialog open={!!manageSetId} onOpenChange={(open) => { if (!open) setManageSetId(null); }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-manage-set-items">
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-manage-set-items">
           <DialogHeader>
             <DialogTitle>Manage Drawing Set Sheets</DialogTitle>
           </DialogHeader>
@@ -498,7 +498,7 @@ export default function DrawingSetsPanel({
       </Dialog>
 
       <Dialog open={!!compareSetId} onOpenChange={(open) => { if (!open) setCompareSetId(null); }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-compare-set">
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-compare-set">
           <DialogHeader>
             <DialogTitle>Compare Set vs Latest Revisions</DialogTitle>
           </DialogHeader>

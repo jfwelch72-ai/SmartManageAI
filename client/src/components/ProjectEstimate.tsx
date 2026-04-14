@@ -644,7 +644,7 @@ export default function ProjectEstimate() {
                 Import from Takeoff
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="sm:max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Import Takeoff Quantities</DialogTitle>
                 <DialogDescription>
@@ -714,7 +714,7 @@ export default function ProjectEstimate() {
                 Add Line Item
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add Manual Line Item</DialogTitle>
                 <DialogDescription>

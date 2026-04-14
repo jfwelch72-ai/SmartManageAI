@@ -833,7 +833,7 @@ function ManageCriteriaDialog() {
       <DialogTrigger asChild>
         <Button variant="outline" data-testid="button-manage-criteria"><Target className="w-4 h-4 mr-2" />Manage Criteria</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Rating Criteria</DialogTitle></DialogHeader>
         {isLoading ? <div className="space-y-2"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div> : (
           <Table>

@@ -350,7 +350,7 @@ function ScoreDetailDialog({
 
   return (
     <Dialog open={!!score} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Award className="h-5 w-5" />
@@ -502,7 +502,7 @@ function CreateScoreDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New Vendor Score</DialogTitle>
           <DialogDescription>

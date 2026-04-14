@@ -406,7 +406,7 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
       </Card>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-create-pr">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-create-pr">
           <DialogHeader>
             <DialogTitle>New Purchase Request</DialogTitle>
             <DialogDescription>Create a purchase request with line items for approval.</DialogDescription>
@@ -422,7 +422,7 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
       </Dialog>
 
       <Dialog open={!!editingPR} onOpenChange={o => { if (!o) setEditingPR(null); }}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-edit-pr">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-edit-pr">
           <DialogHeader>
             <DialogTitle>Edit Purchase Request</DialogTitle>
             <DialogDescription>Update details and line items.</DialogDescription>
@@ -671,7 +671,7 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
       </Card>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-create-po">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-create-po">
           <DialogHeader>
             <DialogTitle>New Purchase Order</DialogTitle>
             <DialogDescription>Create a purchase order with line items.</DialogDescription>
@@ -1134,7 +1134,7 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
       </Sheet>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-edit-po">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-edit-po">
           <DialogHeader>
             <DialogTitle>Edit Purchase Order</DialogTitle>
             <DialogDescription>Update PO details and line items.</DialogDescription>
@@ -1217,7 +1217,7 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
       </Dialog>
 
       <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent className="max-w-lg" data-testid="dialog-record-receipt">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-record-receipt">
           <DialogHeader>
             <DialogTitle>Record Delivery Receipt</DialogTitle>
             <DialogDescription>Enter quantities received for each line item.</DialogDescription>
@@ -1268,7 +1268,7 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
       </Dialog>
 
       <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
-        <DialogContent className="max-w-2xl" data-testid="dialog-add-invoice">
+        <DialogContent className="sm:max-w-2xl" data-testid="dialog-add-invoice">
           <DialogHeader>
             <DialogTitle>Add Vendor Invoice</DialogTitle>
             <DialogDescription>Record an invoice from the vendor for this PO. Line items are auto-populated from PO items for per-item matching.</DialogDescription>

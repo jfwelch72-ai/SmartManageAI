@@ -472,7 +472,7 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
       </Card>
 
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Review AI Draft</DialogTitle>
             <DialogDescription>

@@ -264,7 +264,7 @@ export function PrevailingWageTab({
       </Card>
 
       <Dialog open={showPWRateDialog} onOpenChange={(open) => !open && resetPWRateDialog()}>
-        <DialogContent className="max-w-lg" data-testid="dialog-pw-rate">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-pw-rate">
           <DialogHeader>
             <DialogTitle>{editingPWRate ? "Edit Prevailing Wage Rate" : "Add Prevailing Wage Rate"}</DialogTitle>
             <DialogDescription>

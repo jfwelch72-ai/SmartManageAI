@@ -280,7 +280,7 @@ export default function WebsiteBlogTab({ hasWebsite, canEdit, isMobile }: Websit
       </div>
 
       <Dialog open={showCreateBlogDialog} onOpenChange={setShowCreateBlogDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create Blog Post</DialogTitle>
             <DialogDescription>Write a new blog post for your website</DialogDescription>

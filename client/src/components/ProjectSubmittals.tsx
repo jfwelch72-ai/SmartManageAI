@@ -17,7 +17,9 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
+  Send,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { format } from "date-fns";
 import { useSubmittalMutations } from "@/hooks/useSubmittalMutations";
 import type { Submittal, SubmittalStats, SubmittalCreateForm, Subcontractor } from "@/hooks/useSubmittalMutations";
@@ -229,11 +231,12 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
                 {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-12" />)}
               </div>
             ) : submittals.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground" data-testid="proj-sub-text-empty-state">
-                  No submittals found
-                </CardContent>
-              </Card>
+              <EmptyState
+                icon={Send}
+                title="No submittals yet"
+                description="Create a submittal to track material approvals and document submissions."
+                testId="empty-state-submittals"
+              />
             ) : (
               <>
               <div className="hidden md:block">
@@ -338,7 +341,7 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
       </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create Submittal</DialogTitle>
             <DialogDescription>Create a new submittal for review and approval</DialogDescription>

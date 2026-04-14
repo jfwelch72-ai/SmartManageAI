@@ -234,7 +234,7 @@ export default function LibraryAssemblyDialog({ open, onOpenChange, assembly, li
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{assembly ? "Edit Assembly" : "New Assembly"}</DialogTitle>
           <DialogDescription>

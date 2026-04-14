@@ -263,7 +263,7 @@ export default function BidDocumentDistribution({ bidId, projectId, projectName,
       </CardContent>
 
       <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Send Document to Subcontractor</DialogTitle>
             <DialogDescription>

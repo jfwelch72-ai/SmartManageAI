@@ -390,7 +390,7 @@ export default function WorkflowBuilderPage({ embedded }: { embedded?: boolean }
       )}
 
       <Dialog open={showEditor} onOpenChange={(open) => { if (!open) resetEditor(); }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle data-testid="text-editor-title">{editingId ? "Edit Workflow" : "Create Workflow"}</DialogTitle>
           </DialogHeader>

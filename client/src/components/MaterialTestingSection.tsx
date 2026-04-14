@@ -329,7 +329,7 @@ export default function MaterialTestingSection({ projectId, projectCode, userRol
 
       {(showCreate || showEdit) && (
         <Dialog open={true} onOpenChange={() => { setShowCreate(false); setShowEdit(false); setSelected(null); }}>
-          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-material-test-form">
+          <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-material-test-form">
             <DialogHeader>
               <DialogTitle>{showEdit ? "Edit Material Test" : "New Material Test"}</DialogTitle>
               <DialogDescription>
@@ -487,7 +487,7 @@ export default function MaterialTestingSection({ projectId, projectCode, userRol
 
       {showDetail && selected && (
         <Dialog open={true} onOpenChange={() => { setShowDetail(false); setSelected(null); }}>
-          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-material-test-detail">
+          <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-material-test-detail">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FlaskConical className="h-5 w-5" />

@@ -413,7 +413,7 @@ export function SovLineItemsEditor({ sov, canEdit, canApprove, onClose }: SovLin
       </div>
 
       <Dialog open={showAddLineItemDialog} onOpenChange={setShowAddLineItemDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add Line Item</DialogTitle>
           </DialogHeader>
@@ -458,7 +458,7 @@ export function SovLineItemsEditor({ sov, canEdit, canApprove, onClose }: SovLin
       </Dialog>
 
       <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Send to Representative</DialogTitle>
             <DialogDescription>

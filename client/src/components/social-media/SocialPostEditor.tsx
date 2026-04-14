@@ -229,7 +229,7 @@ export function SocialPostEditor({ open, onClose, editingPost, prefilledDate }: 
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Post" : "Create New Post"}</DialogTitle>
           <DialogDescription>

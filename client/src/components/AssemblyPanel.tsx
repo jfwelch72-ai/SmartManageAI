@@ -341,7 +341,7 @@ export default function AssemblyPanel({ selectedMeasurementId }: AssemblyPanelPr
 
       {/* Create Assembly Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle data-testid="text-create-assembly-title">Create Assembly Template</DialogTitle>
             <DialogDescription>

@@ -367,7 +367,7 @@ export default function SocialMediaPage() {
       )}
 
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Reject Post</DialogTitle>
             <DialogDescription>Provide a reason for rejecting this post. The creator will see this feedback.</DialogDescription>

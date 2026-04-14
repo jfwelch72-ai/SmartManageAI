@@ -349,7 +349,7 @@ export default function HiringTasksPage() {
       </Card>
 
       <Dialog open={showDialog} onOpenChange={(open) => { setShowDialog(open); if (!open) resetDialog(); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add Hiring Task</DialogTitle>
           </DialogHeader>

@@ -79,6 +79,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
 import { Label } from "@/components/ui/label";
+import { EmptyState } from "@/components/EmptyState";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -952,14 +953,17 @@ export default function BidsPage() {
             Loading bids...
           </div>
         ) : filteredBids.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            {searchTerm ||
-            dueDateFilter !== "ALL" ||
-            statusFilter !== "ALL" ||
-            estimatorFilter !== "ALL"
+          <EmptyState
+            icon={ClipboardList}
+            title={searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL"
               ? "No bids match your filters"
-              : "No bids found. Click 'New Bid' to create your first bid."}
-          </div>
+              : "No bids yet"}
+            description={searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL"
+              ? "Try adjusting your search or filter criteria."
+              : "Create your first bid to start tracking estimates and proposals."}
+            actionLabel={!(searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL") ? "New Bid" : undefined}
+            onAction={!(searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL") ? () => setShowCreateDialog(true) : undefined}
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {filteredBids.map((bid) => (
@@ -1015,7 +1019,7 @@ export default function BidsPage() {
 
       {/* Award & Assign Team Dialog */}
       <Dialog open={showAwardDialog} onOpenChange={setShowAwardDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserCog className="h-5 w-5" />
@@ -1215,7 +1219,7 @@ export default function BidsPage() {
       {/* Create Bid Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={handleDialogOpenChange}>
         <DialogContent
-          className="max-w-3xl max-h-[90vh] overflow-y-auto"
+          className="sm:max-w-3xl"
           data-testid="dialog-create-bid"
         >
           <DialogHeader>

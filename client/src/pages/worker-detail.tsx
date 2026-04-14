@@ -547,7 +547,7 @@ function WorkerSafetyTrainingTab({ workerId, workerName }: { workerId: string; w
       )}
 
       <Dialog open={showCompleteDialog} onOpenChange={() => setShowCompleteDialog(false)}>
-        <DialogContent className="max-w-sm" data-testid="dialog-worker-complete">
+        <DialogContent className="sm:max-w-sm" data-testid="dialog-worker-complete">
           <DialogHeader><DialogTitle>Mark Training Complete</DialogTitle></DialogHeader>
           {completing && (
             <div className="space-y-3 py-2">

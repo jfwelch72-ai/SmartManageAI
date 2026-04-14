@@ -697,7 +697,7 @@ function NewChecklistDialog({ onClose, onSave, isSaving }: {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-md" data-testid="dialog-new-mobilization-checklist">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-new-mobilization-checklist">
         <DialogHeader><DialogTitle>New Mobilization Checklist</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
@@ -764,7 +764,7 @@ function NewMethodStatementDialog({ scheduleTasks, safetyChecklists, onClose, on
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-new-method-statement">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-new-method-statement">
         <DialogHeader><DialogTitle>New Method Statement</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
@@ -897,7 +897,7 @@ function MethodStatementDetailDialog({ statement, scheduleTasks, safetyChecklist
   if (isEditing) {
     return (
       <Dialog open={true} onOpenChange={onClose}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-edit-method-statement">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-edit-method-statement">
           <DialogHeader><DialogTitle>Edit Method Statement</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
@@ -970,7 +970,7 @@ function MethodStatementDetailDialog({ statement, scheduleTasks, safetyChecklist
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-method-statement-detail">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-method-statement-detail">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />

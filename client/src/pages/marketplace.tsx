@@ -1274,7 +1274,7 @@ function CrewListingDetailDialog({
 
   return (
     <Dialog open={!!listing} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HardHat className="h-5 w-5" />
@@ -1638,7 +1638,7 @@ function CreateOrEditCrewListingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit Crew Listing" : "List Your Crew"}

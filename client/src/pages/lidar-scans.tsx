@@ -481,7 +481,7 @@ export default function LidarScansPage() {
       </Tabs>
 
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-        <DialogContent className="max-w-lg" data-testid="dialog-upload-scan">
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-upload-scan">
           <DialogHeader>
             <DialogTitle>Upload LiDAR Scan</DialogTitle>
             <DialogDescription>Add a new point cloud scan to a project. Supported formats: LAS, LAZ, PLY. E57 files can be uploaded but require server-side conversion for browser viewing.</DialogDescription>

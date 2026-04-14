@@ -291,7 +291,7 @@ export default function HiringInterviewsPage() {
 
       {/* Schedule Dialog */}
       <Dialog open={showSchedule} onOpenChange={setShowSchedule}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Schedule Interview</DialogTitle>
           </DialogHeader>
@@ -628,7 +628,7 @@ function StatusUpdateDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Update Interview Status</DialogTitle>
         </DialogHeader>
