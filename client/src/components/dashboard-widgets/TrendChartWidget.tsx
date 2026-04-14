@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { BarChart3, TrendingUp, AlertTriangle, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import {
   ResponsiveContainer,
   LineChart,
@@ -87,6 +88,7 @@ interface TrendChartWidgetProps {
 }
 
 export function TrendChartWidget({ config }: TrendChartWidgetProps) {
+  const hasPermission = useFeaturePermission("canViewFinancials");
   const merged = { ...DEFAULT_TREND_CONFIG, ...config };
   const metricDef = TREND_METRICS.find(m => m.value === merged.metric) || TREND_METRICS[0];
   const periodDef = TREND_PERIODS.find(p => p.value === merged.period) || TREND_PERIODS[1];
@@ -94,6 +96,7 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
 
   const { data, isLoading, isError, refetch} = useQuery<TrendResponse>({
     queryKey: ["/api/dashboard/trend", merged.metric, merged.period, merged.groupBy],
+    enabled: hasPermission,
     queryFn: async () => {
       const params = new URLSearchParams({
         metric: merged.metric || "LABOR_COST",
@@ -106,6 +109,8 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
     },
     refetchInterval: 120000,
   });
+
+  if (!hasPermission) return null;
 
   if (isLoading) {
     return (

@@ -5,6 +5,7 @@ import { users, auditLog, billingEvents } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, and, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { validateBody } from "./utils/validation";
 import { logCreate } from "./auditLogger";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -70,7 +71,8 @@ router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"),
       paymentStatus: z.enum(["pending", "paid", "overdue"]).default("pending"),
     });
 
-    const data = schema.parse(req.body);
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
 
     const insertData = { ...data, createdById: req.user!.id };
 
@@ -84,7 +86,7 @@ router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"),
   }
 });
 
-router.get("/api/audit-logs", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
+router.get("/api/audit-logs", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { entityType, entityId, userId, action } = req.query;
 
@@ -175,13 +177,10 @@ router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res, ne
       return;
     }
 
-    const parsed = uploadRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(422).json({ error: "contentType and fileSize are required", details: parsed.error.flatten() });
-      return;
-    }
+    const uploadData = validateBody(uploadRequestSchema, req.body, res);
+    if (!uploadData) return;
 
-    const { contentType, fileSize, fileType } = parsed.data;
+    const { contentType, fileSize, fileType } = uploadData;
 
     const { validateMimeType, validateFileSize, getAllowedMimeTypes, getMaxFileSize } = await import("./fileValidation");
 
@@ -235,13 +234,10 @@ router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res,
       return;
     }
 
-    const parsed = uploadRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(422).json({ error: "contentType and fileSize are required", details: parsed.error.flatten() });
-      return;
-    }
+    const uploadData = validateBody(uploadRequestSchema, req.body, res);
+    if (!uploadData) return;
 
-    const { contentType, fileSize, fileType } = parsed.data;
+    const { contentType, fileSize, fileType } = uploadData;
     const { validateMimeType, validateFileSize, getAllowedMimeTypes, getMaxFileSize } = await import("./fileValidation");
     const resolvedFileType = fileType ?? "DOCUMENT";
 

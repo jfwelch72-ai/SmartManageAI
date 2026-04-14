@@ -181,6 +181,7 @@ import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole, requireRoleOrFeature } from "./auth";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
+import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
 
 const router = Router();
@@ -450,12 +451,8 @@ router.post("/api/projects/:code/labor-rates", requireAuth, requireRoleOrFeature
       notes: z.string().optional(),
     });
 
-    const validationResult = laborRateSchema.safeParse(req.body);
-    
-    if (!validationResult.success) {
-      res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
-      return;
-    }
+    const validationResult = validateBody(laborRateSchema, req.body, res);
+    if (!validationResult) return;
 
     const [existing] = await db
       .select()
@@ -468,7 +465,7 @@ router.post("/api/projects/:code/labor-rates", requireAuth, requireRoleOrFeature
       [result] = await db
         .update(projectLaborRates)
         .set({
-          ...validationResult.data,
+          ...validationResult,
           updatedAt: new Date(),
         })
         .where(eq(projectLaborRates.id, existing.id))
@@ -478,7 +475,7 @@ router.post("/api/projects/:code/labor-rates", requireAuth, requireRoleOrFeature
         .insert(projectLaborRates)
         .values({
           projectId: project.id,
-          ...validationResult.data,
+          ...validationResult,
         })
         .returning();
     }
@@ -488,7 +485,7 @@ router.post("/api/projects/:code/labor-rates", requireAuth, requireRoleOrFeature
       action: existing ? "UPDATE" : "CREATE",
       entityType: "projectLaborRates",
       entityId: result.id,
-      newValue: JSON.stringify({ projectCode: req.params.code, ...validationResult.data }),
+      newValue: JSON.stringify({ projectCode: req.params.code, ...validationResult }),
     }, req);
 
     res.json(result);
@@ -554,14 +551,10 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeat
       notes: z.string().optional(),
     });
 
-    const validationResult = employeeRateSchema.safeParse(req.body);
-    
-    if (!validationResult.success) {
-      res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
-      return;
-    }
+    const validationResult = validateBody(employeeRateSchema, req.body, res);
+    if (!validationResult) return;
 
-    const [employee] = await db.select().from(users).where(eq(users.id, validationResult.data.userId)).limit(1);
+    const [employee] = await db.select().from(users).where(eq(users.id, validationResult.userId)).limit(1);
     if (!employee) {
       res.status(404).json({ error: "Employee not found" });
       return;
@@ -572,7 +565,7 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeat
       .from(projectEmployeeRates)
       .where(and(
         eq(projectEmployeeRates.projectId, project.id),
-        eq(projectEmployeeRates.userId, validationResult.data.userId)
+        eq(projectEmployeeRates.userId, validationResult.userId)
       ))
       .limit(1);
 
@@ -581,9 +574,9 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeat
       [result] = await db
         .update(projectEmployeeRates)
         .set({
-          regularRate: validationResult.data.regularRate,
-          overtimeRate: validationResult.data.overtimeRate,
-          notes: validationResult.data.notes,
+          regularRate: validationResult.regularRate,
+          overtimeRate: validationResult.overtimeRate,
+          notes: validationResult.notes,
           updatedAt: new Date(),
         })
         .where(eq(projectEmployeeRates.id, existing.id))
@@ -593,10 +586,10 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeat
         .insert(projectEmployeeRates)
         .values({
           projectId: project.id,
-          userId: validationResult.data.userId,
-          regularRate: validationResult.data.regularRate,
-          overtimeRate: validationResult.data.overtimeRate,
-          notes: validationResult.data.notes,
+          userId: validationResult.userId,
+          regularRate: validationResult.regularRate,
+          overtimeRate: validationResult.overtimeRate,
+          notes: validationResult.notes,
         })
         .returning();
     }
@@ -606,7 +599,7 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeat
       action: existing ? "UPDATE" : "CREATE",
       entityType: "projectEmployeeRates",
       entityId: result.id,
-      newValue: JSON.stringify({ projectCode: req.params.code, employeeId: validationResult.data.userId }),
+      newValue: JSON.stringify({ projectCode: req.params.code, employeeId: validationResult.userId }),
     }, req);
 
     res.json(result);
@@ -927,12 +920,8 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
       location: sanitizeText(req.body.location),
     };
 
-    const validationResult = createProjectSchema.safeParse(sanitizedBody);
-    
-    if (!validationResult.success) {
-      res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
-      return;
-    }
+    const validationResult = validateBody(createProjectSchema, sanitizedBody, res);
+    if (!validationResult) return;
 
     const MAX_RETRIES = 3;
     let lastError: any = null;
@@ -945,9 +934,9 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
         logInfo(`[Create Project] Auto-assigned code: ${nextCode} (attempt ${attempt + 1})`);
 
         const [newProject] = await db.insert(projects).values({
-          ...validationResult.data,
+          ...validationResult,
           code: nextCode,
-          gcOrganizationId: validationResult.data.gcOrganizationId || userOrgId,
+          gcOrganizationId: validationResult.gcOrganizationId || userOrgId,
         }).returning();
 
         // Auto-create a project channel with slug and add all project-org members
@@ -1113,19 +1102,15 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
       location: req.body.location ? sanitizeText(req.body.location) : undefined,
     };
 
-    const validationResult = updateProjectSchema.safeParse(sanitizedBody);
-    
-    if (!validationResult.success) {
-      res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
-      return;
-    }
+    const validationResult = validateBody(updateProjectSchema, sanitizedBody, res);
+    if (!validationResult) return;
 
-    if (validationResult.data.status !== undefined) {
+    if (validationResult.status !== undefined) {
       const currentProject = existingProject;
 
       const transitionCheck = validateProjectStatusTransition(
         currentProject.status as ProjectStatus,
-        validationResult.data.status as ProjectStatus
+        validationResult.status as ProjectStatus
       );
 
       if (!transitionCheck.valid) {
@@ -1134,7 +1119,7 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
       }
     }
 
-    const updateData: any = { ...validationResult.data, updatedAt: new Date() };
+    const updateData: any = { ...validationResult, updatedAt: new Date() };
     
     const [updatedProject] = await db
       .update(projects)
@@ -1147,7 +1132,7 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
       return;
     }
 
-    if (validationResult.data.status !== undefined && validationResult.data.status !== existingProject.status) {
+    if (validationResult.status !== undefined && validationResult.status !== existingProject.status) {
       await eventBus.emit({
         type: "project.status_changed",
         version: 1,
@@ -1325,12 +1310,9 @@ const updateFinancialsSchema = z.object({
 
 router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const validation = updateFinancialsSchema.safeParse(req.body);
-    if (!validation.success) {
-      res.status(400).json({ error: "Invalid financial data", details: validation.error.errors });
-      return;
-    }
-    const { budget, contractAmount, texturaDrawDate, drawDayOfMonth } = validation.data;
+    const validation = validateBody(updateFinancialsSchema, req.body, res);
+    if (!validation) return;
+    const { budget, contractAmount, texturaDrawDate, drawDayOfMonth } = validation;
 
     if (budget !== undefined && budget !== null) {
       const budgetCheck = validateMonetaryAmount(budget, "Budget");

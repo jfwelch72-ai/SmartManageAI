@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, FileCheck, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
 import { format, parseISO, differenceInDays } from "date-fns";
+import { useAuth } from "@/hooks/use-auth";
+import type { UserRole } from "@/lib/rbac";
 
 interface ExpiringPermit {
   id: string;
@@ -29,7 +31,13 @@ const PERMIT_TYPE_LABELS: Record<string, string> = {
   CUSTOM: "Custom",
 };
 
+const PERMITTED_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"];
+
 export function ExpiringPermitsBanner() {
+  const { user } = useAuth();
+  const userRole = user?.role as UserRole | undefined;
+  const hasPermission = userRole ? PERMITTED_ROLES.includes(userRole) : false;
+
   const { data: expiringPermits = [] } = useQuery<ExpiringPermit[]>({
     queryKey: ["/api/permits/expiring"],
     queryFn: async () => {
@@ -38,9 +46,10 @@ export function ExpiringPermitsBanner() {
       return response.json();
     },
     refetchInterval: 300000,
+    enabled: hasPermission,
   });
 
-  if (expiringPermits.length === 0) return null;
+  if (!hasPermission || expiringPermits.length === 0) return null;
 
   return (
     <Alert variant="destructive" className="mb-6 border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20 text-yellow-900 dark:text-yellow-200" data-testid="alert-expiring-permits">

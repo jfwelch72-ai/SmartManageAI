@@ -195,7 +195,9 @@
  *       201: { description: Note added }
  */
 import { logError } from "./utils/logger";
+import { z } from "zod";
 import { Router } from "express";
+import { validateBody } from "./utils/validation";
 import { db } from "./db";
 import { crmOrganisations, crmContacts, crmOrganisationNotes, insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema, auditLog, users, emailThreads, emailMessages, calendarEvents, projects, crmOpportunities, vendorPricingCatalogs, vendorPricebooks, vendorPricebookItems, subcontractorContracts, rentalVendors, rentalEquipmentCatalog, vendorEnrollments, vendorUsers, websiteContactSubmissions, emailTasks, pricebookImportJobs, vendorScores, materialPriceIndex, rfis, transmittalRecipients, submittals, subcontractorPortalTokens, bidDocumentDistributions, insertCrmContactSchema, crmOpportunityActivities, insertCrmOpportunitySchema, insertCrmOpportunityActivitySchema, notifications, organizationNetworkSettings } from "@shared/schema";
 import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, ilike, ne, type SQL, asc } from "drizzle-orm";
@@ -1928,14 +1930,17 @@ router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requir
     if (!opp) return res.status(404).json({ error: "Opportunity not found" });
     if (opp.stage !== "WON") return res.status(400).json({ error: "Only WON opportunities can be converted to projects" });
 
-    const { name, clientName, description, startDate, targetEndDate, location } = req.body as {
-      name?: string;
-      clientName?: string;
-      description?: string;
-      startDate?: string;
-      targetEndDate?: string;
-      location?: string;
-    };
+    const convertToProjectSchema = z.object({
+      name: z.string().max(500).optional(),
+      clientName: z.string().max(500).optional(),
+      description: z.string().max(5000).optional(),
+      startDate: z.string().optional(),
+      targetEndDate: z.string().optional(),
+      location: z.string().max(1000).optional(),
+    });
+    const parsed = validateBody(convertToProjectSchema, req.body || {}, res);
+    if (!parsed) return;
+    const { name, clientName, description, startDate, targetEndDate, location } = parsed;
 
     const code = await getNextProjectCode();
 
@@ -1986,10 +1991,13 @@ router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("A
 
     const { bids } = await import("@shared/schema");
 
-    const { name, description } = req.body as {
-      name?: string;
-      description?: string;
-    };
+    const createBidSchema = z.object({
+      name: z.string().max(500).optional(),
+      description: z.string().max(5000).optional(),
+    });
+    const parsedBid = validateBody(createBidSchema, req.body || {}, res);
+    if (!parsedBid) return;
+    const { name, description } = parsedBid;
 
     const code = await getNextProjectCode();
 

@@ -184,6 +184,7 @@ import {
 import { eq, desc, inArray, sql, and, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
@@ -845,7 +846,21 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 
     console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
 
-    const { superintendentId, projectManagerId, overheadPercent: bodyOverhead, profitPercent: bodyProfit, startStatus: bodyStartStatus, startDate: bodyStartDate, endDate: bodyEndDate, projectEngineerId: bodyProjectEngineerId, foremanId: bodyForemanId } = req.body || {};
+    const bidConvertSchema = z.object({
+      superintendentId: z.string().uuid().optional(),
+      projectManagerId: z.string().uuid().optional(),
+      overheadPercent: z.number().min(0).max(100).optional(),
+      profitPercent: z.number().min(0).max(100).optional(),
+      startStatus: z.enum(["ACTIVE", "PLANNING"]).optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      projectEngineerId: z.string().uuid().optional(),
+      foremanId: z.string().uuid().optional(),
+    });
+    const parsed = validateBody(bidConvertSchema, req.body || {}, res);
+    if (!parsed) return;
+
+    const { superintendentId, projectManagerId, overheadPercent: bodyOverhead, profitPercent: bodyProfit, startStatus: bodyStartStatus, startDate: bodyStartDate, endDate: bodyEndDate, projectEngineerId: bodyProjectEngineerId, foremanId: bodyForemanId } = parsed;
     const OVERHEAD_PERCENT = typeof bodyOverhead === "number" && bodyOverhead >= 0 ? bodyOverhead : 10;
     const PROFIT_MARGIN_PERCENT = typeof bodyProfit === "number" && bodyProfit >= 0 ? bodyProfit : 15;
     const projectStartStatus: "ACTIVE" | "PLANNING" = bodyStartStatus === "PLANNING" ? "PLANNING" : "ACTIVE";
@@ -1642,10 +1657,11 @@ router.post("/api/bids/:code/quotes", requireAuth, requireRole("ADMIN", "MANAGER
       contactPhone: req.body.contactPhone ? sanitizePhone(req.body.contactPhone) : undefined,
     };
 
-    const validated = insertBidSubcontractorQuoteSchema.parse({
+    const validated = validateBody(insertBidSubcontractorQuoteSchema, {
       ...sanitizedBody,
       bidId: bid.id,
-    });
+    }, res);
+    if (!validated) return;
 
     const [newQuote] = await db.insert(bidSubcontractorQuotes).values(validated).returning();
 
@@ -1660,11 +1676,7 @@ router.post("/api/bids/:code/quotes", requireAuth, requireRole("ADMIN", "MANAGER
     res.status(201).json(newQuote);
   } catch (error: any) {
     logError("Create bid quote error:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (error.name === "ZodError") {
-      res.status(400).json({ error: "Invalid quote data", details: error.errors });
-    } else {
-      next(error);
-    }
+    next(error);
   }
 });
 
@@ -1957,10 +1969,11 @@ router.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN",
       supplierEmail: req.body.supplierEmail ? sanitizeEmail(req.body.supplierEmail) : undefined,
     };
 
-    const validated = insertBidMaterialQuoteSchema.parse({
+    const validated = validateBody(insertBidMaterialQuoteSchema, {
       ...sanitizedBody,
       bidId: bid.id,
-    });
+    }, res);
+    if (!validated) return;
 
     const [newMaterialQuote] = await db.insert(bidMaterialQuotes).values(validated).returning();
 
@@ -1975,11 +1988,7 @@ router.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN",
     res.status(201).json(newMaterialQuote);
   } catch (error: any) {
     logError("Create bid material quote error:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (error.name === "ZodError") {
-      res.status(400).json({ error: "Invalid material quote data", details: error.errors });
-    } else {
-      next(error);
-    }
+    next(error);
   }
 });
 
@@ -2251,55 +2260,77 @@ router.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "
       .where(eq(handoffPackets.bidId, bid.id))
       .limit(1);
 
+    const optStr = z.string().max(2000).nullable().optional();
+    const optBool = z.boolean().nullable().optional();
+    const handoffPacketSchema = z.object({
+      gcName: optStr, gcContactName: optStr, gcPhone: optStr, gcEmail: optStr,
+      accessDetails: optStr, scopeOfWorkSummary: optStr, contractValue: optStr,
+      bidDate: optStr, awardDate: optStr, markupPercent: optStr, duration: optStr,
+      projectStartDate: optStr, projectCompletionDate: optStr, manpower: optStr,
+      alternates: optStr, subcontractExecuted: optBool, insuranceCerts: optStr,
+      bondRequired: optBool, permits: optStr, retentionPercent: optStr,
+      paymentTerms: optStr, scheduleOfValuesReady: optBool, drawSchedule: optStr,
+      prevailingWage: optBool, concreteSupplier: optStr, mixInfo: optStr,
+      rebarVendor: optStr, formingMaterialPlan: optStr, curingSpecs: optStr,
+      specialItems: optStr, leadTimeRisks: optStr, submittalStatus: optStr,
+      layoutSurveyBy: optStr, benchmarkInfo: optStr, accessZones: optStr,
+      workHours: optStr, safetyOrientation: optStr, inspectionNeeds: optStr,
+      coordinationIssues: optStr, weatherRisks: optStr, soilConditions: optStr,
+      estimatorNotes: optStr, gcContactMethod: optStr, projectManager: optStr,
+      superintendent: optStr, officeAdmin: optStr, safetyContact: optStr,
+    });
+    const parsed = validateBody(handoffPacketSchema, req.body || {}, res);
+    if (!parsed) return;
+
     const packetData = {
       bidId: bid.id,
-      gcName: req.body.gcName || null,
-      gcContactName: req.body.gcContactName || null,
-      gcPhone: req.body.gcPhone || null,
-      gcEmail: req.body.gcEmail || null,
-      accessDetails: req.body.accessDetails || null,
-      scopeOfWorkSummary: req.body.scopeOfWorkSummary || null,
-      contractValue: req.body.contractValue || null,
-      bidDate: req.body.bidDate || null,
-      awardDate: req.body.awardDate || null,
-      markupPercent: req.body.markupPercent || null,
-      duration: req.body.duration || null,
-      projectStartDate: req.body.projectStartDate || null,
-      projectCompletionDate: req.body.projectCompletionDate || null,
-      manpower: req.body.manpower || null,
-      alternates: req.body.alternates || null,
-      subcontractExecuted: req.body.subcontractExecuted ?? null,
-      insuranceCerts: req.body.insuranceCerts || null,
-      bondRequired: req.body.bondRequired ?? null,
-      permits: req.body.permits || null,
-      retentionPercent: req.body.retentionPercent || null,
-      paymentTerms: req.body.paymentTerms || null,
-      scheduleOfValuesReady: req.body.scheduleOfValuesReady ?? null,
-      drawSchedule: req.body.drawSchedule || null,
-      prevailingWage: req.body.prevailingWage ?? null,
-      concreteSupplier: req.body.concreteSupplier || null,
-      mixInfo: req.body.mixInfo || null,
-      rebarVendor: req.body.rebarVendor || null,
-      formingMaterialPlan: req.body.formingMaterialPlan || null,
-      curingSpecs: req.body.curingSpecs || null,
-      specialItems: req.body.specialItems || null,
-      leadTimeRisks: req.body.leadTimeRisks || null,
-      submittalStatus: req.body.submittalStatus || null,
-      layoutSurveyBy: req.body.layoutSurveyBy || null,
-      benchmarkInfo: req.body.benchmarkInfo || null,
-      accessZones: req.body.accessZones || null,
-      workHours: req.body.workHours || null,
-      safetyOrientation: req.body.safetyOrientation || null,
-      inspectionNeeds: req.body.inspectionNeeds || null,
-      coordinationIssues: req.body.coordinationIssues || null,
-      weatherRisks: req.body.weatherRisks || null,
-      soilConditions: req.body.soilConditions || null,
-      estimatorNotes: req.body.estimatorNotes || null,
-      gcContactMethod: req.body.gcContactMethod || null,
-      projectManager: req.body.projectManager || null,
-      superintendent: req.body.superintendent || null,
-      officeAdmin: req.body.officeAdmin || null,
-      safetyContact: req.body.safetyContact || null,
+      gcName: parsed.gcName || null,
+      gcContactName: parsed.gcContactName || null,
+      gcPhone: parsed.gcPhone || null,
+      gcEmail: parsed.gcEmail || null,
+      accessDetails: parsed.accessDetails || null,
+      scopeOfWorkSummary: parsed.scopeOfWorkSummary || null,
+      contractValue: parsed.contractValue || null,
+      bidDate: parsed.bidDate || null,
+      awardDate: parsed.awardDate || null,
+      markupPercent: parsed.markupPercent || null,
+      duration: parsed.duration || null,
+      projectStartDate: parsed.projectStartDate || null,
+      projectCompletionDate: parsed.projectCompletionDate || null,
+      manpower: parsed.manpower || null,
+      alternates: parsed.alternates || null,
+      subcontractExecuted: parsed.subcontractExecuted ?? null,
+      insuranceCerts: parsed.insuranceCerts || null,
+      bondRequired: parsed.bondRequired ?? null,
+      permits: parsed.permits || null,
+      retentionPercent: parsed.retentionPercent || null,
+      paymentTerms: parsed.paymentTerms || null,
+      scheduleOfValuesReady: parsed.scheduleOfValuesReady ?? null,
+      drawSchedule: parsed.drawSchedule || null,
+      prevailingWage: parsed.prevailingWage ?? null,
+      concreteSupplier: parsed.concreteSupplier || null,
+      mixInfo: parsed.mixInfo || null,
+      rebarVendor: parsed.rebarVendor || null,
+      formingMaterialPlan: parsed.formingMaterialPlan || null,
+      curingSpecs: parsed.curingSpecs || null,
+      specialItems: parsed.specialItems || null,
+      leadTimeRisks: parsed.leadTimeRisks || null,
+      submittalStatus: parsed.submittalStatus || null,
+      layoutSurveyBy: parsed.layoutSurveyBy || null,
+      benchmarkInfo: parsed.benchmarkInfo || null,
+      accessZones: parsed.accessZones || null,
+      workHours: parsed.workHours || null,
+      safetyOrientation: parsed.safetyOrientation || null,
+      inspectionNeeds: parsed.inspectionNeeds || null,
+      coordinationIssues: parsed.coordinationIssues || null,
+      weatherRisks: parsed.weatherRisks || null,
+      soilConditions: parsed.soilConditions || null,
+      estimatorNotes: parsed.estimatorNotes || null,
+      gcContactMethod: parsed.gcContactMethod || null,
+      projectManager: parsed.projectManager || null,
+      superintendent: parsed.superintendent || null,
+      officeAdmin: parsed.officeAdmin || null,
+      safetyContact: parsed.safetyContact || null,
       createdById: req.user!.id,
       updatedAt: new Date(),
     };
@@ -2903,7 +2934,13 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
       });
     }
 
-    const { recipientEmail } = req.body;
+    const bidSubmitSchema = z.object({
+      recipientEmail: z.string().email().optional(),
+    });
+    const parsed = validateBody(bidSubmitSchema, req.body || {}, res);
+    if (!parsed) return;
+
+    const { recipientEmail } = parsed;
     const toEmail = recipientEmail || bid.clientContactEmail;
 
     if (!toEmail) {

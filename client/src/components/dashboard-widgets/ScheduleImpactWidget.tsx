@@ -4,6 +4,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CalendarDays, Users, TrendingUp, AlertTriangle, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/use-auth";
+import { hasManagementAccess } from "@/lib/rbac";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
@@ -62,10 +64,15 @@ function formatDateShort(dateStr: string | null): string {
 }
 
 export function ScheduleImpactWidget() {
+  const { user } = useAuth();
+  const hasAccess = hasManagementAccess(user?.role);
   const { data, isLoading, isError, refetch} = useQuery<ScheduleImpactResponse>({
     queryKey: ["/api/dashboard/schedule-impact"],
     refetchInterval: 300000,
+    enabled: hasAccess,
   });
+
+  if (!hasAccess) return null;
 
   if (isLoading) {
     return (

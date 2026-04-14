@@ -6,6 +6,8 @@ import { AlertTriangle, AlertCircle, Info, Shield, DollarSign, Clock, CreditCard
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { hasManagementAccess } from "@/lib/rbac";
 
 interface AlertItem {
   id: string;
@@ -61,10 +63,15 @@ const TYPE_LINKS: Record<string, string> = {
 
 export function AlertsWidget() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const hasAccess = hasManagementAccess(user?.role);
   const { data, isLoading, isError, refetch} = useQuery<AlertsResponse>({
     queryKey: ["/api/dashboard/alerts"],
     refetchInterval: 300000,
+    enabled: hasAccess,
   });
+
+  if (!hasAccess) return null;
 
   if (isLoading) {
     return (

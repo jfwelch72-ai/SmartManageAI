@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { useState, useEffect, useRef } from "react";
 
 function useAnimatedValue(target: number, duration = 800) {
@@ -84,6 +85,7 @@ interface KPISummaryWidgetProps {
 }
 
 export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
+  const hasPermission = useFeaturePermission("canViewFinancials");
   const merged = { ...DEFAULT_KPI_CONFIG, ...config };
   const metricDef = KPI_METRICS.find(m => m.value === merged.metric) || KPI_METRICS[2];
 
@@ -96,6 +98,7 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
     isEstimated: boolean;
   }>({
     queryKey: ["/api/dashboard/kpi", merged.metric, merged.dateRange, merged.comparison],
+    enabled: hasPermission,
     queryFn: async () => {
       const params = new URLSearchParams({
         metric: merged.metric || "ACTIVE_PROJECTS",
@@ -110,8 +113,9 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
   });
 
   const comparisonLabel = KPI_COMPARISONS.find(c => c.value === merged.comparison)?.label || "vs previous";
-
   const animatedValue = useAnimatedValue(data?.value || 0);
+
+  if (!hasPermission) return null;
 
   if (isLoading) {
     return (

@@ -5,6 +5,8 @@ import { Briefcase, FileText, DollarSign, Target, HardHat, AlertCircle, RefreshC
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { canAccessBids } from "@/lib/rbac";
 
 interface BidPipeline {
   activeBids: number;
@@ -23,10 +25,15 @@ function formatCurrency(value: number): string {
 }
 
 export function BidPipelineWidget() {
+  const { user } = useAuth();
+  const hasAccess = canAccessBids(user?.role);
   const { data, isLoading, isError, refetch} = useQuery<BidPipeline>({
     queryKey: ["/api/dashboard/bid-pipeline"],
     refetchInterval: 300000,
+    enabled: hasAccess,
   });
+
+  if (!hasAccess) return null;
 
   if (isLoading) {
     return (

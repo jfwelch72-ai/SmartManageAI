@@ -128,7 +128,7 @@
  *   get:
  *     tags: [Admin]
  *     summary: Get user details
- *     description: Requires ADMIN or MANAGER role.
+ *     description: Requires ADMIN, HUSTLER, MANAGER, SUPERINTENDENT, or ESTIMATOR role.
  *     parameters:
  *       - name: id
  *         in: path
@@ -185,6 +185,7 @@
  *       200: { description: Password set }
  */
 import {logError, logWarn } from "./utils/logger";
+import { validateBody } from "./utils/validation";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets, hustlerOrganizations } from "@shared/schema";
@@ -548,7 +549,8 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
     }
     const schema = z.object(schemaShape);
 
-    const data = schema.parse(req.body);
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
 
     const { canViewFinancials: viewFin, canEditFinancials: editFin, ...restData } = data as Record<string, boolean | string>;
     let financialsAccess: string | null = "none";
@@ -1481,7 +1483,9 @@ router.put('/api/dashboard/permissions/:userId/apply-preset', requireAuth, requi
     const schema = z.object({
       presetId: z.string(),
     });
-    const { presetId } = schema.parse(req.body);
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
+    const { presetId } = data;
 
     const [preset] = await db.select().from(permissionPresets)
       .where(eq(permissionPresets.id, presetId));
@@ -1764,7 +1768,9 @@ router.put('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
       }),
     });
 
-    const { layout } = schema.parse(req.body);
+    const layoutData = validateBody(schema, req.body, res);
+    if (!layoutData) return;
+    const { layout } = layoutData;
 
     const allWidgets = layout.sections.flatMap(s => s.widgets);
     const unknownTypes = allWidgets
@@ -2077,7 +2083,8 @@ router.post('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res:
       darkBorder: z.string().optional(),
     });
 
-    const data = schema.parse(req.body);
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
 
     const lightValidation = validatePalette(data, 'light');
     const darkValidation = validatePalette(data, 'dark');
@@ -2266,7 +2273,8 @@ router.post('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, 
       darkBorder: z.string().optional(),
     });
 
-    const data = schema.parse(req.body);
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
 
     const lightValidation = validatePalette(data, 'light');
     const darkValidation = validatePalette(data, 'dark');
@@ -2798,9 +2806,19 @@ router.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("
       return res.status(403).json({ error: "Organization required" });
     }
 
-    const { startDate, endDate } = req.body;
+    const timeTrackingSchema = z.object({
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    });
+    const ttData = validateBody(timeTrackingSchema, req.body, res);
+    if (!ttData) return;
+    const { startDate, endDate } = ttData;
     const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const end = endDate ? new Date(endDate) : new Date();
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      res.status(400).json({ error: "Invalid date format for startDate or endDate" });
+      return;
+    }
 
     const { aggregateTimeTrackingToProductionRates } = await import("./dataPipelineService");
     
@@ -2852,8 +2870,8 @@ router.get("/api/users", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER",
   }
 });
 
-// Get user by ID (Admin/Manager only)
-router.get("/api/users/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
+// Get user by ID (aligned with /api/users list endpoint)
+router.get("/api/users/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
     
@@ -3097,7 +3115,8 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
       newPassword: passwordSchema,
     });
 
-    const data = schema.parse(req.body);
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
 
     const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
     
@@ -3132,7 +3151,8 @@ router.post("/api/auth/set-initial-password", requireAuth, sensitiveLimiter, asy
       password: passwordSchema,
     });
 
-    const data = schema.parse(req.body);
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
 
     const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
     if (!user) {

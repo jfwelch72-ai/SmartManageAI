@@ -5,11 +5,16 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardList, AlertCircle, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { AITask } from "@shared/schema";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
 export function AITasksWidget() {
+  const hasPermission = useFeaturePermission("canUseAiFeatures");
   const { data: aiTasks = [], isLoading, isError, refetch } = useQuery<AITask[]>({
     queryKey: ["/api/ai/tasks"],
+    enabled: hasPermission,
   });
+
+  if (!hasPermission) return null;
 
   if (isLoading) {
     return (

@@ -44,7 +44,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **BIM & LiDAR Integration**: Client-side IFC file parsing for quantity extraction, 3D BIM Viewer, and LiDAR Scanner Module for point cloud analysis.
 *   **Risk Management Module**: Full risk register per project with category/probability/impact scoring, risk matrix heat map visualization, and AI-powered risk suggestions.
 *   **No-Code Workflow Builder**: Visual pipeline editor for custom approval chains, status pipelines, and notification triggers.
-*   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination, N+1 query prevention, DB health check monitoring, Zod validation on financial routes, safe financial math utilities, and password complexity policy.
+*   **Performance & Security Patterns**: Includes 4-tier rate limiting, opt-in pagination, N+1 query prevention, DB health check monitoring, Zod validation on all POST/PATCH/PUT routes via shared `validateBody` helper (`server/utils/validation.ts`), safe financial math utilities, and password complexity policy.
+*   **Dashboard Widget Permission Guards**: All dashboard widgets gate their API calls with `enabled` permission checks (`useFeaturePermission` or role-based) to prevent unauthorized fetches. Pattern: `enabled: hasPermission` in `useQuery`.
 *   **Email Marketing Campaigns**: Full email campaign lifecycle with template management, contact lists, bulk sending, scheduling, and analytics.
 
 ## External Dependencies

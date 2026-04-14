@@ -2411,7 +2411,7 @@ router.get("/ai-contract-document/download/:id", requireAuth, async (req: AuthRe
 // Routes from aiNotesRoutes.ts
 // ========================================
 
-router.post("/analyze", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post("/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { sinceDate, hoursBack } = req.body;
     

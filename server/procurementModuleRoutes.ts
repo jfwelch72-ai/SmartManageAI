@@ -380,6 +380,7 @@ import { crmOrganisations } from "@shared/schema";
 import { eq, and, desc, asc, sql, ilike, or, gte, lte, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { validateBody } from "./utils/validation";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 import { eventBus } from "./events";
 import { verifyOrgAccess } from "./orgFilter";
@@ -779,8 +780,15 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending requests can be rejected" }); return; }
 
-    const rejectionNotes = (req.body.rejectionNotes || req.body.notes || "").trim();
-    if (!rejectionNotes) { res.status(400).json({ error: "Rejection notes are required" }); return; }
+    const rejectSchema = z.object({
+      rejectionNotes: z.string().min(1, "Rejection notes are required").max(2000).optional(),
+      notes: z.string().min(1).max(2000).optional(),
+    }).refine(d => (d.rejectionNotes || d.notes || "").trim().length > 0, {
+      message: "Rejection notes are required",
+    });
+    const parsed = validateBody(rejectSchema, req.body || {}, res);
+    if (!parsed) return;
+    const rejectionNotes = (parsed.rejectionNotes || parsed.notes || "").trim();
 
     const [updated] = await db.update(purchaseRequests)
       .set({ status: "REJECTED", rejectionNotes, updatedAt: new Date() })
@@ -815,7 +823,12 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
     const prItems = await db.select().from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.prId, pr.id));
 
-    const vendorId = req.body.vendorId || null;
+    const convertSchema = z.object({
+      vendorId: z.string().uuid().nullable().optional(),
+    });
+    const parsed = validateBody(convertSchema, req.body || {}, res);
+    if (!parsed) return;
+    const vendorId = parsed.vendorId || null;
 
     if (vendorId) {
       const [vendorOwner] = await db.select({ id: crmOrganisations.id }).from(crmOrganisations)
@@ -1258,8 +1271,15 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
     if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be rejected" }); return; }
 
-    const rejectionNotes = (req.body.rejectionNotes || req.body.notes || "").trim();
-    if (!rejectionNotes) { res.status(400).json({ error: "Rejection notes are required" }); return; }
+    const poRejectSchema = z.object({
+      rejectionNotes: z.string().min(1, "Rejection notes are required").max(2000).optional(),
+      notes: z.string().min(1).max(2000).optional(),
+    }).refine(d => (d.rejectionNotes || d.notes || "").trim().length > 0, {
+      message: "Rejection notes are required",
+    });
+    const parsed = validateBody(poRejectSchema, req.body || {}, res);
+    if (!parsed) return;
+    const rejectionNotes = (parsed.rejectionNotes || parsed.notes || "").trim();
 
     const [updated] = await db.update(purchaseOrders)
       .set({ status: "CANCELLED", rejectionNotes, updatedAt: new Date() })
