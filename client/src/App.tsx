@@ -84,6 +84,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
+import EmailVerificationBanner from "@/components/EmailVerificationBanner";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
 import OfflineStatusBanner from "@/components/OfflineStatusBanner";
 const VoiceDictation = lazy(() => import("@/components/VoiceDictation"));
@@ -527,6 +528,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       <AppSidebar />
       <SidebarInset className="flex flex-col min-h-screen">
         <ImpersonationBanner />
+        <EmailVerificationBanner />
         <OfflineStatusBanner />
         <TopHeader />
         <main className="flex-1 overflow-auto">

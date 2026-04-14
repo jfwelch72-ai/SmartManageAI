@@ -401,7 +401,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use(emailCampaignRoutes);
 
-  app.use("/api/dev", devSeedEnterpriseRoutes);
+  if (process.env.NODE_ENV === "development") {
+    app.use("/api/dev", devSeedEnterpriseRoutes);
+  }
 
   // Auth & Profile routes (extracted to authProfileRoutes.ts)
   app.use(authProfileRoutes);

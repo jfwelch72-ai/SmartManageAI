@@ -292,7 +292,9 @@ app.use((req, res, next) => {
     .join(", ");
   log(`Integration status: ${configuredList}`);
 
-  log(`Dev seed routes: ${isDevSeedEnabled() ? "ENABLED" : "DISABLED"}`);
+  if (isDevSeedEnabled()) {
+    log(`Dev seed routes: ENABLED`);
+  }
 
   server.listen({
     port,

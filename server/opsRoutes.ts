@@ -166,6 +166,15 @@ router.get('/api/ops/status', opsRateLimiter, (_req, res) => {
 });
 
 router.get('/api/ops/health-check', opsRateLimiter, async (_req, res) => {
+  const isDev = process.env.NODE_ENV === 'development';
+  if (!isDev) {
+    const authHeader = _req.headers['x-ops-token'];
+    const expectedToken = process.env.OPS_STATUS_TOKEN;
+    if (!expectedToken || authHeader !== expectedToken) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
+
   const checks: { name: string; status: 'ok' | 'fail'; detail?: string }[] = [];
 
   const cspHeader = res.getHeader('content-security-policy');
