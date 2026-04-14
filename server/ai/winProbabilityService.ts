@@ -3,13 +3,14 @@ import { db } from "../db";
 import { crmOpportunities, crmOpportunityActivities, bids, type CrmOpportunity } from "@shared/schema";
 import { eq, and, sql, count } from "drizzle-orm";
 import { openai, AI_MODEL_GPT5 } from "./openaiClient";
+import { governedAiCall } from "../services/aiGovernance";
 
 interface WinProbabilityResult {
   score: number;
   rationale: string;
 }
 
-export async function scoreWinProbability(opportunityId: string): Promise<WinProbabilityResult> {
+export async function scoreWinProbability(opportunityId: string, callerUserId?: string): Promise<WinProbabilityResult> {
   const [opp] = await db
     .select()
     .from(crmOpportunities)
@@ -83,12 +84,7 @@ export async function scoreWinProbability(opportunityId: string): Promise<WinPro
   };
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        {
-          role: "system",
-          content: `You are a CRM deal scoring assistant for a construction company. Analyze the deal attributes and return a JSON object with:
+    const systemContent = `You are a CRM deal scoring assistant for a construction company. Analyze the deal attributes and return a JSON object with:
 - "score": integer 0-100 representing win probability percentage
 - "rationale": a short phrase (max 80 chars) explaining the score, e.g. "Strong: active engagement, similar past wins" or "At risk: no activity in 30+ days, early stage"
 
@@ -104,24 +100,37 @@ Scoring factors to consider:
 Stage base probabilities: LEAD=10, QUALIFIED=25, ESTIMATING=40, BID_SUBMITTED=60, NEGOTIATION=75, WON=100, LOST=0
 Adjust up/down from the base based on other factors.
 
-Respond ONLY with valid JSON: {"score": <number>, "rationale": "<string>"}`
-        },
-        {
-          role: "user",
-          content: `Score this deal:\n${JSON.stringify(dealAttributes, null, 2)}`
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-      max_completion_tokens: 200,
+Respond ONLY with valid JSON: {"score": <number>, "rationale": "<string>"}`;
+
+    const governed = await governedAiCall({
+      orgId,
+      userId: callerUserId || "system",
+      actionType: "crm_win_probability",
+      inputRefs: { opportunityId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: "system", content: systemContent },
+            { role: "user", content: `Score this deal:\n${JSON.stringify(dealAttributes, null, 2)}` },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_completion_tokens: 200,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error("No response from OpenAI");
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error("No response from OpenAI");
+    if (governed.blocked) {
+      logError("[Win Probability] AI governance blocked, using heuristic fallback", { reason: governed.reason }, new Error("Governance blocked"));
+      return heuristicScore(opp, activityCount, daysSinceLastActivity, daysInPipeline, historicalWinRate);
+    }
 
-    const parsed = JSON.parse(content);
-    const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
-    const rationale = String(parsed.rationale || "AI-scored").substring(0, 200);
+    const score = Math.max(0, Math.min(100, Math.round(Number(governed.result.score) || 0)));
+    const rationale = String(governed.result.rationale || "AI-scored").substring(0, 200);
 
     await db
       .update(crmOpportunities)

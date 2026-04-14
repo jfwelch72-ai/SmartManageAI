@@ -5,6 +5,7 @@ import { voiceLogs, issueCaptures, offlineSyncQueue, media, projects, insertVoic
 import { eq, and, desc, sql, inArray, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 import { ObjectStorageService } from "./objectStorage";
 
 const router = Router();
@@ -667,24 +668,33 @@ Respond with valid JSON only.`
 
 Respond with valid JSON only.`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: transcription },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-      max_completion_tokens: 1024,
+    const governed = await governedAiCall({
+      orgId: req.user!.organizationId,
+      userId: req.user!.id,
+      actionType: `voice_log_parse_${outputType}`,
+      inputRefs: { outputType },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: transcription },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_completion_tokens: 1024,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error("No response from AI");
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      return next(error);
+    if (governed.blocked) {
+      return res.status(429).json({ error: "AI usage limit reached", reason: governed.reason });
     }
 
-    const parsed = JSON.parse(content);
-    res.json(parsed);
+    res.json(governed.result);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
@@ -749,31 +759,40 @@ router.post("/photo-auto-tag", requireAuth, requireInternalRole, async (req: Aut
 
 Respond with valid JSON only: { "tags": [...], "description": "..." }`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Analyze this construction jobsite photo and provide tags and description." },
-            { type: "image_url", image_url: { url: resolvedImageUrl, detail: "low" } },
+    const governed = await governedAiCall({
+      orgId: req.user!.organizationId,
+      userId: req.user!.id,
+      actionType: "photo_auto_tag",
+      inputRefs: { mediaId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Analyze this construction jobsite photo and provide tags and description." },
+                { type: "image_url", image_url: { url: resolvedImageUrl, detail: "low" } },
+              ],
+            },
           ],
-        },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-      max_completion_tokens: 512,
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_completion_tokens: 512,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error("No response from AI");
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      return next(error);
+    if (governed.blocked) {
+      return res.status(429).json({ error: "AI usage limit reached", reason: governed.reason });
     }
 
-    const parsed = JSON.parse(content);
-    const tags = parsed.tags || [];
-    const description = parsed.description || "";
+    const tags = governed.result.tags || [];
+    const description = governed.result.description || "";
 
     const [updated] = await db
       .update(media)

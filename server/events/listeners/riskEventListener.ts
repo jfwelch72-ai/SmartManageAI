@@ -6,6 +6,7 @@ import {logError, logInfo, logWarn } from "../../utils/logger";
 import { deliverNotifications } from "../../services/notificationDelivery";
 import type { RiskStatusChangedEvent, ProjectCreatedEvent } from "../eventTypes";
 import { openai, AI_MODEL_GPT5 } from "../../ai/openaiClient";
+import { governedAiCall } from "../../services/aiGovernance";
 import { sanitizeShortText, sanitizeText } from "../../sanitization";
 
 const ADMIN_ROLES = ["ADMIN", "MANAGER"] as const;
@@ -225,26 +226,38 @@ ${project.endDate ? `End Date: ${project.endDate}` : ""}
 ${project.description ? `Description: ${project.description}` : ""}
 ${project.locationAddress ? `Location: ${project.locationAddress}` : ""}${historicalContext}`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_completion_tokens: 1500,
-    });
-
-    const content = completion.choices[0]?.message?.content;
-    if (!content) return;
-
-    const parsed = JSON.parse(content);
-    const suggestions = parsed.risks;
-    if (!Array.isArray(suggestions) || suggestions.length === 0) return;
-
     const orgId = project.gcOrganizationId;
     if (!orgId) return;
+
+    const governed = await governedAiCall({
+      orgId,
+      userId: "system",
+      actionType: "risk_auto_generation",
+      inputRefs: { projectId: payload.projectId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.7,
+          max_completion_tokens: 1500,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error("No response from AI");
+        return { result: JSON.parse(content), completion };
+      },
+    });
+
+    if (governed.blocked) {
+      logWarn("riskEventListener: AI governance blocked auto-risk generation", { reason: governed.reason, projectId: payload.projectId });
+      return;
+    }
+
+    const suggestions = governed.result.risks;
+    if (!Array.isArray(suggestions) || suggestions.length === 0) return;
 
     for (const s of suggestions.slice(0, 5)) {
       const category = (VALID_CATEGORIES as readonly string[]).includes(s.category) ? s.category : "OTHER";

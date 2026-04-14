@@ -9,6 +9,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { eventBus } from "./events";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -386,22 +387,33 @@ Already identified risks: ${existingRisks.length > 0 ? existingRisks.map(r => `$
 
 Suggest relevant construction project risks that haven't been identified yet.`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_completion_tokens: 2048,
+    const governed = await governedAiCall({
+      orgId: req.user!.organizationId,
+      userId: req.user!.id,
+      actionType: "risk_ai_suggestions",
+      inputRefs: { projectId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.7,
+          max_completion_tokens: 2048,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error("No response from AI");
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) { return res.status(500).json({ error: "No response from AI" }); }
+    if (governed.blocked) {
+      return res.status(429).json({ error: "AI usage limit reached", reason: governed.reason });
+    }
 
-    const parsed = JSON.parse(content);
-    res.json(parsed.risks || []);
+    res.json(governed.result.risks || []);
   } catch (error) {
     next(error);
   }

@@ -18,6 +18,7 @@ import {
 import { eq, and, sql, desc, count } from "drizzle-orm";
 import {logInfo, logError, logWarn } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
+import { governedAiCall } from "./aiGovernance";
 
 export interface HealthScoreBreakdown {
   scheduleScore: number;
@@ -301,6 +302,8 @@ async function calculateTrend(orgId: string, projectId: string, currentScore: nu
 }
 
 async function generateAIExplanation(
+  orgId: string,
+  projectId: string,
   projectName: string,
   currentScore: number,
   previousScore: number | null,
@@ -327,17 +330,31 @@ ${previousScore !== null && previousScore !== currentScore ? `Score changed from
 
 Provide a concise explanation focusing on what's driving the score ${previousScore !== null && currentScore < previousScore ? 'down' : previousScore !== null && currentScore > previousScore ? 'up' : ''}.`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: "system", content: "You are a construction project health analyst. Be concise and specific." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.5,
-      max_completion_tokens: 200,
+    const governed = await governedAiCall({
+      orgId,
+      userId: "system",
+      actionType: "project_health_explanation",
+      inputRefs: { projectId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: "system", content: "You are a construction project health analyst. Be concise and specific." },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.5,
+          max_completion_tokens: 200,
+        });
+        return { result: completion.choices[0]?.message?.content?.trim() || null, completion };
+      },
     });
 
-    return completion.choices[0]?.message?.content?.trim() || null;
+    if (governed.blocked) {
+      logWarn("AI health explanation blocked by governance", { reason: governed.reason });
+      return null;
+    }
+
+    return governed.result;
   } catch (err) {
     logError("Failed to generate AI health explanation", { error: String(err) });
     return null;
@@ -378,6 +395,8 @@ export async function computeProjectHealth(orgId: string, projectId: string): Pr
   let aiExplanation: string | null = null;
   try {
     aiExplanation = await generateAIExplanation(
+      orgId,
+      projectId,
       project.name,
       overallScore,
       previousScore,
