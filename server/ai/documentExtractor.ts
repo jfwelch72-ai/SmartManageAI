@@ -4,6 +4,7 @@ import { createCanvas } from "canvas";
 
 const MAX_PDF_PAGES = 5;
 const PDF_RENDER_SCALE = 1.5;
+const MAX_TEXT_LENGTH = 50000;
 
 function parseGcsUrl(url: string): { bucketName: string; objectName: string } | null {
   try {
@@ -116,7 +117,36 @@ type ImageContentBlock = {
   image_url: { url: string; detail: string };
 };
 
-async function renderPdfToImages(pdfBuffer: Buffer): Promise<ImageContentBlock[]> {
+type TextContentBlock = {
+  type: "text";
+  text: string;
+};
+
+export type DocumentContentBlock = ImageContentBlock | TextContentBlock;
+
+class NodeCanvasFactory {
+  create(width: number, height: number) {
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext("2d");
+    return { canvas, context };
+  }
+
+  reset(canvasAndContext: any, width: number, height: number) {
+    canvasAndContext.canvas.width = width;
+    canvasAndContext.canvas.height = height;
+  }
+
+  destroy(canvasAndContext: any) {
+    if (canvasAndContext) {
+      canvasAndContext.canvas.width = 0;
+      canvasAndContext.canvas.height = 0;
+      canvasAndContext.canvas = null;
+      canvasAndContext.context = null;
+    }
+  }
+}
+
+async function extractPdfText(pdfBuffer: Buffer): Promise<string> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   const loadingTask = pdfjsLib.getDocument({
@@ -128,7 +158,48 @@ async function renderPdfToImages(pdfBuffer: Buffer): Promise<ImageContentBlock[]
 
   const pdfDoc = await loadingTask.promise;
   const numPages = Math.min(pdfDoc.numPages, MAX_PDF_PAGES);
-  const results: ImageContentBlock[] = [];
+  const pageTexts: string[] = [];
+
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str || "")
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (pageText) {
+        pageTexts.push(`--- Page ${pageNum} ---\n${pageText}`);
+      }
+      page.cleanup();
+    } catch (err) {
+      logWarn(`[DocumentExtractor] Failed to extract text from page ${pageNum}`);
+    }
+  }
+
+  pdfDoc.destroy();
+  const fullText = pageTexts.join("\n\n");
+  return fullText.length > MAX_TEXT_LENGTH ? fullText.substring(0, MAX_TEXT_LENGTH) : fullText;
+}
+
+async function processPdf(pdfBuffer: Buffer): Promise<DocumentContentBlock[]> {
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const canvasFactory = new NodeCanvasFactory();
+
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(pdfBuffer),
+    useSystemFonts: true,
+    disableFontFace: true,
+    isEvalSupported: false,
+    canvasFactory: canvasFactory as any,
+  });
+
+  const pdfDoc = await loadingTask.promise;
+  const numPages = Math.min(pdfDoc.numPages, MAX_PDF_PAGES);
+  const imageResults: ImageContentBlock[] = [];
+  const failedPageTexts: string[] = [];
+  let renderFailCount = 0;
 
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     try {
@@ -141,13 +212,13 @@ async function renderPdfToImages(pdfBuffer: Buffer): Promise<ImageContentBlock[]
       await (page.render({
         canvasContext: context as any,
         viewport: viewport,
-        canvas: canvas as any,
+        canvasFactory: canvasFactory as any,
       } as any)).promise;
 
       const pngBuffer = canvas.toBuffer("image/png");
       const base64 = pngBuffer.toString("base64");
 
-      results.push({
+      imageResults.push({
         type: "image_url",
         image_url: {
           url: `data:image/png;base64,${base64}`,
@@ -157,16 +228,63 @@ async function renderPdfToImages(pdfBuffer: Buffer): Promise<ImageContentBlock[]
 
       page.cleanup();
     } catch (pageError) {
+      renderFailCount++;
       logError(`[DocumentExtractor] Failed to render PDF page ${pageNum}:`, {}, pageError instanceof Error ? pageError : new Error(String(pageError)));
+
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => item.str || "")
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (pageText.length > 10) {
+          failedPageTexts.push(`--- Page ${pageNum} ---\n${pageText}`);
+        }
+        page.cleanup();
+      } catch {
+        logWarn(`[DocumentExtractor] Also failed text extraction for page ${pageNum}`);
+      }
     }
   }
 
-  return results;
+  pdfDoc.destroy();
+
+  if (imageResults.length > 0 && failedPageTexts.length > 0) {
+    const fallbackText = failedPageTexts.join("\n\n");
+    const truncated = fallbackText.length > MAX_TEXT_LENGTH ? fallbackText.substring(0, MAX_TEXT_LENGTH) : fallbackText;
+    console.log(`[DocumentExtractor] Rendered ${imageResults.length} pages as images, extracted text from ${failedPageTexts.length} failed pages`);
+    return [
+      ...imageResults,
+      { type: "text", text: `[Text from pages that could not be rendered]\n${truncated}` },
+    ];
+  }
+
+  if (imageResults.length > 0) {
+    return imageResults;
+  }
+
+  if (failedPageTexts.length > 0) {
+    const fullText = failedPageTexts.join("\n\n");
+    const truncated = fullText.length > MAX_TEXT_LENGTH ? fullText.substring(0, MAX_TEXT_LENGTH) : fullText;
+    console.log(`[DocumentExtractor] Rendering failed for all ${renderFailCount} pages, using text fallback (${truncated.length} chars)`);
+    return [{ type: "text", text: `[PDF Document Content]\n${truncated}` }];
+  }
+
+  console.log(`[DocumentExtractor] No images rendered and no text found, trying full text extraction...`);
+  const text = await extractPdfText(pdfBuffer);
+  if (text.trim().length > 10) {
+    console.log(`[DocumentExtractor] Full text extraction yielded ${text.length} chars`);
+    return [{ type: "text", text: `[PDF Document Content]\n${text}` }];
+  }
+
+  return [];
 }
 
 export async function extractDocumentContent(
   documentUrl: string
-): Promise<ImageContentBlock[]> {
+): Promise<DocumentContentBlock[]> {
   try {
     console.log(`[DocumentExtractor] Processing: ${documentUrl.substring(0, 100)}...`);
 
@@ -176,10 +294,12 @@ export async function extractDocumentContent(
     console.log(`[DocumentExtractor] Detected type: ${detected.type} (${detected.mime}), content-type header: ${contentType || 'none'}, size: ${(buffer.length / 1024).toFixed(0)} KB`);
 
     if (detected.type === "pdf") {
-      console.log(`[DocumentExtractor] Rendering PDF...`);
-      const images = await renderPdfToImages(buffer);
-      console.log(`[DocumentExtractor] Rendered ${images.length} PDF pages`);
-      return images;
+      console.log(`[DocumentExtractor] Processing PDF...`);
+      const results = await processPdf(buffer);
+      const imageCount = results.filter(r => r.type === 'image_url').length;
+      const textCount = results.filter(r => r.type === 'text').length;
+      console.log(`[DocumentExtractor] PDF result: ${imageCount} images, ${textCount} text blocks`);
+      return results;
     }
 
     if (detected.type === "image") {
@@ -198,10 +318,10 @@ export async function extractDocumentContent(
 
     console.warn(`[DocumentExtractor] Could not determine file type for: ${documentUrl}. Content-type: ${contentType}. Trying as PDF...`);
     try {
-      const images = await renderPdfToImages(buffer);
-      if (images.length > 0) {
-        console.log(`[DocumentExtractor] Successfully rendered as PDF (${images.length} pages)`);
-        return images;
+      const results = await processPdf(buffer);
+      if (results.length > 0) {
+        console.log(`[DocumentExtractor] Successfully processed as PDF`);
+        return results;
       }
     } catch {
       logWarn("Non-critical operation failed");

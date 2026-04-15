@@ -164,24 +164,40 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const documentImages = await extractDocumentContent(documentUrl);
+    const documentContent = await extractDocumentContent(documentUrl);
     
     let messages: any[] = [
       { role: 'system', content: BID_DOCUMENT_ANALYSIS_SYSTEM_PROMPT },
     ];
 
-    if (documentImages.length > 0) {
-      messages.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: userPrompt },
-          ...documentImages,
-        ]
-      });
+    if (documentContent.length > 0) {
+      const hasImages = documentContent.some(c => c.type === 'image_url');
+      const textBlocks = documentContent.filter(c => c.type === 'text');
+      const imageBlocks = documentContent.filter(c => c.type === 'image_url');
+
+      if (hasImages) {
+        const extraText = textBlocks.map(t => (t as {type: 'text', text: string}).text).join('\n\n');
+        const promptWithText = extraText
+          ? `${userPrompt}\n\nAdditional extracted text:\n${extraText}`
+          : userPrompt;
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: promptWithText },
+            ...imageBlocks,
+          ]
+        });
+      } else {
+        const extractedText = textBlocks.map(t => (t as {type: 'text', text: string}).text).join('\n\n');
+        messages.push({
+          role: 'user',
+          content: `${userPrompt}\n\nExtracted document text:\n${extractedText}`
+        });
+      }
     } else {
       messages.push({
         role: 'user',
-        content: `${userPrompt}\n\nNote: The document could not be visually rendered. Analyze based on the document name and any available context.`
+        content: `${userPrompt}\n\nNote: The document could not be visually rendered or text extracted. Analyze based on the document name and any available context.`
       });
     }
 
@@ -1086,17 +1102,19 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
 
     console.log(`[AI Bid Wizard] Analyzing ${documents.length} documents for org:${orgId}`);
 
-    const allDocumentImages: Array<{type: 'image_url', image_url: {url: string, detail: string}}> = [];
+    const allDocumentContent: Array<{type: 'image_url', image_url: {url: string, detail: string}} | {type: 'text', text: string}> = [];
     for (const doc of documents) {
       try {
-        const images = await extractDocumentContent(doc.url);
-        allDocumentImages.push(...images);
+        const content = await extractDocumentContent(doc.url);
+        allDocumentContent.push(...content);
       } catch (extractError) {
         logError(`[AI Bid Wizard] Failed to extract content from ${doc.name}:`, {}, extractError instanceof Error ? extractError : new Error(String(extractError)));
       }
     }
 
-    console.log(`[AI Bid Wizard] Extracted ${allDocumentImages.length} page images from ${documents.length} documents`);
+    const imageCount = allDocumentContent.filter(c => c.type === 'image_url').length;
+    const textCount = allDocumentContent.filter(c => c.type === 'text').length;
+    console.log(`[AI Bid Wizard] Extracted ${imageCount} page images and ${textCount} text blocks from ${documents.length} documents`);
 
     const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
     const documentNames = documents.map(d => `- ${d.name}`).join('\n');
@@ -1145,18 +1163,34 @@ Be thorough in extracting scope items. Include quantities and units when availab
         { role: 'system', content: BID_WIZARD_SYSTEM_PROMPT },
       ];
 
-      if (allDocumentImages.length > 0) {
-        messages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: userPrompt },
-            ...allDocumentImages,
-          ]
-        });
+      if (allDocumentContent.length > 0) {
+        const hasImages = allDocumentContent.some(c => c.type === 'image_url');
+        const textBlocks = allDocumentContent.filter(c => c.type === 'text');
+        const imageBlocks = allDocumentContent.filter(c => c.type === 'image_url');
+
+        if (hasImages) {
+          const extraText = textBlocks.map(t => (t as {type: 'text', text: string}).text).join('\n\n');
+          const promptWithText = extraText
+            ? `${userPrompt}\n\nAdditional extracted text from documents:\n${extraText}`
+            : userPrompt;
+          messages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: promptWithText },
+              ...imageBlocks,
+            ]
+          });
+        } else {
+          const extractedText = textBlocks.map(t => (t as {type: 'text', text: string}).text).join('\n\n');
+          messages.push({
+            role: 'user',
+            content: `${userPrompt}\n\nExtracted document text:\n${extractedText}`
+          });
+        }
       } else {
         messages.push({
           role: 'user',
-          content: `${userPrompt}\n\nNote: The documents could not be visually rendered. Analyze based on the document names and any available context.`
+          content: `${userPrompt}\n\nNote: The documents could not be visually rendered or text extracted. Analyze based on the document names and any available context.`
         });
       }
 
