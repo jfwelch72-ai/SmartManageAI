@@ -11,11 +11,6 @@ import crypto from "crypto";
 
 const router = Router();
 
-const linkOrganizationSchema = z.object({
-  organizationId: z.string().uuid(),
-  roleOverride: z.enum(["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"]).optional(),
-});
-
 const switchOrganizationSchema = z.object({
   organizationId: z.string().uuid(),
 });
@@ -338,69 +333,6 @@ router.get("/hustler/organizations", requireAuth, requireRole("HUSTLER"), async 
   }
 });
 
-router.post("/hustler/link-organization", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const validationResult = linkOrganizationSchema.safeParse(req.body);
-    if (!validationResult.success) {
-      return res.status(400).json({ error: "Invalid input", details: validationResult.error.issues });
-    }
-
-    const { organizationId, roleOverride } = validationResult.data;
-
-    const [org] = await db
-      .select()
-      .from(organizations)
-      .where(eq(organizations.id, organizationId));
-
-    if (!org) {
-      return res.status(404).json({ error: "Organization not found" });
-    }
-
-    const [existing] = await db
-      .select()
-      .from(hustlerOrganizations)
-      .where(
-        and(
-          eq(hustlerOrganizations.userId, req.user.id),
-          eq(hustlerOrganizations.organizationId, organizationId)
-        )
-      );
-
-    if (existing) {
-      if (!existing.isActive) {
-        await db
-          .update(hustlerOrganizations)
-          .set({ isActive: true, roleOverride: roleOverride || "ADMIN" })
-          .where(eq(hustlerOrganizations.id, existing.id));
-        
-        logInfo( `[Hustler] Reactivated org link: user=${req.user.id} org=${organizationId}`);
-        return res.json({ success: true, message: "Organization link reactivated" });
-      }
-      return res.status(400).json({ error: "Already linked to this organization" });
-    }
-
-    const [newLink] = await db.insert(hustlerOrganizations).values({
-      userId: req.user.id,
-      organizationId,
-      roleOverride: roleOverride || "ADMIN",
-      isActive: true,
-    }).returning();
-
-    logInfo( `[Hustler] Linked org: user=${req.user.id} org=${organizationId}`);
-
-    res.json({
-      success: true,
-      link: newLink,
-      message: "Organization linked successfully",
-    });
-  } catch (error: any) {
-    next(error);
-  }
-});
 
 router.post("/hustler/switch-organization", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
@@ -781,7 +713,7 @@ router.get("/hustler/link-requests/organization", requireAuth, async (req: AuthR
 });
 
 // Accept or decline an invite (HUSTLER responding)
-router.post("/hustler/link-requests/:requestId/respond", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1011,7 +943,7 @@ router.post("/hustler/link-requests/accept-invite", sensitiveLimiter, async (req
 });
 
 // Accept invite via token (authenticated - for logged-in users)
-router.post("/hustler/link-requests/accept-token", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -1035,6 +967,12 @@ router.post("/hustler/link-requests/accept-token", requireAuth, async (req: Auth
 
     if (request.status !== "PENDING") {
       return res.status(400).json({ error: `Invite already ${request.status.toLowerCase()}` });
+    }
+
+    const isRecipient = (request.hustlerUserId && request.hustlerUserId === req.user.id) ||
+      (request.hustlerEmail && request.hustlerEmail.toLowerCase() === req.user.email.toLowerCase());
+    if (!isRecipient) {
+      return res.status(403).json({ error: "This invite is not for you" });
     }
 
     if (request.expiresAt && new Date(request.expiresAt) < new Date()) {
