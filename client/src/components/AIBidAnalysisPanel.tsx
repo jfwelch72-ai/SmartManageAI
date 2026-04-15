@@ -10,12 +10,15 @@ interface AIBidAnalysisPanelProps {
 
 export function AIBidAnalysisPanel({ className = "" }: AIBidAnalysisPanelProps) {
   const { data: insights, isLoading } = useQuery<any[]>({
-    queryKey: ['/api/ai-insights', 'BIDS'],
+    queryKey: ['/api/ai-insights', { module: 'BIDS' }],
+    queryFn: async () => {
+      const res = await fetch('/api/ai-insights?module=BIDS', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch bid insights');
+      return res.json();
+    },
   });
 
-  const bidInsights = insights?.filter?.((i: any) =>
-    i.module === "BIDS" || i.category === "BID"
-  ) || [];
+  const bidInsights = insights || [];
 
   const riskItems = bidInsights.filter((i: any) => i.severity === "HIGH" || i.severity === "CRITICAL");
 
