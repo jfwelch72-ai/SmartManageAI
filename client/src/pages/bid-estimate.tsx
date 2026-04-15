@@ -574,6 +574,7 @@ export default function BidEstimate() {
       overheadAllocation: 0,
       profitAllocation: 0,
       notes: lineItemAny.notes || "",
+      photoUrl: lineItemAny.photoUrl || undefined,
     });
     setMaterialCalcData({
       concreteDepthInches: lineItemAny.concreteDepthInches || "",
@@ -780,6 +781,7 @@ export default function BidEstimate() {
               onCategoryChange={handleCategoryChange}
               onApplyCatalogPrice={applyCatalogPrice}
               equipmentSelectorKey={equipmentSelectorKey}
+              estimateId={estimate?.id}
               useHierarchicalBuilder={useHierarchicalBuilder}
               onUseHierarchicalBuilderChange={setUseHierarchicalBuilder}
               selectedScopeData={selectedScopeData}
@@ -811,6 +813,7 @@ export default function BidEstimate() {
               onCategoryChange={handleCategoryChange}
               onApplyCatalogPrice={applyCatalogPrice}
               equipmentSelectorKey={equipmentSelectorKey}
+              estimateId={estimate?.id}
               lineItemId={editingLineItem?.id}
               lineItemSource={editingLineItem?.source}
             />

@@ -1,5 +1,6 @@
 import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
+import multer from "multer";
 import { db } from "./db";
 import { 
   estimates, 
@@ -2065,6 +2066,113 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       }
 
       successResponse(res);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  const lineItemUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+  const verifyEstimateOrgAccess = async (estimateId: string, user: AuthRequest["user"]) => {
+    const estimate = await db.query.estimates.findFirst({
+      where: eq(estimates.id, estimateId),
+    });
+    if (!estimate) return null;
+    if (user!.organizationId) {
+      const bid = estimate.bidId ? await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) }) : null;
+      const project = estimate.projectId ? await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) }) : null;
+      const ownerOrgId = bid?.organizationId || project?.organizationId;
+      if (ownerOrgId && ownerOrgId !== user!.organizationId) return null;
+    }
+    return estimate;
+  };
+
+  router.post("/api/estimates/:estimateId/line-items/:lineItemId/upload-photo", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), lineItemUpload.single("photo"), async (req: AuthRequest, res, next) => {
+    try {
+      const { estimateId, lineItemId } = req.params;
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "No file uploaded" });
+
+      const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return res.status(400).json({ error: "Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed." });
+      }
+
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)),
+      });
+      if (!lineItem) return res.status(404).json({ error: "Line item not found" });
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const orgId = req.user!.organizationId || "default";
+      const fileName = `${Date.now()}-${file.originalname}`;
+      const storagePath = `line-item-photos/${orgId}/${lineItemId}/${fileName}`;
+      const fullPath = `${privateDir}/${storagePath}`;
+
+      const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      await objectFile.save(file.buffer, { contentType: file.mimetype, metadata: { contentType: file.mimetype } });
+
+      const photoUrl = `/api/estimates/line-item-photos/${orgId}/${lineItemId}/${fileName}`;
+      await db.update(estimateLineItems)
+        .set({ photoUrl, updatedAt: new Date() })
+        .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
+
+      res.json({ photoUrl });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/api/estimates/:estimateId/line-items/:lineItemId/photo", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
+    try {
+      const { estimateId, lineItemId } = req.params;
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+      await db.update(estimateLineItems)
+        .set({ photoUrl: null, updatedAt: new Date() })
+        .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/api/estimates/line-item-photos/:orgId/:lineItemId/*", requireAuth, async (req: AuthRequest, res, next) => {
+    try {
+      const { orgId, lineItemId } = req.params;
+      const fileName = req.params[0];
+      if (req.user!.organizationId && req.user!.organizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const objectId = `line-item-photos/${orgId}/${lineItemId}/${fileName}`;
+      const fullPath = `${privateDir}/${objectId}`;
+
+      const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      const [exists] = await objectFile.exists();
+      if (!exists) return res.status(404).json({ error: "Photo not found" });
+
+      const [metadata] = await objectFile.getMetadata();
+      res.setHeader("Content-Type", (metadata.metadata?.contentType as string) || "image/jpeg");
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      objectFile.createReadStream().pipe(res);
     } catch (error) {
       next(error);
     }

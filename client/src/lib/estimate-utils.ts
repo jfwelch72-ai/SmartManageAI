@@ -65,6 +65,7 @@ export const lineItemSchema = z.object({
   profitAllocation: z.coerce.number().min(0).default(0),
   notes: z.string().optional(),
   scopeWorkTypeId: z.string().optional(),
+  photoUrl: z.string().optional().nullable(),
 });
 
 export type LineItemFormValues = z.infer<typeof lineItemSchema>;
@@ -220,4 +221,5 @@ export const LINE_ITEM_DEFAULT_VALUES: LineItemFormValues = {
   profitAllocation: 0,
   notes: "",
   scopeWorkTypeId: undefined,
+  photoUrl: undefined,
 };

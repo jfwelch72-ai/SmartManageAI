@@ -1503,6 +1503,8 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   vendorPricingId: varchar("vendor_pricing_id"),
   vendorMatchConfidence: text("vendor_match_confidence"),
   
+  photoUrl: text("photo_url"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { UseFormReturn } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,8 +22,10 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2 } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import HierarchicalLineItemBuilder, { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
@@ -201,6 +203,7 @@ interface LineItemFormDialogProps {
   onCategoryChange: (value: string) => void;
   onApplyCatalogPrice: (item: CatalogPriceItem) => void;
   equipmentSelectorKey: number;
+  estimateId?: string;
   lineItemId?: string;
   lineItemSource?: string;
   useHierarchicalBuilder?: boolean;
@@ -347,6 +350,7 @@ export function LineItemFormDialog({
   onCategoryChange,
   onApplyCatalogPrice,
   equipmentSelectorKey,
+  estimateId,
   lineItemId,
   lineItemSource,
   useHierarchicalBuilder = false,
@@ -365,6 +369,9 @@ export function LineItemFormDialog({
   const testPrefix = isEdit ? "edit-" : "";
   const [manualCalcToggle, setManualCalcToggle] = useState(false);
   const [numericDisplayValues, setNumericDisplayValues] = useState<Record<string, string>>({});
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
   
   useEffect(() => {
     if (!open) {
@@ -950,6 +957,99 @@ export function LineItemFormDialog({
                 </FormItem>
               )}
             />
+
+            {isEdit && estimateId && lineItemId && (
+              <div className="col-span-2">
+                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Photo Attachment (Optional)
+                </label>
+                <div className="mt-2">
+                  {form.watch("photoUrl") ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={form.watch("photoUrl")!}
+                        alt="Line item photo"
+                        className="h-32 w-auto rounded-lg border border-border object-cover"
+                        data-testid={`img-${testPrefix}line-item-photo`}
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                        onClick={async () => {
+                          try {
+                            await apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${lineItemId}/photo`, {});
+                            form.setValue("photoUrl", null);
+                            toast({ title: "Photo removed" });
+                          } catch {
+                            toast({ title: "Failed to remove photo", variant: "destructive" });
+                          }
+                        }}
+                        data-testid={`button-${testPrefix}remove-photo`}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        className="hidden"
+                        data-testid={`input-${testPrefix}photo-file`}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 10 * 1024 * 1024) {
+                            toast({ title: "File too large. Maximum size is 10MB.", variant: "destructive" });
+                            return;
+                          }
+                          setIsUploading(true);
+                          try {
+                            const formData = new FormData();
+                            formData.append("photo", file);
+                            const res = await fetch(`/api/estimates/${estimateId}/line-items/${lineItemId}/upload-photo`, {
+                              method: "POST",
+                              body: formData,
+                              credentials: "include",
+                            });
+                            if (!res.ok) {
+                              const err = await res.json().catch(() => ({ error: "Upload failed" }));
+                              throw new Error(err.error || "Upload failed");
+                            }
+                            const data = await res.json();
+                            form.setValue("photoUrl", data.photoUrl);
+                            toast({ title: "Photo attached successfully" });
+                          } catch (err: any) {
+                            toast({ title: err?.message || "Photo upload failed", variant: "destructive" });
+                          } finally {
+                            setIsUploading(false);
+                            if (fileInputRef.current) fileInputRef.current.value = "";
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isUploading}
+                        onClick={() => fileInputRef.current?.click()}
+                        data-testid={`button-${testPrefix}upload-photo`}
+                      >
+                        {isUploading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Camera className="h-4 w-4 mr-2" />
+                        )}
+                        {isUploading ? "Uploading..." : "Attach Photo"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {(isEdit || (isAdd && !useHierarchicalBuilder)) && (() => {
