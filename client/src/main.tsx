@@ -45,5 +45,13 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       console.log('[PWA] New service worker controlling the page');
     });
+
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'GET_CSRF_TOKEN' && event.ports?.[0]) {
+        const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+        const csrfToken = match ? decodeURIComponent(match[1]) : null;
+        event.ports[0].postMessage({ csrfToken });
+      }
+    });
   });
 }

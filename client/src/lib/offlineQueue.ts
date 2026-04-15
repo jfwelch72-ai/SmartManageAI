@@ -1,7 +1,8 @@
 const DB_NAME = 'smartmanageai-offline';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const QUEUE_STORE = 'offline-queue';
 const SYNC_HISTORY_STORE = 'sync-history';
+const CSRF_TOKEN_STORE = 'csrf-token';
 const MAX_RETRIES = 5;
 const RETRY_BACKOFF_BASE = 2000;
 
@@ -36,10 +37,14 @@ export function getItemState(item: OfflineQueueItem): OfflineItemState {
 export function getItemDescription(item: OfflineQueueItem): string {
   const entityLabels: Record<string, string> = {
     'TIME_ENTRY': 'Time Entry',
+    'TIME_CLOCK': 'Time Clock',
     'NOTE': 'Note',
     'ISSUE': 'Issue',
     'VOICE_LOG': 'Voice Log',
     'PHOTO': 'Photo',
+    'PROGRESS_REPORT': 'Progress Report',
+    'SAFETY_CHECKLIST': 'Safety Checklist',
+    'PUNCH_LIST': 'Punch List Item',
   };
   const opLabels: Record<string, string> = {
     'CREATE': 'New',
@@ -83,6 +88,13 @@ export interface SyncHistoryEntry {
   errors: string[];
 }
 
+const MAX_SYNC_HISTORY_ENTRIES = 100;
+
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 let isSyncing = false;
 
 function openDB(): Promise<IDBDatabase> {
@@ -99,10 +111,28 @@ function openDB(): Promise<IDBDatabase> {
         const historyStore = db.createObjectStore(SYNC_HISTORY_STORE, { keyPath: 'id', autoIncrement: true });
         historyStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
+      if (!db.objectStoreNames.contains(CSRF_TOKEN_STORE)) {
+        db.createObjectStore(CSRF_TOKEN_STORE, { keyPath: 'key' });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+async function storeCsrfTokenForSync(): Promise<void> {
+  try {
+    const csrfToken = getCsrfToken();
+    if (!csrfToken) return;
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(CSRF_TOKEN_STORE, 'readwrite');
+      const store = tx.objectStore(CSRF_TOKEN_STORE);
+      store.put({ key: 'csrf', token: csrfToken, updatedAt: Date.now() });
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); resolve(); };
+    });
+  } catch (_e) { /* non-critical */ }
 }
 
 export async function addToQueue(item: Omit<OfflineQueueItem, 'id' | 'status' | 'createdAt' | 'retryCount' | 'retryable'>): Promise<number> {
@@ -190,9 +220,12 @@ export async function processQueue(): Promise<{ synced: number; failed: number }
 
     for (const item of items) {
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const csrfToken = getCsrfToken();
+        if (csrfToken) headers['x-csrf-token'] = csrfToken;
         const response = await fetch(item.url, {
           method: item.method,
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           credentials: 'include',
           body: item.body ? JSON.stringify(item.body) : undefined,
         });
@@ -238,6 +271,7 @@ export async function processQueue(): Promise<{ synced: number; failed: number }
         duration: Date.now() - startTime,
         errors,
       });
+      await pruneSyncHistory();
     }
 
     return results;
@@ -328,6 +362,30 @@ async function addSyncHistoryEntry(entry: Omit<SyncHistoryEntry, 'id'>): Promise
   });
 }
 
+async function pruneSyncHistory(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(SYNC_HISTORY_STORE, 'readwrite');
+      const store = tx.objectStore(SYNC_HISTORY_STORE);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const all = request.result as SyncHistoryEntry[];
+        if (all.length > MAX_SYNC_HISTORY_ENTRIES) {
+          all.sort((a, b) => b.timestamp - a.timestamp);
+          const toDelete = all.slice(MAX_SYNC_HISTORY_ENTRIES);
+          for (const entry of toDelete) {
+            if (entry.id != null) store.delete(entry.id);
+          }
+        }
+        resolve();
+      };
+      request.onerror = () => resolve();
+      tx.oncomplete = () => db.close();
+    });
+  } catch (_e) { /* non-critical */ }
+}
+
 export async function getSyncHistory(limit = 20): Promise<SyncHistoryEntry[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -384,6 +442,7 @@ export async function queueOfflineRequest(
   entityType: string,
 ): Promise<number> {
   const operationType = method === 'POST' ? 'CREATE' : method === 'PATCH' ? 'UPDATE' : 'DELETE';
+  await storeCsrfTokenForSync();
   const id = await addToQueue({ url, method, body, entityType, operationType });
 
   if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
