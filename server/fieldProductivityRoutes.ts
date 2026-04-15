@@ -681,7 +681,6 @@ Respond with valid JSON only.`;
             { role: "user", content: transcription },
           ],
           response_format: { type: "json_object" },
-          temperature: 0.3,
           max_completion_tokens: 1024,
         });
         const content = completion.choices[0]?.message?.content;
@@ -778,7 +777,6 @@ Respond with valid JSON only: { "tags": [...], "description": "..." }`;
             },
           ],
           response_format: { type: "json_object" },
-          temperature: 0.3,
           max_completion_tokens: 512,
         });
         const content = completion.choices[0]?.message?.content;

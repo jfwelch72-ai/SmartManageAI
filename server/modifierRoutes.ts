@@ -656,7 +656,6 @@ router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_A
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
-          temperature: 0.4,
           max_completion_tokens: 2048,
         });
 

@@ -375,7 +375,6 @@ Return your analysis as JSON with this exact structure:
               }
             ],
             max_completion_tokens: 4096,
-            temperature: 0.3,
           });
           return { result: completion.choices[0]?.message?.content, completion };
         },

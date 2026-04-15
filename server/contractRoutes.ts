@@ -1354,7 +1354,6 @@ Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope
             { role: "user", content: `Analyze this construction contract for risks:\n\n${contractContext}` },
           ],
           response_format: { type: "json_object" },
-          temperature: 0.3,
           max_completion_tokens: 4096,
         });
         const content = completion.choices[0]?.message?.content;

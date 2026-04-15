@@ -342,7 +342,6 @@ Provide a concise explanation focusing on what's driving the score ${previousSco
             { role: "system", content: "You are a construction project health analyst. Be concise and specific." },
             { role: "user", content: prompt },
           ],
-          temperature: 0.5,
           max_completion_tokens: 200,
         });
         return { result: completion.choices[0]?.message?.content?.trim() || null, completion };

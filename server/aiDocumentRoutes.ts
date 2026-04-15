@@ -196,7 +196,6 @@ Respond with JSON in this format:
             model: AI_MODEL_GPT5,
             messages,
             response_format: { type: 'json_object' },
-            temperature: 0.3,
             max_completion_tokens: 4096,
           });
           const content = completion.choices[0]?.message?.content;
@@ -214,7 +213,6 @@ Respond with JSON in this format:
       model: AI_MODEL_GPT5,
       messages,
       response_format: { type: 'json_object' },
-      temperature: 0.3,
       max_completion_tokens: 4096,
     });
 
@@ -1163,7 +1161,6 @@ Be thorough in extracting scope items. Include quantities and units when availab
           const completion = await openai.chat.completions.create({
             model: AI_MODEL_GPT5,
             messages,
-            temperature: 0.3,
             max_completion_tokens: 4096,
             response_format: { type: "json_object" },
           });
@@ -1310,7 +1307,6 @@ Be thorough in suggesting scope items based on the project type described. Inclu
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0.3,
             max_completion_tokens: 4096,
             response_format: { type: "json_object" },
           });
@@ -1548,7 +1544,6 @@ Analyze the document and return the structured JSON with all contract details.`;
             model: AI_MODEL_GPT5,
             messages,
             response_format: { type: 'json_object' },
-            temperature: 0.3,
             max_completion_tokens: 6000,
           });
 
@@ -1574,7 +1569,6 @@ Analyze the document and return the structured JSON with all contract details.`;
       model: AI_MODEL_GPT5,
       messages,
       response_format: { type: 'json_object' },
-      temperature: 0.3,
       max_completion_tokens: 6000,
     });
 
@@ -3874,7 +3868,6 @@ Analyze and suggest the properly formatted SOW item.`;
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.3,
           max_completion_tokens: 1000,
         });
 
@@ -4067,7 +4060,6 @@ Analyze and suggest the properly formatted UOM, or explain if a similar one alre
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.2,
           max_completion_tokens: 500,
         });
 

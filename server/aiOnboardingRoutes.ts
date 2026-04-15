@@ -910,7 +910,6 @@ async function extractThemeFromWebsite(organizationId: string, websiteUrl: strin
               content: `Colors found on website: ${foundColors.slice(0, 20).join(', ')}`
             }],
             response_format: { type: "json_object" },
-            temperature: 0.3,
             max_completion_tokens: 100,
           });
           return { result: colorAnalysis.choices[0]?.message?.content || '{}', completion: colorAnalysis };
@@ -1064,7 +1063,6 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: Au
         const completion = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
           messages,
-          temperature: 0.7,
           max_completion_tokens: 800,
           response_format: { type: "json_object" },
         });

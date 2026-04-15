@@ -3160,7 +3160,6 @@ const messagingSetup = (async () => {
                 content: `Please summarize the following call notes:\n\n${notesText}`,
               },
             ],
-            temperature: 0.5,
             max_completion_tokens: 1024,
           });
           return { result: completion.choices[0]?.message?.content || null, completion };

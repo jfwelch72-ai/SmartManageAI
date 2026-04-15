@@ -157,7 +157,6 @@ Identify the primary trade and all related trades that would be involved in this
           { role: 'user', content: userPrompt },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.3,
         max_completion_tokens: 2048,
       });
       return {

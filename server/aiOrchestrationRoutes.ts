@@ -355,7 +355,6 @@ Example of a correct response:
           model: AI_MODEL_GPT4O,
           messages: sqlGenMessages,
           response_format: { type: 'json_object' },
-          temperature: 0.1,
           max_completion_tokens: 1000,
         });
         const content = c.choices[0]?.message?.content;
@@ -434,7 +433,6 @@ Example of a correct response:
             content: `Question: ${question}\n\nQuery results (${queryResults.length} rows):\n${JSON.stringify(queryResults.slice(0, MAX_RESULT_ROWS), null, 2)}`
           },
         ],
-        temperature: 0.3,
         max_completion_tokens: 1000,
       });
       const r = c.choices[0]?.message?.content;
@@ -2148,7 +2146,6 @@ Example of a correct response:
             model: AI_MODEL_GPT4O,
             messages: sqlGenMessages,
             response_format: { type: 'json_object' },
-            temperature: 0.1,
             max_completion_tokens: 1000,
           });
           const content = c.choices[0]?.message?.content;
@@ -2245,7 +2242,6 @@ Example of a correct response:
               content: `Question: ${question}\n\nQuery results (${queryResults.length} rows):\n${JSON.stringify(queryResults.slice(0, MAX_RESULT_ROWS), null, 2)}`
             },
           ],
-          temperature: 0.3,
           max_completion_tokens: 1000,
         });
         const r = c.choices[0]?.message?.content;

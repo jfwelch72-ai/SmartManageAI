@@ -30,9 +30,9 @@ export const openai = new Proxy({} as OpenAI, {
   }
 });
 
-export const AI_MODEL_GPT5 = 'gpt-5';
+export const AI_MODEL_GPT5 = 'gpt-5.2';
 export const AI_MODEL_GPT4O = 'gpt-4o';
-export const AI_MODEL_FALLBACK = AI_MODEL_GPT4O;
+export const AI_MODEL_FALLBACK = 'gpt-5';
 
 export interface AIAnalysisResponse {
   analysis_summary: string;
@@ -131,7 +131,6 @@ export async function callOpenAIForAnalysis(
       { role: 'user', content: userPrompt },
     ],
     response_format: { type: 'json_object' },
-    temperature: 0.7,
     max_completion_tokens: 4096,
   });
 
@@ -259,7 +258,6 @@ If this is a very specialized or niche trade, do your best to provide relevant i
         { role: 'user', content: userPrompt },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.5,
       max_completion_tokens: 4096,
     });
 

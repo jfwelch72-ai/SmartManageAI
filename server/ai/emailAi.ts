@@ -189,7 +189,6 @@ Return JSON with:
             { role: 'user', content: userPrompt }
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.3,
           max_completion_tokens: 1000,
         });
 
@@ -257,7 +256,6 @@ ${m.bodyText?.substring(0, 1500) || '(No content)'}
           { role: 'user', content: `Summarize this email thread:\n\n${threadContent.substring(0, 8000)}` }
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.4,
         max_completion_tokens: 1000,
       });
       const content = completion.choices[0]?.message?.content;
@@ -323,7 +321,6 @@ ${originalEmail.body?.substring(0, 3000) || '(No content)'}
 Return JSON with subject and body fields.` }
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.6,
           max_completion_tokens: 800,
         });
         const content = completion.choices[0]?.message?.content;
@@ -405,7 +402,6 @@ Return JSON with:
 }` }
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.5,
           max_completion_tokens: 1500,
         });
       const content = completion.choices[0]?.message?.content;

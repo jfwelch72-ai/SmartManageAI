@@ -182,7 +182,6 @@ Return format: { "insights": [ ... ] }`;
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt }
             ],
-            temperature: 0.3,
             response_format: { type: "json_object" }
           });
           return {

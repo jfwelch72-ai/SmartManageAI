@@ -52,7 +52,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)
-*   OpenAI GPT-4 / GPT-4o
+*   OpenAI via Replit AI Integrations (gpt-5.2 default, no API key required — billed to Replit credits)
 *   Resend
 *   JWT
 *   Bcrypt

@@ -177,7 +177,6 @@ Respond with JSON in this format:
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.5,
           max_completion_tokens: 4096,
         });
 
@@ -316,7 +315,6 @@ Respond with JSON in this format:
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.5,
           max_completion_tokens: 4096,
         });
         const content = completion.choices[0]?.message?.content;
@@ -472,7 +470,6 @@ Respond with JSON in this format:
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.5,
           max_completion_tokens: 4096,
         });
         const content = completion.choices[0]?.message?.content;
@@ -614,7 +611,6 @@ Respond with JSON in this format:
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.5,
           max_completion_tokens: 4096,
         });
         const content = completion.choices[0]?.message?.content;
@@ -759,7 +755,6 @@ Respond with JSON in this format:
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.5,
           max_completion_tokens: 4096,
         });
         const content = completion.choices[0]?.message?.content;
@@ -903,7 +898,6 @@ Respond with JSON in this format:
             { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.5,
           max_completion_tokens: 4096,
         });
         const content = completion.choices[0]?.message?.content;

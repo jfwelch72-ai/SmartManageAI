@@ -115,7 +115,6 @@ Respond ONLY with valid JSON: {"score": <number>, "rationale": "<string>"}`;
             { role: "user", content: `Score this deal:\n${JSON.stringify(dealAttributes, null, 2)}` },
           ],
           response_format: { type: "json_object" },
-          temperature: 0.3,
           max_completion_tokens: 200,
         });
         const content = completion.choices[0]?.message?.content;

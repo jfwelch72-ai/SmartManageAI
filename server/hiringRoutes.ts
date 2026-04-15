@@ -1729,7 +1729,6 @@ router.post(
               { role: "user", content: userPrompt },
             ],
             response_format: { type: "json_object" },
-            temperature: 0.2,
             max_completion_tokens: 1200,
           });
           const content = completion.choices[0]?.message?.content ?? "{}";

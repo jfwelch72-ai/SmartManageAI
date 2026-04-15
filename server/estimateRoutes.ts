@@ -2665,7 +2665,6 @@ ${Number(actualLabor.total_hours) > 0 ? `- Labor Variance: ${((Number(actualLabo
 Provide comprehensive financial analysis and recommendations.`
               }
             ],
-            temperature: 0.7,
             max_completion_tokens: 1500,
           });
           return {

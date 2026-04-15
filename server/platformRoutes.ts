@@ -1581,7 +1581,7 @@ router.get("/platform/monitoring/integration-health", requireAuth, requireSuperA
       platformIntegrations: {
         resend: !!process.env.RESEND_API_KEY,
         objectStorage: !!process.env.PRIVATE_OBJECT_DIR,
-        openai: !!process.env.OPENAI_API_KEY,
+        openai: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY),
       },
     });
   } catch (error: any) {
