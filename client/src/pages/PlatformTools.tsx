@@ -50,6 +50,7 @@ import {
   Building2,
   GitBranch,
   Loader2,
+  Briefcase,
 } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -319,6 +320,9 @@ function SupportToolsTab() {
               <SelectItem value="workflows" data-testid="tab-workflows">
                 <span className="flex items-center gap-2"><GitBranch className="h-4 w-4" /> Workflow Templates</span>
               </SelectItem>
+              <SelectItem value="hiring-templates" data-testid="tab-hiring-templates">
+                <span className="flex items-center gap-2"><Briefcase className="h-4 w-4" /> Hiring Templates</span>
+              </SelectItem>
               <SelectItem value="datatools" data-testid="tab-datatools">
                 <span className="flex items-center gap-2"><Database className="h-4 w-4" /> Data Tools</span>
               </SelectItem>
@@ -344,6 +348,10 @@ function SupportToolsTab() {
 
         <TabsContent value="workflows" className="space-y-4">
           <WorkflowTemplatesSection />
+        </TabsContent>
+
+        <TabsContent value="hiring-templates" className="space-y-4">
+          <HiringTemplatesSection />
         </TabsContent>
 
         <TabsContent value="datatools" className="space-y-4">
@@ -599,6 +607,326 @@ function WorkflowTemplatesSection() {
               onClick={handleSubmit}
               disabled={!form.name || createMutation.isPending || updateMutation.isPending}
               data-testid="button-save-template"
+            >
+              {createMutation.isPending || updateMutation.isPending ? "Saving..." : editingId ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+const EMPLOYMENT_TYPES = [
+  { value: "FULL_TIME", label: "Full Time" },
+  { value: "PART_TIME", label: "Part Time" },
+  { value: "SEASONAL", label: "Seasonal" },
+  { value: "SUBCONTRACTOR", label: "Subcontractor" },
+  { value: "INTERN", label: "Intern" },
+  { value: "TEMPORARY", label: "Temporary" },
+];
+
+interface GlobalHiringTemplate {
+  id: string;
+  organizationId: string;
+  title: string;
+  trade: string | null;
+  employmentType: string | null;
+  description: string | null;
+  requirements: string | null;
+  certificationsRequired: string | null;
+  screeningQuestionsJson: string | null;
+  isGlobal: boolean;
+  createdAt: string;
+}
+
+function HiringTemplatesSection() {
+  const { toast } = useToast();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    title: "",
+    trade: "",
+    employmentType: "FULL_TIME",
+    description: "",
+    requirements: "",
+    certificationsRequired: "",
+    screeningQuestionsJson: "",
+    isGlobal: true,
+  });
+
+  const { data: templates, isLoading } = useQuery<GlobalHiringTemplate[]>({
+    queryKey: ["/api/platform/hiring-templates"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/platform/hiring-templates", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/hiring-templates"] });
+      setDialogOpen(false);
+      toast({ title: "Hiring template created" });
+    },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", `/api/platform/hiring-templates/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/hiring-templates"] });
+      setDialogOpen(false);
+      toast({ title: "Hiring template updated" });
+    },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/platform/hiring-templates/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/hiring-templates"] });
+      toast({ title: "Hiring template deleted" });
+    },
+  });
+
+  const toggleGlobalMutation = useMutation({
+    mutationFn: async ({ id, isGlobal }: { id: string; isGlobal: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/platform/hiring-templates/${id}`, { isGlobal });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/hiring-templates"] });
+    },
+  });
+
+  const resetForm = () => {
+    setForm({
+      title: "",
+      trade: "",
+      employmentType: "FULL_TIME",
+      description: "",
+      requirements: "",
+      certificationsRequired: "",
+      screeningQuestionsJson: "",
+      isGlobal: true,
+    });
+    setEditingId(null);
+  };
+
+  const openCreate = () => { resetForm(); setDialogOpen(true); };
+
+  const openEdit = (t: GlobalHiringTemplate) => {
+    setEditingId(t.id);
+    setForm({
+      title: t.title,
+      trade: t.trade || "",
+      employmentType: t.employmentType || "FULL_TIME",
+      description: t.description || "",
+      requirements: t.requirements || "",
+      certificationsRequired: t.certificationsRequired || "",
+      screeningQuestionsJson: t.screeningQuestionsJson || "",
+      isGlobal: t.isGlobal,
+    });
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = () => {
+    const payload: Record<string, unknown> = {
+      title: form.title,
+      trade: form.trade || null,
+      employmentType: form.employmentType || null,
+      description: form.description || null,
+      requirements: form.requirements || null,
+      certificationsRequired: form.certificationsRequired || null,
+      screeningQuestionsJson: form.screeningQuestionsJson || null,
+      isGlobal: form.isGlobal,
+    };
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: payload });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Briefcase className="h-5 w-5" />
+                Global Hiring Templates
+              </CardTitle>
+              <CardDescription>Manage hiring job templates visible to all organizations</CardDescription>
+            </div>
+            <Button onClick={openCreate} data-testid="button-create-hiring-template">
+              <Plus className="h-4 w-4 mr-2" />
+              New Template
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <p className="text-muted-foreground">Loading...</p>
+          ) : !templates?.length ? (
+            <p className="text-muted-foreground text-center py-8" data-testid="text-no-hiring-templates">No global hiring templates yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Trade</TableHead>
+                    <TableHead>Employment Type</TableHead>
+                    <TableHead>Global</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {templates.map(t => (
+                    <TableRow key={t.id} data-testid={`row-hiring-template-${t.id}`}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium" data-testid={`text-hiring-title-${t.id}`}>{t.title}</p>
+                          {t.description && <p className="text-sm text-muted-foreground line-clamp-1">{t.description}</p>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {t.trade ? <Badge variant="outline" data-testid={`badge-hiring-trade-${t.id}`}>{t.trade}</Badge> : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" data-testid={`badge-hiring-type-${t.id}`}>
+                          {EMPLOYMENT_TYPES.find(e => e.value === t.employmentType)?.label || t.employmentType || "—"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={t.isGlobal}
+                          onCheckedChange={(checked) => toggleGlobalMutation.mutate({ id: t.id, isGlobal: checked })}
+                          data-testid={`switch-hiring-global-${t.id}`}
+                        />
+                      </TableCell>
+                      <TableCell>{format(new Date(t.createdAt), "MMM d, yyyy")}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(t)} data-testid={`button-edit-hiring-${t.id}`}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(t.id)} data-testid={`button-delete-hiring-${t.id}`}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit Hiring Template" : "New Global Hiring Template"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Title</Label>
+              <Input
+                value={form.title}
+                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. Journeyman Electrician"
+                data-testid="input-hiring-title"
+              />
+            </div>
+            <div>
+              <Label>Trade</Label>
+              <Input
+                value={form.trade}
+                onChange={e => setForm(f => ({ ...f, trade: e.target.value }))}
+                placeholder="e.g. ELECTRICAL, GENERAL"
+                data-testid="input-hiring-trade"
+              />
+            </div>
+            <div>
+              <Label>Employment Type</Label>
+              <Select value={form.employmentType} onValueChange={v => setForm(f => ({ ...f, employmentType: v }))}>
+                <SelectTrigger data-testid="select-hiring-employment-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EMPLOYMENT_TYPES.map(e => (
+                    <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                placeholder="Job description..."
+                rows={3}
+                data-testid="input-hiring-description"
+              />
+            </div>
+            <div>
+              <Label>Requirements</Label>
+              <Textarea
+                value={form.requirements}
+                onChange={e => setForm(f => ({ ...f, requirements: e.target.value }))}
+                placeholder="Job requirements..."
+                rows={3}
+                data-testid="input-hiring-requirements"
+              />
+            </div>
+            <div>
+              <Label>Certifications Required</Label>
+              <Textarea
+                value={form.certificationsRequired}
+                onChange={e => setForm(f => ({ ...f, certificationsRequired: e.target.value }))}
+                placeholder="e.g. OSHA 10, CDL, etc."
+                rows={2}
+                data-testid="input-hiring-certifications"
+              />
+            </div>
+            <div>
+              <Label>Screening Questions (JSON)</Label>
+              <Textarea
+                value={form.screeningQuestionsJson}
+                onChange={e => setForm(f => ({ ...f, screeningQuestionsJson: e.target.value }))}
+                placeholder='[{"question": "Do you have a valid driver license?", "type": "yes_no"}]'
+                rows={3}
+                className="font-mono text-sm"
+                data-testid="input-hiring-screening"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={form.isGlobal}
+                onCheckedChange={checked => setForm(f => ({ ...f, isGlobal: checked }))}
+                data-testid="switch-hiring-form-global"
+              />
+              <Label>Global (visible to all organizations)</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={!form.title || createMutation.isPending || updateMutation.isPending}
+              data-testid="button-save-hiring-template"
             >
               {createMutation.isPending || updateMutation.isPending ? "Saving..." : editingId ? "Update" : "Create"}
             </Button>

@@ -139,7 +139,7 @@
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema, aiActionAudit, uploadIntents, aiRuns, media, integrationConnections, platformAnnouncements, announcementDismissals, globalWorkflowTemplates, equipment, contracts } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema, aiActionAudit, uploadIntents, aiRuns, media, integrationConnections, platformAnnouncements, announcementDismissals, globalWorkflowTemplates, equipment, contracts, hiringJobTemplates, insertHiringJobTemplateSchema } from "@shared/schema";
 import { requireAuth, type AuthRequest, hashPassword, generateToken } from "./auth";
 import { eq, count, desc, sql, and, gte, lte, isNotNull, like, ilike, sum, inArray, or } from "drizzle-orm";
 import crypto from "crypto";
@@ -1993,6 +1993,78 @@ router.delete("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin
   try {
     const { id } = req.params;
     await db.delete(globalWorkflowTemplates).where(eq(globalWorkflowTemplates.id, id));
+    res.json({ message: "Template deleted" });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+// ========================================
+// Global Hiring Templates
+// ========================================
+
+router.get("/platform/hiring-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const adminOrgId = req.user!.organizationId;
+    const templates = await db.select().from(hiringJobTemplates)
+      .where(or(eq(hiringJobTemplates.isGlobal, true), eq(hiringJobTemplates.organizationId, adminOrgId)))
+      .orderBy(desc(hiringJobTemplates.createdAt));
+    res.json(templates);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+const hiringTemplateUpdateSchema = insertHiringJobTemplateSchema.partial().omit({ organizationId: true }).extend({
+  isGlobal: z.boolean().optional(),
+});
+
+router.post("/platform/hiring-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const parsed = insertHiringJobTemplateSchema.safeParse({
+      ...req.body,
+      organizationId: req.user!.organizationId,
+      isGlobal: req.body.isGlobal !== undefined ? req.body.isGlobal : true,
+    });
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const [template] = await db.insert(hiringJobTemplates).values(parsed.data).returning();
+    res.status(201).json(template);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+router.patch("/platform/hiring-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const parsed = hiringTemplateUpdateSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const adminOrgId = req.user!.organizationId;
+    const [existing] = await db.select().from(hiringJobTemplates)
+      .where(and(eq(hiringJobTemplates.id, id), or(eq(hiringJobTemplates.isGlobal, true), eq(hiringJobTemplates.organizationId, adminOrgId))))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: "Template not found" });
+
+    const [updated] = await db.update(hiringJobTemplates).set(parsed.data)
+      .where(eq(hiringJobTemplates.id, id))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Template not found" });
+    res.json(updated);
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+router.delete("/platform/hiring-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const adminOrgId = req.user!.organizationId;
+    const [existing] = await db.select().from(hiringJobTemplates)
+      .where(and(eq(hiringJobTemplates.id, id), or(eq(hiringJobTemplates.isGlobal, true), eq(hiringJobTemplates.organizationId, adminOrgId))))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: "Template not found" });
+    await db.delete(hiringJobTemplates).where(eq(hiringJobTemplates.id, id));
     res.json({ message: "Template deleted" });
   } catch (error: any) {
     next(error);

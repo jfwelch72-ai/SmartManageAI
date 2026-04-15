@@ -7001,6 +7001,7 @@ export const hiringJobTemplates = pgTable("hiring_job_templates", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdx: index("hiring_job_templates_org_idx").on(table.organizationId),
+  globalIdx: index("hiring_job_templates_global_idx").on(table.isGlobal),
 }));
 
 export const insertHiringJobTemplateSchema = createInsertSchema(hiringJobTemplates).omit({ id: true, createdAt: true });
