@@ -653,6 +653,11 @@ function HiringTemplatesSection() {
     certificationsRequired: "",
     screeningQuestionsJson: "",
     isGlobal: true,
+    organizationId: "",
+  });
+
+  const { data: allOrgs } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/platform/organizations"],
   });
 
   const { data: templates, isLoading } = useQuery<GlobalHiringTemplate[]>({
@@ -715,6 +720,7 @@ function HiringTemplatesSection() {
       certificationsRequired: "",
       screeningQuestionsJson: "",
       isGlobal: true,
+      organizationId: allOrgs?.[0]?.id || "",
     });
     setEditingId(null);
   };
@@ -750,6 +756,9 @@ function HiringTemplatesSection() {
     if (editingId) {
       updateMutation.mutate({ id: editingId, data: payload });
     } else {
+      if (form.organizationId) {
+        payload.organizationId = form.organizationId;
+      }
       createMutation.mutate(payload);
     }
   };
@@ -840,6 +849,22 @@ function HiringTemplatesSection() {
             <DialogTitle>{editingId ? "Edit Hiring Template" : "New Global Hiring Template"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {!editingId && (
+              <div>
+                <Label>Organization</Label>
+                <Select value={form.organizationId} onValueChange={v => setForm(f => ({ ...f, organizationId: v }))}>
+                  <SelectTrigger data-testid="select-hiring-org">
+                    <SelectValue placeholder="Select organization..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allOrgs?.map((org: { id: string; name: string }) => (
+                      <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Template is stored under this org but visible to all when global.</p>
+              </div>
+            )}
             <div>
               <Label>Title</Label>
               <Input

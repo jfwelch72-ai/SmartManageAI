@@ -2005,9 +2005,7 @@ router.delete("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin
 
 router.get("/platform/hiring-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
-    const adminOrgId = req.user!.organizationId;
     const templates = await db.select().from(hiringJobTemplates)
-      .where(or(eq(hiringJobTemplates.isGlobal, true), eq(hiringJobTemplates.organizationId, adminOrgId)))
       .orderBy(desc(hiringJobTemplates.createdAt));
     res.json(templates);
   } catch (error: any) {
@@ -2021,9 +2019,13 @@ const hiringTemplateUpdateSchema = insertHiringJobTemplateSchema.partial().omit(
 
 router.post("/platform/hiring-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
+    const orgId = req.body.organizationId || req.user!.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ error: "organizationId is required (Super Admin has no default org)" });
+    }
     const parsed = insertHiringJobTemplateSchema.safeParse({
       ...req.body,
-      organizationId: req.user!.organizationId,
+      organizationId: orgId,
       isGlobal: req.body.isGlobal !== undefined ? req.body.isGlobal : true,
     });
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -2040,9 +2042,8 @@ router.patch("/platform/hiring-templates/:id", requireAuth, requireSuperAdmin, a
     const parsed = hiringTemplateUpdateSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const adminOrgId = req.user!.organizationId;
     const [existing] = await db.select().from(hiringJobTemplates)
-      .where(and(eq(hiringJobTemplates.id, id), or(eq(hiringJobTemplates.isGlobal, true), eq(hiringJobTemplates.organizationId, adminOrgId))))
+      .where(eq(hiringJobTemplates.id, id))
       .limit(1);
     if (!existing) return res.status(404).json({ error: "Template not found" });
 
@@ -2059,9 +2060,8 @@ router.patch("/platform/hiring-templates/:id", requireAuth, requireSuperAdmin, a
 router.delete("/platform/hiring-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
-    const adminOrgId = req.user!.organizationId;
     const [existing] = await db.select().from(hiringJobTemplates)
-      .where(and(eq(hiringJobTemplates.id, id), or(eq(hiringJobTemplates.isGlobal, true), eq(hiringJobTemplates.organizationId, adminOrgId))))
+      .where(eq(hiringJobTemplates.id, id))
       .limit(1);
     if (!existing) return res.status(404).json({ error: "Template not found" });
     await db.delete(hiringJobTemplates).where(eq(hiringJobTemplates.id, id));
