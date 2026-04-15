@@ -31,13 +31,44 @@ const uploadByteRangeSchema = z.object({
 });
 
 const uploadPartQueues = new Map<string, Promise<void>>();
+const uploadPartCounters = new Map<string, { next: number; waiters: Map<number, { resolve: () => void }> }>();
 
-function serializePartUpload(uploadId: string, task: () => Promise<void>): Promise<void> {
+function serializePartUpload(uploadId: string, partNumber: number, task: () => Promise<void>): Promise<void> {
+  if (!uploadPartCounters.has(uploadId)) {
+    uploadPartCounters.set(uploadId, { next: 1, waiters: new Map() });
+  }
+  const counter = uploadPartCounters.get(uploadId)!;
+
+  const ordered = new Promise<void>((resolve, reject) => {
+    const run = () => {
+      task().then(() => {
+        counter.next = partNumber + 1;
+        const nextWaiter = counter.waiters.get(partNumber + 1);
+        if (nextWaiter) {
+          counter.waiters.delete(partNumber + 1);
+          nextWaiter.resolve();
+        }
+        resolve();
+      }).catch(reject);
+    };
+
+    if (counter.next === partNumber) {
+      run();
+    } else {
+      counter.waiters.set(partNumber, { resolve: run });
+      setTimeout(() => {
+        if (counter.waiters.has(partNumber)) {
+          counter.waiters.delete(partNumber);
+          reject(new Error(`Timed out waiting for part ${partNumber - 1} to complete`));
+        }
+      }, 60000);
+    }
+  });
+
   const prev = uploadPartQueues.get(uploadId) ?? Promise.resolve();
-  const queued = prev.then(task);
-  const next = queued.catch(() => {});
+  const next = prev.then(() => ordered).catch(() => {});
   uploadPartQueues.set(uploadId, next);
-  return queued;
+  return ordered;
 }
 
 router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
@@ -369,7 +400,8 @@ router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, a
 
     let etag = `"part-${start}-${end}"`;
 
-    await serializePartUpload(uploadId, async () => {
+    const partNum = parseInt(req.params.partNumber, 10);
+    await serializePartUpload(uploadId, partNum, async () => {
       const gcsRes = await fetch(intent.resumableUri!, {
         method: "PUT",
         headers: {
@@ -380,8 +412,11 @@ router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, a
         body,
       });
       if (![200, 201, 308].includes(gcsRes.status)) {
+        const errBody = await gcsRes.text().catch(() => "");
+        console.error(`[multipart] GCS PUT error: status=${gcsRes.status} range=${contentRange} bodyLen=${body.length} resp=${errBody}`);
         throw new Error(`GCS returned ${gcsRes.status}`);
       }
+      console.log(`[multipart] GCS PUT ok: status=${gcsRes.status} range=${contentRange} bodyLen=${body.length}`);
       etag = gcsRes.headers.get("etag") ?? etag;
     });
 
@@ -403,6 +438,23 @@ router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req
     if (intent.uploadedById !== req.user!.id) { res.status(403).json({ error: "Access denied" }); return; }
     if (intent.confirmedAt) { res.status(409).json({ error: "Already confirmed" }); return; }
 
+    if (intent.resumableUri) {
+      const statusRes = await fetch(intent.resumableUri, {
+        method: "PUT",
+        headers: {
+          "Content-Length": "0",
+          "Content-Range": `bytes */${intent.fileSize}`,
+        },
+      });
+      console.log(`[multipart-complete] Resumable status check: ${statusRes.status} for ${intent.objectKey}`);
+      if (statusRes.status === 308) {
+        const range = statusRes.headers.get("range");
+        console.error(`[multipart-complete] Upload incomplete! range=${range}, expected total=${intent.fileSize}`);
+        res.status(409).json({ error: "Upload not yet complete on storage backend" });
+        return;
+      }
+    }
+
     const { ObjectStorageService } = await objectStoragePromise;
     const objectStorageService = new ObjectStorageService();
     const resolvedVisibility: "public" | "private" = aclPolicy?.visibility === "public" ? "public" : "private";
@@ -417,6 +469,7 @@ router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req
     await db.update(uploadIntents).set({ confirmedAt: new Date() }).where(eq(uploadIntents.id, uploadId));
 
     uploadPartQueues.delete(uploadId);
+    uploadPartCounters.delete(uploadId);
     res.json({ location: normalizedPath, objectPath: normalizedPath });
   } catch (error: any) {
     next(error);
@@ -442,6 +495,7 @@ router.delete("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthR
 
     await db.delete(uploadIntents).where(eq(uploadIntents.id, uploadId));
     uploadPartQueues.delete(uploadId);
+    uploadPartCounters.delete(uploadId);
     res.status(204).send();
   } catch (error: any) {
     next(error);

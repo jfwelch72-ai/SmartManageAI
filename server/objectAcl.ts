@@ -32,7 +32,15 @@ export async function setObjectAclPolicy(
   objectFile: File,
   aclPolicy: ObjectAclPolicy,
 ): Promise<void> {
-  const [exists] = await objectFile.exists();
+  let exists = false;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [found] = await objectFile.exists();
+    if (found) { exists = true; break; }
+    if (attempt < 4) {
+      console.log(`[acl] Object not yet visible (attempt ${attempt + 1}/5), retrying in ${(attempt + 1) * 500}ms: ${objectFile.name}`);
+      await new Promise(r => setTimeout(r, (attempt + 1) * 500));
+    }
+  }
   if (!exists) {
     throw new Error(`Object not found: ${objectFile.name}`);
   }

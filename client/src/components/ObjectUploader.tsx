@@ -102,6 +102,7 @@ export function ObjectUploader({
 
     instance.use(AwsS3, {
       shouldUseMultipart: (file) => !onGetUploadParameters && (file.size ?? 0) > MULTIPART_THRESHOLD,
+      limit: 1,
 
       getUploadParameters: async (file) => {
         const fileInfo = {
