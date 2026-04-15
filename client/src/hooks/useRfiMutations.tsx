@@ -237,7 +237,12 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
       onEditSuccess?.();
     },
     onError: (error: any) => {
-      toast({ title: "Failed to update RFI", description: error.message, variant: "destructive" });
+      if (error.message?.includes("Conflict") || error.message?.includes("409")) {
+        invalidateAll();
+        toast({ title: "Update conflict", description: "Someone else modified this RFI. Your view has been refreshed — please try again.", variant: "destructive" });
+      } else {
+        toast({ title: "Failed to update RFI", description: error.message, variant: "destructive" });
+      }
     },
   });
 

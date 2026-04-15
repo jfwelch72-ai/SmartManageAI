@@ -425,16 +425,25 @@ export function ChangeOrderDialog({
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { changeOrderNumber: string; description: string; amount: string; costCodeId?: number | null }) => {
-      return apiRequest("PATCH", `/api/change-orders/${changeOrder?.id}`, data);
+    mutationFn: async (data: { changeOrderNumber: string; description: string; amount: string; costCodeId?: number | null; lastKnownUpdatedAt?: string }) => {
+      return apiRequest("PATCH", `/api/change-orders/${changeOrder?.id}`, {
+        ...data,
+        lastKnownUpdatedAt: data.lastKnownUpdatedAt || changeOrder?.updatedAt,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Change order updated successfully" });
       setIsEditing(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update change order", variant: "destructive" });
+    onError: (error: any) => {
+      if (error.message?.includes("Conflict") || error.message?.includes("409")) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+        toast({ title: "Update conflict", description: "Someone else modified this change order. Your view has been refreshed — please try again.", variant: "destructive" });
+        setIsEditing(false);
+      } else {
+        toast({ title: "Error", description: "Failed to update change order", variant: "destructive" });
+      }
     },
   });
 

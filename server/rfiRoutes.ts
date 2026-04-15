@@ -627,11 +627,32 @@ router.patch("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
       }
     }
 
+    const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
+    const useOptimisticLock = !forceOverwrite && !!req.body.lastKnownUpdatedAt;
+
+    const whereClause = useOptimisticLock
+      ? and(eq(rfis.id, req.params.id), eq(rfis.updatedAt, new Date(req.body.lastKnownUpdatedAt)))
+      : eq(rfis.id, req.params.id);
+
     const [updated] = await db
       .update(rfis)
       .set(updates)
-      .where(eq(rfis.id, req.params.id))
+      .where(whereClause)
       .returning();
+
+    if (!updated) {
+      if (useOptimisticLock) {
+        const [current] = await db.select().from(rfis).where(eq(rfis.id, req.params.id));
+        if (current) {
+          return res.status(409).json({
+            error: "Conflict: server version is newer",
+            serverUpdatedAt: current.updatedAt,
+            serverData: current,
+          });
+        }
+      }
+      return res.status(404).json({ error: "RFI not found" });
+    }
 
     const user = req.user!;
     await createActivityEntry(

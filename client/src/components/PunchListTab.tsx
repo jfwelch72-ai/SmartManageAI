@@ -287,7 +287,14 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
       if (selected && selected.id === updated.id) setSelected(updated);
       toast({ title: "Updated", description: "Punch list item updated." });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => {
+      if (e.message?.includes("Conflict") || e.message?.includes("409")) {
+        invalidate();
+        toast({ title: "Update conflict", description: "Someone else modified this item. Your view has been refreshed — please try again.", variant: "destructive" });
+      } else {
+        toast({ title: "Error", description: e.message, variant: "destructive" });
+      }
+    },
   });
 
   const deleteMutation = useMutation({
@@ -350,7 +357,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
   const handleStatusChange = (item: PunchListItem, newStatus: string) => {
     updateMutation.mutate({
       id: item.id,
-      data: { status: newStatus, statusNote: statusNote || undefined },
+      data: { status: newStatus, statusNote: statusNote || undefined, lastKnownUpdatedAt: item.updatedAt },
     });
     setStatusNote("");
   };
@@ -1060,6 +1067,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                           : form.assignedToName || null,
                         assignedToEmail: assignedUser?.email || form.assignedToEmail || null,
                         dueDate: form.dueDate || null,
+                        lastKnownUpdatedAt: selected.updatedAt,
                       },
                     },
                     { onSuccess: () => { setShowEdit(false); setForm(emptyForm); } },

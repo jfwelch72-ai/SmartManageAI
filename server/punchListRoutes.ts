@@ -249,17 +249,7 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
     const userName = `${req.user!.firstName} ${req.user!.lastName}`.trim() || userId;
 
     const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
-    if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
-      const clientUpdatedAt = new Date(req.body.lastKnownUpdatedAt).getTime();
-      const serverUpdatedAt = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
-      if (serverUpdatedAt > clientUpdatedAt) {
-        return res.status(409).json({
-          error: "Conflict: server version is newer",
-          serverUpdatedAt: item.updatedAt,
-          serverData: item,
-        });
-      }
-    }
+    const useOptimisticLock = !forceOverwrite && !!req.body.lastKnownUpdatedAt;
 
     const update: Partial<PunchListItem> & { updatedAt: Date } = { updatedAt: new Date() };
 
@@ -375,11 +365,32 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
       update.statusHistory = [...currentHistory, historyEntry];
     }
 
+    const whereClause = useOptimisticLock
+      ? and(
+          eq(punchListItems.id, req.params.id),
+          eq(punchListItems.updatedAt, new Date(req.body.lastKnownUpdatedAt))
+        )
+      : eq(punchListItems.id, req.params.id);
+
     const [updated] = await db
       .update(punchListItems)
       .set(update)
-      .where(eq(punchListItems.id, req.params.id))
+      .where(whereClause)
       .returning();
+
+    if (!updated) {
+      if (useOptimisticLock) {
+        const [current] = await db.select().from(punchListItems).where(eq(punchListItems.id, req.params.id));
+        if (current) {
+          return res.status(409).json({
+            error: "Conflict: server version is newer",
+            serverUpdatedAt: current.updatedAt,
+            serverData: enrichItem(current),
+          });
+        }
+      }
+      return res.status(404).json({ error: "Punch list item not found" });
+    }
 
     await logAudit({
       userId,

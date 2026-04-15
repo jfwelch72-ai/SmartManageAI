@@ -188,8 +188,8 @@ export default function RfiDetailDialog({
   };
 
   const saveEdit = () => {
-    if (!rfi) return;
-    mutations.updateMutation.mutate({ id: rfi.id, data: editForm });
+    if (!activeRfi) return;
+    mutations.updateMutation.mutate({ id: activeRfi.id, data: { ...editForm, lastKnownUpdatedAt: activeRfi.updatedAt } });
     setEditMode(false);
   };
 

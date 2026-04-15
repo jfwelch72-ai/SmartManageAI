@@ -1328,15 +1328,34 @@ router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN
       }
     }
 
-    const updateData: Record<string, unknown> = { ...validationResult.data, updatedAt: new Date() };
-    
+    const { lastKnownUpdatedAt: _lku, ...cleanData } = validationResult.data as any;
+    const updateData: Record<string, unknown> = { ...cleanData, updatedAt: new Date() };
+
+    const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
+    const useOptimisticLock = !forceOverwrite && !!req.body.lastKnownUpdatedAt;
+
+    const whereClause = useOptimisticLock
+      ? and(eq(changeOrders.id, req.params.id), eq(changeOrders.updatedAt, new Date(req.body.lastKnownUpdatedAt)))
+      : eq(changeOrders.id, req.params.id);
+
     const [updatedOrder] = await db
       .update(changeOrders)
       .set(updateData)
-      .where(eq(changeOrders.id, req.params.id))
+      .where(whereClause)
       .returning();
 
     if (!updatedOrder) {
+      if (useOptimisticLock) {
+        const [current] = await db.select().from(changeOrders).where(eq(changeOrders.id, req.params.id));
+        if (current) {
+          res.status(409).json({
+            error: "Conflict: server version is newer",
+            serverUpdatedAt: current.updatedAt,
+            serverData: current,
+          });
+          return;
+        }
+      }
       res.status(404).json({ error: "Change order not found" });
       return;
     }
