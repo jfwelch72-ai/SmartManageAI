@@ -265,6 +265,11 @@ export function requireRole(...roles: UserRole[]) {
       return;
     }
 
+    if (req.user.role === "SUPER_ADMIN") {
+      next();
+      return;
+    }
+
     const roleToCheck = (req.user.effectiveRole || req.user.role) as UserRole;
     
     if (!roles.includes(roleToCheck)) {
@@ -392,6 +397,11 @@ export function requireRoleOrFeature(roles: UserRole[], permKey: FeaturePermissi
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     if (!req.user) {
       res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+
+    if (req.user.role === "SUPER_ADMIN") {
+      next();
       return;
     }
 
