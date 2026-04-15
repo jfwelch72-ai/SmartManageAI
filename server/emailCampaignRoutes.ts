@@ -293,13 +293,14 @@ router.post("/api/email-campaigns/:id/send", requireAuth, async (req, res, next)
           await db.update(emailCampaignContacts).set({ status: "SENT", sentAt: new Date() }).where(eq(emailCampaignContacts.id, contact.id));
         } else {
           totalBounced++;
-          await db.update(emailCampaignContacts).set({ status: "BOUNCED", errorMessage: "Send failed" }).where(eq(emailCampaignContacts.id, contact.id));
+          await db.update(emailCampaignContacts).set({ status: "BOUNCED", errorMessage: "Resend delivery failed — check sender domain verification" }).where(eq(emailCampaignContacts.id, contact.id));
         }
       } catch (err) {
         totalBounced++;
+        const errMsg = err instanceof Error ? err.message : (typeof err === 'object' ? JSON.stringify(err) : String(err));
         await db.update(emailCampaignContacts).set({
           status: "FAILED",
-          errorMessage: err instanceof Error ? err.message : "Unknown error",
+          errorMessage: errMsg.substring(0, 500),
         }).where(eq(emailCampaignContacts.id, contact.id));
       }
     }

@@ -38,19 +38,20 @@ async function sleep(ms: number): Promise<void> {
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   let lastError: any;
 
+  let recipients: string[] = [];
+  if (typeof options.to === 'string') {
+    if (options.to.includes(',')) {
+      recipients = options.to.split(',').map(email => email.trim());
+    } else {
+      recipients = [options.to];
+    }
+  } else {
+    recipients = options.to;
+  }
+  const recipientCount = recipients.length;
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      let recipients: string[] = [];
-      if (typeof options.to === 'string') {
-        if (options.to.includes(',')) {
-          recipients = options.to.split(',').map(email => email.trim());
-        } else {
-          recipients = [options.to];
-        }
-      } else {
-        recipients = options.to;
-      }
-
       const emailPayload: any = {
         from: options.from || DEFAULT_FROM_EMAIL,
         to: recipients,
@@ -74,33 +75,36 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       const { data, error } = await resend.emails.send(emailPayload);
 
       if (error) {
+        const errorMsg = typeof error === 'object' ? JSON.stringify(error) : String(error);
         lastError = error;
         if (attempt < MAX_RETRIES && isTransientError(error)) {
           const delay = BASE_DELAY_MS * Math.pow(2, attempt);
-          console.log(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+          console.log(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
           await sleep(delay);
           continue;
         }
-        logError('Resend email error:', {}, error instanceof Error ? error : new Error(String(error)));
+        logError(`Resend email error (${recipientCount} recipient(s)): ${errorMsg}`, {}, new Error(errorMsg));
         return false;
       }
 
-      console.log(`Email sent successfully via Resend to ${recipients.join(', ')}`, data?.id);
+      console.log(`Email sent successfully via Resend (${recipientCount} recipient(s))`, data?.id);
       return true;
     } catch (error: any) {
       lastError = error;
+      const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
       if (attempt < MAX_RETRIES && isTransientError(error)) {
         const delay = BASE_DELAY_MS * Math.pow(2, attempt);
-        console.log(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+        console.log(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
         await sleep(delay);
         continue;
       }
-      logError('Resend email error:', {}, error instanceof Error ? error : new Error(String(error)));
+      logError(`Resend email error (${recipientCount} recipient(s)): ${errorMsg}`, {}, error instanceof Error ? error : new Error(errorMsg));
       return false;
     }
   }
 
-  logError('Resend email failed after retries:', {}, lastError instanceof Error ? lastError : new Error(String(lastError)));
+  const finalMsg = lastError instanceof Error ? lastError.message : (typeof lastError === 'object' ? JSON.stringify(lastError) : String(lastError));
+  logError(`Resend email failed after ${MAX_RETRIES + 1} attempts: ${finalMsg}`, {}, lastError instanceof Error ? lastError : new Error(finalMsg));
   return false;
 }
 

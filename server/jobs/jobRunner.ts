@@ -15,8 +15,9 @@ import { socialAccounts } from "@shared/schema";
 import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
 import { bids } from "@shared/schema";
 import { eventBus } from "../events";
-import { emailAccounts } from "@shared/schema";
+import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
 import { syncImapAccount, syncOutlookAccount } from "../emailRoutes";
+import { sendEmail } from "../services/emailService";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -33,6 +34,7 @@ let weeklyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let monthlyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let dbHealthCheckTask: ReturnType<typeof cron.schedule> | null = null;
 let socialEngagementTask: ReturnType<typeof cron.schedule> | null = null;
+let scheduledCampaignTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -157,7 +159,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, periodic report, and DB health check schedulers)");
+  scheduledCampaignTask = cron.schedule("*/2 * * * *", async () => {
+    try {
+      await processScheduledCampaigns();
+    } catch (err) {
+      logError("Scheduled campaign processing failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, periodic report, DB health check, and scheduled campaign schedulers)");
 }
 
 export function stopJobRunner() {
@@ -221,6 +231,10 @@ export function stopJobRunner() {
     socialEngagementTask.stop();
     socialEngagementTask = null;
   }
+  if (scheduledCampaignTask) {
+    scheduledCampaignTask.stop();
+    scheduledCampaignTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -240,6 +254,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   monthly_report:      { fn: () => processPeriodicReports("MONTHLY"),  description: "Generate monthly reports",                schedule: "0 7 1 * *" },
   db_health_check:     { fn: () => runDbHealthCheck(),                 description: "Run database health check",              schedule: "0 */6 * * *" },
   social_engagement:   { fn: () => processSocialEngagement(),          description: "Sync social media engagement metrics",    schedule: "0 */4 * * *" },
+  scheduled_campaigns: { fn: () => processScheduledCampaigns(),        description: "Send scheduled email campaigns",          schedule: "*/2 * * * *" },
 };
 
 async function processOutbox() {
@@ -1523,5 +1538,83 @@ async function runDbHealthCheck() {
     }
   } catch (err) {
     logError("DB health check failed", { responseTimeMs: Date.now() - start, error: String(err) });
+  }
+}
+
+async function processScheduledCampaigns() {
+  const now = new Date();
+  const claimed = await db
+    .update(emailCampaigns)
+    .set({ status: "SENDING" })
+    .where(
+      and(
+        eq(emailCampaigns.status, "SCHEDULED"),
+        lte(emailCampaigns.scheduledAt, now)
+      )
+    )
+    .returning();
+
+  if (claimed.length === 0) return;
+
+  logInfo("Processing scheduled email campaigns", { count: claimed.length });
+
+  for (const campaign of claimed) {
+    try {
+
+      const contacts = await db
+        .select()
+        .from(emailCampaignContacts)
+        .where(
+          and(
+            eq(emailCampaignContacts.campaignId, campaign.id),
+            eq(emailCampaignContacts.status, "PENDING")
+          )
+        );
+
+      let totalSent = 0;
+      let totalBounced = 0;
+
+      for (const contact of contacts) {
+        try {
+          const campaignFrom = campaign.fromName
+            ? `${campaign.fromName} <${campaign.replyTo || process.env.EMAIL_FROM_ADDRESS || 'onboarding@resend.dev'}>`
+            : undefined;
+
+          const success = await sendEmail({
+            to: contact.email,
+            subject: campaign.subject,
+            html: campaign.htmlContent,
+            text: campaign.textContent || undefined,
+            from: campaignFrom,
+            replyTo: campaign.replyTo || undefined,
+          });
+
+          if (success) {
+            totalSent++;
+            await db.update(emailCampaignContacts).set({ status: "SENT", sentAt: new Date() }).where(eq(emailCampaignContacts.id, contact.id));
+          } else {
+            totalBounced++;
+            await db.update(emailCampaignContacts).set({ status: "BOUNCED", errorMessage: "Resend delivery failed — check sender domain verification" }).where(eq(emailCampaignContacts.id, contact.id));
+          }
+        } catch (err) {
+          totalBounced++;
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await db.update(emailCampaignContacts).set({ status: "FAILED", errorMessage: errMsg.substring(0, 500) }).where(eq(emailCampaignContacts.id, contact.id));
+        }
+      }
+
+      await db.update(emailCampaigns).set({
+        status: "SENT",
+        sentAt: new Date(),
+        totalRecipients: contacts.length,
+        totalSent,
+        totalBounced,
+      }).where(eq(emailCampaigns.id, campaign.id));
+
+      logInfo(`Scheduled campaign sent: "${campaign.name}"`, { id: campaign.id, totalSent, totalBounced });
+    } catch (err) {
+      logError(`Failed to process scheduled campaign: ${campaign.id}`, { error: String(err) });
+      await db.update(emailCampaigns).set({ status: "FAILED" }).where(eq(emailCampaigns.id, campaign.id));
+    }
   }
 }
