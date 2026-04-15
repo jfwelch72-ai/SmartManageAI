@@ -1166,6 +1166,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const pdfImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const pdfDocCacheRef = useRef<Map<string, any>>(new Map());
+  const sheetsRef = useRef(sheets);
+  sheetsRef.current = sheets;
   const [pdfLoadProgress, setPdfLoadProgress] = useState(0);
 
   const renderPdfPage = useCallback(async (sheetId: string, pdfUrl: string, pageIndex: number): Promise<HTMLImageElement> => {
@@ -1234,7 +1236,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
         if (!currentSheet.scalePxPerFoot) {
           try {
-            const uncalibratedSheets = sheets.filter((s: any) => !s.scalePxPerFoot && s.imageUrl);
+            const latestSheets = sheetsRef.current;
+            const uncalibratedSheets = latestSheets.filter((s: any) => !s.scalePxPerFoot && s.imageUrl);
             const batchInput: Array<{ id: string; textItems: string[] }> = [];
 
             for (const s of uncalibratedSheets) {
@@ -1273,10 +1276,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           }
         }
 
-        const currentIdx = sheets.findIndex((s: any) => s.id === currentSheet.id);
-        const adjacentIndices = [currentIdx - 1, currentIdx + 1, currentIdx + 2].filter(i => i >= 0 && i < sheets.length);
+        const latestSheets = sheetsRef.current;
+        const currentIdx = latestSheets.findIndex((s: any) => s.id === currentSheet.id);
+        const adjacentIndices = [currentIdx - 1, currentIdx + 1, currentIdx + 2].filter(i => i >= 0 && i < latestSheets.length);
         for (const idx of adjacentIndices) {
-          const adjSheet = sheets[idx] as any;
+          const adjSheet = latestSheets[idx] as any;
           if (adjSheet && adjSheet.imageUrl && !pdfImageCacheRef.current.has(`${adjSheet.id}-${adjSheet.sheetIndex || 0}`)) {
             renderPdfPage(adjSheet.id, `/api/takeoff/sheets/${adjSheet.id}/pdf`, adjSheet.sheetIndex || 0).catch(() => {});
           }
@@ -1295,7 +1299,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
     loadPDF();
     setDetectedScale(null);
-  }, [currentSheet?.id, currentSheet?.imageUrl, toast, renderPdfPage, sheets]);
+  }, [currentSheet?.id, currentSheet?.imageUrl, toast, renderPdfPage]);
 
   const autoDetectedSheetsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -1491,7 +1495,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       scalePxPerFoot: detectedScale.pxPerFoot,
                       units: detectedScale.units,
                     });
-                    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                    queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
                     toast({ title: "Scale Applied", description: `Auto-detected scale ${detectedScale.label} applied` });
                     setDetectedScale(null);
                   } catch (err) {
@@ -4189,6 +4193,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         selectedSheet={selectedSheet}
         currentSheet={currentSheet}
         projectId={projectId}
+        sheetsQueryKey={sheetsQueryKey}
         calibrationMode={calibrationMode}
         calibrationPoints={calibrationPoints}
         calibrationDistance={calibrationDistance}
@@ -4447,7 +4452,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           if (!selectedSheet) return;
           try {
             await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: pxPerFoot, units: scaleUnits });
-            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+            queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
             toast({ title: "Scale Applied", description: `Scale set to ${label}` });
           } catch (error: any) {
             toast({ title: "Error", description: error?.message || "Failed to apply scale", variant: "destructive" });

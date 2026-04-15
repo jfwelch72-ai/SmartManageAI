@@ -166,6 +166,7 @@ interface TakeoffSidebarProps {
   aiPanelOpen: boolean;
   onApplyPresetScale: (scaleCategory: string, selectedPresetScale: string, resetFn: () => void) => void;
   sheets?: any[];
+  sheetsQueryKey?: string[];
   onCompareRevisions?: () => void;
   onSelectSheet?: (id: string) => void;
   markups?: TakeoffMarkupWithAuthor[];
@@ -254,7 +255,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     multiCalibMode, setMultiCalibMode, multiCalibPoints, setMultiCalibPoints,
     setCalibrationMode, setCalibrationPoints,
     workspaceRef, aiPanelOpen, onApplyPresetScale,
-    sheets = [], onCompareRevisions, onSelectSheet,
+    sheets = [], sheetsQueryKey, onCompareRevisions, onSelectSheet,
     markups = [], deleteMarkupMutation,
     measurementGroups = [], createGroupMutation, updateGroupMutation, deleteGroupMutation, toggleGroupVisibilityMutation,
     issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
@@ -950,7 +951,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               units: "ft",
                               scaleLabel: tpl.label,
                             });
-                            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                            queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
                           } catch { /* ignore */ }
                         }} data-testid={`button-apply-scale-template-${tpl.id}`}>
                           <CheckCircle2 className="w-3 h-3 text-green-600" />
@@ -2499,7 +2500,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     }
                     try {
                       await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: avgPxPerUnit, units: currentSheet?.units || "ft" });
-                      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                      queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
                       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
                       setMultiCalibMode(false); setMultiCalibPoints([]); setCalibrationMode("idle"); setCalibrationPoints([]);
                       toast({ title: "Success", description: `Multi-point calibration applied (${multiCalibPoints.length} references averaged)` });
@@ -2922,7 +2923,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     scalePxPerFoot: currentSheet?.scalePxPerFoot,
                     units: currentSheet?.units || "ft",
                   });
-                  queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                  queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
                   toast({ title: "Scale Propagated", description: `Applied calibration to ${uncalibratedSheets.length} sheet${uncalibratedSheets.length !== 1 ? "s" : ""}` });
                   setPropagateDialogOpen(false);
                 } catch {
