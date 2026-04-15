@@ -276,8 +276,27 @@ export default function BidWizardPage() {
         throw new Error(errorData.message || 'Failed to create bid');
       }
       const bid = await response.json();
+
+      // Step 2: Attach uploaded documents to the bid as Plans & Takeoff docs
+      if (uploadedDocs.length > 0) {
+        for (const doc of uploadedDocs) {
+          try {
+            await apiRequest("POST", `/api/bids/${bid.code}/documents`, {
+              title: doc.name,
+              fileName: doc.name,
+              fileUrl: doc.url,
+              objectKey: doc.url,
+              fileSize: doc.size,
+              mimeType: doc.type,
+              type: "PLANS",
+            });
+          } catch (docErr) {
+            console.error("Failed to attach document to bid:", doc.name, docErr);
+          }
+        }
+      }
       
-      // Step 2: Create an estimate for the bid (required for line items)
+      // Step 3: Create an estimate for the bid (required for line items)
       const estimateResponse = await apiRequest("POST", `/api/bids/${bid.id}/estimate`);
       if (!estimateResponse.ok) {
         const errorData = await estimateResponse.json().catch(() => ({ message: 'Failed to create estimate' }));
@@ -285,7 +304,7 @@ export default function BidWizardPage() {
       }
       const estimate = await estimateResponse.json();
       
-      // Step 3: Add each scope item as a line item to the estimate
+      // Step 4: Add each scope item as a line item to the estimate
       const validCategories = ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"];
       const mapCategory = (cat: string | undefined) => {
         if (!cat) return "GENERAL";
