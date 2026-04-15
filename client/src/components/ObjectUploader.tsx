@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { ReactNode, DragEvent } from "react";
 import Uppy from "@uppy/core";
 import DashboardModal from "@uppy/react/dashboard-modal";
@@ -78,7 +78,17 @@ export function ObjectUploader({
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const intentMapRef = useRef<Map<string, string>>(new Map());
+  const onCompleteRef = useRef(onComplete);
+  const toastRef = useRef(toast);
   const resolvedFileType = fileType ?? "DOCUMENT";
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const [uppy] = useState(() => {
     const instance = new Uppy({
@@ -149,7 +159,25 @@ export function ObjectUploader({
     });
 
     instance.on("complete", async (result) => {
-      const intentIds = (result.successful ?? [])
+      const successfulFiles = result.successful ?? [];
+      const failedFiles = result.failed ?? [];
+
+      if (successfulFiles.length === 0 && failedFiles.length > 0) {
+        toastRef.current({
+          title: "Upload failed",
+          description: `${failedFiles.length} file(s) could not be uploaded. Please try again.`,
+          variant: "destructive",
+        });
+        setShowModal(false);
+        return;
+      }
+
+      if (successfulFiles.length === 0) {
+        setShowModal(false);
+        return;
+      }
+
+      const intentIds = successfulFiles
         .map((f) => intentMapRef.current.get(f.id))
         .filter((id): id is string => !!id);
 
@@ -164,18 +192,26 @@ export function ObjectUploader({
         let pathIdx = 0;
         const enrichedResult: UploadResult<Record<string, unknown>, Record<string, unknown>> = {
           ...result,
-          successful: (result.successful ?? []).map((f) => ({
+          successful: successfulFiles.map((f) => ({
             ...f,
             uploadURL: objectPaths[pathIdx++] ?? f.uploadURL,
           })),
         };
-        onComplete?.(enrichedResult);
+        onCompleteRef.current?.(enrichedResult);
       } catch (err) {
         console.error("Upload confirm failed:", err);
-        onComplete?.({
+        toastRef.current({
+          title: "Upload processing error",
+          description: "Files uploaded but could not be confirmed. Please try again.",
+          variant: "destructive",
+        });
+        onCompleteRef.current?.({
           ...result,
-          successful: [],
-          failed: [...(result.failed ?? []), ...(result.successful ?? [])],
+          successful: successfulFiles.map((f) => ({
+            ...f,
+            uploadURL: f.uploadURL ?? "",
+          })),
+          failed: failedFiles,
         });
       } finally {
         setShowModal(false);
@@ -207,7 +243,7 @@ export function ObjectUploader({
         setShowModal(true);
       }
     },
-    [uppy]
+    [uppy, toast]
   );
 
   const handleDragEnter = useCallback((e: DragEvent) => {

@@ -165,18 +165,43 @@ export default function BidWizardPage() {
 
 
   const handleUploadComplete = useCallback((result: any) => {
-    if (!result.successful || result.successful.length === 0) return;
+    const successful = result.successful ?? [];
+    const failed = result.failed ?? [];
 
-    const newDocs: UploadedDocument[] = result.successful.map((file: any, index: number) => ({
+    if (failed.length > 0 && successful.length === 0) {
+      toast({
+        title: "Upload failed",
+        description: `${failed.length} file(s) could not be uploaded. Please try again.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (successful.length === 0) return;
+
+    const newDocs: UploadedDocument[] = successful.map((file: any, index: number) => ({
       id: `doc-${Date.now()}-${index}`,
-      name: file.name,
-      url: file.uploadURL?.split('?')[0] || "",
+      name: file.name || file.fileName || `Document ${index + 1}`,
+      url: file.uploadURL?.split('?')[0] || file.response?.uploadURL?.split('?')[0] || "",
       type: file.type || "application/pdf",
       size: file.size || 0,
     }));
 
-    setUploadedDocs(prev => [...prev, ...newDocs]);
-    toast({ title: "Documents uploaded", description: `${newDocs.length} file(s) uploaded successfully` });
+    const validDocs = newDocs.filter(d => d.url);
+    const invalidCount = newDocs.length - validDocs.length;
+
+    if (validDocs.length > 0) {
+      setUploadedDocs(prev => [...prev, ...validDocs]);
+      toast({ title: "Documents uploaded", description: `${validDocs.length} file(s) uploaded successfully` });
+    }
+
+    if (invalidCount > 0) {
+      toast({
+        title: "Some files had issues",
+        description: `${invalidCount} file(s) could not be processed. Please try uploading them again.`,
+        variant: "destructive",
+      });
+    }
   }, [toast]);
 
   const removeDocument = (docId: string) => {
