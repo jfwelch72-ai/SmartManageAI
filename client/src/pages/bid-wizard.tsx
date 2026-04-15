@@ -307,6 +307,7 @@ export default function BidWizardPage() {
             materialCost: "0",
             laborCost: "0",
             laborHours: "0",
+            equipmentHours: "0",
             equipmentCost: "0",
             consumablesCost: "0",
             subcontractCost: "0",
