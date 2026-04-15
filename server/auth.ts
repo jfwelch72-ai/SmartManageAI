@@ -8,6 +8,49 @@ import { eq, sql, and } from "drizzle-orm";
 import { getRoleDefaults, mergePermissions } from "./dashboardRoutes";
 import type { UserRole } from "@shared/schema";
 
+const AUTH_CACHE_TTL_MS = 8_000;
+interface AuthCacheEntry {
+  user: User;
+  hustlerLink?: { roleOverride: string | null } | null;
+  expiresAt: number;
+}
+const authUserCache = new Map<string, AuthCacheEntry>();
+
+function getAuthCachedUser(userId: string): AuthCacheEntry | null {
+  const entry = authUserCache.get(userId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    authUserCache.delete(userId);
+    return null;
+  }
+  return entry;
+}
+
+function setAuthCachedUser(userId: string, user: User, hustlerLink?: { roleOverride: string | null } | null): void {
+  if (authUserCache.size > 2000) {
+    const now = Date.now();
+    for (const [k, v] of authUserCache) {
+      if (now > v.expiresAt) authUserCache.delete(k);
+    }
+    if (authUserCache.size > 2000) {
+      const oldest = authUserCache.keys().next().value;
+      if (oldest) authUserCache.delete(oldest);
+    }
+  }
+  authUserCache.set(userId, { user, hustlerLink, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+}
+
+export function invalidateAuthCache(userId: string): void {
+  authUserCache.delete(userId);
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of authUserCache) {
+    if (now > v.expiresAt) authUserCache.delete(k);
+  }
+}, 60_000).unref();
+
 // Enforce SESSION_SECRET - fail fast if not set
 if (!process.env.SESSION_SECRET) {
   throw new Error(
@@ -83,28 +126,19 @@ export async function authMiddleware(
     return;
   }
 
-  const [user] = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
-  
-  if (user && user.isActive) {
-    // Check tokenVersion - reject if it doesn't match (token revocation)
-    // Handle null tokenVersion defensively (legacy users) by treating null as 0
-    const userTokenVersion = user.tokenVersion ?? 0;
-    const payloadTokenVersion = payload.tokenVersion ?? 0;
-    
-    if (userTokenVersion !== payloadTokenVersion) {
-      res.clearCookie(COOKIE_NAME);
-      next();
-      return;
-    }
+  let user: User | undefined;
+  let hustlerLink: { roleOverride: string | null } | null | undefined;
 
-    // Determine effective role for HUSTLER users
-    // HUSTLERs are owners of their linked organizations and get ADMIN-level access by default
-    let effectiveRole: string | undefined;
-    let isHustlerOwner = false;
-    
-    if (user.role === "HUSTLER" && user.organizationId) {
+  const cached = getAuthCachedUser(payload.userId);
+  if (cached) {
+    user = cached.user;
+    hustlerLink = cached.hustlerLink;
+  } else {
+    const [fetched] = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
+    user = fetched;
+    if (user && user.role === "HUSTLER" && user.organizationId) {
       const [link] = await db
-        .select()
+        .select({ roleOverride: hustlerOrganizations.roleOverride })
         .from(hustlerOrganizations)
         .where(
           and(
@@ -114,13 +148,28 @@ export async function authMiddleware(
           )
         )
         .limit(1);
-      
-      if (link) {
-        // HUSTLER is the OWNER of linked organizations
-        // roleOverride allows specific role assignment, but defaults to ADMIN (owner-level)
-        effectiveRole = link.roleOverride || "ADMIN";
-        isHustlerOwner = true;
-      }
+      hustlerLink = link || null;
+    }
+    if (user) setAuthCachedUser(payload.userId, user, hustlerLink);
+  }
+
+  if (user && user.isActive) {
+    const userTokenVersion = user.tokenVersion ?? 0;
+    const payloadTokenVersion = payload.tokenVersion ?? 0;
+    
+    if (userTokenVersion !== payloadTokenVersion) {
+      invalidateAuthCache(payload.userId);
+      res.clearCookie(COOKIE_NAME);
+      next();
+      return;
+    }
+
+    let effectiveRole: string | undefined;
+    let isHustlerOwner = false;
+    
+    if (user.role === "HUSTLER" && user.organizationId && hustlerLink) {
+      effectiveRole = hustlerLink.roleOverride || "ADMIN";
+      isHustlerOwner = true;
     }
 
     // Create sanitized user object - explicitly omit passwordHash and tokenVersion (security critical)
@@ -364,7 +413,6 @@ export function requireRoleOrFeature(roles: UserRole[], permKey: FeaturePermissi
   };
 }
 
-// Helper function to increment tokenVersion (revokes all existing tokens)
 export async function revokeUserTokens(userId: string): Promise<void> {
   await db
     .update(users)
@@ -373,6 +421,7 @@ export async function revokeUserTokens(userId: string): Promise<void> {
       updatedAt: new Date()
     })
     .where(eq(users.id, userId));
+  invalidateAuthCache(userId);
 }
 
 // Set auth cookie

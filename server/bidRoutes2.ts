@@ -3416,14 +3416,13 @@ router.patch("/api/bids/:code/quotes/:quoteId/select", requireAuth, requireRole(
       return;
     }
 
-    const sameScope = await db.select().from(bidSubcontractorQuotes)
+    await db.update(bidSubcontractorQuotes)
+      .set({ isSelected: false, updatedAt: new Date() })
       .where(and(eq(bidSubcontractorQuotes.bidId, bid.id), eq(bidSubcontractorQuotes.scopeOfWork, quote.scopeOfWork)));
 
-    for (const sq of sameScope) {
-      await db.update(bidSubcontractorQuotes)
-        .set({ isSelected: sq.id === quoteId, updatedAt: new Date() })
-        .where(eq(bidSubcontractorQuotes.id, sq.id));
-    }
+    await db.update(bidSubcontractorQuotes)
+      .set({ isSelected: true, updatedAt: new Date() })
+      .where(eq(bidSubcontractorQuotes.id, quoteId));
 
     res.json({ success: true, selectedQuoteId: quoteId });
   } catch (error) {

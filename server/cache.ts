@@ -6,6 +6,8 @@ interface CacheEntry<T> {
 const store = new Map<string, CacheEntry<unknown>>();
 
 const DEFAULT_TTL_MS = 60_000;
+const MAX_CACHE_SIZE = 5000;
+const CLEANUP_INTERVAL_MS = 120_000;
 
 export function cacheGet<T>(orgId: string, key: string): T | undefined {
   const fullKey = `${orgId}:${key}`;
@@ -19,6 +21,13 @@ export function cacheGet<T>(orgId: string, key: string): T | undefined {
 }
 
 export function cacheSet<T>(orgId: string, key: string, data: T, ttlMs: number = DEFAULT_TTL_MS): void {
+  if (store.size >= MAX_CACHE_SIZE) {
+    cacheEvictExpired();
+    if (store.size >= MAX_CACHE_SIZE) {
+      const oldest = store.keys().next().value;
+      if (oldest) store.delete(oldest);
+    }
+  }
   const fullKey = `${orgId}:${key}`;
   store.set(fullKey, { data, expiresAt: Date.now() + ttlMs });
 }
@@ -52,3 +61,16 @@ export function cacheInvalidateOrg(orgId: string): void {
 export function cacheClearAll(): void {
   store.clear();
 }
+
+function cacheEvictExpired(): void {
+  const now = Date.now();
+  for (const [k, v] of store) {
+    if (now > v.expiresAt) store.delete(k);
+  }
+}
+
+export function cacheSize(): number {
+  return store.size;
+}
+
+setInterval(cacheEvictExpired, CLEANUP_INTERVAL_MS).unref();

@@ -2425,104 +2425,70 @@ router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: Au
         ? eq(projects.gcOrganizationId, orgId) 
         : sql`true`;
 
-      const activeProjectsResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projects)
-        .where(and(eq(projects.status, "ACTIVE"), orgCondition));
-      const activeProjectsCount = activeProjectsResult[0]?.count || 0;
+      const [
+        activeProjectsResult,
+        pendingCOResult,
+        pendingTimeOffResult,
+        activeDelaysResult,
+        delaysNeedingAckResult,
+        delaysNeedingCOResult,
+      ] = await Promise.all([
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(projects)
+          .where(and(eq(projects.status, "ACTIVE"), orgCondition)),
 
-      let pendingChangeOrdersCount = 0;
-      if (shouldFilter && orgId) {
-        const pendingCOResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(changeOrders)
-          .innerJoin(projects, eq(changeOrders.projectId, projects.id))
-          .where(and(
-            eq(changeOrders.status, "SUBMITTED"),
-            eq(projects.gcOrganizationId, orgId)
-          ));
-        pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
-      } else {
-        const pendingCOResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(changeOrders)
-          .where(eq(changeOrders.status, "SUBMITTED"));
-        pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
-      }
+        shouldFilter && orgId
+          ? db.select({ count: sql<number>`count(*)::int` })
+              .from(changeOrders)
+              .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+              .where(and(eq(changeOrders.status, "SUBMITTED"), eq(projects.gcOrganizationId, orgId)))
+          : db.select({ count: sql<number>`count(*)::int` })
+              .from(changeOrders)
+              .where(eq(changeOrders.status, "SUBMITTED")),
 
-      let pendingTimeOffCount = 0;
-      if (shouldFilter && orgId) {
-        const pendingTimeOffResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(leaveRequests)
-          .where(and(eq(leaveRequests.status, "PENDING"), eq(leaveRequests.organizationId, orgId)));
-        pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
-      } else {
-        const pendingTimeOffResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(leaveRequests)
-          .where(eq(leaveRequests.status, "PENDING"));
-        pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
-      }
+        shouldFilter && orgId
+          ? db.select({ count: sql<number>`count(*)::int` })
+              .from(leaveRequests)
+              .where(and(eq(leaveRequests.status, "PENDING"), eq(leaveRequests.organizationId, orgId)))
+          : db.select({ count: sql<number>`count(*)::int` })
+              .from(leaveRequests)
+              .where(eq(leaveRequests.status, "PENDING")),
 
-      let activeDelaysCount = 0;
-      if (shouldFilter && orgId) {
-        const activeDelaysResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(projectDelays)
-          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
-          .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED') AND ${projects.gcOrganizationId} = ${orgId}`);
-        activeDelaysCount = activeDelaysResult[0]?.count || 0;
-      } else {
-        const activeDelaysResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(projectDelays)
-          .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED')`);
-        activeDelaysCount = activeDelaysResult[0]?.count || 0;
-      }
+        shouldFilter && orgId
+          ? db.select({ count: sql<number>`count(*)::int` })
+              .from(projectDelays)
+              .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+              .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED') AND ${projects.gcOrganizationId} = ${orgId}`)
+          : db.select({ count: sql<number>`count(*)::int` })
+              .from(projectDelays)
+              .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED')`),
 
-      let delaysNeedingAckCount = 0;
-      if (shouldFilter && orgId) {
-        const delaysNeedingAckResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(projectDelays)
-          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
-          .where(and(
-            eq(projectDelays.status, "SUBMITTED"),
-            eq(projects.gcOrganizationId, orgId)
-          ));
-        delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
-      } else {
-        const delaysNeedingAckResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(projectDelays)
-          .where(eq(projectDelays.status, "SUBMITTED"));
-        delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
-      }
+        shouldFilter && orgId
+          ? db.select({ count: sql<number>`count(*)::int` })
+              .from(projectDelays)
+              .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+              .where(and(eq(projectDelays.status, "SUBMITTED"), eq(projects.gcOrganizationId, orgId)))
+          : db.select({ count: sql<number>`count(*)::int` })
+              .from(projectDelays)
+              .where(eq(projectDelays.status, "SUBMITTED")),
 
-      let delaysNeedingChangeOrderCount = 0;
-      if (shouldFilter && orgId) {
-        const delaysNeedingCOResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(projectDelays)
-          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
-          .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL AND ${projects.gcOrganizationId} = ${orgId}`);
-        delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
-      } else {
-        const delaysNeedingCOResult = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(projectDelays)
-          .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL`);
-        delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
-      }
+        shouldFilter && orgId
+          ? db.select({ count: sql<number>`count(*)::int` })
+              .from(projectDelays)
+              .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+              .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL AND ${projects.gcOrganizationId} = ${orgId}`)
+          : db.select({ count: sql<number>`count(*)::int` })
+              .from(projectDelays)
+              .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL`),
+      ]);
 
       return {
-        activeProjectsCount,
-        pendingChangeOrdersCount,
-        pendingTimeOffCount,
-        activeDelaysCount,
-        delaysNeedingAckCount,
-        delaysNeedingChangeOrderCount,
+        activeProjectsCount: activeProjectsResult[0]?.count || 0,
+        pendingChangeOrdersCount: pendingCOResult[0]?.count || 0,
+        pendingTimeOffCount: pendingTimeOffResult[0]?.count || 0,
+        activeDelaysCount: activeDelaysResult[0]?.count || 0,
+        delaysNeedingAckCount: delaysNeedingAckResult[0]?.count || 0,
+        delaysNeedingChangeOrderCount: delaysNeedingCOResult[0]?.count || 0,
       };
     });
 

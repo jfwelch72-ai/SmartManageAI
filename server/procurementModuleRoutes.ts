@@ -1431,27 +1431,18 @@ router.get("/api/procurement-module/summary", requireAuth, requireRole(...ROLES)
     let totalPaid = 0;
 
     if (poIds.length > 0) {
-      const invoices = await db.select({
-        id: vendorInvoices.id,
-        totalAmount: vendorInvoices.totalAmount,
+      const [invoiceSumResult] = await db.select({
+        totalInvoicedSum: sql<string>`COALESCE(SUM(${vendorInvoices.totalAmount}::numeric), 0)::text`,
       }).from(vendorInvoices)
         .where(sql`${vendorInvoices.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`);
+      totalInvoiced = parseFloat(invoiceSumResult?.totalInvoicedSum || "0");
 
-      for (const inv of invoices) {
-        totalInvoiced += parseFloat(String(inv.totalAmount || "0"));
-      }
-
-      const invIds = invoices.map(inv => inv.id);
-      if (invIds.length > 0) {
-        const payments = await db.select({
-          amount: invoicePayments.amount,
-        }).from(invoicePayments)
-          .where(sql`${invoicePayments.invoiceId} IN (${sql.join(invIds.map(id => sql`${id}`), sql`, `)})`);
-
-        for (const p of payments) {
-          totalPaid += parseFloat(String(p.amount || "0"));
-        }
-      }
+      const [paymentSumResult] = await db.select({
+        totalPaidSum: sql<string>`COALESCE(SUM(${invoicePayments.amount}::numeric), 0)::text`,
+      }).from(invoicePayments)
+        .innerJoin(vendorInvoices, eq(invoicePayments.invoiceId, vendorInvoices.id))
+        .where(sql`${vendorInvoices.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`);
+      totalPaid = parseFloat(paymentSumResult?.totalPaidSum || "0");
     }
 
     const totalPOs = allPOs.length;
