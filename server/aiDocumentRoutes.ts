@@ -750,9 +750,14 @@ router.get("/ai/bid-document-analysis/:id", requireAuth, async (req: AuthRequest
   }
 });
 
+const documentUrlValidator = z.string().refine(
+  (val) => val.startsWith("/objects/") || z.string().url().safeParse(val).success,
+  { message: "Must be a valid URL or object storage path" }
+);
+
 const createAnalysisSchema = z.object({
   bidId: z.string().optional(),
-  documentUrl: z.string().url(),
+  documentUrl: documentUrlValidator,
   documentName: z.string(),
   documentType: z.string().optional(),
 });
@@ -760,7 +765,7 @@ const createAnalysisSchema = z.object({
 const createAnalysisSchemaExtended = z.object({
   bidId: z.string().optional(),
   organizationId: z.string().optional(),
-  documentUrl: z.string().url(),
+  documentUrl: documentUrlValidator,
   documentName: z.string(),
   documentType: z.string().optional(),
 });
@@ -1004,7 +1009,7 @@ router.delete("/ai/bid-document-analysis/:id", requireAuth, requireRole("ADMIN")
 // AI Bid Wizard - Analyze multiple documents for new bid creation
 const wizardAnalyzeSchema = z.object({
   documents: z.array(z.object({
-    url: z.string().url(),
+    url: documentUrlValidator,
     name: z.string(),
   })).min(1, "At least one document is required"),
 });
@@ -1025,6 +1030,9 @@ IMPORTANT INSTRUCTIONS:
 Respond with valid JSON matching the required structure.`;
 
 function isValidObjectStorageUrl(url: string): boolean {
+  if (url.startsWith("/objects/")) {
+    return true;
+  }
   try {
     const parsedUrl = new URL(url);
     const allowedHosts = [
@@ -2058,7 +2066,7 @@ router.get("/ai/contract-document-analysis/:id", requireAuth, async (req: AuthRe
 const createContractAnalysisSchema = z.object({
   projectId: z.string().optional(),
   organizationId: z.string().optional(),
-  documentUrl: z.string().url(),
+  documentUrl: documentUrlValidator,
   documentName: z.string(),
   documentType: z.string().optional(),
 });

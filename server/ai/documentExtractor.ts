@@ -1,5 +1,5 @@
 import {logError, logWarn } from "../utils/logger";
-import { objectStorageClient } from "../objectStorage";
+import { objectStorageClient, ObjectStorageService } from "../objectStorage";
 import { createCanvas } from "canvas";
 
 const MAX_PDF_PAGES = 5;
@@ -27,10 +27,30 @@ interface GcsDownloadResult {
   contentType: string | null;
 }
 
+async function downloadFromObjectPath(objectPath: string): Promise<GcsDownloadResult> {
+  const storageService = new ObjectStorageService();
+  const file = await storageService.getObjectEntityFile(objectPath);
+
+  let contentType: string | null = null;
+  try {
+    const [metadata] = await file.getMetadata();
+    contentType = metadata.contentType || null;
+  } catch {
+    logWarn("Non-critical operation failed");
+  }
+
+  const [contents] = await file.download();
+  return { buffer: contents, contentType };
+}
+
 async function downloadFromGcs(url: string): Promise<GcsDownloadResult> {
+  if (url.startsWith("/objects/")) {
+    return downloadFromObjectPath(url);
+  }
+
   const gcsInfo = parseGcsUrl(url);
   if (!gcsInfo) {
-    throw new Error(`Not a valid GCS URL: ${url}`);
+    throw new Error(`Not a valid document URL: ${url}`);
   }
 
   const bucket = objectStorageClient.bucket(gcsInfo.bucketName);
