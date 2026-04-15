@@ -46,7 +46,8 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction): v
     req.path.startsWith("/api/auth/passkey") ||
     req.path.startsWith("/api/email/oauth") ||
     req.path.startsWith("/api/integrations/connections") ||
-    req.path.startsWith("/api/portal/auth")
+    req.path.startsWith("/api/portal/auth") ||
+    (method === "PUT" && /^\/api\/objects\/multipart\/[^/]+\/\d+\/upload/.test(req.path))
   ) {
     return next();
   }
