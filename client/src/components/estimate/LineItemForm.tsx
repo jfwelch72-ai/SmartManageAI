@@ -440,7 +440,7 @@ export function LineItemFormDialog({
   };
 
   const dialogContent = (
-    <DialogContent className={`${isAdd ? "max-w-4xl" : "max-w-3xl"} max-h-[90vh] overflow-y-auto`}>
+    <DialogContent className={`${isAdd ? "sm:max-w-[70rem]" : "sm:max-w-[65rem]"} max-h-[90vh] overflow-y-auto`}>
       <DialogHeader>
         <DialogTitle>{isAdd ? "Add Line Item" : "Edit Line Item"}</DialogTitle>
         <DialogDescription>
