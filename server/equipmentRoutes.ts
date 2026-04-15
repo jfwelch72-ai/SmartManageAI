@@ -1848,12 +1848,17 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         return res.status(404).json({ error: "Rate profile not found" });
       }
       
+      const updateSchema = insertEquipmentRateProfileSchema.omit({ equipmentId: true }).partial();
+      const parseResult = updateSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: parseResult.error.flatten().fieldErrors });
+      }
+
       const updateData = {
-        ...req.body,
+        ...parseResult.data,
         updatedAt: new Date(),
       };
       
-      // If activating this profile, deactivate others
       if (updateData.isActive === true && !existingProfile.isActive) {
         await db.update(equipmentRateProfiles)
           .set({ isActive: false, updatedAt: new Date() })
@@ -2086,12 +2091,18 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         return res.status(404).json({ error: "Rental vendor not found" });
       }
       
+      const updateSchema = insertRentalVendorSchema.omit({ organizationId: true }).partial();
+      const parseResult = updateSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: parseResult.error.flatten().fieldErrors });
+      }
+
       const [updated] = await db.update(rentalVendors)
-        .set({ ...req.body, updatedAt: new Date() })
+        .set({ ...parseResult.data, updatedAt: new Date() })
         .where(and(...conditions))
         .returning();
       
-      await logUpdate(userId!, "rental_vendors", id, existing, req.body);
+      await logUpdate(userId!, "rental_vendors", id, existing, parseResult.data);
       
       res.json(updated);
     } catch (error) {
@@ -2287,12 +2298,18 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         return res.status(404).json({ error: "Catalog item not found" });
       }
       
+      const updateSchema = insertRentalEquipmentCatalogSchema.omit({ organizationId: true, vendorId: true }).partial();
+      const parseResult = updateSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Validation failed", details: parseResult.error.flatten().fieldErrors });
+      }
+
       const [updated] = await db.update(rentalEquipmentCatalog)
-        .set({ ...req.body, updatedAt: new Date() })
+        .set({ ...parseResult.data, updatedAt: new Date() })
         .where(eq(rentalEquipmentCatalog.id, id))
         .returning();
       
-      await logUpdate(userId!, "rental_equipment_catalog", id, catalogWithVendor[0], req.body);
+      await logUpdate(userId!, "rental_equipment_catalog", id, catalogWithVendor[0], parseResult.data);
       
       res.json(updated);
     } catch (error) {

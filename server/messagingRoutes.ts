@@ -3135,30 +3135,41 @@ const messagingSetup = (async () => {
         .join("\n\n---\n\n");
 
       const { openai: openaiClient, AI_MODEL_GPT5 } = await import("./ai/openaiClient");
+      const { governedAiCall } = await import("./services/aiGovernance");
 
-      let completion;
-      try {
-        completion = await openaiClient.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            {
-              role: "system",
-              content: "You are a helpful assistant that summarizes meeting notes. Produce a clear, concise summary of the key points discussed, decisions made, and action items identified. Use bullet points for clarity. Keep it brief but comprehensive.",
-            },
-            {
-              role: "user",
-              content: `Please summarize the following call notes:\n\n${notesText}`,
-            },
-          ],
-          temperature: 0.5,
-          max_completion_tokens: 1024,
-        });
-      } catch (aiError) {
-        logError("OpenAI summarize error:", {}, aiError instanceof Error ? aiError : new Error(String(aiError)));
-        return res.status(502).json({ error: "AI service is temporarily unavailable. Please try again later." });
+      const orgId = req.user!.organizationId;
+      if (!orgId) {
+        return res.status(400).json({ error: "Organization context required" });
       }
 
-      const summary = completion.choices[0]?.message?.content;
+      const { result: summary, blocked, reason } = await governedAiCall<string | null>({
+        orgId,
+        userId,
+        actionType: "call_notes_summarize",
+        inputRefs: { callId },
+        fn: async () => {
+          const completion = await openaiClient.chat.completions.create({
+            model: AI_MODEL_GPT5,
+            messages: [
+              {
+                role: "system",
+                content: "You are a helpful assistant that summarizes meeting notes. Produce a clear, concise summary of the key points discussed, decisions made, and action items identified. Use bullet points for clarity. Keep it brief but comprehensive.",
+              },
+              {
+                role: "user",
+                content: `Please summarize the following call notes:\n\n${notesText}`,
+              },
+            ],
+            temperature: 0.5,
+            max_completion_tokens: 1024,
+          });
+          return { result: completion.choices[0]?.message?.content || null, completion };
+        },
+      });
+
+      if (blocked) {
+        return res.status(429).json({ error: reason || "AI usage limit reached" });
+      }
       if (!summary) {
         return res.status(502).json({ error: "AI service returned an empty response. Please try again." });
       }

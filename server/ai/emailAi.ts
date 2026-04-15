@@ -1,5 +1,6 @@
 import {logError, logWarn } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
+import { governedAiCall } from "../services/aiGovernance";
 import { db } from '../db';
 import { 
   emailMessages, 
@@ -175,33 +176,51 @@ Return JSON with:
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: EMAIL_CLASSIFICATION_PROMPT },
-        { role: 'user', content: userPrompt }
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-      max_completion_tokens: 1000,
+    const { result: analysisResult, blocked, reason } = await governedAiCall<EmailAnalysisResult>({
+      orgId: organizationId,
+      userId: null,
+      actionType: "email_analyze",
+      inputRefs: { fromAddress, subject: emailSubject },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: EMAIL_CLASSIFICATION_PROMPT },
+            { role: 'user', content: userPrompt }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.3,
+          max_completion_tokens: 1000,
+        });
+
+        const content = completion.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error('No response from OpenAI');
+        }
+
+        const parsed = JSON.parse(content) as EmailAnalysisResult;
+        if (!EMAIL_CLASSIFICATIONS.includes(parsed.classification as EmailClassification)) {
+          parsed.classification = 'OTHER';
+        }
+        return { result: parsed, completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('No response from OpenAI');
+    if (blocked) {
+      logWarn('Email analysis blocked by AI governance', { organizationId, reason });
+      return {
+        classification: 'OTHER',
+        confidence: 0,
+        summary: 'Analysis skipped — AI usage limit reached',
+        extractedEntities: {},
+        suggestedPriority: 'MEDIUM',
+        requiresResponse: false,
+      };
     }
 
-    const result = JSON.parse(content) as EmailAnalysisResult;
-    
-    // Validate classification is valid
-    if (!EMAIL_CLASSIFICATIONS.includes(result.classification as EmailClassification)) {
-      result.classification = 'OTHER';
-    }
-
-    return result;
+    return analysisResult;
   } catch (error) {
     logError('Email analysis failed:', {}, error instanceof Error ? error : new Error(String(error)));
-    // Return default result on error
     return {
       classification: 'OTHER',
       confidence: 0,
@@ -217,7 +236,8 @@ Return JSON with:
  * Generate a summary for an email thread
  */
 export async function summarizeThread(
-  messages: Array<{ fromAddress: string; fromName?: string; subject: string; bodyText?: string; receivedAt: Date }>
+  messages: Array<{ fromAddress: string; fromName?: string; subject: string; bodyText?: string; receivedAt: Date }>,
+  organizationId?: string
 ): Promise<ThreadSummaryResult> {
   const threadContent = messages
     .map((m, i) => `[Message ${i + 1}] From: ${m.fromName || m.fromAddress}
@@ -229,23 +249,38 @@ ${m.bodyText?.substring(0, 1500) || '(No content)'}
     .join('\n\n');
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: THREAD_SUMMARY_PROMPT },
-        { role: 'user', content: `Summarize this email thread:\n\n${threadContent.substring(0, 8000)}` }
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.4,
-      max_completion_tokens: 1000,
-    });
+    const doCall = async () => {
+      const completion = await openai.chat.completions.create({
+        model: AI_MODEL_GPT5,
+        messages: [
+          { role: 'system', content: THREAD_SUMMARY_PROMPT },
+          { role: 'user', content: `Summarize this email thread:\n\n${threadContent.substring(0, 8000)}` }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.4,
+        max_completion_tokens: 1000,
+      });
+      const content = completion.choices[0]?.message?.content;
+      if (!content) throw new Error('No response from OpenAI');
+      return { result: JSON.parse(content) as ThreadSummaryResult, completion };
+    };
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('No response from OpenAI');
+    if (organizationId) {
+      const { result, blocked, reason } = await governedAiCall<ThreadSummaryResult>({
+        orgId: organizationId,
+        userId: null,
+        actionType: "email_summarize_thread",
+        inputRefs: { messageCount: messages.length },
+        fn: doCall,
+      });
+      if (blocked) {
+        logWarn('Thread summary blocked by AI governance', { organizationId, reason });
+        return { summary: 'AI usage limit reached', keyPoints: [], actionItems: [], participants: messages.map(m => m.fromAddress), overallSentiment: 'NEUTRAL' };
+      }
+      return result;
     }
-
-    return JSON.parse(content) as ThreadSummaryResult;
+    const { result } = await doCall();
+    return result;
   } catch (error) {
     logError('Thread summary failed:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
@@ -263,7 +298,8 @@ ${m.bodyText?.substring(0, 1500) || '(No content)'}
  */
 export async function suggestReplies(
   originalEmail: { subject: string; body: string; fromAddress: string },
-  tones: Array<'professional' | 'casual' | 'firm'> = ['professional']
+  tones: Array<'professional' | 'casual' | 'firm'> = ['professional'],
+  organizationId?: string
 ): Promise<ReplyDraft[]> {
   const drafts: ReplyDraft[] = [];
 
@@ -271,11 +307,12 @@ export async function suggestReplies(
     try {
       const prompt = REPLY_SUGGESTION_PROMPT.replace('{tone}', tone);
       
-      const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT5,
-        messages: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: `Generate a ${tone} reply to this email:
+      const doCall = async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: `Generate a ${tone} reply to this email:
 
 From: ${originalEmail.fromAddress}
 Subject: ${originalEmail.subject}
@@ -284,20 +321,30 @@ Body:
 ${originalEmail.body?.substring(0, 3000) || '(No content)'}
 
 Return JSON with subject and body fields.` }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.6,
-        max_completion_tokens: 800,
-      });
-
-      const content = completion.choices[0]?.message?.content;
-      if (content) {
-        const parsed = JSON.parse(content);
-        drafts.push({
-          tone,
-          subject: parsed.subject || `Re: ${originalEmail.subject}`,
-          body: parsed.body || '',
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.6,
+          max_completion_tokens: 800,
         });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) return { result: null, completion };
+        const parsed = JSON.parse(content);
+        return { result: { tone, subject: parsed.subject || `Re: ${originalEmail.subject}`, body: parsed.body || '' } as ReplyDraft, completion };
+      };
+
+      if (organizationId) {
+        const { result, blocked } = await governedAiCall<ReplyDraft | null>({
+          orgId: organizationId,
+          userId: null,
+          actionType: "email_suggest_reply",
+          inputRefs: { tone },
+          fn: doCall,
+        });
+        if (blocked) { logWarn('Reply suggestion blocked by AI governance', { organizationId }); break; }
+        if (result) drafts.push(result);
+      } else {
+        const { result } = await doCall();
+        if (result) drafts.push(result);
       }
     } catch (error) {
       logError(`Failed to generate ${tone} reply:`, {}, error instanceof Error ? error : new Error(String(error)));
@@ -319,7 +366,8 @@ export async function generateEmailSummary(
     threadId: string;
     receivedAt: Date;
   }>,
-  periodType: 'DAILY' | 'WEEKLY'
+  periodType: 'DAILY' | 'WEEKLY',
+  organizationId?: string
 ): Promise<EmailSummaryDigest> {
   // Count by classification
   const byClassification: Record<string, number> = {};
@@ -338,11 +386,12 @@ Date: ${e.receivedAt.toISOString()}`)
     .join('\n\n');
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: DAILY_SUMMARY_PROMPT },
-        { role: 'user', content: `Create a ${periodType.toLowerCase()} email summary for these ${emails.length} emails:
+    const doCall = async () => {
+      const completion = await openai.chat.completions.create({
+        model: AI_MODEL_GPT5,
+        messages: [
+          { role: 'system', content: DAILY_SUMMARY_PROMPT },
+          { role: 'user', content: `Create a ${periodType.toLowerCase()} email summary for these ${emails.length} emails:
 
 ${emailList}
 
@@ -354,27 +403,43 @@ Return JSON with:
   "actionNeeded": [{"title": "...", "description": "...", "dueDate": "..."}],
   "summaryNarrative": "A paragraph summary of the period"
 }` }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.5,
-        max_completion_tokens: 1500,
-      });
-
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('No response from OpenAI');
-    }
-
-    const parsed = JSON.parse(content);
-    
-    return {
-      periodDescription: periodType === 'DAILY' ? 'Last 24 hours' : 'Last 7 days',
-      totalEmails: emails.length,
-      byClassification,
-      highlights: parsed.highlights || [],
-      actionNeeded: parsed.actionNeeded || [],
-      summaryNarrative: parsed.summaryNarrative || 'No summary available.',
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.5,
+          max_completion_tokens: 1500,
+        });
+      const content = completion.choices[0]?.message?.content;
+      if (!content) throw new Error('No response from OpenAI');
+      const parsed = JSON.parse(content);
+      return {
+        result: {
+          periodDescription: periodType === 'DAILY' ? 'Last 24 hours' : 'Last 7 days',
+          totalEmails: emails.length,
+          byClassification,
+          highlights: parsed.highlights || [],
+          actionNeeded: parsed.actionNeeded || [],
+          summaryNarrative: parsed.summaryNarrative || 'No summary available.',
+        } as EmailSummaryDigest,
+        completion,
+      };
     };
+
+    if (organizationId) {
+      const { result, blocked, reason } = await governedAiCall<EmailSummaryDigest>({
+        orgId: organizationId,
+        userId: null,
+        actionType: "email_generate_summary",
+        inputRefs: { periodType, emailCount: emails.length },
+        fn: doCall,
+      });
+      if (blocked) {
+        logWarn('Email summary blocked by AI governance', { organizationId, reason });
+        return { periodDescription: periodType === 'DAILY' ? 'Last 24 hours' : 'Last 7 days', totalEmails: emails.length, byClassification, highlights: [], actionNeeded: [], summaryNarrative: 'AI usage limit reached.' };
+      }
+      return result;
+    }
+    const { result } = await doCall();
+    return result;
   } catch (error) {
     logError('Summary generation failed:', {}, error instanceof Error ? error : new Error(String(error)));
     return {

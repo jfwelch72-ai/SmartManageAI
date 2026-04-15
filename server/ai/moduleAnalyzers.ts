@@ -1,4 +1,5 @@
-import { logError } from "../utils/logger";
+import { logError, logWarn } from "../utils/logger";
+import { governedAiCall } from "../services/aiGovernance";
 import { db } from "../db";
 import { 
   projects, 
@@ -163,27 +164,41 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.5,
-      max_completion_tokens: 4096,
+    const { result: analysisResult, blocked, reason } = await governedAiCall<any>({
+      orgId: organizationId,
+      userId: null,
+      actionType: "module_analyze_scheduling",
+      inputRefs: { projectId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.5,
+          max_completion_tokens: 4096,
+        });
+
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from OpenAI');
+
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
+    if (blocked) {
+      logWarn('[AI Scheduling] Blocked by governance', { organizationId, reason });
+      return { insights: [{ module: "SCHEDULING", severity: "INFO", title: "AI Limit Reached", summary: reason || "Daily AI usage limit reached.", recommendations: ["Try again later"] }] };
+    }
 
-    const parsed = JSON.parse(content);
     return {
-      insights: (parsed.insights || []).map((i: any) => ({
+      insights: (analysisResult.insights || []).map((i: any) => ({
         ...i,
         module: "SCHEDULING",
       })),
-      ganttRecommendations: parsed.ganttRecommendations || [],
+      ganttRecommendations: analysisResult.ganttRecommendations || [],
     };
   } catch (error) {
     logError('[AI Scheduling] Error:', {}, error instanceof Error ? error : new Error(String(error)));
@@ -288,23 +303,35 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.5,
-      max_completion_tokens: 4096,
+    const { result: analysisResult, blocked, reason } = await governedAiCall<any>({
+      orgId: organizationId!,
+      userId: null,
+      actionType: "module_analyze_delays",
+      inputRefs: { projectId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.5,
+          max_completion_tokens: 4096,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from OpenAI');
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
+    if (blocked) {
+      logWarn('[AI Delays] Blocked by governance', { organizationId, reason });
+      return { insights: [{ module: "DELAYS", severity: "INFO", title: "AI Limit Reached", summary: reason || "Daily AI usage limit reached.", recommendations: ["Try again later"] }] };
+    }
 
-    const parsed = JSON.parse(content);
     return {
-      insights: (parsed.insights || []).map((i: any) => ({
+      insights: (analysisResult.insights || []).map((i: any) => ({
         ...i,
         module: "DELAYS",
       })),
@@ -432,23 +459,35 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.5,
-      max_completion_tokens: 4096,
+    const { result: analysisResult, blocked, reason } = await governedAiCall<any>({
+      orgId: organizationId!,
+      userId: null,
+      actionType: "module_analyze_costs",
+      inputRefs: { projectId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.5,
+          max_completion_tokens: 4096,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from OpenAI');
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
+    if (blocked) {
+      logWarn('[AI Costs] Blocked by governance', { organizationId, reason });
+      return { insights: [{ module: "COSTS", severity: "INFO", title: "AI Limit Reached", summary: reason || "Daily AI usage limit reached.", recommendations: ["Try again later"] }] };
+    }
 
-    const parsed = JSON.parse(content);
     return {
-      insights: (parsed.insights || []).map((i: any) => ({
+      insights: (analysisResult.insights || []).map((i: any) => ({
         ...i,
         module: "COSTS",
       })),
@@ -562,23 +601,35 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.5,
-      max_completion_tokens: 4096,
+    const { result: analysisResult, blocked, reason } = await governedAiCall<any>({
+      orgId: organizationId!,
+      userId: null,
+      actionType: "module_analyze_equipment",
+      inputRefs: {},
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.5,
+          max_completion_tokens: 4096,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from OpenAI');
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
+    if (blocked) {
+      logWarn('[AI Equipment] Blocked by governance', { organizationId, reason });
+      return { insights: [{ module: "EQUIPMENT", severity: "INFO", title: "AI Limit Reached", summary: reason || "Daily AI usage limit reached.", recommendations: ["Try again later"] }] };
+    }
 
-    const parsed = JSON.parse(content);
     return {
-      insights: (parsed.insights || []).map((i: any) => ({
+      insights: (analysisResult.insights || []).map((i: any) => ({
         ...i,
         module: "EQUIPMENT",
       })),
@@ -695,27 +746,39 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.5,
-      max_completion_tokens: 4096,
+    const { result: analysisResult, blocked, reason } = await governedAiCall<any>({
+      orgId: organizationId!,
+      userId: null,
+      actionType: "module_analyze_vendor_pricing",
+      inputRefs: {},
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.5,
+          max_completion_tokens: 4096,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from OpenAI');
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
+    if (blocked) {
+      logWarn('[AI Vendor Pricing] Blocked by governance', { organizationId, reason });
+      return { insights: [{ module: "VENDOR_PRICING", severity: "INFO", title: "AI Limit Reached", summary: reason || "Daily AI usage limit reached.", recommendations: ["Try again later"] }] };
+    }
 
-    const parsed = JSON.parse(content);
     return {
-      insights: (parsed.insights || []).map((i: any) => ({
+      insights: (analysisResult.insights || []).map((i: any) => ({
         ...i,
         module: "VENDOR_PRICING",
       })),
-      vendorComparisons: parsed.vendorComparisons || [],
+      vendorComparisons: analysisResult.vendorComparisons || [],
     };
   } catch (error) {
     logError('[AI Vendor Pricing] Error:', {}, error instanceof Error ? error : new Error(String(error)));
@@ -826,23 +889,36 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.5,
-      max_completion_tokens: 4096,
+    const orgId = project.gcOrganizationId;
+    const { result: analysisResult, blocked, reason } = await governedAiCall<any>({
+      orgId: orgId || "unknown",
+      userId: null,
+      actionType: "module_analyze_project_health",
+      inputRefs: { projectId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT5,
+          messages: [
+            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.5,
+          max_completion_tokens: 4096,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error('No response from OpenAI');
+        return { result: JSON.parse(content), completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
+    if (blocked) {
+      logWarn('[AI Project Health] Blocked by governance', { projectId, reason });
+      return { insights: [{ module: "PROJECT_HEALTH", severity: "INFO", title: "AI Limit Reached", summary: reason || "Daily AI usage limit reached.", recommendations: ["Try again later"] }] };
+    }
 
-    const parsed = JSON.parse(content);
     return {
-      insights: (parsed.insights || []).map((i: any) => ({
+      insights: (analysisResult.insights || []).map((i: any) => ({
         ...i,
         module: "PROJECT_HEALTH",
       })),
