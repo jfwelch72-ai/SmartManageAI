@@ -2261,7 +2261,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   const rw = (bbox.w / 100) * imgW;
                   const rh = (bbox.h / 100) * imgH;
                   const conf = item.confidence || 0;
-                  const fillColor = conf >= 85 ? "rgba(139,92,246,0.06)" : conf >= 70 ? "rgba(139,92,246,0.04)" : "rgba(139,92,246,0.03)";
+                  const fillColor = conf >= 85 ? "rgba(139,92,246,0.18)" : conf >= 70 ? "rgba(139,92,246,0.14)" : "rgba(139,92,246,0.10)";
                   const strokeColor = conf >= 85 ? "#8b5cf6" : conf >= 70 ? "#a78bfa" : "#c4b5fd";
                   const isHighlighted = highlightedAiItem?.id === item.id;
                   return (
@@ -2271,11 +2271,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         y={ry}
                         width={rw}
                         height={rh}
-                        fill={isHighlighted ? "rgba(139,92,246,0.18)" : fillColor}
+                        fill={isHighlighted ? "rgba(139,92,246,0.30)" : fillColor}
                         stroke={isHighlighted ? "#7c3aed" : strokeColor}
-                        strokeWidth={isHighlighted ? 2.5 : 1}
-                        dash={[4, 4]}
-                        cornerRadius={2}
+                        strokeWidth={isHighlighted ? 3 : 2}
+                        dash={[6, 4]}
+                        cornerRadius={3}
                         listening={true}
                         onMouseEnter={(e) => {
                           const container = e.target.getStage()?.container();
@@ -2291,20 +2291,31 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       />
                       <Text
                         x={rx}
-                        y={ry - 13}
+                        y={ry - 16}
                         text={`${item.description} (${conf}%) · ${item.quantity} ${item.unit}`}
-                        fontSize={9}
-                        fill={isHighlighted ? "#7c3aed" : strokeColor}
+                        fontSize={11}
+                        fontStyle="bold"
+                        fill={isHighlighted ? "#7c3aed" : "#e9d5ff"}
                         listening={false}
                       />
                       {isHighlighted && (
-                        <Text
+                        <Rect
                           x={rx + 4}
                           y={ry + 4}
+                          width={Math.min(rw - 8, 220)}
+                          height={item.suggestedSowItem ? 56 : 42}
+                          fill="rgba(0,0,0,0.80)"
+                          cornerRadius={4}
+                          listening={false}
+                        />
+                      )}
+                      {isHighlighted && (
+                        <Text
+                          x={rx + 10}
+                          y={ry + 8}
                           text={`${item.description}\n${item.quantity} ${item.unit} · ${conf}% confidence${item.suggestedSowItem ? `\nSOW: ${item.suggestedSowItem.code}` : ""}`}
                           fontSize={11}
                           fill="#fff"
-                          padding={6}
                           listening={false}
                         />
                       )}
@@ -2324,7 +2335,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     const rw = (bbox.w / 100) * imgW;
                     const rh = (bbox.h / 100) * imgH;
                     const conf = meta?.confidence || 0;
-                    const fillColor = conf >= 85 ? "rgba(34,197,94,0.08)" : conf >= 70 ? "rgba(234,179,8,0.08)" : "rgba(249,115,22,0.08)";
+                    const fillColor = conf >= 85 ? "rgba(34,197,94,0.15)" : conf >= 70 ? "rgba(234,179,8,0.15)" : "rgba(249,115,22,0.12)";
                     const strokeColor = conf >= 85 ? "#22c55e" : conf >= 70 ? "#eab308" : "#f97316";
                     const aiItemId = meta?.aiItemId || meta?.sourceItemId;
                     const isHighlighted = highlightedAiItem && (
@@ -2338,9 +2349,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                           y={ry}
                           width={rw}
                           height={rh}
-                          fill={isHighlighted ? "rgba(139,92,246,0.15)" : fillColor}
+                          fill={isHighlighted ? "rgba(139,92,246,0.25)" : fillColor}
                           stroke={isHighlighted ? "#8b5cf6" : strokeColor}
-                          strokeWidth={isHighlighted ? 2.5 : 1.5}
+                          strokeWidth={isHighlighted ? 3 : 2}
                           dash={[6, 3]}
                           cornerRadius={3}
                           listening={true}
@@ -2356,22 +2367,33 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         />
                         <Text
                           x={rx}
-                          y={ry - 14}
+                          y={ry - 16}
                           text={`${m.label || "AI"} · ${m.count || 1} ${meta?.unit || "EA"} (${conf}%)`}
-                          fontSize={10}
+                          fontSize={11}
+                          fontStyle="bold"
                           fill={isHighlighted ? "#8b5cf6" : strokeColor}
                           listening={false}
                         />
                         {selectedMeasurementId === m.id && (
-                          <Text
-                            x={rx + 4}
-                            y={ry + 4}
-                            text={`${m.label || "AI Item"}\nQty: ${m.count || 1} ${meta?.unit || "EA"}\nConfidence: ${conf}%`}
-                            fontSize={11}
-                            fill="#fff"
-                            padding={6}
-                            listening={false}
-                          />
+                          <>
+                            <Rect
+                              x={rx + 4}
+                              y={ry + 4}
+                              width={Math.min(rw - 8, 220)}
+                              height={52}
+                              fill="rgba(0,0,0,0.80)"
+                              cornerRadius={4}
+                              listening={false}
+                            />
+                            <Text
+                              x={rx + 10}
+                              y={ry + 8}
+                              text={`${m.label || "AI Item"}\nQty: ${m.count || 1} ${meta?.unit || "EA"}\nConfidence: ${conf}%`}
+                              fontSize={11}
+                              fill="#fff"
+                              listening={false}
+                            />
+                          </>
                         )}
                       </Fragment>
                     );
