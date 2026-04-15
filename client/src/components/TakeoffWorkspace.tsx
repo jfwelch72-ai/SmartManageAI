@@ -4086,15 +4086,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               const newMeasurementIds: string[] = [];
               const imgH = pdfImage?.height || 1500;
 
-              const LINEAR_UNITS = new Set(["lf", "lm", "ft", "m", "in", "linear feet", "linear meters"]);
-              const AREA_UNITS = new Set(["sf", "sm", "sq ft", "sq m", "sqft", "sqm", "square feet", "square meters"]);
-              const LINEAR_TYPES = new Set(["wire_run", "ridge", "drip_edge", "pipe_run", "conduit", "framing", "rebar"]);
-              const AREA_TYPES = new Set(["roof_plane", "slab", "floor", "ceiling", "wall", "formwork"]);
+              const LINEAR_UNITS = new Set(["lf", "lm", "ft", "m", "in", "linear feet", "linear meters", "feet", "meters", "inches"]);
+              const AREA_UNITS = new Set(["sf", "sm", "sq ft", "sq m", "sqft", "sqm", "square feet", "square meters", "sq", "squares", "sy", "square yards"]);
+              const VOLUME_UNITS = new Set(["cy", "cm", "cubic yards", "cubic meters", "cu yd", "cu ft", "cf", "cubic feet", "ton", "tons"]);
+              const LINEAR_TYPES = new Set(["wire_run", "ridge", "drip_edge", "pipe_run", "conduit", "framing", "rebar", "gutter", "fascia", "soffit_linear", "trim"]);
+              const AREA_TYPES = new Set(["roof_plane", "slab", "floor", "ceiling", "wall", "formwork", "insulation", "drywall", "sheathing", "membrane", "shingles", "roofing"]);
+              const VOLUME_TYPES = new Set(["footing", "foundation", "concrete", "fill", "excavation", "backfill", "grading"]);
 
               const deriveMeasurementType = (item: DetectedItem): string => {
                 const unitLower = (item.unit || "").toLowerCase();
-                if (LINEAR_UNITS.has(unitLower) || LINEAR_TYPES.has(item.itemType)) return "LINEAR";
-                if (AREA_UNITS.has(unitLower) || AREA_TYPES.has(item.itemType)) return "AREA";
+                const typeLower = (item.itemType || "").toLowerCase();
+                if (LINEAR_UNITS.has(unitLower) || LINEAR_TYPES.has(typeLower)) return "LINEAR";
+                if (AREA_UNITS.has(unitLower) || AREA_TYPES.has(typeLower)) return "AREA";
+                if (VOLUME_UNITS.has(unitLower) || VOLUME_TYPES.has(typeLower)) return "AREA";
+                if (item.boundingBox && unitLower !== "ea" && unitLower !== "each") return "AREA";
                 return "COUNT";
               };
 
@@ -4126,13 +4131,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   const midX = (x1 + x2) / 2;
                   return [{ x: midX, y: y1 }, { x: midX, y: y2 }];
                 }
+                if (item.boundingBox) {
+                  return [
+                    { x: x1, y: y1 },
+                    { x: x2, y: y1 },
+                    { x: x2, y: y2 },
+                    { x: x1, y: y2 },
+                  ];
+                }
                 return [{ x: (x1 + x2) / 2, y: (y1 + y2) / 2 }];
               };
 
               for (let idx = 0; idx < items.length; idx++) {
                 const item = items[idx];
-                const measType = deriveMeasurementType(item);
+                let measType = deriveMeasurementType(item);
                 const points = derivePoints(item, measType, imgW, imgH);
+                if (points.length >= 4 && measType === "COUNT") {
+                  measType = "AREA";
+                }
 
                 try {
                   const categoryId = item.itemType ? await getOrCreateCategory(item.itemType) : undefined;
