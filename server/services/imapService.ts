@@ -323,7 +323,8 @@ function parseConnectionError(err: any, protocol: string, account?: EmailAccount
     return `${protocol} SSL/TLS error. Try toggling the secure connection setting.`;
   }
 
-  return `${protocol} error: ${msg.substring(0, 200)}`;
+  logError(`${protocol} connection error (unrecognized):`, {}, err instanceof Error ? err : new Error(msg));
+  return `${protocol} error. Please verify your server settings and try again.`;
 }
 
 function extractTextFromSource(source: string): string {

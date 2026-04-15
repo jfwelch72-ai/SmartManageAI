@@ -546,24 +546,37 @@ router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: 
         ...(overrides.imapPassword !== undefined && overrides.imapPassword !== "" && { imapPassword: overrides.imapPassword }),
       };
       const result = await testFullConnection(testAccount);
+
+      const knownSafePatterns = [
+        "not found", "connection refused", "timed out", "authentication failed",
+        "SSL/TLS error", "Please verify your server settings",
+      ];
+      const sanitizeTestResult = (r: typeof result.imap): typeof result.imap => {
+        if (!r.error) return { ...r, error: undefined };
+        const isSafe = knownSafePatterns.some((p) => r.error!.includes(p));
+        return { ...r, error: isSafe ? r.error : "Connection failed. Please check your settings and try again." };
+      };
+      const sanitizedImap = sanitizeTestResult(result.imap);
+      const sanitizedSmtp = sanitizeTestResult(result.smtp);
+
       if (!result.success) {
         const errors: string[] = [];
-        if (!result.imap.success) errors.push(result.imap.error || "IMAP connection failed");
-        if (!result.smtp.success && result.smtp.message !== "SMTP not configured (skipped)") {
-          errors.push(result.smtp.error || "SMTP connection failed");
+        if (!sanitizedImap.success) errors.push(sanitizedImap.error || "IMAP connection failed");
+        if (!sanitizedSmtp.success && sanitizedSmtp.message !== "SMTP not configured (skipped)") {
+          errors.push(sanitizedSmtp.error || "SMTP connection failed");
         }
         return res.status(400).json({
           success: false,
           message: errors.join("; "),
-          imap: result.imap,
-          smtp: result.smtp,
+          imap: sanitizedImap,
+          smtp: sanitizedSmtp,
         });
       }
       return res.json({
         success: true,
         message: "Connection test successful",
-        imap: result.imap,
-        smtp: result.smtp,
+        imap: sanitizedImap,
+        smtp: sanitizedSmtp,
       });
     }
 
@@ -1445,7 +1458,7 @@ async function sendViaGmail(
     return { success: true, messageId: result.id };
   } catch (err: any) {
     logError("Gmail send error:", {}, err instanceof Error ? err : new Error(String(err)));
-    return { success: false, error: err.message || String(err) };
+    return { success: false, error: "Failed to send email via Gmail. Please try again or check your account settings." };
   }
 }
 
@@ -1514,7 +1527,7 @@ async function sendViaOutlook(
     return { success: true, messageId: msgId };
   } catch (err: any) {
     logError("Outlook send error:", {}, err instanceof Error ? err : new Error(String(err)));
-    return { success: false, error: err.message || String(err) };
+    return { success: false, error: "Failed to send email via Outlook. Please try again or check your account settings." };
   }
 }
 
