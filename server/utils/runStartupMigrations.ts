@@ -26,6 +26,7 @@ import { ensureWorkflowTables } from "./ensureWorkflowTables";
 import { ensureMissingDrizzleTables } from "./ensureMissingDrizzleTables";
 import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
+import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -61,6 +62,7 @@ const migrations: MigrationStep[] = [
   { name: "missing_drizzle_tables", category: "CREATE_TABLE", fn: ensureMissingDrizzleTables },
   { name: "geofence_enhancements", category: "ADD_COLUMN", fn: ensureGeofenceEnhancements },
   { name: "site_leave_table", category: "CREATE_TABLE", fn: ensureSiteLeaveTable },
+  { name: "purchase_order_columns", category: "ADD_COLUMN", fn: ensurePurchaseOrderColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
