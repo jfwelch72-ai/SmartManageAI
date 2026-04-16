@@ -153,7 +153,7 @@ export function TakeoffToolbar({
 
   return (
     <div className="relative z-30 h-full">
-      <div className="hidden sm:flex w-[65px] h-full bg-card/95 backdrop-blur-sm border-r flex-col items-center py-1 gap-px shrink-0">
+      <div className="hidden sm:flex w-[65px] h-full bg-card/95 backdrop-blur-sm border-r flex-col items-center py-1 gap-px shrink-0 overflow-y-auto overflow-x-hidden">
 
         {navTools.map(tool => {
           const Icon = tool.icon;

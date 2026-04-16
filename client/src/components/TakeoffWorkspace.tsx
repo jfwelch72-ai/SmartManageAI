@@ -3716,12 +3716,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             </div>
           )}
 
-          {markupTextInput && (
+          {markupTextInput && (() => {
+            const w = pdfImage?.width || 0;
+            const h = pdfImage?.height || 0;
+            let rx = markupTextInput.x;
+            let ry = markupTextInput.y;
+            switch (sheetRotation) {
+              case 90: rx = markupTextInput.y; ry = w - markupTextInput.x; break;
+              case 180: rx = w - markupTextInput.x; ry = h - markupTextInput.y; break;
+              case 270: rx = h - markupTextInput.y; ry = markupTextInput.x; break;
+            }
+            return (
             <div
               className="absolute z-50 pointer-events-auto"
               style={{
-                left: markupTextInput.x * stageScale + stagePosition.x,
-                top: markupTextInput.y * stageScale + stagePosition.y,
+                left: rx * stageScale + stagePosition.x,
+                top: ry * stageScale + stagePosition.y,
               }}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
@@ -3729,7 +3739,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               <input
                 ref={markupTextRef}
                 autoFocus
-                className="border-2 border-primary rounded px-2 py-1 text-sm bg-background shadow-md min-w-40"
+                className="border-2 border-primary rounded px-2 py-1 text-sm bg-background text-foreground shadow-md min-w-40"
                 placeholder="Type label..."
                 defaultValue=""
                 data-testid="input-markup-text"
@@ -3752,7 +3762,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 }}
               />
             </div>
-          )}
+            );
+          })()}
 
           {createLinkMode && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-card border rounded-lg shadow-lg px-4 py-3 flex items-center gap-3" data-testid="create-link-panel">
