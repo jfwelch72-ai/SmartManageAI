@@ -1472,12 +1472,13 @@ router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole
     const conditions: SQL[] = [eq(purchaseOrders.orgId, orgId)];
     if (req.query.projectId) conditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
 
-    const itemConditions: SQL[] = [sql`${purchaseOrderItems.expectedDeliveryDate} IS NOT NULL`];
+    const effectiveDate = sql<Date>`COALESCE(${purchaseOrderItems.expectedDeliveryDate}, ${purchaseOrders.neededByDate})`;
+    const itemConditions: SQL[] = [sql`${effectiveDate} IS NOT NULL`];
     if (req.query.from) {
-      itemConditions.push(gte(purchaseOrderItems.expectedDeliveryDate, new Date(String(req.query.from))));
+      itemConditions.push(sql`${effectiveDate} >= ${new Date(String(req.query.from))}`);
     }
     if (req.query.to) {
-      itemConditions.push(lte(purchaseOrderItems.expectedDeliveryDate, new Date(String(req.query.to))));
+      itemConditions.push(sql`${effectiveDate} <= ${new Date(String(req.query.to))}`);
     }
 
     const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
@@ -1490,7 +1491,7 @@ router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole
       unit: purchaseOrderItems.unit,
       unitCost: purchaseOrderItems.unitCost,
       quantityReceived: purchaseOrderItems.quantityReceived,
-      expectedDeliveryDate: purchaseOrderItems.expectedDeliveryDate,
+      expectedDeliveryDate: sql<string>`${effectiveDate}`,
       poId: purchaseOrders.id,
       poNumber: purchaseOrders.poNumber,
       poStatus: purchaseOrders.status,
@@ -1505,7 +1506,7 @@ router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole
       .leftJoin(projectAlias, eq(purchaseOrders.projectId, projectAlias.id))
       .leftJoin(vendorAlias, eq(purchaseOrders.vendorId, vendorAlias.id))
       .where(and(...conditions, ...itemConditions))
-      .orderBy(asc(purchaseOrderItems.expectedDeliveryDate))
+      .orderBy(asc(effectiveDate))
       .limit(500);
 
     res.json(deliveries);
