@@ -778,12 +778,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const handleMarkupTextSubmit = async (text: string) => {
     if (markupTextSubmittedRef.current) return;
-    if (!markupTextInput || !selectedSheet || !text.trim()) {
+    const trimmed = (text || "").trim();
+    if (!markupTextInput || !selectedSheet || !trimmed) {
+      markupTextSubmittedRef.current = true;
       setMarkupTextInput(null);
       return;
     }
     markupTextSubmittedRef.current = true;
-    const pos = markupTextInput;
+    const pos = { x: markupTextInput.x, y: markupTextInput.y };
     setMarkupTextInput(null);
     try {
       await createMarkupMutation.mutateAsync({
@@ -792,21 +794,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         points: [pos],
         color: markupColor,
         thickness: markupThickness,
-        text: text.trim(),
+        text: trimmed,
       });
     } catch (err) {
       console.warn("[Takeoff] Failed to save text markup:", err);
+      toast({ title: "Error", description: "Failed to save text label", variant: "destructive" });
     }
   };
 
   useEffect(() => {
     if (markupTextInput && markupTextRef.current) {
-      const timer = setTimeout(() => {
-        markupTextRef.current?.focus();
-      }, 50);
-      return () => clearTimeout(timer);
+      const el = markupTextRef.current;
+      const raf = requestAnimationFrame(() => {
+        el.focus();
+        try { el.setSelectionRange(el.value.length, el.value.length); } catch {}
+      });
+      return () => cancelAnimationFrame(raf);
     }
-  }, [markupTextInput]);
+  }, [markupTextInput?.x, markupTextInput?.y]);
 
   useEffect(() => {
     Object.entries(addendaOverlays).forEach(([addendumId, overlay]) => {
@@ -3860,41 +3865,76 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               case 180: rx = w - markupTextInput.x; ry = h - markupTextInput.y; break;
               case 270: rx = h - markupTextInput.y; ry = markupTextInput.x; break;
             }
+            const left = Math.max(4, Math.min((rx * stageScale + stagePosition.x), (workspaceRef.current?.clientWidth || 9999) - 260));
+            const top = Math.max(48, Math.min((ry * stageScale + stagePosition.y), (workspaceRef.current?.clientHeight || 9999) - 80));
+            const stopAll = (e: React.SyntheticEvent) => { e.stopPropagation(); };
             return (
             <div
-              className="absolute z-50 pointer-events-auto"
-              style={{
-                left: rx * stageScale + stagePosition.x,
-                top: ry * stageScale + stagePosition.y,
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
+              className="absolute z-[60] pointer-events-auto flex items-center gap-1 bg-background border-2 border-primary rounded-md shadow-lg p-1"
+              style={{ left, top }}
+              onMouseDown={stopAll}
+              onMouseUp={stopAll}
+              onClick={stopAll}
+              onPointerDown={stopAll}
+              onWheel={stopAll}
+              data-testid="markup-text-input-wrapper"
             >
               <input
                 ref={markupTextRef}
-                autoFocus
-                className="border-2 border-primary rounded px-2 py-1 text-sm bg-background text-foreground shadow-md min-w-40"
-                placeholder="Type label..."
-                defaultValue=""
+                type="text"
+                className="px-2 py-1 text-sm bg-background text-foreground outline-none border-0 min-w-[200px]"
+                placeholder="Type label, then Enter…"
+                value={markupTextInput.value}
                 data-testid="input-markup-text"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMarkupTextInput((prev) => (prev ? { ...prev, value: v } : prev));
+                }}
                 onKeyDown={(e) => {
                   e.stopPropagation();
                   if (e.key === "Enter") {
                     e.preventDefault();
                     handleMarkupTextSubmit(e.currentTarget.value);
-                  }
-                  if (e.key === "Escape") {
+                  } else if (e.key === "Escape") {
                     e.preventDefault();
                     markupTextSubmittedRef.current = true;
                     setMarkupTextInput(null);
                   }
                 }}
+                onKeyUp={stopAll}
                 onBlur={(e) => {
-                  if (!markupTextSubmittedRef.current) {
-                    handleMarkupTextSubmit(e.currentTarget.value);
-                  }
+                  const val = e.currentTarget.value;
+                  window.setTimeout(() => {
+                    if (!markupTextSubmittedRef.current) {
+                      handleMarkupTextSubmit(val);
+                    }
+                  }, 120);
                 }}
               />
+              <button
+                type="button"
+                onClick={() => {
+                  const v = markupTextRef.current?.value || markupTextInput?.value || "";
+                  handleMarkupTextSubmit(v);
+                }}
+                className="px-2 py-1 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
+                data-testid="button-save-markup-text"
+                title="Save (Enter)"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  markupTextSubmittedRef.current = true;
+                  setMarkupTextInput(null);
+                }}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-accent shrink-0"
+                data-testid="button-cancel-markup-text"
+                title="Cancel (Esc)"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
             );
           })()}
