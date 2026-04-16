@@ -646,14 +646,20 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      const [sheetWithDoc] = await db
-        .select({ objectKey: planDocuments.objectKey, fileUrl: planDocuments.fileUrl })
-        .from(takeoffSheets)
-        .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
-        .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
-        .where(eq(takeoffSheets.id, sheetId))
-        .limit(1);
-      const gcsFile = await resolveGcsFile(sheetWithDoc?.objectKey, sheetWithDoc?.fileUrl);
+      let gcsFile = null;
+      if (sheet.planId) {
+        const [sheetWithDoc] = await db
+          .select({ objectKey: planDocuments.objectKey, fileUrl: planDocuments.fileUrl })
+          .from(takeoffSheets)
+          .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
+          .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
+          .where(eq(takeoffSheets.id, sheetId))
+          .limit(1);
+        gcsFile = await resolveGcsFile(sheetWithDoc?.objectKey, sheetWithDoc?.fileUrl);
+      }
+      if (!gcsFile && sheet.imageUrl) {
+        gcsFile = await resolveGcsFile(sheet.imageUrl, null);
+      }
       if (!gcsFile) {
         res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
         return;
