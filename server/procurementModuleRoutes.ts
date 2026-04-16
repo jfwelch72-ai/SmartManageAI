@@ -2094,11 +2094,7 @@ router.get("/api/procurement-module/invoices/:id/file-url", requireAuth, require
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(invoice.fileUrl);
-    const [signedUrl] = await objectFile.getSignedUrl({
-      version: 'v4',
-      action: 'read',
-      expires: Date.now() + 60 * 60 * 1000,
-    });
+    const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
     res.json({ url: signedUrl });
   } catch (error) {
     next(error);
