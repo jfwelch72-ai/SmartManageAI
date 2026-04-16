@@ -501,7 +501,7 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
   });
   const { pageItems: pagedPOs, rangeStart: poStart, rangeEnd: poEnd, totalItems: poTotal, hasPrev: poHasPrev, hasNext: poHasNext, prevPage: poPrev, nextPage: poNext, resetPage: poResetPage } = usePagination(pos);
   useEffect(() => { poResetPage(); }, [search, statusFilter, poResetPage]);
-  const { data: vendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/vendors"] });
+  const { data: vendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/organisations"] });
   const createMutation = useCreatePurchaseOrder();
   const submitMutation = useSubmitPurchaseOrder();
   const approveMutation = useApprovePurchaseOrder();
@@ -780,7 +780,7 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
 function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => void }) {
   const { toast } = useToast();
   const { data: po, isLoading } = usePurchaseOrderDetail(poId);
-  const { data: editVendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/vendors"] });
+  const { data: editVendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/organisations"] });
   const updateMutation = useUpdatePurchaseOrder();
   const createReceiptMutation = useCreatePOReceipt();
   const createInvoiceMutation = useCreateVendorInvoice();
