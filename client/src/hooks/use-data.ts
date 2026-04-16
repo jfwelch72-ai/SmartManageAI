@@ -1208,8 +1208,34 @@ export function useCreateDocument() {
 }
 
 // Receipts
+export interface PODeliveryReceipt {
+  id: string;
+  type: "PO_DELIVERY";
+  poId: string;
+  poNumber: string;
+  receivedAt: string;
+  deliveryNote: string | null;
+  status: string;
+  notes: string | null;
+  receivedByName: string | null;
+  vendorName: string | null;
+  items: Array<{
+    id: string;
+    poItemId: string;
+    quantityReceived: string;
+    condition: string;
+    notes: string | null;
+    description: string | null;
+  }>;
+}
+
+export interface ProjectReceiptsResponse {
+  expenseReceipts: Receipt[];
+  deliveryReceipts: PODeliveryReceipt[];
+}
+
 export function useProjectReceipts(code: string) {
-  return useQuery<Receipt[]>({
+  return useQuery<ProjectReceiptsResponse>({
     queryKey: ["/api/projects", code, "receipts"],
     enabled: !!code,
   });

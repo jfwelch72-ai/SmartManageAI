@@ -91,7 +91,62 @@ router.get("/api/projects/:code/receipts", requireAuth, async (req: AuthRequest,
       "RECEIPT"
     );
 
-    res.json(projectReceipts);
+    let poDeliveryReceipts: any[] = [];
+    try {
+      const { pool: dbPool } = await import("./db");
+      const poReceiptResult = await dbPool.query(
+        `SELECT 
+          r.id, r.po_id, r.received_at, r.delivery_note, r.status, r.notes,
+          po.po_number, po.vendor_id,
+          u.first_name || ' ' || u.last_name AS received_by_name,
+          co.name AS vendor_name,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', ri.id,
+                'poItemId', ri.po_item_id,
+                'quantityReceived', ri.quantity_received,
+                'condition', ri.condition,
+                'notes', ri.notes,
+                'description', poi.description
+              )
+            ) FILTER (WHERE ri.id IS NOT NULL), '[]'
+          ) AS items
+        FROM po_receipts r
+        JOIN purchase_orders po ON r.po_id = po.id
+        LEFT JOIN users u ON r.received_by_id = u.id
+        LEFT JOIN crm_organisations co ON po.vendor_id = co.id
+        LEFT JOIN po_receipt_items ri ON ri.receipt_id = r.id
+        LEFT JOIN purchase_order_items poi ON ri.po_item_id = poi.id
+        WHERE po.project_id = $1
+        GROUP BY r.id, r.po_id, r.received_at, r.delivery_note, r.status, r.notes,
+                 po.po_number, po.vendor_id, u.first_name, u.last_name, co.name
+        ORDER BY r.received_at DESC
+        LIMIT 100`,
+        [project.id]
+      );
+      poDeliveryReceipts = poReceiptResult.rows.map((row: any) => ({
+        id: row.id,
+        type: "PO_DELIVERY",
+        poId: row.po_id,
+        poNumber: row.po_number,
+        receivedAt: row.received_at,
+        deliveryNote: row.delivery_note,
+        status: row.status,
+        notes: row.notes,
+        receivedByName: row.received_by_name,
+        vendorName: row.vendor_name,
+        items: row.items,
+      }));
+    } catch (err) {
+      const { logError } = await import("./utils/logger");
+      logError("Failed to fetch PO delivery receipts", { projectId: project.id }, err instanceof Error ? err : new Error(String(err)));
+    }
+
+    res.json({
+      expenseReceipts: projectReceipts,
+      deliveryReceipts: poDeliveryReceipts,
+    });
   } catch (error) {
     next(error);
   }
