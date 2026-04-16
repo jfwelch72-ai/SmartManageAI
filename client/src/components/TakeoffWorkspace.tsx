@@ -134,6 +134,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       }
     }
   }, [internalSelectedSheet, sheetStorageKey, isControlled]);
+  const openSheetsStorageKey = sheetStorageKey ? `${sheetStorageKey}-open-tabs` : null;
+  const [openSheetIds, setOpenSheetIds] = useState<string[]>(() => {
+    if (!openSheetsStorageKey) return [];
+    try {
+      const raw = sessionStorage.getItem(openSheetsStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter((x) => typeof x === "string");
+      }
+    } catch (err) {
+      console.warn("[Takeoff] Failed to read open sheet tabs:", err);
+    }
+    return [];
+  });
+  useEffect(() => {
+    if (!openSheetsStorageKey) return;
+    try {
+      sessionStorage.setItem(openSheetsStorageKey, JSON.stringify(openSheetIds));
+    } catch (err) {
+      console.warn("[Takeoff] Failed to persist open sheet tabs:", err);
+    }
+  }, [openSheetIds, openSheetsStorageKey]);
+  useEffect(() => {
+    if (selectedSheet && !openSheetIds.includes(selectedSheet)) {
+      setOpenSheetIds((prev) => (prev.includes(selectedSheet) ? prev : [...prev, selectedSheet]));
+    }
+  }, [selectedSheet, openSheetIds]);
+  const handleCloseSheetTab = useCallback((sheetId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setOpenSheetIds((prev) => {
+      const next = prev.filter((id) => id !== sheetId);
+      if (selectedSheet === sheetId) {
+        const idx = prev.indexOf(sheetId);
+        const fallback = next[idx] || next[idx - 1] || next[0] || null;
+        setSelectedSheet(fallback);
+      }
+      return next;
+    });
+  }, [selectedSheet, setSelectedSheet]);
   const [localRotation, setLocalRotation] = useState<number | null>(null);
   const takeoffHistory = useTakeoffHistory(selectedSheet);
   const prevSheetRef = useRef<string | null>(null);
@@ -2103,60 +2142,43 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               </button>
             </div>
           )}
-          {sheets.length > 1 && selectedSheet && (
-            <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-card/95 backdrop-blur-sm rounded-lg shadow-md border px-1 py-1 max-w-[calc(100%-16px)]" data-testid="quick-sheet-switcher">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 shrink-0"
-                disabled={!sheets.findIndex((s: any) => s.id === selectedSheet) || sheets.findIndex((s: any) => s.id === selectedSheet) <= 0}
-                onClick={() => {
-                  const i = sheets.findIndex((s: any) => s.id === selectedSheet);
-                  if (i > 0) {
-                    const prev = sheets[i - 1];
-                    if (isControlled) { onSelectSheet?.(prev.id); } else { setInternalSelectedSheet(prev.id); }
-                  }
-                }}
-                data-testid="button-prev-sheet"
-                title="Previous sheet"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </Button>
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-[60vw]">
-                {sheets.map((s: any, idx: number) => (
-                  <button
-                    key={s.id}
-                    onClick={() => { if (isControlled) onSelectSheet?.(s.id); else setInternalSelectedSheet(s.id); }}
-                    className={cn(
-                      "px-2 py-1 rounded text-[11px] font-medium whitespace-nowrap shrink-0 transition-colors",
-                      selectedSheet === s.id
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                    )}
-                    title={s.name || `Sheet ${idx + 1}`}
-                    data-testid={`button-switch-sheet-${s.id}`}
-                  >
-                    <span className="truncate inline-block max-w-[120px] align-middle">{s.name || `Sheet ${idx + 1}`}</span>
-                  </button>
-                ))}
-              </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 shrink-0"
-                disabled={sheets.findIndex((s: any) => s.id === selectedSheet) >= sheets.length - 1}
-                onClick={() => {
-                  const i = sheets.findIndex((s: any) => s.id === selectedSheet);
-                  if (i >= 0 && i < sheets.length - 1) {
-                    const next = sheets[i + 1];
-                    if (isControlled) { onSelectSheet?.(next.id); } else { setInternalSelectedSheet(next.id); }
-                  }
-                }}
-                data-testid="button-next-sheet"
-                title="Next sheet"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </Button>
+          {openSheetIds.length > 0 && (
+            <div className="absolute top-2 left-2 right-2 z-20 flex items-center gap-0.5 bg-card/95 backdrop-blur-sm rounded-md shadow-sm border px-1 py-0.5 overflow-x-auto no-scrollbar" data-testid="sheet-tabs-bar">
+              {openSheetIds
+                .map((id) => sheets.find((s: any) => s.id === id))
+                .filter(Boolean)
+                .map((s: any, idx: number) => {
+                  const isActive = selectedSheet === s.id;
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => setSelectedSheet(s.id)}
+                      className={cn(
+                        "group flex items-center gap-1 pl-2 pr-1 py-1 rounded text-[11px] font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors border",
+                        isActive
+                          ? "bg-background text-foreground border-border shadow-sm"
+                          : "bg-transparent text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50"
+                      )}
+                      title={s.name || `Sheet ${idx + 1}`}
+                      data-testid={`tab-sheet-${s.id}`}
+                    >
+                      <span className="truncate inline-block max-w-[140px] align-middle">{s.name || `Sheet ${idx + 1}`}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCloseSheetTab(s.id, e)}
+                        className={cn(
+                          "flex items-center justify-center w-4 h-4 rounded-sm shrink-0 transition-opacity hover:bg-muted-foreground/20",
+                          isActive ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover:opacity-60 hover:!opacity-100"
+                        )}
+                        data-testid={`button-close-tab-${s.id}`}
+                        title="Close tab"
+                        aria-label={`Close ${s.name || `Sheet ${idx + 1}`}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           )}
 
