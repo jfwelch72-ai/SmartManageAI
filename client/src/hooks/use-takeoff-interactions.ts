@@ -126,8 +126,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     isDraggingStageRef.current = v;
     _setIsDraggingStage(v);
   }, []);
-  const [snapEnabled, setSnapEnabled] = useState(true);
-  const [orthoLock, setOrthoLock] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(() => {
+    try { return localStorage.getItem("takeoff-snap-enabled") !== "false"; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem("takeoff-snap-enabled", String(snapEnabled)); } catch {} }, [snapEnabled]);
+  const [orthoLock, setOrthoLock] = useState(() => {
+    try { return localStorage.getItem("takeoff-ortho-lock") === "true"; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem("takeoff-ortho-lock", String(orthoLock)); } catch {} }, [orthoLock]);
   const [currentSnap, setCurrentSnap] = useState<SnapResult | null>(null);
   const [cursorPosition, setCursorPosition] = useState<Point | null>(null);
   const [runningMeasurement, setRunningMeasurement] = useState<{ value: number; unit: string; segments?: number } | null>(null);

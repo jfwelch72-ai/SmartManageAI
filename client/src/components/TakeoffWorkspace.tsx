@@ -16,7 +16,8 @@ import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
   Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
   CheckCircle2, AlertCircle, GalleryHorizontal, List,
-  Link2, ArrowLeft, Search, X, Tag, History, PanelRight, ArrowRight
+  Link2, ArrowLeft, Search, X, Tag, History, PanelRight, ArrowRight,
+  ChevronLeft, ChevronRight
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -24,7 +25,7 @@ import {
   sampleArcPoints,
   computeNetAreaInFt2,
 } from "@shared/utils/geometry";
-import { type Tool, validateHexColor, hexToRgba } from "./takeoff/types";
+import { type Tool, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/types";
 import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
 import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
@@ -214,8 +215,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       return next;
     });
   };
-  const [hideAiMeasurements, setHideAiMeasurements] = useState(false);
-  const [showAiOverlays, setShowAiOverlays] = useState(true);
+  const [hideAiMeasurements, setHideAiMeasurements] = useState(() => {
+    try { return localStorage.getItem("takeoff-hide-ai-measurements") === "true"; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem("takeoff-hide-ai-measurements", String(hideAiMeasurements)); } catch {} }, [hideAiMeasurements]);
+  const [showAiOverlays, setShowAiOverlays] = useState(() => {
+    try { return localStorage.getItem("takeoff-show-ai-overlays") !== "false"; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem("takeoff-show-ai-overlays", String(showAiOverlays)); } catch {} }, [showAiOverlays]);
   const [highlightedAiItem, setHighlightedAiItem] = useState<DetectedItem | null>(null);
   const [preImportDetectedItems, setPreImportDetectedItems] = useState<DetectedItem[]>([]);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
@@ -265,7 +272,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   }>(() => {
     try { return JSON.parse(localStorage.getItem("takeoff-gridlines") || '{"horizontal":[],"vertical":[]}'); } catch (err) { console.warn("[Takeoff] Failed to read gridlines:", err); return { horizontal: [], vertical: [] }; }
   });
-  const [showStructuralGridlines, setShowStructuralGridlines] = useState(false);
+  const [showStructuralGridlines, setShowStructuralGridlines] = useState(() => {
+    try { return localStorage.getItem("takeoff-show-structural-gridlines") === "true"; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem("takeoff-show-structural-gridlines", String(showStructuralGridlines)); } catch {} }, [showStructuralGridlines]);
   const [labelHiddenCategories, setLabelHiddenCategories] = useState<Set<string>>(() => {
     try { const stored = localStorage.getItem("takeoff-label-hidden-categories"); return stored ? new Set(JSON.parse(stored)) : new Set(); } catch (err) { console.warn("[Takeoff] Failed to read label hidden categories:", err); return new Set(); }
   });
@@ -2093,6 +2103,85 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               </button>
             </div>
           )}
+          {sheets.length > 1 && selectedSheet && (
+            <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-card/95 backdrop-blur-sm rounded-lg shadow-md border px-1 py-1 max-w-[calc(100%-16px)]" data-testid="quick-sheet-switcher">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0"
+                disabled={!sheets.findIndex((s: any) => s.id === selectedSheet) || sheets.findIndex((s: any) => s.id === selectedSheet) <= 0}
+                onClick={() => {
+                  const i = sheets.findIndex((s: any) => s.id === selectedSheet);
+                  if (i > 0) {
+                    const prev = sheets[i - 1];
+                    if (isControlled) { onSelectSheet?.(prev.id); } else { setInternalSelectedSheet(prev.id); }
+                  }
+                }}
+                data-testid="button-prev-sheet"
+                title="Previous sheet"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </Button>
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-[60vw]">
+                {sheets.map((s: any, idx: number) => (
+                  <button
+                    key={s.id}
+                    onClick={() => { if (isControlled) onSelectSheet?.(s.id); else setInternalSelectedSheet(s.id); }}
+                    className={cn(
+                      "px-2 py-1 rounded text-[11px] font-medium whitespace-nowrap shrink-0 transition-colors",
+                      selectedSheet === s.id
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    )}
+                    title={s.name || `Sheet ${idx + 1}`}
+                    data-testid={`button-switch-sheet-${s.id}`}
+                  >
+                    <span className="truncate inline-block max-w-[120px] align-middle">{s.name || `Sheet ${idx + 1}`}</span>
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0"
+                disabled={sheets.findIndex((s: any) => s.id === selectedSheet) >= sheets.length - 1}
+                onClick={() => {
+                  const i = sheets.findIndex((s: any) => s.id === selectedSheet);
+                  if (i >= 0 && i < sheets.length - 1) {
+                    const next = sheets[i + 1];
+                    if (isControlled) { onSelectSheet?.(next.id); } else { setInternalSelectedSheet(next.id); }
+                  }
+                }}
+                data-testid="button-next-sheet"
+                title="Next sheet"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          )}
+
+          {selectedSheet && (
+            <div className="absolute bottom-2 left-2 z-10 flex items-center gap-2 bg-card/90 backdrop-blur-sm rounded-md shadow-sm border px-2 py-1 text-[10px] text-muted-foreground" data-testid="takeoff-status-bar">
+              <span className="font-mono tabular-nums" data-testid="status-zoom">{Math.round(stageScale * 100)}%</span>
+              <span className="opacity-40">·</span>
+              <span data-testid="status-tool">{TOOL_CONFIG.find(t => t.id === activeTool)?.label || "Select"}</span>
+              {currentSheet?.scalePxPerFoot ? (
+                <>
+                  <span className="opacity-40">·</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium" data-testid="status-scale-ok">Calibrated</span>
+                </>
+              ) : (
+                <>
+                  <span className="opacity-40">·</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-medium" data-testid="status-scale-missing">No scale</span>
+                </>
+              )}
+              {snapEnabled && (<><span className="opacity-40">·</span><span data-testid="status-snap">Snap</span></>)}
+              {orthoLock && (<><span className="opacity-40">·</span><span data-testid="status-ortho">Ortho</span></>)}
+              {gridEnabled && (<><span className="opacity-40">·</span><span data-testid="status-grid">Grid</span></>)}
+            </div>
+          )}
+
           {isDrawing && !isMobile && (
             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-card/95 backdrop-blur-sm rounded-lg shadow-lg border px-3 py-1.5" data-testid="drawing-guide-bar">
               <div className="flex items-center gap-1.5">
@@ -4092,7 +4181,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       )}
 
       {aiPanelOpen && selectedSheet && (
-        <div className="absolute top-0 right-0 h-full w-full sm:w-80 max-w-full border-l bg-card shadow-2xl z-30 flex flex-col" data-testid="panel-ai-takeoff-overlay">
+        <div className={cn("absolute top-0 right-0 h-full w-full sm:w-80 max-w-full border-l bg-card shadow-2xl z-30 flex flex-col transition-opacity", isDrawing && !isMobile && "opacity-20 hover:opacity-100")} data-testid="panel-ai-takeoff-overlay">
           <AiTakeoffPanel
             projectId={context?.type === "project" ? context.projectId : projectId || undefined}
             bidId={context?.type === "bid" ? context.bidId : undefined}
@@ -4468,7 +4557,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       />
 
       {crossModulePanelOpen && context?.type !== "bid" && (
-        <div className="absolute top-0 right-0 h-full w-full sm:w-[340px] max-w-full overflow-y-auto border-l bg-background shadow-2xl z-30" data-testid="panel-cross-module-overlay">
+        <div className={cn("absolute top-0 right-0 h-full w-full sm:w-[340px] max-w-full overflow-y-auto border-l bg-background shadow-2xl z-30 transition-opacity", isDrawing && !isMobile && "opacity-20 hover:opacity-100")} data-testid="panel-cross-module-overlay">
           <TakeoffCrossModulePanel
             projectId={projectId}
             selectedSheet={selectedSheet}
