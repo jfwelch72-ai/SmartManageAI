@@ -27,6 +27,7 @@ import { ensureMissingDrizzleTables } from "./ensureMissingDrizzleTables";
 import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
+import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -63,6 +64,7 @@ const migrations: MigrationStep[] = [
   { name: "geofence_enhancements", category: "ADD_COLUMN", fn: ensureGeofenceEnhancements },
   { name: "site_leave_table", category: "CREATE_TABLE", fn: ensureSiteLeaveTable },
   { name: "purchase_order_columns", category: "ADD_COLUMN", fn: ensurePurchaseOrderColumns },
+  { name: "crm_org_type_enum_values", category: "ADD_ENUM", fn: ensureCrmOrgTypeEnumValues },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

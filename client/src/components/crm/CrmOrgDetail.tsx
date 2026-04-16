@@ -78,6 +78,7 @@ const TYPE_LABELS: Record<OrganizationType, string> = {
   SUBCONTRACTOR: "Subcontractor",
   SUPPLIER: "Supplier",
   VENDOR: "Vendor",
+  SERVICE_VENDOR: "Service Vendor",
   OWNER_REP: "Owner Rep",
   RENTAL_VENDOR: "Rental Vendor",
 };

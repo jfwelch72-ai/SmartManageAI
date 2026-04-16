@@ -71,6 +71,7 @@ function OrgFormFields({ newOrg, setNewOrg, allProjects, prefix }: {
               <SelectItem value="SUBCONTRACTOR">Subcontractor</SelectItem>
               <SelectItem value="SUPPLIER">Supplier</SelectItem>
               <SelectItem value="VENDOR">Vendor</SelectItem>
+              <SelectItem value="SERVICE_VENDOR">Service Vendor</SelectItem>
               <SelectItem value="RENTAL_VENDOR">Rental Vendor</SelectItem>
               <SelectItem value="OWNER_REP">Owner Rep</SelectItem>
             </SelectContent>

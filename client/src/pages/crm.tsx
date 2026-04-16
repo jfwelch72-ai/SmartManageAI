@@ -94,6 +94,7 @@ const TYPE_LABELS: Record<OrganizationType, string> = {
   SUBCONTRACTOR: "Subcontractor",
   SUPPLIER: "Supplier",
   VENDOR: "Vendor",
+  SERVICE_VENDOR: "Service Vendor",
   OWNER_REP: "Owner Rep",
   RENTAL_VENDOR: "Rental Vendor",
 };
@@ -106,6 +107,8 @@ const TYPE_COLORS: Record<OrganizationType, string> = {
     "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   VENDOR:
     "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  SERVICE_VENDOR:
+    "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",
   OWNER_REP: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
   RENTAL_VENDOR:
     "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
@@ -1267,6 +1270,7 @@ export default function CRMPage() {
                       <SelectItem value="SUBCONTRACTOR">Subcontractors</SelectItem>
                       <SelectItem value="SUPPLIER">Suppliers</SelectItem>
                       <SelectItem value="VENDOR">Vendors</SelectItem>
+                      <SelectItem value="SERVICE_VENDOR">Service Vendors</SelectItem>
                       <SelectItem value="RENTAL_VENDOR">Rental Vendors</SelectItem>
                       <SelectItem value="OWNER_REP">Owner Reps</SelectItem>
                     </SelectContent>
