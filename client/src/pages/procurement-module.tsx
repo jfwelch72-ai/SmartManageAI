@@ -68,8 +68,9 @@ function fmtDate(d: string | null | undefined) {
 }
 
 function fmtCurrency(v: string | number | null | undefined) {
-  const n = parseFloat(String(v || "0"));
-  if (isNaN(n) || n === 0) return "-";
+  if (v === null || v === undefined || v === "") return "-";
+  const n = parseFloat(String(v));
+  if (isNaN(n)) return "-";
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
@@ -678,8 +679,8 @@ function PurchaseOrdersTab() {
                           <Badge variant={PO_STATUS_VARIANT[po.status] || "outline"}>{statusLabel(po.status)}</Badge>
                         </div>
                         <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-                          {po.vendor && <span>{po.vendor.name}</span>}
-                          {po.project && <span>{po.project.name}</span>}
+                          {po.vendor && <span data-testid={`text-vendor-${po.id}`}>Vendor: <span className="text-foreground">{po.vendor.name}</span></span>}
+                          {po.project && <span data-testid={`text-project-${po.id}`}>Project: <span className="text-foreground">{po.project.name}</span></span>}
                           <span>Needed: {fmtDate(po.neededByDate)}</span>
                           <span>Total: {fmtCurrency(po.totalCost)}</span>
                           {committed > 0 && <span className="text-primary font-medium" data-testid={`text-committed-${po.id}`}>Committed: {fmtCurrency(committed)}</span>}
