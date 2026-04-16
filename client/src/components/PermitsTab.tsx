@@ -229,13 +229,21 @@ export default function PermitsTab({ projectId, userRole }: PermitsTabProps) {
     return true;
   });
 
-  const activeCount = permits.filter((p) => p.status === "ACTIVE" || p.status === "APPROVED").length;
+  const isDateExpired = (p: ProjectPermit) => {
+    if (!p.expiryDate) return false;
+    return differenceInDays(parseISO(p.expiryDate), new Date()) < 0;
+  };
+  const expiredCount = permits.filter((p) => p.status === "EXPIRED" || (p.status !== "RENEWED" && isDateExpired(p))).length;
   const expiringCount = permits.filter((p) => {
     if (!p.expiryDate || p.status === "EXPIRED" || p.status === "RENEWED") return false;
     const days = differenceInDays(parseISO(p.expiryDate), new Date());
     return days >= 0 && days <= 30;
   }).length;
-  const expiredCount = permits.filter((p) => p.status === "EXPIRED").length;
+  const activeCount = permits.filter((p) => {
+    if (p.status === "EXPIRED" || p.status === "RENEWED") return false;
+    if (isDateExpired(p)) return false;
+    return ["APPLIED", "UNDER_REVIEW", "APPROVED", "ACTIVE"].includes(p.status);
+  }).length;
 
   const getExpiryWarning = (permit: ProjectPermit) => {
     if (!permit.expiryDate || permit.status === "EXPIRED" || permit.status === "RENEWED") return null;
