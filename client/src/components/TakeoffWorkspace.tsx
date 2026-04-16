@@ -4092,7 +4092,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       )}
 
       {aiPanelOpen && selectedSheet && (
-        <div className="w-80 border-l bg-card shrink-0">
+        <div className="absolute top-0 right-0 h-full w-full sm:w-80 max-w-full border-l bg-card shadow-2xl z-30 flex flex-col" data-testid="panel-ai-takeoff-overlay">
           <AiTakeoffPanel
             projectId={context?.type === "project" ? context.projectId : projectId || undefined}
             bidId={context?.type === "bid" ? context.bidId : undefined}
@@ -4468,7 +4468,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       />
 
       {crossModulePanelOpen && context?.type !== "bid" && (
-        <div className="w-[340px] shrink-0 overflow-y-auto border-l bg-background">
+        <div className="absolute top-0 right-0 h-full w-full sm:w-[340px] max-w-full overflow-y-auto border-l bg-background shadow-2xl z-30" data-testid="panel-cross-module-overlay">
           <TakeoffCrossModulePanel
             projectId={projectId}
             selectedSheet={selectedSheet}
