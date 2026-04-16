@@ -2806,7 +2806,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               variant="ghost"
                               size="icon"
                               className="h-6 w-6 opacity-0 group-hover:opacity-100 shrink-0"
-                              onClick={() => deleteMarkupMutation.mutate(markup.id)}
+                              onClick={() => deleteMarkupMutation.mutate(markup)}
                               disabled={deleteMarkupMutation.isPending}
                               data-testid={`button-delete-markup-${markup.id}`}
                             >

@@ -455,8 +455,12 @@ export function useTakeoffData({
       const res = await apiRequest("POST", "/api/takeoff/markups", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (created: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+      if (selectedSheet && created?.id) {
+        const normalized = { ...created, points: typeof created.points === "string" ? JSON.parse(created.points) : created.points };
+        takeoffHistory.pushMarkupAction("MARKUP_CREATE", normalized, selectedSheet);
+      }
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to save markup", variant: "destructive" });
@@ -464,12 +468,16 @@ export function useTakeoffData({
   });
 
   const deleteMarkupMutation = useMutation({
-    mutationFn: async (markupId: string) => {
+    mutationFn: async (markup: TakeoffMarkupWithAuthor | string) => {
+      const markupId = typeof markup === "string" ? markup : markup.id;
       await apiRequest("DELETE", `/api/takeoff/markups/${markupId}`);
-      return markupId;
+      return typeof markup === "string" ? null : markup;
     },
-    onSuccess: () => {
+    onSuccess: (deleted) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+      if (selectedSheet && deleted) {
+        takeoffHistory.pushMarkupAction("MARKUP_DELETE", deleted as any, selectedSheet);
+      }
       toast({ title: "Markup deleted" });
     },
     onError: () => {

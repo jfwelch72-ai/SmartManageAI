@@ -1,13 +1,14 @@
 import { useRef, useCallback, useState } from "react";
-import type { TakeoffMeasurement } from "@shared/schema";
+import type { TakeoffMeasurement, TakeoffMarkup } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-type ActionType = "CREATE" | "DELETE" | "UPDATE";
+type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MARKUP_CREATE" | "MARKUP_DELETE";
 
 interface HistoryEntry {
   type: ActionType;
-  measurement: TakeoffMeasurement;
+  measurement?: TakeoffMeasurement;
   previousMeasurement?: TakeoffMeasurement;
+  markup?: TakeoffMarkup & { points: { x: number; y: number }[] };
   sheetId: string;
 }
 
@@ -31,6 +32,19 @@ function buildCreatePayload(m: TakeoffMeasurement, sheetId: string) {
   };
 }
 
+function buildMarkupPayload(m: TakeoffMarkup & { points: { x: number; y: number }[] }, sheetId: string) {
+  const points = typeof m.points === "string" ? JSON.parse(m.points as any) : m.points;
+  return {
+    sheetId,
+    tool: m.tool,
+    points,
+    color: m.color,
+    thickness: m.thickness,
+    text: (m as any).text || undefined,
+    categoryId: (m as any).categoryId || undefined,
+  };
+}
+
 export function useTakeoffHistory(selectedSheet: string | null) {
   const undoStack = useRef<HistoryEntry[]>([]);
   const redoStack = useRef<HistoryEntry[]>([]);
@@ -49,8 +63,15 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  const invalidate = useCallback((sheetId: string) => {
-    queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", sheetId, "measurements"] });
+  const pushMarkupAction = useCallback((type: "MARKUP_CREATE" | "MARKUP_DELETE", markup: TakeoffMarkup & { points: { x: number; y: number }[] }, sheetId: string) => {
+    undoStack.current.push({ type, markup, sheetId });
+    redoStack.current = [];
+    updateFlags();
+  }, [updateFlags]);
+
+  const invalidate = useCallback((sheetId: string, isMarkup = false) => {
+    const key = isMarkup ? "markups" : "measurements";
+    queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", sheetId, key] });
   }, []);
 
   const undo = useCallback(async () => {
@@ -58,14 +79,14 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     const entry = undoStack.current.pop()!;
     setIsPending(true);
     try {
-      if (entry.type === "CREATE") {
+      if (entry.type === "CREATE" && entry.measurement) {
         await apiRequest("DELETE", `/api/takeoff/measurements/${entry.measurement.id}`);
-      } else if (entry.type === "DELETE") {
+      } else if (entry.type === "DELETE" && entry.measurement) {
         const payload = buildCreatePayload(entry.measurement, entry.sheetId);
         const res = await apiRequest("POST", "/api/takeoff/measurements", payload);
         const restored = await res.json();
         entry.measurement = restored;
-      } else if (entry.type === "UPDATE" && entry.previousMeasurement) {
+      } else if (entry.type === "UPDATE" && entry.previousMeasurement && entry.measurement) {
         const points = typeof entry.previousMeasurement.points === "string"
           ? JSON.parse(entry.previousMeasurement.points)
           : entry.previousMeasurement.points;
@@ -80,9 +101,16 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         });
         const updated = await res.json();
         entry.measurement = updated;
+      } else if (entry.type === "MARKUP_CREATE" && entry.markup) {
+        await apiRequest("DELETE", `/api/takeoff/markups/${entry.markup.id}`);
+      } else if (entry.type === "MARKUP_DELETE" && entry.markup) {
+        const payload = buildMarkupPayload(entry.markup, entry.sheetId);
+        const res = await apiRequest("POST", "/api/takeoff/markups", payload);
+        const restored = await res.json();
+        entry.markup = { ...restored, points: typeof restored.points === "string" ? JSON.parse(restored.points) : restored.points };
       }
       redoStack.current.push(entry);
-      invalidate(entry.sheetId);
+      invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
     } catch {
       undoStack.current.push(entry);
     } finally {
@@ -96,14 +124,14 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     const entry = redoStack.current.pop()!;
     setIsPending(true);
     try {
-      if (entry.type === "CREATE") {
+      if (entry.type === "CREATE" && entry.measurement) {
         const payload = buildCreatePayload(entry.measurement, entry.sheetId);
         const res = await apiRequest("POST", "/api/takeoff/measurements", payload);
         const restored = await res.json();
         entry.measurement = restored;
-      } else if (entry.type === "DELETE") {
+      } else if (entry.type === "DELETE" && entry.measurement) {
         await apiRequest("DELETE", `/api/takeoff/measurements/${entry.measurement.id}`);
-      } else if (entry.type === "UPDATE") {
+      } else if (entry.type === "UPDATE" && entry.measurement) {
         const points = typeof entry.measurement.points === "string"
           ? JSON.parse(entry.measurement.points)
           : entry.measurement.points;
@@ -118,9 +146,16 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         });
         const updated = await res.json();
         entry.measurement = updated;
+      } else if (entry.type === "MARKUP_CREATE" && entry.markup) {
+        const payload = buildMarkupPayload(entry.markup, entry.sheetId);
+        const res = await apiRequest("POST", "/api/takeoff/markups", payload);
+        const restored = await res.json();
+        entry.markup = { ...restored, points: typeof restored.points === "string" ? JSON.parse(restored.points) : restored.points };
+      } else if (entry.type === "MARKUP_DELETE" && entry.markup) {
+        await apiRequest("DELETE", `/api/takeoff/markups/${entry.markup.id}`);
       }
       undoStack.current.push(entry);
-      invalidate(entry.sheetId);
+      invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
     } catch {
       redoStack.current.push(entry);
     } finally {
@@ -135,5 +170,5 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  return { pushAction, undo, redo, canUndo, canRedo, isPending, clear };
+  return { pushAction, pushMarkupAction, undo, redo, canUndo, canRedo, isPending, clear };
 }
