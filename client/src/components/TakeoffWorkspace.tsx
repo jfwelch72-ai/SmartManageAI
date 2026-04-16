@@ -68,9 +68,11 @@ interface TakeoffWorkspaceProps {
   projectId?: string;
   projectCode?: string;
   context?: TakeoffContext;
+  selectedSheetId?: string | null;
+  onSelectSheet?: (sheetId: string | null) => void;
 }
 
-export default function TakeoffWorkspace({ projectId = "", projectCode = "", context }: TakeoffWorkspaceProps) {
+export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet }: TakeoffWorkspaceProps) {
   const isMobile = useIsMobile();
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
@@ -81,7 +83,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       ? `takeoff-sheet-${projectId}`
       : null;
   const prevStorageKeyRef = useRef<string | null>(sheetStorageKey);
-  const [selectedSheet, setSelectedSheet] = useState<string | null>(() => {
+  const isControlled = controlledSheetId !== undefined;
+  const [internalSelectedSheet, setInternalSelectedSheet] = useState<string | null>(() => {
+    if (isControlled) return controlledSheetId ?? null;
     if (sheetStorageKey) {
       try {
         return sessionStorage.getItem(sheetStorageKey);
@@ -91,27 +95,36 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     }
     return null;
   });
+  const selectedSheet = isControlled ? (controlledSheetId ?? null) : internalSelectedSheet;
+  const setSelectedSheet = useCallback((val: string | null) => {
+    if (!isControlled) {
+      setInternalSelectedSheet(val);
+    }
+    onSelectSheet?.(val);
+  }, [isControlled, onSelectSheet]);
   useEffect(() => {
+    if (isControlled) return;
     if (prevStorageKeyRef.current !== sheetStorageKey) {
       prevStorageKeyRef.current = sheetStorageKey;
       if (sheetStorageKey) {
         try {
           const stored = sessionStorage.getItem(sheetStorageKey);
-          setSelectedSheet(stored);
+          setInternalSelectedSheet(stored);
         } catch (err) {
           console.warn("[Takeoff] Failed to read sheet from sessionStorage:", err);
-          setSelectedSheet(null);
+          setInternalSelectedSheet(null);
         }
       } else {
-        setSelectedSheet(null);
+        setInternalSelectedSheet(null);
       }
     }
-  }, [sheetStorageKey]);
+  }, [sheetStorageKey, isControlled]);
   useEffect(() => {
+    if (isControlled) return;
     if (sheetStorageKey) {
       try {
-        if (selectedSheet) {
-          sessionStorage.setItem(sheetStorageKey, selectedSheet);
+        if (internalSelectedSheet) {
+          sessionStorage.setItem(sheetStorageKey, internalSelectedSheet);
         } else {
           sessionStorage.removeItem(sheetStorageKey);
         }
@@ -119,7 +132,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         console.warn("[Takeoff] Failed to persist selected sheet:", err);
       }
     }
-  }, [selectedSheet, sheetStorageKey]);
+  }, [internalSelectedSheet, sheetStorageKey, isControlled]);
   const [localRotation, setLocalRotation] = useState<number | null>(null);
   const takeoffHistory = useTakeoffHistory(selectedSheet);
   const prevSheetRef = useRef<string | null>(null);

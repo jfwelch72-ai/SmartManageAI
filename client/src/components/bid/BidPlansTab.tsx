@@ -103,6 +103,34 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [renameSheetValue, setRenameSheetValue] = useState("");
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const bidSheetStorageKey = bidId ? `takeoff-sheet-${bidId}` : null;
+  const [selectedSheetId, setSelectedSheetId] = useState<string | null>(() => {
+    if (!bidSheetStorageKey) return null;
+    try { return sessionStorage.getItem(bidSheetStorageKey); } catch { return null; }
+  });
+  const prevBidSheetStorageKeyRef = useRef<string | null>(bidSheetStorageKey);
+  useEffect(() => {
+    if (prevBidSheetStorageKeyRef.current !== bidSheetStorageKey) {
+      prevBidSheetStorageKeyRef.current = bidSheetStorageKey;
+      if (!bidSheetStorageKey) {
+        setSelectedSheetId(null);
+      } else {
+        try { setSelectedSheetId(sessionStorage.getItem(bidSheetStorageKey)); }
+        catch { setSelectedSheetId(null); }
+      }
+    }
+  }, [bidSheetStorageKey]);
+  useEffect(() => {
+    if (!bidSheetStorageKey) return;
+    try {
+      if (selectedSheetId) sessionStorage.setItem(bidSheetStorageKey, selectedSheetId);
+      else sessionStorage.removeItem(bidSheetStorageKey);
+    } catch {}
+  }, [selectedSheetId, bidSheetStorageKey]);
+  const handleSelectSheetFromSidebar = (sheetId: string) => {
+    setPreviewDocId(null);
+    setSelectedSheetId(sheetId);
+  };
   const [panelWidth, setPanelWidth] = useState(256);
   const isResizingRef = useRef(false);
   const resizeStartXRef = useRef(0);
@@ -1094,18 +1122,27 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                     draggable
                                     onDragStart={(e) => handleSheetDragStart(e, sheet.id)}
                                     onDragEnd={() => setDraggedSheetId(null)}
+                                    onClick={() => {
+                                      if (renameSheetId === sheet.id) return;
+                                      handleSelectSheetFromSidebar(sheet.id);
+                                    }}
                                     className={cn(
                                       "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
-                                      draggedSheetId === sheet.id && "opacity-50"
+                                      draggedSheetId === sheet.id && "opacity-50",
+                                      selectedSheetId === sheet.id && !previewDocId && "bg-accent text-accent-foreground"
                                     )}
                                     data-testid={`sheet-${sheet.id}`}
                                   >
-                                    <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
+                                    <GripVertical
+                                      className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
                                     <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
                                     {renameSheetId === sheet.id ? (
                                       <Input
                                         value={renameSheetValue}
                                         onChange={(e) => setRenameSheetValue(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
                                         onKeyDown={(e) => {
                                           if (e.key === "Enter" && renameSheetValue.trim()) {
                                             renameSheetMutation.mutate({ sheetId: sheet.id, sheetName: renameSheetValue.trim() });
@@ -1326,7 +1363,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 </div>
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
-                    <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />
+                    <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} />
                   </WidgetErrorBoundary>
                 </div>
               </div>
@@ -1400,7 +1437,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           ) : previewDocId ? (
             (() => {
               const doc = documents.find((d) => d.id === previewDocId);
-              if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} /></WidgetErrorBoundary>;
+              if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} /></WidgetErrorBoundary>;
               const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
               const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
               const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
@@ -1562,7 +1599,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
               )}
               <div className="flex-1 min-h-0">
                 <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
-                  <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />
+                  <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} />
                 </WidgetErrorBoundary>
               </div>
             </div>
