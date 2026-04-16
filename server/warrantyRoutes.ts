@@ -181,15 +181,6 @@ router.post(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const signoffs = await db.select({ role: assetHandoverSignoffs.role })
-        .from(assetHandoverSignoffs)
-        .where(eq(assetHandoverSignoffs.projectId, project.id));
-      const hasContractor = signoffs.some(s => s.role === "CONTRACTOR");
-      const hasOwner = signoffs.some(s => s.role === "OWNER");
-      if (!hasContractor || !hasOwner) {
-        return res.status(403).json({ error: "Handover must be completed (both contractor and owner signoff) before warranty cases can be created." });
-      }
-
       const userId = req.user!.id;
       const caseNumber = await generateCaseNumber(req.params.code);
 

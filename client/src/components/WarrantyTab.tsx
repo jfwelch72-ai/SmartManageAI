@@ -219,18 +219,16 @@ function allowedTransitions(status: CaseStatus, role: string): CaseStatus[] {
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
 
-function EmptyState({ onAdd, canAdd, handoverComplete }: { onAdd: () => void; canAdd: boolean; handoverComplete?: boolean }) {
+function EmptyState({ onAdd, canAdd }: { onAdd: () => void; canAdd: boolean; handoverComplete?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <ShieldCheck className="w-12 h-12 text-muted-foreground mb-4 opacity-40" />
       <h3 className="text-lg font-semibold mb-1">No Warranty Cases</h3>
       <p className="text-muted-foreground text-sm mb-6 max-w-sm">
-        {handoverComplete === false
-          ? "Complete the asset handover signoff process to enable warranty case tracking."
-          : "Track defects, warranty claims, callbacks, and recalls for this project after construction."}
+        Track defects, warranty claims, callbacks, and recalls for this project after construction.
       </p>
       {canAdd && (
-        <Button onClick={onAdd} disabled={handoverComplete === false} data-testid="button-add-warranty-case">
+        <Button onClick={onAdd} data-testid="button-add-warranty-case">
           <Plus className="w-4 h-4 mr-2" /> Log Warranty Case
         </Button>
       )}
@@ -1161,13 +1159,13 @@ export function WarrantyTab({ projectId, projectCode, userRole, handoverComplete
   return (
     <div className="space-y-4" data-testid="warranty-tab">
       {handoverComplete === false && (
-        <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20" data-testid="card-warranty-handover-pending">
+        <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20" data-testid="card-warranty-handover-pending">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-amber-600" />
+              <Clock className="w-5 h-5 text-blue-600" />
               <div>
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Handover Not Yet Complete</p>
-                <p className="text-xs text-amber-700 dark:text-amber-400">Warranty tracking activates after both contractor and owner sign off on the asset handover. Complete the handover signoff process to enable warranty case creation.</p>
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Handover Pending</p>
+                <p className="text-xs text-blue-700 dark:text-blue-400">The asset handover signoff has not been completed yet. You can still log warranty cases now.</p>
               </div>
             </div>
           </CardContent>
@@ -1187,7 +1185,7 @@ export function WarrantyTab({ projectId, projectCode, userRole, handoverComplete
             <FileDown className="w-4 h-4 mr-1" /> Export
           </Button>
           {isManager && (
-            <Button size="sm" onClick={() => setShowCreate(true)} disabled={handoverComplete === false} data-testid="button-add-warranty-case-header">
+            <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-add-warranty-case-header">
               <Plus className="w-4 h-4 mr-1" /> Log Case
             </Button>
           )}
