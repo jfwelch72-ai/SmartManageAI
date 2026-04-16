@@ -210,6 +210,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupDrawing, setMarkupDrawing] = useState(false);
   const [markupDrawPoints, setMarkupDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
+  const markupTextRef = useRef<HTMLInputElement>(null);
+  const markupTextSubmittedRef = useRef(false);
   const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
   const [thumbnailStripOpen, setThumbnailStripOpen] = useState(false);
   const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
@@ -664,6 +666,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     const pos = getStagePointer();
     if (!pos) return;
     if (activeTool === "markup_text") {
+      markupTextSubmittedRef.current = false;
       setMarkupTextInput({ x: pos.x, y: pos.y, value: "" });
       return;
     }
@@ -702,10 +705,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   };
 
   const handleMarkupTextSubmit = async (text: string) => {
+    if (markupTextSubmittedRef.current) return;
     if (!markupTextInput || !selectedSheet || !text.trim()) {
       setMarkupTextInput(null);
       return;
     }
+    markupTextSubmittedRef.current = true;
     const pos = markupTextInput;
     setMarkupTextInput(null);
     try {
@@ -721,6 +726,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       console.warn("[Takeoff] Failed to save text markup:", err);
     }
   };
+
+  useEffect(() => {
+    if (markupTextInput && markupTextRef.current) {
+      const timer = setTimeout(() => {
+        markupTextRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [markupTextInput]);
 
   useEffect(() => {
     Object.entries(addendaOverlays).forEach(([addendumId, overlay]) => {
@@ -3709,18 +3723,33 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 left: markupTextInput.x * stageScale + stagePosition.x,
                 top: markupTextInput.y * stageScale + stagePosition.y,
               }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             >
               <input
+                ref={markupTextRef}
                 autoFocus
                 className="border-2 border-primary rounded px-2 py-1 text-sm bg-background shadow-md min-w-40"
                 placeholder="Type label..."
                 defaultValue=""
                 data-testid="input-markup-text"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleMarkupTextSubmit(e.currentTarget.value);
-                  if (e.key === "Escape") setMarkupTextInput(null);
+                  e.stopPropagation();
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleMarkupTextSubmit(e.currentTarget.value);
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    markupTextSubmittedRef.current = true;
+                    setMarkupTextInput(null);
+                  }
                 }}
-                onBlur={(e) => handleMarkupTextSubmit(e.currentTarget.value)}
+                onBlur={(e) => {
+                  if (!markupTextSubmittedRef.current) {
+                    handleMarkupTextSubmit(e.currentTarget.value);
+                  }
+                }}
               />
             </div>
           )}
