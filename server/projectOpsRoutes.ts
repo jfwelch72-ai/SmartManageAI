@@ -953,12 +953,7 @@ router.get("/api/documents/:documentId/download-url", requireAuth, async (req: A
       
       try {
         const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
-        
-        const [signedUrl] = await objectFile.getSignedUrl({
-          version: 'v4',
-          action: 'read',
-          expires: Date.now() + 60 * 60 * 1000,
-        });
+        const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
 
         res.json({ url: signedUrl });
       } catch (error) {
@@ -2528,7 +2523,7 @@ router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRo
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
-    const [signedUrl] = await objectFile.getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 15 * 60 * 1000 });
+    const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 900);
 
     res.json({ url: signedUrl, fileName: doc.fileName, mimeType: doc.mimeType });
   } catch (error) {
@@ -2612,7 +2607,7 @@ router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...
         const { ObjectStorageService } = await import("./objectStorage");
         const objectStorageService = new ObjectStorageService();
         const objectFile = await objectStorageService.getObjectEntityFile(key);
-        const [signedUrl] = await objectFile.getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 10 * 60 * 1000 });
+        const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 600);
         const resp = await fetch(signedUrl);
         if (resp.ok) return Buffer.from(await resp.arrayBuffer());
         return null;

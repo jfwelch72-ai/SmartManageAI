@@ -847,12 +847,7 @@ router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response, ne
         let fileUrl: string | null = null;
         try {
           const objectFile = await objectStorageService.getObjectEntityFile(att.storageKey);
-          const [signedUrl] = await objectFile.getSignedUrl({
-            version: "v4" as const,
-            action: "read" as const,
-            expires: Date.now() + 60 * 60 * 1000,
-          });
-          fileUrl = signedUrl;
+          fileUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
         } catch (e) {
           logError(`Failed to get signed URL for attachment ${att.id}`, {}, e instanceof Error ? e : new Error(String(e)));
         }
