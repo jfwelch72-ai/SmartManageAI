@@ -4203,7 +4203,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       )}
 
       {aiPanelOpen && selectedSheet && (
-        <div className={cn("absolute top-0 right-0 h-full w-full sm:w-80 max-w-full border-l bg-card shadow-2xl z-30 flex flex-col transition-opacity", isDrawing && !isMobile && "opacity-20 hover:opacity-100")} data-testid="panel-ai-takeoff-overlay">
+        <div className={cn("absolute top-0 right-0 h-full w-full sm:w-80 max-w-full border-l bg-card shadow-2xl z-40 flex flex-col transition-opacity", isDrawing && !isMobile && "opacity-20 hover:opacity-100")} data-testid="panel-ai-takeoff-overlay">
           <AiTakeoffPanel
             projectId={context?.type === "project" ? context.projectId : projectId || undefined}
             bidId={context?.type === "bid" ? context.bidId : undefined}
