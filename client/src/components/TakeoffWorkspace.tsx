@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, Fragment } from "react";
-import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect, Group } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect, Group, Path } from "react-konva";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -360,6 +360,47 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       y: (pos.y - stagePosition.y) / stageScale,
     };
     return inverseRotate(raw);
+  };
+
+  const buildCloudPath = (x1: number, y1: number, x2: number, y2: number, bumpSize: number): string => {
+    const left = Math.min(x1, x2);
+    const right = Math.max(x1, x2);
+    const top = Math.min(y1, y2);
+    const bottom = Math.max(y1, y2);
+    const w = right - left;
+    const h = bottom - top;
+    if (w < 4 || h < 4) {
+      return `M ${left} ${top} L ${right} ${top} L ${right} ${bottom} L ${left} ${bottom} Z`;
+    }
+    const bx = Math.max(3, Math.round(w / bumpSize));
+    const by = Math.max(3, Math.round(h / bumpSize));
+    const sx = w / bx;
+    const sy = h / by;
+    const px = Math.max(4, sx * 0.45);
+    const py = Math.max(4, sy * 0.45);
+    let d = `M ${left} ${top}`;
+    for (let i = 0; i < bx; i++) {
+      const ex = left + (i + 1) * sx;
+      const cx = left + i * sx + sx / 2;
+      d += ` Q ${cx} ${top - py}, ${ex} ${top}`;
+    }
+    for (let i = 0; i < by; i++) {
+      const ey = top + (i + 1) * sy;
+      const cy = top + i * sy + sy / 2;
+      d += ` Q ${right + px} ${cy}, ${right} ${ey}`;
+    }
+    for (let i = 0; i < bx; i++) {
+      const ex = right - (i + 1) * sx;
+      const cx = right - i * sx - sx / 2;
+      d += ` Q ${cx} ${bottom + py}, ${ex} ${bottom}`;
+    }
+    for (let i = 0; i < by; i++) {
+      const ey = bottom - (i + 1) * sy;
+      const cy = bottom - i * sy - sy / 2;
+      d += ` Q ${left - px} ${cy}, ${left} ${ey}`;
+    }
+    d += " Z";
+    return d;
   };
 
   const toolToMarkupType = (tool: string): string => {
@@ -3634,14 +3675,32 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       />
                     );
                   }
-                  if ((tool === "FREEHAND" || tool === "CLOUD") && pts.length >= 2) {
+                  if (tool === "CLOUD" && pts.length >= 2) {
+                    const a = pts[0];
+                    const b = pts[pts.length - 1];
+                    const bump = Math.max(12, Math.min(32, Math.min(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) / 4)) / stageScale;
+                    const d = buildCloudPath(a.x, a.y, b.x, b.y, bump);
+                    return (
+                      <Path
+                        key={markup.id}
+                        data={d}
+                        stroke={color}
+                        strokeWidth={thickness}
+                        fill="transparent"
+                        lineCap="round"
+                        lineJoin="round"
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (tool === "FREEHAND" && pts.length >= 2) {
                     return (
                       <Line
                         key={markup.id}
                         points={pts.flatMap(p => [p.x, p.y])}
                         stroke={color}
                         strokeWidth={thickness}
-                        tension={tool === "CLOUD" ? 0.5 : 0}
+                        tension={0}
                         lineCap="round"
                         lineJoin="round"
                         listening={false}
@@ -3794,13 +3853,32 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       />
                     );
                   }
+                  if (activeTool === "markup_cloud") {
+                    const a = pts[0];
+                    const b = pts[pts.length - 1];
+                    const bump = Math.max(12, Math.min(32, Math.min(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) / 4)) / stageScale;
+                    const d = buildCloudPath(a.x, a.y, b.x, b.y, bump);
+                    return (
+                      <Path
+                        key="markup-preview"
+                        data={d}
+                        stroke={markupColor}
+                        strokeWidth={markupThickness}
+                        fill="transparent"
+                        lineCap="round"
+                        lineJoin="round"
+                        opacity={0.7}
+                        listening={false}
+                      />
+                    );
+                  }
                   return (
                     <Line
                       key="markup-preview"
                       points={pts.flatMap(p => [p.x, p.y])}
                       stroke={markupColor}
                       strokeWidth={markupThickness}
-                      tension={activeTool === "markup_cloud" ? 0.5 : 0}
+                      tension={0}
                       lineCap="round"
                       lineJoin="round"
                       opacity={0.7}
