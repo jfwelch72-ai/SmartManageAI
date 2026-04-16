@@ -204,6 +204,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [renameValue, setRenameValue] = useState("");
   const [deleteSheetConfirmOpen, setDeleteSheetConfirmOpen] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem("takeoff-sidebar-collapsed") === "true"; } catch { return false; }
+  });
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem("takeoff-sidebar-collapsed", String(next)); } catch {}
+      return next;
+    });
+  };
   const [hideAiMeasurements, setHideAiMeasurements] = useState(false);
   const [showAiOverlays, setShowAiOverlays] = useState(true);
   const [highlightedAiItem, setHighlightedAiItem] = useState<DetectedItem | null>(null);
@@ -4332,6 +4342,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setCalibrationPoints={setCalibrationPoints}
         workspaceRef={workspaceRef}
         aiPanelOpen={aiPanelOpen}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapsed}
         onApplyPresetScale={handleApplyPresetScale}
         sheets={sheets}
         onCompareRevisions={hasRevisionHistory ? () => setCompareDialogOpen(true) : undefined}

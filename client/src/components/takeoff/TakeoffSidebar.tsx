@@ -13,7 +13,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
-  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download,
+  History, ChevronDown, ChevronRight, ChevronLeft, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download,
   FolderPlus, GripVertical, FolderOpen, Loader2, MapPin, Search, ArrowUpDown, Tag
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -164,6 +164,8 @@ interface TakeoffSidebarProps {
   setCalibrationPoints: (v: { x: number; y: number }[]) => void;
   workspaceRef: React.RefObject<HTMLDivElement | null>;
   aiPanelOpen: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   onApplyPresetScale: (scaleCategory: string, selectedPresetScale: string, resetFn: () => void) => void;
   sheets?: any[];
   sheetsQueryKey?: string[];
@@ -254,7 +256,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     verifyExpectedDistance, setVerifyExpectedDistance, verifyResult, setVerifyResult,
     multiCalibMode, setMultiCalibMode, multiCalibPoints, setMultiCalibPoints,
     setCalibrationMode, setCalibrationPoints,
-    workspaceRef, aiPanelOpen, onApplyPresetScale,
+    workspaceRef, aiPanelOpen, collapsed, onToggleCollapse, onApplyPresetScale,
     sheets = [], sheetsQueryKey, onCompareRevisions, onSelectSheet,
     markups = [], deleteMarkupMutation,
     measurementGroups = [], createGroupMutation, updateGroupMutation, deleteGroupMutation, toggleGroupVisibilityMutation,
@@ -557,9 +559,64 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     return [...predecessors, ...chain];
   })();
 
+  if (collapsed) {
+    return (
+      <div className={cn("hidden sm:flex w-9 bg-card border-l flex-col shrink-0 items-center py-2 gap-1", aiPanelOpen && "hidden md:flex")}>
+        <button
+          onClick={onToggleCollapse}
+          className="w-7 h-7 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground"
+          data-testid="button-expand-takeoff-sidebar"
+          title="Expand sidebar"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => { setSidebarTab("tools"); onToggleCollapse?.(); }}
+          className={cn("w-7 h-7 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground", sidebarTab === "tools" && "text-primary")}
+          data-testid="button-expand-tab-tools"
+          title="Takeoff"
+        >
+          <Layers className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => { setSidebarTab("conditions"); onToggleCollapse?.(); }}
+          className={cn("w-7 h-7 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground relative", sidebarTab === "conditions" && "text-primary")}
+          data-testid="button-expand-tab-conditions"
+          title="Conditions"
+        >
+          <Zap className="w-4 h-4" />
+          {activeCondition && (
+            <span className="absolute top-0 right-0 w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: activeCondition.color }} />
+          )}
+        </button>
+        <button
+          onClick={() => { setSidebarTab("issues"); onToggleCollapse?.(); }}
+          className={cn("w-7 h-7 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground relative", sidebarTab === "issues" && "text-primary")}
+          data-testid="button-expand-tab-issues"
+          title="Issues"
+        >
+          <Flag className="w-4 h-4" />
+          {openIssueCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full min-w-3.5 h-3.5 flex items-center justify-center px-0.5">
+              {openIssueCount}
+            </span>
+          )}
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className={cn("hidden sm:flex w-[280px] md:w-[320px] lg:w-[360px] bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
-      <div className="flex border-b shrink-0 bg-muted/30">
+    <div className={cn("hidden sm:flex w-[280px] md:w-[300px] lg:w-[320px] bg-card border-l flex-col shrink-0 min-w-0 overflow-hidden", aiPanelOpen && "hidden md:flex")}>
+      <div className="flex border-b shrink-0 bg-muted/30 items-stretch">
+        <button
+          onClick={onToggleCollapse}
+          className="px-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 border-r shrink-0"
+          data-testid="button-collapse-takeoff-sidebar"
+          title="Collapse sidebar"
+        >
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
         <button
           className={cn("flex-1 py-2.5 text-xs font-medium transition-all relative", sidebarTab === "tools" ? "border-b-2 border-primary text-primary bg-card" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}
           onClick={() => setSidebarTab("tools")}
