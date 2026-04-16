@@ -848,7 +848,7 @@ function PurchaseOrdersTab() {
 function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void }) {
   const { toast } = useToast();
   const { data: po, isLoading } = usePurchaseOrderDetail(poId);
-  const { data: editVendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/vendors"] });
+  const { data: editVendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/organisations"] });
   const updateMutation = useUpdatePurchaseOrder();
   const createReceiptMutation = useCreatePOReceipt();
   const createInvoiceMutation = useCreateVendorInvoice();
