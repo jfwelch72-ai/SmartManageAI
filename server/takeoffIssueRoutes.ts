@@ -113,7 +113,15 @@ router.get("/api/takeoff/sheets/:sheetId/issues", requireAuth, async (req: AuthR
 
     const result = issues.map(issue => ({
       ...issue,
-      comments: comments.filter(c => c.issueId === issue.id),
+      comments: comments.filter(c => c.issueId === issue.id).map(c => ({
+        id: c.id,
+        issueId: c.issueId,
+        authorId: c.authorId,
+        body: c.body,
+        createdAt: c.createdAt,
+        authorName: c.authorFirstName || c.authorLastName ? `${c.authorFirstName || ""} ${c.authorLastName || ""}`.trim() : null,
+        authorAvatarUrl: c.authorAvatarUrl,
+      })),
     }));
 
     res.json(result);
@@ -330,15 +338,15 @@ router.post("/api/takeoff/issues/:issueId/comments", requireAuth, async (req: Au
     }).returning();
 
     const [userRecord] = await db
-      .select({ name: users.name, profilePhotoUrl: users.profilePhotoUrl })
+      .select({ firstName: users.firstName, lastName: users.lastName, avatarUrl: users.avatarUrl })
       .from(users)
       .where(eq(users.id, user.id))
       .limit(1);
 
     res.status(201).json({
       ...comment,
-      authorName: userRecord?.name,
-      authorAvatarUrl: userRecord?.profilePhotoUrl,
+      authorName: userRecord ? `${userRecord.firstName} ${userRecord.lastName}`.trim() : null,
+      authorAvatarUrl: userRecord?.avatarUrl,
     });
   } catch (error) {
   next(error);
