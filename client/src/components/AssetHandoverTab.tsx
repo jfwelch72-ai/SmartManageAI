@@ -245,9 +245,28 @@ export default function AssetHandoverTab({ projectId, projectCode, userRole }: A
                       )}
                     </div>
                     {item.documentUrl ? (
-                      <a href={item.documentUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1" data-testid={`link-document-${item.id}`}>
+                      <button
+                        type="button"
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                        data-testid={`link-document-${item.id}`}
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/projects/${projectCode}/handover/items/${item.id}/signed-url`, { credentials: "include" });
+                            if (!res.ok) {
+                              toast({ title: "Error", description: "Could not access this file.", variant: "destructive" });
+                              return;
+                            }
+                            const data = await res.json();
+                            if (data.url) {
+                              window.open(data.url, "_blank");
+                            }
+                          } catch {
+                            toast({ title: "Error", description: "Failed to open file.", variant: "destructive" });
+                          }
+                        }}
+                      >
                         <Download className="w-3 h-3" /> {item.documentFilename || "Document"}
-                      </a>
+                      </button>
                     ) : isMgr && (
                       <ObjectUploader
                         maxNumberOfFiles={1}

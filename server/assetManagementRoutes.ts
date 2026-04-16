@@ -187,6 +187,45 @@ router.delete(
   },
 );
 
+// ─── HANDOVER ITEM FILE SIGNED URL ───────────────────────────────────────────
+
+router.get(
+  "/projects/:code/handover/items/:id/signed-url",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await verifyProjectAccess(req.params.code, req, res);
+      if (!project) return;
+      const [item] = await db.select().from(assetHandoverItems)
+        .where(and(eq(assetHandoverItems.id, req.params.id), eq(assetHandoverItems.projectId, project.id)))
+        .limit(1);
+      if (!item) return res.status(404).json({ error: "Handover item not found" });
+      if (!item.documentUrl) return res.status(404).json({ error: "No document attached to this item" });
+
+      const storageKey = item.documentUrl;
+      if (storageKey.startsWith("http://") || storageKey.startsWith("https://")) {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        try {
+          const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+          const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
+          return res.json({ url: signedUrl, fileName: item.documentFilename });
+        } catch {
+          return res.json({ url: storageKey, fileName: item.documentFilename });
+        }
+      }
+
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+      const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
+      res.json({ url: signedUrl, fileName: item.documentFilename });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // ─── HANDOVER EXPORT ──────────────────────────────────────────────────────────
 
 router.get("/projects/:code/handover/export", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
