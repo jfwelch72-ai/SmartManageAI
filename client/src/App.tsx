@@ -146,6 +146,12 @@ const EquipmentDetailPage = lazy(() => import("@/pages/equipment-detail"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const PlatformAdminDashboard = lazy(() => import("@/pages/PlatformAdminDashboard"));
 const DotLibraryPage = lazy(() => import("@/pages/DotLibraryPage"));
+const HaulTicketsPage = lazy(() => import("@/pages/haul-tickets"));
+const DailyInspectorReportsPage = lazy(() => import("@/pages/daily-inspector-reports"));
+const SwpppInspectionsPage = lazy(() => import("@/pages/swppp-inspections"));
+const SuretyBondsPage = lazy(() => import("@/pages/surety-bonds"));
+const DbeGoalsPage = lazy(() => import("@/pages/dbe-goals"));
+const MaterialCertificationsPage = lazy(() => import("@/pages/material-certifications"));
 const PlatformOrganizations = lazy(() => import("@/pages/PlatformOrganizations"));
 const PlatformOrganizationDetail = lazy(() => import("@/pages/PlatformOrganizationDetail"));
 const PlatformAnalyticsMonitoring = lazy(() => import("@/pages/PlatformAnalyticsMonitoring"));
@@ -480,6 +486,12 @@ function Router() {
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/dot-library" component={() => <ProtectedRoute component={DotLibraryPage} />} />
+      <Route path="/haul-tickets" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="HAUL_TICKETS"><HaulTicketsPage /></FeatureFlagGate>} />} />
+      <Route path="/daily-inspector-reports" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="DAILY_INSPECTOR_REPORTS"><DailyInspectorReportsPage /></FeatureFlagGate>} />} />
+      <Route path="/swppp-inspections" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="SWPPP_INSPECTIONS"><SwpppInspectionsPage /></FeatureFlagGate>} />} />
+      <Route path="/surety-bonds" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="SURETY_BONDS"><SuretyBondsPage /></FeatureFlagGate>} />} />
+      <Route path="/dbe-goals" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="DBE_TRACKING"><DbeGoalsPage /></FeatureFlagGate>} />} />
+      <Route path="/material-certifications" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="BUY_AMERICA"><MaterialCertificationsPage /></FeatureFlagGate>} />} />
       <Route path="/admin/organizations/:id/view" component={() => <ProtectedRoute component={ViewAsOrganization} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations/:id" component={() => <ProtectedRoute component={PlatformOrganizationDetail} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

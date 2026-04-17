@@ -195,6 +195,21 @@ router.post("/api/projects/:projectId/dbe-goals", requireAuth, async (req: AuthR
   const [row] = await db.insert(projectDbeGoals).values(data).returning();
   res.status(201).json(row);
 });
+router.patch("/api/projects/:projectId/dbe-goals/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  const orgId = req.user!.organizationId;
+  const { id: _id, projectId: _pid, organizationId: _oid, createdById: _cb, createdAt: _ca, ...candidate } = req.body ?? {};
+  const data = validateBody(insertProjectDbeGoalSchema.partial(), candidate, res);
+  if (!data) return;
+  const [row] = await db.update(projectDbeGoals).set(data)
+    .where(and(
+      eq(projectDbeGoals.id, req.params.id),
+      eq(projectDbeGoals.projectId, req.params.projectId),
+      eq(projectDbeGoals.organizationId, orgId),
+    ))
+    .returning();
+  if (!row) return res.status(404).json({ error: "DBE goal not found" });
+  res.json(row);
+});
 router.delete("/api/projects/:projectId/dbe-goals/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   const orgId = req.user!.organizationId;
   await db.delete(projectDbeGoals).where(and(eq(projectDbeGoals.id, req.params.id), eq(projectDbeGoals.organizationId, orgId)));
