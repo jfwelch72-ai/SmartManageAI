@@ -263,6 +263,17 @@ app.use((req, res, next) => {
   await seedBuiltInPresets();
   await backfillMissingFeatureFlags();
 
+  // DOT pay item libraries: seed AFTER startup migrations so the dot_* tables
+  // are guaranteed to exist on cold start.
+  try {
+    const { seedDotAgenciesAndSpecBooks } = await import("./seedDotAgencies");
+    seedDotAgenciesAndSpecBooks().catch(err => {
+      logError("Failed to seed DOT agencies:", {}, err instanceof Error ? err : new Error(String(err)));
+    });
+  } catch (err) {
+    logError("Failed to import DOT seeder:", {}, err instanceof Error ? err : new Error(String(err)));
+  }
+
   let portRetryCount = 0;
   const MAX_PORT_RETRIES = 3;
   server.on("error", (err: NodeJS.ErrnoException) => {

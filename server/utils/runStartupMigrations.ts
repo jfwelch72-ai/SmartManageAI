@@ -28,6 +28,7 @@ import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
+import { ensureDotTables } from "./ensureDotTables";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -38,6 +39,7 @@ interface MigrationStep {
 }
 
 const migrations: MigrationStep[] = [
+  { name: "dot_tables", category: "CREATE_TABLE", fn: ensureDotTables },
   { name: "video_call_tables", category: "CREATE_TABLE", fn: ensureVideoCallTables },
   { name: "estimate_subcontractor_tables", category: "CREATE_TABLE", fn: ensureEstimateSubcontractorTables },
   { name: "equipment_columns", category: "ADD_COLUMN", fn: ensureEquipmentColumns },

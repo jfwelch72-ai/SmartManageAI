@@ -26,6 +26,7 @@ interface PayItemJson {
 
 interface SamplePayItemSet {
   specBook: { edition: string; title: string };
+  source?: string;
   items: PayItemJson[];
 }
 
@@ -86,10 +87,24 @@ export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted:
   for (const [agencyCode, set] of Object.entries(sampleData)) {
     const agency = await db.select().from(dotAgencies).where(eq(dotAgencies.code, agencyCode)).limit(1);
     if (agency.length === 0) continue;
-    const sb = await db.select().from(dotSpecBooks)
+    let sb = await db.select().from(dotSpecBooks)
       .where(and(eq(dotSpecBooks.agencyId, agency[0].id), eq(dotSpecBooks.edition, set.specBook.edition)))
       .limit(1);
-    if (sb.length === 0) continue;
+    if (sb.length === 0) {
+      const [created] = await db.insert(dotSpecBooks).values({
+        agencyId: agency[0].id,
+        edition: set.specBook.edition,
+        title: set.specBook.title,
+        isCurrent: true,
+        notes: set.source ? `Source: ${set.source}` : null,
+      }).returning();
+      sb = [created];
+      specBooksInserted++;
+    } else if (set.source && !sb[0].notes) {
+      await db.update(dotSpecBooks)
+        .set({ notes: `Source: ${set.source}` })
+        .where(eq(dotSpecBooks.id, sb[0].id));
+    }
     const specBookId = sb[0].id;
 
     for (const item of set.items) {
