@@ -34,7 +34,13 @@ export default defineConfig({
       output: {
         manualChunks(id: string) {
           if (id.includes("node_modules")) {
-            if (id.includes("react-dom") || id.match(/\/react\//) || id.includes("/scheduler/")) return "vendor-react";
+            if (
+              id.includes("react-dom") ||
+              id.match(/\/react\//) ||
+              id.includes("/scheduler/") ||
+              id.includes("react-reconciler") ||
+              id.includes("use-sync-external-store")
+            ) return "vendor-react";
             if (id.includes("@tanstack")) return "vendor-tanstack";
             if (id.includes("@radix-ui")) return "vendor-radix";
             if (id.includes("recharts") || id.includes("d3-")) return "vendor-charts";
