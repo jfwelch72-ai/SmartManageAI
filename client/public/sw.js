@@ -1,5 +1,5 @@
-const CACHE_VERSION = 'smartmanageai-v3';
-const API_CACHE = 'smartmanageai-api-v2';
+const CACHE_VERSION = 'smartmanageai-v4';
+const API_CACHE = 'smartmanageai-api-v3';
 const OFFLINE_URL = '/';
 
 const PRECACHE_ASSETS = [
