@@ -1,10 +1,11 @@
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const DATA_DIR = __dirname;
+import tradesJson from "./trades.json" with { type: "json" };
+import scopesJson from "./scopes.json" with { type: "json" };
+import materialsJson from "./materials.json" with { type: "json" };
+import formulasJson from "./formulas.json" with { type: "json" };
+import grammarJson from "./line_item_grammar.json" with { type: "json" };
+import tradeComponentsJson from "./trade_components.json" with { type: "json" };
+import variantExpansionsJson from "./variant_expansions.json" with { type: "json" };
+import calibrationRatesJson from "./calibration_rates.json" with { type: "json" };
 
 export interface Trade {
   trade_id: string;
@@ -96,9 +97,23 @@ export interface CalibrationRate {
   notes: string;
 }
 
+const JSON_DATA: Record<string, unknown> = {
+  "trades.json": tradesJson,
+  "scopes.json": scopesJson,
+  "materials.json": materialsJson,
+  "formulas.json": formulasJson,
+  "line_item_grammar.json": grammarJson,
+  "trade_components.json": tradeComponentsJson,
+  "variant_expansions.json": variantExpansionsJson,
+  "calibration_rates.json": calibrationRatesJson,
+};
+
 function loadJson<T>(filename: string): T {
-  const raw = readFileSync(join(DATA_DIR, filename), "utf8");
-  return JSON.parse(raw) as T;
+  const data = JSON_DATA[filename];
+  if (data === undefined) {
+    throw new Error(`Onboarding data file not bundled: ${filename}`);
+  }
+  return data as T;
 }
 
 const tradesData: Trade[] = loadJson<Trade[]>("trades.json");
