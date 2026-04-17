@@ -26,6 +26,29 @@
   </head>
   <body>
     <div id="root"></div>
+    <div id="__early_error" style="display:none;position:fixed;top:0;left:0;right:0;background:#fee;color:#900;padding:12px;font:12px/1.4 monospace;white-space:pre-wrap;z-index:99999;max-height:50vh;overflow:auto;border-bottom:2px solid #900"></div>
+    <script>
+      (function(){
+        var box = document.getElementById('__early_error');
+        function show(prefix, msg, src, line, col, stack){
+          box.style.display = 'block';
+          box.textContent += '['+prefix+'] '+msg+' @ '+(src||'?')+':'+(line||'?')+':'+(col||'?')+'\n'+(stack||'')+'\n\n';
+        }
+        window.addEventListener('error', function(e){
+          show('ERR', e.message, e.filename, e.lineno, e.colno, e.error && e.error.stack);
+        }, true);
+        window.addEventListener('unhandledrejection', function(e){
+          var r = e.reason;
+          show('REJ', (r && r.message) || String(r), '', '', '', r && r.stack);
+        });
+        setTimeout(function(){
+          var root = document.getElementById('root');
+          if (root && !root.firstChild && box.style.display !== 'block') {
+            show('TIMEOUT', 'React did not mount within 8s. No JS errors captured. Bundle may have loaded but App returned null.', '', '', '', '');
+          }
+        }, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
