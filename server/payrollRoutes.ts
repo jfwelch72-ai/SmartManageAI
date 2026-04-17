@@ -2180,6 +2180,236 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
   }
 });
 
+router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const { getFeatureFlags } = await import("./services/featureFlagService");
+    const flags = await getFeatureFlags(orgId);
+    if (!flags.WH_347_PAYROLL) {
+      return res.status(403).json({ error: "Certified payroll (WH-347) is not enabled for this organization" });
+    }
+
+    const [payRun] = await db.select().from(payRuns)
+      .where(and(eq(payRuns.id, req.params.id), eq(payRuns.organizationId, orgId)));
+    if (!payRun) return res.status(404).json({ error: "Pay run not found" });
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+
+    const requestedProjectId = typeof req.query.projectId === "string" && req.query.projectId.length > 0
+      ? req.query.projectId
+      : null;
+
+    const lineItems = await db.select({
+      lineItem: payRunLineItems,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      projectName: projects.name,
+      projectId: projects.id,
+      projectLocation: projects.locationAddress,
+      projectCode: projects.code,
+      projectVariant: projects.payrollFormVariant,
+    })
+      .from(payRunLineItems)
+      .innerJoin(users, eq(payRunLineItems.userId, users.id))
+      .innerJoin(projects, eq(payRunLineItems.projectId, projects.id))
+      .where(
+        requestedProjectId
+          ? and(eq(payRunLineItems.payRunId, req.params.id), eq(payRunLineItems.projectId, requestedProjectId))
+          : eq(payRunLineItems.payRunId, req.params.id)
+      )
+      .orderBy(asc(users.lastName), asc(users.firstName));
+
+    if (lineItems.length === 0) {
+      return res.status(404).json({ error: "No payroll line items found for this pay run" });
+    }
+
+    const lineItemUserIds = [...new Set(lineItems.map(i => i.lineItem.userId))];
+    const lineItemIds = lineItems.map(i => i.lineItem.id);
+    const lineItemProjectIds = [...new Set(lineItems.map(i => i.projectId))];
+
+    const classNameMap = new Map<string, string>();
+    const classIdMap = new Map<string, string>();
+    const pwMap = new Map<string, number>();
+    const dedMap = new Map<string, Array<{ amount: string; category: string }>>();
+
+    if (lineItemUserIds.length > 0) {
+      const allEmpClasses = await db.select({
+        userId: employeeClassifications.userId,
+        classificationId: employeeClassifications.classificationId,
+        classificationName: jobClassifications.name,
+      })
+        .from(employeeClassifications)
+        .innerJoin(jobClassifications, eq(employeeClassifications.classificationId, jobClassifications.id))
+        .where(inArray(employeeClassifications.userId, lineItemUserIds));
+
+      for (const ec of allEmpClasses) {
+        if (!classNameMap.has(ec.userId)) {
+          classNameMap.set(ec.userId, ec.classificationName);
+          classIdMap.set(ec.userId, ec.classificationId);
+        }
+      }
+    }
+
+    const classIds = [...new Set(Array.from(classIdMap.values()))];
+    if (classIds.length > 0 && lineItemProjectIds.length > 0) {
+      const allPw = await db.select().from(prevailingWageRates)
+        .where(and(
+          eq(prevailingWageRates.organizationId, orgId),
+          inArray(prevailingWageRates.projectId, lineItemProjectIds),
+          inArray(prevailingWageRates.classificationId, classIds),
+        ));
+      for (const pw of allPw) {
+        pwMap.set(`${pw.projectId}:${pw.classificationId}`, parseFloat(pw.wageRate));
+      }
+    }
+
+    if (lineItemIds.length > 0) {
+      const allDeds = await db.select({
+        lineItemId: payStubDeductions.payRunLineItemId,
+        amount: payStubDeductions.amount,
+        category: payrollDeductionTypes.category,
+      })
+        .from(payStubDeductions)
+        .innerJoin(payrollDeductionTypes, eq(payStubDeductions.deductionTypeId, payrollDeductionTypes.id))
+        .where(inArray(payStubDeductions.payRunLineItemId, lineItemIds));
+
+      for (const d of allDeds) {
+        if (!dedMap.has(d.lineItemId)) dedMap.set(d.lineItemId, []);
+        dedMap.get(d.lineItemId)!.push({ amount: d.amount, category: d.category });
+      }
+    }
+
+    const employees = lineItems.map(item => {
+      const userId = item.lineItem.userId;
+      const classification = classNameMap.get(userId) || "Laborer";
+      let prevailingRate: number | null = null;
+      let belowPrevailingWage = false;
+      const userClassId = classIdMap.get(userId);
+      if (userClassId) {
+        const pw = pwMap.get(`${item.projectId}:${userClassId}`);
+        if (pw !== undefined) {
+          prevailingRate = pw;
+          if (parseFloat(item.lineItem.regularRate) < pw) belowPrevailingWage = true;
+        }
+      }
+      const stubDeds = dedMap.get(item.lineItem.id) || [];
+      let ficaAmount = 0, withholdingTax = 0, otherDeductions = 0;
+      for (const d of stubDeds) {
+        const amt = parseFloat(d.amount);
+        if (d.category === "FICA" || d.category === "MEDICARE") ficaAmount += amt;
+        else if (d.category === "FEDERAL_TAX" || d.category === "STATE_TAX" || d.category === "LOCAL_TAX") withholdingTax += amt;
+        else otherDeductions += amt;
+      }
+      const totalDeductions = ficaAmount + withholdingTax + otherDeductions;
+      const gross = parseFloat(item.lineItem.grossAmount || item.lineItem.totalAmount);
+      const regH = parseFloat(item.lineItem.regularHours);
+      const otH = parseFloat(item.lineItem.overtimeHours);
+      return {
+        name: `${item.firstName} ${item.lastName}`,
+        workClassification: classification,
+        regularHours: regH,
+        overtimeHours: otH,
+        totalHours: regH + otH,
+        rateOfPay: parseFloat(item.lineItem.regularRate),
+        overtimeRate: parseFloat(item.lineItem.overtimeRate),
+        grossEarned: Math.round(gross * 100) / 100,
+        fica: Math.round(ficaAmount * 100) / 100,
+        withholdingTax: Math.round(withholdingTax * 100) / 100,
+        otherDeductions: Math.round(otherDeductions * 100) / 100,
+        totalDeductions: Math.round(totalDeductions * 100) / 100,
+        netWages: Math.round((gross - totalDeductions) * 100) / 100,
+        projectName: item.projectName,
+        prevailingRate,
+        belowPrevailingWage,
+      };
+    });
+
+    const totalGross = employees.reduce((s, e) => s + e.grossEarned, 0);
+    const totalDed = employees.reduce((s, e) => s + e.totalDeductions, 0);
+    const projectName = [...new Set(lineItems.map(l => l.projectName))].join(", ");
+    const projectLocation = [...new Set(lineItems.map(l => l.projectLocation).filter(Boolean) as string[])].join("; ");
+    const projectCode = [...new Set(lineItems.map(l => l.projectCode))].join(", ");
+
+    const { generateWH347Pdf } = await import("./services/wh347Generator");
+    const { payrollFormVariantValues } = await import("@shared/schema/enums");
+    type PayrollFormVariant = (typeof payrollFormVariantValues)[number];
+    const isAllowedVariant = (v: string | null | undefined): v is PayrollFormVariant =>
+      typeof v === "string" && (payrollFormVariantValues as readonly string[]).includes(v);
+    const requestedVariant = typeof req.query.variant === "string" ? req.query.variant.toUpperCase() : null;
+    // Use the project's configured variant when (a) the export is scoped to a
+    // single project via ?projectId= or (b) every line item in the pay run
+    // resolves to the same project variant. This keeps mixed-project pay runs
+    // from silently picking a state-DOT form for unrelated work.
+    const distinctProjectVariants = Array.from(
+      new Set(lineItems.map(l => l.projectVariant).filter((v): v is string => !!v))
+    );
+    const projectVariant = requestedProjectId
+      ? (lineItems[0].projectVariant ?? null)
+      : (distinctProjectVariants.length === 1 ? distinctProjectVariants[0] : null);
+    const variant: PayrollFormVariant = isAllowedVariant(requestedVariant)
+      ? requestedVariant
+      : isAllowedVariant(projectVariant)
+        ? projectVariant
+        : "WH_347";
+
+    const pdfBuffer = await generateWH347Pdf({
+      contractorName: org?.name || "",
+      contractorAddress: undefined,
+      payrollNumber: payRun.runNumber,
+      weekEndingDate: payRun.payPeriodEnd,
+      projectName,
+      projectLocation,
+      projectNumber: projectCode,
+      employees,
+      totals: {
+        totalGross: Math.round(totalGross * 100) / 100,
+        totalDeductions: Math.round(totalDed * 100) / 100,
+        totalNet: Math.round((totalGross - totalDed) * 100) / 100,
+      },
+      fringeBenefitsPaidToPlan: true,
+      fringeBenefitsPaidInCash: false,
+      noFringeBenefitsRequired: false,
+      signerName: undefined,
+      signerTitle: undefined,
+    }, variant);
+
+    // Persist to object storage at a deterministic key (best-effort).
+    try {
+      const { objectStorageClient } = await import("./objectStorage");
+      const { setObjectAclPolicy } = await import("./objectAcl");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      if (privateDir) {
+        const projectKeyPart = requestedProjectId || lineItemProjectIds[0] || "all";
+        const key = `${privateDir}/${orgId}/payroll/certified/${payRun.id}/${projectKeyPart}/${variant}.pdf`;
+        const parts = key.startsWith("/") ? key.slice(1).split("/") : key.split("/");
+        const bucketName = parts[0];
+        const objectName = parts.slice(1).join("/");
+        const bucket = objectStorageClient.bucket(bucketName);
+        const file = bucket.file(objectName);
+        await file.save(pdfBuffer, { contentType: "application/pdf", metadata: { contentType: "application/pdf" } });
+        await setObjectAclPolicy(file, {
+          owner: authReq.user!.id,
+          organizationId: orgId,
+          visibility: "private",
+        });
+      }
+    } catch (storageErr) {
+      logWarn("Failed to persist certified payroll PDF to object storage (non-critical)");
+    }
+
+    const fileName = `${variant}_${payRun.runNumber || payRun.id.slice(0, 8)}_${payRun.payPeriodEnd}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Length", String(pdfBuffer.length));
+    res.send(pdfBuffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete("/api/payroll/pay-runs/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;

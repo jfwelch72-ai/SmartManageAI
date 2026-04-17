@@ -8,7 +8,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Printer, Download, AlertTriangle, CheckCircle } from "lucide-react";
+import { FileText, Printer, Download, AlertTriangle, CheckCircle, FileDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const VARIANT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "WH_347", label: "Federal WH-347" },
+  { value: "CALTRANS_CEM_2502", label: "Caltrans CEM-2502" },
+  { value: "ODOT_CA_D_9C", label: "ODOT CA-D-9C" },
+  { value: "TXDOT", label: "TxDOT" },
+  { value: "FDOT", label: "FDOT" },
+  { value: "GENERIC", label: "Generic Certified Payroll" },
+];
 
 interface CertifiedEmployee {
   name: string;
@@ -75,7 +85,7 @@ export function CertifiedPayrollButton({ payRunId, payRunNumber }: { payRunId: s
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen(true)} data-testid="button-certified-payroll">
         <FileText className="w-4 h-4 mr-1" />
-        WH-347 Report
+        Certified Payroll
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -258,6 +268,8 @@ function buildProjectHtml(pr: ProjectReport): string {
 
 export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: { payRunId: string; payRunNumber: string | null }) {
   const isMobile = useIsMobile();
+  const [variant, setVariant] = useState<string>("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const { data: report, isLoading } = useQuery<CertifiedReport>({
     queryKey: ["/api/payroll/pay-runs", payRunId, "certified-report"],
@@ -266,6 +278,37 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
 
   const projectReports = report?.projectReports || [];
   const hasMultipleProjects = projectReports.length > 1;
+
+  const downloadPdf = async () => {
+    if (!payRunId) return;
+    setDownloadingPdf(true);
+    try {
+      const params = new URLSearchParams();
+      if (variant) params.set("variant", variant);
+      const qs = params.toString();
+      const url = `/api/payroll/pay-runs/${payRunId}/certified-payroll-pdf${qs ? `?${qs}` : ""}`;
+      const resp = await fetch(url, { credentials: "include" });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || `Failed to generate PDF (${resp.status})`);
+      }
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      const disp = resp.headers.get("Content-Disposition") || "";
+      const match = disp.match(/filename="?([^";]+)"?/i);
+      a.download = match?.[1] || `${variant || "WH_347"}_${payRunNumber || payRunId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to download PDF");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const printReport = () => {
     if (!report) return;
@@ -373,10 +416,25 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
     <div className="space-y-4">
       <DialogHeader>
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <DialogTitle className="text-lg">WH-347 Certified Payroll Report</DialogTitle>
-          <div className="flex items-center gap-2">
+          <DialogTitle className="text-lg">Certified Payroll Report</DialogTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={variant} onValueChange={setVariant}>
+              <SelectTrigger className="h-8 w-[200px]" data-testid="select-payroll-variant">
+                <SelectValue placeholder="Form variant" />
+              </SelectTrigger>
+              <SelectContent>
+                {VARIANT_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value} data-testid={`option-variant-${opt.value}`}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="default" size="sm" onClick={downloadPdf} disabled={downloadingPdf} data-testid="button-download-pdf">
+              <FileDown className="w-4 h-4 mr-1" /> {downloadingPdf ? "Generating…" : "Download PDF"}
+            </Button>
             <Button variant="outline" size="sm" onClick={exportCSV} data-testid="button-export-csv">
-              <Download className="w-4 h-4 mr-1" /> Export CSV
+              <Download className="w-4 h-4 mr-1" /> CSV
             </Button>
             <Button variant="outline" size="sm" onClick={printReport} data-testid="button-print-report">
               <Printer className="w-4 h-4 mr-1" /> Print

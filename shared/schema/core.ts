@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, onboardingStatusEnum, payRunStatusEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
+import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -364,6 +364,7 @@ export const projects = pgTable("projects", {
   autoChangeOrderEnabled: boolean("auto_change_order_enabled").notNull().default(true),
   autoChangeOrderThreshold: decimal("auto_change_order_threshold", { precision: 12, scale: 2 }).default("0"),
   safetyOfficerId: varchar("safety_officer_id").references(() => users.id, { onDelete: "set null" }),
+  payrollFormVariant: payrollFormVariantEnum("payroll_form_variant").notNull().default("WH_347"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

@@ -29,6 +29,7 @@ import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
 import { ensureDotTables } from "./ensureDotTables";
+import { ensurePayrollFormVariantColumn } from "./ensurePayrollFormVariantColumn";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -67,6 +68,7 @@ const migrations: MigrationStep[] = [
   { name: "site_leave_table", category: "CREATE_TABLE", fn: ensureSiteLeaveTable },
   { name: "purchase_order_columns", category: "ADD_COLUMN", fn: ensurePurchaseOrderColumns },
   { name: "crm_org_type_enum_values", category: "ADD_ENUM", fn: ensureCrmOrgTypeEnumValues },
+  { name: "payroll_form_variant_column", category: "ADD_COLUMN", fn: ensurePayrollFormVariantColumn },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

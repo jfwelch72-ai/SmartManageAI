@@ -296,14 +296,16 @@ export const buyAmericaStatusEnum = pgEnum("buy_america_status", [
   "WAIVER_GRANTED",
   "NON_COMPLIANT",
 ]);
-export const payrollFormVariantEnum = pgEnum("payroll_form_variant", [
+export const payrollFormVariantValues = [
   "WH_347",
   "ODOT_CA_D_9C",
   "CALTRANS_CEM_2502",
   "TXDOT",
   "FDOT",
   "GENERIC",
-]);
+] as const;
+export type PayrollFormVariant = (typeof payrollFormVariantValues)[number];
+export const payrollFormVariantEnum = pgEnum("payroll_form_variant", payrollFormVariantValues);
 
 // Organization Document Enums
 export const organizationDocumentTypeEnum = pgEnum("organization_document_type", [
