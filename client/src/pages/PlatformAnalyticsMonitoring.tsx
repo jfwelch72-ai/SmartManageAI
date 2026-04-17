@@ -180,7 +180,7 @@ function GrowthRevenueTab() {
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const renderEntityId = (entityId: string | null | undefined, entityType: string) => {
+  const renderEntityId = (entityId: string | null | undefined) => {
     if (!entityId) {
       return <span className="text-muted-foreground" data-testid="text-entity-id">—</span>;
     }
@@ -213,13 +213,7 @@ function GrowthRevenueTab() {
     if (!newValue) return null;
     try {
       const parsed = JSON.parse(newValue);
-      const resource =
-        typeof parsed?.resource === "string"
-          ? parsed.resource
-          : typeof parsed?.targetOrganizationId === "string"
-            ? null
-            : null;
-      return resource ?? null;
+      return typeof parsed?.resource === "string" ? parsed.resource : null;
     } catch {
       return null;
     }
@@ -455,14 +449,17 @@ function GrowthRevenueTab() {
               </TableHeader>
               <TableBody>
                 {analytics?.recentActivity?.map((activity) => {
-                  const resource = parseResource(activity.newValue);
+                  const resource =
+                    activity.entityType === "cross_org_access"
+                      ? parseResource(activity.newValue)
+                      : null;
                   return (
                     <TableRow key={activity.id} data-testid={`row-activity-${activity.id}`}>
                       <TableCell>{getActionBadge(activity.action)}</TableCell>
                       <TableCell>{formatEntityType(activity.entityType)}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-0.5 min-w-0">
-                          {renderEntityId(activity.entityId, activity.entityType)}
+                          {renderEntityId(activity.entityId)}
                           {resource && (
                             <span
                               className="text-xs text-muted-foreground font-mono truncate max-w-[280px]"
