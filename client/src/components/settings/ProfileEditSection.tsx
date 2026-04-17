@@ -116,6 +116,21 @@ export default function ProfileEditSection() {
     enabled: !!user,
   });
 
+  const isHustler = user?.role === "HUSTLER";
+  const { data: hustlerOrgsData } = useQuery<{
+    organizations: Array<{
+      id: string;
+      organizationId: string;
+      organization: { id: string; name: string };
+    }>;
+    currentOrganizationId: string | null;
+    count: number;
+  }>({
+    queryKey: ["/api/hustler/organizations"],
+    staleTime: 60000,
+    enabled: !!user && isHustler,
+  });
+
   if (!user) return null;
 
   const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase();
@@ -239,8 +254,40 @@ export default function ProfileEditSection() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label>Organization</Label>
-                <Input value={organizationName || ""} disabled className="bg-muted/50" data-testid="input-organization" />
+                <Label id="organization-field-label">
+                  {isHustler && (hustlerOrgsData?.organizations.length ?? 0) > 1 ? "Organizations" : "Organization"}
+                </Label>
+                {isHustler && hustlerOrgsData && hustlerOrgsData.organizations.length > 0 ? (
+                  <div
+                    role="list"
+                    aria-labelledby="organization-field-label"
+                    className="flex flex-wrap gap-1.5 min-h-10 px-3 py-2 rounded-md border border-input bg-muted/50"
+                    data-testid="list-hustler-organizations"
+                  >
+                    {hustlerOrgsData.organizations.map((link) => {
+                      const isCurrent = link.organizationId === hustlerOrgsData.currentOrganizationId;
+                      return (
+                        <Badge
+                          key={link.id}
+                          variant={isCurrent ? "default" : "secondary"}
+                          className="font-normal"
+                          data-testid={`badge-hustler-org-${link.organizationId}`}
+                          title={isCurrent ? "Currently active organization" : undefined}
+                        >
+                          {link.organization.name}
+                          {isCurrent && <span className="ml-1 text-[10px] uppercase opacity-80">Active</span>}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <Input value={organizationName || ""} disabled className="bg-muted/50" data-testid="input-organization" />
+                )}
+                {isHustler && (hustlerOrgsData?.count ?? 0) > 1 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Linked to {hustlerOrgsData!.count} organizations
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Role</Label>
