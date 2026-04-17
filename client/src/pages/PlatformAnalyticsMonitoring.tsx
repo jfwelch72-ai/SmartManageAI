@@ -178,6 +178,53 @@ function GrowthRevenueTab() {
       .replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  const renderEntityId = (entityId: string | null | undefined, entityType: string) => {
+    if (!entityId) {
+      return <span className="text-muted-foreground" data-testid="text-entity-id">—</span>;
+    }
+    if (entityId === "all_orgs") {
+      return (
+        <span className="italic text-muted-foreground" data-testid="text-entity-id">
+          All Organizations
+        </span>
+      );
+    }
+    if (UUID_RE.test(entityId)) {
+      return (
+        <span
+          className="font-mono text-sm cursor-help"
+          title={entityId}
+          data-testid="text-entity-id"
+        >
+          {entityId.slice(0, 8)}…
+        </span>
+      );
+    }
+    return (
+      <span className="font-mono text-sm break-all" data-testid="text-entity-id">
+        {entityId}
+      </span>
+    );
+  };
+
+  const parseResource = (newValue: string | null | undefined): string | null => {
+    if (!newValue) return null;
+    try {
+      const parsed = JSON.parse(newValue);
+      const resource =
+        typeof parsed?.resource === "string"
+          ? parsed.resource
+          : typeof parsed?.targetOrganizationId === "string"
+            ? null
+            : null;
+      return resource ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const totalPages = analytics ? Math.ceil(analytics.activityTotal / analytics.activityPageSize) : 1;
 
   const formatCurrency = (value: number) => {
@@ -407,16 +454,32 @@ function GrowthRevenueTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {analytics?.recentActivity?.map((activity) => (
-                  <TableRow key={activity.id} data-testid={`row-activity-${activity.id}`}>
-                    <TableCell>{getActionBadge(activity.action)}</TableCell>
-                    <TableCell>{formatEntityType(activity.entityType)}</TableCell>
-                    <TableCell className="font-mono text-sm">{activity.entityId.slice(0, 8)}...</TableCell>
-                    <TableCell>
-                      {format(new Date(activity.createdAt), "MMM d, yyyy h:mm a")}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {analytics?.recentActivity?.map((activity) => {
+                  const resource = parseResource(activity.newValue);
+                  return (
+                    <TableRow key={activity.id} data-testid={`row-activity-${activity.id}`}>
+                      <TableCell>{getActionBadge(activity.action)}</TableCell>
+                      <TableCell>{formatEntityType(activity.entityType)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5 min-w-0">
+                          {renderEntityId(activity.entityId, activity.entityType)}
+                          {resource && (
+                            <span
+                              className="text-xs text-muted-foreground font-mono truncate max-w-[280px]"
+                              title={resource}
+                              data-testid={`text-activity-resource-${activity.id}`}
+                            >
+                              {resource}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {format(new Date(activity.createdAt), "MMM d, yyyy h:mm a")}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {(!analytics?.recentActivity || analytics.recentActivity.length === 0) && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
