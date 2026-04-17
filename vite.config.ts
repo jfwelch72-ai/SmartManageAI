@@ -33,13 +33,15 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id: string) {
+          if (
+            id.includes("commonjsHelpers") ||
+            id.includes("commonjs-dynamic-modules")
+          ) {
+            return "vendor-react";
+          }
           if (id.includes("node_modules")) {
             if (
-              id.includes("react-dom") ||
-              id.match(/\/react\//) ||
-              id.includes("/scheduler/") ||
-              id.includes("react-reconciler") ||
-              id.includes("use-sync-external-store")
+              id.match(/[\\/]node_modules[\\/](react|react-dom|scheduler|react-reconciler|react-is|use-sync-external-store)[\\/]/)
             ) return "vendor-react";
             if (id.includes("@tanstack")) return "vendor-tanstack";
             if (id.includes("@radix-ui")) return "vendor-radix";
