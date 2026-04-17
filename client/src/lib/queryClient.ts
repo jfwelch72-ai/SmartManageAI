@@ -29,13 +29,19 @@ async function throwIfResNotOk(res: Response) {
 function handleGlobal401(url: string) {
   if (url.includes("/api/auth/me")) return;
   queryClient.setQueryData(["/api/auth/me"], null);
-  if (!window.location.pathname.startsWith("/login") &&
-      !window.location.pathname.startsWith("/register") &&
-      !window.location.pathname.startsWith("/forgot-password") &&
-      !window.location.pathname.startsWith("/reset-password") &&
-      window.location.pathname !== "/portal" &&
-      !window.location.pathname.startsWith("/portal/") &&
-      !window.location.pathname.startsWith("/sub-portal")) {
+  const path = window.location.pathname;
+  if (path !== "/" &&
+      !path.startsWith("/login") &&
+      !path.startsWith("/register") &&
+      !path.startsWith("/forgot-password") &&
+      !path.startsWith("/reset-password") &&
+      !path.startsWith("/hustler/accept-invite") &&
+      !path.startsWith("/site/") &&
+      !path.startsWith("/shared-preview/") &&
+      !path.startsWith("/rfq-response/") &&
+      path !== "/portal" &&
+      !path.startsWith("/portal/") &&
+      !path.startsWith("/sub-portal")) {
     window.location.href = "/login";
   }
 }
