@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, uniqueIndex, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tasks, tmTickets } from "./operations";
 
@@ -34,6 +34,16 @@ export const FEATURE_FLAG_KEYS = [
   "LIDAR_SCANNER",
   "VIDEO_CALLS",
   "SMS_NOTIFICATIONS",
+  // Heavy Civil / DOT
+  "DOT_PAY_ITEMS",
+  "DBE_TRACKING",
+  "WH_347_PAYROLL",
+  "HAUL_TICKETS",
+  "DAILY_INSPECTOR_REPORTS",
+  "SWPPP_INSPECTIONS",
+  "SURETY_BONDS",
+  "BUY_AMERICA",
+  "MASS_HAUL_ANALYZER",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -45,6 +55,15 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   "LIDAR_SCANNER",
   "VIDEO_CALLS",
   "SMS_NOTIFICATIONS",
+  "DOT_PAY_ITEMS",
+  "DBE_TRACKING",
+  "WH_347_PAYROLL",
+  "HAUL_TICKETS",
+  "DAILY_INSPECTOR_REPORTS",
+  "SWPPP_INSPECTIONS",
+  "SURETY_BONDS",
+  "BUY_AMERICA",
+  "MASS_HAUL_ANALYZER",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {
@@ -1294,6 +1313,10 @@ export const crmOrganisations = pgTable("crm_organisations", {
   isDeleted: boolean("is_deleted").notNull().default(false),
   deletedAt: timestamp("deleted_at"),
   legacySubcontractorId: varchar("legacy_subcontractor_id"),
+  // DBE / MBE / WBE quick-reference fields — detail records live in crm_organisation_certifications
+  primaryCertificationType: text("primary_certification_type"),
+  primaryCertificationExpiration: date("primary_certification_expiration"),
+  certificationsSummary: text("certifications_summary"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1302,6 +1325,7 @@ export const crmOrganisations = pgTable("crm_organisations", {
   typeIdx: index("crm_organisations_type_idx").on(table.type),
   nameIdx: index("crm_organisations_name_idx").on(table.name),
   isDeletedIdx: index("crm_organisations_is_deleted_idx").on(table.isDeleted),
+  primaryCertIdx: index("crm_organisations_primary_cert_idx").on(table.primaryCertificationType),
 }));
 
 export const insertCrmOrganisationSchema = createInsertSchema(crmOrganisations).omit({ id: true, createdAt: true, updatedAt: true });
@@ -3477,13 +3501,19 @@ export const sovLineItems = pgTable("sov_line_items", {
   
   // Unified SOW Tracking - links to organization's master SOW library for billing analytics across projects
   organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
-  
+
+  // DOT pay item linking — carries through to DOT progress estimate format
+  dotPayItemId: varchar("dot_pay_item_id"),
+  payItemNumber: varchar("pay_item_number", { length: 64 }),
+  specSection: varchar("spec_section", { length: 32 }),
+
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   sovIdx: index("sov_line_items_sov_idx").on(table.sovId),
   organizationSowItemIdx: index("sov_line_items_org_sow_item_idx").on(table.organizationSowItemId),
+  dotPayItemIdx: index("sov_line_items_dot_pay_item_idx").on(table.dotPayItemId),
 }));
 
 export const insertSovLineItemSchema = createInsertSchema(sovLineItems).omit({ id: true, createdAt: true, updatedAt: true });
@@ -8411,4 +8441,346 @@ export const unifiedPayments = pgTable("unified_payments", {
 export const insertUnifiedPaymentSchema = createInsertSchema(unifiedPayments).omit({ id: true, createdAt: true, updatedAt: true, voidedAt: true, voidedById: true, voidReason: true });
 export type InsertUnifiedPayment = z.infer<typeof insertUnifiedPaymentSchema>;
 export type UnifiedPayment = typeof unifiedPayments.$inferSelect;
+
+// ========================================================================
+// HEAVY CIVIL & DOT COVERAGE
+// Pay item libraries for FHWA + all 50+ state DOTs / territories /
+// toll authorities, plus the surrounding heavy-civil tables (DBE goals,
+// surety bonds, haul tickets, Daily Inspector Reports, SWPPP, Buy America).
+// Pay item libraries are GLOBAL reference data (no organizationId);
+// orgs may add overrides via dotPayItemOverrides.
+// ========================================================================
+
+export const dotAgencies = pgTable("dot_agencies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  name: text("name").notNull(),
+  fullName: text("full_name").notNull(),
+  stateCode: varchar("state_code", { length: 4 }),
+  kind: dotAgencyKindEnum("kind").notNull(),
+  website: text("website"),
+  specBookSystem: text("spec_book_system"),
+  currentSpecYear: varchar("current_spec_year", { length: 8 }),
+  supportsAashtoware: boolean("supports_aashtoware").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  kindIdx: index("dot_agencies_kind_idx").on(table.kind),
+  stateIdx: index("dot_agencies_state_idx").on(table.stateCode),
+}));
+export const insertDotAgencySchema = createInsertSchema(dotAgencies).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDotAgency = z.infer<typeof insertDotAgencySchema>;
+export type DotAgency = typeof dotAgencies.$inferSelect;
+
+export const dotSpecBooks = pgTable("dot_spec_books", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  agencyId: varchar("agency_id").notNull().references(() => dotAgencies.id, { onDelete: "cascade" }),
+  edition: varchar("edition", { length: 16 }).notNull(),
+  title: text("title").notNull(),
+  effectiveDate: date("effective_date"),
+  isCurrent: boolean("is_current").notNull().default(false),
+  itemCount: integer("item_count").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  agencyIdx: index("dot_spec_books_agency_idx").on(table.agencyId),
+  uniqueEdition: unique("dot_spec_books_agency_edition_uniq").on(table.agencyId, table.edition),
+}));
+export const insertDotSpecBookSchema = createInsertSchema(dotSpecBooks).omit({ id: true, createdAt: true, updatedAt: true, itemCount: true });
+export type InsertDotSpecBook = z.infer<typeof insertDotSpecBookSchema>;
+export type DotSpecBook = typeof dotSpecBooks.$inferSelect;
+
+export const dotPayItems = pgTable("dot_pay_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  specBookId: varchar("spec_book_id").notNull().references(() => dotSpecBooks.id, { onDelete: "cascade" }),
+  agencyId: varchar("agency_id").notNull().references(() => dotAgencies.id, { onDelete: "cascade" }),
+  itemNumber: varchar("item_number", { length: 64 }).notNull(),
+  description: text("description").notNull(),
+  unit: varchar("unit", { length: 16 }).notNull(),
+  specSection: varchar("spec_section", { length: 32 }),
+  category: text("category"),
+  payItemType: dotPayItemTypeEnum("pay_item_type").notNull().default("UNIT_PRICE"),
+  searchTokens: text("search_tokens"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  specBookIdx: index("dot_pay_items_spec_book_idx").on(table.specBookId),
+  agencyIdx: index("dot_pay_items_agency_idx").on(table.agencyId),
+  itemNumberIdx: index("dot_pay_items_item_number_idx").on(table.itemNumber),
+  uniqueItem: unique("dot_pay_items_spec_book_item_uniq").on(table.specBookId, table.itemNumber),
+}));
+export const insertDotPayItemSchema = createInsertSchema(dotPayItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDotPayItem = z.infer<typeof insertDotPayItemSchema>;
+export type DotPayItem = typeof dotPayItems.$inferSelect;
+
+// Per-organization overrides: rename, custom unit, internal alias, custom category
+export const dotPayItemOverrides = pgTable("dot_pay_item_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  payItemId: varchar("pay_item_id").notNull().references(() => dotPayItems.id, { onDelete: "cascade" }),
+  customDescription: text("custom_description"),
+  customUnit: varchar("custom_unit", { length: 16 }),
+  internalAlias: text("internal_alias"),
+  customCategory: text("custom_category"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePerOrg: unique("dot_pay_item_overrides_org_item_uniq").on(table.organizationId, table.payItemId),
+  orgIdx: index("dot_pay_item_overrides_org_idx").on(table.organizationId),
+}));
+export const insertDotPayItemOverrideSchema = createInsertSchema(dotPayItemOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDotPayItemOverride = z.infer<typeof insertDotPayItemOverrideSchema>;
+export type DotPayItemOverride = typeof dotPayItemOverrides.$inferSelect;
+
+// Which DOTs an organization regularly bids in (drives onboarding & default spec book picker)
+export const organizationDotPreferences = pgTable("organization_dot_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  agencyId: varchar("agency_id").notNull().references(() => dotAgencies.id, { onDelete: "cascade" }),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePref: unique("org_dot_preferences_uniq").on(table.organizationId, table.agencyId),
+  orgIdx: index("org_dot_preferences_org_idx").on(table.organizationId),
+}));
+export const insertOrganizationDotPreferenceSchema = createInsertSchema(organizationDotPreferences).omit({ id: true, createdAt: true });
+export type InsertOrganizationDotPreference = z.infer<typeof insertOrganizationDotPreferenceSchema>;
+export type OrganizationDotPreference = typeof organizationDotPreferences.$inferSelect;
+
+// ============================================
+// DBE / MBE / WBE / SBE / VOSB GOAL TRACKING
+// ============================================
+export const projectDbeGoals = pgTable("project_dbe_goals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  certificationType: dbeCertificationTypeEnum("certification_type").notNull(),
+  goalPercent: decimal("goal_percent", { precision: 5, scale: 2 }).notNull(),
+  goalDollars: decimal("goal_dollars", { precision: 14, scale: 2 }),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_dbe_goals_project_idx").on(table.projectId),
+  uniqueGoal: unique("project_dbe_goals_uniq").on(table.projectId, table.certificationType),
+}));
+export const insertProjectDbeGoalSchema = createInsertSchema(projectDbeGoals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectDbeGoal = z.infer<typeof insertProjectDbeGoalSchema>;
+export type ProjectDbeGoal = typeof projectDbeGoals.$inferSelect;
+
+// CRM organisation certifications (multi-cert per sub/vendor)
+export const crmOrganisationCertifications = pgTable("crm_organisation_certifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  certificationType: dbeCertificationTypeEnum("certification_type").notNull(),
+  certifyingAgency: text("certifying_agency"),
+  certificationNumber: text("certification_number"),
+  effectiveDate: date("effective_date"),
+  expirationDate: date("expiration_date"),
+  documentUrl: text("document_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgEntityIdx: index("crm_org_cert_entity_idx").on(table.crmOrganisationId),
+  expIdx: index("crm_org_cert_exp_idx").on(table.expirationDate),
+  uniqueCert: unique("crm_org_cert_uniq").on(table.crmOrganisationId, table.certificationType, table.certifyingAgency),
+}));
+export const insertCrmOrganisationCertificationSchema = createInsertSchema(crmOrganisationCertifications).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmOrganisationCertification = z.infer<typeof insertCrmOrganisationCertificationSchema>;
+export type CrmOrganisationCertification = typeof crmOrganisationCertifications.$inferSelect;
+
+// ============================================
+// SURETY BONDS LEDGER
+// ============================================
+export const suretyBonds = pgTable("surety_bonds", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  bondType: suretyBondTypeEnum("bond_type").notNull(),
+  status: suretyBondStatusEnum("status").notNull().default("DRAFT"),
+  bondNumber: text("bond_number").notNull(),
+  suretyCompany: text("surety_company").notNull(),
+  agentName: text("agent_name"),
+  agentPhone: text("agent_phone"),
+  agentEmail: text("agent_email"),
+  bondAmount: decimal("bond_amount", { precision: 14, scale: 2 }).notNull(),
+  premiumAmount: decimal("premium_amount", { precision: 12, scale: 2 }),
+  effectiveDate: date("effective_date"),
+  expirationDate: date("expiration_date"),
+  releaseDate: date("release_date"),
+  documentUrl: text("document_url"),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("surety_bonds_org_idx").on(table.organizationId),
+  projectIdx: index("surety_bonds_project_idx").on(table.projectId),
+  bidIdx: index("surety_bonds_bid_idx").on(table.bidId),
+  expIdx: index("surety_bonds_exp_idx").on(table.expirationDate),
+  statusIdx: index("surety_bonds_status_idx").on(table.status),
+}));
+export const insertSuretyBondSchema = createInsertSchema(suretyBonds).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSuretyBond = z.infer<typeof insertSuretyBondSchema>;
+export type SuretyBond = typeof suretyBonds.$inferSelect;
+
+// ============================================
+// HAUL TICKETS
+// ============================================
+export const haulTickets = pgTable("haul_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  ticketNumber: text("ticket_number").notNull(),
+  ticketDate: date("ticket_date").notNull(),
+  status: haulTicketStatusEnum("status").notNull().default("SUBMITTED"),
+  materialClass: text("material_class").notNull(),
+  source: text("source"),
+  destination: text("destination"),
+  truckNumber: text("truck_number"),
+  driverName: text("driver_name"),
+  haulerVendorId: varchar("hauler_vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  quantity: decimal("quantity", { precision: 12, scale: 3 }).notNull(),
+  unit: varchar("unit", { length: 16 }).notNull().default("TON"),
+  unitCost: decimal("unit_cost", { precision: 12, scale: 4 }),
+  totalCost: decimal("total_cost", { precision: 14, scale: 2 }),
+  costCode: varchar("cost_code", { length: 20 }),
+  payItemId: varchar("pay_item_id").references(() => dotPayItems.id, { onDelete: "set null" }),
+  payItemNumber: varchar("pay_item_number", { length: 64 }),
+  ticketPhotoUrl: text("ticket_photo_url"),
+  notes: text("notes"),
+  recordedById: varchar("recorded_by_id").references(() => users.id),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("haul_tickets_org_idx").on(table.organizationId),
+  projectIdx: index("haul_tickets_project_idx").on(table.projectId),
+  ticketDateIdx: index("haul_tickets_date_idx").on(table.ticketDate),
+  statusIdx: index("haul_tickets_status_idx").on(table.status),
+}));
+export const insertHaulTicketSchema = createInsertSchema(haulTickets).omit({ id: true, createdAt: true, updatedAt: true, approvedAt: true });
+export type InsertHaulTicket = z.infer<typeof insertHaulTicketSchema>;
+export type HaulTicket = typeof haulTickets.$inferSelect;
+
+// ============================================
+// DAILY INSPECTOR REPORT (IDR)
+// Separate from T&M tickets — a state-DOT-style daily field report
+// ============================================
+export const dailyInspectorReports = pgTable("daily_inspector_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  reportDate: date("report_date").notNull(),
+  reportNumber: text("report_number"),
+  status: idrStatusEnum("status").notNull().default("DRAFT"),
+  inspectorId: varchar("inspector_id").references(() => users.id),
+  inspectorName: text("inspector_name"),
+  weatherConditions: text("weather_conditions"),
+  temperatureHigh: integer("temperature_high"),
+  temperatureLow: integer("temperature_low"),
+  precipitationInches: decimal("precipitation_inches", { precision: 5, scale: 2 }),
+  windSpeedMph: integer("wind_speed_mph"),
+  crewCount: integer("crew_count").default(0),
+  crewHours: decimal("crew_hours", { precision: 8, scale: 2 }).default("0"),
+  equipmentSummary: json("equipment_summary"),
+  workPerformed: text("work_performed"),
+  stationsWorked: text("stations_worked"),
+  deliveries: text("deliveries"),
+  visitors: text("visitors"),
+  safetyIncidents: text("safety_incidents"),
+  delaysEncountered: text("delays_encountered"),
+  photoUrls: text("photo_urls").array(),
+  attachmentUrls: text("attachment_urls").array(),
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("idr_org_idx").on(table.organizationId),
+  projectIdx: index("idr_project_idx").on(table.projectId),
+  reportDateIdx: index("idr_date_idx").on(table.reportDate),
+  uniqueDay: unique("idr_project_date_uniq").on(table.projectId, table.reportDate),
+}));
+export const insertDailyInspectorReportSchema = createInsertSchema(dailyInspectorReports).omit({ id: true, createdAt: true, updatedAt: true, submittedAt: true, approvedAt: true });
+export type InsertDailyInspectorReport = z.infer<typeof insertDailyInspectorReportSchema>;
+export type DailyInspectorReport = typeof dailyInspectorReports.$inferSelect;
+
+// ============================================
+// SWPPP / NPDES INSPECTION LOG
+// ============================================
+export const swpppInspections = pgTable("swppp_inspections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  inspectionDate: date("inspection_date").notNull(),
+  inspectionType: swpppInspectionTypeEnum("inspection_type").notNull().default("ROUTINE"),
+  inspectorId: varchar("inspector_id").references(() => users.id),
+  inspectorName: text("inspector_name"),
+  inspectorCertNumber: text("inspector_cert_number"),
+  rainfallTriggerInches: decimal("rainfall_trigger_inches", { precision: 5, scale: 2 }),
+  rainfall24hrInches: decimal("rainfall_24hr_inches", { precision: 5, scale: 2 }),
+  bmpChecklist: json("bmp_checklist"),
+  deficienciesFound: text("deficiencies_found"),
+  correctiveActions: text("corrective_actions"),
+  correctiveActionAssigneeId: varchar("corrective_action_assignee_id").references(() => users.id),
+  correctiveActionDueDate: date("corrective_action_due_date"),
+  correctiveActionCompletedAt: timestamp("corrective_action_completed_at"),
+  photoUrls: text("photo_urls").array(),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("swppp_org_idx").on(table.organizationId),
+  projectIdx: index("swppp_project_idx").on(table.projectId),
+  inspectionDateIdx: index("swppp_date_idx").on(table.inspectionDate),
+}));
+export const insertSwpppInspectionSchema = createInsertSchema(swpppInspections).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSwpppInspection = z.infer<typeof insertSwpppInspectionSchema>;
+export type SwpppInspection = typeof swpppInspections.$inferSelect;
+
+// ============================================
+// MATERIAL CERTIFICATIONS / BUY AMERICA TRACKER
+// ============================================
+export const materialCertifications = pgTable("material_certifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  materialDescription: text("material_description").notNull(),
+  payItemId: varchar("pay_item_id").references(() => dotPayItems.id, { onDelete: "set null" }),
+  payItemNumber: varchar("pay_item_number", { length: 64 }),
+  manufacturerName: text("manufacturer_name"),
+  manufacturerCountry: text("manufacturer_country"),
+  millName: text("mill_name"),
+  millCountry: text("mill_country"),
+  heatNumber: text("heat_number"),
+  certNumber: text("cert_number"),
+  buyAmericaStatus: buyAmericaStatusEnum("buy_america_status").notNull().default("PENDING"),
+  waiverReason: text("waiver_reason"),
+  documentUrl: text("document_url"),
+  receivedDate: date("received_date"),
+  verifiedById: varchar("verified_by_id").references(() => users.id),
+  verifiedAt: timestamp("verified_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("material_certs_org_idx").on(table.organizationId),
+  projectIdx: index("material_certs_project_idx").on(table.projectId),
+  statusIdx: index("material_certs_status_idx").on(table.buyAmericaStatus),
+}));
+export const insertMaterialCertificationSchema = createInsertSchema(materialCertifications).omit({ id: true, createdAt: true, updatedAt: true, verifiedAt: true });
+export type InsertMaterialCertification = z.infer<typeof insertMaterialCertificationSchema>;
+export type MaterialCertification = typeof materialCertifications.$inferSelect;
 

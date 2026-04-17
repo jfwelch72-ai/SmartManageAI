@@ -602,6 +602,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     logError("Failed to seed core modifier categories:", {}, err instanceof Error ? err : new Error(String(err)));
   });
 
+  const { default: dotRoutes } = await import("./dotRoutes");
+  app.use(dotRoutes);
+
+  const { seedDotAgenciesAndSpecBooks } = await import("./seedDotAgencies");
+  seedDotAgenciesAndSpecBooks().catch(err => {
+    logError("Failed to seed DOT agencies:", {}, err instanceof Error ? err : new Error(String(err)));
+  });
+
   const cron = await import("node-cron");
   cron.schedule("0 8 * * *", async () => {
     try {

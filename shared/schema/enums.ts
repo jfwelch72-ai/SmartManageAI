@@ -219,6 +219,92 @@ export const tradeTypeEnum = pgEnum("trade_type", [
 ]);
 export const onboardingStatusEnum = pgEnum("onboarding_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]);
 
+// ============================================
+// HEAVY CIVIL / DOT ENUMS
+// ============================================
+export const dotAgencyKindEnum = pgEnum("dot_agency_kind", [
+  "FEDERAL",
+  "STATE_DOT",
+  "TERRITORY_DOT",
+  "TOLL_AUTHORITY",
+  "MUNICIPAL",
+  "AIRPORT_AUTHORITY",
+  "TRANSIT_AUTHORITY",
+  "OTHER",
+]);
+export const dotPayItemTypeEnum = pgEnum("dot_pay_item_type", [
+  "UNIT_PRICE",
+  "LUMP_SUM",
+  "ALTERNATE",
+  "INCENTIVE",
+  "FORCE_ACCOUNT",
+]);
+export const dbeCertificationTypeEnum = pgEnum("dbe_certification_type", [
+  "DBE",
+  "MBE",
+  "WBE",
+  "SBE",
+  "VOSB",
+  "SDVOSB",
+  "HUBZONE",
+  "EIGHTA",
+  "ACDBE",
+  "OTHER",
+]);
+export const suretyBondTypeEnum = pgEnum("surety_bond_type", [
+  "BID",
+  "PERFORMANCE",
+  "PAYMENT",
+  "MAINTENANCE",
+  "SUPPLY",
+  "WARRANTY",
+  "LICENSE",
+  "OTHER",
+]);
+export const suretyBondStatusEnum = pgEnum("surety_bond_status", [
+  "DRAFT",
+  "ACTIVE",
+  "EXPIRED",
+  "RELEASED",
+  "CLAIMED",
+  "CANCELED",
+]);
+export const haulTicketStatusEnum = pgEnum("haul_ticket_status", [
+  "DRAFT",
+  "SUBMITTED",
+  "APPROVED",
+  "REJECTED",
+  "VOIDED",
+]);
+export const swpppInspectionTypeEnum = pgEnum("swppp_inspection_type", [
+  "ROUTINE",
+  "POST_RAIN",
+  "PRE_STORM",
+  "FINAL",
+  "OTHER",
+]);
+export const idrStatusEnum = pgEnum("idr_status", [
+  "DRAFT",
+  "SUBMITTED",
+  "APPROVED",
+  "REVISED",
+]);
+export const buyAmericaStatusEnum = pgEnum("buy_america_status", [
+  "PENDING",
+  "VERIFIED",
+  "WAIVER_REQUESTED",
+  "WAIVER_GRANTED",
+  "NON_COMPLIANT",
+]);
+export const payrollFormVariantEnum = pgEnum("payroll_form_variant", [
+  "WH_347",
+  "ODOT_CA_D_9C",
+  "CALTRANS_CEM_2502",
+  "TXDOT",
+  "FDOT",
+  "GENERIC",
+]);
+
 // Organization Document Enums
 export const organizationDocumentTypeEnum = pgEnum("organization_document_type", [
   "LOGO_PRIMARY",

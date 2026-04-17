@@ -145,6 +145,7 @@ const EquipmentPage = lazy(() => import("@/pages/equipment"));
 const EquipmentDetailPage = lazy(() => import("@/pages/equipment-detail"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const PlatformAdminDashboard = lazy(() => import("@/pages/PlatformAdminDashboard"));
+const DotLibraryPage = lazy(() => import("@/pages/DotLibraryPage"));
 const PlatformOrganizations = lazy(() => import("@/pages/PlatformOrganizations"));
 const PlatformOrganizationDetail = lazy(() => import("@/pages/PlatformOrganizationDetail"));
 const PlatformAnalyticsMonitoring = lazy(() => import("@/pages/PlatformAnalyticsMonitoring"));
@@ -478,6 +479,7 @@ function Router() {
       
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/dot-library" component={() => <ProtectedRoute component={DotLibraryPage} />} />
       <Route path="/admin/organizations/:id/view" component={() => <ProtectedRoute component={ViewAsOrganization} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations/:id" component={() => <ProtectedRoute component={PlatformOrganizationDetail} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

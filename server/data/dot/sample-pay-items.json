@@ -1,0 +1,52 @@
+{
+  "FHWA": {
+    "specBook": { "edition": "2014", "title": "Standard Specifications for Construction of Roads and Bridges on Federal Highway Projects (FP-14)" },
+    "items": [
+      { "itemNumber": "151.01", "description": "Clearing and Grubbing", "unit": "AC", "specSection": "151", "category": "Earthwork" },
+      { "itemNumber": "203.02", "description": "Roadway Excavation", "unit": "CY", "specSection": "203", "category": "Earthwork" },
+      { "itemNumber": "203.03", "description": "Borrow Excavation", "unit": "CY", "specSection": "203", "category": "Earthwork" },
+      { "itemNumber": "208.01", "description": "Erosion Control", "unit": "LS", "specSection": "208", "category": "Erosion Control" },
+      { "itemNumber": "301.01", "description": "Subgrade Preparation", "unit": "SY", "specSection": "301", "category": "Base Course" },
+      { "itemNumber": "303.02", "description": "Aggregate Base Course", "unit": "TON", "specSection": "303", "category": "Base Course" },
+      { "itemNumber": "401.03", "description": "Hot Asphalt Concrete Pavement", "unit": "TON", "specSection": "401", "category": "Asphalt Paving" },
+      { "itemNumber": "501.03", "description": "Portland Cement Concrete Pavement", "unit": "SY", "specSection": "501", "category": "Concrete Paving" },
+      { "itemNumber": "601.03", "description": "Structural Concrete, Class A", "unit": "CY", "specSection": "601", "category": "Structures" },
+      { "itemNumber": "602.01", "description": "Reinforcing Steel", "unit": "LB", "specSection": "602", "category": "Structures" },
+      { "itemNumber": "603.04", "description": "Reinforced Concrete Pipe, 18 inch", "unit": "LF", "specSection": "603", "category": "Drainage" },
+      { "itemNumber": "611.01", "description": "Catch Basin", "unit": "EA", "specSection": "611", "category": "Drainage" },
+      { "itemNumber": "624.01", "description": "Topsoil Placement", "unit": "CY", "specSection": "624", "category": "Roadside Development" },
+      { "itemNumber": "625.01", "description": "Seeding and Mulching", "unit": "AC", "specSection": "625", "category": "Roadside Development" },
+      { "itemNumber": "633.01", "description": "Permanent Pavement Markings, 4 inch", "unit": "LF", "specSection": "633", "category": "Traffic Control" },
+      { "itemNumber": "634.01", "description": "Sign Panels", "unit": "SF", "specSection": "634", "category": "Traffic Control" },
+      { "itemNumber": "635.01", "description": "Guardrail, W-Beam", "unit": "LF", "specSection": "635", "category": "Traffic Control" },
+      { "itemNumber": "641.01", "description": "Mobilization", "unit": "LS", "specSection": "641", "category": "General" },
+      { "itemNumber": "643.01", "description": "Traffic Control", "unit": "LS", "specSection": "643", "category": "Traffic Control" },
+      { "itemNumber": "657.01", "description": "Construction Survey and Layout", "unit": "LS", "specSection": "657", "category": "General" }
+    ]
+  },
+  "ODOT": {
+    "specBook": { "edition": "2023", "title": "Construction and Material Specifications (C&MS)" },
+    "items": [
+      { "itemNumber": "201", "description": "Clearing and Grubbing", "unit": "LSUM", "specSection": "201", "category": "Earthwork" },
+      { "itemNumber": "203", "description": "Excavation", "unit": "CY", "specSection": "203", "category": "Earthwork" },
+      { "itemNumber": "203 E10000", "description": "Embankment", "unit": "CY", "specSection": "203", "category": "Earthwork" },
+      { "itemNumber": "204", "description": "Subgrade Compaction", "unit": "SY", "specSection": "204", "category": "Earthwork" },
+      { "itemNumber": "207", "description": "Linear Grading", "unit": "MILE", "specSection": "207", "category": "Earthwork" },
+      { "itemNumber": "304", "description": "Aggregate Base", "unit": "CY", "specSection": "304", "category": "Base Course" },
+      { "itemNumber": "407", "description": "Tack Coat", "unit": "GAL", "specSection": "407", "category": "Asphalt" },
+      { "itemNumber": "441", "description": "Asphalt Concrete Surface Course, Type 1", "unit": "CY", "specSection": "441", "category": "Asphalt" },
+      { "itemNumber": "451", "description": "Reinforced Concrete Pavement", "unit": "SY", "specSection": "451", "category": "Concrete Paving" },
+      { "itemNumber": "509", "description": "Reinforcing Steel", "unit": "LB", "specSection": "509", "category": "Structures" },
+      { "itemNumber": "511", "description": "Class C Concrete, Bridge Deck", "unit": "CY", "specSection": "511", "category": "Structures" },
+      { "itemNumber": "603", "description": "Conduit, Type C, 706.05, 18\"", "unit": "FT", "specSection": "603", "category": "Drainage" },
+      { "itemNumber": "611", "description": "Catch Basin, Type 2-2B", "unit": "EA", "specSection": "611", "category": "Drainage" },
+      { "itemNumber": "614", "description": "Maintaining Traffic", "unit": "LSUM", "specSection": "614", "category": "Traffic Control" },
+      { "itemNumber": "621", "description": "Object Marker, Type OM-1A", "unit": "EA", "specSection": "621", "category": "Traffic Control" },
+      { "itemNumber": "624", "description": "Mobilization", "unit": "LSUM", "specSection": "624", "category": "General" },
+      { "itemNumber": "630", "description": "Sign, Flat Sheet", "unit": "SF", "specSection": "630", "category": "Traffic Control" },
+      { "itemNumber": "642", "description": "Edge Line, 4\", Type 1", "unit": "MILE", "specSection": "642", "category": "Traffic Control" },
+      { "itemNumber": "659", "description": "Seeding and Mulching, Class 1", "unit": "ACRE", "specSection": "659", "category": "Roadside Development" },
+      { "itemNumber": "832", "description": "Erosion Control", "unit": "LSUM", "specSection": "832", "category": "Erosion Control" }
+    ]
+  }
+}
