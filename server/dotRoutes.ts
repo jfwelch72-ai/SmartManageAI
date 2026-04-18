@@ -1259,6 +1259,7 @@ router.post(
   "/api/haul-tickets/:id/submit",
   requireAuth,
   requireFeaturePermission("canManageHaulTickets"),
+  // Submission requires record-keeping (manage) right; approvers only review.
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -1273,7 +1274,7 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(haulTickets)
-      .set({ status: "SUBMITTED" as any, updatedAt: new Date() })
+      .set({ status: "SUBMITTED", updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
@@ -1296,7 +1297,7 @@ router.post(
 router.post(
   "/api/haul-tickets/:id/approve",
   requireAuth,
-  requireFeaturePermission("canManageHaulTickets"),
+  requireAnyFeaturePermission("canApproveHaulTickets", "canManageHaulTickets"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -1311,7 +1312,7 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(haulTickets)
-      .set({ status: "APPROVED" as any, approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
+      .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
@@ -1334,7 +1335,7 @@ router.post(
 router.post(
   "/api/haul-tickets/:id/reject",
   requireAuth,
-  requireFeaturePermission("canManageHaulTickets"),
+  requireAnyFeaturePermission("canApproveHaulTickets", "canManageHaulTickets"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -1349,7 +1350,7 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(haulTickets)
-      .set({ status: "REJECTED" as any, updatedAt: new Date() })
+      .set({ status: "REJECTED", updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
@@ -1373,7 +1374,7 @@ router.post(
 router.post(
   "/api/daily-inspector-reports/:id/submit",
   requireAuth,
-  requireFeaturePermission("canManageInspectorReports"),
+  requireAnyFeaturePermission("canSubmitInspectorReports", "canManageInspectorReports"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -1388,7 +1389,7 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(dailyInspectorReports)
-      .set({ status: "SUBMITTED" as any, submittedAt: new Date(), updatedAt: new Date() })
+      .set({ status: "SUBMITTED", submittedAt: new Date(), updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
@@ -1411,7 +1412,7 @@ router.post(
 router.post(
   "/api/daily-inspector-reports/:id/approve",
   requireAuth,
-  requireFeaturePermission("canManageInspectorReports"),
+  requireAnyFeaturePermission("canApproveInspectorReports", "canManageInspectorReports"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -1426,7 +1427,7 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(dailyInspectorReports)
-      .set({ status: "APPROVED" as any, approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
+      .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
@@ -1449,7 +1450,7 @@ router.post(
 router.post(
   "/api/daily-inspector-reports/:id/reject",
   requireAuth,
-  requireFeaturePermission("canManageInspectorReports"),
+  requireAnyFeaturePermission("canApproveInspectorReports", "canManageInspectorReports"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -1464,7 +1465,9 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(dailyInspectorReports)
-      .set({ status: "REJECTED" as any, updatedAt: new Date() })
+      // idr_status enum lacks REJECTED — semantically a rejection sends the
+      // report back to the inspector for revision, modeled as REVISED.
+      .set({ status: "REVISED", updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
@@ -1487,7 +1490,7 @@ router.post(
 router.post(
   "/api/daily-inspector-reports/:id/request-revision",
   requireAuth,
-  requireFeaturePermission("canManageInspectorReports"),
+  requireAnyFeaturePermission("canApproveInspectorReports", "canManageInspectorReports"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -1497,7 +1500,7 @@ router.post(
     if (!prev) return res.status(404).json({ error: "Not found" });
     const orgId = prev.organizationId;
     const [row] = await db.update(dailyInspectorReports)
-      .set({ status: "DRAFT" as any, submittedAt: null, updatedAt: new Date() })
+      .set({ status: "DRAFT", submittedAt: null, updatedAt: new Date() })
       .where(and(...conditions)).returning();
     if (prev.inspectorId) {
       await notifySubmitter(prev.inspectorId, {
@@ -1559,7 +1562,9 @@ router.post(
     if (!prev) return res.status(404).json({ error: "Not found" });
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
-    const buyAmericaStatus = (req.body?.buyAmericaStatus as "VERIFIED" | "NON_COMPLIANT" | "WAIVER_GRANTED") ?? "VERIFIED";
+    type BuyAmericaTransition = "VERIFIED" | "NON_COMPLIANT" | "WAIVER_GRANTED";
+    const buyAmericaStatus: BuyAmericaTransition =
+      (req.body?.buyAmericaStatus as BuyAmericaTransition | undefined) ?? "VERIFIED";
     const delegation = await workflowEngine.delegateEntityTransition(
       orgId, "MATERIAL_CERT", prev.id, req.user!.id, role, "VERIFIED", req.body?.notes,
     );
@@ -1567,7 +1572,7 @@ router.post(
     const [row] = await db.update(materialCertifications)
       .set({
         verifiedById: req.user!.id, verifiedAt: new Date(),
-        buyAmericaStatus: buyAmericaStatus as any, updatedAt: new Date(),
+        buyAmericaStatus, updatedAt: new Date(),
       })
       .where(and(...conditions)).returning();
     await eventBus.emit({
@@ -1611,7 +1616,7 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(materialCertifications)
-      .set({ buyAmericaStatus: "NON_COMPLIANT" as any, updatedAt: new Date() })
+      .set({ buyAmericaStatus: "NON_COMPLIANT", updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await notifyApprovers(orgId, req.user!.id, {
       type: "MATERIAL_CERT_REJECTED",
@@ -1646,7 +1651,7 @@ router.post(
     );
     if (handleDelegationGate(res, delegation, prev)) return;
     const [row] = await db.update(suretyBonds)
-      .set({ status: "ACTIVE" as any, updatedAt: new Date() })
+      .set({ status: "ACTIVE", updatedAt: new Date() })
       .where(and(...conditions)).returning();
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),

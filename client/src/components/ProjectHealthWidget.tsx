@@ -41,11 +41,14 @@ interface HealthSnapshot {
       expiredBonds?: number;
       expiringSoonBonds?: number;
       nonCompliantMaterialCerts?: number;
-      stalePendingCerts?: number;
+      expiredMaterialCerts?: number;
+      idrWorkdaysExpected?: number;
       idrDaysWithReport?: number;
       missingIdrDays?: number;
       trackingIdr?: boolean;
       dbeGoalCount?: number;
+      dbeGoalsWithShortfall?: number;
+      dbeShortfallDollars?: number;
     };
   } | null;
 }
@@ -276,14 +279,29 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
                           <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.expiringSoonBonds ?? 0}</span>
                           <span>Non-compliant material certs</span>
                           <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.nonCompliantMaterialCerts ?? 0}</span>
-                          <span>Stale pending certs (&gt;30d)</span>
-                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.stalePendingCerts ?? 0}</span>
-                          <span>IDR days (last 14)</span>
-                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.idrDaysWithReport ?? 0}</span>
-                          <span>Missing IDR days</span>
+                          <span>Expired material certs</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.expiredMaterialCerts ?? 0}</span>
+                          <span>IDR workdays (last 14)</span>
+                          <span className="text-right tabular-nums">
+                            {snapshot?.breakdown?.compliance?.idrDaysWithReport ?? 0}
+                            {snapshot?.breakdown?.compliance?.idrWorkdaysExpected != null
+                              ? ` / ${snapshot.breakdown.compliance.idrWorkdaysExpected}`
+                              : ""}
+                          </span>
+                          <span>Missing IDR workdays</span>
                           <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.missingIdrDays ?? 0}</span>
                           <span>DBE goals defined</span>
                           <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.dbeGoalCount ?? 0}</span>
+                          <span>DBE goals short</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.dbeGoalsWithShortfall ?? 0}</span>
+                          {snapshot?.breakdown?.compliance?.dbeShortfallDollars != null && snapshot.breakdown.compliance.dbeShortfallDollars > 0 && (
+                            <>
+                              <span>DBE shortfall ($)</span>
+                              <span className="text-right tabular-nums">
+                                {snapshot.breakdown.compliance.dbeShortfallDollars.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </TooltipContent>
                     </Tooltip>

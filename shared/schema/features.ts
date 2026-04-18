@@ -8951,6 +8951,7 @@ export const materialCertifications = pgTable("material_certifications", {
   waiverReason: text("waiver_reason"),
   documentUrl: text("document_url"),
   receivedDate: date("received_date"),
+  expirationDate: date("expiration_date"),
   verifiedById: varchar("verified_by_id").references(() => users.id),
   verifiedAt: timestamp("verified_at"),
   notes: text("notes"),

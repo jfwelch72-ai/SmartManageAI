@@ -335,30 +335,40 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
     ));
   const nonCompliantCount = Number(nonCompliantCerts[0]?.cnt || 0);
 
-  // Pending/unverified material certs older than 30 days
-  const pendingCerts = await db
+  // Expired material certifications (cert past expiration_date and still
+  // tracked as in-use, i.e. not WAIVER_GRANTED).
+  const expiredCertsRows = await db
     .select({ cnt: sql<number>`count(*)` })
     .from(materialCertifications)
     .where(and(
       eq(materialCertifications.organizationId, orgId),
       eq(materialCertifications.projectId, projectId),
-      eq(materialCertifications.buyAmericaStatus, "PENDING"),
-      sql`${materialCertifications.createdAt} < NOW() - INTERVAL '30 days'`,
+      sql`${materialCertifications.expirationDate} IS NOT NULL`,
+      sql`${materialCertifications.expirationDate} < ${todayStr}`,
+      sql`${materialCertifications.buyAmericaStatus} <> 'WAIVER_GRANTED'`,
     ));
-  const stalePendingCount = Number(pendingCerts[0]?.cnt || 0);
+  const expiredCertCount = Number(expiredCertsRows[0]?.cnt || 0);
 
-  // Count distinct days in last 14 with an APPROVED or SUBMITTED IDR
+  // Compute IDR coverage over active workdays (Mon-Fri, DOW 1-5) in last 14d.
   const fourteenDaysAgo = new Date(today.getTime() - 14 * 86400000).toISOString().split("T")[0];
-  const idrDays = await db
-    .select({ cnt: sql<number>`count(DISTINCT ${dailyInspectorReports.reportDate})` })
-    .from(dailyInspectorReports)
-    .where(and(
-      eq(dailyInspectorReports.organizationId, orgId),
-      eq(dailyInspectorReports.projectId, projectId),
-      sql`${dailyInspectorReports.reportDate} >= ${fourteenDaysAgo}`,
-      sql`${dailyInspectorReports.status} IN ('SUBMITTED', 'APPROVED')`,
-    ));
-  const idrDaysWithReport = Number(idrDays[0]?.cnt || 0);
+  const idrWeekdayRows = await db.execute(sql`
+    WITH workdays AS (
+      SELECT generate_series(${fourteenDaysAgo}::date, ${todayStr}::date, '1 day')::date AS d
+    ),
+    active AS (
+      SELECT d FROM workdays WHERE EXTRACT(DOW FROM d) BETWEEN 1 AND 5
+    )
+    SELECT
+      (SELECT COUNT(*) FROM active) AS workday_count,
+      (SELECT COUNT(DISTINCT report_date) FROM daily_inspector_reports
+        WHERE organization_id = ${orgId} AND project_id = ${projectId}
+          AND report_date >= ${fourteenDaysAgo}
+          AND status IN ('SUBMITTED', 'APPROVED')
+          AND EXTRACT(DOW FROM report_date) BETWEEN 1 AND 5
+      ) AS reported_workdays
+  `);
+  const workdayCount = Number((idrWeekdayRows.rows[0] as any)?.workday_count || 0);
+  const idrDaysWithReport = Number((idrWeekdayRows.rows[0] as any)?.reported_workdays || 0);
   // Only score IDR coverage when at least one IDR has ever been logged for this project
   const anyIdrEver = await db
     .select({ cnt: sql<number>`count(*)` })
@@ -368,26 +378,68 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
       eq(dailyInspectorReports.projectId, projectId),
     ));
   const trackingIdr = Number(anyIdrEver[0]?.cnt || 0) > 0;
-  const missingIdrDays = trackingIdr ? Math.max(0, 14 - idrDaysWithReport) : 0;
+  const missingIdrDays = trackingIdr ? Math.max(0, workdayCount - idrDaysWithReport) : 0;
 
-  // DBE goal coverage: count goals defined for the project (transparency only —
-  // actuals tracking infrastructure is a future task; surfaces presence of
-  // commitments without scoring shortfall).
-  const dbeGoals = await db
-    .select({ cnt: sql<number>`count(*)` })
-    .from(projectDbeGoals)
-    .where(and(
-      eq(projectDbeGoals.organizationId, orgId),
-      eq(projectDbeGoals.projectId, projectId),
-    ));
-  const dbeGoalCount = Number(dbeGoals[0]?.cnt || 0);
+  // DBE participation shortfall: compare goalDollars vs actual PO award to
+  // crm_organisations whose certification matches the goal type and is still
+  // active (effective_date<=today, expiration_date>=today). Awarded amount =
+  // SUM(po.total_amount) for non-CANCELLED POs to those vendors. If goalDollars
+  // is null but goalPercent is set, fall back to projectValue * goalPercent/100.
+  const dbeShortfallRows = await db.execute(sql`
+    WITH goals AS (
+      SELECT pdg.id, pdg.certification_type,
+             COALESCE(pdg.goal_dollars, NULL) AS goal_dollars,
+             pdg.goal_percent
+        FROM project_dbe_goals pdg
+       WHERE pdg.organization_id = ${orgId}
+         AND pdg.project_id = ${projectId}
+    ),
+    project_value AS (
+      SELECT COALESCE(budget, 0)::numeric AS v
+        FROM projects WHERE id = ${projectId}
+    ),
+    awarded AS (
+      SELECT g.id AS goal_id,
+             COALESCE(SUM(po.total_amount), 0)::numeric AS awarded_dollars
+        FROM goals g
+        LEFT JOIN purchase_orders po
+               ON po.organization_id = ${orgId}
+              AND po.project_id = ${projectId}
+              AND po.status <> 'CANCELLED'
+        LEFT JOIN crm_organisation_certifications coc
+               ON coc.crm_organisation_id = po.vendor_id
+              AND coc.certification_type = g.certification_type
+              AND (coc.effective_date IS NULL OR coc.effective_date <= ${todayStr}::date)
+              AND (coc.expiration_date IS NULL OR coc.expiration_date >= ${todayStr}::date)
+       WHERE coc.id IS NOT NULL
+       GROUP BY g.id
+    )
+    SELECT g.id, g.certification_type,
+           COALESCE(g.goal_dollars, (g.goal_percent / 100.0) * (SELECT v FROM project_value)) AS effective_goal,
+           COALESCE(a.awarded_dollars, 0) AS awarded
+      FROM goals g
+      LEFT JOIN awarded a ON a.goal_id = g.id
+  `).catch(() => ({ rows: [] as any[] }));
+  let dbeGoalCount = 0;
+  let dbeGoalsWithShortfall = 0;
+  let dbeShortfallDollars = 0;
+  for (const r of (dbeShortfallRows.rows as any[])) {
+    dbeGoalCount += 1;
+    const goal = Number(r.effective_goal || 0);
+    const awarded = Number(r.awarded || 0);
+    if (goal > 0 && awarded < goal) {
+      dbeGoalsWithShortfall += 1;
+      dbeShortfallDollars += goal - awarded;
+    }
+  }
 
   let score = 100;
   score -= Math.min(45, expiredBondCount * 15);
   score -= Math.min(15, expiringSoonBondCount * 5);
   score -= Math.min(30, nonCompliantCount * 10);
-  score -= Math.min(15, stalePendingCount * 3);
+  score -= Math.min(20, expiredCertCount * 5);
   score -= Math.min(40, missingIdrDays * 3);
+  score -= Math.min(20, dbeGoalsWithShortfall * 7);
 
   return {
     score: clampScore(score),
@@ -395,11 +447,14 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
       expiredBonds: expiredBondCount,
       expiringSoonBonds: expiringSoonBondCount,
       nonCompliantMaterialCerts: nonCompliantCount,
-      stalePendingCerts: stalePendingCount,
+      expiredMaterialCerts: expiredCertCount,
+      idrWorkdaysExpected: workdayCount,
       idrDaysWithReport,
       missingIdrDays,
       trackingIdr,
       dbeGoalCount,
+      dbeGoalsWithShortfall,
+      dbeShortfallDollars: Math.round(dbeShortfallDollars * 100) / 100,
     },
   };
 }
