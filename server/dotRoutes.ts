@@ -58,6 +58,29 @@ async function userHasApprovalPermission(
   const perms = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, role);
   return Boolean(perms[permKey]);
 }
+
+async function userHasManagePermission(
+  req: AuthRequest,
+  permKey: FeaturePermissionKey,
+): Promise<boolean> {
+  if (!req.user) return false;
+  if (req.user.role === "SUPER_ADMIN" || req.user.role === "ADMIN") return true;
+  const role = req.user.effectiveRole || req.user.role;
+  const perms = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, role);
+  return Boolean(perms[permKey]);
+}
+
+// Restrict an incoming PATCH body to a whitelist of fields. Returns a new object
+// containing only the allowed keys, plus a flag indicating disallowed fields were stripped.
+function pickAllowedFields<T extends Record<string, any>>(patch: T, allowed: readonly string[]): { picked: Partial<T>; rejected: string[] } {
+  const picked: Partial<T> = {};
+  const rejected: string[] = [];
+  for (const k of Object.keys(patch)) {
+    if (allowed.includes(k)) (picked as any)[k] = patch[k];
+    else rejected.push(k);
+  }
+  return { picked, rejected };
+}
 import { eventBus } from "./events/eventBus";
 import { validateBody } from "./utils/validation";
 import { z } from "zod";
@@ -639,12 +662,21 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, recordedById: _r, ...patch } = req.body || {};
+    const { id: _id, organizationId: _o, createdAt: _c, recordedById: _r, ...rawPatch } = req.body || {};
     const conditions: any[] = [eq(haulTickets.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+
+    // Field-level authz: approve-only users (no manage) may change status/notes only.
+    const canManage = await userHasManagePermission(req, "canManageHaulTickets");
+    const patch = canManage
+      ? rawPatch
+      : pickAllowedFields(rawPatch, ["status", "notes"] as const).picked;
+    if (!canManage && Object.keys(patch).length === 0) {
+      return res.status(403).json({ error: "Approval-only role may modify status/notes only" });
+    }
 
     if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
       const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveHaulTickets");
@@ -817,12 +849,31 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, ...patch } = req.body || {};
+    const { id: _id, organizationId: _o, createdAt: _c, ...rawPatch } = req.body || {};
     const conditions: any[] = [eq(dailyInspectorReports.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+
+    // Field-level authz:
+    //  - manage: full edit
+    //  - submit: may edit own DRAFT report fields, never status->APPROVED
+    //  - approve-only: may change status/approval notes only
+    const canManage = await userHasManagePermission(req, "canManageInspectorReports");
+    const canSubmit = await userHasManagePermission(req, "canSubmitInspectorReports");
+    let patch: any;
+    if (canManage) {
+      patch = rawPatch;
+    } else if (canSubmit && prev.inspectorId === req.user!.id && prev.status !== "APPROVED") {
+      const { status: _s, approvedById: _ab, approvedAt: _aa, ...rest } = rawPatch;
+      patch = rest;
+    } else {
+      patch = pickAllowedFields(rawPatch, ["status", "notes"] as const).picked;
+    }
+    if (Object.keys(patch).length === 0) {
+      return res.status(403).json({ error: "No fields permitted for your role" });
+    }
 
     if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
       const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveInspectorReports");
@@ -1027,12 +1078,21 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, ...patch } = req.body || {};
+    const { id: _id, organizationId: _o, createdAt: _c, ...rawPatch } = req.body || {};
     const conditions: any[] = [eq(materialCertifications.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+
+    // Field-level authz: verify-only users may only set verification fields and Buy America status.
+    const canManage = await userHasManagePermission(req, "canManageMaterialCertifications");
+    const patch = canManage
+      ? rawPatch
+      : pickAllowedFields(rawPatch, ["verifiedAt", "verifiedById", "buyAmericaStatus", "verificationNotes"] as const).picked;
+    if (!canManage && Object.keys(patch).length === 0) {
+      return res.status(403).json({ error: "Verify-only role may modify verification fields only" });
+    }
 
     const wasVerified = Boolean(prev.verifiedAt || prev.verifiedById);
     const willBeVerified = Boolean(
