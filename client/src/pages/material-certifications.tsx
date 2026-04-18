@@ -64,7 +64,7 @@ export default function MaterialCertificationsPage() {
           <h1 className="text-2xl font-semibold">Material Certifications</h1>
           <p className="text-sm text-muted-foreground">Buy America compliance — manufacturer, mill, heat number, and certification status for each material delivery.</p>
         </div>
-        <Button onClick={() => setEditing("new")} data-testid="button-new-cert"><Plus className="h-4 w-4 mr-2" />New Certification</Button>
+        {canManage && (<Button onClick={() => setEditing("new")} data-testid="button-new-cert"><Plus className="h-4 w-4 mr-2" />New Certification</Button>)}
       </div>
 
       <div className="max-w-md">
@@ -88,8 +88,8 @@ export default function MaterialCertificationsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <Badge variant={STATUS_VARIANT[c.buyAmericaStatus] || "outline"}>{c.buyAmericaStatus.replace(/_/g, " ")}</Badge>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(c)} data-testid={`button-edit-cert-${c.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(c)} data-testid={`button-delete-cert-${c.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    {(canManage || canVerify) && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(c)} data-testid={`button-edit-cert-${c.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>)}
+                    {canManage && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(c)} data-testid={`button-delete-cert-${c.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>)}
                   </div>
                 </div>
               </CardHeader>

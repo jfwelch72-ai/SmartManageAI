@@ -60,7 +60,7 @@ export default function SwpppInspectionsPage() {
           <h1 className="text-2xl font-semibold">SWPPP Inspections</h1>
           <p className="text-sm text-muted-foreground">NPDES storm water inspections — BMP checklists, deficiencies, and corrective actions.</p>
         </div>
-        <Button onClick={() => setEditing("new")} data-testid="button-new-swppp"><Plus className="h-4 w-4 mr-2" />New Inspection</Button>
+        {canManage && (<Button onClick={() => setEditing("new")} data-testid="button-new-swppp"><Plus className="h-4 w-4 mr-2" />New Inspection</Button>)}
       </div>
 
       <div className="max-w-md">
@@ -84,8 +84,8 @@ export default function SwpppInspectionsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <Badge variant="outline">{s.inspectionType.replace(/_/g, " ")}</Badge>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(s)} data-testid={`button-edit-swppp-${s.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(s)} data-testid={`button-delete-swppp-${s.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    {canManage && (<><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(s)} data-testid={`button-edit-swppp-${s.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(s)} data-testid={`button-delete-swppp-${s.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button></>)}
                   </div>
                 </div>
               </CardHeader>

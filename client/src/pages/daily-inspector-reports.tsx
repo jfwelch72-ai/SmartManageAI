@@ -64,7 +64,7 @@ export default function DailyInspectorReportsPage() {
           <h1 className="text-2xl font-semibold">Daily Inspector Reports</h1>
           <p className="text-sm text-muted-foreground">DOT-style daily field reports — weather, crews, equipment, and work performed.</p>
         </div>
-        <Button onClick={() => setEditing("new")} data-testid="button-new-idr"><Plus className="h-4 w-4 mr-2" />New IDR</Button>
+        {canManage && (<Button onClick={() => setEditing("new")} data-testid="button-new-idr"><Plus className="h-4 w-4 mr-2" />New IDR</Button>)}
       </div>
 
       <div className="max-w-md">
@@ -88,8 +88,8 @@ export default function DailyInspectorReportsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <Badge variant={STATUS_VARIANT[r.status] || "outline"}>{r.status}</Badge>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(r)} data-testid={`button-edit-idr-${r.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(r)} data-testid={`button-delete-idr-${r.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    {(canManage || canApprove) && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(r)} data-testid={`button-edit-idr-${r.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>)}
+                    {canManage && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(r)} data-testid={`button-delete-idr-${r.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>)}
                   </div>
                 </div>
               </CardHeader>

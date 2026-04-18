@@ -29,7 +29,7 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import {
   requireAuth,
   requireRole,
-  requireRoleOrFeature,
+  requireFeaturePermission,
   type AuthRequest,
 } from "./auth";
 import { requireOrgOwnership } from "./orgFilter";
@@ -194,7 +194,7 @@ router.get("/api/dot/preferences", requireAuth, async (req: AuthRequest, res: Re
 router.post(
   "/api/dot/preferences",
   requireAuth,
-  requireRoleOrFeature(["ADMIN"], "canManageDotLibrary"),
+  requireFeaturePermission("canManageDotLibrary"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -216,7 +216,7 @@ router.post(
 router.delete(
   "/api/dot/preferences/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN"], "canManageDotLibrary"),
+  requireFeaturePermission("canManageDotLibrary"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -247,7 +247,7 @@ router.get("/api/dot/pay-item-overrides", requireAuth, async (req: AuthRequest, 
 router.post(
   "/api/dot/pay-item-overrides",
   requireAuth,
-  requireRoleOrFeature(["ADMIN"], "canManageDotLibrary"),
+  requireFeaturePermission("canManageDotLibrary"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -265,19 +265,27 @@ router.post(
 // =========================
 // DBE Goals (per project)
 // =========================
+const KEY_DBE_GOALS = (projectId: string) => `dot:dbe-goals:${projectId}`;
+
 router.get("/api/projects/:projectId/dbe-goals", requireAuth, async (req: AuthRequest, res: Response) => {
   const ctx = requireOrgOwnership(req, res);
   if (!ctx) return;
-  const conditions: any[] = [eq(projectDbeGoals.projectId, req.params.projectId)];
-  if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
-  const rows = await db.select().from(projectDbeGoals).where(and(...conditions));
+  const projectId = req.params.projectId;
+  const fetchRows = async () => {
+    const conditions: any[] = [eq(projectDbeGoals.projectId, projectId)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
+    return db.select().from(projectDbeGoals).where(and(...conditions));
+  };
+  const rows = ctx.isSuperAdmin
+    ? await fetchRows()
+    : await orgScopedCache(ctx.orgId!, KEY_DBE_GOALS(projectId), 60_000, fetchRows);
   res.json(rows);
 });
 
 router.post(
   "/api/projects/:projectId/dbe-goals",
   requireAuth,
-  requireRoleOrFeature(["ADMIN"], "canManageDbeGoals"),
+  requireFeaturePermission("canManageDbeGoals"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -292,6 +300,7 @@ router.post(
     }, res);
     if (!data) return;
     const [row] = await db.insert(projectDbeGoals).values(data).returning();
+    cacheInvalidate(ctx.orgId!, KEY_DBE_GOALS(row.projectId));
     await eventBus.emit({
       version: 1,
       orgId: ctx.orgId!,
@@ -313,7 +322,7 @@ router.post(
 router.patch(
   "/api/projects/:projectId/dbe-goals/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN"], "canManageDbeGoals"),
+  requireFeaturePermission("canManageDbeGoals"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -327,6 +336,7 @@ router.patch(
     if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
     const [row] = await db.update(projectDbeGoals).set(data).where(and(...conditions)).returning();
     if (!row) return res.status(404).json({ error: "DBE goal not found" });
+    cacheInvalidate(row.organizationId, KEY_DBE_GOALS(row.projectId));
     await eventBus.emit({
       version: 1,
       orgId: row.organizationId,
@@ -348,13 +358,14 @@ router.patch(
 router.delete(
   "/api/projects/:projectId/dbe-goals/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN"], "canManageDbeGoals"),
+  requireFeaturePermission("canManageDbeGoals"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     const conditions: any[] = [eq(projectDbeGoals.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
-    await db.delete(projectDbeGoals).where(and(...conditions));
+    const [deleted] = await db.delete(projectDbeGoals).where(and(...conditions)).returning();
+    if (deleted) cacheInvalidate(deleted.organizationId, KEY_DBE_GOALS(deleted.projectId));
     res.status(204).end();
   },
 );
@@ -374,7 +385,7 @@ router.get("/api/crm/organisations/:crmOrgId/certifications", requireAuth, async
 router.post(
   "/api/crm/organisations/:crmOrgId/certifications",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateCRMContacts"),
+  requireFeaturePermission("canCreateCRMContacts"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -395,7 +406,7 @@ router.post(
 router.delete(
   "/api/crm/organisations/:crmOrgId/certifications/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateCRMContacts"),
+  requireFeaturePermission("canCreateCRMContacts"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -425,7 +436,7 @@ router.get("/api/surety-bonds", requireAuth, async (req: AuthRequest, res: Respo
 router.post(
   "/api/surety-bonds",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSuretyBonds"),
+  requireFeaturePermission("canManageSuretyBonds"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -459,17 +470,49 @@ router.post(
 router.patch(
   "/api/surety-bonds/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSuretyBonds"),
+  requireFeaturePermission("canManageSuretyBonds"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
     const conditions: any[] = [eq(suretyBonds.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(suretyBonds).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
     const [row] = await db.update(suretyBonds).set({ ...patch, updatedAt: new Date() })
       .where(and(...conditions))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
+
+    if (patch.status && patch.status !== prev.status) {
+      if (patch.status === "EXPIRED") {
+        await eventBus.emit({
+          version: 1,
+          orgId: row.organizationId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "surety_bond.expired",
+          payload: {
+            bondId: row.id,
+            projectId: row.projectId ?? null,
+            expirationDate: row.expirationDate ? String(row.expirationDate) : null,
+          },
+        });
+      } else if (patch.status === "RELEASED") {
+        await eventBus.emit({
+          version: 1,
+          orgId: row.organizationId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "surety_bond.released",
+          payload: {
+            bondId: row.id,
+            projectId: row.projectId ?? null,
+            releasedBy: req.user!.id,
+          },
+        });
+      }
+    }
     res.json(row);
   },
 );
@@ -477,7 +520,7 @@ router.patch(
 router.delete(
   "/api/surety-bonds/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSuretyBonds"),
+  requireFeaturePermission("canManageSuretyBonds"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -508,7 +551,7 @@ router.get("/api/haul-tickets", requireAuth, async (req: AuthRequest, res: Respo
 router.post(
   "/api/haul-tickets",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageHaulTickets"),
+  requireFeaturePermission("canManageHaulTickets"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -543,7 +586,7 @@ router.post(
 router.patch(
   "/api/haul-tickets/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageHaulTickets"),
+  requireFeaturePermission("canManageHaulTickets"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -579,7 +622,7 @@ router.patch(
             totalCost: row.totalCost !== null && row.totalCost !== undefined ? String(row.totalCost) : null,
           },
         });
-      } else if (patch.status === "VOIDED" || patch.status === "REJECTED") {
+      } else if (patch.status === "VOIDED") {
         await eventBus.emit({
           version: 1,
           orgId: row.organizationId,
@@ -590,7 +633,21 @@ router.patch(
             ticketId: row.id,
             projectId: row.projectId ?? null,
             voidedBy: req.user!.id,
-            reason: (patch.notes as string | null) ?? null,
+            reason: typeof patch.notes === "string" ? patch.notes : null,
+          },
+        });
+      } else if (patch.status === "REJECTED") {
+        await eventBus.emit({
+          version: 1,
+          orgId: row.organizationId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "haul_ticket.rejected",
+          payload: {
+            ticketId: row.id,
+            projectId: row.projectId ?? null,
+            rejectedBy: req.user!.id,
+            reason: typeof patch.notes === "string" ? patch.notes : null,
           },
         });
       }
@@ -602,7 +659,7 @@ router.patch(
 router.delete(
   "/api/haul-tickets/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageHaulTickets"),
+  requireFeaturePermission("canManageHaulTickets"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -648,7 +705,7 @@ router.get("/api/daily-inspector-reports", requireAuth, async (req: AuthRequest,
 router.post(
   "/api/daily-inspector-reports",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageInspectorReports"),
+  requireFeaturePermission("canManageInspectorReports"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -671,7 +728,7 @@ router.post(
       payload: {
         reportId: row.id,
         projectId: row.projectId,
-        reportDate: typeof row.reportDate === "string" ? row.reportDate : new Date(row.reportDate as any).toISOString(),
+        reportDate: String(row.reportDate),
         inspectorId: row.inspectorId,
       },
     });
@@ -682,7 +739,7 @@ router.post(
 router.patch(
   "/api/daily-inspector-reports/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageInspectorReports"),
+  requireFeaturePermission("canManageInspectorReports"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -724,7 +781,7 @@ router.patch(
 router.delete(
   "/api/daily-inspector-reports/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageInspectorReports"),
+  requireFeaturePermission("canManageInspectorReports"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -755,7 +812,7 @@ router.get("/api/swppp-inspections", requireAuth, async (req: AuthRequest, res: 
 router.post(
   "/api/swppp-inspections",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageSwppp"),
+  requireFeaturePermission("canManageSwppp"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -778,8 +835,8 @@ router.post(
       payload: {
         inspectionId: row.id,
         projectId: row.projectId,
-        inspectionDate: typeof row.inspectionDate === "string" ? row.inspectionDate : new Date(row.inspectionDate as any).toISOString(),
-        deficienciesFound: !!(row as any).deficienciesFound,
+        inspectionDate: String(row.inspectionDate),
+        deficienciesFound: Boolean(row.deficienciesFound && row.deficienciesFound.trim().length > 0),
       },
     });
     res.status(201).json(row);
@@ -789,7 +846,7 @@ router.post(
 router.patch(
   "/api/swppp-inspections/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageSwppp"),
+  requireFeaturePermission("canManageSwppp"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -807,7 +864,7 @@ router.patch(
 router.delete(
   "/api/swppp-inspections/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSwppp"),
+  requireFeaturePermission("canManageSwppp"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -838,7 +895,7 @@ router.get("/api/material-certifications", requireAuth, async (req: AuthRequest,
 router.post(
   "/api/material-certifications",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageMaterialCertifications"),
+  requireFeaturePermission("canManageMaterialCertifications"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {
@@ -871,7 +928,7 @@ router.post(
 router.patch(
   "/api/material-certifications/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageMaterialCertifications"),
+  requireFeaturePermission("canManageMaterialCertifications"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -921,7 +978,7 @@ router.patch(
 router.delete(
   "/api/material-certifications/:id",
   requireAuth,
-  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageMaterialCertifications"),
+  requireFeaturePermission("canManageMaterialCertifications"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;

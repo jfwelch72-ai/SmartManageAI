@@ -434,6 +434,7 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "takeoff.version_superseded",
   "haul_ticket.created",
   "haul_ticket.approved",
+  "haul_ticket.rejected",
   "haul_ticket.voided",
   "daily_inspector_report.submitted",
   "daily_inspector_report.approved",
@@ -442,6 +443,8 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "material_certification.verified",
   "surety_bond.created",
   "surety_bond.expiring",
+  "surety_bond.expired",
+  "surety_bond.released",
   "dbe_goal.changed",
 ];
 
@@ -542,6 +545,34 @@ export interface SuretyBondExpiringEvent extends EventEnvelope {
     projectId: string | null;
     expirationDate: string;
     daysRemaining: number;
+  };
+}
+
+export interface SuretyBondExpiredEvent extends EventEnvelope {
+  type: "surety_bond.expired";
+  payload: {
+    bondId: string;
+    projectId: string | null;
+    expirationDate: string | null;
+  };
+}
+
+export interface SuretyBondReleasedEvent extends EventEnvelope {
+  type: "surety_bond.released";
+  payload: {
+    bondId: string;
+    projectId: string | null;
+    releasedBy: string;
+  };
+}
+
+export interface HaulTicketRejectedEvent extends EventEnvelope {
+  type: "haul_ticket.rejected";
+  payload: {
+    ticketId: string;
+    projectId: string | null;
+    rejectedBy: string;
+    reason: string | null;
   };
 }
 

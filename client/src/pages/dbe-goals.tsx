@@ -60,7 +60,7 @@ export default function DbeGoalsPage() {
           <h1 className="text-2xl font-semibold">DBE Goals</h1>
           <p className="text-sm text-muted-foreground">Disadvantaged Business Enterprise participation goals — DBE, MBE, WBE, SBE, VOSB and more.</p>
         </div>
-        <Button disabled={!projectId} onClick={() => setEditing("new")} data-testid="button-new-dbe-goal"><Plus className="h-4 w-4 mr-2" />New Goal</Button>
+        {canManage && (<Button disabled={!projectId} onClick={() => setEditing("new")} data-testid="button-new-dbe-goal"><Plus className="h-4 w-4 mr-2" />New Goal</Button>)}
       </div>
 
       <div className="max-w-md">
@@ -83,8 +83,8 @@ export default function DbeGoalsPage() {
                   <CardTitle className="text-base">{g.certificationType}</CardTitle>
                   <div className="flex items-center gap-1">
                     <Badge variant="default">{Number(g.goalPercent).toFixed(2)}%</Badge>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(g)} data-testid={`button-edit-dbe-${g.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(g)} data-testid={`button-delete-dbe-${g.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    {canManage && (<><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(g)} data-testid={`button-edit-dbe-${g.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(g)} data-testid={`button-delete-dbe-${g.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button></>)}
                   </div>
                 </div>
               </CardHeader>

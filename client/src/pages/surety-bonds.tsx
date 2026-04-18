@@ -64,7 +64,7 @@ export default function SuretyBondsPage() {
           <h1 className="text-2xl font-semibold">Surety Bonds</h1>
           <p className="text-sm text-muted-foreground">Bid, performance, payment and other surety bonds — agents, premiums and expiration dates.</p>
         </div>
-        <Button onClick={() => setEditing("new")} data-testid="button-new-bond"><Plus className="h-4 w-4 mr-2" />New Bond</Button>
+        {canManage && (<Button onClick={() => setEditing("new")} data-testid="button-new-bond"><Plus className="h-4 w-4 mr-2" />New Bond</Button>)}
       </div>
 
       <div className="max-w-md">
@@ -88,8 +88,8 @@ export default function SuretyBondsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <Badge variant={STATUS_VARIANT[b.status] || "outline"}>{b.status}</Badge>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(b)} data-testid={`button-edit-bond-${b.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(b)} data-testid={`button-delete-bond-${b.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    {canManage && (<><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(b)} data-testid={`button-edit-bond-${b.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(b)} data-testid={`button-delete-bond-${b.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button></>)}
                   </div>
                 </div>
               </CardHeader>
