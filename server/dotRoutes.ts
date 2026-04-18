@@ -188,18 +188,26 @@ router.post("/api/dot/pay-items/bulk-upload", requireAuth, requireRole("SUPER_AD
 // =========================
 // Org-scoped DOT preferences
 // =========================
-router.get("/api/dot/preferences", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  if (ctx.isSuperAdmin) {
-    const rows = await db.select().from(organizationDotPreferences);
-    return res.json(rows);
-  }
-  const rows = await orgScopedCache(ctx.orgId!, KEY_ORG_PREFS, ORG_TTL_MS, () =>
-    db.select().from(organizationDotPreferences).where(eq(organizationDotPreferences.organizationId, ctx.orgId!))
-  );
-  res.json(rows);
-});
+router.get(
+  "/api/dot/preferences",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    if (ctx.isSuperAdmin) {
+      const targetOrg = superAdminTargetOrgId(req);
+      const rows = targetOrg
+        ? await db.select().from(organizationDotPreferences).where(eq(organizationDotPreferences.organizationId, targetOrg))
+        : await db.select().from(organizationDotPreferences);
+      return res.json(rows);
+    }
+    const rows = await orgScopedCache(ctx.orgId!, KEY_ORG_PREFS, ORG_TTL_MS, () =>
+      db.select().from(organizationDotPreferences).where(eq(organizationDotPreferences.organizationId, ctx.orgId!))
+    );
+    res.json(rows);
+  },
+);
 
 router.post(
   "/api/dot/preferences",
@@ -241,18 +249,26 @@ router.delete(
 // =========================
 // Pay item overrides (per-org)
 // =========================
-router.get("/api/dot/pay-item-overrides", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  if (ctx.isSuperAdmin) {
-    const rows = await db.select().from(dotPayItemOverrides);
-    return res.json(rows);
-  }
-  const rows = await orgScopedCache(ctx.orgId!, KEY_ORG_OVERRIDES, ORG_TTL_MS, () =>
-    db.select().from(dotPayItemOverrides).where(eq(dotPayItemOverrides.organizationId, ctx.orgId!))
-  );
-  res.json(rows);
-});
+router.get(
+  "/api/dot/pay-item-overrides",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    if (ctx.isSuperAdmin) {
+      const targetOrg = superAdminTargetOrgId(req);
+      const rows = targetOrg
+        ? await db.select().from(dotPayItemOverrides).where(eq(dotPayItemOverrides.organizationId, targetOrg))
+        : await db.select().from(dotPayItemOverrides);
+      return res.json(rows);
+    }
+    const rows = await orgScopedCache(ctx.orgId!, KEY_ORG_OVERRIDES, ORG_TTL_MS, () =>
+      db.select().from(dotPayItemOverrides).where(eq(dotPayItemOverrides.organizationId, ctx.orgId!))
+    );
+    res.json(rows);
+  },
+);
 
 router.post(
   "/api/dot/pay-item-overrides",
