@@ -367,8 +367,10 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
           AND EXTRACT(DOW FROM report_date) BETWEEN 1 AND 5
       ) AS reported_workdays
   `);
-  const workdayCount = Number((idrWeekdayRows.rows[0] as any)?.workday_count || 0);
-  const idrDaysWithReport = Number((idrWeekdayRows.rows[0] as any)?.reported_workdays || 0);
+  type IdrCoverageRow = { workday_count: number | string; reported_workdays: number | string };
+  const idrCoverage = idrWeekdayRows.rows[0] as IdrCoverageRow | undefined;
+  const workdayCount = Number(idrCoverage?.workday_count ?? 0);
+  const idrDaysWithReport = Number(idrCoverage?.reported_workdays ?? 0);
   // Only score IDR coverage when at least one IDR has ever been logged for this project
   const anyIdrEver = await db
     .select({ cnt: sql<number>`count(*)` })
@@ -423,10 +425,16 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
   let dbeGoalCount = 0;
   let dbeGoalsWithShortfall = 0;
   let dbeShortfallDollars = 0;
-  for (const r of (dbeShortfallRows.rows as any[])) {
+  type DbeShortfallRow = {
+    id: string;
+    certification_type: string;
+    effective_goal: number | string | null;
+    awarded: number | string | null;
+  };
+  for (const r of (dbeShortfallRows.rows as unknown as DbeShortfallRow[])) {
     dbeGoalCount += 1;
-    const goal = Number(r.effective_goal || 0);
-    const awarded = Number(r.awarded || 0);
+    const goal = Number(r.effective_goal ?? 0);
+    const awarded = Number(r.awarded ?? 0);
     if (goal > 0 && awarded < goal) {
       dbeGoalsWithShortfall += 1;
       dbeShortfallDollars += goal - awarded;

@@ -1578,20 +1578,35 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (MC_TERMINAL_BUYAM.includes(prev.buyAmericaStatus ?? "PENDING")) {
+      return res.status(409).json({
+        error: `Cannot submit certification in buyAmericaStatus ${prev.buyAmericaStatus}`,
+        currentStatus: prev.buyAmericaStatus,
+      });
+    }
+    if (prev.submittedAt) {
+      return res.status(409).json({
+        error: "Certification already submitted",
+        submittedAt: prev.submittedAt.toISOString(),
+      });
+    }
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
       orgId, "MATERIAL_CERT", prev.id, req.user!.id, role, "SUBMITTED", req.body?.notes,
     );
     if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(materialCertifications)
+      .set({ submittedById: req.user!.id, submittedAt: new Date(), updatedAt: new Date() })
+      .where(and(...conditions)).returning();
     await notifyApprovers(orgId, req.user!.id, {
       type: "MATERIAL_CERT_SUBMITTED",
       title: "Material Certification Submitted",
-      message: `${prev.materialDescription} submitted for verification`,
-      relatedEntityType: "MATERIAL_CERT", relatedEntityId: prev.id,
+      message: `${row.materialDescription} submitted for verification`,
+      relatedEntityType: "MATERIAL_CERT", relatedEntityId: row.id,
     });
-    await dotAudit(req, "SUBMIT", "material_certification", prev.id, prev, prev);
-    res.json({ ...prev, workflow: delegation });
+    await dotAudit(req, "SUBMIT", "material_certification", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
   },
 );
 

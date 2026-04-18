@@ -9,6 +9,61 @@ import crypto from "crypto";
 
 const router = Router();
 
+// Mobile sync typed contracts (shared by GET/POST sync handlers)
+type SyncEntityKey = "HAUL_TICKET" | "INSPECTOR_REPORT" | "SWPPP_INSPECTION";
+type OfflineOperation = "CREATE" | "UPDATE" | "DELETE";
+type MobileSyncRecord = {
+  id?: string;
+  localId?: string;
+  clientTimestamp?: string;
+  attachments?: Array<{
+    localId: string;
+    name?: string;
+    mime?: string;
+    size?: number;
+    objectKey?: string;
+  }>;
+  [k: string]: unknown;
+};
+type ProcessedItem = { localId: string; status: "QUEUED" | "CONFLICT"; serverUpdatedAt?: string };
+type ConflictItem = {
+  entityType: SyncEntityKey;
+  entityId: string;
+  localId?: string;
+  serverUpdatedAt: string;
+  clientTimestamp?: string;
+};
+// Org-scoped server lookup for conflict detection. Each entity's lookup runs
+// a typed query bounded by both id AND organizationId to prevent any
+// cross-tenant metadata leakage from the conflict response.
+type ServerSyncRow = { updatedAt: Date | null };
+const lookupServerRow: Record<SyncEntityKey, (id: string, orgId: string) => Promise<ServerSyncRow | undefined>> = {
+  HAUL_TICKET: async (id, orgId) => {
+    const [row] = await db
+      .select({ updatedAt: haulTickets.updatedAt })
+      .from(haulTickets)
+      .where(and(eq(haulTickets.id, id), eq(haulTickets.organizationId, orgId)))
+      .limit(1);
+    return row;
+  },
+  INSPECTOR_REPORT: async (id, orgId) => {
+    const [row] = await db
+      .select({ updatedAt: dailyInspectorReports.updatedAt })
+      .from(dailyInspectorReports)
+      .where(and(eq(dailyInspectorReports.id, id), eq(dailyInspectorReports.organizationId, orgId)))
+      .limit(1);
+    return row;
+  },
+  SWPPP_INSPECTION: async (id, orgId) => {
+    const [row] = await db
+      .select({ updatedAt: swpppInspections.updatedAt })
+      .from(swpppInspections)
+      .where(and(eq(swpppInspections.id, id), eq(swpppInspections.organizationId, orgId)))
+      .limit(1);
+    return row;
+  },
+};
+
 router.get("/api/ai-features/mobile-sync", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
@@ -371,9 +426,15 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { deviceId, changes } = req.body;
-    type ProcessedItem = { localId: string; status: "QUEUED" | "CONFLICT"; serverUpdatedAt?: string };
-    type ConflictItem = { entityType: string; entityId: string; localId?: string; serverUpdatedAt: string; clientTimestamp?: string };
+    const { deviceId, changes } = req.body as {
+      deviceId?: string;
+      changes?: {
+        timeClockEvents?: Array<{ localId: string; [k: string]: unknown }>;
+        haulTickets?: MobileSyncRecord[];
+        dailyInspectorReports?: MobileSyncRecord[];
+        swpppInspections?: MobileSyncRecord[];
+      };
+    };
     const processed: {
       timeClockEvents: ProcessedItem[];
       dailyLogs: ProcessedItem[];
@@ -398,32 +459,40 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       }
     }
 
-    // Conflict detection: when the client provides an existing record.id and a
-    // clientTimestamp, compare against the server row's updatedAt. If the
-    // server is newer, do not queue — return a conflict for client resolution.
-    type EntityKey = "HAUL_TICKET" | "INSPECTOR_REPORT" | "SWPPP_INSPECTION";
-    const tableForEntity = {
-      HAUL_TICKET: haulTickets,
-      INSPECTOR_REPORT: dailyInspectorReports,
-      SWPPP_INSPECTION: swpppInspections,
-    } as const;
-    type OfflineOperation = "CREATE" | "UPDATE" | "DELETE";
-
-    const queueOffline = async (entityType: EntityKey, record: any): Promise<ProcessedItem> => {
+    const queueOffline = async (entityType: SyncEntityKey, record: MobileSyncRecord): Promise<ProcessedItem> => {
       const localId: string = record.localId ?? record.id ?? "";
-      // Server-side conflict check for updates only
+      // Conflict detection (org-scoped): when the client provides an existing
+      // record.id and a clientTimestamp, compare against the server row's
+      // updatedAt. The server lookup is org-scoped to prevent any
+      // cross-tenant metadata leakage. If the server is newer, do not queue —
+      // record a FAILED row in the existing offlineSyncQueue conflict pipeline
+      // so the GET /conflicts endpoint surfaces it for resolution.
       if (record.id && record.clientTimestamp) {
-        const table = tableForEntity[entityType];
-        const [server] = await db.select().from(table).where(eq((table as any).id, record.id)).limit(1);
+        const server = await lookupServerRow[entityType](record.id, organizationId);
         if (server?.updatedAt && new Date(record.clientTimestamp) < server.updatedAt) {
+          const serverIso = server.updatedAt.toISOString();
+          // Persist the conflict in the existing FAILED-status conflict queue
+          // consumed by GET /api/ai-features/mobile-sync/conflicts.
+          await db.insert(offlineSyncQueue).values({
+            organizationId,
+            userId,
+            operationType: "UPDATE",
+            entityType,
+            entityId: record.id,
+            payload: record,
+            status: "FAILED",
+            errorMessage: `CONFLICT: server updatedAt ${serverIso} > client ${record.clientTimestamp}`,
+            deviceId,
+            clientTimestamp: new Date(record.clientTimestamp),
+          });
           conflicts.push({
             entityType,
             entityId: record.id,
             localId,
-            serverUpdatedAt: server.updatedAt.toISOString(),
+            serverUpdatedAt: serverIso,
             clientTimestamp: record.clientTimestamp,
           });
-          return { localId, status: "CONFLICT", serverUpdatedAt: server.updatedAt.toISOString() };
+          return { localId, status: "CONFLICT", serverUpdatedAt: serverIso };
         }
       }
       const operationType: OfflineOperation = record.id ? "UPDATE" : "CREATE";
