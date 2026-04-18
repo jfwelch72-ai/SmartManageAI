@@ -17,6 +17,27 @@ import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { HaulTicket } from "@shared/schema";
 
+interface MassHaulImbalance { material: string; issue: string; estimatedSavings?: string | number }
+interface MassHaulAnalysis {
+  summary?: string;
+  imbalances?: MassHaulImbalance[];
+  recommendations?: string[];
+  confidence?: number;
+}
+interface MassHaulMovement { material: string; source: string; destination: string; quantity: number; unit: string }
+interface MassHaulResponse {
+  fallback?: boolean;
+  message?: string;
+  analysis?: MassHaulAnalysis;
+  movements?: MassHaulMovement[];
+}
+interface HaulOcrResponse {
+  fallback?: boolean;
+  message?: string;
+  fields?: Partial<{ ticketNumber: string; ticketDate: string; truckNumber: string; driverName: string; source: string; destination: string; materialClass: string; quantity: string; unit: string; totalCost: string }>;
+  confidence?: number;
+}
+
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   DRAFT: "outline", SUBMITTED: "secondary", APPROVED: "default", REJECTED: "destructive", VOIDED: "outline",
 };
@@ -58,10 +79,10 @@ export default function HaulTicketsPage() {
   };
 
   const [massHaulOpen, setMassHaulOpen] = useState(false);
-  const massHaulMut = useMutation({
+  const massHaulMut = useMutation<MassHaulResponse, Error, void>({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/ai-features/heavy-civil/mass-haul/analyze", { projectId });
-      return r.json();
+      return (await r.json()) as MassHaulResponse;
     },
     onError: (error: Error) => toast({ title: "Mass-haul AI failed", description: getErrorMessage(error), variant: "destructive" }),
   });
@@ -97,7 +118,7 @@ export default function HaulTicketsPage() {
                 <div>
                   <strong>Imbalances:</strong>
                   <ul className="list-disc pl-5 mt-1 space-y-1">
-                    {massHaulMut.data.analysis.imbalances.map((i: any, k: number) => <li key={k}>{i.material}: {i.issue}{i.estimatedSavings ? ` — ~${i.estimatedSavings}` : ""}</li>)}
+                    {massHaulMut.data.analysis.imbalances.map((i, k) => <li key={k}>{i.material}: {i.issue}{i.estimatedSavings ? ` — ~${i.estimatedSavings}` : ""}</li>)}
                   </ul>
                 </div>
               )}
@@ -256,10 +277,10 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
     onError: (error: Error) => toast({ title: "Failed to save", description: getErrorMessage(error), variant: "destructive" }),
   });
 
-  const ocrMut = useMutation({
+  const ocrMut = useMutation<HaulOcrResponse, Error, string>({
     mutationFn: async (documentId: string) => {
       const r = await apiRequest("POST", "/api/ai-features/heavy-civil/haul-ticket/ocr", { documentId });
-      return r.json();
+      return (await r.json()) as HaulOcrResponse;
     },
     onSuccess: (data) => {
       if (data?.fallback) { toast({ title: "AI couldn't read the ticket", description: data.message ?? "Enter values manually." }); return; }

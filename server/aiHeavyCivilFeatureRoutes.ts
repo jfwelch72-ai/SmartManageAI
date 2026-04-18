@@ -327,6 +327,28 @@ router.post(
 // Compute deterministic risk + AI commentary for a project's DBE goals.
 // Used both by the user-triggered button and the daily background job.
 // =====================================================================
+// In-memory snapshot of the most recent risk assessment per project so
+// dashboards and at-risk tiles can read the latest score without recomputing
+// AI on every page load. Keyed by `${organizationId}:${projectId}`.
+// (A persistent table would be ideal but the heavy-civil schema push is
+// pending — see follow-up task #496.)
+const dbeRiskSnapshots = new Map<string, DbeRiskAssessment>();
+function snapshotKey(orgId: string, projectId: string): string {
+  return `${orgId}:${projectId}`;
+}
+export function getDbeRiskSnapshot(orgId: string, projectId: string): DbeRiskAssessment | null {
+  return dbeRiskSnapshots.get(snapshotKey(orgId, projectId)) ?? null;
+}
+export function listDbeRiskSnapshots(orgId: string): DbeRiskAssessment[] {
+  const prefix = `${orgId}:`;
+  const out: DbeRiskAssessment[] = [];
+  for (const [k, v] of dbeRiskSnapshots) if (k.startsWith(prefix)) out.push(v);
+  return out;
+}
+export function recordDbeRiskSnapshot(orgId: string, projectId: string, snap: DbeRiskAssessment): void {
+  dbeRiskSnapshots.set(snapshotKey(orgId, projectId), snap);
+}
+
 export interface DbeRiskAssessment {
   projectId: string;
   projectCode: string;
@@ -488,7 +510,7 @@ export async function computeDbeRiskAssessment(
     }
   }
 
-  return {
+  const snapshot: DbeRiskAssessment = {
     projectId,
     projectCode: project.code,
     goals: goalRows,
@@ -498,7 +520,35 @@ export async function computeDbeRiskAssessment(
     aiRecommendations,
     generatedAt: new Date().toISOString(),
   };
+  recordDbeRiskSnapshot(organizationId, projectId, snapshot);
+  return snapshot;
 }
+
+// Read the most recent persisted DBE risk snapshot for a project — used by
+// dashboard at-risk tiles so the UI does not have to recompute on every load.
+router.get(
+  "/ai-features/heavy-civil/dbe/risk-snapshot/:projectId",
+  requireAuth,
+  requireOrgFeatureFlag("DBE_TRACKING"),
+  requireFeaturePermission("canViewDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user?.organizationId) return res.status(403).json({ error: "Organization required" });
+    const snap = getDbeRiskSnapshot(req.user.organizationId, req.params.projectId);
+    if (!snap) return res.status(404).json({ error: "No snapshot yet — run risk score first" });
+    res.json(snap);
+  },
+);
+
+router.get(
+  "/ai-features/heavy-civil/dbe/risk-snapshots",
+  requireAuth,
+  requireOrgFeatureFlag("DBE_TRACKING"),
+  requireFeaturePermission("canViewDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user?.organizationId) return res.status(403).json({ error: "Organization required" });
+    res.json(listDbeRiskSnapshots(req.user.organizationId));
+  },
+);
 
 const dbeRiskRequestSchema = z.object({ projectId: z.string().min(1) });
 

@@ -14,6 +14,21 @@ import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+interface BidTabItem {
+  itemNumber: string;
+  description: string;
+  unit: string;
+  quantity: number;
+  specSection?: string | null;
+}
+interface BidTabResponse {
+  fallback?: boolean;
+  message?: string;
+  items?: BidTabItem[];
+  confidence?: number;
+  notes?: string;
+}
+
 export default function DotLibraryPage() {
   const canManageLib = useFeaturePermission("canManageDotLibrary");
   const canViewLib = useFeaturePermission("canViewDotLibrary");
@@ -24,13 +39,13 @@ export default function DotLibraryPage() {
   const [bidTabUrl, setBidTabUrl] = useState("");
   const [bidTabAgency, setBidTabAgency] = useState("");
   const { toast } = useToast();
-  const bidTabMut = useMutation({
+  const bidTabMut = useMutation<BidTabResponse, Error, void>({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/ai-features/heavy-civil/bid-tab/extract", {
         documentUrl: bidTabUrl.trim(),
         agencyName: bidTabAgency.trim() || undefined,
       });
-      return r.json();
+      return (await r.json()) as BidTabResponse;
     },
     onError: (error: Error) => toast({ title: "Bid-tab extraction failed", description: error.message, variant: "destructive" }),
   });
@@ -96,7 +111,7 @@ export default function DotLibraryPage() {
                 <table className="w-full text-xs">
                   <thead><tr className="border-b text-left"><th className="py-1 pr-2">Item #</th><th className="pr-2">Description</th><th className="pr-2">Unit</th><th>Qty</th></tr></thead>
                   <tbody>
-                    {(bidTabMut.data.items ?? []).map((it: any, k: number) => (
+                    {(bidTabMut.data.items ?? []).map((it, k) => (
                       <tr key={k} className="border-b last:border-0">
                         <td className="py-1 pr-2 font-mono">{it.itemNumber}</td>
                         <td className="pr-2">{it.description}</td>

@@ -16,6 +16,25 @@ import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { ProjectDbeGoal } from "@shared/schema";
 
+interface DbeGoalRisk {
+  certificationType: string;
+  goalPercent: number;
+  actualPercent: number;
+  actualDollars: number;
+  committedDollars: number;
+  riskScore: number;
+  riskBand: "LOW" | "MEDIUM" | "HIGH";
+}
+interface DbeRiskResponse {
+  fallback?: boolean;
+  message?: string;
+  overallRiskScore: number;
+  overallRiskBand: "LOW" | "MEDIUM" | "HIGH";
+  goals: DbeGoalRisk[];
+  aiCommentary?: string;
+  aiRecommendations?: string[];
+}
+
 const CERT_TYPES = ["DBE", "MBE", "WBE", "SBE", "VOSB", "SDVOSB", "HUBZONE", "EIGHTA", "ACDBE", "OTHER"];
 
 type Editing = ProjectDbeGoal | "new" | null;
@@ -39,10 +58,10 @@ export default function DbeGoalsPage() {
   }
 
   const [riskOpen, setRiskOpen] = useState(false);
-  const riskMut = useMutation({
+  const riskMut = useMutation<DbeRiskResponse, Error, void>({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/ai-features/heavy-civil/dbe/risk-score", { projectId });
-      return r.json();
+      return (await r.json()) as DbeRiskResponse;
     },
     onError: (error: Error) => toast({ title: "DBE risk score failed", description: getErrorMessage(error), variant: "destructive" }),
   });
@@ -89,7 +108,7 @@ export default function DbeGoalsPage() {
                 <span>Overall risk score: <strong>{riskMut.data.overallRiskScore}/100</strong></span>
               </div>
               <div className="border rounded p-3 space-y-2">
-                {riskMut.data.goals?.map((g: any) => (
+                {riskMut.data.goals?.map((g) => (
                   <div key={g.certificationType} className="text-xs">
                     <strong>{g.certificationType}</strong> — goal {g.goalPercent}%, paid {g.actualPercent.toFixed(2)}% (${g.actualDollars.toLocaleString()}) · committed ${g.committedDollars.toLocaleString()} · risk {g.riskScore}/100 ({g.riskBand})
                   </div>
