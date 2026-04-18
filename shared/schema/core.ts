@@ -172,6 +172,28 @@ export const insertWeeklyPayrollReportSchema = createInsertSchema(weeklyPayrollR
 export type InsertWeeklyPayrollReport = z.infer<typeof insertWeeklyPayrollReportSchema>;
 export type WeeklyPayrollReport = typeof weeklyPayrollReports.$inferSelect;
 
+// Certified Payroll Reports - audit log of every generated WH-347/state DOT certified payroll PDF.
+export const certifiedPayrollReports = pgTable("certified_payroll_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  payRunId: varchar("pay_run_id").notNull().references(() => payRuns.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  variant: payrollFormVariantEnum("variant").notNull(),
+  objectKey: text("object_key").notNull(),
+  fileSize: integer("file_size").notNull().default(0),
+  generatedById: varchar("generated_by_id").notNull().references(() => users.id),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("certified_payroll_reports_org_idx").on(table.organizationId),
+  payRunIdx: index("certified_payroll_reports_pay_run_idx").on(table.payRunId),
+  projectIdx: index("certified_payroll_reports_project_idx").on(table.projectId),
+  generatedAtIdx: index("certified_payroll_reports_generated_at_idx").on(table.generatedAt),
+}));
+
+export const insertCertifiedPayrollReportSchema = createInsertSchema(certifiedPayrollReports).omit({ id: true, generatedAt: true });
+export type InsertCertifiedPayrollReport = z.infer<typeof insertCertifiedPayrollReportSchema>;
+export type CertifiedPayrollReport = typeof certifiedPayrollReports.$inferSelect;
+
 export const payRuns = pgTable("pay_runs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),

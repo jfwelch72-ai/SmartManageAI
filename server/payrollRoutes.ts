@@ -315,7 +315,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
-import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings } from "@shared/schema";
+import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
@@ -2427,14 +2427,21 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       fringeRates: fringeRatesArray,
     }, variant);
 
-    // Persist to object storage at a deterministic key (best-effort).
+    // Persist to object storage at a unique key per generation and record an audit row.
+    // The key embeds a fresh report id so each generation is an immutable artifact —
+    // historical rows in `certified_payroll_reports` always resolve to the exact PDF
+    // that was produced at that timestamp (state DOTs need this for audits).
     try {
       const { objectStorageClient } = await import("./objectStorage");
       const { setObjectAclPolicy } = await import("./objectAcl");
+      const { randomUUID } = await import("crypto");
       const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
       if (privateDir) {
-        const projectKeyPart = requestedProjectId || lineItemProjectIds[0] || "all";
-        const key = `${privateDir}/${orgId}/payroll/certified/${payRun.id}/${projectKeyPart}/${variant}.pdf`;
+        const recordedProjectId = requestedProjectId
+          || (lineItemProjectIds.length === 1 ? lineItemProjectIds[0] : null);
+        const projectKeyPart = recordedProjectId || "all";
+        const reportId = randomUUID();
+        const key = `${privateDir}/${orgId}/payroll/certified/${payRun.id}/${projectKeyPart}/${reportId}_${variant}.pdf`;
         const parts = key.startsWith("/") ? key.slice(1).split("/") : key.split("/");
         const bucketName = parts[0];
         const objectName = parts.slice(1).join("/");
@@ -2446,6 +2453,17 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
           organizationId: orgId,
           visibility: "private",
         });
+
+        await db.insert(certifiedPayrollReports).values({
+          id: reportId,
+          organizationId: orgId,
+          payRunId: payRun.id,
+          projectId: recordedProjectId,
+          variant,
+          objectKey: key,
+          fileSize: pdfBuffer.length,
+          generatedById: authReq.user!.id,
+        });
       }
     } catch (storageErr) {
       logWarn("Failed to persist certified payroll PDF to object storage (non-critical)");
@@ -2456,6 +2474,77 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
     res.setHeader("Content-Length", String(pdfBuffer.length));
     res.send(pdfBuffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// List historical certified payroll reports for a project (most recent first).
+router.get("/api/projects/:id/certified-payroll-reports", requireAuth, requireFeaturePermission('canManagePayroll'), async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const projectId = req.params.id;
+    // Org-scope the project existence check so we don't leak whether a project from
+    // another tenant exists (404 vs empty list semantics).
+    const [project] = await db.select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)));
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const rows = await db.select({
+      id: certifiedPayrollReports.id,
+      payRunId: certifiedPayrollReports.payRunId,
+      projectId: certifiedPayrollReports.projectId,
+      variant: certifiedPayrollReports.variant,
+      objectKey: certifiedPayrollReports.objectKey,
+      fileSize: certifiedPayrollReports.fileSize,
+      generatedAt: certifiedPayrollReports.generatedAt,
+      generatedById: certifiedPayrollReports.generatedById,
+      generatedByFirstName: users.firstName,
+      generatedByLastName: users.lastName,
+      generatedByEmail: users.email,
+      payRunNumber: payRuns.runNumber,
+      payPeriodStart: payRuns.payPeriodStart,
+      payPeriodEnd: payRuns.payPeriodEnd,
+    })
+      .from(certifiedPayrollReports)
+      .innerJoin(payRuns, eq(certifiedPayrollReports.payRunId, payRuns.id))
+      .leftJoin(users, eq(certifiedPayrollReports.generatedById, users.id))
+      .where(and(
+        eq(certifiedPayrollReports.organizationId, orgId),
+        eq(certifiedPayrollReports.projectId, projectId),
+      ))
+      .orderBy(desc(certifiedPayrollReports.generatedAt));
+
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Issue a short-lived signed URL to download a previously generated certified payroll PDF.
+router.get("/api/payroll/certified-reports/:id/download-url", requireAuth, requireFeaturePermission('canManagePayroll'), async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [report] = await db.select().from(certifiedPayrollReports)
+      .where(and(eq(certifiedPayrollReports.id, req.params.id), eq(certifiedPayrollReports.organizationId, orgId)));
+    if (!report) return res.status(404).json({ error: "Report not found" });
+
+    const { objectStorageClient, ObjectStorageService } = await import("./objectStorage");
+    const parts = report.objectKey.startsWith("/") ? report.objectKey.slice(1).split("/") : report.objectKey.split("/");
+    const bucketName = parts[0];
+    const objectName = parts.slice(1).join("/");
+    const file = objectStorageClient.bucket(bucketName).file(objectName);
+    const [exists] = await file.exists();
+    if (!exists) return res.status(410).json({ error: "Stored PDF is no longer available" });
+    const url = await new ObjectStorageService().getSignedDownloadUrl(file, 300);
+    res.json({ url, expiresInSec: 300 });
   } catch (error) {
     next(error);
   }

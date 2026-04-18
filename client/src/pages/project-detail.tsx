@@ -109,6 +109,7 @@ import MediaTab from "@/components/project-tabs/MediaTab";
 import TimeTab from "@/components/project-tabs/TimeTab";
 import ProjectEmailTab from "@/components/project-tabs/ProjectEmailTab";
 import ProjectPayrollTab from "@/components/project-tabs/ProjectPayrollTab";
+import CertifiedPayrollHistoryTab from "@/components/project-tabs/CertifiedPayrollHistoryTab";
 import ProjectEquipmentTab from "@/components/project-tabs/ProjectEquipmentTab";
 import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
@@ -212,6 +213,7 @@ function buildTabConfigs(
   userRole: string | undefined,
   canAccessSOV: boolean,
   projectStatus?: string,
+  canManagePayrollFlag?: boolean,
 ): TabConfig[] {
   const isProjectComplete = projectStatus === "COMPLETE" || projectStatus === "CLOSED";
   const showAssetMgmt = isProjectComplete || hasManagementAccess(userRole);
@@ -446,6 +448,16 @@ function buildTabConfigs(
       group: "Financial",
     },
     {
+      value: "certified-payroll-history",
+      label: "Certified Payroll History",
+      icon: FileCheck,
+      // Match the backend gate (canManagePayroll) so we never show a tab
+      // that 403s for the viewer. Fall back to management access until the
+      // permission flag has loaded.
+      visible: canManagePayrollFlag ?? hasManagementAccess(userRole),
+      group: "Financial",
+    },
+    {
       value: "procurement",
       label: "Procurement",
       icon: ShoppingCart,
@@ -542,6 +554,7 @@ export default function ProjectDetailPage() {
   const { toast } = useToast();
   const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
   const canAccessFinancialsPerms = useFeaturePermission("canViewFinancials");
+  const canManagePayrollPerm = useFeaturePermission("canManagePayroll");
   const [pinnedTabValues, setPinnedTabValuesState] = useState<string[]>(() => {
     const stored = getPinnedTabs(user?.id || "default");
     if (stored.length > 0) return stored;
@@ -626,7 +639,7 @@ export default function ProjectDetailPage() {
     user?.role === "MANAGER" ||
     user?.role === "SUPERINTENDENT" ||
     canAccessFinancialsPerms === true;
-  const tabConfigs = buildTabConfigs(user?.role, canAccessSOV, project?.status);
+  const tabConfigs = buildTabConfigs(user?.role, canAccessSOV, project?.status, canManagePayrollPerm === true);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
   const groupedTabs = groupTabs(visibleTabs);
 
@@ -1225,6 +1238,10 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="payroll">
             <ProjectPayrollTab projectId={project.id} />
+          </TabsContent>
+
+          <TabsContent value="certified-payroll-history">
+            <CertifiedPayrollHistoryTab projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="equipment">
