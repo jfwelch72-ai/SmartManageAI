@@ -30,6 +30,10 @@ interface PrevailingWageRate {
   classificationId: string;
   wageRate: string;
   fringeRate: string;
+  fringeHealthRate?: string | null;
+  fringePensionRate?: string | null;
+  fringeVacationRate?: string | null;
+  fringeTrainingRate?: string | null;
   totalRate: string;
   overtimeMultiplier: string;
   effectiveDate: string;
@@ -72,6 +76,10 @@ export function PrevailingWageTab({
   const [pwClassificationId, setPwClassificationId] = useState("");
   const [pwWageRate, setPwWageRate] = useState("");
   const [pwFringeRate, setPwFringeRate] = useState("");
+  const [pwFringeHealth, setPwFringeHealth] = useState("");
+  const [pwFringePension, setPwFringePension] = useState("");
+  const [pwFringeVacation, setPwFringeVacation] = useState("");
+  const [pwFringeTraining, setPwFringeTraining] = useState("");
   const [pwOvertimeMultiplier, setPwOvertimeMultiplier] = useState("1.5");
   const [pwEffectiveDate, setPwEffectiveDate] = useState("");
   const [pwExpirationDate, setPwExpirationDate] = useState("");
@@ -102,6 +110,10 @@ export function PrevailingWageTab({
     setPwClassificationId("");
     setPwWageRate("");
     setPwFringeRate("");
+    setPwFringeHealth("");
+    setPwFringePension("");
+    setPwFringeVacation("");
+    setPwFringeTraining("");
     setPwOvertimeMultiplier("1.5");
     setPwEffectiveDate("");
     setPwExpirationDate("");
@@ -116,6 +128,10 @@ export function PrevailingWageTab({
       setPwClassificationId(rate.classificationId);
       setPwWageRate(rate.wageRate);
       setPwFringeRate(rate.fringeRate);
+      setPwFringeHealth(rate.fringeHealthRate || "");
+      setPwFringePension(rate.fringePensionRate || "");
+      setPwFringeVacation(rate.fringeVacationRate || "");
+      setPwFringeTraining(rate.fringeTrainingRate || "");
       setPwOvertimeMultiplier(rate.overtimeMultiplier);
       setPwEffectiveDate(rate.effectiveDate);
       setPwExpirationDate(rate.expirationDate || "");
@@ -133,11 +149,23 @@ export function PrevailingWageTab({
       toast({ title: "Error", description: "Please fill all required fields", variant: "destructive" });
       return;
     }
+    const breakdownSum =
+      parseFloat(pwFringeHealth || "0") +
+      parseFloat(pwFringePension || "0") +
+      parseFloat(pwFringeVacation || "0") +
+      parseFloat(pwFringeTraining || "0");
+    const effectiveFringe = pwFringeRate.trim() !== ""
+      ? pwFringeRate
+      : (breakdownSum > 0 ? breakdownSum.toFixed(2) : "0");
     pwRateMutation.mutate({
       projectId: pwProjectId,
       classificationId: pwClassificationId,
       wageRate: pwWageRate,
-      fringeRate: pwFringeRate || "0",
+      fringeRate: effectiveFringe,
+      fringeHealthRate: pwFringeHealth || "0",
+      fringePensionRate: pwFringePension || "0",
+      fringeVacationRate: pwFringeVacation || "0",
+      fringeTrainingRate: pwFringeTraining || "0",
       overtimeMultiplier: pwOvertimeMultiplier || "1.5",
       effectiveDate: pwEffectiveDate,
       expirationDate: pwExpirationDate || null,
@@ -306,12 +334,36 @@ export function PrevailingWageTab({
                 <Input id="pw-wage-rate" type="number" step="0.01" value={pwWageRate} onChange={(e) => setPwWageRate(e.target.value)} data-testid="input-pw-wage-rate" />
               </div>
               <div>
-                <Label htmlFor="pw-fringe-rate">Fringe Rate ($/hr)</Label>
-                <Input id="pw-fringe-rate" type="number" step="0.01" value={pwFringeRate} onChange={(e) => setPwFringeRate(e.target.value)} placeholder="0.00" data-testid="input-pw-fringe-rate" />
+                <Label htmlFor="pw-fringe-rate">Total Fringe ($/hr)</Label>
+                <Input id="pw-fringe-rate" type="number" step="0.01" value={pwFringeRate} onChange={(e) => setPwFringeRate(e.target.value)} placeholder="auto-sum" data-testid="input-pw-fringe-rate" />
               </div>
               <div>
                 <Label htmlFor="pw-ot-mult">OT Multiplier</Label>
                 <Input id="pw-ot-mult" type="number" step="0.01" value={pwOvertimeMultiplier} onChange={(e) => setPwOvertimeMultiplier(e.target.value)} data-testid="input-pw-ot-mult" />
+              </div>
+            </div>
+            <div className="rounded-md border p-3 space-y-3 bg-muted/30">
+              <div>
+                <Label className="text-sm font-semibold">Fringe Breakdown ($/hr)</Label>
+                <p className="text-xs text-muted-foreground">Used for the per-classification fringe table on certified payroll PDFs.</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <Label htmlFor="pw-fringe-health" className="text-xs">Health/Welfare</Label>
+                  <Input id="pw-fringe-health" type="number" step="0.01" value={pwFringeHealth} onChange={(e) => setPwFringeHealth(e.target.value)} placeholder="0.00" data-testid="input-pw-fringe-health" />
+                </div>
+                <div>
+                  <Label htmlFor="pw-fringe-pension" className="text-xs">Pension</Label>
+                  <Input id="pw-fringe-pension" type="number" step="0.01" value={pwFringePension} onChange={(e) => setPwFringePension(e.target.value)} placeholder="0.00" data-testid="input-pw-fringe-pension" />
+                </div>
+                <div>
+                  <Label htmlFor="pw-fringe-vacation" className="text-xs">Vacation/Holiday</Label>
+                  <Input id="pw-fringe-vacation" type="number" step="0.01" value={pwFringeVacation} onChange={(e) => setPwFringeVacation(e.target.value)} placeholder="0.00" data-testid="input-pw-fringe-vacation" />
+                </div>
+                <div>
+                  <Label htmlFor="pw-fringe-training" className="text-xs">Training</Label>
+                  <Input id="pw-fringe-training" type="number" step="0.01" value={pwFringeTraining} onChange={(e) => setPwFringeTraining(e.target.value)} placeholder="0.00" data-testid="input-pw-fringe-training" />
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

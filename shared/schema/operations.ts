@@ -228,7 +228,11 @@ export const prevailingWageRates = pgTable("prevailing_wage_rates", {
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   classificationId: varchar("classification_id").notNull().references(() => jobClassifications.id, { onDelete: "cascade" }),
   wageRate: decimal("wage_rate", { precision: 10, scale: 2 }).notNull(), // Base wage
-  fringeRate: decimal("fringe_rate", { precision: 10, scale: 2 }).notNull().default("0"), // Fringe benefits
+  fringeRate: decimal("fringe_rate", { precision: 10, scale: 2 }).notNull().default("0"), // Total fringe benefits
+  fringeHealthRate: decimal("fringe_health_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  fringePensionRate: decimal("fringe_pension_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  fringeVacationRate: decimal("fringe_vacation_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  fringeTrainingRate: decimal("fringe_training_rate", { precision: 10, scale: 2 }).notNull().default("0"),
   totalRate: decimal("total_rate", { precision: 10, scale: 2 }).notNull(), // wage + fringe
   overtimeMultiplier: decimal("overtime_multiplier", { precision: 4, scale: 2 }).notNull().default("1.5"),
   effectiveDate: date("effective_date").notNull(),

@@ -22,6 +22,15 @@ export interface WH347Employee {
   belowPrevailingWage: boolean;
 }
 
+export interface WH347FringeRate {
+  classification: string;
+  health: number;
+  pension: number;
+  vacation: number;
+  training: number;
+  total: number;
+}
+
 export interface WH347ReportData {
   contractorName: string;
   contractorAddress?: string;
@@ -41,6 +50,7 @@ export interface WH347ReportData {
   noFringeBenefitsRequired: boolean;
   signerName?: string;
   signerTitle?: string;
+  fringeRates?: WH347FringeRate[];
 }
 
 interface VariantConfig {
@@ -400,7 +410,9 @@ function drawComplianceBlock(
   y: number
 ) {
   const cfg = VARIANT_CONFIG[variant];
-  const blockH = 130;
+  const fringeRows = data.fringeRates ?? [];
+  const fringeTableH = fringeRows.length > 0 ? 14 + fringeRows.length * 11 + 6 : 0;
+  const blockH = 130 + fringeTableH;
   const blockY = y - blockH;
   drawRect(page, MARGIN_X, blockY, PAGE_WIDTH - 2 * MARGIN_X, blockH);
   drawText(page, "STATEMENT OF COMPLIANCE", MARGIN_X + 6, y - 12, bold, 10);
@@ -439,6 +451,41 @@ function drawComplianceBlock(
     if (cb.checked) f.check();
     drawText(page, cb.label, cx + 12, checkY + 1, font, 8);
     cx += font.widthOfTextAtSize(cb.label, 8) + 30;
+  }
+
+  // Fringe rate breakdown table (per classification)
+  if (fringeRows.length > 0) {
+    let fy = checkY - 12;
+    drawText(page, "Fringe Benefit Hourly Rates by Classification", MARGIN_X + 6, fy, bold, 8);
+    fy -= 10;
+    const cols = [
+      { label: "Classification", w: 220, key: "classification" as const },
+      { label: "Health/Welfare", w: 90, key: "health" as const },
+      { label: "Pension", w: 90, key: "pension" as const },
+      { label: "Vacation/Holiday", w: 100, key: "vacation" as const },
+      { label: "Training", w: 80, key: "training" as const },
+      { label: "Total Fringe", w: 90, key: "total" as const },
+    ];
+    let hx = MARGIN_X + 6;
+    for (const c of cols) {
+      drawText(page, c.label, hx, fy, bold, 7, { align: c.key === "classification" ? "left" : "right", width: c.w });
+      hx += c.w;
+    }
+    fy -= 10;
+    for (const row of fringeRows) {
+      let rx = MARGIN_X + 6;
+      for (const c of cols) {
+        let val = "";
+        if (c.key === "classification") {
+          val = ellipsize(row.classification, font, 7.5, c.w);
+        } else {
+          val = fmt$(row[c.key] as number);
+        }
+        drawText(page, val, rx, fy, font, 7.5, { align: c.key === "classification" ? "left" : "right", width: c.w });
+        rx += c.w;
+      }
+      fy -= 11;
+    }
   }
 
   // Signature row

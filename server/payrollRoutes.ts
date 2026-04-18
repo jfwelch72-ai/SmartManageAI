@@ -2263,16 +2263,41 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       }
     }
 
+    const fringeBreakdownMap = new Map<string, { name: string; health: number; pension: number; vacation: number; training: number; total: number }>();
     const classIds = [...new Set(Array.from(classIdMap.values()))];
     if (classIds.length > 0 && lineItemProjectIds.length > 0) {
-      const allPw = await db.select().from(prevailingWageRates)
+      const allPw = await db.select({
+        rate: prevailingWageRates,
+        className: jobClassifications.name,
+      })
+        .from(prevailingWageRates)
+        .innerJoin(jobClassifications, eq(prevailingWageRates.classificationId, jobClassifications.id))
         .where(and(
           eq(prevailingWageRates.organizationId, orgId),
           inArray(prevailingWageRates.projectId, lineItemProjectIds),
           inArray(prevailingWageRates.classificationId, classIds),
         ));
-      for (const pw of allPw) {
+      for (const row of allPw) {
+        const pw = row.rate;
         pwMap.set(`${pw.projectId}:${pw.classificationId}`, parseFloat(pw.wageRate));
+        const health = parseFloat(pw.fringeHealthRate || "0");
+        const pension = parseFloat(pw.fringePensionRate || "0");
+        const vacation = parseFloat(pw.fringeVacationRate || "0");
+        const training = parseFloat(pw.fringeTrainingRate || "0");
+        const breakdownTotal = health + pension + vacation + training;
+        const total = breakdownTotal > 0 ? breakdownTotal : parseFloat(pw.fringeRate || "0");
+        const key = `${pw.classificationId}`;
+        const existing = fringeBreakdownMap.get(key);
+        if (!existing || total > existing.total) {
+          fringeBreakdownMap.set(key, {
+            name: row.className,
+            health,
+            pension,
+            vacation,
+            training,
+            total,
+          });
+        }
       }
     }
 
@@ -2343,6 +2368,21 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
     const projectLocation = [...new Set(lineItems.map(l => l.projectLocation).filter(Boolean) as string[])].join("; ");
     const projectCode = [...new Set(lineItems.map(l => l.projectCode))].join(", ");
 
+    const [payrollSettings] = await db.select().from(organizationPayrollSettings)
+      .where(eq(organizationPayrollSettings.organizationId, orgId)).limit(1);
+    const fringeOption = (payrollSettings?.defaultFringeOption || "PLAN").toUpperCase();
+    const fringeRatesArray = Array.from(fringeBreakdownMap.values())
+      .filter(r => r.total > 0 || r.health > 0 || r.pension > 0 || r.vacation > 0 || r.training > 0)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(r => ({
+        classification: r.name,
+        health: Math.round(r.health * 100) / 100,
+        pension: Math.round(r.pension * 100) / 100,
+        vacation: Math.round(r.vacation * 100) / 100,
+        training: Math.round(r.training * 100) / 100,
+        total: Math.round(r.total * 100) / 100,
+      }));
+
     const { generateWH347Pdf } = await import("./services/wh347Generator");
     const { payrollFormVariantValues } = await import("@shared/schema/enums");
     type PayrollFormVariant = (typeof payrollFormVariantValues)[number];
@@ -2367,7 +2407,6 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
 
     const pdfBuffer = await generateWH347Pdf({
       contractorName: org?.name || "",
-      contractorAddress: undefined,
       payrollNumber: payRun.runNumber,
       weekEndingDate: payRun.payPeriodEnd,
       projectName,
@@ -2379,11 +2418,13 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
         totalDeductions: Math.round(totalDed * 100) / 100,
         totalNet: Math.round((totalGross - totalDed) * 100) / 100,
       },
-      fringeBenefitsPaidToPlan: true,
-      fringeBenefitsPaidInCash: false,
-      noFringeBenefitsRequired: false,
-      signerName: undefined,
-      signerTitle: undefined,
+      fringeBenefitsPaidToPlan: fringeOption === "PLAN",
+      fringeBenefitsPaidInCash: fringeOption === "CASH",
+      noFringeBenefitsRequired: fringeOption === "NONE",
+      signerName: payrollSettings?.signerName || undefined,
+      signerTitle: payrollSettings?.signerTitle || undefined,
+      contractorAddress: payrollSettings?.contractorAddress || undefined,
+      fringeRates: fringeRatesArray,
     }, variant);
 
     // Persist to object storage at a deterministic key (best-effort).
@@ -2701,6 +2742,10 @@ router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADM
       overtimeThresholdHours: z.string().optional(),
       autoGenerateWeeklyReports: z.boolean().optional(),
       requireSuperintendentApproval: z.boolean().optional(),
+      signerName: z.string().nullable().optional(),
+      signerTitle: z.string().nullable().optional(),
+      contractorAddress: z.string().nullable().optional(),
+      defaultFringeOption: z.enum(["PLAN", "CASH", "NONE"]).optional(),
     });
 
     const data = updateSchema.parse(req.body);

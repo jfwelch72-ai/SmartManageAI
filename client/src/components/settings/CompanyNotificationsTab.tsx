@@ -13,7 +13,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle } from "lucide-react";
+import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle, ClipboardCheck } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import type { PayrollSettings } from "./types";
 import { DAYS_OF_WEEK } from "./types";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
@@ -33,7 +34,11 @@ export function CompanyNotificationsTab() {
   const [payrollForm, setPayrollForm] = useState({
     workWeekStartDay: "SUNDAY" as PayrollSettings["workWeekStartDay"],
     overtimeThresholdHours: 40,
-    notifyOnWeekComplete: true
+    notifyOnWeekComplete: true,
+    signerName: "",
+    signerTitle: "",
+    contractorAddress: "",
+    defaultFringeOption: "PLAN" as PayrollSettings["defaultFringeOption"],
   });
 
   const updatePayrollMutation = useMutation({
@@ -43,6 +48,10 @@ export function CompanyNotificationsTab() {
         overtimeThresholdHours: String(data.overtimeThresholdHours),
         workWeekEndNotificationEnabled: data.notifyOnWeekComplete,
         autoGenerateWeeklyReports: data.notifyOnWeekComplete,
+        signerName: data.signerName.trim() || null,
+        signerTitle: data.signerTitle.trim() || null,
+        contractorAddress: data.contractorAddress.trim() || null,
+        defaultFringeOption: data.defaultFringeOption,
       });
     },
     onSuccess: () => {
@@ -59,7 +68,11 @@ export function CompanyNotificationsTab() {
       setPayrollForm({
         workWeekStartDay: payrollSettings.workWeekStartDay,
         overtimeThresholdHours: parseInt(payrollSettings.overtimeThresholdHours) || 40,
-        notifyOnWeekComplete: payrollSettings.workWeekEndNotificationEnabled
+        notifyOnWeekComplete: payrollSettings.workWeekEndNotificationEnabled,
+        signerName: payrollSettings.signerName || "",
+        signerTitle: payrollSettings.signerTitle || "",
+        contractorAddress: payrollSettings.contractorAddress || "",
+        defaultFringeOption: payrollSettings.defaultFringeOption || "PLAN",
       });
     }
   }, [payrollSettings]);
@@ -159,6 +172,83 @@ export function CompanyNotificationsTab() {
               >
                 {updatePayrollMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 Save Settings
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-certified-payroll-settings">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ClipboardCheck className="h-5 w-5" />
+                Certified Payroll (WH-347)
+              </CardTitle>
+              <CardDescription>
+                Signer info, contractor address, and default fringe-benefit option used on generated certified payroll PDFs.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signer-name">Authorized Signer Name</Label>
+                  <Input
+                    id="signer-name"
+                    value={payrollForm.signerName}
+                    onChange={(e) => setPayrollForm(prev => ({ ...prev, signerName: e.target.value }))}
+                    placeholder="e.g., Jane Doe"
+                    data-testid="input-signer-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signer-title">Signer Title</Label>
+                  <Input
+                    id="signer-title"
+                    value={payrollForm.signerTitle}
+                    onChange={(e) => setPayrollForm(prev => ({ ...prev, signerTitle: e.target.value }))}
+                    placeholder="e.g., Payroll Officer"
+                    data-testid="input-signer-title"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contractor-address">Contractor Mailing Address</Label>
+                <Textarea
+                  id="contractor-address"
+                  value={payrollForm.contractorAddress}
+                  onChange={(e) => setPayrollForm(prev => ({ ...prev, contractorAddress: e.target.value }))}
+                  placeholder="Street, City, State ZIP"
+                  rows={2}
+                  data-testid="input-contractor-address"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="default-fringe-option">Default Fringe Benefit Option</Label>
+                <Select
+                  value={payrollForm.defaultFringeOption}
+                  onValueChange={(value: PayrollSettings["defaultFringeOption"]) =>
+                    setPayrollForm(prev => ({ ...prev, defaultFringeOption: value }))
+                  }
+                >
+                  <SelectTrigger data-testid="select-fringe-option">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PLAN" data-testid="option-fringe-plan">Fringe benefits paid to approved plan(s)</SelectItem>
+                    <SelectItem value="CASH" data-testid="option-fringe-cash">Fringe benefits paid in cash</SelectItem>
+                    <SelectItem value="NONE" data-testid="option-fringe-none">No fringe benefits required</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Pre-checked on the Statement of Compliance section of every generated certified payroll PDF.
+                </p>
+              </div>
+              <Button
+                onClick={() => updatePayrollMutation.mutate(payrollForm)}
+                disabled={updatePayrollMutation.isPending}
+                className="mt-2"
+                data-testid="button-save-certified-payroll"
+              >
+                {updatePayrollMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save Certified Payroll Settings
               </Button>
             </CardContent>
           </Card>

@@ -524,13 +524,23 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
       return res.status(400).json({ error: "Organization required" });
     }
 
-    const { wageRate, fringeRate, ...rest } = req.body;
-    const totalRate = (parseFloat(wageRate) + parseFloat(fringeRate || 0)).toFixed(2);
+    const { wageRate, fringeRate, fringeHealthRate, fringePensionRate, fringeVacationRate, fringeTrainingRate, ...rest } = req.body;
+    const breakdown = [fringeHealthRate, fringePensionRate, fringeVacationRate, fringeTrainingRate]
+      .map(v => parseFloat(v || "0"));
+    const breakdownSum = breakdown.reduce((a, b) => a + b, 0);
+    const effectiveFringe = fringeRate !== undefined && fringeRate !== null && fringeRate !== ""
+      ? fringeRate
+      : (breakdownSum > 0 ? breakdownSum.toFixed(2) : "0");
+    const totalRate = (parseFloat(wageRate) + parseFloat(effectiveFringe)).toFixed(2);
 
     const data = insertPrevailingWageRateSchema.parse({
       ...rest,
       wageRate,
-      fringeRate: fringeRate || "0",
+      fringeRate: effectiveFringe,
+      fringeHealthRate: fringeHealthRate || "0",
+      fringePensionRate: fringePensionRate || "0",
+      fringeVacationRate: fringeVacationRate || "0",
+      fringeTrainingRate: fringeTrainingRate || "0",
       totalRate,
       organizationId
     });
@@ -562,7 +572,7 @@ router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MA
     }
 
     const { id } = req.params;
-    const { wageRate, fringeRate, overtimeMultiplier, effectiveDate, expirationDate, wageDecision, notes } = req.body;
+    const { wageRate, fringeRate, fringeHealthRate, fringePensionRate, fringeVacationRate, fringeTrainingRate, overtimeMultiplier, effectiveDate, expirationDate, wageDecision, notes } = req.body;
 
     const [existing] = await db
       .select()
@@ -577,7 +587,24 @@ router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MA
     }
 
     const newWageRate = wageRate !== undefined ? wageRate : existing.wageRate;
-    const newFringeRate = fringeRate !== undefined ? fringeRate : existing.fringeRate;
+    const newHealth = fringeHealthRate !== undefined ? fringeHealthRate : existing.fringeHealthRate;
+    const newPension = fringePensionRate !== undefined ? fringePensionRate : existing.fringePensionRate;
+    const newVacation = fringeVacationRate !== undefined ? fringeVacationRate : existing.fringeVacationRate;
+    const newTraining = fringeTrainingRate !== undefined ? fringeTrainingRate : existing.fringeTrainingRate;
+    const breakdownSum =
+      parseFloat(newHealth || "0") +
+      parseFloat(newPension || "0") +
+      parseFloat(newVacation || "0") +
+      parseFloat(newTraining || "0");
+    const breakdownChanged =
+      fringeHealthRate !== undefined ||
+      fringePensionRate !== undefined ||
+      fringeVacationRate !== undefined ||
+      fringeTrainingRate !== undefined;
+    let newFringeRate = fringeRate !== undefined ? fringeRate : existing.fringeRate;
+    if (fringeRate === undefined && breakdownChanged) {
+      newFringeRate = breakdownSum.toFixed(2);
+    }
     const totalRate = (parseFloat(newWageRate) + parseFloat(newFringeRate)).toFixed(2);
 
     const [updated] = await db
@@ -585,6 +612,10 @@ router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MA
       .set({
         wageRate: newWageRate,
         fringeRate: newFringeRate,
+        fringeHealthRate: newHealth,
+        fringePensionRate: newPension,
+        fringeVacationRate: newVacation,
+        fringeTrainingRate: newTraining,
         totalRate,
         overtimeMultiplier: overtimeMultiplier !== undefined ? overtimeMultiplier : existing.overtimeMultiplier,
         effectiveDate: effectiveDate !== undefined ? effectiveDate : existing.effectiveDate,

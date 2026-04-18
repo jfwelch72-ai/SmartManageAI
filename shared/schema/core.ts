@@ -133,6 +133,10 @@ export const organizationPayrollSettings = pgTable("organization_payroll_setting
   overtimeThresholdHours: decimal("overtime_threshold_hours", { precision: 5, scale: 2 }).notNull().default("40"),
   autoGenerateWeeklyReports: boolean("auto_generate_weekly_reports").notNull().default(true),
   requireSuperintendentApproval: boolean("require_superintendent_approval").notNull().default(true),
+  signerName: text("signer_name"),
+  signerTitle: text("signer_title"),
+  contractorAddress: text("contractor_address"),
+  defaultFringeOption: text("default_fringe_option").notNull().default("PLAN"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

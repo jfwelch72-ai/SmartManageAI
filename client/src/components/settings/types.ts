@@ -86,6 +86,10 @@ export interface PayrollSettings {
   overtimeThresholdHours: string;
   workWeekEndNotificationEnabled: boolean;
   autoGenerateWeeklyReports: boolean;
+  signerName: string | null;
+  signerTitle: string | null;
+  contractorAddress: string | null;
+  defaultFringeOption: "PLAN" | "CASH" | "NONE";
   createdAt: string;
   updatedAt: string | null;
 }
