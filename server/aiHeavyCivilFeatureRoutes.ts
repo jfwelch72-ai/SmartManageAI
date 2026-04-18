@@ -64,7 +64,10 @@ function safeJson<T>(text: string | null | undefined): T | null {
 // Parse a state-DOT bid-tab document into pay-item rows.
 // =====================================================================
 const bidTabSchema = z.object({
-  documentUrl: z.string().min(5),
+  // Only accept org-owned uploaded documents (resolved to file URL via the
+  // planDocuments tenant check) — never raw URLs, to prevent cross-tenant
+  // IDOR / SSRF against internal storage paths.
+  documentId: z.string().min(1),
   agencyName: z.string().optional(),
   specBookEdition: z.string().optional(),
 });
@@ -83,7 +86,12 @@ router.post(
       const data = validateBody(bidTabSchema, req.body, res);
       if (!data) return;
 
-      const blocks = await extractDocumentContent(data.documentUrl);
+      const url = await resolveDocumentUrl({ documentId: data.documentId }, req.user!.organizationId!);
+      if (!url) {
+        return res.status(404).json({ error: "Document not found in your organization" });
+      }
+
+      const blocks = await extractDocumentContent(url);
       if (blocks.length === 0) {
         return fallbackResponse(res, "Unable to read the uploaded bid tab document. Please enter pay items manually.");
       }
@@ -92,7 +100,7 @@ router.post(
         orgId: req.user!.organizationId!,
         userId: req.user!.id,
         actionType: "heavy_civil.bid_tab.extract",
-        inputRefs: { documentUrl: data.documentUrl, agency: data.agencyName ?? null },
+        inputRefs: { documentId: data.documentId, agency: data.agencyName ?? null },
         fn: async () => {
           const completion = await openai.chat.completions.create({
             model: AI_MODEL_GPT5,
@@ -132,15 +140,14 @@ router.post(
 // =====================================================================
 // FEATURE 2 — HAUL TICKET OCR (HAUL_TICKETS)
 // Read a paper haul-ticket photo into structured fields.
-// Accepts either a documentUrl or a documentId (resolved to fileUrl).
+// Accepts an org-owned documentId only (resolved to fileUrl with tenant
+// validation). Raw URLs are rejected to prevent IDOR / SSRF.
 // =====================================================================
 const haulOcrSchema = z.object({
-  documentUrl: z.string().optional(),
-  documentId: z.string().optional(),
-}).refine((d) => Boolean(d.documentUrl || d.documentId), { message: "documentUrl or documentId required" });
+  documentId: z.string().min(1),
+});
 
-async function resolveDocumentUrl(input: { documentUrl?: string; documentId?: string }, organizationId: string): Promise<string | null> {
-  if (input.documentUrl) return input.documentUrl;
+async function resolveDocumentUrl(input: { documentId?: string }, organizationId: string): Promise<string | null> {
   if (!input.documentId) return null;
   const [doc] = await db
     .select({ fileUrl: planDocuments.fileUrl, projectId: planDocuments.projectId })
@@ -174,7 +181,7 @@ router.post(
         orgId: req.user!.organizationId!,
         userId: req.user!.id,
         actionType: "heavy_civil.haul_ticket.ocr",
-        inputRefs: { documentUrl: url, documentId: data.documentId ?? null },
+        inputRefs: { documentId: data.documentId },
         fn: async () => {
           const completion = await openai.chat.completions.create({
             model: AI_MODEL_GPT5,

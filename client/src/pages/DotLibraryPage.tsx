@@ -36,13 +36,13 @@ export default function DotLibraryPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [agencyFilter, setAgencyFilter] = useState("");
   const [bidTabOpen, setBidTabOpen] = useState(false);
-  const [bidTabUrl, setBidTabUrl] = useState("");
+  const [bidTabDocId, setBidTabDocId] = useState("");
   const [bidTabAgency, setBidTabAgency] = useState("");
   const { toast } = useToast();
   const bidTabMut = useMutation<BidTabResponse, Error, void>({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/ai-features/heavy-civil/bid-tab/extract", {
-        documentUrl: bidTabUrl.trim(),
+        documentId: bidTabDocId.trim(),
         agencyName: bidTabAgency.trim() || undefined,
       });
       return (await r.json()) as BidTabResponse;
@@ -97,8 +97,9 @@ export default function DotLibraryPage() {
           <DialogHeader><DialogTitle>AI Bid-Tab Extractor</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Document URL (PDF / Excel of bid tabulation)</Label>
-              <Input value={bidTabUrl} onChange={(e) => setBidTabUrl(e.target.value)} placeholder="https://… or storage URL" data-testid="input-bid-tab-url" />
+              <Label>Uploaded Document ID (PDF / Excel of bid tabulation)</Label>
+              <Input value={bidTabDocId} onChange={(e) => setBidTabDocId(e.target.value)} placeholder="Paste plan-document ID — must be uploaded to your org first" data-testid="input-bid-tab-doc-id" />
+              <p className="text-xs text-muted-foreground mt-1">For tenant safety, only documents already uploaded to your project library can be parsed.</p>
             </div>
             <div>
               <Label>Agency (optional, helps AI)</Label>
