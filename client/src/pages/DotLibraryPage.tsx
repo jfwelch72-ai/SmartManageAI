@@ -131,7 +131,7 @@ export default function DotLibraryPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBidTabOpen(false)} data-testid="button-bid-tab-close">Close</Button>
-            <Button disabled={bidTabMut.isPending || bidTabUrl.trim().length < 5} onClick={() => bidTabMut.mutate()} data-testid="button-bid-tab-run">
+            <Button disabled={bidTabMut.isPending || bidTabDocId.trim().length < 1} onClick={() => bidTabMut.mutate()} data-testid="button-bid-tab-run">
               {bidTabMut.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Extract
             </Button>
           </DialogFooter>
