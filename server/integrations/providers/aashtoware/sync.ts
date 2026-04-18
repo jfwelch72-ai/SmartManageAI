@@ -1,7 +1,7 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationSyncState, dotPayItems, estimateLineItems } from "@shared/schema";
+import { integrationSyncState, dotPayItems, dotPayItemOverrides, estimateLineItems } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
 
@@ -61,6 +61,7 @@ export async function importBidPackage(
   let unmatched = 0;
 
   try {
+    let overridesUpserted = 0;
     for (const item of pkg.items) {
       if (!item.itemNumber) continue;
       const [hit] = await db
@@ -68,8 +69,52 @@ export async function importBidPackage(
         .from(dotPayItems)
         .where(eq(dotPayItems.itemNumber, item.itemNumber))
         .limit(1);
-      if (hit) matched++;
-      else unmatched++;
+      if (!hit) {
+        unmatched++;
+        continue;
+      }
+      matched++;
+
+      // For each matched pay item, persist an org-level override carrying
+      // the ebsx-supplied description as `internalAlias`. This is the
+      // mechanism by which an ebsx import "imports" pay items into the
+      // org's library — global pay items are SUPER_ADMIN-only, so per-org
+      // overrides are the correct merge target.
+      if (dryRun) continue;
+      try {
+        const [existing] = await db
+          .select({ id: dotPayItemOverrides.id })
+          .from(dotPayItemOverrides)
+          .where(
+            and(
+              eq(dotPayItemOverrides.organizationId, connection.organizationId),
+              eq(dotPayItemOverrides.payItemId, hit.id),
+            )
+          )
+          .limit(1);
+        const overrideValues = {
+          customDescription: item.description ?? null,
+          customUnit: item.unit ?? null,
+          internalAlias: item.description ?? null,
+          notes: `Imported from ebsx ${pkg.proposalNumber} on ${new Date().toISOString().slice(0, 10)}`,
+          updatedAt: new Date(),
+        };
+        if (existing) {
+          await db
+            .update(dotPayItemOverrides)
+            .set(overrideValues)
+            .where(eq(dotPayItemOverrides.id, existing.id));
+        } else {
+          await db.insert(dotPayItemOverrides).values({
+            organizationId: connection.organizationId,
+            payItemId: hit.id,
+            ...overrideValues,
+          });
+        }
+        overridesUpserted++;
+      } catch (err) {
+        errors.push({ entityId: item.itemNumber, message: String(err) });
+      }
     }
 
     const meta = {
@@ -80,6 +125,7 @@ export async function importBidPackage(
         itemCount: pkg.items.length,
         matched,
         unmatched,
+        overridesUpserted,
         importedAt: new Date().toISOString(),
         items: pkg.items,
       },

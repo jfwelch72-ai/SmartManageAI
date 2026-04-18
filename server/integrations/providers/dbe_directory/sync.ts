@@ -136,7 +136,52 @@ export async function verifyCertification(
     ) {
       discrepancy = "Certification number mismatch";
     }
-    return { verified: !discrepancy, discrepancy };
+    const verified = !discrepancy;
+
+    // Persist verification outcome to integration_sync_state so DBE-goal
+    // views can join and surface mismatches without a schema migration.
+    // Entity type is per-cert; metadata captures the full snapshot.
+    const entityType = `certification_verification:${certificationId}`;
+    const meta = {
+      certificationId,
+      crmOrganisationId: cert.crmOrganisationId,
+      verified,
+      discrepancy: discrepancy ?? null,
+      directoryEntry: {
+        legalName: directoryEntry.legalName,
+        certificationType: directoryType,
+        certificationNumber: directoryEntry.certificationNumber ?? null,
+        certifyingAgency: directoryEntry.certifyingAgency ?? null,
+        expirationDate: directoryEntry.expirationDate ?? null,
+      },
+      verifiedAt: new Date().toISOString(),
+    };
+    const [existing] = await db
+      .select()
+      .from(integrationSyncState)
+      .where(
+        and(
+          eq(integrationSyncState.organizationId, connection.organizationId),
+          eq(integrationSyncState.entityType, entityType),
+        )
+      )
+      .limit(1);
+    if (existing) {
+      await db
+        .update(integrationSyncState)
+        .set({ metadata: meta, lastSyncAt: new Date(), updatedAt: new Date() })
+        .where(eq(integrationSyncState.id, existing.id));
+    } else {
+      await db.insert(integrationSyncState).values({
+        organizationId: connection.organizationId,
+        connectionId: connection.id,
+        entityType,
+        metadata: meta,
+        lastSyncAt: new Date(),
+      });
+    }
+
+    return { verified, discrepancy };
   } catch (err) {
     logError("DBE single-cert verify failed", { certificationId, error: String(err) });
     return null;

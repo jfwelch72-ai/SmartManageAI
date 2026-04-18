@@ -2,7 +2,7 @@ import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
 import { integrationSyncState } from "@shared/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
 import { safeFetch } from "../../../utils/safeFetch";
 
