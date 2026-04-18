@@ -129,8 +129,11 @@ function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
-  if (type === "HAUL_TICKET_SUBMITTED" || type === "HAUL_TICKET_APPROVED" || type === "HAUL_TICKET_REJECTED") {
-    const status = type === "HAUL_TICKET_APPROVED" ? "Approved" : type === "HAUL_TICKET_REJECTED" ? "Rejected" : "Submitted";
+  if (type === "HAUL_TICKET_SUBMITTED" || type === "HAUL_TICKET_APPROVED" || type === "HAUL_TICKET_REJECTED" || type === "HAUL_TICKET_VOIDED") {
+    const status = type === "HAUL_TICKET_APPROVED" ? "Approved"
+      : type === "HAUL_TICKET_REJECTED" ? "Rejected"
+      : type === "HAUL_TICKET_VOIDED" ? "Voided"
+      : "Submitted";
     return {
       subject: `Haul Ticket ${status} — SmartManageAI`,
       body: notification.message,
@@ -159,8 +162,11 @@ function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
-  if (type === "SURETY_BOND_ACTIVATED" || type === "SURETY_BOND_RELEASED" || type === "SURETY_BOND_EXPIRED") {
-    const status = type === "SURETY_BOND_ACTIVATED" ? "Activated" : type === "SURETY_BOND_RELEASED" ? "Released" : "Expired";
+  if (type === "SURETY_BOND_ACTIVATED" || type === "SURETY_BOND_RELEASED" || type === "SURETY_BOND_EXPIRED" || type === "SURETY_BOND_CANCELED") {
+    const status = type === "SURETY_BOND_ACTIVATED" ? "Activated"
+      : type === "SURETY_BOND_RELEASED" ? "Released"
+      : type === "SURETY_BOND_CANCELED" ? "Canceled"
+      : "Expired";
     return {
       subject: `Surety Bond ${status} — SmartManageAI`,
       body: notification.message,

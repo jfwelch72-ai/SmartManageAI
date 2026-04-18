@@ -1639,13 +1639,12 @@ router.post(
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
     if (MC_TERMINAL_BUYAM.includes(prev.buyAmericaStatus ?? "PENDING")) {
-      // Already verified, waived, or non-compliant — must reset/re-submit first
-      if ((prev.buyAmericaStatus ?? "PENDING") !== "WAIVER_REQUESTED") {
-        return res.status(409).json({
-          error: `Cannot verify certification in buyAmericaStatus ${prev.buyAmericaStatus}`,
-          currentStatus: prev.buyAmericaStatus,
-        });
-      }
+      // Already verified, waived, or non-compliant — must reset/re-submit first.
+      // (WAIVER_REQUESTED is non-terminal and falls through.)
+      return res.status(409).json({
+        error: `Cannot verify certification in buyAmericaStatus ${prev.buyAmericaStatus}`,
+        currentStatus: prev.buyAmericaStatus,
+      });
     }
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
@@ -1677,6 +1676,14 @@ router.post(
       message: `${row.materialDescription} verified (${buyAmericaStatus})`,
       relatedEntityType: "MATERIAL_CERT", relatedEntityId: row.id,
     });
+    if (prev.submittedById && prev.submittedById !== req.user!.id) {
+      await notifySubmitter(prev.submittedById, {
+        type: "MATERIAL_CERT_VERIFIED",
+        title: "Material Certification Verified",
+        message: `Your certification "${row.materialDescription}" was verified (${buyAmericaStatus}).`,
+        relatedEntityType: "MATERIAL_CERT", relatedEntityId: row.id,
+      }, orgId);
+    }
     await dotAudit(req, "APPROVE", "material_certification", row.id, prev, row);
     res.json({ ...row, workflow: delegation });
   },
@@ -1717,6 +1724,14 @@ router.post(
       message: `${row.materialDescription} rejected${req.body?.notes ? `: ${req.body.notes}` : ""}`,
       relatedEntityType: "MATERIAL_CERT", relatedEntityId: row.id,
     });
+    if (prev.submittedById && prev.submittedById !== req.user!.id) {
+      await notifySubmitter(prev.submittedById, {
+        type: "MATERIAL_CERT_REJECTED",
+        title: "Material Certification Rejected",
+        message: `Your certification "${row.materialDescription}" was rejected${req.body?.notes ? `: ${req.body.notes}` : ""}.`,
+        relatedEntityType: "MATERIAL_CERT", relatedEntityId: row.id,
+      }, orgId);
+    }
     await dotAudit(req, "REJECT", "material_certification", row.id, prev, row);
     res.json({ ...row, workflow: delegation });
   },
