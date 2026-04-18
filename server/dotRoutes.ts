@@ -90,6 +90,9 @@ function pickAllowedFields<T extends object, K extends keyof T>(
   return { picked, rejected };
 }
 import { eventBus } from "./events/eventBus";
+import { integrationConnections } from "@shared/schema";
+import { verifyCertification as dbeVerifyCertification } from "./integrations/providers/dbe_directory/sync";
+import { logWarn } from "./utils/logger";
 import { validateBody } from "./utils/validation";
 import { z } from "zod";
 import { logAudit } from "./auditLogger";
@@ -587,6 +590,36 @@ router.post(
       },
     });
     await dotAudit(req, "CREATE", "crm_organisation_certification", row.id, null, row);
+
+    // Fire-and-forget DBE auto-verify against the directory if a connection
+    // is configured. Discrepancies are logged for follow-up nightly batch.
+    void (async () => {
+      try {
+        const [conn] = await db
+          .select()
+          .from(integrationConnections)
+          .where(
+            and(
+              eq(integrationConnections.organizationId, ctx.orgId!),
+              eq(integrationConnections.provider, "dbe_directory"),
+              eq(integrationConnections.status, "active"),
+            )
+          )
+          .limit(1);
+        if (!conn) return;
+        const result = await dbeVerifyCertification(conn, row.id);
+        if (result?.discrepancy) {
+          logWarn("DBE certification discrepancy", {
+            certificationId: row.id,
+            crmOrganisationId: row.crmOrganisationId,
+            discrepancy: result.discrepancy,
+          });
+        }
+      } catch (err) {
+        logWarn("DBE auto-verify hook failed", { certificationId: row.id, error: String(err) });
+      }
+    })();
+
     res.status(201).json(row);
   },
 );

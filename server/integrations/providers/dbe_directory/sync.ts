@@ -88,6 +88,61 @@ async function directoryFetch(connection: IntegrationConnection, params: Record<
   return [];
 }
 
+/**
+ * Verify a single CRM organization certification against the directory and
+ * persist a discrepancy/match flag back onto the certification row. Used as
+ * a fire-and-forget hook from the cert-create endpoint. No-ops gracefully
+ * if no DBE directory connection is configured for the org.
+ */
+export async function verifyCertification(
+  connection: IntegrationConnection,
+  certificationId: string,
+): Promise<{ verified: boolean; discrepancy?: string } | null> {
+  try {
+    const [cert] = await db
+      .select()
+      .from(crmOrganisationCertifications)
+      .where(
+        and(
+          eq(crmOrganisationCertifications.id, certificationId),
+          eq(crmOrganisationCertifications.organizationId, connection.organizationId),
+        )
+      )
+      .limit(1);
+    if (!cert) return null;
+
+    const [org] = await db
+      .select({ id: crmOrganisations.id, name: crmOrganisations.name })
+      .from(crmOrganisations)
+      .where(eq(crmOrganisations.id, cert.crmOrganisationId))
+      .limit(1);
+    if (!org) return null;
+
+    const matches = await searchDirectory(connection, { name: org.name });
+    const directoryEntry = matches[0];
+    if (!directoryEntry) {
+      return { verified: false, discrepancy: "No matching directory entry" };
+    }
+
+    const declaredType = cert.certificationType;
+    const directoryType = toDbeCertType(directoryEntry.certificationType);
+    let discrepancy: string | undefined;
+    if (directoryType && directoryType !== declaredType) {
+      discrepancy = `Directory shows ${directoryType}, declared ${declaredType}`;
+    } else if (
+      cert.certificationNumber &&
+      directoryEntry.certificationNumber &&
+      cert.certificationNumber !== directoryEntry.certificationNumber
+    ) {
+      discrepancy = "Certification number mismatch";
+    }
+    return { verified: !discrepancy, discrepancy };
+  } catch (err) {
+    logError("DBE single-cert verify failed", { certificationId, error: String(err) });
+    return null;
+  }
+}
+
 export async function searchDirectory(
   connection: IntegrationConnection,
   query: { name?: string; uei?: string; state?: string }

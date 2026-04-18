@@ -166,6 +166,47 @@ export async function importWageDetermination(
  * `prevailingWageRates` row is present. Returns null if not connected,
  * not cached, or classification not found.
  */
+/**
+ * Locale-based lookup. Used by WH-347 generation when the project has no
+ * explicit wageDecision row but is bound to a state/county. Scans every
+ * cached wage determination for the org, picks the most recent one matching
+ * the locale, and returns the rate for the given classification.
+ */
+export async function lookupCachedRateByLocale(
+  organizationId: string,
+  state: string | null | undefined,
+  county: string | null | undefined,
+  classification: string,
+): Promise<DavisBaconWageRate | null> {
+  if (!state && !county) return null;
+  const rows = await db
+    .select()
+    .from(integrationSyncState)
+    .where(
+      and(
+        eq(integrationSyncState.organizationId, organizationId),
+        sql`${integrationSyncState.entityType} LIKE 'wage_determination:%'`,
+      ),
+    );
+  const norm = classification.trim().toLowerCase();
+  const stateKey = (state ?? "").trim().toUpperCase();
+  const countyKey = (county ?? "").trim().toLowerCase();
+  // Sort newest first by lastSyncAt
+  rows.sort((a, b) => (b.lastSyncAt?.getTime() ?? 0) - (a.lastSyncAt?.getTime() ?? 0));
+  for (const row of rows) {
+    const meta = row.metadata as WageDetermination | undefined;
+    if (!meta || !Array.isArray(meta.rates)) continue;
+    const rState = (meta.state ?? "").trim().toUpperCase();
+    const rCounty = (meta.county ?? "").trim().toLowerCase();
+    const stateMatch = !stateKey || !rState || rState === stateKey;
+    const countyMatch = !countyKey || !rCounty || rCounty === countyKey;
+    if (!stateMatch || !countyMatch) continue;
+    const hit = meta.rates.find((r) => r.classification.trim().toLowerCase() === norm);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 export async function lookupCachedWageRate(
   organizationId: string,
   decisionNumber: string,

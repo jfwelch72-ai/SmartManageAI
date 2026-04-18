@@ -315,7 +315,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
-import { lookupCachedWageRate } from "./integrations/providers/dol_davis_bacon/sync";
+import { lookupCachedWageRate, lookupCachedRateByLocale } from "./integrations/providers/dol_davis_bacon/sync";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -2006,6 +2006,8 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       projectName: projects.name,
       projectId: projects.id,
       projectPayrollFormVariant: projects.payrollFormVariant,
+      projectState: projects.state,
+      projectCity: projects.city,
     })
       .from(payRunLineItems)
       .innerJoin(users, eq(payRunLineItems.userId, users.id))
@@ -2068,18 +2070,33 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         if (!userClassId) continue;
         const key = `${item.projectId}:${userClassId}`;
         if (pwMap.has(key)) continue;
-        const decision = projectDecisionMap.get(item.projectId);
-        if (!decision) continue;
         const className = classNameMap.get(item.lineItem.userId);
         if (!className) continue;
+
+        // Tier 1: known wage decision for this project → exact lookup
+        const decision = projectDecisionMap.get(item.projectId);
+        if (decision) {
+          try {
+            const cached = await lookupCachedWageRate(orgId, decision, className);
+            if (cached && cached.baseRate > 0) {
+              pwMap.set(key, cached.baseRate);
+              continue;
+            }
+          } catch (err) {
+            logWarn("Davis-Bacon decision lookup failed", { decision, className, error: String(err) });
+          }
+        }
+
+        // Tier 2: locale-based lookup (project state, no county column on
+        // `projects` yet — pass null for county). Uses any cached
+        // determination synced for the org that matches the locale.
         try {
-          const cached = await lookupCachedWageRate(orgId, decision, className);
-          if (cached && cached.baseRate > 0) {
-            pwMap.set(key, cached.baseRate);
+          const localeRate = await lookupCachedRateByLocale(orgId, item.projectState, null, className);
+          if (localeRate && localeRate.baseRate > 0) {
+            pwMap.set(key, localeRate.baseRate);
           }
         } catch (err) {
-          // Non-fatal: fallback simply leaves prevailingRate null
-          logWarn("Davis-Bacon fallback lookup failed", { decision, className, error: String(err) });
+          logWarn("Davis-Bacon locale fallback failed", { state: item.projectState, className, error: String(err) });
         }
       }
     }
