@@ -1084,6 +1084,7 @@ export default function ProjectDetailPage() {
               <GeofenceZonesPanel projectId={project.id as string} />
             )}
             <AutoChangeOrderSettingsCard project={project} projectCode={projectCode} />
+            <CertifiedPayrollFormCard project={project} projectCode={projectCode} />
             {hasManagementAccess(user?.role) && (
               <GeofenceComplianceSection projectId={project.id as string} />
             )}
@@ -1792,6 +1793,76 @@ function AutoChangeOrderSettingsCard({ project, projectCode }: { project: Record
             </div>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const PAYROLL_FORM_VARIANT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "WH_347", label: "Federal WH-347" },
+  { value: "CALTRANS_CEM_2502", label: "Caltrans CEM-2502" },
+  { value: "ODOT_CA_D_9C", label: "ODOT CA-D-9C" },
+  { value: "TXDOT", label: "TxDOT" },
+  { value: "FDOT", label: "FDOT" },
+  { value: "GENERIC", label: "Generic Certified Payroll" },
+];
+
+function CertifiedPayrollFormCard({ project, projectCode }: { project: Record<string, unknown>; projectCode: string }) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const canManage = ["ADMIN", "MANAGER", "ESTIMATOR"].includes(user?.role || "");
+  const currentVariant = (project.payrollFormVariant as string) || "WH_347";
+
+  const updateMutation = useMutation({
+    mutationFn: async (variant: string) => {
+      await apiRequest("PATCH", `/api/projects/${projectCode}`, { payrollFormVariant: variant });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
+      toast({ title: "Certified payroll form updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update form", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const currentLabel = PAYROLL_FORM_VARIANT_OPTIONS.find(o => o.value === currentVariant)?.label || currentVariant;
+
+  return (
+    <Card data-testid="card-certified-payroll-form">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <CardTitle className="text-base">Certified Payroll Form</CardTitle>
+        </div>
+        <CardDescription>
+          The default form used when generating certified payroll for this project. Choose the federal WH-347 or the appropriate state DOT variant.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {canManage ? (
+          <div className="space-y-2 max-w-sm">
+            <Label htmlFor="payroll-form-variant" className="text-sm font-medium">Form Variant</Label>
+            <Select
+              value={currentVariant}
+              onValueChange={(v) => updateMutation.mutate(v)}
+              disabled={updateMutation.isPending}
+            >
+              <SelectTrigger id="payroll-form-variant" data-testid="select-payroll-form-variant">
+                <SelectValue placeholder="Select form" />
+              </SelectTrigger>
+              <SelectContent>
+                {PAYROLL_FORM_VARIANT_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value} data-testid={`option-payroll-form-${opt.value}`}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="text-sm" data-testid="text-payroll-form-variant">{currentLabel}</div>
+        )}
       </CardContent>
     </Card>
   );

@@ -2007,6 +2007,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       email: users.email,
       projectName: projects.name,
       projectId: projects.id,
+      projectPayrollFormVariant: projects.payrollFormVariant,
     })
       .from(payRunLineItems)
       .innerJoin(users, eq(payRunLineItems.userId, users.id))
@@ -2129,8 +2130,10 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
     const projectNames = [...new Set(employeeRows.map(r => r.projectName))];
 
     const projectIdToName = new Map<string, string>();
+    const projectIdToVariant = new Map<string, string>();
     for (const item of lineItems) {
       projectIdToName.set(item.projectId, item.projectName);
+      projectIdToVariant.set(item.projectId, item.projectPayrollFormVariant || "WH_347");
     }
 
     const projectGroupsById = new Map<string, typeof employeeRows>();
@@ -2147,6 +2150,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         weekEndingDate: payRun.payPeriodEnd,
         projectName: projectIdToName.get(projId) || "",
       },
+      payrollFormVariant: projectIdToVariant.get(projId) || "WH_347",
       employees,
       totals: {
         totalGross: Math.round(employees.reduce((s, e) => s + e.grossEarned, 0) * 100) / 100,
@@ -2154,6 +2158,11 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         totalNet: Math.round(employees.reduce((s, e) => s + e.netWages, 0) * 100) / 100,
       },
     }));
+
+    const distinctVariants = new Set(projectReports.map(p => p.payrollFormVariant));
+    const defaultPayrollFormVariant = distinctVariants.size === 1
+      ? projectReports[0]?.payrollFormVariant ?? null
+      : null;
 
     res.json({
       header: {
@@ -2174,6 +2183,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         noFringeBenefitsRequired: false,
       },
       projectReports,
+      defaultPayrollFormVariant,
     });
   } catch (error) {
     next(error);

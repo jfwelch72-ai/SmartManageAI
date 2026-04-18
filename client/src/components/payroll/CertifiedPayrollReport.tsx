@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,6 +73,7 @@ interface CertifiedReport {
     noFringeBenefitsRequired: boolean;
   };
   projectReports?: ProjectReport[];
+  defaultPayrollFormVariant?: string | null;
 }
 
 const formatCurrency = (val: number) =>
@@ -275,6 +276,12 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
     queryKey: ["/api/payroll/pay-runs", payRunId, "certified-report"],
     enabled: !!payRunId,
   });
+
+  useEffect(() => {
+    if (!variant && report?.defaultPayrollFormVariant) {
+      setVariant(report.defaultPayrollFormVariant);
+    }
+  }, [report?.defaultPayrollFormVariant, variant]);
 
   const projectReports = report?.projectReports || [];
   const hasMultipleProjects = projectReports.length > 1;
