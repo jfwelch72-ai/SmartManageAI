@@ -248,7 +248,7 @@ router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthReq
     if (existing.length > 0) {
       [device] = await db.update(mobileDevices)
         .set({
-          platform: platform as any,
+          platform,
           appVersion,
           deviceModel,
           pushToken,
@@ -263,7 +263,7 @@ router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthReq
         organizationId,
         userId,
         deviceId,
-        platform: platform as any,
+        platform,
         appVersion,
         deviceModel,
         pushToken,
@@ -372,7 +372,18 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
     }
 
     const { deviceId, changes } = req.body;
-    const processed: any = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [] };
+    type ProcessedItem = { localId: string; status: "QUEUED" | "CONFLICT"; serverUpdatedAt?: string };
+    type ConflictItem = { entityType: string; entityId: string; localId?: string; serverUpdatedAt: string; clientTimestamp?: string };
+    const processed: {
+      timeClockEvents: ProcessedItem[];
+      dailyLogs: ProcessedItem[];
+      photos: ProcessedItem[];
+      haulTickets: ProcessedItem[];
+      dailyInspectorReports: ProcessedItem[];
+      swpppInspections: ProcessedItem[];
+      attachments: ProcessedItem[];
+    } = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [], attachments: [] };
+    const conflicts: ConflictItem[] = [];
 
     if (changes?.timeClockEvents) {
       for (const event of changes.timeClockEvents) {
@@ -387,44 +398,91 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       }
     }
 
-    const queueOffline = async (
-      entityType: "HAUL_TICKET" | "INSPECTOR_REPORT" | "SWPPP_INSPECTION",
-      record: any,
-    ) => {
+    // Conflict detection: when the client provides an existing record.id and a
+    // clientTimestamp, compare against the server row's updatedAt. If the
+    // server is newer, do not queue — return a conflict for client resolution.
+    type EntityKey = "HAUL_TICKET" | "INSPECTOR_REPORT" | "SWPPP_INSPECTION";
+    const tableForEntity = {
+      HAUL_TICKET: haulTickets,
+      INSPECTOR_REPORT: dailyInspectorReports,
+      SWPPP_INSPECTION: swpppInspections,
+    } as const;
+    type OfflineOperation = "CREATE" | "UPDATE" | "DELETE";
+
+    const queueOffline = async (entityType: EntityKey, record: any): Promise<ProcessedItem> => {
+      const localId: string = record.localId ?? record.id ?? "";
+      // Server-side conflict check for updates only
+      if (record.id && record.clientTimestamp) {
+        const table = tableForEntity[entityType];
+        const [server] = await db.select().from(table).where(eq((table as any).id, record.id)).limit(1);
+        if (server?.updatedAt && new Date(record.clientTimestamp) < server.updatedAt) {
+          conflicts.push({
+            entityType,
+            entityId: record.id,
+            localId,
+            serverUpdatedAt: server.updatedAt.toISOString(),
+            clientTimestamp: record.clientTimestamp,
+          });
+          return { localId, status: "CONFLICT", serverUpdatedAt: server.updatedAt.toISOString() };
+        }
+      }
+      const operationType: OfflineOperation = record.id ? "UPDATE" : "CREATE";
       await db.insert(offlineSyncQueue).values({
         organizationId,
         userId,
-        operationType: (record.id ? "UPDATE" : "CREATE") as any,
-        entityType: entityType as any,
-        entityId: record.id ?? record.localId ?? null,
+        operationType,
+        entityType,
+        entityId: record.id ?? localId ?? null,
         payload: record,
-        status: "PENDING" as any,
+        status: "PENDING",
+        deviceId,
+        clientTimestamp: record.clientTimestamp ? new Date(record.clientTimestamp) : null,
       });
+      // Queue any inline attachments to mobilePendingUploads for binary upload
+      if (Array.isArray(record.attachments)) {
+        for (const att of record.attachments) {
+          if (!att?.localId) continue;
+          await db.insert(mobilePendingUploads).values({
+            deviceId,
+            localId: att.localId,
+            recordType: `${entityType}_ATTACHMENT`,
+            recordDataJson: JSON.stringify({
+              parentEntityType: entityType,
+              parentLocalId: localId,
+              parentEntityId: record.id ?? null,
+              name: att.name ?? null,
+              mime: att.mime ?? null,
+              size: att.size ?? null,
+              objectKey: att.objectKey ?? null,
+            }),
+            status: "PENDING",
+          });
+          processed.attachments.push({ localId: att.localId, status: "QUEUED" });
+        }
+      }
+      return { localId, status: "QUEUED" };
     };
 
     if (Array.isArray(changes?.haulTickets)) {
       for (const t of changes.haulTickets) {
-        await queueOffline("HAUL_TICKET", t);
-        processed.haulTickets.push({ localId: t.localId ?? t.id, status: "QUEUED" });
+        processed.haulTickets.push(await queueOffline("HAUL_TICKET", t));
       }
     }
     if (Array.isArray(changes?.dailyInspectorReports)) {
       for (const r of changes.dailyInspectorReports) {
-        await queueOffline("INSPECTOR_REPORT", r);
-        processed.dailyInspectorReports.push({ localId: r.localId ?? r.id, status: "QUEUED" });
+        processed.dailyInspectorReports.push(await queueOffline("INSPECTOR_REPORT", r));
       }
     }
     if (Array.isArray(changes?.swpppInspections)) {
       for (const s of changes.swpppInspections) {
-        await queueOffline("SWPPP_INSPECTION", s);
-        processed.swpppInspections.push({ localId: s.localId ?? s.id, status: "QUEUED" });
+        processed.swpppInspections.push(await queueOffline("SWPPP_INSPECTION", s));
       }
     }
 
     res.json({
       success: true,
       processed,
-      conflicts: [],
+      conflicts,
       serverTime: new Date().toISOString(),
     });
   } catch (error) {

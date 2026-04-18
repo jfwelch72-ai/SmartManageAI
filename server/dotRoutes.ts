@@ -117,7 +117,7 @@ function requireOrgFeatureFlag(flag: FeatureFlagKey) {
 
 async function dotAudit(
   req: AuthRequest,
-  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "SUBMIT" | "ACTIVATE",
+  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "SUBMIT",
   entityType: string,
   entityId: string,
   oldValue: unknown,
@@ -1238,6 +1238,49 @@ router.delete(
 
 type DelegationResult = Awaited<ReturnType<typeof workflowEngine.delegateEntityTransition>>;
 
+// Lifecycle transition matrix. The workflow engine handles delegation when a
+// template is configured, but the fallback (direct) path must still refuse
+// invalid current states (e.g. approving a DRAFT haul ticket, or re-submitting
+// an APPROVED IDR). Applies BEFORE the delegation call so behavior is
+// consistent whether or not a workflow template exists.
+type StatusGuard = { from: ReadonlyArray<string>; nextLabel: string };
+const HAUL_GUARDS: Record<string, StatusGuard> = {
+  SUBMITTED: { from: ["DRAFT"], nextLabel: "submit" },
+  APPROVED: { from: ["SUBMITTED"], nextLabel: "approve" },
+  REJECTED: { from: ["SUBMITTED"], nextLabel: "reject" },
+};
+const IDR_GUARDS: Record<string, StatusGuard> = {
+  SUBMITTED: { from: ["DRAFT", "REVISED"], nextLabel: "submit" },
+  APPROVED: { from: ["SUBMITTED"], nextLabel: "approve" },
+  REVISED: { from: ["SUBMITTED"], nextLabel: "reject" },
+  DRAFT: { from: ["APPROVED", "SUBMITTED"], nextLabel: "request-revision" },
+};
+const SURETY_GUARDS: Record<string, StatusGuard> = {
+  ACTIVE: { from: ["DRAFT"], nextLabel: "activate" },
+  RELEASED: { from: ["ACTIVE"], nextLabel: "release" },
+};
+// Material certs: gate verify/reject by current buyAmericaStatus.
+const MC_TERMINAL_BUYAM: ReadonlyArray<string> = ["VERIFIED", "WAIVER_GRANTED", "NON_COMPLIANT"];
+
+function enforceLifecycle(
+  res: Response,
+  guards: Record<string, StatusGuard>,
+  currentStatus: string,
+  targetStatus: string,
+): boolean {
+  const guard = guards[targetStatus];
+  if (!guard) return false;
+  if (!guard.from.includes(currentStatus)) {
+    res.status(409).json({
+      error: `Cannot ${guard.nextLabel} from status ${currentStatus}`,
+      currentStatus,
+      allowedFrom: guard.from,
+    });
+    return true;
+  }
+  return false;
+}
+
 function handleDelegationGate(res: Response, delegation: DelegationResult, prev: any): boolean {
   if (!delegation.delegated) return false;
   if (delegation.needsMoreApprovals) {
@@ -1267,6 +1310,7 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (enforceLifecycle(res, HAUL_GUARDS, prev.status, "SUBMITTED")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1305,6 +1349,7 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (enforceLifecycle(res, HAUL_GUARDS, prev.status, "APPROVED")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1343,6 +1388,7 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (enforceLifecycle(res, HAUL_GUARDS, prev.status, "REJECTED")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1382,6 +1428,7 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (enforceLifecycle(res, IDR_GUARDS, prev.status, "SUBMITTED")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1420,6 +1467,7 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (enforceLifecycle(res, IDR_GUARDS, prev.status, "APPROVED")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1458,6 +1506,8 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    // /reject sends an IDR back as REVISED (idr_status enum has no REJECTED)
+    if (enforceLifecycle(res, IDR_GUARDS, prev.status, "REVISED")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1498,6 +1548,7 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (enforceLifecycle(res, IDR_GUARDS, prev.status, "DRAFT")) return;
     const orgId = prev.organizationId;
     const [row] = await db.update(dailyInspectorReports)
       .set({ status: "DRAFT", submittedAt: null, updatedAt: new Date() })
@@ -1560,6 +1611,15 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if (MC_TERMINAL_BUYAM.includes(prev.buyAmericaStatus ?? "PENDING")) {
+      // Already verified, waived, or non-compliant — must reset/re-submit first
+      if ((prev.buyAmericaStatus ?? "PENDING") !== "WAIVER_REQUESTED") {
+        return res.status(409).json({
+          error: `Cannot verify certification in buyAmericaStatus ${prev.buyAmericaStatus}`,
+          currentStatus: prev.buyAmericaStatus,
+        });
+      }
+    }
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     type BuyAmericaTransition = "VERIFIED" | "NON_COMPLIANT" | "WAIVER_GRANTED";
@@ -1609,6 +1669,12 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    if ((prev.buyAmericaStatus ?? "PENDING") === "NON_COMPLIANT") {
+      return res.status(409).json({
+        error: "Certification is already marked NON_COMPLIANT",
+        currentStatus: prev.buyAmericaStatus,
+      });
+    }
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1641,9 +1707,7 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(suretyBonds).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
-    if (prev.status !== "DRAFT") {
-      return res.status(400).json({ error: `Cannot activate bond in status ${prev.status}` });
-    }
+    if (enforceLifecycle(res, SURETY_GUARDS, prev.status, "ACTIVE")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
     const delegation = await workflowEngine.delegateEntityTransition(
@@ -1664,7 +1728,8 @@ router.post(
       message: `Bond ${row.bondNumber} (${row.bondType}) is now active`,
       relatedEntityType: "SURETY_BOND", relatedEntityId: row.id,
     });
-    await dotAudit(req, "ACTIVATE", "surety_bond", row.id, prev, row);
+    // audit_action enum has no ACTIVATE; record as UPDATE with diff payload
+    await dotAudit(req, "UPDATE", "surety_bond", row.id, prev, row);
     res.json({ ...row, workflow: delegation });
   },
 );

@@ -400,10 +400,10 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
     ),
     awarded AS (
       SELECT g.id AS goal_id,
-             COALESCE(SUM(po.total_amount), 0)::numeric AS awarded_dollars
+             COALESCE(SUM(po.total_cost), 0)::numeric AS awarded_dollars
         FROM goals g
         LEFT JOIN purchase_orders po
-               ON po.organization_id = ${orgId}
+               ON po.org_id = ${orgId}
               AND po.project_id = ${projectId}
               AND po.status <> 'CANCELLED'
         LEFT JOIN crm_organisation_certifications coc
@@ -419,7 +419,7 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
            COALESCE(a.awarded_dollars, 0) AS awarded
       FROM goals g
       LEFT JOIN awarded a ON a.goal_id = g.id
-  `).catch(() => ({ rows: [] as any[] }));
+  `);
   let dbeGoalCount = 0;
   let dbeGoalsWithShortfall = 0;
   let dbeShortfallDollars = 0;
