@@ -287,7 +287,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(organizationDotPreferences.id, req.params.id)];
+    const conditions: SQL[] = [eq(organizationDotPreferences.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(organizationDotPreferences.organizationId, ctx.orgId!));
     await db.delete(organizationDotPreferences).where(and(...conditions));
     if (!ctx.isSuperAdmin) cacheInvalidate(ctx.orgId!, KEY_ORG_PREFS);
@@ -352,7 +352,7 @@ router.get(
     const projectId = req.params.projectId;
     const targetOrg = superAdminTargetOrgId(req);
     const fetchRows = async () => {
-      const conditions: any[] = [eq(projectDbeGoals.projectId, projectId)];
+      const conditions: SQL[] = [eq(projectDbeGoals.projectId, projectId)];
       if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
       else if (targetOrg) conditions.push(eq(projectDbeGoals.organizationId, targetOrg));
       return db.select().from(projectDbeGoals).where(and(...conditions));
@@ -411,7 +411,7 @@ router.patch(
     const { id: _id, projectId: _pid, organizationId: _oid, createdById: _cb, createdAt: _ca, ...candidate } = req.body ?? {};
     const data = validateBody(insertProjectDbeGoalSchema.partial(), candidate, res);
     if (!data) return;
-    const conditions: any[] = [
+    const conditions: SQL[] = [
       eq(projectDbeGoals.id, req.params.id),
       eq(projectDbeGoals.projectId, req.params.projectId),
     ];
@@ -444,7 +444,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(projectDbeGoals.id, req.params.id)];
+    const conditions: SQL[] = [eq(projectDbeGoals.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
     const [deleted] = await db.delete(projectDbeGoals).where(and(...conditions)).returning();
     if (deleted) cacheInvalidate(deleted.organizationId, KEY_DBE_GOALS(deleted.projectId));
@@ -459,7 +459,7 @@ router.get("/api/crm/organisations/:crmOrgId/certifications", requireAuth, async
   const ctx = requireOrgOwnership(req, res);
   if (!ctx) return;
   const targetOrg = superAdminTargetOrgId(req);
-  const conditions: any[] = [eq(crmOrganisationCertifications.crmOrganisationId, req.params.crmOrgId)];
+  const conditions: SQL[] = [eq(crmOrganisationCertifications.crmOrganisationId, req.params.crmOrgId)];
   if (!ctx.isSuperAdmin) conditions.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
   else if (targetOrg) conditions.push(eq(crmOrganisationCertifications.organizationId, targetOrg));
   const rows = await db.select().from(crmOrganisationCertifications).where(and(...conditions));
@@ -507,7 +507,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(crmOrganisationCertifications.id, req.params.id)];
+    const conditions: SQL[] = [eq(crmOrganisationCertifications.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
     const [deleted] = await db.delete(crmOrganisationCertifications).where(and(...conditions)).returning();
     if (deleted) {
@@ -540,7 +540,7 @@ router.get(
     if (!ctx) return;
     const projectId = (req.query.projectId as string) || null;
     const targetOrg = superAdminTargetOrgId(req);
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
     if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
     else if (targetOrg) conditions.push(eq(suretyBonds.organizationId, targetOrg));
     if (projectId) conditions.push(eq(suretyBonds.projectId, projectId));
@@ -593,7 +593,7 @@ router.patch(
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
-    const conditions: any[] = [eq(suretyBonds.id, req.params.id)];
+    const conditions: SQL[] = [eq(suretyBonds.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(suretyBonds).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
@@ -642,7 +642,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(suretyBonds.id, req.params.id)];
+    const conditions: SQL[] = [eq(suretyBonds.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
     await db.delete(suretyBonds).where(and(...conditions));
     res.status(204).end();
@@ -661,7 +661,7 @@ router.get(
     if (!ctx) return;
     const projectId = (req.query.projectId as string) || null;
     const targetOrg = superAdminTargetOrgId(req);
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
     else if (targetOrg) conditions.push(eq(haulTickets.organizationId, targetOrg));
     if (projectId) conditions.push(eq(haulTickets.projectId, projectId));
@@ -716,7 +716,7 @@ router.patch(
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     const { id: _id, organizationId: _o, createdAt: _c, recordedById: _r, ...rawPatch } = req.body || {};
-    const conditions: any[] = [eq(haulTickets.id, req.params.id)];
+    const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
@@ -797,7 +797,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(haulTickets.id, req.params.id)];
+    const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
     await db.delete(haulTickets).where(and(...conditions));
     res.status(204).end();
@@ -842,7 +842,7 @@ router.get(
     if (!ctx) return;
     const projectId = (req.query.projectId as string) || null;
     const targetOrg = superAdminTargetOrgId(req);
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
     else if (targetOrg) conditions.push(eq(dailyInspectorReports.organizationId, targetOrg));
     if (projectId) conditions.push(eq(dailyInspectorReports.projectId, projectId));
@@ -903,7 +903,7 @@ router.patch(
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     const { id: _id, organizationId: _o, createdAt: _c, ...rawPatch } = req.body || {};
-    const conditions: any[] = [eq(dailyInspectorReports.id, req.params.id)];
+    const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
@@ -915,14 +915,15 @@ router.patch(
     //  - approve-only: may change status/approval notes only
     const canManage = await userHasManagePermission(req, "canManageInspectorReports");
     const canSubmit = await userHasManagePermission(req, "canSubmitInspectorReports");
-    let patch: any;
+    type IdrPatch = Partial<typeof dailyInspectorReports.$inferInsert>;
+    let patch: IdrPatch;
     if (canManage) {
-      patch = rawPatch;
+      patch = rawPatch as IdrPatch;
     } else if (canSubmit && prev.inspectorId === req.user!.id && prev.status !== "APPROVED") {
-      const { status: _s, approvedById: _ab, approvedAt: _aa, ...rest } = rawPatch;
-      patch = rest;
+      const { status: _s, approvedById: _ab, approvedAt: _aa, ...rest } = rawPatch as IdrPatch & Record<string, unknown>;
+      patch = rest as IdrPatch;
     } else {
-      patch = pickAllowedFields(rawPatch, ["status", "notes"] as const).picked;
+      patch = pickAllowedFields(rawPatch as Record<string, unknown>, ["status", "notes"] as const).picked as IdrPatch;
     }
     if (Object.keys(patch).length === 0) {
       return res.status(403).json({ error: "No fields permitted for your role" });
@@ -963,7 +964,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(dailyInspectorReports.id, req.params.id)];
+    const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
     await db.delete(dailyInspectorReports).where(and(...conditions));
     res.status(204).end();
@@ -982,7 +983,7 @@ router.get(
   if (!ctx) return;
   const projectId = (req.query.projectId as string) || null;
   const targetOrg = superAdminTargetOrgId(req);
-  const conditions: any[] = [];
+  const conditions: SQL[] = [];
   if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
   else if (targetOrg) conditions.push(eq(swpppInspections.organizationId, targetOrg));
   if (projectId) conditions.push(eq(swpppInspections.projectId, projectId));
@@ -1036,7 +1037,7 @@ router.patch(
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
-    const conditions: any[] = [eq(swpppInspections.id, req.params.id)];
+    const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
     const [row] = await db.update(swpppInspections).set({ ...patch, updatedAt: new Date() })
       .where(and(...conditions))
@@ -1053,7 +1054,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(swpppInspections.id, req.params.id)];
+    const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
     await db.delete(swpppInspections).where(and(...conditions));
     res.status(204).end();
@@ -1076,7 +1077,7 @@ router.get(
     if (!ctx) return;
     const projectId = (req.query.projectId as string) || null;
     const targetOrg = superAdminTargetOrgId(req);
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
     else if (targetOrg) conditions.push(eq(materialCertifications.organizationId, targetOrg));
     if (projectId) conditions.push(eq(materialCertifications.projectId, projectId));
@@ -1132,7 +1133,7 @@ router.patch(
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     const { id: _id, organizationId: _o, createdAt: _c, ...rawPatch } = req.body || {};
-    const conditions: any[] = [eq(materialCertifications.id, req.params.id)];
+    const conditions: SQL[] = [eq(materialCertifications.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
@@ -1190,7 +1191,7 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const conditions: any[] = [eq(materialCertifications.id, req.params.id)];
+    const conditions: SQL[] = [eq(materialCertifications.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
     await db.delete(materialCertifications).where(and(...conditions));
     res.status(204).end();
