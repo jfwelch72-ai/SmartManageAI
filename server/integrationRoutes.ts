@@ -16,7 +16,7 @@ import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentSta
 import { exportHaulTickets, exportSuretyPremiums, exportCertifiedPayroll } from "./integrations/providers/qbo/sync";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
 import { importWageDetermination } from "./integrations/providers/dol_davis_bacon";
-import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications } from "./integrations/providers/dbe_directory";
+import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
 import { verifyOrganizationBonds } from "./integrations/providers/surety_verification";
 import { importProjects as stackctImportProjects, exportProjects as stackctExportProjects, importPlans as stackctImportPlans, exportPlans as stackctExportPlans, importEstimates as stackctImportEstimates, exportEstimates as stackctExportEstimates, acquireTokenWithCredentials as stackctAcquireToken } from "./integrations/providers/stackct";
 import { z } from "zod";
@@ -688,6 +688,7 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
         const entries = await searchDbeDirectory(connection, {
           name: data?.name,
           uei: data?.uei,
+          duns: data?.duns,
           state: data?.state,
         });
         result = { success: true, entityType: "dbe_directory", direction: "import" as const, created: 0, updated: 0, skipped: 0, errors: [], data: entries };
@@ -696,6 +697,12 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
       case "dbe_refresh":
         result = await refreshDbeCertifications(connection, dryRun);
         break;
+      case "dbe_verify": {
+        if (!data?.certificationId) return res.status(400).json({ error: "certificationId required" });
+        const v = await verifyDbeCertification(connection, data.certificationId);
+        result = { success: !!v, entityType: "dbe_certification", direction: "import" as const, created: 0, updated: v?.verified ? 1 : 0, skipped: 0, errors: [], data: v };
+        break;
+      }
       case "surety_verify":
         result = await verifyOrganizationBonds(connection, { bondIds: data?.bondIds, dryRun });
         break;

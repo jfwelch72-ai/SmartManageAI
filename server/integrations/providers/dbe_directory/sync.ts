@@ -190,11 +190,12 @@ export async function verifyCertification(
 
 export async function searchDirectory(
   connection: IntegrationConnection,
-  query: { name?: string; uei?: string; state?: string }
+  query: { name?: string; uei?: string; duns?: string; state?: string }
 ): Promise<DbeDirectoryEntry[]> {
   const params: Record<string, string> = {};
   if (query.name) params.q = query.name;
   if (query.uei) params.uei = query.uei;
+  if (query.duns) params.duns = query.duns;
   if (query.state) params.state = query.state;
   const raw = await directoryFetch(connection, params);
   return raw.map(normalizeEntry).filter((e) => e.legalName);

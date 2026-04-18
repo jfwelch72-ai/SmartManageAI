@@ -837,13 +837,13 @@ export async function exportHaulTickets(
       ? and(
           eq(haulTickets.organizationId, connection.organizationId),
           eq(haulTickets.projectId, options.projectId),
-          eq(haulTickets.status, "APPROVED" as any),
+          eq(haulTickets.status, "APPROVED"),
           isNotNull(haulTickets.totalCost),
           isNotNull(haulTickets.haulerVendorId),
         )
       : and(
           eq(haulTickets.organizationId, connection.organizationId),
-          eq(haulTickets.status, "APPROVED" as any),
+          eq(haulTickets.status, "APPROVED"),
           isNotNull(haulTickets.totalCost),
           isNotNull(haulTickets.haulerVendorId),
         );
@@ -934,7 +934,7 @@ export async function exportSuretyPremiums(
     const exportedIds = await getExportedIds(connection.id, "exported_surety_premiums");
     const bonds = await db.select().from(suretyBonds).where(and(
       eq(suretyBonds.organizationId, connection.organizationId),
-      eq(suretyBonds.status, "ACTIVE" as any),
+      eq(suretyBonds.status, "ACTIVE"),
       isNotNull(suretyBonds.premiumAmount),
     ));
     const defaultExpAccount = await getDefaultExpenseAccount(connection.id);
