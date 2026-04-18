@@ -92,6 +92,7 @@ function pickAllowedFields<T extends object, K extends keyof T>(
 import { eventBus } from "./events/eventBus";
 import { integrationConnections } from "@shared/schema";
 import { verifyCertification as dbeVerifyCertification } from "./integrations/providers/dbe_directory/sync";
+import * as connectionService from "./integrations/connectionService";
 import { logWarn } from "./utils/logger";
 import { validateBody } from "./utils/validation";
 import { z } from "zod";
@@ -595,8 +596,8 @@ router.post(
     // is configured. Discrepancies are logged for follow-up nightly batch.
     void (async () => {
       try {
-        const [conn] = await db
-          .select()
+        const [connRow] = await db
+          .select({ id: integrationConnections.id })
           .from(integrationConnections)
           .where(
             and(
@@ -606,6 +607,11 @@ router.post(
             )
           )
           .limit(1);
+        if (!connRow) return;
+        // Connection metadata (directory URL, API key) is encrypted at rest;
+        // fetch via the connection service so the verify call has decrypted
+        // credentials.
+        const conn = await connectionService.getDecryptedConnection(connRow.id, ctx.orgId!);
         if (!conn) return;
         const result = await dbeVerifyCertification(conn, row.id);
         if (result?.discrepancy) {

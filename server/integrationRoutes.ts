@@ -559,7 +559,7 @@ const syncSchema = z.object({
     // DOL Davis-Bacon
     "wage_determination",
     // DBE directory
-    "dbe_lookup", "dbe_refresh",
+    "dbe_lookup", "dbe_refresh", "dbe_verify",
     // Surety verification
     "surety_verify",
   ]),
@@ -576,7 +576,7 @@ const PROVIDER_OPERATIONS: Record<string, Set<string>> = {
   qbo: QBO_OPERATIONS,
   aashtoware: new Set(["ebsx_import", "ebsx_export"]),
   dol_davis_bacon: new Set(["wage_determination"]),
-  dbe_directory: new Set(["dbe_lookup", "dbe_refresh"]),
+  dbe_directory: new Set(["dbe_lookup", "dbe_refresh", "dbe_verify"]),
   surety_verification: new Set(["surety_verify"]),
 };
 
