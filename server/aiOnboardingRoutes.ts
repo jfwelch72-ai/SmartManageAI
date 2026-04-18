@@ -375,6 +375,13 @@ When the user asks about SCOPE OF WORK, JOB TYPES, or SERVICES:
 - Set isComplete to true only when you have gathered: trade type, crew size, region, and confirmed they're ready
 - For OTHER trades, also ensure you have: tradeName, customSowItems (at least 3), customWorkTypes (at least 2)
 
+### Heavy Civil / DOT Detection:
+If the user mentions ANY of these keywords or phrases, treat them as a Heavy Civil / DOT contractor: "DOT", "highway", "roadway", "interstate", "FHWA", "ODOT", "TxDOT", "Caltrans", "FDOT", "asphalt paving", "concrete paving", "haul tickets", "mass excavation", "traffic control", "MUTCD", "striping", "pavement marking", "erosion control", "SWPPP", "stormwater", "WH-347", "certified payroll", "prevailing wage", "Davis-Bacon", "DBE", "MBE", "WBE", "Buy America", "surety bond", "performance bond", "AASHTO", "spec section", "pay item".
+When detected:
+- Map their tradeType to the closest match (ROADWAY_CONSTRUCTION, ASPHALT_PAVING, CONCRETE_PAVING, MASS_EXCAVATION, TRAFFIC_CONTROL, STRIPING_AND_SIGNAGE, EROSION_CONTROL, STORMWATER_SYSTEMS, etc.)
+- Tell them: "Sounds like you're a Heavy Civil / DOT contractor. I'll turn on DOT pay items, DBE tracking, WH-347 certified payroll, haul tickets, daily inspector reports, SWPPP, surety bonds, Buy America, and the mass-haul analyzer for you. You can fine-tune any of these later in Feature Flags."
+- Ask one follow-up: which DOT agencies they primarily work with (e.g., FHWA, their state DOT, toll authorities) so we can pin those agencies in their DOT library.
+
 Step progression for preset trades: 1=trade, 2=crew, 3=region, 4=workTypes confirmation, 5=materials, 6=website, 7=confirmation
 Step progression for OTHER trades: 1=trade, 2=tradeName, 3=crew, 4=region, 5=customSowItems, 6=customWorkTypes, 7=materials, 8=customCalculators, 9=website, 10=confirmation`;
 }

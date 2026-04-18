@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "./auth";
-import { FEATURE_FLAG_KEYS, type FeatureFlagKey } from "@shared/schema";
+import { FEATURE_FLAG_KEYS, tradeTypeEnum, type FeatureFlagKey } from "@shared/schema";
 import * as flagService from "./services/featureFlagService";
 import { logError } from "./utils/logger";
 
@@ -27,6 +27,26 @@ router.get("/:orgId", requireAuth, async (req, res, next) => {
     }
     const flags = await flagService.getFeatureFlags(req.params.orgId);
     res.json({ flags, keys: FEATURE_FLAG_KEYS });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:orgId/apply-preset", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== "SUPER_ADMIN" && (user.role !== "ADMIN" || user.organizationId !== req.params.orgId)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const { tradeType } = req.body || {};
+    if (!tradeType || typeof tradeType !== "string") {
+      return res.status(400).json({ error: "tradeType is required" });
+    }
+    if (!(tradeTypeEnum.enumValues as readonly string[]).includes(tradeType)) {
+      return res.status(400).json({ error: `Invalid tradeType: ${tradeType}` });
+    }
+    const updated = await flagService.applyTradePreset(req.params.orgId, tradeType);
+    res.json({ flags: updated });
   } catch (err) {
     next(err);
   }

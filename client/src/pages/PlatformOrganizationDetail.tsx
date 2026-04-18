@@ -20,6 +20,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { FeatureFlagKey } from "@shared/schema";
+import {
+  FEATURE_FLAG_LABELS,
+  FEATURE_FLAG_DESCRIPTIONS,
+  FEATURE_FLAG_CATEGORIES,
+  FEATURE_FLAG_CATEGORY_MAP,
+  isHeavyCivilTrade,
+} from "@shared/schema/features";
 
 interface Organization {
   id: string;
@@ -104,6 +111,18 @@ const tradeTypeOptions = [
   { value: "FLOORING", label: "Flooring" },
   { value: "LANDSCAPING", label: "Landscaping" },
   { value: "EARTHWORK", label: "Earthwork" },
+  { value: "ROADWAY_CONSTRUCTION", label: "Heavy Civil / Highway (DOT)" },
+  { value: "ASPHALT_PAVING", label: "Asphalt Paving" },
+  { value: "CONCRETE_PAVING", label: "Concrete Paving" },
+  { value: "MASS_EXCAVATION", label: "Mass Excavation" },
+  { value: "TRAFFIC_CONTROL", label: "Traffic Control" },
+  { value: "STRIPING_AND_SIGNAGE", label: "Striping & Signage" },
+  { value: "EROSION_CONTROL", label: "Erosion Control / SWPPP" },
+  { value: "STORMWATER_SYSTEMS", label: "Stormwater Systems" },
+  { value: "SANITARY_SEWER", label: "Sanitary Sewer" },
+  { value: "WATERLINE", label: "Waterline" },
+  { value: "CURB_AND_GUTTER", label: "Curb & Gutter" },
+  { value: "SIDEWALK", label: "Sidewalk" },
   { value: "DEMOLITION", label: "Demolition" },
   { value: "STEEL_ERECTION", label: "Steel Erection" },
   { value: "GLAZING", label: "Glazing" },
@@ -226,6 +245,18 @@ export default function PlatformOrganizationDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId] });
     },
     onError: (e: Error) => toast({ title: "Failed to update feature flag", description: e.message, variant: "destructive" }),
+  });
+
+  const applyPresetMutation = useMutation({
+    mutationFn: async (tradeType: string) => {
+      const res = await apiRequest("POST", `/api/feature-flags/${orgId}/apply-preset`, { tradeType });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId] });
+      toast({ title: "Heavy Civil preset applied", description: "DOT, DBE, payroll, haul tickets, and inspections are now enabled." });
+    },
+    onError: (e: Error) => toast({ title: "Failed to apply preset", description: e.message, variant: "destructive" }),
   });
 
   const exportMutation = useMutation({
@@ -1162,26 +1193,68 @@ export default function PlatformOrganizationDetail() {
                   <ToggleRight className="h-5 w-5" />
                   Feature Flags
                 </CardTitle>
-                <CardDescription>Toggle feature flags for this organization</CardDescription>
+                <CardDescription>Toggle feature flags for this organization. Flags are grouped by category with a plain-English description of what each one does.</CardDescription>
               </CardHeader>
               <CardContent>
+                {isHeavyCivilTrade(organization.tradeType) && (
+                  <div className="mb-6 p-4 rounded-lg border bg-muted/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="heavy-civil-preset-banner">
+                    <div>
+                      <div className="font-medium">This looks like a Heavy Civil / DOT contractor</div>
+                      <div className="text-sm text-muted-foreground">
+                        Apply the Heavy Civil preset to enable DOT pay items, DBE tracking, WH-347 payroll, haul tickets, IDR, SWPPP, surety bonds, Buy America, and mass-haul analyzer in one click.
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => applyPresetMutation.mutate(organization.tradeType)}
+                      disabled={applyPresetMutation.isPending}
+                      data-testid="button-apply-heavy-civil-preset"
+                    >
+                      {applyPresetMutation.isPending ? "Applying..." : "Apply Heavy Civil Preset"}
+                    </Button>
+                  </div>
+                )}
                 {featureFlagsLoading ? <Skeleton className="h-40 w-full" /> : orgFeatureFlags ? (
-                  <div className="space-y-4">
-                    {orgFeatureFlags.keys.map((key) => {
-                      const enabled = orgFeatureFlags.flags[key] ?? false;
-                      const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                  <div className="space-y-6">
+                    {FEATURE_FLAG_CATEGORIES.map((category) => {
+                      const keysInCategory = orgFeatureFlags.keys.filter(
+                        (k) => FEATURE_FLAG_CATEGORY_MAP[k] === category
+                      );
+                      if (keysInCategory.length === 0) return null;
                       return (
-                        <div key={key} className="flex items-center justify-between p-4 rounded-lg border" data-testid={`feature-flag-row-${key}`}>
-                          <div>
-                            <div className="font-medium" data-testid={`feature-flag-label-${key}`}>{label}</div>
-                            <div className="text-sm text-muted-foreground">{key}</div>
+                        <div key={category} data-testid={`feature-flag-category-${category.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}>
+                          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                            {category}
+                          </h3>
+                          <div className="space-y-2">
+                            {keysInCategory.map((key) => {
+                              const enabled = orgFeatureFlags.flags[key] ?? false;
+                              const label = FEATURE_FLAG_LABELS[key] ?? key;
+                              const description = FEATURE_FLAG_DESCRIPTIONS[key];
+                              return (
+                                <div
+                                  key={key}
+                                  className="flex items-start justify-between gap-4 p-4 rounded-lg border"
+                                  data-testid={`feature-flag-row-${key}`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-medium" data-testid={`feature-flag-label-${key}`}>{label}</div>
+                                    {description && (
+                                      <div className="text-sm text-muted-foreground mt-0.5" data-testid={`feature-flag-description-${key}`}>
+                                        {description}
+                                      </div>
+                                    )}
+                                    <div className="text-xs text-muted-foreground/70 font-mono mt-1">{key}</div>
+                                  </div>
+                                  <Switch
+                                    checked={enabled}
+                                    onCheckedChange={(checked) => toggleFlagMutation.mutate({ flag: key, enabled: checked })}
+                                    disabled={toggleFlagMutation.isPending}
+                                    data-testid={`feature-flag-toggle-${key}`}
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
-                          <Switch
-                            checked={enabled}
-                            onCheckedChange={(checked) => toggleFlagMutation.mutate({ flag: key, enabled: checked })}
-                            disabled={toggleFlagMutation.isPending}
-                            data-testid={`feature-flag-toggle-${key}`}
-                          />
                         </div>
                       );
                     })}
