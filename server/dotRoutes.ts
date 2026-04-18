@@ -1248,6 +1248,7 @@ const HAUL_GUARDS: Record<string, StatusGuard> = {
   SUBMITTED: { from: ["DRAFT"], nextLabel: "submit" },
   APPROVED: { from: ["SUBMITTED"], nextLabel: "approve" },
   REJECTED: { from: ["SUBMITTED"], nextLabel: "reject" },
+  VOIDED: { from: ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"], nextLabel: "void" },
 };
 const IDR_GUARDS: Record<string, StatusGuard> = {
   SUBMITTED: { from: ["DRAFT", "REVISED"], nextLabel: "submit" },
@@ -1258,6 +1259,8 @@ const IDR_GUARDS: Record<string, StatusGuard> = {
 const SURETY_GUARDS: Record<string, StatusGuard> = {
   ACTIVE: { from: ["DRAFT"], nextLabel: "activate" },
   RELEASED: { from: ["ACTIVE"], nextLabel: "release" },
+  EXPIRED: { from: ["ACTIVE"], nextLabel: "expire" },
+  CANCELED: { from: ["DRAFT", "ACTIVE"], nextLabel: "cancel" },
 };
 // Material certs: gate verify/reject by current buyAmericaStatus.
 const MC_TERMINAL_BUYAM: ReadonlyArray<string> = ["VERIFIED", "WAIVER_GRANTED", "NON_COMPLIANT"];
@@ -1281,7 +1284,7 @@ function enforceLifecycle(
   return false;
 }
 
-function handleDelegationGate(res: Response, delegation: DelegationResult, prev: any): boolean {
+function handleDelegationGate(res: Response, delegation: DelegationResult, prev: Record<string, unknown>): boolean {
   if (!delegation.delegated) return false;
   if (delegation.needsMoreApprovals) {
     res.json({ ...prev, workflow: delegation, message: "Approval recorded; more approvals required" });
@@ -1428,6 +1431,12 @@ router.post(
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
+    // Managers/super-admin may submit any IDR; inspectors with canSubmit may
+    // only submit their own report (mirrors the PATCH ownership gate).
+    const canManage = await userHasManagePermission(req, "canManageInspectorReports");
+    if (!ctx.isSuperAdmin && !canManage && prev.inspectorId !== req.user!.id) {
+      return res.status(403).json({ error: "Only the assigned inspector may submit this report" });
+    }
     if (enforceLifecycle(res, IDR_GUARDS, prev.status, "SUBMITTED")) return;
     const orgId = prev.organizationId;
     const role = req.user!.effectiveRole || req.user!.role;
@@ -1745,6 +1754,98 @@ router.post(
     });
     // audit_action enum has no ACTIVATE; record as UPDATE with diff payload
     await dotAudit(req, "UPDATE", "surety_bond", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+// Surety bond lifecycle: release / expire / cancel. Each transition is
+// guarded by SURETY_GUARDS and runs through the workflow engine so any
+// org-configured surety bond approval template is honored.
+function makeSuretyTransition(
+  path: string,
+  target: "RELEASED" | "EXPIRED" | "CANCELED",
+  eventType: string,
+  notifyTitle: string,
+) {
+  router.post(
+    path,
+    requireAuth,
+    requireFeaturePermission("canManageSuretyBonds"),
+    async (req: AuthRequest, res: Response) => {
+      const ctx = requireOrgOwnership(req, res);
+      if (!ctx) return;
+      const conditions: SQL[] = [eq(suretyBonds.id, req.params.id)];
+      if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
+      const [prev] = await db.select().from(suretyBonds).where(and(...conditions)).limit(1);
+      if (!prev) return res.status(404).json({ error: "Not found" });
+      if (enforceLifecycle(res, SURETY_GUARDS, prev.status, target)) return;
+      const orgId = prev.organizationId;
+      const role = req.user!.effectiveRole || req.user!.role;
+      const delegation = await workflowEngine.delegateEntityTransition(
+        orgId, "SURETY_BOND", prev.id, req.user!.id, role, target, req.body?.notes,
+      );
+      if (handleDelegationGate(res, delegation, prev)) return;
+      const [row] = await db.update(suretyBonds)
+        .set({ status: target, updatedAt: new Date() })
+        .where(and(...conditions)).returning();
+      await eventBus.emit({
+        version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+        type: eventType,
+        payload: { bondId: row.id, projectId: row.projectId ?? null, bondNumber: row.bondNumber },
+      });
+      await notifyApprovers(orgId, req.user!.id, {
+        type: `SURETY_BOND_${target}`,
+        title: notifyTitle,
+        message: `Bond ${row.bondNumber} (${row.bondType}) ${target.toLowerCase()}`,
+        relatedEntityType: "SURETY_BOND", relatedEntityId: row.id,
+      });
+      await dotAudit(req, "UPDATE", "surety_bond", row.id, prev, row);
+      res.json({ ...row, workflow: delegation });
+    },
+  );
+}
+makeSuretyTransition("/api/surety-bonds/:id/release", "RELEASED", "surety_bond.released", "Surety Bond Released");
+makeSuretyTransition("/api/surety-bonds/:id/expire", "EXPIRED", "surety_bond.expired", "Surety Bond Expired");
+makeSuretyTransition("/api/surety-bonds/:id/cancel", "CANCELED", "surety_bond.canceled", "Surety Bond Canceled");
+
+// Haul ticket void: terminal transition usable from any prior status by
+// users with manage permission. Workflow-aware so org-configured haul
+// approval templates can intercept (e.g. require supervisor sign-off).
+router.post(
+  "/api/haul-tickets/:id/void",
+  requireAuth,
+  requireFeaturePermission("canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    if (enforceLifecycle(res, HAUL_GUARDS, prev.status, "VOIDED")) return;
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "HAUL_TICKET", prev.id, req.user!.id, role, "VOIDED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(haulTickets)
+      .set({ status: "VOIDED", updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "haul_ticket.voided",
+      payload: { haulTicketId: row.id, projectId: row.projectId, ticketNumber: row.ticketNumber, reason: req.body?.notes ?? null },
+    });
+    if (prev.recordedById) {
+      await notifySubmitter(prev.recordedById, {
+        type: "HAUL_TICKET_VOIDED",
+        title: "Haul Ticket Voided",
+        message: `Haul ticket ${row.ticketNumber} was voided${req.body?.notes ? `: ${req.body.notes}` : ""}`,
+        relatedEntityType: "HAUL_TICKET", relatedEntityId: row.id,
+      }, orgId);
+    }
+    await dotAudit(req, "UPDATE", "haul_ticket", row.id, prev, row);
     res.json({ ...row, workflow: delegation });
   },
 );
