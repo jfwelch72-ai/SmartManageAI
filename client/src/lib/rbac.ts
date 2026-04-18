@@ -462,15 +462,23 @@ export interface FeaturePerms {
   canSubmitPeerRatings?: boolean;
   canViewPeerRatings?: boolean;
   canManageDotLibrary?: boolean;
+  canViewDotLibrary?: boolean;
   canManageDbeGoals?: boolean;
+  canViewDbeGoals?: boolean;
   canManageHaulTickets?: boolean;
   canApproveHaulTickets?: boolean;
+  canViewHaulTickets?: boolean;
   canManageInspectorReports?: boolean;
   canApproveInspectorReports?: boolean;
+  canSubmitInspectorReports?: boolean;
+  canViewInspectorReports?: boolean;
   canManageSwppp?: boolean;
+  canViewSwppp?: boolean;
   canManageMaterialCertifications?: boolean;
   canVerifyMaterialCertifications?: boolean;
+  canViewMaterialCertifications?: boolean;
   canManageSuretyBonds?: boolean;
+  canViewSuretyBonds?: boolean;
 }
 
 export interface NavItem {
