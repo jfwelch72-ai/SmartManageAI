@@ -862,9 +862,13 @@ router.get("/api/documents/:documentId", requireAuth, async (req: AuthRequest, r
       .from(projects)
       .where(eq(projects.id, document.projectId))
       .limit(1);
-    if (project && req.user!.role !== "SUPER_ADMIN" && project.organizationId !== req.user!.organizationId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
+    if (req.user!.role !== "SUPER_ADMIN") {
+      // Deny by default: a doc without a resolvable project cannot prove
+      // tenant ownership, so non-superadmins cannot read it.
+      if (!project || project.organizationId !== req.user!.organizationId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
     }
     res.json(document);
   } catch (error) {

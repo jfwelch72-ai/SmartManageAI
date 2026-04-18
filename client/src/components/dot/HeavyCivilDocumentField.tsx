@@ -32,6 +32,68 @@ interface DocumentRevision {
   status: string;
   storageKey: string | null;
   createdAt: string;
+  createdByUserId?: string | null;
+  metadata?: { fileName?: string; fileSize?: number; mimeType?: string } | null;
+}
+
+function formatBytes(n?: number) {
+  if (!n || n <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function RevisionHistoryList({ revisions, testId }: { revisions: DocumentRevision[]; testId: string }) {
+  if (revisions.length === 0) return null;
+  const sorted = [...revisions].sort((a, b) => b.revisionNumber - a.revisionNumber);
+  return (
+    <details className="mt-2 text-xs" data-testid={`history-${testId}`}>
+      <summary className="cursor-pointer text-muted-foreground hover-elevate inline-block px-1 rounded">
+        <History className="h-3 w-3 inline mr-1" />
+        Revision history ({revisions.length})
+      </summary>
+      <ul className="mt-1 space-y-1 border-l-2 border-muted pl-3">
+        {sorted.map((rev) => {
+          const meta = rev.metadata ?? {};
+          return (
+            <li key={rev.id} className="flex items-center justify-between gap-2" data-testid={`history-row-${testId}-${rev.id}`}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant={rev.status === "active" ? "default" : "outline"} className="text-[10px]">
+                    Rev {rev.revisionNumber}
+                  </Badge>
+                  {rev.status !== "active" && (
+                    <span className="text-[10px] text-muted-foreground">{rev.status}</span>
+                  )}
+                  <span className="text-muted-foreground">
+                    {new Date(rev.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                {(meta.fileName || meta.fileSize) && (
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    {meta.fileName}{meta.fileSize ? ` · ${formatBytes(meta.fileSize)}` : ""}
+                  </div>
+                )}
+              </div>
+              {rev.storageKey && (
+                <a
+                  className="text-xs underline shrink-0"
+                  href={`/api/documents/revisions/${rev.id}/preview-url`}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-testid={`history-download-${testId}-${rev.id}`}
+                >
+                  <Download className="h-3 w-3 inline" />
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
 }
 
 async function createDocumentAndInitialRevision(opts: {
@@ -210,13 +272,8 @@ export function HeavyCivilDocumentField({
                 Replace (new revision)
               </Button>
             </ObjectUploader>
-            {revisions.length > 1 && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <History className="h-3 w-3" />
-                History preserved
-              </span>
-            )}
           </div>
+          <RevisionHistoryList revisions={revisions} testId={testId} />
         </div>
       ) : (
         <div className="rounded-md border border-dashed p-3 flex items-center justify-between gap-2">
@@ -361,21 +418,24 @@ function DocumentSummary({ documentId, testId }: { documentId: string; testId: s
   });
   const active = revs.find((r) => r.status === "active") ?? revs[0];
   return (
-    <div className="flex items-center gap-2 min-w-0 flex-1" data-testid={`text-${testId}`}>
-      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate">
-          {isLoading ? "Loading…" : data?.title ?? data?.fileName ?? documentId}
+    <div className="flex flex-col gap-1 min-w-0 flex-1" data-testid={`text-${testId}`}>
+      <div className="flex items-center gap-2 min-w-0">
+        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate">
+            {isLoading ? "Loading…" : data?.title ?? data?.fileName ?? documentId}
+          </div>
+          {active && <div className="text-xs text-muted-foreground">Rev {active.revisionNumber} · {revs.length} total</div>}
         </div>
-        {active && <div className="text-xs text-muted-foreground">Rev {active.revisionNumber} · {revs.length} total</div>}
+        {active && (
+          <Button type="button" size="sm" variant="ghost" asChild aria-label="Download">
+            <a href={`/api/documents/revisions/${active.id}/preview-url`} target="_blank" rel="noreferrer">
+              <Download className="h-3.5 w-3.5" />
+            </a>
+          </Button>
+        )}
       </div>
-      {active && (
-        <Button type="button" size="sm" variant="ghost" asChild aria-label="Download">
-          <a href={`/api/documents/revisions/${active.id}/preview-url`} target="_blank" rel="noreferrer">
-            <Download className="h-3.5 w-3.5" />
-          </a>
-        </Button>
-      )}
+      <RevisionHistoryList revisions={revs} testId={testId} />
     </div>
   );
 }
