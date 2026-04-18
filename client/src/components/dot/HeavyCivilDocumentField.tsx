@@ -45,7 +45,21 @@ function formatBytes(n?: number) {
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+interface UserLite { id: string; firstName?: string | null; lastName?: string | null; email?: string | null }
+
 function RevisionHistoryList({ revisions, testId }: { revisions: DocumentRevision[]; testId: string }) {
+  const { data: users = [] } = useQuery<UserLite[]>({
+    queryKey: ["/api/users"],
+    enabled: revisions.length > 0,
+  });
+  const userById = new Map(users.map((u) => [u.id, u]));
+  const uploaderName = (id: string | null | undefined) => {
+    if (!id) return "Unknown";
+    const u = userById.get(id);
+    if (!u) return id.slice(0, 8);
+    const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim();
+    return name || u.email || id.slice(0, 8);
+  };
   if (revisions.length === 0) return null;
   const sorted = [...revisions].sort((a, b) => b.revisionNumber - a.revisionNumber);
   return (
@@ -71,11 +85,11 @@ function RevisionHistoryList({ revisions, testId }: { revisions: DocumentRevisio
                     {new Date(rev.createdAt).toLocaleString()}
                   </span>
                 </div>
-                {(meta.fileName || meta.fileSize) && (
-                  <div className="text-[10px] text-muted-foreground truncate">
-                    {meta.fileName}{meta.fileSize ? ` · ${formatBytes(meta.fileSize)}` : ""}
-                  </div>
-                )}
+                <div className="text-[10px] text-muted-foreground truncate">
+                  by {uploaderName(rev.createdByUserId)}
+                  {meta.fileName ? ` · ${meta.fileName}` : ""}
+                  {meta.fileSize ? ` · ${formatBytes(meta.fileSize)}` : ""}
+                </div>
               </div>
               {rev.storageKey && (
                 <a
@@ -119,6 +133,11 @@ async function createDocumentAndInitialRevision(opts: {
   await apiRequest("POST", `/api/documents/${doc.id}/revisions`, {
     sourceType: "upload",
     storageKey: opts.fileUrl,
+    metadata: {
+      fileName: opts.fileName,
+      fileSize: opts.fileSize,
+      mimeType: opts.mimeType,
+    },
   });
   return doc;
 }
@@ -126,10 +145,18 @@ async function createDocumentAndInitialRevision(opts: {
 async function uploadAndCreateRevision(opts: {
   documentId: string;
   fileUrl: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
 }): Promise<DocumentRevision> {
   const r = await apiRequest("POST", `/api/documents/${opts.documentId}/revisions`, {
     sourceType: "upload",
     storageKey: opts.fileUrl,
+    metadata: {
+      fileName: opts.fileName,
+      fileSize: opts.fileSize,
+      mimeType: opts.mimeType,
+    },
   });
   return (await r.json()) as DocumentRevision;
 }
@@ -177,7 +204,7 @@ export function HeavyCivilDocumentField({
     setBusy(true);
     try {
       if (documentId) {
-        await uploadAndCreateRevision({ documentId, fileUrl: f.uploadURL });
+        await uploadAndCreateRevision({ documentId, fileUrl: f.uploadURL, fileName, fileSize, mimeType });
         await queryClient.invalidateQueries({ queryKey: ["/api/documents", documentId, "revisions"] });
         toast({ title: "New revision uploaded" });
       } else {
