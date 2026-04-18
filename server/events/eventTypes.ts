@@ -263,7 +263,9 @@ export type DomainEvent =
   | MaterialCertificationVerifiedEvent
   | SuretyBondCreatedEvent
   | SuretyBondExpiringEvent
-  | DbeGoalChangedEvent;
+  | DbeGoalChangedEvent
+  | CrmCertificationCreatedEvent
+  | CrmCertificationDeletedEvent;
 
 export interface PoReceiptRecordedEvent extends EventEnvelope {
   type: "po.receipt_recorded";
@@ -449,6 +451,8 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "surety_bond.expired",
   "surety_bond.released",
   "dbe_goal.changed",
+  "crm_certification.created",
+  "crm_certification.deleted",
 ];
 
 export interface HaulTicketCreatedEvent extends EventEnvelope {
@@ -587,5 +591,24 @@ export interface DbeGoalChangedEvent extends EventEnvelope {
     certificationType: string | null;
     goalPercent: string | null;
     actualPercent: string | null;
+  };
+}
+
+export interface CrmCertificationCreatedEvent extends EventEnvelope {
+  type: "crm_certification.created";
+  payload: {
+    certificationId: string;
+    crmOrganisationId: string;
+    certificationType: string;
+    expirationDate: string | null;
+  };
+}
+
+export interface CrmCertificationDeletedEvent extends EventEnvelope {
+  type: "crm_certification.deleted";
+  payload: {
+    certificationId: string;
+    crmOrganisationId: string;
+    deletedBy: string;
   };
 }

@@ -163,7 +163,11 @@ const payItemSearchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
-router.get("/api/dot/pay-items", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get(
+  "/api/dot/pay-items",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
   const parsed = payItemSearchQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: "Invalid query", details: parsed.error.flatten().fieldErrors });
   const { specBookId, agencyId, q, category, limit } = parsed.data;
@@ -182,7 +186,8 @@ router.get("/api/dot/pay-items", requireAuth, async (req: AuthRequest, res: Resp
   }
   const rows = await db.select().from(dotPayItems).where(and(...conditions)).orderBy(dotPayItems.itemNumber).limit(limit);
   res.json(rows);
-});
+  },
+);
 
 const bulkUploadSchema = z.object({
   specBookId: z.string(),
@@ -475,6 +480,19 @@ router.post(
     }, res);
     if (!data) return;
     const [row] = await db.insert(crmOrganisationCertifications).values(data).returning();
+    await eventBus.emit({
+      version: 1,
+      orgId: ctx.orgId!,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "crm_certification.created",
+      payload: {
+        certificationId: row.id,
+        crmOrganisationId: row.crmOrganisationId,
+        certificationType: row.certificationType,
+        expirationDate: row.expirationDate ? String(row.expirationDate) : null,
+      },
+    });
     res.status(201).json(row);
   },
 );
@@ -488,7 +506,21 @@ router.delete(
     if (!ctx) return;
     const conditions: any[] = [eq(crmOrganisationCertifications.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
-    await db.delete(crmOrganisationCertifications).where(and(...conditions));
+    const [deleted] = await db.delete(crmOrganisationCertifications).where(and(...conditions)).returning();
+    if (deleted) {
+      await eventBus.emit({
+        version: 1,
+        orgId: deleted.organizationId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "crm_certification.deleted",
+        payload: {
+          certificationId: deleted.id,
+          crmOrganisationId: deleted.crmOrganisationId,
+          deletedBy: req.user!.id,
+        },
+      });
+    }
     res.status(204).end();
   },
 );
