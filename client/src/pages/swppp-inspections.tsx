@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Droplets, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Droplets, Plus, Loader2, Pencil, Trash2, Wand2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -143,6 +143,30 @@ function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppIns
   const [form, setForm] = useState<FormState>(() => initial(existing, defaultProjectId));
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
 
+  const aiDraftMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/ai-features/heavy-civil/swppp/draft-corrective", {
+        deficienciesFound: form.deficienciesFound,
+        inspectionType: form.inspectionType,
+        rainfall24hrInches: form.rainfall24hrInches || undefined,
+      });
+      return r.json();
+    },
+    onSuccess: (data) => {
+      if (data?.fallback) { toast({ title: "AI couldn't draft corrective actions", description: data.message ?? "Enter manually." }); return; }
+      const due = data?.recommendedDueDays && Number.isFinite(Number(data.recommendedDueDays))
+        ? new Date(Date.now() + Number(data.recommendedDueDays) * 86400000).toISOString().slice(0, 10)
+        : form.correctiveActionDueDate;
+      setForm((prev) => ({
+        ...prev,
+        correctiveActions: data.correctiveActions ?? prev.correctiveActions,
+        correctiveActionDueDate: prev.correctiveActionDueDate || due,
+      }));
+      toast({ title: "AI draft inserted", description: `Confidence ${data.confidence ?? "—"}/100. Review before saving.` });
+    },
+    onError: (error: Error) => toast({ title: "AI draft failed", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
   const mut = useMutation({
     mutationFn: async (data: FormState) => {
       const payload: Record<string, unknown> = {
@@ -190,7 +214,15 @@ function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppIns
           <div><Label>Trigger (in)</Label><Input inputMode="decimal" value={form.rainfallTriggerInches} onChange={(e) => setForm({ ...form, rainfallTriggerInches: e.target.value })} data-testid="input-swppp-trigger" /></div>
         </div>
         <div><Label>Deficiencies Found</Label><Textarea rows={2} value={form.deficienciesFound} onChange={(e) => setForm({ ...form, deficienciesFound: e.target.value })} data-testid="input-swppp-deficiencies" /></div>
-        <div><Label>Corrective Actions</Label><Textarea rows={2} value={form.correctiveActions} onChange={(e) => setForm({ ...form, correctiveActions: e.target.value })} data-testid="input-swppp-corrective" /></div>
+        <div>
+          <div className="flex items-center justify-between">
+            <Label>Corrective Actions</Label>
+            <Button type="button" size="sm" variant="outline" disabled={aiDraftMut.isPending || form.deficienciesFound.length < 5} onClick={() => aiDraftMut.mutate()} data-testid="button-swppp-ai-draft">
+              {aiDraftMut.isPending ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Wand2 className="h-3.5 w-3.5 mr-2" />}AI Draft
+            </Button>
+          </div>
+          <Textarea rows={3} value={form.correctiveActions} onChange={(e) => setForm({ ...form, correctiveActions: e.target.value })} data-testid="input-swppp-corrective" />
+        </div>
         <div><Label>Corrective Action Due Date</Label><Input type="date" value={form.correctiveActionDueDate} onChange={(e) => setForm({ ...form, correctiveActionDueDate: e.target.value })} data-testid="input-swppp-due" /></div>
         <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-swppp-notes" /></div>
         <DialogFooter>

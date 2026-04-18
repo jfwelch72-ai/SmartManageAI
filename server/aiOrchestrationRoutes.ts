@@ -19,6 +19,7 @@ import aiDocumentRoutes from "./aiDocumentRoutes";
 import aiSchedulingRoutes from "./aiSchedulingRoutes";
 import aiTakeoffFeatureRoutes from "./aiTakeoffFeatureRoutes";
 import aiCfoAnalyticsRoutes from "./aiCfoAnalyticsRoutes";
+import aiHeavyCivilFeatureRoutes from "./aiHeavyCivilFeatureRoutes";
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.use(aiDocumentRoutes);
 router.use(aiSchedulingRoutes);
 router.use(aiTakeoffFeatureRoutes);
 router.use(aiCfoAnalyticsRoutes);
+router.use(aiHeavyCivilFeatureRoutes);
 
 // ========================================
 // Routes from aiRoutes.ts

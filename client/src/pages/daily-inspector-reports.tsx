@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ClipboardList, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
+import { ClipboardList, Plus, Loader2, Pencil, Trash2, Wand2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { HeavyCivilDocumentList } from "@/components/dot/HeavyCivilDocumentField";
@@ -167,6 +167,34 @@ function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspe
   const [form, setForm] = useState<FormState>(() => initial(existing, defaultProjectId));
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
 
+  const [aiNotes, setAiNotes] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  const aiSummarizeMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/ai-features/heavy-civil/idr/summarize", {
+        rawNotes: aiNotes,
+        weather: form.weatherConditions || undefined,
+        crewCount: form.crewCount ? Number(form.crewCount) : undefined,
+        crewHours: form.crewHours || undefined,
+        stationsWorked: form.stationsWorked || undefined,
+      });
+      return r.json();
+    },
+    onSuccess: (data) => {
+      if (data?.fallback) { toast({ title: "AI summarize failed", description: data.message ?? "Use raw notes." }); return; }
+      setForm((prev) => ({
+        ...prev,
+        workPerformed: data.workPerformed ?? prev.workPerformed,
+        delaysEncountered: prev.delaysEncountered || (data.delaysEncountered ?? ""),
+        safetyIncidents: prev.safetyIncidents || (data.safetyIncidents ?? ""),
+      }));
+      toast({ title: "AI summary inserted", description: `Confidence ${data.confidence ?? "—"}/100. Review before submitting.` });
+      setAiOpen(false);
+      setAiNotes("");
+    },
+    onError: (error: Error) => toast({ title: "AI summarize failed", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
   const mut = useMutation({
     mutationFn: async (data: FormState) => {
       // Server strips status from PATCH; lifecycle goes through workflow
@@ -253,7 +281,31 @@ function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspe
           <div><Label>Crew Count</Label><Input inputMode="numeric" value={form.crewCount} onChange={(e) => setForm({ ...form, crewCount: e.target.value })} data-testid="input-idr-crew-count" /></div>
           <div><Label>Crew Hours</Label><Input inputMode="decimal" value={form.crewHours} onChange={(e) => setForm({ ...form, crewHours: e.target.value })} data-testid="input-idr-crew-hours" /></div>
         </div>
-        <div><Label>Work Performed</Label><Textarea rows={3} value={form.workPerformed} onChange={(e) => setForm({ ...form, workPerformed: e.target.value })} data-testid="input-idr-work" /></div>
+        <div>
+          <div className="flex items-center justify-between">
+            <Label>Work Performed</Label>
+            <Button type="button" size="sm" variant="outline" onClick={() => setAiOpen(true)} data-testid="button-idr-ai-summarize">
+              <Wand2 className="h-3.5 w-3.5 mr-2" />AI Summarize Notes
+            </Button>
+          </div>
+          <Textarea rows={3} value={form.workPerformed} onChange={(e) => setForm({ ...form, workPerformed: e.target.value })} data-testid="input-idr-work" />
+        </div>
+        <Dialog open={aiOpen} onOpenChange={setAiOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader><DialogTitle>AI Summarize Field Notes</DialogTitle></DialogHeader>
+            <div className="space-y-2">
+              <Label>Paste your raw field notes (voice transcript, scribbles, etc.)</Label>
+              <Textarea rows={8} value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} placeholder="Crew of 6 started at 7am pouring class A concrete at sta 12+50…" data-testid="input-idr-ai-notes" />
+              <p className="text-xs text-muted-foreground">AI extracts work performed, delays, and safety notes. Review before saving.</p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAiOpen(false)} data-testid="button-idr-ai-cancel">Cancel</Button>
+              <Button type="button" disabled={aiSummarizeMut.isPending || aiNotes.length < 10} onClick={() => aiSummarizeMut.mutate()} data-testid="button-idr-ai-run">
+                {aiSummarizeMut.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Summarize
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <div><Label>Stations Worked</Label><Input placeholder="e.g. Sta 100+00 to 110+50" value={form.stationsWorked} onChange={(e) => setForm({ ...form, stationsWorked: e.target.value })} data-testid="input-idr-stations" /></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><Label>Deliveries</Label><Textarea rows={2} value={form.deliveries} onChange={(e) => setForm({ ...form, deliveries: e.target.value })} data-testid="input-idr-deliveries" /></div>

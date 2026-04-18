@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Award, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Award, Plus, Loader2, Pencil, Trash2, Sparkles } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatMoney, getErrorMessage } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -38,6 +38,15 @@ export default function DbeGoalsPage() {
     );
   }
 
+  const [riskOpen, setRiskOpen] = useState(false);
+  const riskMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/ai-features/heavy-civil/dbe/risk-score", { projectId });
+      return r.json();
+    },
+    onError: (error: Error) => toast({ title: "DBE risk score failed", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
   const delMut = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/projects/${projectId}/dbe-goals/${id}`); },
     onSuccess: () => {
@@ -58,8 +67,47 @@ export default function DbeGoalsPage() {
           <h1 className="text-2xl font-semibold">DBE Goals</h1>
           <p className="text-sm text-muted-foreground">Disadvantaged Business Enterprise participation goals — DBE, MBE, WBE, SBE, VOSB and more.</p>
         </div>
-        {canManage && (<Button disabled={!projectId} onClick={() => setEditing("new")} data-testid="button-new-dbe-goal"><Plus className="h-4 w-4 mr-2" />New Goal</Button>)}
+        <div className="flex items-center gap-2">
+          {canAccess && projectId && (
+            <Button variant="outline" disabled={riskMut.isPending} onClick={() => { setRiskOpen(true); riskMut.mutate(); }} data-testid="button-dbe-risk-ai">
+              {riskMut.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}AI Risk Score
+            </Button>
+          )}
+          {canManage && (<Button disabled={!projectId} onClick={() => setEditing("new")} data-testid="button-new-dbe-goal"><Plus className="h-4 w-4 mr-2" />New Goal</Button>)}
+        </div>
       </div>
+
+      <Dialog open={riskOpen} onOpenChange={setRiskOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>DBE Participation Risk</DialogTitle></DialogHeader>
+          {riskMut.isPending ? (
+            <div className="flex items-center justify-center py-10 text-muted-foreground"><Loader2 className="h-5 w-5 mr-2 animate-spin" />Computing risk…</div>
+          ) : riskMut.data ? (
+            <div className="space-y-3 text-sm" data-testid="text-dbe-risk-result">
+              <div className="flex items-center gap-2">
+                <Badge variant={riskMut.data.overallRiskBand === "HIGH" ? "destructive" : riskMut.data.overallRiskBand === "MEDIUM" ? "secondary" : "default"}>{riskMut.data.overallRiskBand}</Badge>
+                <span>Overall risk score: <strong>{riskMut.data.overallRiskScore}/100</strong></span>
+              </div>
+              <div className="border rounded p-3 space-y-2">
+                {riskMut.data.goals?.map((g: any) => (
+                  <div key={g.certificationType} className="text-xs">
+                    <strong>{g.certificationType}</strong> — goal {g.goalPercent}%, paid {g.actualPercent.toFixed(2)}% (${g.actualDollars.toLocaleString()}) · committed ${g.committedDollars.toLocaleString()} · risk {g.riskScore}/100 ({g.riskBand})
+                  </div>
+                ))}
+              </div>
+              {riskMut.data.aiCommentary && <div><strong>AI commentary:</strong> {riskMut.data.aiCommentary}</div>}
+              {Array.isArray(riskMut.data.aiRecommendations) && riskMut.data.aiRecommendations.length > 0 && (
+                <div>
+                  <strong>Recommendations:</strong>
+                  <ul className="list-disc pl-5 mt-1 space-y-1">{riskMut.data.aiRecommendations.map((r: string, k: number) => <li key={k}>{r}</li>)}</ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No data.</div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="max-w-md">
         <Label className="text-xs text-muted-foreground">Project *</Label>

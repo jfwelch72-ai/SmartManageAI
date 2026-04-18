@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Truck, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Truck, Plus, Loader2, Pencil, Trash2, Sparkles, Wand2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { HeavyCivilDocumentField } from "@/components/dot/HeavyCivilDocumentField";
@@ -57,6 +57,15 @@ export default function HaulTicketsPage() {
     if (window.confirm(`Delete haul ticket #${t.ticketNumber}?`)) delMut.mutate(t.id);
   };
 
+  const [massHaulOpen, setMassHaulOpen] = useState(false);
+  const massHaulMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/ai-features/heavy-civil/mass-haul/analyze", { projectId });
+      return r.json();
+    },
+    onError: (error: Error) => toast({ title: "Mass-haul AI failed", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -64,10 +73,51 @@ export default function HaulTicketsPage() {
           <h1 className="text-2xl font-semibold">Haul Tickets</h1>
           <p className="text-sm text-muted-foreground">Field-recorded truck tickets — material, source, destination, quantity, and cost.</p>
         </div>
-        {canManage && (
-          <Button onClick={() => setEditing("new")} data-testid="button-new-haul-ticket"><Plus className="h-4 w-4 mr-2" />New Ticket</Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canView && projectId && (
+            <Button variant="outline" onClick={() => { setMassHaulOpen(true); massHaulMut.mutate(); }} disabled={massHaulMut.isPending} data-testid="button-haul-mass-haul-ai">
+              {massHaulMut.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}Mass-Haul AI
+            </Button>
+          )}
+          {canManage && (
+            <Button onClick={() => setEditing("new")} data-testid="button-new-haul-ticket"><Plus className="h-4 w-4 mr-2" />New Ticket</Button>
+          )}
+        </div>
       </div>
+
+      <Dialog open={massHaulOpen} onOpenChange={setMassHaulOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Mass-Haul AI Analysis</DialogTitle></DialogHeader>
+          {massHaulMut.isPending ? (
+            <div className="flex items-center justify-center py-10 text-muted-foreground"><Loader2 className="h-5 w-5 mr-2 animate-spin" />Analyzing haul movements…</div>
+          ) : massHaulMut.data?.analysis ? (
+            <div className="space-y-3 text-sm" data-testid="text-mass-haul-result">
+              <div><strong>Summary:</strong> {String(massHaulMut.data.analysis.summary ?? "—")}</div>
+              {Array.isArray(massHaulMut.data.analysis.imbalances) && massHaulMut.data.analysis.imbalances.length > 0 && (
+                <div>
+                  <strong>Imbalances:</strong>
+                  <ul className="list-disc pl-5 mt-1 space-y-1">
+                    {massHaulMut.data.analysis.imbalances.map((i: any, k: number) => <li key={k}>{i.material}: {i.issue}{i.estimatedSavings ? ` — ~${i.estimatedSavings}` : ""}</li>)}
+                  </ul>
+                </div>
+              )}
+              {Array.isArray(massHaulMut.data.analysis.recommendations) && (
+                <div>
+                  <strong>Recommendations:</strong>
+                  <ul className="list-disc pl-5 mt-1 space-y-1">
+                    {massHaulMut.data.analysis.recommendations.map((r: string, k: number) => <li key={k}>{r}</li>)}
+                  </ul>
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground">Confidence {massHaulMut.data.analysis.confidence ?? "—"}/100 · {massHaulMut.data.movements?.length ?? 0} movement rows analyzed.</div>
+            </div>
+          ) : massHaulMut.data?.message ? (
+            <div className="text-sm text-muted-foreground" data-testid="text-mass-haul-empty">{massHaulMut.data.message}</div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No analysis available.</div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="max-w-md">
         <Label className="text-xs text-muted-foreground">Filter by project</Label>
@@ -206,6 +256,31 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
     onError: (error: Error) => toast({ title: "Failed to save", description: getErrorMessage(error), variant: "destructive" }),
   });
 
+  const ocrMut = useMutation({
+    mutationFn: async (documentId: string) => {
+      const r = await apiRequest("POST", "/api/ai-features/heavy-civil/haul-ticket/ocr", { documentId });
+      return r.json();
+    },
+    onSuccess: (data) => {
+      if (data?.fallback) { toast({ title: "AI couldn't read the ticket", description: data.message ?? "Enter values manually." }); return; }
+      setForm((prev) => ({
+        ...prev,
+        ticketNumber: prev.ticketNumber || (data.ticketNumber ?? ""),
+        ticketDate: prev.ticketDate || (data.ticketDate ?? prev.ticketDate),
+        materialClass: prev.materialClass || (data.materialClass ?? ""),
+        source: prev.source || (data.source ?? ""),
+        destination: prev.destination || (data.destination ?? ""),
+        truckNumber: prev.truckNumber || (data.truckNumber ?? ""),
+        driverName: prev.driverName || (data.driverName ?? ""),
+        quantity: prev.quantity || (data.quantity ?? ""),
+        unit: prev.unit || (data.unit ?? prev.unit),
+        unitCost: prev.unitCost || (data.unitCost ?? ""),
+      }));
+      toast({ title: "AI prefilled from photo", description: `Confidence ${data.confidence ?? "—"}/100. Review before saving.` });
+    },
+    onError: (error: Error) => toast({ title: "OCR failed", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
   const transitionMut = useMutation({
     mutationFn: async (action: "submit" | "approve" | "reject" | "void") => {
       if (!existing) throw new Error("Save the ticket first");
@@ -309,7 +384,14 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-haul-notes" />
         </div>
         <div className="border-t pt-3">
-          <Label className="mb-2 block">Ticket Photo</Label>
+          <div className="flex items-center justify-between mb-2">
+            <Label>Ticket Photo</Label>
+            {form.ticketPhotoDocumentId && (
+              <Button type="button" size="sm" variant="outline" disabled={ocrMut.isPending} onClick={() => ocrMut.mutate(form.ticketPhotoDocumentId)} data-testid="button-haul-ocr-ai">
+                {ocrMut.isPending ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Wand2 className="h-3.5 w-3.5 mr-2" />}AI Read Ticket
+              </Button>
+            )}
+          </div>
           <HeavyCivilDocumentField
             documentId={form.ticketPhotoDocumentId || null}
             projectId={form.projectId}

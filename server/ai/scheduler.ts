@@ -1,13 +1,16 @@
 import { logError } from "../utils/logger";
 import * as cron from 'node-cron';
 import { db } from "../db";
-import { aiSettings, changeOrders, projects, users, notifications } from "@shared/schema";
+import { aiSettings, changeOrders, projects, users, notifications, projectDbeGoals, organizations } from "@shared/schema";
 import { runAIAnalysis } from "./orchestrator";
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, and, inArray } from 'drizzle-orm';
 import { insertNotifications } from "../services/notificationService";
+import { computeDbeRiskAssessment } from "../aiHeavyCivilFeatureRoutes";
+import { isFeatureEnabled } from "../services/featureFlagService";
 
 let scheduledTask: cron.ScheduledTask | null = null;
 let weeklyAlertTask: cron.ScheduledTask | null = null;
+let dailyDbeRiskTask: cron.ScheduledTask | null = null;
 
 export async function initializeAIScheduler() {
   console.log('🤖 Initializing AI PM + CFO scheduler...');
@@ -19,6 +22,11 @@ export async function initializeAIScheduler() {
     console.log('📝 Creating default AI settings...');
     [settings] = await db.insert(aiSettings).values({}).returning();
   }
+
+  // DBE risk job is independent of `dailyRunsEnabled` (which only gates the
+  // PM + CFO orchestrator). Initialize it before the early-return so admins
+  // who disable the PM/CFO runs still get DBE compliance alerts.
+  initializeDailyDbeRiskJob();
 
   if (!settings.dailyRunsEnabled) {
     console.log('⏸️  Daily AI runs are disabled in settings');
@@ -57,6 +65,84 @@ export async function initializeAIScheduler() {
   
   // Initialize weekly change order alert (every Monday at 8:00 AM)
   await initializeWeeklyChangeOrderAlerts();
+}
+
+/**
+ * Daily DBE risk scoring — computes participation risk for every active project
+ * with DBE goals in any organization that has DBE_TRACKING enabled, and
+ * notifies admins/managers when a project lands in the HIGH risk band.
+ */
+function initializeDailyDbeRiskJob() {
+  if (dailyDbeRiskTask) dailyDbeRiskTask.stop();
+  console.log('📊 Scheduling daily DBE risk job (06:00 EST)...');
+  dailyDbeRiskTask = cron.schedule('0 6 * * *', async () => {
+    try {
+      await runDailyDbeRiskJob();
+    } catch (err) {
+      logError('❌ Daily DBE risk job failed', {}, err instanceof Error ? err : new Error(String(err)));
+    }
+  }, { timezone: 'America/New_York' });
+}
+
+async function runDailyDbeRiskJob() {
+  console.log('📊 Running daily DBE risk job...');
+
+  // Find every org that has DBE_TRACKING enabled (flag stored in organizations.featureFlags JSON)
+  const allOrgs = await db.select({ id: organizations.id }).from(organizations);
+  const orgIds: string[] = [];
+  for (const o of allOrgs) {
+    if (await isFeatureEnabled(o.id, 'DBE_TRACKING')) orgIds.push(o.id);
+  }
+  if (orgIds.length === 0) {
+    console.log('📊 No orgs with DBE_TRACKING enabled');
+    return;
+  }
+
+  // All projects in those orgs that have at least one DBE goal
+  const projectsWithGoals = await db
+    .selectDistinct({ projectId: projectDbeGoals.projectId, organizationId: projectDbeGoals.organizationId })
+    .from(projectDbeGoals)
+    .where(inArray(projectDbeGoals.organizationId, orgIds));
+
+  let highRisk = 0;
+  for (const row of projectsWithGoals) {
+    try {
+      // No userId — system-triggered run; skip AI commentary to keep cost predictable
+      const result = await computeDbeRiskAssessment(row.projectId, row.organizationId, null, { withAi: false });
+      if (!result) continue;
+      if (result.overallRiskBand !== 'HIGH') continue;
+      highRisk += 1;
+
+      const recipients = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, row.organizationId),
+          sql`${users.role} IN ('ADMIN', 'MANAGER')`,
+          eq(users.isActive, true),
+        ));
+      if (recipients.length === 0) continue;
+
+      const goalLine = result.goals
+        .map(g => `${g.certificationType}: ${g.actualPercent.toFixed(1)}% / goal ${g.goalPercent}% (risk ${g.riskScore})`)
+        .join('; ');
+      const title = `DBE participation HIGH risk on ${result.projectCode}`.substring(0, 250);
+      const message = `Overall risk ${result.overallRiskScore}/100. ${goalLine}`.substring(0, 1000);
+
+      await insertNotifications(recipients.map(r => ({
+        userId: r.id,
+        organizationId: row.organizationId,
+        type: 'AI_ALERT' as const,
+        title,
+        message,
+        relatedEntityType: 'projectDbeGoal',
+        relatedEntityId: row.projectId,
+      })));
+    } catch (err) {
+      logError('❌ DBE risk computation failed for project', { projectId: row.projectId }, err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+  console.log(`✅ Daily DBE risk job completed — ${projectsWithGoals.length} projects scanned, ${highRisk} high-risk alerts issued`);
 }
 
 /**
@@ -215,6 +301,11 @@ export function stopAIScheduler() {
     weeklyAlertTask.stop();
     weeklyAlertTask = null;
     console.log('⏸️  Weekly alert scheduler stopped');
+  }
+  if (dailyDbeRiskTask) {
+    dailyDbeRiskTask.stop();
+    dailyDbeRiskTask = null;
+    console.log('⏸️  Daily DBE risk scheduler stopped');
   }
 }
 

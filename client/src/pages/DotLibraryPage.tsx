@@ -1,14 +1,18 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { PayItemPicker, type DotAgency, type DotSpecBook, type DotPayItem } from "@/components/dot/PayItemPicker";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Loader2, Building2, BookOpen, Hash, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Loader2, Building2, BookOpen, Hash, Search, Wand2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function DotLibraryPage() {
   const canManageLib = useFeaturePermission("canManageDotLibrary");
@@ -16,6 +20,20 @@ export default function DotLibraryPage() {
   const canAccess = canViewLib || canManageLib;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [agencyFilter, setAgencyFilter] = useState("");
+  const [bidTabOpen, setBidTabOpen] = useState(false);
+  const [bidTabUrl, setBidTabUrl] = useState("");
+  const [bidTabAgency, setBidTabAgency] = useState("");
+  const { toast } = useToast();
+  const bidTabMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/ai-features/heavy-civil/bid-tab/extract", {
+        documentUrl: bidTabUrl.trim(),
+        agencyName: bidTabAgency.trim() || undefined,
+      });
+      return r.json();
+    },
+    onError: (error: Error) => toast({ title: "Bid-tab extraction failed", description: error.message, variant: "destructive" }),
+  });
   const { data: agencies = [], isLoading } = useQuery<DotAgency[]>({ queryKey: ["/api/dot/agencies"], enabled: canAccess });
 
   if (!canAccess) {
@@ -49,10 +67,60 @@ export default function DotLibraryPage() {
             Federal, state, territory and toll-authority pay item libraries with spec book editions.
           </p>
         </div>
-        <Button onClick={() => setPickerOpen(true)} data-testid="button-open-pay-item-picker">
-          <Search className="h-4 w-4 mr-2" />Browse Pay Items
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setBidTabOpen(true)} data-testid="button-open-bid-tab-extract">
+            <Wand2 className="h-4 w-4 mr-2" />AI Bid-Tab Extract
+          </Button>
+          <Button onClick={() => setPickerOpen(true)} data-testid="button-open-pay-item-picker">
+            <Search className="h-4 w-4 mr-2" />Browse Pay Items
+          </Button>
+        </div>
       </div>
+
+      <Dialog open={bidTabOpen} onOpenChange={(o) => { setBidTabOpen(o); if (!o) bidTabMut.reset(); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>AI Bid-Tab Extractor</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Document URL (PDF / Excel of bid tabulation)</Label>
+              <Input value={bidTabUrl} onChange={(e) => setBidTabUrl(e.target.value)} placeholder="https://… or storage URL" data-testid="input-bid-tab-url" />
+            </div>
+            <div>
+              <Label>Agency (optional, helps AI)</Label>
+              <Input value={bidTabAgency} onChange={(e) => setBidTabAgency(e.target.value)} placeholder="e.g. Caltrans, ODOT, FHWA" data-testid="input-bid-tab-agency" />
+            </div>
+            <p className="text-xs text-muted-foreground">AI will parse pay items (item #, description, unit, qty). Always review before adding to your library.</p>
+            {bidTabMut.data && !bidTabMut.data.fallback && (
+              <div className="border rounded p-3 max-h-72 overflow-y-auto" data-testid="text-bid-tab-result">
+                <div className="text-xs text-muted-foreground mb-2">Confidence: {bidTabMut.data.confidence ?? "—"}/100 · {bidTabMut.data.items?.length ?? 0} items</div>
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b text-left"><th className="py-1 pr-2">Item #</th><th className="pr-2">Description</th><th className="pr-2">Unit</th><th>Qty</th></tr></thead>
+                  <tbody>
+                    {(bidTabMut.data.items ?? []).map((it: any, k: number) => (
+                      <tr key={k} className="border-b last:border-0">
+                        <td className="py-1 pr-2 font-mono">{it.itemNumber}</td>
+                        <td className="pr-2">{it.description}</td>
+                        <td className="pr-2">{it.unit}</td>
+                        <td>{it.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {bidTabMut.data.notes && <div className="text-xs text-muted-foreground mt-2">{bidTabMut.data.notes}</div>}
+              </div>
+            )}
+            {bidTabMut.data?.fallback && (
+              <div className="text-xs text-amber-600">{bidTabMut.data.message ?? "AI could not extract — enter pay items manually."}</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBidTabOpen(false)} data-testid="button-bid-tab-close">Close</Button>
+            <Button disabled={bidTabMut.isPending || bidTabUrl.trim().length < 5} onClick={() => bidTabMut.mutate()} data-testid="button-bid-tab-run">
+              {bidTabMut.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Extract
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Federal" value={counts.federal} />
