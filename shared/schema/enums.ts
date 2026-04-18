@@ -43,6 +43,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "BUDGET_ALERT",
   "TM_INVOICE_AUTO_CREATED",
   "DOCUMENT_REVISION_CREATED",
+  "HAUL_TICKET_SUBMITTED", "HAUL_TICKET_APPROVED", "HAUL_TICKET_REJECTED",
+  "INSPECTOR_REPORT_SUBMITTED", "INSPECTOR_REPORT_APPROVED", "INSPECTOR_REPORT_REVISION_REQUESTED",
+  "MATERIAL_CERT_SUBMITTED", "MATERIAL_CERT_VERIFIED", "MATERIAL_CERT_REJECTED",
+  "SURETY_BOND_ACTIVATED", "SURETY_BOND_RELEASED", "SURETY_BOND_EXPIRED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);
@@ -606,7 +610,7 @@ export const takeoffIssueCategoryEnum = pgEnum("takeoff_issue_category", ["QUEST
 export const takeoffIssueStatusEnum = pgEnum("takeoff_issue_status", ["OPEN", "IN_REVIEW", "RESOLVED"]);
 export const offlineSyncStatusEnum = pgEnum("offline_sync_status", ["PENDING", "SYNCED", "FAILED"]);
 export const offlineOperationTypeEnum = pgEnum("offline_operation_type", ["CREATE", "UPDATE", "DELETE"]);
-export const offlineEntityTypeEnum = pgEnum("offline_entity_type", ["TIME_ENTRY", "NOTE", "ISSUE", "VOICE_LOG", "PHOTO"]);
+export const offlineEntityTypeEnum = pgEnum("offline_entity_type", ["TIME_ENTRY", "NOTE", "ISSUE", "VOICE_LOG", "PHOTO", "HAUL_TICKET", "INSPECTOR_REPORT", "SWPPP_INSPECTION"]);
 
 // Voice Logs table - Voice memo transcriptions from field workers
 export const vendorScoreCategoryEnum = pgEnum("vendor_score_category", ["QUALITY", "TIMELINESS", "COMMUNICATION", "PRICING", "RELIABILITY"]);
@@ -717,7 +721,7 @@ export const maintenanceSystemEnum = pgEnum("maintenance_system", ["HVAC", "PLUM
 export const recurringFrequencyEnum = pgEnum("recurring_frequency", ["WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
 export const geofenceEnforcementEnum = pgEnum("geofence_enforcement", ["OFF", "WARN", "BLOCK"]);
 
-export const workflowEntityTypeEnum = pgEnum("workflow_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET"]);
+export const workflowEntityTypeEnum = pgEnum("workflow_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "HAUL_TICKET", "INSPECTOR_REPORT", "MATERIAL_CERT", "SURETY_BOND"]);
 export const workflowTemplateStatusEnum = pgEnum("workflow_template_status", ["ACTIVE", "INACTIVE", "DRAFT"]);
 export const workflowInstanceStatusEnum = pgEnum("workflow_instance_status", ["IN_PROGRESS", "COMPLETED", "CANCELLED"]);
 export const workflowNotificationChannelEnum = pgEnum("workflow_notification_channel", ["EMAIL", "PUSH", "SMS", "SLACK", "TEAMS"]);

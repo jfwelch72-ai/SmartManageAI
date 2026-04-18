@@ -94,6 +94,8 @@ import { validateBody } from "./utils/validation";
 import { z } from "zod";
 import { logAudit } from "./auditLogger";
 import { isFeatureEnabled } from "./services/featureFlagService";
+import * as workflowEngine from "./services/workflowEngine";
+import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 import type { FeatureFlagKey } from "@shared/schema";
 import { exportLimiter } from "./rateLimiter";
 
@@ -115,7 +117,7 @@ function requireOrgFeatureFlag(flag: FeatureFlagKey) {
 
 async function dotAudit(
   req: AuthRequest,
-  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "SUBMIT",
+  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "SUBMIT" | "ACTIVATE",
   entityType: string,
   entityId: string,
   oldValue: unknown,
@@ -683,7 +685,11 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
+    const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...rawPatch } = req.body || {};
+    // Lifecycle status transitions must go through the workflow-aware
+    // /activate (and future /release, /claim) endpoints to honor any
+    // configured workflow template. Strip status here to prevent bypass.
+    const { status: _status, ...patch } = rawPatch;
     const conditions: SQL[] = [eq(suretyBonds.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(suretyBonds).where(and(...conditions)).limit(1);
@@ -1302,6 +1308,406 @@ router.delete(
     const [deleted] = await db.delete(materialCertifications).where(and(...conditions)).returning();
     if (deleted) await dotAudit(req, "DELETE", "material_certification", deleted.id, deleted, null);
     res.status(204).end();
+  },
+);
+
+// =========================
+// Heavy-civil approval transition endpoints (workflow-aware)
+// Pattern: call workflowEngine.delegateEntityTransition. If delegated:
+//   - needsMoreApprovals → return without status update (workflow gates the rest)
+//   - success === false  → return error (workflow rejected)
+//   - success === true   → fall through to direct update + notify (terminal stage)
+// If not delegated → fall through to direct update + notify (no workflow configured).
+// Always emits a domain event + audits.
+// =========================
+
+type DelegationResult = Awaited<ReturnType<typeof workflowEngine.delegateEntityTransition>>;
+
+function handleDelegationGate(res: Response, delegation: DelegationResult, prev: any): boolean {
+  if (!delegation.delegated) return false;
+  if (delegation.needsMoreApprovals) {
+    res.json({ ...prev, workflow: delegation, message: "Approval recorded; more approvals required" });
+    return true;
+  }
+  if (delegation.success === false) {
+    res.status(400).json({
+      error: delegation.error || "Workflow rejected the transition",
+      workflow: delegation,
+    });
+    return true;
+  }
+  return false;
+}
+
+// ---- Haul Tickets ----
+router.post(
+  "/api/haul-tickets/:id/submit",
+  requireAuth,
+  requireFeaturePermission("canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "HAUL_TICKET", prev.id, req.user!.id, role, "SUBMITTED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(haulTickets)
+      .set({ status: "SUBMITTED" as any, updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "haul_ticket.submitted",
+      payload: { haulTicketId: row.id, projectId: row.projectId, ticketNumber: row.ticketNumber },
+    });
+    if (!delegation.delegated) {
+      await notifyApprovers(orgId, req.user!.id, {
+        type: "HAUL_TICKET_SUBMITTED",
+        title: "Haul Ticket Submitted",
+        message: `Haul ticket ${row.ticketNumber} submitted for approval`,
+        relatedEntityType: "HAUL_TICKET", relatedEntityId: row.id,
+      });
+    }
+    await dotAudit(req, "SUBMIT", "haul_ticket", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+router.post(
+  "/api/haul-tickets/:id/approve",
+  requireAuth,
+  requireFeaturePermission("canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "HAUL_TICKET", prev.id, req.user!.id, role, "APPROVED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(haulTickets)
+      .set({ status: "APPROVED" as any, approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "haul_ticket.approved",
+      payload: { haulTicketId: row.id, projectId: row.projectId, ticketNumber: row.ticketNumber },
+    });
+    if (prev.recordedById) {
+      await notifySubmitter(prev.recordedById, {
+        type: "HAUL_TICKET_APPROVED",
+        title: "Haul Ticket Approved",
+        message: `Haul ticket ${row.ticketNumber} was approved`,
+        relatedEntityType: "HAUL_TICKET", relatedEntityId: row.id,
+      }, orgId);
+    }
+    await dotAudit(req, "APPROVE", "haul_ticket", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+router.post(
+  "/api/haul-tickets/:id/reject",
+  requireAuth,
+  requireFeaturePermission("canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "HAUL_TICKET", prev.id, req.user!.id, role, "REJECTED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(haulTickets)
+      .set({ status: "REJECTED" as any, updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "haul_ticket.rejected",
+      payload: { haulTicketId: row.id, projectId: row.projectId, ticketNumber: row.ticketNumber, reason: req.body?.notes ?? null },
+    });
+    if (prev.recordedById) {
+      await notifySubmitter(prev.recordedById, {
+        type: "HAUL_TICKET_REJECTED",
+        title: "Haul Ticket Rejected",
+        message: `Haul ticket ${row.ticketNumber} was rejected${req.body?.notes ? `: ${req.body.notes}` : ""}`,
+        relatedEntityType: "HAUL_TICKET", relatedEntityId: row.id,
+      }, orgId);
+    }
+    await dotAudit(req, "REJECT", "haul_ticket", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+// ---- Daily Inspector Reports ----
+router.post(
+  "/api/daily-inspector-reports/:id/submit",
+  requireAuth,
+  requireFeaturePermission("canManageInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "INSPECTOR_REPORT", prev.id, req.user!.id, role, "SUBMITTED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(dailyInspectorReports)
+      .set({ status: "SUBMITTED" as any, submittedAt: new Date(), updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "inspector_report.submitted",
+      payload: { reportId: row.id, projectId: row.projectId, reportDate: String(row.reportDate) },
+    });
+    if (!delegation.delegated) {
+      await notifyApprovers(orgId, req.user!.id, {
+        type: "INSPECTOR_REPORT_SUBMITTED",
+        title: "Daily Inspector Report Submitted",
+        message: `IDR for ${row.reportDate} submitted for approval`,
+        relatedEntityType: "INSPECTOR_REPORT", relatedEntityId: row.id,
+      });
+    }
+    await dotAudit(req, "SUBMIT", "daily_inspector_report", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+router.post(
+  "/api/daily-inspector-reports/:id/approve",
+  requireAuth,
+  requireFeaturePermission("canManageInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "INSPECTOR_REPORT", prev.id, req.user!.id, role, "APPROVED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(dailyInspectorReports)
+      .set({ status: "APPROVED" as any, approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "inspector_report.approved",
+      payload: { reportId: row.id, projectId: row.projectId, reportDate: String(row.reportDate) },
+    });
+    if (prev.inspectorId) {
+      await notifySubmitter(prev.inspectorId, {
+        type: "INSPECTOR_REPORT_APPROVED",
+        title: "Daily Inspector Report Approved",
+        message: `Your IDR for ${row.reportDate} was approved`,
+        relatedEntityType: "INSPECTOR_REPORT", relatedEntityId: row.id,
+      }, orgId);
+    }
+    await dotAudit(req, "APPROVE", "daily_inspector_report", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+router.post(
+  "/api/daily-inspector-reports/:id/request-revision",
+  requireAuth,
+  requireFeaturePermission("canManageInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const [row] = await db.update(dailyInspectorReports)
+      .set({ status: "DRAFT" as any, submittedAt: null, updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    if (prev.inspectorId) {
+      await notifySubmitter(prev.inspectorId, {
+        type: "INSPECTOR_REPORT_REVISION_REQUESTED",
+        title: "Daily Inspector Report Revision Requested",
+        message: `Revisions requested on IDR for ${row.reportDate}${req.body?.notes ? `: ${req.body.notes}` : ""}`,
+        relatedEntityType: "INSPECTOR_REPORT", relatedEntityId: row.id,
+      }, orgId);
+    }
+    await dotAudit(req, "UPDATE", "daily_inspector_report", row.id, prev, row);
+    res.json(row);
+  },
+);
+
+// ---- Material Certifications ----
+router.post(
+  "/api/material-certifications/:id/submit",
+  requireAuth,
+  requireFeaturePermission("canManageMaterialCertifications"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(materialCertifications.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "MATERIAL_CERT", prev.id, req.user!.id, role, "SUBMITTED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    await notifyApprovers(orgId, req.user!.id, {
+      type: "MATERIAL_CERT_SUBMITTED",
+      title: "Material Certification Submitted",
+      message: `${prev.materialDescription} submitted for verification`,
+      relatedEntityType: "MATERIAL_CERT", relatedEntityId: prev.id,
+    });
+    await dotAudit(req, "SUBMIT", "material_certification", prev.id, prev, prev);
+    res.json({ ...prev, workflow: delegation });
+  },
+);
+
+router.post(
+  "/api/material-certifications/:id/verify",
+  requireAuth,
+  requireAnyFeaturePermission(
+    "canManageMaterialCertifications",
+    "canVerifyMaterialCertifications",
+  ),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const verifier = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canVerifyMaterialCertifications");
+    if (!verifier) return res.status(403).json({ error: "Verification permission required" });
+    const conditions: SQL[] = [eq(materialCertifications.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const buyAmericaStatus = (req.body?.buyAmericaStatus as "VERIFIED" | "NON_COMPLIANT" | "WAIVER_GRANTED") ?? "VERIFIED";
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "MATERIAL_CERT", prev.id, req.user!.id, role, "VERIFIED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(materialCertifications)
+      .set({
+        verifiedById: req.user!.id, verifiedAt: new Date(),
+        buyAmericaStatus: buyAmericaStatus as any, updatedAt: new Date(),
+      })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "material_certification.verified",
+      payload: {
+        certificationId: row.id, projectId: row.projectId ?? null,
+        verifiedBy: req.user!.id,
+        isCompliant: buyAmericaStatus === "VERIFIED" ? true : buyAmericaStatus === "NON_COMPLIANT" ? false : null,
+      },
+    });
+    await notifyApprovers(orgId, req.user!.id, {
+      type: "MATERIAL_CERT_VERIFIED",
+      title: "Material Certification Verified",
+      message: `${row.materialDescription} verified (${buyAmericaStatus})`,
+      relatedEntityType: "MATERIAL_CERT", relatedEntityId: row.id,
+    });
+    await dotAudit(req, "APPROVE", "material_certification", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+router.post(
+  "/api/material-certifications/:id/reject",
+  requireAuth,
+  requireAnyFeaturePermission(
+    "canManageMaterialCertifications",
+    "canVerifyMaterialCertifications",
+  ),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(materialCertifications.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "MATERIAL_CERT", prev.id, req.user!.id, role, "REJECTED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(materialCertifications)
+      .set({ buyAmericaStatus: "NON_COMPLIANT" as any, updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await notifyApprovers(orgId, req.user!.id, {
+      type: "MATERIAL_CERT_REJECTED",
+      title: "Material Certification Rejected",
+      message: `${row.materialDescription} rejected${req.body?.notes ? `: ${req.body.notes}` : ""}`,
+      relatedEntityType: "MATERIAL_CERT", relatedEntityId: row.id,
+    });
+    await dotAudit(req, "REJECT", "material_certification", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+// ---- Surety Bonds (workflow-aware activation) ----
+router.post(
+  "/api/surety-bonds/:id/activate",
+  requireAuth,
+  requireFeaturePermission("canManageSuretyBonds"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(suretyBonds.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(suretyBonds).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    if (prev.status !== "DRAFT") {
+      return res.status(400).json({ error: `Cannot activate bond in status ${prev.status}` });
+    }
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "SURETY_BOND", prev.id, req.user!.id, role, "ACTIVE", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(suretyBonds)
+      .set({ status: "ACTIVE" as any, updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "surety_bond.activated",
+      payload: { bondId: row.id, projectId: row.projectId ?? null, bondNumber: row.bondNumber },
+    });
+    await notifyApprovers(orgId, req.user!.id, {
+      type: "SURETY_BOND_ACTIVATED",
+      title: "Surety Bond Activated",
+      message: `Bond ${row.bondNumber} (${row.bondType}) is now active`,
+      relatedEntityType: "SURETY_BOND", relatedEntityId: row.id,
+    });
+    await dotAudit(req, "ACTIVATE", "surety_bond", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
   },
 );
 

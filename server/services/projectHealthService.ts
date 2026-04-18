@@ -14,11 +14,15 @@ import {
   purchaseOrders,
   purchaseOrderItems,
   costLedgerPostings,
+  suretyBonds,
+  materialCertifications,
+  dailyInspectorReports,
 } from "@shared/schema";
-import { eq, and, sql, desc, count } from "drizzle-orm";
+import { eq, and, sql, desc, count, lt } from "drizzle-orm";
 import {logInfo, logError, logWarn } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
 import { governedAiCall } from "./aiGovernance";
+import { getFeatureFlags } from "./featureFlagService";
 
 export interface HealthScoreBreakdown {
   scheduleScore: number;
@@ -27,6 +31,7 @@ export interface HealthScoreBreakdown {
   rfiSubmittalScore: number;
   changeOrderScore: number;
   safetyScore: number;
+  complianceScore: number | null;
   overallScore: number;
   trendDirection: "improving" | "declining" | "stable";
   aiExplanation: string | null;
@@ -38,6 +43,15 @@ const WEIGHTS = {
   schedule: 0.35,
   safety: 0.25,
 };
+
+const HEAVY_CIVIL_WEIGHTS = {
+  cost: 0.35,
+  schedule: 0.30,
+  safety: 0.20,
+  compliance: 0.15,
+};
+
+const HEAVY_CIVIL_FLAGS = ["SURETY_BONDS", "BUY_AMERICA", "DAILY_INSPECTOR_REPORTS", "HAUL_TICKETS", "DBE_TRACKING"] as const;
 
 function clampScore(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
@@ -280,6 +294,87 @@ async function calculateSafetyScore(orgId: string, projectId: string): Promise<{
   };
 }
 
+async function calculateComplianceScore(orgId: string, projectId: string): Promise<{ score: number; factors: Record<string, any> }> {
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+
+  // Expired surety bonds (still active, not released)
+  const expiredBonds = await db
+    .select({ cnt: sql<number>`count(*)` })
+    .from(suretyBonds)
+    .where(and(
+      eq(suretyBonds.organizationId, orgId),
+      eq(suretyBonds.projectId, projectId),
+      sql`${suretyBonds.status} NOT IN ('RELEASED', 'CANCELED', 'EXPIRED')`,
+      sql`${suretyBonds.expirationDate} IS NOT NULL AND ${suretyBonds.expirationDate} < ${todayStr}`,
+    ));
+  const expiredBondCount = Number(expiredBonds[0]?.cnt || 0);
+
+  // Non-compliant Buy America material certs (no waiver)
+  const nonCompliantCerts = await db
+    .select({ cnt: sql<number>`count(*)` })
+    .from(materialCertifications)
+    .where(and(
+      eq(materialCertifications.organizationId, orgId),
+      eq(materialCertifications.projectId, projectId),
+      eq(materialCertifications.buyAmericaStatus, "NON_COMPLIANT"),
+    ));
+  const nonCompliantCount = Number(nonCompliantCerts[0]?.cnt || 0);
+
+  // Pending/unverified material certs older than 30 days
+  const pendingCerts = await db
+    .select({ cnt: sql<number>`count(*)` })
+    .from(materialCertifications)
+    .where(and(
+      eq(materialCertifications.organizationId, orgId),
+      eq(materialCertifications.projectId, projectId),
+      eq(materialCertifications.buyAmericaStatus, "PENDING"),
+      sql`${materialCertifications.createdAt} < NOW() - INTERVAL '30 days'`,
+    ));
+  const stalePendingCount = Number(pendingCerts[0]?.cnt || 0);
+
+  // Count distinct days in last 14 with an APPROVED or SUBMITTED IDR
+  const fourteenDaysAgo = new Date(today.getTime() - 14 * 86400000).toISOString().split("T")[0];
+  const idrDays = await db
+    .select({ cnt: sql<number>`count(DISTINCT ${dailyInspectorReports.reportDate})` })
+    .from(dailyInspectorReports)
+    .where(and(
+      eq(dailyInspectorReports.organizationId, orgId),
+      eq(dailyInspectorReports.projectId, projectId),
+      sql`${dailyInspectorReports.reportDate} >= ${fourteenDaysAgo}`,
+      sql`${dailyInspectorReports.status} IN ('SUBMITTED', 'APPROVED')`,
+    ));
+  const idrDaysWithReport = Number(idrDays[0]?.cnt || 0);
+  // Only score IDR coverage when at least one IDR has ever been logged for this project
+  const anyIdrEver = await db
+    .select({ cnt: sql<number>`count(*)` })
+    .from(dailyInspectorReports)
+    .where(and(
+      eq(dailyInspectorReports.organizationId, orgId),
+      eq(dailyInspectorReports.projectId, projectId),
+    ));
+  const trackingIdr = Number(anyIdrEver[0]?.cnt || 0) > 0;
+  const missingIdrDays = trackingIdr ? Math.max(0, 14 - idrDaysWithReport) : 0;
+
+  let score = 100;
+  score -= Math.min(45, expiredBondCount * 15);
+  score -= Math.min(30, nonCompliantCount * 10);
+  score -= Math.min(15, stalePendingCount * 3);
+  score -= Math.min(40, missingIdrDays * 3);
+
+  return {
+    score: clampScore(score),
+    factors: {
+      expiredBonds: expiredBondCount,
+      nonCompliantMaterialCerts: nonCompliantCount,
+      stalePendingCerts: stalePendingCount,
+      idrDaysWithReport,
+      missingIdrDays,
+      trackingIdr,
+    },
+  };
+}
+
 async function calculateTrend(orgId: string, projectId: string, currentScore: number): Promise<"improving" | "declining" | "stable"> {
   const history = await db
     .select({ overallScore: projectHealthSnapshots.overallScore })
@@ -366,16 +461,25 @@ export async function computeProjectHealth(orgId: string, projectId: string): Pr
     throw new Error(`Project ${projectId} not found`);
   }
 
-  const [costResult, scheduleResult, safetyResult] = await Promise.all([
+  const flags = await getFeatureFlags(orgId).catch(() => ({} as Record<string, boolean | undefined>));
+  const heavyCivilEnabled = HEAVY_CIVIL_FLAGS.some((f) => flags[f as keyof typeof flags]);
+
+  const [costResult, scheduleResult, safetyResult, complianceResult] = await Promise.all([
     calculateCostScore(projectId, project),
     calculateScheduleScore(projectId, project),
     calculateSafetyScore(orgId, projectId),
+    heavyCivilEnabled ? calculateComplianceScore(orgId, projectId) : Promise.resolve(null),
   ]);
 
   const overallScore = clampScore(
-    costResult.score * WEIGHTS.cost +
-    scheduleResult.score * WEIGHTS.schedule +
-    safetyResult.score * WEIGHTS.safety
+    heavyCivilEnabled && complianceResult
+      ? costResult.score * HEAVY_CIVIL_WEIGHTS.cost +
+        scheduleResult.score * HEAVY_CIVIL_WEIGHTS.schedule +
+        safetyResult.score * HEAVY_CIVIL_WEIGHTS.safety +
+        complianceResult.score * HEAVY_CIVIL_WEIGHTS.compliance
+      : costResult.score * WEIGHTS.cost +
+        scheduleResult.score * WEIGHTS.schedule +
+        safetyResult.score * WEIGHTS.safety
   );
 
   const trendDirection = await calculateTrend(orgId, projectId, overallScore);
@@ -420,6 +524,7 @@ export async function computeProjectHealth(orgId: string, projectId: string): Pr
       100 - Math.min(30, (costResult.factors.variancePercent < 0 ? Math.abs(costResult.factors.variancePercent) : 0))
     ),
     safetyScore: safetyResult.score,
+    complianceScore: complianceResult?.score ?? null,
     overallScore,
     trendDirection,
     aiExplanation,
@@ -427,6 +532,7 @@ export async function computeProjectHealth(orgId: string, projectId: string): Pr
       cost: costResult.factors,
       schedule: scheduleResult.factors,
       safety: safetyResult.factors,
+      ...(complianceResult ? { compliance: complianceResult.factors } : {}),
     },
   };
 }
@@ -444,6 +550,7 @@ export async function saveHealthSnapshot(orgId: string, projectId: string, break
     rfiSubmittalScore: breakdown.rfiSubmittalScore,
     changeOrderScore: breakdown.changeOrderScore,
     safetyScore: breakdown.safetyScore,
+    complianceScore: breakdown.complianceScore,
     trendDirection: breakdown.trendDirection,
     aiExplanation: breakdown.aiExplanation,
     breakdown: breakdown.factors,

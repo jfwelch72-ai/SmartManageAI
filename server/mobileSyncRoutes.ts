@@ -2,7 +2,7 @@ import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, type AuthRequest } from "./auth";
-import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts } from "@shared/schema";
+import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections } from "@shared/schema";
 import { eq, and, count, max, desc, gte } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
@@ -310,6 +310,30 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
       ))
       .limit(100);
 
+    const haulChanges = await db.select()
+      .from(haulTickets)
+      .where(and(
+        eq(haulTickets.organizationId, organizationId),
+        gte(haulTickets.updatedAt, syncTime)
+      ))
+      .limit(200);
+
+    const idrChanges = await db.select()
+      .from(dailyInspectorReports)
+      .where(and(
+        eq(dailyInspectorReports.organizationId, organizationId),
+        gte(dailyInspectorReports.updatedAt, syncTime)
+      ))
+      .limit(100);
+
+    const swpppChanges = await db.select()
+      .from(swpppInspections)
+      .where(and(
+        eq(swpppInspections.organizationId, organizationId),
+        gte(swpppInspections.updatedAt, syncTime)
+      ))
+      .limit(100);
+
     if (deviceId) {
       await db.update(mobileDevices)
         .set({ lastSyncAt: new Date(), syncToken: nextSyncToken })
@@ -329,6 +353,9 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
           shifts: shiftChanges,
           events: [],
         },
+        haulTickets: haulChanges,
+        dailyInspectorReports: idrChanges,
+        swpppInspections: swpppChanges,
       },
     });
   } catch (error) {
@@ -345,7 +372,7 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
     }
 
     const { deviceId, changes } = req.body;
-    const processed: any = { timeClockEvents: [], dailyLogs: [], photos: [] };
+    const processed: any = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [] };
 
     if (changes?.timeClockEvents) {
       for (const event of changes.timeClockEvents) {
@@ -356,10 +383,41 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
           recordDataJson: JSON.stringify(event),
           status: "PENDING",
         });
-        processed.timeClockEvents.push({
-          localId: event.localId,
-          status: "QUEUED",
-        });
+        processed.timeClockEvents.push({ localId: event.localId, status: "QUEUED" });
+      }
+    }
+
+    const queueOffline = async (
+      entityType: "HAUL_TICKET" | "INSPECTOR_REPORT" | "SWPPP_INSPECTION",
+      record: any,
+    ) => {
+      await db.insert(offlineSyncQueue).values({
+        organizationId,
+        userId,
+        operationType: (record.id ? "UPDATE" : "CREATE") as any,
+        entityType: entityType as any,
+        entityId: record.id ?? record.localId ?? null,
+        payload: record,
+        status: "PENDING" as any,
+      });
+    };
+
+    if (Array.isArray(changes?.haulTickets)) {
+      for (const t of changes.haulTickets) {
+        await queueOffline("HAUL_TICKET", t);
+        processed.haulTickets.push({ localId: t.localId ?? t.id, status: "QUEUED" });
+      }
+    }
+    if (Array.isArray(changes?.dailyInspectorReports)) {
+      for (const r of changes.dailyInspectorReports) {
+        await queueOffline("INSPECTOR_REPORT", r);
+        processed.dailyInspectorReports.push({ localId: r.localId ?? r.id, status: "QUEUED" });
+      }
+    }
+    if (Array.isArray(changes?.swpppInspections)) {
+      for (const s of changes.swpppInspections) {
+        await queueOffline("SWPPP_INSPECTION", s);
+        processed.swpppInspections.push({ localId: s.localId ?? s.id, status: "QUEUED" });
       }
     }
 

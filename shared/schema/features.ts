@@ -6644,6 +6644,7 @@ export const projectHealthSnapshots = pgTable("project_health_snapshots", {
   changeOrderScore: integer("change_order_score").notNull(),
   safetyScore: integer("safety_score").notNull(),
   costScore: integer("cost_score"),
+  complianceScore: integer("compliance_score"),
   trendDirection: text("trend_direction"),
   aiExplanation: text("ai_explanation"),
   breakdown: json("breakdown"),

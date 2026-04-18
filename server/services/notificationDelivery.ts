@@ -129,6 +129,46 @@ function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  if (type === "HAUL_TICKET_SUBMITTED" || type === "HAUL_TICKET_APPROVED" || type === "HAUL_TICKET_REJECTED") {
+    const status = type === "HAUL_TICKET_APPROVED" ? "Approved" : type === "HAUL_TICKET_REJECTED" ? "Rejected" : "Submitted";
+    return {
+      subject: `Haul Ticket ${status} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/haul-tickets`,
+      actionText: "View Haul Tickets",
+    };
+  }
+
+  if (type === "INSPECTOR_REPORT_SUBMITTED" || type === "INSPECTOR_REPORT_APPROVED" || type === "INSPECTOR_REPORT_REVISION_REQUESTED") {
+    const status = type === "INSPECTOR_REPORT_APPROVED" ? "Approved" : type === "INSPECTOR_REPORT_REVISION_REQUESTED" ? "Revision Requested" : "Submitted";
+    return {
+      subject: `Daily Inspector Report ${status} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/daily-inspector-reports`,
+      actionText: "View Inspector Reports",
+    };
+  }
+
+  if (type === "MATERIAL_CERT_SUBMITTED" || type === "MATERIAL_CERT_VERIFIED" || type === "MATERIAL_CERT_REJECTED") {
+    const status = type === "MATERIAL_CERT_VERIFIED" ? "Verified" : type === "MATERIAL_CERT_REJECTED" ? "Rejected" : "Submitted";
+    return {
+      subject: `Material Certification ${status} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/material-certifications`,
+      actionText: "View Material Certifications",
+    };
+  }
+
+  if (type === "SURETY_BOND_ACTIVATED" || type === "SURETY_BOND_RELEASED" || type === "SURETY_BOND_EXPIRED") {
+    const status = type === "SURETY_BOND_ACTIVATED" ? "Activated" : type === "SURETY_BOND_RELEASED" ? "Released" : "Expired";
+    return {
+      subject: `Surety Bond ${status} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/surety-bonds`,
+      actionText: "View Surety Bonds",
+    };
+  }
+
   if (type === "TM_TICKET_SUBMITTED" || type === "TM_TICKET_APPROVED" || type === "TM_TICKET_REJECTED") {
     return {
       subject: `T&M Ticket Update — SmartManageAI`,
@@ -307,6 +347,10 @@ function composeEmailContent(notification: NotificationRecord): {
       TM_TICKET: (id) => `${baseUrl}/tm-tickets/${id}`,
       SOV_PAY_APP: (id) => `${baseUrl}/pay-apps/${id}`,
       VENDOR_BILL: (id) => `${baseUrl}/payables/${id}`,
+      HAUL_TICKET: () => `${baseUrl}/haul-tickets`,
+      INSPECTOR_REPORT: () => `${baseUrl}/daily-inspector-reports`,
+      MATERIAL_CERT: () => `${baseUrl}/material-certifications`,
+      SURETY_BOND: () => `${baseUrl}/surety-bonds`,
       bid: (id) => `${baseUrl}/bids/${id}`,
       project: (id) => `${baseUrl}/projects/${id}`,
       inspection: (id) => `${baseUrl}/inspections/${id}`,

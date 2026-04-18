@@ -13,6 +13,7 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -28,6 +29,7 @@ interface HealthSnapshot {
   rfiSubmittalScore: number;
   changeOrderScore: number;
   safetyScore: number;
+  complianceScore: number | null;
   trendDirection: string | null;
   aiExplanation: string | null;
   createdAt: string;
@@ -151,6 +153,8 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
   const costScore = snapshot?.costScore ?? snapshot?.budgetScore ?? 0;
   const scheduleScore = snapshot?.scheduleScore ?? 0;
   const safetyScore = snapshot?.safetyScore ?? 0;
+  const complianceScore = snapshot?.complianceScore ?? null;
+  const hasCompliance = complianceScore !== null && complianceScore !== undefined;
   const trendDirection = snapshot?.trendDirection;
   const sparklineData = [...history].reverse().map((s) => s.overallScore);
 
@@ -229,9 +233,12 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
             </div>
 
             <div className="space-y-3">
-              <ScoreBar label="Cost Risk" score={costScore} icon={DollarSign} weight="40%" />
-              <ScoreBar label="Schedule Risk" score={scheduleScore} icon={Calendar} weight="35%" />
-              <ScoreBar label="Safety Risk" score={safetyScore} icon={Shield} weight="25%" />
+              <ScoreBar label="Cost Risk" score={costScore} icon={DollarSign} weight={hasCompliance ? "35%" : "40%"} />
+              <ScoreBar label="Schedule Risk" score={scheduleScore} icon={Calendar} weight={hasCompliance ? "30%" : "35%"} />
+              <ScoreBar label="Safety Risk" score={safetyScore} icon={Shield} weight={hasCompliance ? "20%" : "25%"} />
+              {hasCompliance && (
+                <ScoreBar label="Compliance" score={complianceScore!} icon={ShieldCheck} weight="15%" />
+              )}
             </div>
 
             {snapshot.aiExplanation && (
