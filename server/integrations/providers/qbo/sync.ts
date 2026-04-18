@@ -866,10 +866,20 @@ export async function exportHaulTickets(
         const acct = (ccKey && accountMap.get(ccKey)) || null;
         const accountRef = acct ? { value: acct.qboAccountId, name: acct.qboAccountName } : defaultExpAccount;
 
+        // Job-cost class mapping: orgs configure { classMap: { [projectId]: qboClassId } }
+        // on the QBO connection metadata. When set, attach a ClassRef so the
+        // bill rolls up to the correct project/job in QBO P&L by class.
+        const classMap = (metadata.classMap as Record<string, string> | undefined) ?? {};
+        const classRef = ticket.projectId && classMap[ticket.projectId]
+          ? { value: classMap[ticket.projectId] }
+          : null;
+
         if (options.dryRun) { created++; continue; }
 
         const vendorId = await getOrCreateVendor(metadata.realmId, metadata.accessToken || "", vendor.name);
-        const bill = {
+        const lineDetail: Record<string, unknown> = { AccountRef: accountRef };
+        if (classRef) lineDetail.ClassRef = classRef;
+        const bill: Record<string, unknown> = {
           VendorRef: { value: vendorId },
           TxnDate: ticket.ticketDate,
           DocNumber: ticket.ticketNumber.slice(0, 21),
@@ -878,7 +888,7 @@ export async function exportHaulTickets(
             DetailType: "AccountBasedExpenseLineDetail",
             Amount: Number(ticket.totalCost),
             Description: `${ticket.materialClass} ${ticket.quantity} ${ticket.unit} → ${ticket.destination ?? ""}`.slice(0, 4000),
-            AccountBasedExpenseLineDetail: { AccountRef: accountRef },
+            AccountBasedExpenseLineDetail: lineDetail,
           }],
         };
         const result = await qboPost(metadata.realmId, metadata.accessToken || "", "bill", bill);
@@ -939,7 +949,13 @@ export async function exportSuretyPremiums(
       try {
         if (options.dryRun) { created++; continue; }
         const vendorId = await getOrCreateVendor(metadata.realmId, metadata.accessToken || "", bond.suretyCompany);
-        const bill = {
+        const classMap = (metadata.classMap as Record<string, string> | undefined) ?? {};
+        const classRef = bond.projectId && classMap[bond.projectId]
+          ? { value: classMap[bond.projectId] }
+          : null;
+        const lineDetail: Record<string, unknown> = { AccountRef: defaultExpAccount };
+        if (classRef) lineDetail.ClassRef = classRef;
+        const bill: Record<string, unknown> = {
           VendorRef: { value: vendorId },
           TxnDate: bond.effectiveDate ?? new Date().toISOString().slice(0, 10),
           DocNumber: `BOND-${bond.bondNumber}`.slice(0, 21),
@@ -948,7 +964,7 @@ export async function exportSuretyPremiums(
             DetailType: "AccountBasedExpenseLineDetail",
             Amount: premium,
             Description: `Surety premium — ${bond.bondType} bond ${bond.bondNumber}`,
-            AccountBasedExpenseLineDetail: { AccountRef: defaultExpAccount },
+            AccountBasedExpenseLineDetail: lineDetail,
           }],
         };
         const result = await qboPost(metadata.realmId, metadata.accessToken || "", "bill", bill);
@@ -1012,6 +1028,16 @@ export async function exportCertifiedPayroll(
       return { success: true, entityType: "certified_payroll", direction: "export", created: 0, updated: 0, skipped: 1, errors };
     }
 
+    // Pull pay run period for WH-347 metadata
+    const [payRun] = await db
+      .select({
+        runNumber: payRuns.runNumber,
+        payPeriodStart: payRuns.payPeriodStart,
+        payPeriodEnd: payRuns.payPeriodEnd,
+      })
+      .from(payRuns)
+      .where(eq(payRuns.id, payRunId));
+
     const defaultExpAccount = await getDefaultExpenseAccount(connection.id);
     const liabilityAccount = await getDefaultLiabilityAccount(connection.id);
     if (!defaultExpAccount || !liabilityAccount) {
@@ -1026,8 +1052,17 @@ export async function exportCertifiedPayroll(
       buckets.set(key, (buckets.get(key) ?? 0) + amt);
     }
 
+    // Per-project totals for WH-347 metadata footer
+    const projectBuckets = new Map<string, number>();
+    for (const ln of lines) {
+      if (!ln.projectId) continue;
+      projectBuckets.set(ln.projectId, (projectBuckets.get(ln.projectId) ?? 0) + Number(ln.amount ?? 0));
+    }
+
+    const classMap = (metadata.classMap as Record<string, string> | undefined) ?? {};
+
     let total = 0;
-    const journalLines: any[] = [];
+    const journalLines: Array<Record<string, unknown>> = [];
     for (const [costCode, amount] of buckets.entries()) {
       if (amount <= 0) continue;
       total += amount;
@@ -1055,9 +1090,42 @@ export async function exportCertifiedPayroll(
       return { success: true, entityType: "certified_payroll", direction: "export", created: 1, updated: 0, skipped: 0, errors };
     }
 
+    // Structured WH-347 metadata: pay period, run number, per-project totals,
+    // and ClassRef on the credit when a single project dominates the run.
+    const projectBreakdown = Array.from(projectBuckets.entries())
+      .map(([pid, amt]) => `${pid}=${amt.toFixed(2)}`)
+      .join(", ");
+    const periodLabel = payRun
+      ? `${payRun.payPeriodStart}..${payRun.payPeriodEnd}`
+      : "unknown period";
+    const runLabel = payRun?.runNumber ? `Run #${payRun.runNumber}` : `Pay run ${payRunId}`;
+    const privateNote = [
+      `Certified Payroll WH-347`,
+      runLabel,
+      `Period: ${periodLabel}`,
+      `Total gross: ${total.toFixed(2)}`,
+      `Cost-code buckets: ${buckets.size}`,
+      projectBreakdown ? `Per-project: ${projectBreakdown}` : null,
+    ].filter(Boolean).join(" | ");
+
+    // If the entire run posts to one project AND that project has a class
+    // mapping, attach ClassRef to every line for clean job-cost rollup.
+    const singleProjectId = projectBuckets.size === 1
+      ? Array.from(projectBuckets.keys())[0]
+      : null;
+    const runClassRef = singleProjectId && classMap[singleProjectId]
+      ? { value: classMap[singleProjectId] }
+      : null;
+    if (runClassRef) {
+      for (const jl of journalLines) {
+        const detail = jl.JournalEntryLineDetail as Record<string, unknown>;
+        detail.ClassRef = runClassRef;
+      }
+    }
+
     const journalEntry = {
       TxnDate: new Date().toISOString().slice(0, 10),
-      PrivateNote: `Certified Payroll WH-347 — pay run ${payRunId}`,
+      PrivateNote: privateNote.slice(0, 4000),
       Line: journalLines,
     };
     const result = await qboPost(metadata.realmId, metadata.accessToken || "", "journalentry", journalEntry);

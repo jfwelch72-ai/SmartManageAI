@@ -4,6 +4,7 @@ import { db } from "../../../db";
 import { integrationSyncState } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
+import { safeFetch } from "../../../utils/safeFetch";
 
 const SAM_BASE = "https://api.sam.gov/prod";
 
@@ -43,25 +44,16 @@ function num(v: unknown): number {
   return isFinite(n) ? n : 0;
 }
 
-async function samFetch(url: string, apiKey: string): Promise<any> {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 30000);
-  try {
-    const u = new URL(url);
-    u.searchParams.set("api_key", apiKey);
-    const resp = await fetch(u.toString(), {
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
-    clearTimeout(t);
-    if (!resp.ok) {
-      throw new Error(`SAM.gov API error ${resp.status}: ${await resp.text()}`);
-    }
-    return resp.json();
-  } catch (err) {
-    clearTimeout(t);
-    throw err;
+async function samFetch(url: string, apiKey: string): Promise<unknown> {
+  const u = new URL(url);
+  u.searchParams.set("api_key", apiKey);
+  const resp = await safeFetch(u.toString(), {
+    headers: { Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    throw new Error(`SAM.gov API error ${resp.status}: ${await resp.text()}`);
   }
+  return resp.json();
 }
 
 /**
@@ -77,9 +69,9 @@ export async function fetchWageDetermination(
   const apiKey = meta.apiKey || meta.accessToken;
   if (!apiKey) throw new Error("SAM.gov API key not configured on connection");
 
-  const data = await samFetch(`${SAM_BASE}/wagedeterminations/v1/details/${encodeURIComponent(decisionNumber)}`, apiKey);
+  const data = await samFetch(`${SAM_BASE}/wagedeterminations/v1/details/${encodeURIComponent(decisionNumber)}`, apiKey) as { wageDetermination?: { rates?: unknown }; rates?: unknown };
   const det = data?.wageDetermination ?? data ?? {};
-  const rows: SamWageRow[] = Array.isArray(det.rates) ? det.rates : [];
+  const rows: SamWageRow[] = Array.isArray((det as { rates?: unknown }).rates) ? ((det as { rates: SamWageRow[] }).rates) : [];
 
   const rates: DavisBaconWageRate[] = rows.map((r) => {
     const base = num(r.baseRate);

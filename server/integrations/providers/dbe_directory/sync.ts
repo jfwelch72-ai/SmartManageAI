@@ -8,6 +8,17 @@ import {
 } from "@shared/schema";
 import { and, eq, ilike, sql } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
+import { safeFetch } from "../../../utils/safeFetch";
+
+const DBE_CERT_TYPES = ["DBE", "MBE", "WBE", "SBE", "VOSB", "SDVOSB", "HUBZONE", "EIGHTA", "ACDBE", "OTHER"] as const;
+type DbeCertType = typeof DBE_CERT_TYPES[number];
+function toDbeCertType(value: string | undefined | null): DbeCertType | null {
+  if (!value) return null;
+  const upper = value.toUpperCase().replace(/[^A-Z]/g, "");
+  // Handle "8(a)" → "EIGHTA"
+  const normalized = upper === "8A" || upper === "EIGHTAEIGHTA" ? "EIGHTA" : upper;
+  return (DBE_CERT_TYPES as readonly string[]).includes(normalized) ? (normalized as DbeCertType) : null;
+}
 
 export interface DbeDirectoryEntry {
   legalName: string;
@@ -57,29 +68,24 @@ function normalizeEntry(raw: RawEntry): DbeDirectoryEntry {
 }
 
 async function directoryFetch(connection: IntegrationConnection, params: Record<string, string>): Promise<RawEntry[]> {
-  const meta = (connection.metadata as Record<string, any>) || {};
-  const baseUrl = meta.directoryUrl;
+  const meta = (connection.metadata as Record<string, unknown>) || {};
+  const baseUrl = typeof meta.directoryUrl === "string" ? meta.directoryUrl : "";
   if (!baseUrl) throw new Error("DBE directory URL not configured");
   const u = new URL(baseUrl);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
 
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 30000);
-  try {
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (meta.apiKey) headers.Authorization = `Bearer ${meta.apiKey}`;
-    const resp = await fetch(u.toString(), { headers, signal: controller.signal });
-    clearTimeout(t);
-    if (!resp.ok) throw new Error(`DBE directory ${resp.status}: ${await resp.text()}`);
-    const data = await resp.json();
-    if (Array.isArray(data)) return data as RawEntry[];
-    if (Array.isArray((data as any).entries)) return (data as any).entries as RawEntry[];
-    if (Array.isArray((data as any).results)) return (data as any).results as RawEntry[];
-    return [];
-  } catch (err) {
-    clearTimeout(t);
-    throw err;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (typeof meta.apiKey === "string" && meta.apiKey) headers.Authorization = `Bearer ${meta.apiKey}`;
+  const resp = await safeFetch(u.toString(), { headers });
+  if (!resp.ok) throw new Error(`DBE directory ${resp.status}: ${await resp.text()}`);
+  const data: unknown = await resp.json();
+  if (Array.isArray(data)) return data as RawEntry[];
+  if (data && typeof data === "object") {
+    const obj = data as { entries?: unknown; results?: unknown };
+    if (Array.isArray(obj.entries)) return obj.entries as RawEntry[];
+    if (Array.isArray(obj.results)) return obj.results as RawEntry[];
   }
+  return [];
 }
 
 export async function searchDirectory(
@@ -137,23 +143,26 @@ export async function refreshCertifications(
           updated++;
           continue;
         }
-        // The DB unique constraint is on (org, crmOrg, type, agency) — match
-        // the lookup to those columns so we never collide on insert.
-        const certType = best.certificationType ?? null;
+        const certType = toDbeCertType(best.certificationType);
+        if (!certType) { skipped++; continue; }
         const certAgency = best.certifyingAgency ?? null;
-        const lookupConds = [
-          eq(crmOrganisationCertifications.organizationId, connection.organizationId),
-          eq(crmOrganisationCertifications.crmOrganisationId, org.id),
-        ];
-        if (certType) lookupConds.push(eq(crmOrganisationCertifications.certificationType, certType as any));
-        if (certAgency) lookupConds.push(ilike(crmOrganisationCertifications.certifyingAgency, certAgency));
-        const existing = certType
-          ? await db
-              .select()
-              .from(crmOrganisationCertifications)
-              .where(and(...lookupConds))
-              .limit(1)
-          : [];
+
+        // The DB unique constraint is on (crmOrg, type, agency) — match the
+        // lookup to those columns so we never collide on insert.
+        const existing = await db
+          .select()
+          .from(crmOrganisationCertifications)
+          .where(
+            and(
+              eq(crmOrganisationCertifications.organizationId, connection.organizationId),
+              eq(crmOrganisationCertifications.crmOrganisationId, org.id),
+              eq(crmOrganisationCertifications.certificationType, certType),
+              certAgency
+                ? ilike(crmOrganisationCertifications.certifyingAgency, certAgency)
+                : sql`${crmOrganisationCertifications.certifyingAgency} IS NULL`,
+            )
+          )
+          .limit(1);
 
         if (existing.length > 0) {
           await db
@@ -161,18 +170,18 @@ export async function refreshCertifications(
             .set({
               certificationNumber: best.certificationNumber ?? existing[0].certificationNumber,
               expirationDate: best.expirationDate ?? null,
-              certifyingAgency: best.certifyingAgency ?? existing[0].certifyingAgency,
+              certifyingAgency: certAgency ?? existing[0].certifyingAgency,
               updatedAt: new Date(),
             })
             .where(eq(crmOrganisationCertifications.id, existing[0].id));
           updated++;
-        } else if (best.certificationType && best.certificationNumber) {
+        } else if (best.certificationNumber) {
           await db.insert(crmOrganisationCertifications).values({
             organizationId: connection.organizationId,
             crmOrganisationId: org.id,
-            certificationType: best.certificationType as any,
+            certificationType: certType,
             certificationNumber: best.certificationNumber,
-            certifyingAgency: best.certifyingAgency ?? null,
+            certifyingAgency: certAgency,
             expirationDate: best.expirationDate ?? null,
           });
           created++;

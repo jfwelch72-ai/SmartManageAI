@@ -4,6 +4,10 @@ import { db } from "../../../db";
 import { integrationSyncState, suretyBonds } from "@shared/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
+import { safeFetch } from "../../../utils/safeFetch";
+
+const BOND_STATUS_VALUES = ["ACTIVE", "EXPIRED", "CANCELLED", "PENDING", "RELEASED"] as const;
+type BondStatus = typeof BOND_STATUS_VALUES[number];
 
 export interface BondVerificationResult {
   bondNumber: string;
@@ -19,38 +23,30 @@ async function verifyOne(
   bondNumber: string,
   suretyCompany?: string
 ): Promise<BondVerificationResult> {
-  const meta = (connection.metadata as Record<string, any>) || {};
-  const url = meta.verificationUrl;
+  const meta = (connection.metadata as Record<string, unknown>) || {};
+  const url = typeof meta.verificationUrl === "string" ? meta.verificationUrl : "";
   if (!url) throw new Error("Surety verification URL not configured");
 
   const u = new URL(url);
   u.searchParams.set("bondNumber", bondNumber);
   if (suretyCompany) u.searchParams.set("surety", suretyCompany);
 
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 30000);
-  try {
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (meta.apiKey) headers.Authorization = `Bearer ${meta.apiKey}`;
-    const resp = await fetch(u.toString(), { headers, signal: controller.signal });
-    clearTimeout(t);
-    if (!resp.ok) throw new Error(`Surety verify ${resp.status}: ${await resp.text()}`);
-    const data: any = await resp.json();
-    const status = String(data.status ?? "").toUpperCase();
-    const normalized: BondVerificationResult["status"] =
-      status === "ACTIVE" || status === "EXPIRED" || status === "CANCELLED" ? (status as any) : "UNKNOWN";
-    return {
-      bondNumber,
-      status: normalized,
-      suretyCompany: data.suretyCompany ?? suretyCompany,
-      expirationDate: data.expirationDate,
-      verifiedAt: new Date().toISOString(),
-      raw: data,
-    };
-  } catch (err) {
-    clearTimeout(t);
-    throw err;
-  }
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (typeof meta.apiKey === "string" && meta.apiKey) headers.Authorization = `Bearer ${meta.apiKey}`;
+  const resp = await safeFetch(u.toString(), { headers });
+  if (!resp.ok) throw new Error(`Surety verify ${resp.status}: ${await resp.text()}`);
+  const data = (await resp.json()) as { status?: unknown; suretyCompany?: string; expirationDate?: string };
+  const statusStr = String(data.status ?? "").toUpperCase();
+  const normalized: BondVerificationResult["status"] =
+    statusStr === "ACTIVE" || statusStr === "EXPIRED" || statusStr === "CANCELLED" ? statusStr : "UNKNOWN";
+  return {
+    bondNumber,
+    status: normalized,
+    suretyCompany: data.suretyCompany ?? suretyCompany,
+    expirationDate: data.expirationDate,
+    verifiedAt: new Date().toISOString(),
+    raw: data,
+  };
 }
 
 /**
@@ -67,9 +63,10 @@ export async function verifyOrganizationBonds(
   const verified: BondVerificationResult[] = [];
 
   try {
+    const activeStatus: BondStatus = "ACTIVE";
     const where = options.bondIds && options.bondIds.length > 0
       ? and(eq(suretyBonds.organizationId, connection.organizationId), inArray(suretyBonds.id, options.bondIds))
-      : and(eq(suretyBonds.organizationId, connection.organizationId), eq(suretyBonds.status, "ACTIVE" as any));
+      : and(eq(suretyBonds.organizationId, connection.organizationId), eq(suretyBonds.status, activeStatus));
 
     const bonds = await db
       .select({
@@ -86,14 +83,18 @@ export async function verifyOrganizationBonds(
         const result = await verifyOne(connection, bond.bondNumber, bond.suretyCompany ?? undefined);
         verified.push(result);
         if (!options.dryRun) {
-          const patch: Record<string, any> = {
+          const patch: Partial<typeof suretyBonds.$inferInsert> = {
             verificationStatus: result.status,
             lastVerifiedAt: new Date(),
             updatedAt: new Date(),
           };
           if (result.expirationDate) patch.expirationDate = result.expirationDate;
-          if (result.status === "EXPIRED" || result.status === "CANCELLED") {
-            patch.status = result.status;
+          // Note: enum spelling is "CANCELED" (single L); map verifier
+          // "CANCELLED" → DB "CANCELED".
+          if (result.status === "EXPIRED") {
+            patch.status = "EXPIRED";
+          } else if (result.status === "CANCELLED") {
+            patch.status = "CANCELED";
           }
           await db
             .update(suretyBonds)

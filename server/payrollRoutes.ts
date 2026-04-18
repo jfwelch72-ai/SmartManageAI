@@ -315,6 +315,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
+import { lookupCachedWageRate } from "./integrations/providers/dol_davis_bacon/sync";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -2049,6 +2050,37 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         ));
       for (const pw of allPw) {
         pwMap.set(`${pw.projectId}:${pw.classificationId}`, parseFloat(pw.wageRate));
+      }
+
+      // Davis-Bacon fallback: for any (project, classification) pair that has
+      // no entry in prevailingWageRates, attempt to resolve via the cached
+      // wage determination synced from DOL/SAM.gov. The decision number is
+      // borrowed from any existing PW row for the same project so we keep
+      // the "one wage decision per project" assumption used in WH-347.
+      const projectDecisionMap = new Map<string, string>();
+      for (const pw of allPw) {
+        if (pw.wageDecision && !projectDecisionMap.has(pw.projectId)) {
+          projectDecisionMap.set(pw.projectId, pw.wageDecision);
+        }
+      }
+      for (const item of lineItems) {
+        const userClassId = classIdMap.get(item.lineItem.userId);
+        if (!userClassId) continue;
+        const key = `${item.projectId}:${userClassId}`;
+        if (pwMap.has(key)) continue;
+        const decision = projectDecisionMap.get(item.projectId);
+        if (!decision) continue;
+        const className = classNameMap.get(item.lineItem.userId);
+        if (!className) continue;
+        try {
+          const cached = await lookupCachedWageRate(orgId, decision, className);
+          if (cached && cached.baseRate > 0) {
+            pwMap.set(key, cached.baseRate);
+          }
+        } catch (err) {
+          // Non-fatal: fallback simply leaves prevailingRate null
+          logWarn("Davis-Bacon fallback lookup failed", { decision, className, error: String(err) });
+        }
       }
     }
 
