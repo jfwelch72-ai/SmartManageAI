@@ -9,6 +9,10 @@ import { gdriveProvider } from "./gdrive/provider";
 import { onedriveProvider } from "./onedrive/provider";
 import { boxProvider } from "./box/provider";
 import { stackctProvider } from "./stackct";
+import { aashtowareProvider } from "./aashtoware";
+import { dolDavisBaconProvider } from "./dol_davis_bacon";
+import { dbeDirectoryProvider } from "./dbe_directory";
+import { suretyVerificationProvider } from "./surety_verification";
 
 export function registerAllProviders() {
   registerProvider(qboProvider);
@@ -21,4 +25,8 @@ export function registerAllProviders() {
   registerProvider(onedriveProvider);
   registerProvider(boxProvider);
   registerProvider(stackctProvider);
+  registerProvider(aashtowareProvider);
+  registerProvider(dolDavisBaconProvider);
+  registerProvider(dbeDirectoryProvider);
+  registerProvider(suretyVerificationProvider);
 }

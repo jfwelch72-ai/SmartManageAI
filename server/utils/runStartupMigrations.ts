@@ -16,6 +16,7 @@ import { ensureLidarTables } from "./ensureLidarTables";
 import { ensureErrorLogsTable } from "./ensureErrorLogsTable";
 import { ensureScopeModifierTables } from "./ensureScopeModifierTables";
 import { ensureStackctProviderEnum } from "./ensureStackctProviderEnum";
+import { ensureDotIntegrationSchema } from "./ensureDotIntegrationSchema";
 import { ensureMobilizationTables } from "./ensureMobilizationTables";
 import { ensurePermitTables } from "./ensurePermitTables";
 import { ensureMaterialTestTables } from "./ensureMaterialTestTables";
@@ -60,6 +61,7 @@ const migrations: MigrationStep[] = [
   { name: "error_logs_table", category: "CREATE_TABLE", fn: ensureErrorLogsTable },
   { name: "scope_modifier_tables", category: "CREATE_TABLE", fn: ensureScopeModifierTables },
   { name: "stackct_provider_enum", category: "ADD_ENUM", fn: ensureStackctProviderEnum },
+  { name: "dot_integration_schema", category: "ADD_ENUM", fn: ensureDotIntegrationSchema },
   { name: "mobilization_tables", category: "CREATE_TABLE", fn: ensureMobilizationTables },
   { name: "permit_tables", category: "CREATE_TABLE", fn: ensurePermitTables },
   { name: "material_test_tables", category: "CREATE_TABLE", fn: ensureMaterialTestTables },

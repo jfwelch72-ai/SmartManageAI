@@ -1,8 +1,8 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationSyncState, qboAccountMappings, payRuns, payRunLineItems, subcontractorPayments, subcontractorContracts, crmOrganisations, procurementItems, projects, tmInvoices, users } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { integrationSyncState, qboAccountMappings, payRuns, payRunLineItems, subcontractorPayments, subcontractorContracts, crmOrganisations, procurementItems, projects, tmInvoices, users, haulTickets, suretyBonds } from "@shared/schema";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
 
 function getQboBaseUrl(): string {
@@ -808,5 +808,267 @@ export async function reconcilePayments(
     logError("QBO payment reconciliation failed", { error: String(err) });
     errors.push({ message: String(err) });
     return { success: false, entityType: "payment_reconciliation", direction: "import", created: 0, updated: 0, skipped: 0, errors };
+  }
+}
+
+// ============================================================================
+// HEAVY-CIVIL EXPORTS
+// Haul tickets → Bills, surety premiums → Bills, certified payroll → Journal
+// All idempotent via the existing exportedIds tracker.
+// ============================================================================
+
+/**
+ * Export approved haul tickets to QBO as Bills (one Bill per ticket, vendor =
+ * haulerVendor). Skips tickets already exported, tickets without a hauler,
+ * and tickets without a totalCost.
+ */
+export async function exportHaulTickets(
+  connection: IntegrationConnection,
+  options: { projectId?: string; dryRun?: boolean } = {}
+): Promise<SyncResult> {
+  const metadata = connection.metadata as Record<string, any> || {};
+  const errors: SyncError[] = [];
+  let created = 0;
+  let skipped = 0;
+
+  try {
+    const exportedIds = await getExportedIds(connection.id, "exported_haul_tickets");
+    const where = options.projectId
+      ? and(
+          eq(haulTickets.organizationId, connection.organizationId),
+          eq(haulTickets.projectId, options.projectId),
+          eq(haulTickets.status, "APPROVED" as any),
+          isNotNull(haulTickets.totalCost),
+          isNotNull(haulTickets.haulerVendorId),
+        )
+      : and(
+          eq(haulTickets.organizationId, connection.organizationId),
+          eq(haulTickets.status, "APPROVED" as any),
+          isNotNull(haulTickets.totalCost),
+          isNotNull(haulTickets.haulerVendorId),
+        );
+    const tickets = await db.select().from(haulTickets).where(where);
+    const defaultExpAccount = await getDefaultExpenseAccount(connection.id);
+    if (!defaultExpAccount) {
+      throw new Error("No expense account mapping. Import chart of accounts first.");
+    }
+    const accountMap = await getAccountMappings(connection.id, connection.organizationId);
+
+    for (const ticket of tickets) {
+      if (exportedIds.has(ticket.id)) { skipped++; continue; }
+      try {
+        const [vendor] = ticket.haulerVendorId
+          ? await db.select({ name: crmOrganisations.name }).from(crmOrganisations).where(eq(crmOrganisations.id, ticket.haulerVendorId))
+          : [];
+        if (!vendor?.name) { skipped++; continue; }
+
+        const ccKey = ticket.costCode ? `${ticket.costCode}:cost_code` : null;
+        const acct = (ccKey && accountMap.get(ccKey)) || null;
+        const accountRef = acct ? { value: acct.qboAccountId, name: acct.qboAccountName } : defaultExpAccount;
+
+        if (options.dryRun) { created++; continue; }
+
+        const vendorId = await getOrCreateVendor(metadata.realmId, metadata.accessToken || "", vendor.name);
+        const bill = {
+          VendorRef: { value: vendorId },
+          TxnDate: ticket.ticketDate,
+          DocNumber: ticket.ticketNumber.slice(0, 21),
+          PrivateNote: `Haul ticket ${ticket.ticketNumber} — ${ticket.materialClass}${ticket.payItemNumber ? ` / pay item ${ticket.payItemNumber}` : ""}`,
+          Line: [{
+            DetailType: "AccountBasedExpenseLineDetail",
+            Amount: Number(ticket.totalCost),
+            Description: `${ticket.materialClass} ${ticket.quantity} ${ticket.unit} → ${ticket.destination ?? ""}`.slice(0, 4000),
+            AccountBasedExpenseLineDetail: { AccountRef: accountRef },
+          }],
+        };
+        const result = await qboPost(metadata.realmId, metadata.accessToken || "", "bill", bill);
+        const qboBillId = result?.Bill?.Id;
+        await trackExportedId(connection.id, connection.organizationId, "exported_haul_tickets", ticket.id, qboBillId);
+        created++;
+      } catch (err) {
+        errors.push({ entityId: ticket.id, message: String(err) });
+      }
+    }
+
+    logInfo("QBO haul ticket export complete", { created, skipped, errors: errors.length });
+    return {
+      success: errors.length === 0,
+      entityType: "haul_ticket",
+      direction: "export",
+      created,
+      updated: 0,
+      skipped,
+      errors,
+    };
+  } catch (err) {
+    logError("QBO haul ticket export failed", { error: String(err) });
+    errors.push({ message: String(err) });
+    return { success: false, entityType: "haul_ticket", direction: "export", created: 0, updated: 0, skipped: 0, errors };
+  }
+}
+
+/**
+ * Export surety bond premiums (premiumAmount > 0, status=ACTIVE) as QBO Bills
+ * to the surety company. Idempotent per bond.
+ */
+export async function exportSuretyPremiums(
+  connection: IntegrationConnection,
+  options: { dryRun?: boolean } = {}
+): Promise<SyncResult> {
+  const metadata = connection.metadata as Record<string, any> || {};
+  const errors: SyncError[] = [];
+  let created = 0;
+  let skipped = 0;
+
+  try {
+    const exportedIds = await getExportedIds(connection.id, "exported_surety_premiums");
+    const bonds = await db.select().from(suretyBonds).where(and(
+      eq(suretyBonds.organizationId, connection.organizationId),
+      eq(suretyBonds.status, "ACTIVE" as any),
+      isNotNull(suretyBonds.premiumAmount),
+    ));
+    const defaultExpAccount = await getDefaultExpenseAccount(connection.id);
+    if (!defaultExpAccount) {
+      throw new Error("No expense account mapping. Import chart of accounts first.");
+    }
+
+    for (const bond of bonds) {
+      if (exportedIds.has(bond.id)) { skipped++; continue; }
+      const premium = Number(bond.premiumAmount);
+      if (!isFinite(premium) || premium <= 0) { skipped++; continue; }
+      try {
+        if (options.dryRun) { created++; continue; }
+        const vendorId = await getOrCreateVendor(metadata.realmId, metadata.accessToken || "", bond.suretyCompany);
+        const bill = {
+          VendorRef: { value: vendorId },
+          TxnDate: bond.effectiveDate ?? new Date().toISOString().slice(0, 10),
+          DocNumber: `BOND-${bond.bondNumber}`.slice(0, 21),
+          PrivateNote: `${bond.bondType} bond #${bond.bondNumber} premium${bond.expirationDate ? ` (exp ${bond.expirationDate})` : ""}`,
+          Line: [{
+            DetailType: "AccountBasedExpenseLineDetail",
+            Amount: premium,
+            Description: `Surety premium — ${bond.bondType} bond ${bond.bondNumber}`,
+            AccountBasedExpenseLineDetail: { AccountRef: defaultExpAccount },
+          }],
+        };
+        const result = await qboPost(metadata.realmId, metadata.accessToken || "", "bill", bill);
+        const qboBillId = result?.Bill?.Id;
+        await trackExportedId(connection.id, connection.organizationId, "exported_surety_premiums", bond.id, qboBillId);
+        created++;
+      } catch (err) {
+        errors.push({ entityId: bond.id, message: String(err) });
+      }
+    }
+
+    logInfo("QBO surety premium export complete", { created, skipped, errors: errors.length });
+    return {
+      success: errors.length === 0,
+      entityType: "surety_premium",
+      direction: "export",
+      created,
+      updated: 0,
+      skipped,
+      errors,
+    };
+  } catch (err) {
+    logError("QBO surety premium export failed", { error: String(err) });
+    errors.push({ message: String(err) });
+    return { success: false, entityType: "surety_premium", direction: "export", created: 0, updated: 0, skipped: 0, errors };
+  }
+}
+
+/**
+ * Export a certified payroll run as a single QBO Journal Entry. Splits the
+ * existing payRun aggregation by Davis-Bacon classification, debiting the
+ * mapped wage expense account and crediting the default liability account.
+ * Idempotency key: payRunId. Intentionally shares the `exported_payroll`
+ * bucket with `exportPayroll` so a single pay run can never produce two
+ * journal entries — heavy-civil orgs choose ONE payroll export style per run.
+ */
+export async function exportCertifiedPayroll(
+  connection: IntegrationConnection,
+  payRunId: string,
+  options: { dryRun?: boolean } = {}
+): Promise<SyncResult> {
+  const metadata = connection.metadata as Record<string, any> || {};
+  const errors: SyncError[] = [];
+
+  try {
+    const exportedIds = await getExportedIds(connection.id, "exported_payroll");
+    if (exportedIds.has(payRunId)) {
+      return { success: true, entityType: "certified_payroll", direction: "export", created: 0, updated: 0, skipped: 1, errors };
+    }
+
+    const lines = await db
+      .select({
+        amount: payRunLineItems.grossAmount,
+        costCode: payRunLineItems.costCode,
+        projectId: payRunLineItems.projectId,
+      })
+      .from(payRunLineItems)
+      .where(eq(payRunLineItems.payRunId, payRunId));
+
+    if (lines.length === 0) {
+      return { success: true, entityType: "certified_payroll", direction: "export", created: 0, updated: 0, skipped: 1, errors };
+    }
+
+    const defaultExpAccount = await getDefaultExpenseAccount(connection.id);
+    const liabilityAccount = await getDefaultLiabilityAccount(connection.id);
+    if (!defaultExpAccount || !liabilityAccount) {
+      throw new Error("Need both an expense and a liability account. Import chart of accounts first.");
+    }
+    const accountMap = await getAccountMappings(connection.id, connection.organizationId);
+
+    const buckets = new Map<string, number>();
+    for (const ln of lines) {
+      const key = ln.costCode ?? "unclassified";
+      const amt = Number(ln.amount ?? 0);
+      buckets.set(key, (buckets.get(key) ?? 0) + amt);
+    }
+
+    let total = 0;
+    const journalLines: any[] = [];
+    for (const [costCode, amount] of buckets.entries()) {
+      if (amount <= 0) continue;
+      total += amount;
+      const ccKey = `${costCode}:wage_expense`;
+      const acct = accountMap.get(ccKey) ?? accountMap.get(`${costCode}:cost_code`);
+      const accountRef = acct ? { value: acct.qboAccountId, name: acct.qboAccountName } : defaultExpAccount;
+      journalLines.push({
+        DetailType: "JournalEntryLineDetail",
+        Amount: amount,
+        Description: `Certified payroll — cost code ${costCode}`,
+        JournalEntryLineDetail: { PostingType: "Debit", AccountRef: accountRef },
+      });
+    }
+    if (total <= 0) {
+      return { success: true, entityType: "certified_payroll", direction: "export", created: 0, updated: 0, skipped: 1, errors };
+    }
+    journalLines.push({
+      DetailType: "JournalEntryLineDetail",
+      Amount: total,
+      Description: `Certified payroll liability — pay run ${payRunId}`,
+      JournalEntryLineDetail: { PostingType: "Credit", AccountRef: { value: liabilityAccount.value, name: liabilityAccount.name } },
+    });
+
+    if (options.dryRun) {
+      return { success: true, entityType: "certified_payroll", direction: "export", created: 1, updated: 0, skipped: 0, errors };
+    }
+
+    const journalEntry = {
+      TxnDate: new Date().toISOString().slice(0, 10),
+      PrivateNote: `Certified Payroll WH-347 — pay run ${payRunId}`,
+      Line: journalLines,
+    };
+    const result = await qboPost(metadata.realmId, metadata.accessToken || "", "journalentry", journalEntry);
+    const qboId = result?.JournalEntry?.Id;
+    await trackExportedId(connection.id, connection.organizationId, "exported_payroll", payRunId, qboId);
+
+    logInfo("QBO certified payroll export complete", { payRunId, total, classCount: buckets.size });
+    return { success: true, entityType: "certified_payroll", direction: "export", created: 1, updated: 0, skipped: 0, errors };
+  } catch (err) {
+    logError("QBO certified payroll export failed", { error: String(err), payRunId });
+    errors.push({ entityId: payRunId, message: String(err) });
+    return { success: false, entityType: "certified_payroll", direction: "export", created: 0, updated: 0, skipped: 0, errors };
   }
 }

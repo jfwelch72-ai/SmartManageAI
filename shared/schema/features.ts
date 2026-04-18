@@ -8800,6 +8800,8 @@ export const suretyBonds = pgTable("surety_bonds", {
   documentUrl: text("document_url"),
   documentId: varchar("document_id"),
   notes: text("notes"),
+  verificationStatus: text("verification_status"),
+  lastVerifiedAt: timestamp("last_verified_at"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -13,6 +13,11 @@ import { db } from "./db";
 import { decryptMetadata } from "./integrations/encryption";
 import type { AuthRequest } from "./auth";
 import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentStatus, exportPayroll, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "./integrations/providers/qbo";
+import { exportHaulTickets, exportSuretyPremiums, exportCertifiedPayroll } from "./integrations/providers/qbo/sync";
+import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
+import { importWageDetermination } from "./integrations/providers/dol_davis_bacon";
+import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications } from "./integrations/providers/dbe_directory";
+import { verifyOrganizationBonds } from "./integrations/providers/surety_verification";
 import { importProjects as stackctImportProjects, exportProjects as stackctExportProjects, importPlans as stackctImportPlans, exportPlans as stackctExportPlans, importEstimates as stackctImportEstimates, exportEstimates as stackctExportEstimates, acquireTokenWithCredentials as stackctAcquireToken } from "./integrations/providers/stackct";
 import { z } from "zod";
 import * as webhookService from "./integrations/webhookService";
@@ -543,10 +548,37 @@ router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
 // ========================================
 
 const syncSchema = z.object({
-  operation: z.enum(["chart_of_accounts", "customers", "invoices", "payment_status"]),
+  operation: z.enum([
+    // QBO core
+    "chart_of_accounts", "customers", "invoices", "payment_status",
+    "payroll", "subcontractor_payments", "purchase_orders", "reconcile_payments",
+    // QBO heavy-civil
+    "haul_tickets", "surety_premiums", "certified_payroll",
+    // AASHTOWare ebsx
+    "ebsx_import", "ebsx_export",
+    // DOL Davis-Bacon
+    "wage_determination",
+    // DBE directory
+    "dbe_lookup", "dbe_refresh",
+    // Surety verification
+    "surety_verify",
+  ]),
   dryRun: z.boolean().optional().default(false),
   data: z.any().optional(),
 });
+
+const QBO_OPERATIONS = new Set([
+  "chart_of_accounts", "customers", "invoices", "payment_status",
+  "payroll", "subcontractor_payments", "purchase_orders", "reconcile_payments",
+  "haul_tickets", "surety_premiums", "certified_payroll",
+]);
+const PROVIDER_OPERATIONS: Record<string, Set<string>> = {
+  qbo: QBO_OPERATIONS,
+  aashtoware: new Set(["ebsx_import", "ebsx_export"]),
+  dol_davis_bacon: new Set(["wage_determination"]),
+  dbe_directory: new Set(["dbe_lookup", "dbe_refresh"]),
+  surety_verification: new Set(["surety_verify"]),
+};
 
 router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
   try {
@@ -568,12 +600,15 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
 
     const { operation, dryRun, data } = parsed.data;
 
-    const SYNC_CAPABLE_PROVIDERS = ["qbo"] as const;
-    if (!SYNC_CAPABLE_PROVIDERS.includes(connection.provider as any)) {
+    const allowed = PROVIDER_OPERATIONS[connection.provider as string];
+    if (!allowed) {
       const hint = connection.provider === "stackct"
         ? " Use the STACK CT sync endpoint instead."
         : "";
-      return res.status(400).json({ error: `This sync endpoint only supports QuickBooks Online. Provider '${connection.provider}' does not have accounting sync operations.${hint}` });
+      return res.status(400).json({ error: `Sync operations are not supported for provider '${connection.provider}'.${hint}` });
+    }
+    if (!allowed.has(operation)) {
+      return res.status(400).json({ error: `Operation '${operation}' is not supported by provider '${connection.provider}'.` });
     }
 
     const metadata = (connection.metadata as Record<string, any>) || {};
@@ -626,6 +661,43 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
         break;
       case "reconcile_payments":
         result = await reconcilePayments(connection, dryRun);
+        break;
+      case "haul_tickets":
+        result = await exportHaulTickets(connection, { projectId: data?.projectId, dryRun });
+        break;
+      case "surety_premiums":
+        result = await exportSuretyPremiums(connection, { dryRun });
+        break;
+      case "certified_payroll":
+        if (!data?.payRunId) return res.status(400).json({ error: "Pay run ID required" });
+        result = await exportCertifiedPayroll(connection, data.payRunId, { dryRun });
+        break;
+      case "ebsx_import":
+        if (!data?.payload) return res.status(400).json({ error: "ebsx payload required" });
+        result = await importBidPackage(connection, parseEbsxJson(data.payload), dryRun);
+        break;
+      case "ebsx_export":
+        if (!data?.estimateId) return res.status(400).json({ error: "estimateId required" });
+        result = await exportEstimateAsEbsx(connection, data.estimateId, dryRun);
+        break;
+      case "wage_determination":
+        if (!data?.decisionNumber) return res.status(400).json({ error: "decisionNumber required" });
+        result = await importWageDetermination(connection, data.decisionNumber, dryRun);
+        break;
+      case "dbe_lookup": {
+        const entries = await searchDbeDirectory(connection, {
+          name: data?.name,
+          uei: data?.uei,
+          state: data?.state,
+        });
+        result = { success: true, entityType: "dbe_directory", direction: "import" as const, created: 0, updated: 0, skipped: 0, errors: [], data: entries };
+        break;
+      }
+      case "dbe_refresh":
+        result = await refreshDbeCertifications(connection, dryRun);
+        break;
+      case "surety_verify":
+        result = await verifyOrganizationBonds(connection, { bondIds: data?.bondIds, dryRun });
         break;
     }
 
