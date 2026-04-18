@@ -148,12 +148,19 @@ function initial(existing: MaterialCertification | null, defaultProjectId?: stri
 
 function CertForm({ existing, onClose, defaultProjectId }: { existing: MaterialCertification | null; onClose: () => void; defaultProjectId?: string }) {
   const { toast } = useToast();
+  const canManage = useFeaturePermission("canManageMaterialCertifications");
+  const canVerify = useFeaturePermission("canVerifyMaterialCertifications");
   const [form, setForm] = useState<FormState>(() => initial(existing, defaultProjectId));
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
 
   const mut = useMutation({
     mutationFn: async (data: FormState) => {
-      const payload: Record<string, unknown> = { ...data, receivedDate: data.receivedDate || null };
+      // Server strips buyAmericaStatus from PATCH; lifecycle goes through
+      // /submit /verify /reject endpoints below.
+      const { buyAmericaStatus, ...rest } = data;
+      const payload: Record<string, unknown> = existing
+        ? { ...rest, receivedDate: rest.receivedDate || null }
+        : { ...data, receivedDate: data.receivedDate || null };
       const url = existing ? `/api/material-certifications/${existing.id}` : "/api/material-certifications";
       const r = await apiRequest(existing ? "PATCH" : "POST", url, payload);
       return r.json();
@@ -164,6 +171,21 @@ function CertForm({ existing, onClose, defaultProjectId }: { existing: MaterialC
       onClose();
     },
     onError: (error: Error) => toast({ title: "Failed to save", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
+  const transitionMut = useMutation({
+    mutationFn: async (action: "submit" | "verify" | "reject") => {
+      if (!existing) throw new Error("Save the certification first");
+      const r = await apiRequest("POST", `/api/material-certifications/${existing.id}/${action}`, {});
+      return r.json();
+    },
+    onSuccess: (_d, action) => {
+      const labels: Record<string, string> = { submit: "submitted", verify: "verified", reject: "rejected" };
+      toast({ title: `Certification ${labels[action]}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/material-certifications"] });
+      onClose();
+    },
+    onError: (error: Error) => toast({ title: "Workflow action failed", description: getErrorMessage(error), variant: "destructive" }),
   });
 
   return (
@@ -195,14 +217,35 @@ function CertForm({ existing, onClose, defaultProjectId }: { existing: MaterialC
           <div><Label>Received Date</Label><Input type="date" value={form.receivedDate} onChange={(e) => setForm({ ...form, receivedDate: e.target.value })} data-testid="input-cert-received" /></div>
         </div>
         <div>
-          <Label>Buy America Status *</Label>
-          <Select value={form.buyAmericaStatus} onValueChange={(v) => setForm({ ...form, buyAmericaStatus: v })}>
-            <SelectTrigger data-testid="select-cert-status"><SelectValue /></SelectTrigger>
-            <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
-          </Select>
+          <Label>Buy America Status {existing ? "" : "*"}</Label>
+          {existing ? (
+            <div className="h-10 flex items-center" data-testid="badge-cert-status">
+              <Badge variant={STATUS_VARIANT[form.buyAmericaStatus] || "outline"}>{form.buyAmericaStatus.replace(/_/g, " ")}</Badge>
+              <span className="text-xs text-muted-foreground ml-2">Use workflow actions below</span>
+            </div>
+          ) : (
+            <Select value={form.buyAmericaStatus} onValueChange={(v) => setForm({ ...form, buyAmericaStatus: v })}>
+              <SelectTrigger data-testid="select-cert-status"><SelectValue /></SelectTrigger>
+              <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
         </div>
         <div><Label>Waiver Reason (if applicable)</Label><Textarea rows={2} value={form.waiverReason} onChange={(e) => setForm({ ...form, waiverReason: e.target.value })} data-testid="input-cert-waiver" /></div>
         <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-cert-notes" /></div>
+        {existing && (
+          <div className="flex flex-wrap gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground self-center mr-1">Workflow:</span>
+            {canManage && existing.buyAmericaStatus === "PENDING" && (
+              <Button type="button" size="sm" variant="secondary" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("submit")} data-testid="button-cert-submit">Submit for Verification</Button>
+            )}
+            {(canVerify || canManage) && (existing.buyAmericaStatus === "PENDING" || existing.buyAmericaStatus === "WAIVER_REQUESTED") && (
+              <>
+                <Button type="button" size="sm" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("verify")} data-testid="button-cert-verify">Verify</Button>
+                <Button type="button" size="sm" variant="destructive" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("reject")} data-testid="button-cert-reject">Reject</Button>
+              </>
+            )}
+          </div>
+        )}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} data-testid="button-cert-cancel">Cancel</Button>
           <Button type="submit" disabled={mut.isPending || !form.projectId} data-testid="button-cert-save">

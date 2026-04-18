@@ -19,7 +19,6 @@ import type { HaulTicket } from "@shared/schema";
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   DRAFT: "outline", SUBMITTED: "secondary", APPROVED: "default", REJECTED: "destructive", VOIDED: "outline",
 };
-const STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "VOIDED"];
 
 type Editing = HaulTicket | "new" | null;
 
@@ -147,7 +146,7 @@ interface FormState {
 function initial(existing: HaulTicket | null, defaultProjectId?: string): FormState {
   if (!existing) {
     return {
-      projectId: defaultProjectId || "", ticketNumber: "", ticketDate: todayIso(), status: "SUBMITTED",
+      projectId: defaultProjectId || "", ticketNumber: "", ticketDate: todayIso(), status: "DRAFT",
       materialClass: "", source: "", destination: "", truckNumber: "", driverName: "",
       quantity: "", unit: "TON", unitCost: "", costCode: "", payItemNumber: "", notes: "",
     };
@@ -173,14 +172,19 @@ function initial(existing: HaulTicket | null, defaultProjectId?: string): FormSt
 
 function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: HaulTicket | null; onClose: () => void; defaultProjectId?: string }) {
   const { toast } = useToast();
+  const canManage = useFeaturePermission("canManageHaulTickets");
+  const canApprove = useFeaturePermission("canApproveHaulTickets");
   const [form, setForm] = useState<FormState>(() => initial(existing, defaultProjectId));
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
 
   const mut = useMutation({
     mutationFn: async (data: FormState) => {
       const totalCost = data.unitCost && data.quantity ? (Number(data.unitCost) * Number(data.quantity)).toFixed(2) : null;
+      // Server strips status from PATCH; lifecycle transitions go through
+      // /submit /approve /reject /void below.
+      const { status: _status, ...rest } = data;
       const payload: Record<string, unknown> = {
-        ...data,
+        ...rest,
         unitCost: data.unitCost || null,
         totalCost,
       };
@@ -195,6 +199,20 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
       onClose();
     },
     onError: (error: Error) => toast({ title: "Failed to save", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
+  const transitionMut = useMutation({
+    mutationFn: async (action: "submit" | "approve" | "reject" | "void") => {
+      if (!existing) throw new Error("Save the ticket first");
+      const r = await apiRequest("POST", `/api/haul-tickets/${existing.id}/${action}`, {});
+      return r.json();
+    },
+    onSuccess: (_d, action) => {
+      toast({ title: `Haul ticket ${action === "submit" ? "submitted" : action === "approve" ? "approved" : action === "reject" ? "rejected" : "voided"}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/haul-tickets"] });
+      onClose();
+    },
+    onError: (error: Error) => toast({ title: "Workflow action failed", description: getErrorMessage(error), variant: "destructive" }),
   });
 
   return (
@@ -216,10 +234,10 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
           </div>
           <div>
             <Label>Status</Label>
-            <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-              <SelectTrigger data-testid="select-haul-status"><SelectValue /></SelectTrigger>
-              <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-            </Select>
+            <div className="h-10 flex items-center" data-testid="badge-haul-status">
+              <Badge variant={STATUS_VARIANT[form.status] || "outline"}>{form.status}</Badge>
+              <span className="text-xs text-muted-foreground ml-2">Use workflow actions below</span>
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -285,6 +303,23 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
           <Label>Notes</Label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-haul-notes" />
         </div>
+        {existing && (
+          <div className="flex flex-wrap gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground self-center mr-1">Workflow:</span>
+            {canManage && existing.status === "DRAFT" && (
+              <Button type="button" size="sm" variant="secondary" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("submit")} data-testid="button-haul-submit">Submit</Button>
+            )}
+            {(canApprove || canManage) && existing.status === "SUBMITTED" && (
+              <>
+                <Button type="button" size="sm" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("approve")} data-testid="button-haul-approve">Approve</Button>
+                <Button type="button" size="sm" variant="destructive" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("reject")} data-testid="button-haul-reject">Reject</Button>
+              </>
+            )}
+            {canManage && existing.status !== "VOIDED" && (
+              <Button type="button" size="sm" variant="outline" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("void")} data-testid="button-haul-void">Void</Button>
+            )}
+          </div>
+        )}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} data-testid="button-haul-cancel">Cancel</Button>
           <Button type="submit" disabled={mut.isPending || !form.projectId} data-testid="button-haul-save">

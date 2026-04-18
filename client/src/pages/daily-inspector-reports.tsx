@@ -19,7 +19,6 @@ import type { DailyInspectorReport } from "@shared/schema";
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
   DRAFT: "outline", SUBMITTED: "secondary", APPROVED: "default", REVISED: "secondary",
 };
-const STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "REVISED"];
 
 type Editing = DailyInspectorReport | "new" | null;
 
@@ -157,13 +156,19 @@ function initial(existing: DailyInspectorReport | null, defaultProjectId?: strin
 
 function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspectorReport | null; onClose: () => void; defaultProjectId?: string }) {
   const { toast } = useToast();
+  const canManage = useFeaturePermission("canManageInspectorReports");
+  const canApprove = useFeaturePermission("canApproveInspectorReports");
+  const canSubmit = useFeaturePermission("canSubmitInspectorReports");
   const [form, setForm] = useState<FormState>(() => initial(existing, defaultProjectId));
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
 
   const mut = useMutation({
     mutationFn: async (data: FormState) => {
+      // Server strips status from PATCH; lifecycle goes through workflow
+      // endpoints (/submit /approve /reject /request-revision) below.
+      const { status: _status, ...rest } = data;
       const payload: Record<string, unknown> = {
-        ...data,
+        ...rest,
         temperatureHigh: data.temperatureHigh ? Number(data.temperatureHigh) : null,
         temperatureLow: data.temperatureLow ? Number(data.temperatureLow) : null,
         precipitationInches: data.precipitationInches || null,
@@ -181,6 +186,21 @@ function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspe
       onClose();
     },
     onError: (error: Error) => toast({ title: "Failed to save", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
+  const transitionMut = useMutation({
+    mutationFn: async (action: "submit" | "approve" | "reject" | "request-revision") => {
+      if (!existing) throw new Error("Save the report first");
+      const r = await apiRequest("POST", `/api/daily-inspector-reports/${existing.id}/${action}`, {});
+      return r.json();
+    },
+    onSuccess: (_d, action) => {
+      const labels: Record<string, string> = { submit: "submitted", approve: "approved", reject: "rejected", "request-revision": "sent for revision" };
+      toast({ title: `IDR ${labels[action]}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-inspector-reports"] });
+      onClose();
+    },
+    onError: (error: Error) => toast({ title: "Workflow action failed", description: getErrorMessage(error), variant: "destructive" }),
   });
 
   return (
@@ -202,10 +222,10 @@ function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspe
           </div>
           <div>
             <Label>Status</Label>
-            <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-              <SelectTrigger data-testid="select-idr-status"><SelectValue /></SelectTrigger>
-              <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-            </Select>
+            <div className="h-10 flex items-center" data-testid="badge-idr-status">
+              <Badge variant={STATUS_VARIANT[form.status] || "outline"}>{form.status}</Badge>
+              <span className="text-xs text-muted-foreground ml-2">Use workflow actions below</span>
+            </div>
           </div>
         </div>
         <div>
@@ -236,6 +256,21 @@ function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspe
           <div><Label>Safety Incidents</Label><Textarea rows={2} value={form.safetyIncidents} onChange={(e) => setForm({ ...form, safetyIncidents: e.target.value })} data-testid="input-idr-safety" /></div>
           <div><Label>Delays</Label><Textarea rows={2} value={form.delaysEncountered} onChange={(e) => setForm({ ...form, delaysEncountered: e.target.value })} data-testid="input-idr-delays" /></div>
         </div>
+        {existing && (
+          <div className="flex flex-wrap gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground self-center mr-1">Workflow:</span>
+            {(canSubmit || canManage) && (existing.status === "DRAFT" || existing.status === "REVISED") && (
+              <Button type="button" size="sm" variant="secondary" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("submit")} data-testid="button-idr-submit">Submit</Button>
+            )}
+            {(canApprove || canManage) && existing.status === "SUBMITTED" && (
+              <>
+                <Button type="button" size="sm" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("approve")} data-testid="button-idr-approve">Approve</Button>
+                <Button type="button" size="sm" variant="destructive" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("reject")} data-testid="button-idr-reject">Reject</Button>
+                <Button type="button" size="sm" variant="outline" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("request-revision")} data-testid="button-idr-revise">Request Revision</Button>
+              </>
+            )}
+          </div>
+        )}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} data-testid="button-idr-cancel">Cancel</Button>
           <Button type="submit" disabled={mut.isPending || !form.projectId} data-testid="button-idr-save">
