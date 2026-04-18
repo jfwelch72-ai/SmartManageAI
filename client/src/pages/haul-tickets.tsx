@@ -34,8 +34,18 @@ interface MassHaulResponse {
 interface HaulOcrResponse {
   fallback?: boolean;
   message?: string;
-  fields?: Partial<{ ticketNumber: string; ticketDate: string; truckNumber: string; driverName: string; source: string; destination: string; materialClass: string; quantity: string; unit: string; totalCost: string }>;
+  ticketNumber?: string | null;
+  ticketDate?: string | null;
+  materialClass?: string | null;
+  source?: string | null;
+  destination?: string | null;
+  truckNumber?: string | null;
+  driverName?: string | null;
+  quantity?: string | null;
+  unit?: string | null;
+  unitCost?: string | null;
   confidence?: number;
+  notes?: string;
 }
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -284,18 +294,25 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
     },
     onSuccess: (data) => {
       if (data?.fallback) { toast({ title: "AI couldn't read the ticket", description: data.message ?? "Enter values manually." }); return; }
+      // For each field, prefer the AI value when present. Defaulted fields
+      // (ticketDate=today, unit="TON") would otherwise block the AI value
+      // because they are non-empty in `prev`.
+      const pick = (aiVal: string | null | undefined, prevVal: string): string => {
+        if (aiVal && aiVal.trim().length > 0) return aiVal;
+        return prevVal;
+      };
       setForm((prev) => ({
         ...prev,
-        ticketNumber: prev.ticketNumber || (data.ticketNumber ?? ""),
-        ticketDate: prev.ticketDate || (data.ticketDate ?? prev.ticketDate),
-        materialClass: prev.materialClass || (data.materialClass ?? ""),
-        source: prev.source || (data.source ?? ""),
-        destination: prev.destination || (data.destination ?? ""),
-        truckNumber: prev.truckNumber || (data.truckNumber ?? ""),
-        driverName: prev.driverName || (data.driverName ?? ""),
-        quantity: prev.quantity || (data.quantity ?? ""),
-        unit: prev.unit || (data.unit ?? prev.unit),
-        unitCost: prev.unitCost || (data.unitCost ?? ""),
+        ticketNumber: pick(data.ticketNumber, prev.ticketNumber),
+        ticketDate: pick(data.ticketDate, prev.ticketDate),
+        materialClass: pick(data.materialClass, prev.materialClass),
+        source: pick(data.source, prev.source),
+        destination: pick(data.destination, prev.destination),
+        truckNumber: pick(data.truckNumber, prev.truckNumber),
+        driverName: pick(data.driverName, prev.driverName),
+        quantity: pick(data.quantity, prev.quantity),
+        unit: pick(data.unit, prev.unit),
+        unitCost: pick(data.unitCost, prev.unitCost),
       }));
       toast({ title: "AI prefilled from photo", description: `Confidence ${data.confidence ?? "—"}/100. Review before saving.` });
     },

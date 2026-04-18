@@ -73,7 +73,10 @@ router.post(
   "/ai-features/heavy-civil/bid-tab/extract",
   requireAuth,
   requireOrgFeatureFlag("DOT_PAY_ITEMS"),
-  requireFeaturePermission("canManageBidWizard"),
+  // The extractor lives on the DOT Library page so we gate on the library
+  // permission. Bid-wizard users with `canManageBidWizard` should already be
+  // granted `canManageDotLibrary` by the standard role defaults.
+  requireFeaturePermission("canManageDotLibrary"),
   sensitiveLimiter,
   async (req: AuthRequest, res: Response) => {
     try {
