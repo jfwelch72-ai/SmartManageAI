@@ -977,7 +977,10 @@ router.patch(
     let patch: IdrPatch;
     if (canManage) {
       patch = rawPatch as IdrPatch;
-    } else if (canSubmit && prev.inspectorId === req.user!.id && prev.status === "DRAFT") {
+    } else if (canSubmit && prev.inspectorId === req.user!.id && (prev.status === "DRAFT" || prev.status === "REVISED")) {
+      // Inspectors may edit their own report while in DRAFT or after a
+      // reviewer rejected it back to REVISED, so they can correct findings
+      // before re-submitting via /submit.
       patch = rawPatch as IdrPatch;
     } else {
       return res.status(403).json({ error: "Use /submit, /approve, /reject, or /request-revision endpoints for status changes" });
