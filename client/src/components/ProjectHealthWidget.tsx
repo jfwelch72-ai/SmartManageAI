@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 import {
   Activity,
   TrendingUp,
@@ -34,6 +36,18 @@ interface HealthSnapshot {
   aiExplanation: string | null;
   createdAt: string;
   snapshotDate: string;
+  breakdown?: {
+    compliance?: {
+      expiredBonds?: number;
+      expiringSoonBonds?: number;
+      nonCompliantMaterialCerts?: number;
+      stalePendingCerts?: number;
+      idrDaysWithReport?: number;
+      missingIdrDays?: number;
+      trackingIdr?: boolean;
+      dbeGoalCount?: number;
+    };
+  } | null;
 }
 
 function getScoreColor(score: number): string {
@@ -237,7 +251,44 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
               <ScoreBar label="Schedule Risk" score={scheduleScore} icon={Calendar} weight={hasCompliance ? "30%" : "35%"} />
               <ScoreBar label="Safety Risk" score={safetyScore} icon={Shield} weight={hasCompliance ? "20%" : "25%"} />
               {hasCompliance && (
-                <ScoreBar label="Compliance" score={complianceScore!} icon={ShieldCheck} weight="15%" />
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <ScoreBar label="Compliance" score={complianceScore!} icon={ShieldCheck} weight="15%" />
+                  </div>
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground"
+                          data-testid="button-compliance-factors"
+                          aria-label="Compliance factor breakdown"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs text-xs space-y-1" data-testid="tooltip-compliance-factors">
+                        <div className="font-semibold">Compliance breakdown</div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                          <span>Expired bonds</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.expiredBonds ?? 0}</span>
+                          <span>Bonds expiring ≤30d</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.expiringSoonBonds ?? 0}</span>
+                          <span>Non-compliant material certs</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.nonCompliantMaterialCerts ?? 0}</span>
+                          <span>Stale pending certs (&gt;30d)</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.stalePendingCerts ?? 0}</span>
+                          <span>IDR days (last 14)</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.idrDaysWithReport ?? 0}</span>
+                          <span>Missing IDR days</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.missingIdrDays ?? 0}</span>
+                          <span>DBE goals defined</span>
+                          <span className="text-right tabular-nums">{snapshot?.breakdown?.compliance?.dbeGoalCount ?? 0}</span>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               )}
             </div>
 

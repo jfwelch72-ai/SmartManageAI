@@ -17,6 +17,7 @@ import {
   suretyBonds,
   materialCertifications,
   dailyInspectorReports,
+  projectDbeGoals,
 } from "@shared/schema";
 import { eq, and, sql, desc, count, lt } from "drizzle-orm";
 import {logInfo, logError, logWarn } from "../utils/logger";
@@ -310,6 +311,19 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
     ));
   const expiredBondCount = Number(expiredBonds[0]?.cnt || 0);
 
+  // Active surety bonds expiring within 30 days (early warning)
+  const thirtyDaysOut = new Date(today.getTime() + 30 * 86400000).toISOString().split("T")[0];
+  const expiringSoonBonds = await db
+    .select({ cnt: sql<number>`count(*)` })
+    .from(suretyBonds)
+    .where(and(
+      eq(suretyBonds.organizationId, orgId),
+      eq(suretyBonds.projectId, projectId),
+      sql`${suretyBonds.status} NOT IN ('RELEASED', 'CANCELED', 'EXPIRED')`,
+      sql`${suretyBonds.expirationDate} IS NOT NULL AND ${suretyBonds.expirationDate} >= ${todayStr} AND ${suretyBonds.expirationDate} <= ${thirtyDaysOut}`,
+    ));
+  const expiringSoonBondCount = Number(expiringSoonBonds[0]?.cnt || 0);
+
   // Non-compliant Buy America material certs (no waiver)
   const nonCompliantCerts = await db
     .select({ cnt: sql<number>`count(*)` })
@@ -356,8 +370,21 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
   const trackingIdr = Number(anyIdrEver[0]?.cnt || 0) > 0;
   const missingIdrDays = trackingIdr ? Math.max(0, 14 - idrDaysWithReport) : 0;
 
+  // DBE goal coverage: count goals defined for the project (transparency only —
+  // actuals tracking infrastructure is a future task; surfaces presence of
+  // commitments without scoring shortfall).
+  const dbeGoals = await db
+    .select({ cnt: sql<number>`count(*)` })
+    .from(projectDbeGoals)
+    .where(and(
+      eq(projectDbeGoals.organizationId, orgId),
+      eq(projectDbeGoals.projectId, projectId),
+    ));
+  const dbeGoalCount = Number(dbeGoals[0]?.cnt || 0);
+
   let score = 100;
   score -= Math.min(45, expiredBondCount * 15);
+  score -= Math.min(15, expiringSoonBondCount * 5);
   score -= Math.min(30, nonCompliantCount * 10);
   score -= Math.min(15, stalePendingCount * 3);
   score -= Math.min(40, missingIdrDays * 3);
@@ -366,11 +393,13 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
     score: clampScore(score),
     factors: {
       expiredBonds: expiredBondCount,
+      expiringSoonBonds: expiringSoonBondCount,
       nonCompliantMaterialCerts: nonCompliantCount,
       stalePendingCerts: stalePendingCount,
       idrDaysWithReport,
       missingIdrDays,
       trackingIdr,
+      dbeGoalCount,
     },
   };
 }

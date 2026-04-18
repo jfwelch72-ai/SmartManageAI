@@ -815,25 +815,24 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, recordedById: _r, ...rawPatch } = req.body || {};
+    const { id: _id, organizationId: _o, createdAt: _c, recordedById: _r, status: _status, ...rawPatch } = req.body || {};
+    // Lifecycle status transitions (SUBMITTED/APPROVED/REJECTED) must go
+    // through workflow-aware /submit, /approve, /reject endpoints to honor
+    // approval templates. Status is stripped above to prevent bypass.
     const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
 
-    // Field-level authz: approve-only users (no manage) may change status/notes only.
+    // Field-level authz: approve-only users (no manage) may change notes only here;
+    // they must use the dedicated /approve or /reject endpoints for status changes.
     const canManage = await userHasManagePermission(req, "canManageHaulTickets");
     const patch = canManage
       ? rawPatch
-      : pickAllowedFields(rawPatch, ["status", "notes"] as const).picked;
+      : pickAllowedFields(rawPatch, ["notes"] as const).picked;
     if (!canManage && Object.keys(patch).length === 0) {
-      return res.status(403).json({ error: "Approval-only role may modify status/notes only" });
-    }
-
-    if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
-      const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveHaulTickets");
-      if (!approver) return res.status(403).json({ error: "Approval permission required" });
+      return res.status(403).json({ error: "Approval-only role must use /approve or /reject endpoints for status changes" });
     }
 
     const [row] = await db.update(haulTickets).set({ ...patch, updatedAt: new Date() })
@@ -841,51 +840,6 @@ router.patch(
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
 
-    if (patch.status && patch.status !== prev.status) {
-      if (patch.status === "APPROVED") {
-        await eventBus.emit({
-          version: 1,
-          orgId: row.organizationId,
-          actorId: req.user!.id,
-          timestamp: new Date(),
-          type: "haul_ticket.approved",
-          payload: {
-            ticketId: row.id,
-            projectId: row.projectId ?? null,
-            approvedBy: req.user!.id,
-            totalCost: row.totalCost !== null && row.totalCost !== undefined ? String(row.totalCost) : null,
-          },
-        });
-      } else if (patch.status === "VOIDED") {
-        await eventBus.emit({
-          version: 1,
-          orgId: row.organizationId,
-          actorId: req.user!.id,
-          timestamp: new Date(),
-          type: "haul_ticket.voided",
-          payload: {
-            ticketId: row.id,
-            projectId: row.projectId ?? null,
-            voidedBy: req.user!.id,
-            reason: typeof patch.notes === "string" ? patch.notes : null,
-          },
-        });
-      } else if (patch.status === "REJECTED") {
-        await eventBus.emit({
-          version: 1,
-          orgId: row.organizationId,
-          actorId: req.user!.id,
-          timestamp: new Date(),
-          type: "haul_ticket.rejected",
-          payload: {
-            ticketId: row.id,
-            projectId: row.projectId ?? null,
-            rejectedBy: req.user!.id,
-            reason: typeof patch.notes === "string" ? patch.notes : null,
-          },
-        });
-      }
-    }
     await dotAudit(req, "UPDATE", "haul_ticket", row.id, prev, row);
     res.json(row);
   },
@@ -1005,36 +959,31 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, ...rawPatch } = req.body || {};
+    const { id: _id, organizationId: _o, createdAt: _c, status: _status, approvedById: _ab, approvedAt: _aa, submittedAt: _sa, ...rawPatch } = req.body || {};
+    // Lifecycle status transitions (SUBMITTED/APPROVED/REJECTED) and
+    // submission/approval timestamps must go through workflow-aware
+    // /submit, /approve, /reject, /request-revision endpoints.
     const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
 
-    // Field-level authz:
-    //  - manage: full edit
-    //  - submit: may edit own DRAFT report fields, never status->APPROVED
-    //  - approve-only: may change status/approval notes only
+    // Field-level authz: submit role may edit own DRAFT report content;
+    // manage role may edit all content. Approve-only role has no content edit.
     const canManage = await userHasManagePermission(req, "canManageInspectorReports");
     const canSubmit = await userHasManagePermission(req, "canSubmitInspectorReports");
     type IdrPatch = Partial<typeof dailyInspectorReports.$inferInsert>;
     let patch: IdrPatch;
     if (canManage) {
       patch = rawPatch as IdrPatch;
-    } else if (canSubmit && prev.inspectorId === req.user!.id && prev.status !== "APPROVED") {
-      const { status: _s, approvedById: _ab, approvedAt: _aa, ...rest } = rawPatch as IdrPatch & Record<string, unknown>;
-      patch = rest as IdrPatch;
+    } else if (canSubmit && prev.inspectorId === req.user!.id && prev.status === "DRAFT") {
+      patch = rawPatch as IdrPatch;
     } else {
-      patch = pickAllowedFields(rawPatch as Record<string, unknown>, ["status", "notes"] as const).picked as IdrPatch;
+      return res.status(403).json({ error: "Use /submit, /approve, /reject, or /request-revision endpoints for status changes" });
     }
     if (Object.keys(patch).length === 0) {
-      return res.status(403).json({ error: "No fields permitted for your role" });
-    }
-
-    if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
-      const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveInspectorReports");
-      if (!approver) return res.status(403).json({ error: "Approval permission required" });
+      return res.status(400).json({ error: "No fields to update" });
     }
 
     const [row] = await db.update(dailyInspectorReports).set({ ...patch, updatedAt: new Date() })
@@ -1042,20 +991,6 @@ router.patch(
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
 
-    if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
-      await eventBus.emit({
-        version: 1,
-        orgId: row.organizationId,
-        actorId: req.user!.id,
-        timestamp: new Date(),
-        type: "daily_inspector_report.approved",
-        payload: {
-          reportId: row.id,
-          projectId: row.projectId,
-          approvedBy: req.user!.id,
-        },
-      });
-    }
     await dotAudit(req, "UPDATE", "daily_inspector_report", row.id, prev, row);
     res.json(row);
   },
@@ -1243,54 +1178,34 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, ...rawPatch } = req.body || {};
+    const {
+      id: _id, organizationId: _o, createdAt: _c,
+      verifiedAt: _va, verifiedById: _vb, buyAmericaStatus: _ba,
+      ...rawPatch
+    } = req.body || {};
+    // Verification lifecycle (verifiedAt/verifiedById/buyAmericaStatus) must
+    // go through workflow-aware /submit, /verify (alias /approve), /reject
+    // endpoints to honor approval templates.
     const conditions: SQL[] = [eq(materialCertifications.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
 
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
 
-    // Field-level authz: verify-only users may only set verification fields and Buy America status.
+    // Field-level authz: only manage role may edit content here.
     const canManage = await userHasManagePermission(req, "canManageMaterialCertifications");
-    const patch = canManage
-      ? rawPatch
-      : pickAllowedFields(rawPatch, ["verifiedAt", "verifiedById", "buyAmericaStatus", "verificationNotes"] as const).picked;
-    if (!canManage && Object.keys(patch).length === 0) {
-      return res.status(403).json({ error: "Verify-only role may modify verification fields only" });
+    if (!canManage) {
+      return res.status(403).json({ error: "Use /submit, /verify (or /approve), or /reject endpoints for verification changes" });
+    }
+    if (Object.keys(rawPatch).length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
     }
 
-    const wasVerified = Boolean(prev.verifiedAt || prev.verifiedById);
-    const willBeVerified = Boolean(
-      (patch.verifiedAt ?? prev.verifiedAt) || (patch.verifiedById ?? prev.verifiedById),
-    );
-    if (!wasVerified && willBeVerified) {
-      const verifier = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canVerifyMaterialCertifications");
-      if (!verifier) return res.status(403).json({ error: "Verification permission required" });
-    }
-
-    const [row] = await db.update(materialCertifications).set({ ...patch, updatedAt: new Date() })
+    const [row] = await db.update(materialCertifications).set({ ...rawPatch, updatedAt: new Date() })
       .where(and(...conditions))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
 
-    const isVerifiedNow = Boolean(row.verifiedAt || row.verifiedById);
-    if (!wasVerified && isVerifiedNow) {
-      const baStatus = row.buyAmericaStatus;
-      const isCompliant = baStatus === "COMPLIANT" ? true : baStatus === "NON_COMPLIANT" ? false : null;
-      await eventBus.emit({
-        version: 1,
-        orgId: row.organizationId,
-        actorId: req.user!.id,
-        timestamp: new Date(),
-        type: "material_certification.verified",
-        payload: {
-          certificationId: row.id,
-          projectId: row.projectId ?? null,
-          verifiedBy: req.user!.id,
-          isCompliant,
-        },
-      });
-    }
     await dotAudit(req, "UPDATE", "material_certification", row.id, prev, row);
     res.json(row);
   },
@@ -1532,6 +1447,44 @@ router.post(
 );
 
 router.post(
+  "/api/daily-inspector-reports/:id/reject",
+  requireAuth,
+  requireFeaturePermission("canManageInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const orgId = prev.organizationId;
+    const role = req.user!.effectiveRole || req.user!.role;
+    const delegation = await workflowEngine.delegateEntityTransition(
+      orgId, "INSPECTOR_REPORT", prev.id, req.user!.id, role, "REJECTED", req.body?.notes,
+    );
+    if (handleDelegationGate(res, delegation, prev)) return;
+    const [row] = await db.update(dailyInspectorReports)
+      .set({ status: "REJECTED" as any, updatedAt: new Date() })
+      .where(and(...conditions)).returning();
+    await eventBus.emit({
+      version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
+      type: "inspector_report.rejected",
+      payload: { reportId: row.id, projectId: row.projectId, reportDate: String(row.reportDate), reason: req.body?.notes ?? null },
+    });
+    if (prev.inspectorId) {
+      await notifySubmitter(prev.inspectorId, {
+        type: "INSPECTOR_REPORT_REVISION_REQUESTED",
+        title: "Daily Inspector Report Rejected",
+        message: `Your IDR for ${row.reportDate} was rejected${req.body?.notes ? `: ${req.body.notes}` : ""}`,
+        relatedEntityType: "INSPECTOR_REPORT", relatedEntityId: row.id,
+      }, orgId);
+    }
+    await dotAudit(req, "REJECT", "daily_inspector_report", row.id, prev, row);
+    res.json({ ...row, workflow: delegation });
+  },
+);
+
+router.post(
   "/api/daily-inspector-reports/:id/request-revision",
   requireAuth,
   requireFeaturePermission("canManageInspectorReports"),
@@ -1589,7 +1542,7 @@ router.post(
 );
 
 router.post(
-  "/api/material-certifications/:id/verify",
+  ["/api/material-certifications/:id/verify", "/api/material-certifications/:id/approve"],
   requireAuth,
   requireAnyFeaturePermission(
     "canManageMaterialCertifications",
