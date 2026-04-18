@@ -324,6 +324,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { deliverNotification, type NotificationRecord } from "./services/notificationDelivery";
 import { insertNotification } from "./services/notificationService";
 import { successResponse } from "./responseHelper";
+import { validateBody } from "./utils/validation";
 
 const router = Router();
 
@@ -1305,7 +1306,7 @@ const payRunStatusHandler = async (req: any, res: Response) => {
 router.put("/api/payroll/pay-runs/:id/status", requireAuth, requireFeaturePermission("canManagePayroll"), payRunStatusHandler);
 router.patch("/api/payroll/pay-runs/:id/status", requireAuth, requireFeaturePermission("canManagePayroll"), payRunStatusHandler);
 
-router.get("/api/payroll/workers", requireAuth, async (req, res, next) => {
+router.get("/api/payroll/workers", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1337,7 +1338,7 @@ router.get("/api/payroll/workers", requireAuth, async (req, res, next) => {
   }
 });
 
-router.get("/api/payroll/time-entries", requireAuth, async (req, res, next) => {
+router.get("/api/payroll/time-entries", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1721,11 +1722,9 @@ router.post("/api/payroll/employee-deductions", requireAuth, requireFeaturePermi
       endDate: z.string().optional(),
       isActive: z.boolean().optional(),
     });
-    const parsed = createEmployeeDeductionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
-    }
-    const { userId, deductionTypeId, overrideAmount, effectiveDate, endDate, isActive } = parsed.data;
+    const validated = validateBody(createEmployeeDeductionSchema, req.body, res);
+    if (!validated) return;
+    const { userId, deductionTypeId, overrideAmount, effectiveDate, endDate, isActive } = validated;
 
     const [user] = await db.select({ id: users.id }).from(users)
       .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
@@ -1762,11 +1761,9 @@ router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireFeature
       endDate: z.string().nullable().optional(),
       isActive: z.boolean().optional(),
     });
-    const parsed = updateEmployeeDeductionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
-    }
-    const { overrideAmount, effectiveDate, endDate, isActive } = parsed.data;
+    const validated = validateBody(updateEmployeeDeductionSchema, req.body, res);
+    if (!validated) return;
+    const { overrideAmount, effectiveDate, endDate, isActive } = validated;
     const updateData: any = { updatedAt: new Date() };
     if (overrideAmount !== undefined) updateData.overrideAmount = overrideAmount || null;
     if (effectiveDate !== undefined) updateData.effectiveDate = effectiveDate;
