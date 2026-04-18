@@ -25,7 +25,7 @@ import {
   insertSwpppInspectionSchema,
   insertMaterialCertificationSchema,
 } from "@shared/schema";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import {
   requireAuth,
   requireRole,
@@ -168,24 +168,27 @@ router.get(
   requireAuth,
   requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
   async (req: AuthRequest, res: Response) => {
-  const parsed = payItemSearchQuerySchema.safeParse(req.query);
-  if (!parsed.success) return res.status(400).json({ error: "Invalid query", details: parsed.error.flatten().fieldErrors });
-  const { specBookId, agencyId, q, category, limit } = parsed.data;
-
-  const conditions: any[] = [eq(dotPayItems.isActive, true)];
-  if (specBookId) conditions.push(eq(dotPayItems.specBookId, specBookId));
-  if (agencyId) conditions.push(eq(dotPayItems.agencyId, agencyId));
-  if (category) conditions.push(eq(dotPayItems.category, category));
-  if (q && q.trim()) {
-    const term = `%${q.trim().toLowerCase()}%`;
-    conditions.push(or(
-      ilike(dotPayItems.itemNumber, term),
-      ilike(dotPayItems.description, term),
-      ilike(dotPayItems.searchTokens, term),
-    ));
-  }
-  const rows = await db.select().from(dotPayItems).where(and(...conditions)).orderBy(dotPayItems.itemNumber).limit(limit);
-  res.json(rows);
+    const parsed = payItemSearchQuerySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid query", details: parsed.error.flatten().fieldErrors });
+    const { specBookId, agencyId, q, category, limit } = parsed.data;
+    const cacheKey = `dot:pay-items:${specBookId ?? ""}:${agencyId ?? ""}:${category ?? ""}:${(q ?? "").toLowerCase()}:${limit}`;
+    const rows = await orgScopedCache(null, cacheKey, REFERENCE_TTL_MS, () => {
+      const conditions: SQL[] = [eq(dotPayItems.isActive, true)];
+      if (specBookId) conditions.push(eq(dotPayItems.specBookId, specBookId));
+      if (agencyId) conditions.push(eq(dotPayItems.agencyId, agencyId));
+      if (category) conditions.push(eq(dotPayItems.category, category));
+      if (q && q.trim()) {
+        const term = `%${q.trim().toLowerCase()}%`;
+        const orExpr = or(
+          ilike(dotPayItems.itemNumber, term),
+          ilike(dotPayItems.description, term),
+          ilike(dotPayItems.searchTokens, term),
+        );
+        if (orExpr) conditions.push(orExpr);
+      }
+      return db.select().from(dotPayItems).where(and(...conditions)).orderBy(dotPayItems.itemNumber).limit(limit);
+    });
+    res.json(rows);
   },
 );
 
