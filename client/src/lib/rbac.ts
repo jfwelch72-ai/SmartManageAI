@@ -461,6 +461,16 @@ export interface FeaturePerms {
   canEditProjectHandoff?: boolean;
   canSubmitPeerRatings?: boolean;
   canViewPeerRatings?: boolean;
+  canManageDotLibrary?: boolean;
+  canManageDbeGoals?: boolean;
+  canManageHaulTickets?: boolean;
+  canApproveHaulTickets?: boolean;
+  canManageInspectorReports?: boolean;
+  canApproveInspectorReports?: boolean;
+  canManageSwppp?: boolean;
+  canManageMaterialCertifications?: boolean;
+  canVerifyMaterialCertifications?: boolean;
+  canManageSuretyBonds?: boolean;
 }
 
 export interface NavItem {

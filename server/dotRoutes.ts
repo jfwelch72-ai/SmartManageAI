@@ -15,7 +15,6 @@ import {
   materialCertifications,
   insertDotAgencySchema,
   insertDotSpecBookSchema,
-  insertDotPayItemSchema,
   insertDotPayItemOverrideSchema,
   insertOrganizationDotPreferenceSchema,
   insertProjectDbeGoalSchema,
@@ -26,18 +25,52 @@ import {
   insertSwpppInspectionSchema,
   insertMaterialCertificationSchema,
 } from "@shared/schema";
-import { and, desc, eq, ilike, or, sql, inArray } from "drizzle-orm";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import {
+  requireAuth,
+  requireRole,
+  requireRoleOrFeature,
+  type AuthRequest,
+} from "./auth";
+import { requireOrgOwnership } from "./orgFilter";
+import { orgScopedCache, cacheInvalidate } from "./cache";
+import { getEffectivePermissions, type FeaturePermissionKey } from "./auth";
+
+async function userHasApprovalPermission(
+  req: AuthRequest,
+  approvalRoles: string[],
+  permKey: FeaturePermissionKey,
+): Promise<boolean> {
+  if (!req.user) return false;
+  if (req.user.role === "SUPER_ADMIN") return true;
+  const role = req.user.effectiveRole || req.user.role;
+  if (approvalRoles.includes(role)) return true;
+  const perms = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, role);
+  return Boolean(perms[permKey]);
+}
+import { eventBus } from "./events/eventBus";
 import { validateBody } from "./utils/validation";
 import { z } from "zod";
 
 const router = Router();
 
+// Cache TTLs
+const REFERENCE_TTL_MS = 5 * 60_000; // 5 min - global reference data
+const ORG_TTL_MS = 60_000; // 1 min - org-scoped lookups
+
+// Cache key helpers
+const KEY_AGENCIES = "dot:agencies";
+const KEY_SPEC_BOOKS = (agencyId: string) => `dot:spec-books:${agencyId}`;
+const KEY_ORG_PREFS = "dot:preferences";
+const KEY_ORG_OVERRIDES = "dot:pay-item-overrides";
+
 // =========================
 // DOT Agencies (read-only for users; write requires SUPER_ADMIN)
 // =========================
 router.get("/api/dot/agencies", requireAuth, async (_req: AuthRequest, res: Response) => {
-  const rows = await db.select().from(dotAgencies).where(eq(dotAgencies.isActive, true)).orderBy(dotAgencies.name);
+  const rows = await orgScopedCache(null, KEY_AGENCIES, REFERENCE_TTL_MS, () =>
+    db.select().from(dotAgencies).where(eq(dotAgencies.isActive, true)).orderBy(dotAgencies.name)
+  );
   res.json(rows);
 });
 
@@ -45,6 +78,7 @@ router.post("/api/dot/agencies", requireAuth, requireRole("SUPER_ADMIN"), async 
   const data = validateBody(insertDotAgencySchema, req.body, res);
   if (!data) return;
   const [row] = await db.insert(dotAgencies).values(data).returning();
+  cacheInvalidate("__global__", KEY_AGENCIES);
   res.status(201).json(row);
 });
 
@@ -52,7 +86,10 @@ router.post("/api/dot/agencies", requireAuth, requireRole("SUPER_ADMIN"), async 
 // DOT Spec Books
 // =========================
 router.get("/api/dot/agencies/:agencyId/spec-books", requireAuth, async (req: AuthRequest, res: Response) => {
-  const rows = await db.select().from(dotSpecBooks).where(eq(dotSpecBooks.agencyId, req.params.agencyId)).orderBy(desc(dotSpecBooks.edition));
+  const { agencyId } = req.params;
+  const rows = await orgScopedCache(null, KEY_SPEC_BOOKS(agencyId), REFERENCE_TTL_MS, () =>
+    db.select().from(dotSpecBooks).where(eq(dotSpecBooks.agencyId, agencyId)).orderBy(desc(dotSpecBooks.edition))
+  );
   res.json(rows);
 });
 
@@ -60,6 +97,7 @@ router.post("/api/dot/spec-books", requireAuth, requireRole("SUPER_ADMIN"), asyn
   const data = validateBody(insertDotSpecBookSchema, req.body, res);
   if (!data) return;
   const [row] = await db.insert(dotSpecBooks).values(data).returning();
+  cacheInvalidate("__global__", KEY_SPEC_BOOKS(row.agencyId));
   res.status(201).json(row);
 });
 
@@ -133,6 +171,7 @@ router.post("/api/dot/pay-items/bulk-upload", requireAuth, requireRole("SUPER_AD
   await db.update(dotSpecBooks).set({
     itemCount: sql`(SELECT COUNT(*) FROM dot_pay_items WHERE spec_book_id = ${data.specBookId})`,
   }).where(eq(dotSpecBooks.id, data.specBookId));
+  cacheInvalidate("__global__", KEY_SPEC_BOOKS(sb[0].agencyId));
   res.json({ inserted, skipped, total: data.items.length });
 });
 
@@ -140,186 +179,446 @@ router.post("/api/dot/pay-items/bulk-upload", requireAuth, requireRole("SUPER_AD
 // Org-scoped DOT preferences
 // =========================
 router.get("/api/dot/preferences", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const rows = await db.select().from(organizationDotPreferences).where(eq(organizationDotPreferences.organizationId, orgId));
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
+  if (ctx.isSuperAdmin) {
+    const rows = await db.select().from(organizationDotPreferences);
+    return res.json(rows);
+  }
+  const rows = await orgScopedCache(ctx.orgId!, KEY_ORG_PREFS, ORG_TTL_MS, () =>
+    db.select().from(organizationDotPreferences).where(eq(organizationDotPreferences.organizationId, ctx.orgId!))
+  );
   res.json(rows);
 });
-router.post("/api/dot/preferences", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertOrganizationDotPreferenceSchema, { ...req.body, organizationId: req.user!.organizationId }, res);
-  if (!data) return;
-  try {
-    const [row] = await db.insert(organizationDotPreferences).values(data).returning();
-    res.status(201).json(row);
-  } catch {
-    res.status(409).json({ error: "Already a preferred agency" });
-  }
-});
-router.delete("/api/dot/preferences/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(organizationDotPreferences).where(and(eq(organizationDotPreferences.id, req.params.id), eq(organizationDotPreferences.organizationId, orgId)));
-  res.status(204).end();
-});
+
+router.post(
+  "/api/dot/preferences",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN"], "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertOrganizationDotPreferenceSchema, { ...req.body, organizationId: ctx.orgId }, res);
+    if (!data) return;
+    try {
+      const [row] = await db.insert(organizationDotPreferences).values(data).returning();
+      cacheInvalidate(ctx.orgId!, KEY_ORG_PREFS);
+      res.status(201).json(row);
+    } catch {
+      res.status(409).json({ error: "Already a preferred agency" });
+    }
+  },
+);
+
+router.delete(
+  "/api/dot/preferences/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN"], "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(organizationDotPreferences.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(organizationDotPreferences.organizationId, ctx.orgId!));
+    await db.delete(organizationDotPreferences).where(and(...conditions));
+    if (!ctx.isSuperAdmin) cacheInvalidate(ctx.orgId!, KEY_ORG_PREFS);
+    res.status(204).end();
+  },
+);
 
 // =========================
 // Pay item overrides (per-org)
 // =========================
 router.get("/api/dot/pay-item-overrides", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const rows = await db.select().from(dotPayItemOverrides).where(eq(dotPayItemOverrides.organizationId, orgId));
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
+  if (ctx.isSuperAdmin) {
+    const rows = await db.select().from(dotPayItemOverrides);
+    return res.json(rows);
+  }
+  const rows = await orgScopedCache(ctx.orgId!, KEY_ORG_OVERRIDES, ORG_TTL_MS, () =>
+    db.select().from(dotPayItemOverrides).where(eq(dotPayItemOverrides.organizationId, ctx.orgId!))
+  );
   res.json(rows);
 });
-router.post("/api/dot/pay-item-overrides", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertDotPayItemOverrideSchema, { ...req.body, organizationId: req.user!.organizationId }, res);
-  if (!data) return;
-  const [row] = await db.insert(dotPayItemOverrides).values(data).returning();
-  res.status(201).json(row);
-});
+
+router.post(
+  "/api/dot/pay-item-overrides",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN"], "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertDotPayItemOverrideSchema, { ...req.body, organizationId: ctx.orgId }, res);
+    if (!data) return;
+    const [row] = await db.insert(dotPayItemOverrides).values(data).returning();
+    cacheInvalidate(ctx.orgId!, KEY_ORG_OVERRIDES);
+    res.status(201).json(row);
+  },
+);
 
 // =========================
 // DBE Goals (per project)
 // =========================
 router.get("/api/projects/:projectId/dbe-goals", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const rows = await db.select().from(projectDbeGoals)
-    .where(and(eq(projectDbeGoals.projectId, req.params.projectId), eq(projectDbeGoals.organizationId, orgId)));
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
+  const conditions: any[] = [eq(projectDbeGoals.projectId, req.params.projectId)];
+  if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
+  const rows = await db.select().from(projectDbeGoals).where(and(...conditions));
   res.json(rows);
 });
-router.post("/api/projects/:projectId/dbe-goals", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertProjectDbeGoalSchema, {
-    ...req.body,
-    projectId: req.params.projectId,
-    organizationId: req.user!.organizationId,
-    createdById: req.user!.id,
-  }, res);
-  if (!data) return;
-  const [row] = await db.insert(projectDbeGoals).values(data).returning();
-  res.status(201).json(row);
-});
-router.patch("/api/projects/:projectId/dbe-goals/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const { id: _id, projectId: _pid, organizationId: _oid, createdById: _cb, createdAt: _ca, ...candidate } = req.body ?? {};
-  const data = validateBody(insertProjectDbeGoalSchema.partial(), candidate, res);
-  if (!data) return;
-  const [row] = await db.update(projectDbeGoals).set(data)
-    .where(and(
+
+router.post(
+  "/api/projects/:projectId/dbe-goals",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN"], "canManageDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertProjectDbeGoalSchema, {
+      ...req.body,
+      projectId: req.params.projectId,
+      organizationId: ctx.orgId,
+      createdById: req.user!.id,
+    }, res);
+    if (!data) return;
+    const [row] = await db.insert(projectDbeGoals).values(data).returning();
+    await eventBus.emit({
+      version: 1,
+      orgId: ctx.orgId!,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "dbe_goal.changed",
+      payload: {
+        goalId: row.id,
+        projectId: row.projectId,
+        certificationType: row.certificationType ?? null,
+        goalPercent: row.goalPercent !== null && row.goalPercent !== undefined ? String(row.goalPercent) : null,
+        actualPercent: row.actualPercent !== null && row.actualPercent !== undefined ? String(row.actualPercent) : null,
+      },
+    });
+    res.status(201).json(row);
+  },
+);
+
+router.patch(
+  "/api/projects/:projectId/dbe-goals/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN"], "canManageDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { id: _id, projectId: _pid, organizationId: _oid, createdById: _cb, createdAt: _ca, ...candidate } = req.body ?? {};
+    const data = validateBody(insertProjectDbeGoalSchema.partial(), candidate, res);
+    if (!data) return;
+    const conditions: any[] = [
       eq(projectDbeGoals.id, req.params.id),
       eq(projectDbeGoals.projectId, req.params.projectId),
-      eq(projectDbeGoals.organizationId, orgId),
-    ))
-    .returning();
-  if (!row) return res.status(404).json({ error: "DBE goal not found" });
-  res.json(row);
-});
-router.delete("/api/projects/:projectId/dbe-goals/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(projectDbeGoals).where(and(eq(projectDbeGoals.id, req.params.id), eq(projectDbeGoals.organizationId, orgId)));
-  res.status(204).end();
-});
+    ];
+    if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
+    const [row] = await db.update(projectDbeGoals).set(data).where(and(...conditions)).returning();
+    if (!row) return res.status(404).json({ error: "DBE goal not found" });
+    await eventBus.emit({
+      version: 1,
+      orgId: row.organizationId,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "dbe_goal.changed",
+      payload: {
+        goalId: row.id,
+        projectId: row.projectId,
+        certificationType: row.certificationType ?? null,
+        goalPercent: row.goalPercent !== null && row.goalPercent !== undefined ? String(row.goalPercent) : null,
+        actualPercent: row.actualPercent !== null && row.actualPercent !== undefined ? String(row.actualPercent) : null,
+      },
+    });
+    res.json(row);
+  },
+);
+
+router.delete(
+  "/api/projects/:projectId/dbe-goals/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN"], "canManageDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(projectDbeGoals.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
+    await db.delete(projectDbeGoals).where(and(...conditions));
+    res.status(204).end();
+  },
+);
 
 // =========================
 // CRM org certifications
 // =========================
 router.get("/api/crm/organisations/:crmOrgId/certifications", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const rows = await db.select().from(crmOrganisationCertifications)
-    .where(and(eq(crmOrganisationCertifications.crmOrganisationId, req.params.crmOrgId), eq(crmOrganisationCertifications.organizationId, orgId)));
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
+  const conditions: any[] = [eq(crmOrganisationCertifications.crmOrganisationId, req.params.crmOrgId)];
+  if (!ctx.isSuperAdmin) conditions.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
+  const rows = await db.select().from(crmOrganisationCertifications).where(and(...conditions));
   res.json(rows);
 });
-router.post("/api/crm/organisations/:crmOrgId/certifications", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertCrmOrganisationCertificationSchema, {
-    ...req.body,
-    crmOrganisationId: req.params.crmOrgId,
-    organizationId: req.user!.organizationId,
-  }, res);
-  if (!data) return;
-  const [row] = await db.insert(crmOrganisationCertifications).values(data).returning();
-  res.status(201).json(row);
-});
-router.delete("/api/crm/organisations/:crmOrgId/certifications/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(crmOrganisationCertifications).where(and(eq(crmOrganisationCertifications.id, req.params.id), eq(crmOrganisationCertifications.organizationId, orgId)));
-  res.status(204).end();
-});
+
+router.post(
+  "/api/crm/organisations/:crmOrgId/certifications",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateCRMContacts"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertCrmOrganisationCertificationSchema, {
+      ...req.body,
+      crmOrganisationId: req.params.crmOrgId,
+      organizationId: ctx.orgId,
+    }, res);
+    if (!data) return;
+    const [row] = await db.insert(crmOrganisationCertifications).values(data).returning();
+    res.status(201).json(row);
+  },
+);
+
+router.delete(
+  "/api/crm/organisations/:crmOrgId/certifications/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateCRMContacts"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(crmOrganisationCertifications.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
+    await db.delete(crmOrganisationCertifications).where(and(...conditions));
+    res.status(204).end();
+  },
+);
 
 // =========================
 // Surety Bonds
 // =========================
 router.get("/api/surety-bonds", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
   const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [eq(suretyBonds.organizationId, orgId)];
+  const conditions: any[] = [];
+  if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
   if (projectId) conditions.push(eq(suretyBonds.projectId, projectId));
-  const rows = await db.select().from(suretyBonds).where(and(...conditions)).orderBy(desc(suretyBonds.createdAt));
+  const rows = await db.select().from(suretyBonds)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(suretyBonds.createdAt));
   res.json(rows);
 });
-router.post("/api/surety-bonds", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertSuretyBondSchema, {
-    ...req.body,
-    organizationId: req.user!.organizationId,
-    createdById: req.user!.id,
-  }, res);
-  if (!data) return;
-  const [row] = await db.insert(suretyBonds).values(data).returning();
-  res.status(201).json(row);
-});
-router.patch("/api/surety-bonds/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
-  const [row] = await db.update(suretyBonds).set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(suretyBonds.id, req.params.id), eq(suretyBonds.organizationId, orgId)))
-    .returning();
-  if (!row) return res.status(404).json({ error: "Not found" });
-  res.json(row);
-});
-router.delete("/api/surety-bonds/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(suretyBonds).where(and(eq(suretyBonds.id, req.params.id), eq(suretyBonds.organizationId, orgId)));
-  res.status(204).end();
-});
+
+router.post(
+  "/api/surety-bonds",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSuretyBonds"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertSuretyBondSchema, {
+      ...req.body,
+      organizationId: ctx.orgId,
+      createdById: req.user!.id,
+    }, res);
+    if (!data) return;
+    const [row] = await db.insert(suretyBonds).values(data).returning();
+    await eventBus.emit({
+      version: 1,
+      orgId: ctx.orgId!,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "surety_bond.created",
+      payload: {
+        bondId: row.id,
+        projectId: row.projectId ?? null,
+        bondType: row.bondType ?? null,
+        bondAmount: row.bondAmount !== null && row.bondAmount !== undefined ? String(row.bondAmount) : null,
+      },
+    });
+    res.status(201).json(row);
+  },
+);
+
+router.patch(
+  "/api/surety-bonds/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSuretyBonds"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
+    const conditions: any[] = [eq(suretyBonds.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
+    const [row] = await db.update(suretyBonds).set({ ...patch, updatedAt: new Date() })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+    res.json(row);
+  },
+);
+
+router.delete(
+  "/api/surety-bonds/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSuretyBonds"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(suretyBonds.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
+    await db.delete(suretyBonds).where(and(...conditions));
+    res.status(204).end();
+  },
+);
 
 // =========================
 // Haul Tickets
 // =========================
 router.get("/api/haul-tickets", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
   const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [eq(haulTickets.organizationId, orgId)];
+  const conditions: any[] = [];
+  if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
   if (projectId) conditions.push(eq(haulTickets.projectId, projectId));
-  const rows = await db.select().from(haulTickets).where(and(...conditions)).orderBy(desc(haulTickets.ticketDate)).limit(500);
+  const rows = await db.select().from(haulTickets)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(haulTickets.ticketDate))
+    .limit(500);
   res.json(rows);
 });
-router.post("/api/haul-tickets", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertHaulTicketSchema, {
-    ...req.body,
-    organizationId: req.user!.organizationId,
-    recordedById: req.user!.id,
-  }, res);
-  if (!data) return;
-  const [row] = await db.insert(haulTickets).values(data).returning();
-  res.status(201).json(row);
-});
-router.patch("/api/haul-tickets/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const { id: _id, organizationId: _o, createdAt: _c, recordedById: _r, ...patch } = req.body || {};
-  const [row] = await db.update(haulTickets).set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(haulTickets.id, req.params.id), eq(haulTickets.organizationId, orgId)))
-    .returning();
-  if (!row) return res.status(404).json({ error: "Not found" });
-  res.json(row);
-});
-router.delete("/api/haul-tickets/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(haulTickets).where(and(eq(haulTickets.id, req.params.id), eq(haulTickets.organizationId, orgId)));
-  res.status(204).end();
-});
+
+router.post(
+  "/api/haul-tickets",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertHaulTicketSchema, {
+      ...req.body,
+      organizationId: ctx.orgId,
+      recordedById: req.user!.id,
+    }, res);
+    if (!data) return;
+    const [row] = await db.insert(haulTickets).values(data).returning();
+    await eventBus.emit({
+      version: 1,
+      orgId: ctx.orgId!,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "haul_ticket.created",
+      payload: {
+        ticketId: row.id,
+        projectId: row.projectId ?? null,
+        materialClass: row.materialClass ?? null,
+        quantity: row.quantity !== null && row.quantity !== undefined ? String(row.quantity) : null,
+        unit: row.unit ?? null,
+      },
+    });
+    res.status(201).json(row);
+  },
+);
+
+router.patch(
+  "/api/haul-tickets/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { id: _id, organizationId: _o, createdAt: _c, recordedById: _r, ...patch } = req.body || {};
+    const conditions: any[] = [eq(haulTickets.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
+
+    const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+
+    const [row] = await db.update(haulTickets).set({ ...patch, updatedAt: new Date() })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+
+    if (patch.status && patch.status !== prev.status) {
+      if (patch.status === "APPROVED") {
+        const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveHaulTickets");
+        if (!approver) return res.status(403).json({ error: "Approval permission required" });
+        await eventBus.emit({
+          version: 1,
+          orgId: row.organizationId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "haul_ticket.approved",
+          payload: {
+            ticketId: row.id,
+            projectId: row.projectId ?? null,
+            approvedBy: req.user!.id,
+            totalCost: row.totalCost !== null && row.totalCost !== undefined ? String(row.totalCost) : null,
+          },
+        });
+      } else if (patch.status === "VOIDED" || patch.status === "REJECTED") {
+        await eventBus.emit({
+          version: 1,
+          orgId: row.organizationId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "haul_ticket.voided",
+          payload: {
+            ticketId: row.id,
+            projectId: row.projectId ?? null,
+            voidedBy: req.user!.id,
+            reason: (patch.notes as string | null) ?? null,
+          },
+        });
+      }
+    }
+    res.json(row);
+  },
+);
+
+router.delete(
+  "/api/haul-tickets/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(haulTickets.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
+    await db.delete(haulTickets).where(and(...conditions));
+    res.status(204).end();
+  },
+);
 
 // Aggregate haul reconciliation: planned vs actual by material class
 router.get("/api/projects/:projectId/haul-reconciliation", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
+  const orgFilter = ctx.isSuperAdmin ? sql`TRUE` : sql`organization_id = ${ctx.orgId}`;
   const rows = await db.execute(sql`
     SELECT material_class, SUM(quantity) AS total_quantity, SUM(total_cost) AS total_cost, unit
     FROM haul_tickets
-    WHERE project_id = ${req.params.projectId} AND organization_id = ${orgId}
+    WHERE project_id = ${req.params.projectId} AND ${orgFilter}
     GROUP BY material_class, unit
     ORDER BY material_class
   `);
@@ -330,107 +629,295 @@ router.get("/api/projects/:projectId/haul-reconciliation", requireAuth, async (r
 // Daily Inspector Reports
 // =========================
 router.get("/api/daily-inspector-reports", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
   const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [eq(dailyInspectorReports.organizationId, orgId)];
+  const conditions: any[] = [];
+  if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
   if (projectId) conditions.push(eq(dailyInspectorReports.projectId, projectId));
-  const rows = await db.select().from(dailyInspectorReports).where(and(...conditions)).orderBy(desc(dailyInspectorReports.reportDate)).limit(200);
+  const rows = await db.select().from(dailyInspectorReports)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(dailyInspectorReports.reportDate))
+    .limit(200);
   res.json(rows);
 });
-router.post("/api/daily-inspector-reports", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertDailyInspectorReportSchema, {
-    ...req.body,
-    organizationId: req.user!.organizationId,
-    inspectorId: req.body?.inspectorId ?? req.user!.id,
-  }, res);
-  if (!data) return;
-  const [row] = await db.insert(dailyInspectorReports).values(data).returning();
-  res.status(201).json(row);
-});
-router.patch("/api/daily-inspector-reports/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const { id: _id, organizationId: _o, createdAt: _c, ...patch } = req.body || {};
-  const [row] = await db.update(dailyInspectorReports).set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(dailyInspectorReports.id, req.params.id), eq(dailyInspectorReports.organizationId, orgId)))
-    .returning();
-  if (!row) return res.status(404).json({ error: "Not found" });
-  res.json(row);
-});
-router.delete("/api/daily-inspector-reports/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(dailyInspectorReports).where(and(eq(dailyInspectorReports.id, req.params.id), eq(dailyInspectorReports.organizationId, orgId)));
-  res.status(204).end();
-});
+
+router.post(
+  "/api/daily-inspector-reports",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertDailyInspectorReportSchema, {
+      ...req.body,
+      organizationId: ctx.orgId,
+      inspectorId: req.body?.inspectorId ?? req.user!.id,
+    }, res);
+    if (!data) return;
+    const [row] = await db.insert(dailyInspectorReports).values(data).returning();
+    await eventBus.emit({
+      version: 1,
+      orgId: ctx.orgId!,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "daily_inspector_report.submitted",
+      payload: {
+        reportId: row.id,
+        projectId: row.projectId,
+        reportDate: typeof row.reportDate === "string" ? row.reportDate : new Date(row.reportDate as any).toISOString(),
+        inspectorId: row.inspectorId,
+      },
+    });
+    res.status(201).json(row);
+  },
+);
+
+router.patch(
+  "/api/daily-inspector-reports/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { id: _id, organizationId: _o, createdAt: _c, ...patch } = req.body || {};
+    const conditions: any[] = [eq(dailyInspectorReports.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+
+    const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+
+    const [row] = await db.update(dailyInspectorReports).set({ ...patch, updatedAt: new Date() })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+
+    if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
+      const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveInspectorReports");
+      if (!approver) return res.status(403).json({ error: "Approval permission required" });
+      await eventBus.emit({
+        version: 1,
+        orgId: row.organizationId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "daily_inspector_report.approved",
+        payload: {
+          reportId: row.id,
+          projectId: row.projectId,
+          approvedBy: req.user!.id,
+        },
+      });
+    }
+    res.json(row);
+  },
+);
+
+router.delete(
+  "/api/daily-inspector-reports/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(dailyInspectorReports.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+    await db.delete(dailyInspectorReports).where(and(...conditions));
+    res.status(204).end();
+  },
+);
 
 // =========================
 // SWPPP Inspections
 // =========================
 router.get("/api/swppp-inspections", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
   const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [eq(swpppInspections.organizationId, orgId)];
+  const conditions: any[] = [];
+  if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
   if (projectId) conditions.push(eq(swpppInspections.projectId, projectId));
-  const rows = await db.select().from(swpppInspections).where(and(...conditions)).orderBy(desc(swpppInspections.inspectionDate)).limit(200);
+  const rows = await db.select().from(swpppInspections)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(swpppInspections.inspectionDate))
+    .limit(200);
   res.json(rows);
 });
-router.post("/api/swppp-inspections", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertSwpppInspectionSchema, {
-    ...req.body,
-    organizationId: req.user!.organizationId,
-    createdById: req.user!.id,
-  }, res);
-  if (!data) return;
-  const [row] = await db.insert(swpppInspections).values(data).returning();
-  res.status(201).json(row);
-});
-router.patch("/api/swppp-inspections/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
-  const [row] = await db.update(swpppInspections).set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(swpppInspections.id, req.params.id), eq(swpppInspections.organizationId, orgId)))
-    .returning();
-  if (!row) return res.status(404).json({ error: "Not found" });
-  res.json(row);
-});
-router.delete("/api/swppp-inspections/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(swpppInspections).where(and(eq(swpppInspections.id, req.params.id), eq(swpppInspections.organizationId, orgId)));
-  res.status(204).end();
-});
+
+router.post(
+  "/api/swppp-inspections",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertSwpppInspectionSchema, {
+      ...req.body,
+      organizationId: ctx.orgId,
+      createdById: req.user!.id,
+    }, res);
+    if (!data) return;
+    const [row] = await db.insert(swpppInspections).values(data).returning();
+    await eventBus.emit({
+      version: 1,
+      orgId: ctx.orgId!,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "swppp_inspection.submitted",
+      payload: {
+        inspectionId: row.id,
+        projectId: row.projectId,
+        inspectionDate: typeof row.inspectionDate === "string" ? row.inspectionDate : new Date(row.inspectionDate as any).toISOString(),
+        deficienciesFound: !!(row as any).deficienciesFound,
+      },
+    });
+    res.status(201).json(row);
+  },
+);
+
+router.patch(
+  "/api/swppp-inspections/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
+    const conditions: any[] = [eq(swpppInspections.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
+    const [row] = await db.update(swpppInspections).set({ ...patch, updatedAt: new Date() })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+    res.json(row);
+  },
+);
+
+router.delete(
+  "/api/swppp-inspections/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(swpppInspections.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
+    await db.delete(swpppInspections).where(and(...conditions));
+    res.status(204).end();
+  },
+);
 
 // =========================
 // Material Certifications (Buy America)
 // =========================
 router.get("/api/material-certifications", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
+  const ctx = requireOrgOwnership(req, res);
+  if (!ctx) return;
   const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [eq(materialCertifications.organizationId, orgId)];
+  const conditions: any[] = [];
+  if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
   if (projectId) conditions.push(eq(materialCertifications.projectId, projectId));
-  const rows = await db.select().from(materialCertifications).where(and(...conditions)).orderBy(desc(materialCertifications.createdAt)).limit(500);
+  const rows = await db.select().from(materialCertifications)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(materialCertifications.createdAt))
+    .limit(500);
   res.json(rows);
 });
-router.post("/api/material-certifications", requireAuth, async (req: AuthRequest, res: Response) => {
-  const data = validateBody(insertMaterialCertificationSchema, {
-    ...req.body,
-    organizationId: req.user!.organizationId,
-  }, res);
-  if (!data) return;
-  const [row] = await db.insert(materialCertifications).values(data).returning();
-  res.status(201).json(row);
-});
-router.patch("/api/material-certifications/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  const { id: _id, organizationId: _o, createdAt: _c, ...patch } = req.body || {};
-  const [row] = await db.update(materialCertifications).set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(materialCertifications.id, req.params.id), eq(materialCertifications.organizationId, orgId)))
-    .returning();
-  if (!row) return res.status(404).json({ error: "Not found" });
-  res.json(row);
-});
-router.delete("/api/material-certifications/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const orgId = req.user!.organizationId;
-  await db.delete(materialCertifications).where(and(eq(materialCertifications.id, req.params.id), eq(materialCertifications.organizationId, orgId)));
-  res.status(204).end();
-});
+
+router.post(
+  "/api/material-certifications",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageMaterialCertifications"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx || ctx.isSuperAdmin) {
+      if (ctx?.isSuperAdmin) return res.status(400).json({ error: "Provide an organization context" });
+      return;
+    }
+    const data = validateBody(insertMaterialCertificationSchema, {
+      ...req.body,
+      organizationId: ctx.orgId,
+    }, res);
+    if (!data) return;
+    const [row] = await db.insert(materialCertifications).values(data).returning();
+    await eventBus.emit({
+      version: 1,
+      orgId: ctx.orgId!,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      type: "material_certification.uploaded",
+      payload: {
+        certificationId: row.id,
+        projectId: row.projectId ?? null,
+        materialType: row.materialDescription ?? null,
+        isBuyAmericaCompliant: row.buyAmericaStatus === "COMPLIANT" ? true : row.buyAmericaStatus === "NON_COMPLIANT" ? false : null,
+      },
+    });
+    res.status(201).json(row);
+  },
+);
+
+router.patch(
+  "/api/material-certifications/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER", "SUPERINTENDENT"], "canManageMaterialCertifications"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { id: _id, organizationId: _o, createdAt: _c, ...patch } = req.body || {};
+    const conditions: any[] = [eq(materialCertifications.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
+
+    const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+
+    const [row] = await db.update(materialCertifications).set({ ...patch, updatedAt: new Date() })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+
+    const wasVerified = (prev as any).verifiedAt || (prev as any).verifiedById;
+    const isVerifiedNow = (row as any).verifiedAt || (row as any).verifiedById;
+    if (!wasVerified && isVerifiedNow) {
+      const verifier = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canVerifyMaterialCertifications");
+      if (!verifier) return res.status(403).json({ error: "Verification permission required" });
+      const baStatus = (row as any).buyAmericaStatus;
+      const isCompliant = baStatus === "COMPLIANT" ? true : baStatus === "NON_COMPLIANT" ? false : null;
+      await eventBus.emit({
+        version: 1,
+        orgId: row.organizationId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "material_certification.verified",
+        payload: {
+          certificationId: row.id,
+          projectId: row.projectId ?? null,
+          verifiedBy: req.user!.id,
+          isCompliant,
+        },
+      });
+    }
+    res.json(row);
+  },
+);
+
+router.delete(
+  "/api/material-certifications/:id",
+  requireAuth,
+  requireRoleOrFeature(["ADMIN", "MANAGER"], "canManageMaterialCertifications"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: any[] = [eq(materialCertifications.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
+    await db.delete(materialCertifications).where(and(...conditions));
+    res.status(204).end();
+  },
+);
 
 export default router;

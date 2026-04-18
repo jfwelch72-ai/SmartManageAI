@@ -230,7 +230,13 @@ type FeaturePermissionKeys =
   | 'canViewProjectReceipts' | 'canViewProjectTimeEntries' | 'canViewProjectSubcontractors'
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
   | 'canSubmitPeerRatings' | 'canViewPeerRatings'
-  | 'canAccessTimeMaterial';
+  | 'canAccessTimeMaterial'
+  | 'canManageDotLibrary' | 'canManageDbeGoals'
+  | 'canManageHaulTickets' | 'canApproveHaulTickets'
+  | 'canManageInspectorReports' | 'canApproveInspectorReports'
+  | 'canManageSwppp'
+  | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
+  | 'canManageSuretyBonds';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean> & { projectScope: "ALL" | "ACTIVE_ONLY" };
 
@@ -263,6 +269,12 @@ const ALL_FALSE: PermissionSet = {
   canCreateChangeOrders: false, canDeleteScopeItems: false, canEditProjectHandoff: false,
   canSubmitPeerRatings: false, canViewPeerRatings: false,
   canAccessTimeMaterial: false,
+  canManageDotLibrary: false, canManageDbeGoals: false,
+  canManageHaulTickets: false, canApproveHaulTickets: false,
+  canManageInspectorReports: false, canApproveInspectorReports: false,
+  canManageSwppp: false,
+  canManageMaterialCertifications: false, canVerifyMaterialCertifications: false,
+  canManageSuretyBonds: false,
 };
 
 const ALL_TRUE: PermissionSet = {
@@ -294,6 +306,12 @@ const ALL_TRUE: PermissionSet = {
   canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
   canSubmitPeerRatings: true, canViewPeerRatings: true,
   canAccessTimeMaterial: true,
+  canManageDotLibrary: true, canManageDbeGoals: true,
+  canManageHaulTickets: true, canApproveHaulTickets: true,
+  canManageInspectorReports: true, canApproveInspectorReports: true,
+  canManageSwppp: true,
+  canManageMaterialCertifications: true, canVerifyMaterialCertifications: true,
+  canManageSuretyBonds: true,
 };
 
 export const ROLE_HIERARCHY: UserRole[] = [
@@ -326,6 +344,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     ...ALL_TRUE,
     canAccessEnterpriseSettings: false,
     canManageHiringSettings: false,
+    canManageDotLibrary: false,
   },
   MANAGER: {
     ...ALL_TRUE,
@@ -336,6 +355,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessEnterpriseSettings: false,
     canManageHiringSettings: false,
     canManageUsers: false,
+    canManageDotLibrary: false,
   },
   SUPERINTENDENT: {
     ...ALL_FALSE,
@@ -357,6 +377,11 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
     canCreateChangeOrders: true,
     canSubmitPeerRatings: true, canViewPeerRatings: true,
+    canManageHaulTickets: true, canApproveHaulTickets: true,
+    canManageInspectorReports: true, canApproveInspectorReports: true,
+    canManageSwppp: true,
+    canManageMaterialCertifications: true, canVerifyMaterialCertifications: true,
+    canManageDbeGoals: true,
   },
   ESTIMATOR: {
     ...ALL_FALSE,
@@ -377,6 +402,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,
     canSubmitPeerRatings: true, canViewPeerRatings: true,
+    canManageDbeGoals: true, canManageSuretyBonds: true,
   },
   FIELD_WORKER: {
     ...ALL_FALSE,

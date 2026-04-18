@@ -249,7 +249,18 @@ export type DomainEvent =
   | EquipmentActualLoggedEvent
   | ReceiptCreatedEvent
   | RiskStatusChangedEvent
-  | TakeoffVersionSupersededEvent;
+  | TakeoffVersionSupersededEvent
+  | HaulTicketCreatedEvent
+  | HaulTicketApprovedEvent
+  | HaulTicketVoidedEvent
+  | DailyInspectorReportSubmittedEvent
+  | DailyInspectorReportApprovedEvent
+  | SwpppInspectionSubmittedEvent
+  | MaterialCertificationUploadedEvent
+  | MaterialCertificationVerifiedEvent
+  | SuretyBondCreatedEvent
+  | SuretyBondExpiringEvent
+  | DbeGoalChangedEvent;
 
 export interface PoReceiptRecordedEvent extends EventEnvelope {
   type: "po.receipt_recorded";
@@ -421,4 +432,126 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "receipt.created",
   "risk.status_changed",
   "takeoff.version_superseded",
+  "haul_ticket.created",
+  "haul_ticket.approved",
+  "haul_ticket.voided",
+  "daily_inspector_report.submitted",
+  "daily_inspector_report.approved",
+  "swppp_inspection.submitted",
+  "material_certification.uploaded",
+  "material_certification.verified",
+  "surety_bond.created",
+  "surety_bond.expiring",
+  "dbe_goal.changed",
 ];
+
+export interface HaulTicketCreatedEvent extends EventEnvelope {
+  type: "haul_ticket.created";
+  payload: {
+    ticketId: string;
+    projectId: string | null;
+    materialClass: string | null;
+    quantity: string | null;
+    unit: string | null;
+  };
+}
+
+export interface HaulTicketApprovedEvent extends EventEnvelope {
+  type: "haul_ticket.approved";
+  payload: {
+    ticketId: string;
+    projectId: string | null;
+    approvedBy: string;
+    totalCost: string | null;
+  };
+}
+
+export interface HaulTicketVoidedEvent extends EventEnvelope {
+  type: "haul_ticket.voided";
+  payload: {
+    ticketId: string;
+    projectId: string | null;
+    voidedBy: string;
+    reason: string | null;
+  };
+}
+
+export interface DailyInspectorReportSubmittedEvent extends EventEnvelope {
+  type: "daily_inspector_report.submitted";
+  payload: {
+    reportId: string;
+    projectId: string;
+    reportDate: string;
+    inspectorId: string;
+  };
+}
+
+export interface DailyInspectorReportApprovedEvent extends EventEnvelope {
+  type: "daily_inspector_report.approved";
+  payload: {
+    reportId: string;
+    projectId: string;
+    approvedBy: string;
+  };
+}
+
+export interface SwpppInspectionSubmittedEvent extends EventEnvelope {
+  type: "swppp_inspection.submitted";
+  payload: {
+    inspectionId: string;
+    projectId: string;
+    inspectionDate: string;
+    deficienciesFound: boolean;
+  };
+}
+
+export interface MaterialCertificationUploadedEvent extends EventEnvelope {
+  type: "material_certification.uploaded";
+  payload: {
+    certificationId: string;
+    projectId: string | null;
+    materialType: string | null;
+    isBuyAmericaCompliant: boolean | null;
+  };
+}
+
+export interface MaterialCertificationVerifiedEvent extends EventEnvelope {
+  type: "material_certification.verified";
+  payload: {
+    certificationId: string;
+    projectId: string | null;
+    verifiedBy: string;
+    isCompliant: boolean | null;
+  };
+}
+
+export interface SuretyBondCreatedEvent extends EventEnvelope {
+  type: "surety_bond.created";
+  payload: {
+    bondId: string;
+    projectId: string | null;
+    bondType: string | null;
+    bondAmount: string | null;
+  };
+}
+
+export interface SuretyBondExpiringEvent extends EventEnvelope {
+  type: "surety_bond.expiring";
+  payload: {
+    bondId: string;
+    projectId: string | null;
+    expirationDate: string;
+    daysRemaining: number;
+  };
+}
+
+export interface DbeGoalChangedEvent extends EventEnvelope {
+  type: "dbe_goal.changed";
+  payload: {
+    goalId: string;
+    projectId: string;
+    certificationType: string | null;
+    goalPercent: string | null;
+    actualPercent: string | null;
+  };
+}

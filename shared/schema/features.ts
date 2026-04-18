@@ -4612,6 +4612,18 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canSubmitPeerRatings: boolean("can_submit_peer_ratings").default(false),
   canViewPeerRatings: boolean("can_view_peer_ratings").default(false),
 
+  // Category 13: Heavy Civil / DOT (76-85)
+  canManageDotLibrary: boolean("can_manage_dot_library").default(false),
+  canManageDbeGoals: boolean("can_manage_dbe_goals").default(false),
+  canManageHaulTickets: boolean("can_manage_haul_tickets").default(false),
+  canApproveHaulTickets: boolean("can_approve_haul_tickets").default(false),
+  canManageInspectorReports: boolean("can_manage_inspector_reports").default(false),
+  canApproveInspectorReports: boolean("can_approve_inspector_reports").default(false),
+  canManageSwppp: boolean("can_manage_swppp").default(false),
+  canManageMaterialCertifications: boolean("can_manage_material_certifications").default(false),
+  canVerifyMaterialCertifications: boolean("can_verify_material_certifications").default(false),
+  canManageSuretyBonds: boolean("can_manage_surety_bonds").default(false),
+
   // Granted by admin
   grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
   grantedAt: timestamp("granted_at"),
