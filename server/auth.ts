@@ -310,12 +310,13 @@ export type FeaturePermissionKey =
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
   | 'canSubmitPeerRatings' | 'canViewPeerRatings'
   | 'canAccessTimeMaterial'
-  | 'canManageDotLibrary' | 'canManageDbeGoals'
-  | 'canManageHaulTickets' | 'canApproveHaulTickets'
-  | 'canManageInspectorReports' | 'canApproveInspectorReports'
-  | 'canManageSwppp'
-  | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
-  | 'canManageSuretyBonds';
+  | 'canViewDotLibrary' | 'canManageDotLibrary'
+  | 'canViewDbeGoals' | 'canManageDbeGoals'
+  | 'canViewHaulTickets' | 'canManageHaulTickets' | 'canApproveHaulTickets'
+  | 'canViewInspectorReports' | 'canSubmitInspectorReports' | 'canManageInspectorReports' | 'canApproveInspectorReports'
+  | 'canViewSwppp' | 'canManageSwppp'
+  | 'canViewMaterialCertifications' | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
+  | 'canViewSuretyBonds' | 'canManageSuretyBonds';
 
 export async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean | string>> {
   if (role === "SUPER_ADMIN") return getRoleDefaults("SUPER_ADMIN");

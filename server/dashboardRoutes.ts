@@ -231,12 +231,13 @@ type FeaturePermissionKeys =
   | 'canCreateChangeOrders' | 'canDeleteScopeItems' | 'canEditProjectHandoff'
   | 'canSubmitPeerRatings' | 'canViewPeerRatings'
   | 'canAccessTimeMaterial'
-  | 'canManageDotLibrary' | 'canManageDbeGoals'
-  | 'canManageHaulTickets' | 'canApproveHaulTickets'
-  | 'canManageInspectorReports' | 'canApproveInspectorReports'
-  | 'canManageSwppp'
-  | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
-  | 'canManageSuretyBonds';
+  | 'canViewDotLibrary' | 'canManageDotLibrary'
+  | 'canViewDbeGoals' | 'canManageDbeGoals'
+  | 'canViewHaulTickets' | 'canManageHaulTickets' | 'canApproveHaulTickets'
+  | 'canViewInspectorReports' | 'canSubmitInspectorReports' | 'canManageInspectorReports' | 'canApproveInspectorReports'
+  | 'canViewSwppp' | 'canManageSwppp'
+  | 'canViewMaterialCertifications' | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
+  | 'canViewSuretyBonds' | 'canManageSuretyBonds';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean> & { projectScope: "ALL" | "ACTIVE_ONLY" };
 
@@ -269,12 +270,15 @@ const ALL_FALSE: PermissionSet = {
   canCreateChangeOrders: false, canDeleteScopeItems: false, canEditProjectHandoff: false,
   canSubmitPeerRatings: false, canViewPeerRatings: false,
   canAccessTimeMaterial: false,
-  canManageDotLibrary: false, canManageDbeGoals: false,
-  canManageHaulTickets: false, canApproveHaulTickets: false,
+  canViewDotLibrary: false, canManageDotLibrary: false,
+  canViewDbeGoals: false, canManageDbeGoals: false,
+  canViewHaulTickets: false, canManageHaulTickets: false, canApproveHaulTickets: false,
+  canViewInspectorReports: false, canSubmitInspectorReports: false,
   canManageInspectorReports: false, canApproveInspectorReports: false,
-  canManageSwppp: false,
+  canViewSwppp: false, canManageSwppp: false,
+  canViewMaterialCertifications: false,
   canManageMaterialCertifications: false, canVerifyMaterialCertifications: false,
-  canManageSuretyBonds: false,
+  canViewSuretyBonds: false, canManageSuretyBonds: false,
 };
 
 const ALL_TRUE: PermissionSet = {
@@ -306,12 +310,15 @@ const ALL_TRUE: PermissionSet = {
   canCreateChangeOrders: true, canDeleteScopeItems: true, canEditProjectHandoff: true,
   canSubmitPeerRatings: true, canViewPeerRatings: true,
   canAccessTimeMaterial: true,
-  canManageDotLibrary: true, canManageDbeGoals: true,
-  canManageHaulTickets: true, canApproveHaulTickets: true,
+  canViewDotLibrary: true, canManageDotLibrary: true,
+  canViewDbeGoals: true, canManageDbeGoals: true,
+  canViewHaulTickets: true, canManageHaulTickets: true, canApproveHaulTickets: true,
+  canViewInspectorReports: true, canSubmitInspectorReports: true,
   canManageInspectorReports: true, canApproveInspectorReports: true,
-  canManageSwppp: true,
+  canViewSwppp: true, canManageSwppp: true,
+  canViewMaterialCertifications: true,
   canManageMaterialCertifications: true, canVerifyMaterialCertifications: true,
-  canManageSuretyBonds: true,
+  canViewSuretyBonds: true, canManageSuretyBonds: true,
 };
 
 export const ROLE_HIERARCHY: UserRole[] = [

@@ -252,10 +252,13 @@ export type DomainEvent =
   | TakeoffVersionSupersededEvent
   | HaulTicketCreatedEvent
   | HaulTicketApprovedEvent
+  | HaulTicketRejectedEvent
   | HaulTicketVoidedEvent
   | DailyInspectorReportSubmittedEvent
   | DailyInspectorReportApprovedEvent
   | SwpppInspectionSubmittedEvent
+  | SuretyBondExpiredEvent
+  | SuretyBondReleasedEvent
   | MaterialCertificationUploadedEvent
   | MaterialCertificationVerifiedEvent
   | SuretyBondCreatedEvent

@@ -4612,16 +4612,24 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canSubmitPeerRatings: boolean("can_submit_peer_ratings").default(false),
   canViewPeerRatings: boolean("can_view_peer_ratings").default(false),
 
-  // Category 13: Heavy Civil / DOT (76-85)
+  // Category 13: Heavy Civil / DOT (76-93)
+  canViewDotLibrary: boolean("can_view_dot_library").default(false),
   canManageDotLibrary: boolean("can_manage_dot_library").default(false),
+  canViewDbeGoals: boolean("can_view_dbe_goals").default(false),
   canManageDbeGoals: boolean("can_manage_dbe_goals").default(false),
+  canViewHaulTickets: boolean("can_view_haul_tickets").default(false),
   canManageHaulTickets: boolean("can_manage_haul_tickets").default(false),
   canApproveHaulTickets: boolean("can_approve_haul_tickets").default(false),
+  canViewInspectorReports: boolean("can_view_inspector_reports").default(false),
+  canSubmitInspectorReports: boolean("can_submit_inspector_reports").default(false),
   canManageInspectorReports: boolean("can_manage_inspector_reports").default(false),
   canApproveInspectorReports: boolean("can_approve_inspector_reports").default(false),
+  canViewSwppp: boolean("can_view_swppp").default(false),
   canManageSwppp: boolean("can_manage_swppp").default(false),
+  canViewMaterialCertifications: boolean("can_view_material_certifications").default(false),
   canManageMaterialCertifications: boolean("can_manage_material_certifications").default(false),
   canVerifyMaterialCertifications: boolean("can_verify_material_certifications").default(false),
+  canViewSuretyBonds: boolean("can_view_surety_bonds").default(false),
   canManageSuretyBonds: boolean("can_manage_surety_bonds").default(false),
 
   // Granted by admin

@@ -30,11 +30,21 @@ import {
   requireAuth,
   requireRole,
   requireFeaturePermission,
+  requireAnyFeaturePermission,
   type AuthRequest,
 } from "./auth";
-import { requireOrgOwnership } from "./orgFilter";
+import { requireOrgOwnership, getOrgIdForFilter } from "./orgFilter";
 import { orgScopedCache, cacheInvalidate } from "./cache";
 import { getEffectivePermissions, type FeaturePermissionKey } from "./auth";
+
+// SUPER_ADMIN view-as: when isSuperAdmin and ?organizationId=... is passed,
+// scope the list to that org; otherwise return all-org rows (audited via
+// getOrgIdForFilter). Returns the orgId to inject into WHERE, or null for no extra filter.
+function superAdminTargetOrgId(req: AuthRequest): string | null {
+  if (req.user?.role !== "SUPER_ADMIN") return null;
+  const v = (req.query?.organizationId as string | undefined) ?? null;
+  return v && v.length > 0 ? v : null;
+}
 
 async function userHasApprovalPermission(
   req: AuthRequest,
@@ -267,20 +277,27 @@ router.post(
 // =========================
 const KEY_DBE_GOALS = (projectId: string) => `dot:dbe-goals:${projectId}`;
 
-router.get("/api/projects/:projectId/dbe-goals", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  const projectId = req.params.projectId;
-  const fetchRows = async () => {
-    const conditions: any[] = [eq(projectDbeGoals.projectId, projectId)];
-    if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
-    return db.select().from(projectDbeGoals).where(and(...conditions));
-  };
-  const rows = ctx.isSuperAdmin
-    ? await fetchRows()
-    : await orgScopedCache(ctx.orgId!, KEY_DBE_GOALS(projectId), 60_000, fetchRows);
-  res.json(rows);
-});
+router.get(
+  "/api/projects/:projectId/dbe-goals",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDbeGoals", "canManageDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const projectId = req.params.projectId;
+    const targetOrg = superAdminTargetOrgId(req);
+    const fetchRows = async () => {
+      const conditions: any[] = [eq(projectDbeGoals.projectId, projectId)];
+      if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
+      else if (targetOrg) conditions.push(eq(projectDbeGoals.organizationId, targetOrg));
+      return db.select().from(projectDbeGoals).where(and(...conditions));
+    };
+    const rows = ctx.isSuperAdmin
+      ? await fetchRows()
+      : await orgScopedCache(ctx.orgId!, KEY_DBE_GOALS(projectId), 60_000, fetchRows);
+    res.json(rows);
+  },
+);
 
 router.post(
   "/api/projects/:projectId/dbe-goals",
@@ -376,8 +393,10 @@ router.delete(
 router.get("/api/crm/organisations/:crmOrgId/certifications", requireAuth, async (req: AuthRequest, res: Response) => {
   const ctx = requireOrgOwnership(req, res);
   if (!ctx) return;
+  const targetOrg = superAdminTargetOrgId(req);
   const conditions: any[] = [eq(crmOrganisationCertifications.crmOrganisationId, req.params.crmOrgId)];
   if (!ctx.isSuperAdmin) conditions.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
+  else if (targetOrg) conditions.push(eq(crmOrganisationCertifications.organizationId, targetOrg));
   const rows = await db.select().from(crmOrganisationCertifications).where(and(...conditions));
   res.json(rows);
 });
@@ -420,18 +439,25 @@ router.delete(
 // =========================
 // Surety Bonds
 // =========================
-router.get("/api/surety-bonds", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [];
-  if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
-  if (projectId) conditions.push(eq(suretyBonds.projectId, projectId));
-  const rows = await db.select().from(suretyBonds)
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(suretyBonds.createdAt));
-  res.json(rows);
-});
+router.get(
+  "/api/surety-bonds",
+  requireAuth,
+  requireAnyFeaturePermission("canViewSuretyBonds", "canManageSuretyBonds"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const projectId = (req.query.projectId as string) || null;
+    const targetOrg = superAdminTargetOrgId(req);
+    const conditions: any[] = [];
+    if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
+    else if (targetOrg) conditions.push(eq(suretyBonds.organizationId, targetOrg));
+    if (projectId) conditions.push(eq(suretyBonds.projectId, projectId));
+    const rows = await db.select().from(suretyBonds)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(suretyBonds.createdAt));
+    res.json(rows);
+  },
+);
 
 router.post(
   "/api/surety-bonds",
@@ -534,19 +560,26 @@ router.delete(
 // =========================
 // Haul Tickets
 // =========================
-router.get("/api/haul-tickets", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [];
-  if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
-  if (projectId) conditions.push(eq(haulTickets.projectId, projectId));
-  const rows = await db.select().from(haulTickets)
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(haulTickets.ticketDate))
-    .limit(500);
-  res.json(rows);
-});
+router.get(
+  "/api/haul-tickets",
+  requireAuth,
+  requireAnyFeaturePermission("canViewHaulTickets", "canManageHaulTickets", "canApproveHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const projectId = (req.query.projectId as string) || null;
+    const targetOrg = superAdminTargetOrgId(req);
+    const conditions: any[] = [];
+    if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
+    else if (targetOrg) conditions.push(eq(haulTickets.organizationId, targetOrg));
+    if (projectId) conditions.push(eq(haulTickets.projectId, projectId));
+    const rows = await db.select().from(haulTickets)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(haulTickets.ticketDate))
+      .limit(500);
+    res.json(rows);
+  },
+);
 
 router.post(
   "/api/haul-tickets",
@@ -586,7 +619,7 @@ router.post(
 router.patch(
   "/api/haul-tickets/:id",
   requireAuth,
-  requireFeaturePermission("canManageHaulTickets"),
+  requireAnyFeaturePermission("canManageHaulTickets", "canApproveHaulTickets"),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -671,36 +704,54 @@ router.delete(
 );
 
 // Aggregate haul reconciliation: planned vs actual by material class
-router.get("/api/projects/:projectId/haul-reconciliation", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  const orgFilter = ctx.isSuperAdmin ? sql`TRUE` : sql`organization_id = ${ctx.orgId}`;
-  const rows = await db.execute(sql`
-    SELECT material_class, SUM(quantity) AS total_quantity, SUM(total_cost) AS total_cost, unit
-    FROM haul_tickets
-    WHERE project_id = ${req.params.projectId} AND ${orgFilter}
-    GROUP BY material_class, unit
-    ORDER BY material_class
-  `);
-  res.json(rows.rows);
-});
+router.get(
+  "/api/projects/:projectId/haul-reconciliation",
+  requireAuth,
+  requireAnyFeaturePermission("canViewHaulTickets", "canManageHaulTickets", "canApproveHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const targetOrg = superAdminTargetOrgId(req);
+    const orgFilter = ctx.isSuperAdmin
+      ? (targetOrg ? sql`organization_id = ${targetOrg}` : sql`TRUE`)
+      : sql`organization_id = ${ctx.orgId}`;
+    const rows = await db.execute(sql`
+      SELECT material_class, SUM(quantity) AS total_quantity, SUM(total_cost) AS total_cost, unit
+      FROM haul_tickets
+      WHERE project_id = ${req.params.projectId} AND ${orgFilter}
+      GROUP BY material_class, unit
+      ORDER BY material_class
+    `);
+    res.json(rows.rows);
+  },
+);
 
 // =========================
 // Daily Inspector Reports
 // =========================
-router.get("/api/daily-inspector-reports", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [];
-  if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
-  if (projectId) conditions.push(eq(dailyInspectorReports.projectId, projectId));
-  const rows = await db.select().from(dailyInspectorReports)
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(dailyInspectorReports.reportDate))
-    .limit(200);
-  res.json(rows);
-});
+router.get(
+  "/api/daily-inspector-reports",
+  requireAuth,
+  requireAnyFeaturePermission(
+    "canViewInspectorReports", "canSubmitInspectorReports",
+    "canManageInspectorReports", "canApproveInspectorReports",
+  ),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const projectId = (req.query.projectId as string) || null;
+    const targetOrg = superAdminTargetOrgId(req);
+    const conditions: any[] = [];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+    else if (targetOrg) conditions.push(eq(dailyInspectorReports.organizationId, targetOrg));
+    if (projectId) conditions.push(eq(dailyInspectorReports.projectId, projectId));
+    const rows = await db.select().from(dailyInspectorReports)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(dailyInspectorReports.reportDate))
+      .limit(200);
+    res.json(rows);
+  },
+);
 
 router.post(
   "/api/daily-inspector-reports",
@@ -739,7 +790,11 @@ router.post(
 router.patch(
   "/api/daily-inspector-reports/:id",
   requireAuth,
-  requireFeaturePermission("canManageInspectorReports"),
+  requireAnyFeaturePermission(
+    "canManageInspectorReports",
+    "canApproveInspectorReports",
+    "canSubmitInspectorReports",
+  ),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
@@ -795,19 +850,26 @@ router.delete(
 // =========================
 // SWPPP Inspections
 // =========================
-router.get("/api/swppp-inspections", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get(
+  "/api/swppp-inspections",
+  requireAuth,
+  requireAnyFeaturePermission("canViewSwppp", "canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
   const ctx = requireOrgOwnership(req, res);
   if (!ctx) return;
   const projectId = (req.query.projectId as string) || null;
+  const targetOrg = superAdminTargetOrgId(req);
   const conditions: any[] = [];
   if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
+  else if (targetOrg) conditions.push(eq(swpppInspections.organizationId, targetOrg));
   if (projectId) conditions.push(eq(swpppInspections.projectId, projectId));
   const rows = await db.select().from(swpppInspections)
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(swpppInspections.inspectionDate))
     .limit(200);
   res.json(rows);
-});
+  },
+);
 
 router.post(
   "/api/swppp-inspections",
@@ -878,19 +940,30 @@ router.delete(
 // =========================
 // Material Certifications (Buy America)
 // =========================
-router.get("/api/material-certifications", requireAuth, async (req: AuthRequest, res: Response) => {
-  const ctx = requireOrgOwnership(req, res);
-  if (!ctx) return;
-  const projectId = (req.query.projectId as string) || null;
-  const conditions: any[] = [];
-  if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
-  if (projectId) conditions.push(eq(materialCertifications.projectId, projectId));
-  const rows = await db.select().from(materialCertifications)
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(materialCertifications.createdAt))
-    .limit(500);
-  res.json(rows);
-});
+router.get(
+  "/api/material-certifications",
+  requireAuth,
+  requireAnyFeaturePermission(
+    "canViewMaterialCertifications",
+    "canManageMaterialCertifications",
+    "canVerifyMaterialCertifications",
+  ),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const projectId = (req.query.projectId as string) || null;
+    const targetOrg = superAdminTargetOrgId(req);
+    const conditions: any[] = [];
+    if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
+    else if (targetOrg) conditions.push(eq(materialCertifications.organizationId, targetOrg));
+    if (projectId) conditions.push(eq(materialCertifications.projectId, projectId));
+    const rows = await db.select().from(materialCertifications)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(materialCertifications.createdAt))
+      .limit(500);
+    res.json(rows);
+  },
+);
 
 router.post(
   "/api/material-certifications",
@@ -928,7 +1001,10 @@ router.post(
 router.patch(
   "/api/material-certifications/:id",
   requireAuth,
-  requireFeaturePermission("canManageMaterialCertifications"),
+  requireAnyFeaturePermission(
+    "canManageMaterialCertifications",
+    "canVerifyMaterialCertifications",
+  ),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
