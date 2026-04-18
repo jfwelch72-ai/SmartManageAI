@@ -25,8 +25,8 @@ export default function SwpppInspectionsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const canManage = useFeaturePermission("canManageSwppp");
-  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "SUPERINTENDENT";
-  const canAccess = isPrivilegedRole || canManage;
+  const canView = useFeaturePermission("canViewSwppp");
+  const canAccess = canView || canManage;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/swppp-inspections", projectId ? { projectId } : {}];

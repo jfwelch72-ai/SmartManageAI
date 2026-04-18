@@ -29,8 +29,8 @@ export default function MaterialCertificationsPage() {
   const { user } = useAuth();
   const canManage = useFeaturePermission("canManageMaterialCertifications");
   const canVerify = useFeaturePermission("canVerifyMaterialCertifications");
-  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "SUPERINTENDENT";
-  const canAccess = isPrivilegedRole || canManage || canVerify;
+  const canView = useFeaturePermission("canViewMaterialCertifications");
+  const canAccess = canView || canManage || canVerify;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/material-certifications", projectId ? { projectId } : {}];

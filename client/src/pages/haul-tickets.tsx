@@ -29,8 +29,8 @@ export default function HaulTicketsPage() {
   const { user } = useAuth();
   const canManage = useFeaturePermission("canManageHaulTickets");
   const canApprove = useFeaturePermission("canApproveHaulTickets");
-  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "SUPERINTENDENT";
-  const canAccess = isPrivilegedRole || canManage || canApprove;
+  const canView = useFeaturePermission("canViewHaulTickets");
+  const canAccess = canView || canManage || canApprove;
   const [projectId, setProjectId] = useState<string>("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/haul-tickets", projectId ? { projectId } : {}];

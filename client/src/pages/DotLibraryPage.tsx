@@ -14,8 +14,8 @@ import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 export default function DotLibraryPage() {
   const { user } = useAuth();
   const canManageLib = useFeaturePermission("canManageDotLibrary");
-  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" || user?.role === "ESTIMATOR";
-  const canAccess = isPrivilegedRole || canManageLib;
+  const canViewLib = useFeaturePermission("canViewDotLibrary");
+  const canAccess = canViewLib || canManageLib;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [agencyFilter, setAgencyFilter] = useState("");
   const { data: agencies = [], isLoading } = useQuery<DotAgency[]>({ queryKey: ["/api/dot/agencies"], enabled: canAccess });

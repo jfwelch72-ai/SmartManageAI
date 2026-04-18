@@ -756,7 +756,10 @@ router.get(
 router.post(
   "/api/daily-inspector-reports",
   requireAuth,
-  requireFeaturePermission("canManageInspectorReports"),
+  requireAnyFeaturePermission(
+    "canSubmitInspectorReports",
+    "canManageInspectorReports",
+  ),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx || ctx.isSuperAdmin) {

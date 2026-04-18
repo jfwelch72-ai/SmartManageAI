@@ -27,10 +27,11 @@ type Editing = DailyInspectorReport | "new" | null;
 export default function DailyInspectorReportsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const canView = useFeaturePermission("canViewInspectorReports");
+  const canSubmit = useFeaturePermission("canSubmitInspectorReports");
   const canManage = useFeaturePermission("canManageInspectorReports");
   const canApprove = useFeaturePermission("canApproveInspectorReports");
-  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "SUPERINTENDENT";
-  const canAccess = isPrivilegedRole || canManage || canApprove;
+  const canAccess = canView || canSubmit || canManage || canApprove;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/daily-inspector-reports", projectId ? { projectId } : {}];
@@ -64,7 +65,7 @@ export default function DailyInspectorReportsPage() {
           <h1 className="text-2xl font-semibold">Daily Inspector Reports</h1>
           <p className="text-sm text-muted-foreground">DOT-style daily field reports — weather, crews, equipment, and work performed.</p>
         </div>
-        {canManage && (<Button onClick={() => setEditing("new")} data-testid="button-new-idr"><Plus className="h-4 w-4 mr-2" />New IDR</Button>)}
+        {(canSubmit || canManage) && (<Button onClick={() => setEditing("new")} data-testid="button-new-idr"><Plus className="h-4 w-4 mr-2" />New IDR</Button>)}
       </div>
 
       <div className="max-w-md">

@@ -29,8 +29,8 @@ export default function SuretyBondsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const canManage = useFeaturePermission("canManageSuretyBonds");
-  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "ESTIMATOR";
-  const canAccess = isPrivilegedRole || canManage;
+  const canView = useFeaturePermission("canViewSuretyBonds");
+  const canAccess = canView || canManage;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/surety-bonds", projectId ? { projectId } : {}];

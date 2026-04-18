@@ -25,8 +25,8 @@ export default function DbeGoalsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const canManage = useFeaturePermission("canManageDbeGoals");
-  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "ESTIMATOR";
-  const canAccess = isPrivilegedRole || canManage;
+  const canView = useFeaturePermission("canViewDbeGoals");
+  const canAccess = canView || canManage;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/projects", projectId, "dbe-goals"];
