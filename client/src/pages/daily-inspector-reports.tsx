@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { DailyInspectorReport } from "@shared/schema";
 
@@ -26,7 +25,6 @@ type Editing = DailyInspectorReport | "new" | null;
 
 export default function DailyInspectorReportsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
   const canView = useFeaturePermission("canViewInspectorReports");
   const canSubmit = useFeaturePermission("canSubmitInspectorReports");
   const canManage = useFeaturePermission("canManageInspectorReports");

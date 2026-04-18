@@ -33,7 +33,7 @@ import {
   requireAnyFeaturePermission,
   type AuthRequest,
 } from "./auth";
-import { requireOrgOwnership, getOrgIdForFilter } from "./orgFilter";
+import { requireOrgOwnership } from "./orgFilter";
 import { orgScopedCache, cacheInvalidate } from "./cache";
 import { getEffectivePermissions, type FeaturePermissionKey } from "./auth";
 
@@ -108,12 +108,17 @@ const KEY_ORG_OVERRIDES = "dot:pay-item-overrides";
 // =========================
 // DOT Agencies (read-only for users; write requires SUPER_ADMIN)
 // =========================
-router.get("/api/dot/agencies", requireAuth, async (_req: AuthRequest, res: Response) => {
-  const rows = await orgScopedCache(null, KEY_AGENCIES, REFERENCE_TTL_MS, () =>
-    db.select().from(dotAgencies).where(eq(dotAgencies.isActive, true)).orderBy(dotAgencies.name)
-  );
-  res.json(rows);
-});
+router.get(
+  "/api/dot/agencies",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (_req: AuthRequest, res: Response) => {
+    const rows = await orgScopedCache(null, KEY_AGENCIES, REFERENCE_TTL_MS, () =>
+      db.select().from(dotAgencies).where(eq(dotAgencies.isActive, true)).orderBy(dotAgencies.name)
+    );
+    res.json(rows);
+  },
+);
 
 router.post("/api/dot/agencies", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   const data = validateBody(insertDotAgencySchema, req.body, res);
@@ -126,13 +131,18 @@ router.post("/api/dot/agencies", requireAuth, requireRole("SUPER_ADMIN"), async 
 // =========================
 // DOT Spec Books
 // =========================
-router.get("/api/dot/agencies/:agencyId/spec-books", requireAuth, async (req: AuthRequest, res: Response) => {
-  const { agencyId } = req.params;
-  const rows = await orgScopedCache(null, KEY_SPEC_BOOKS(agencyId), REFERENCE_TTL_MS, () =>
-    db.select().from(dotSpecBooks).where(eq(dotSpecBooks.agencyId, agencyId)).orderBy(desc(dotSpecBooks.edition))
-  );
-  res.json(rows);
-});
+router.get(
+  "/api/dot/agencies/:agencyId/spec-books",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const { agencyId } = req.params;
+    const rows = await orgScopedCache(null, KEY_SPEC_BOOKS(agencyId), REFERENCE_TTL_MS, () =>
+      db.select().from(dotSpecBooks).where(eq(dotSpecBooks.agencyId, agencyId)).orderBy(desc(dotSpecBooks.edition))
+    );
+    res.json(rows);
+  },
+);
 
 router.post("/api/dot/spec-books", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   const data = validateBody(insertDotSpecBookSchema, req.body, res);

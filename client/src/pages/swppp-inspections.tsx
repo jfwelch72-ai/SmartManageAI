@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { SwpppInspection } from "@shared/schema";
 
@@ -23,7 +22,6 @@ type Editing = SwpppInspection | "new" | null;
 
 export default function SwpppInspectionsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
   const canManage = useFeaturePermission("canManageSwppp");
   const canView = useFeaturePermission("canViewSwppp");
   const canAccess = canView || canManage;

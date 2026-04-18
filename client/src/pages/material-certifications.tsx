@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { MaterialCertification } from "@shared/schema";
 
@@ -26,7 +25,6 @@ type Editing = MaterialCertification | "new" | null;
 
 export default function MaterialCertificationsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
   const canManage = useFeaturePermission("canManageMaterialCertifications");
   const canVerify = useFeaturePermission("canVerifyMaterialCertifications");
   const canView = useFeaturePermission("canViewMaterialCertifications");

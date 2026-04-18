@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { HaulTicket } from "@shared/schema";
 
@@ -26,7 +25,6 @@ type Editing = HaulTicket | "new" | null;
 
 export default function HaulTicketsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
   const canManage = useFeaturePermission("canManageHaulTickets");
   const canApprove = useFeaturePermission("canApproveHaulTickets");
   const canView = useFeaturePermission("canViewHaulTickets");

@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { SuretyBond } from "@shared/schema";
 
@@ -27,7 +26,6 @@ type Editing = SuretyBond | "new" | null;
 
 export default function SuretyBondsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
   const canManage = useFeaturePermission("canManageSuretyBonds");
   const canView = useFeaturePermission("canViewSuretyBonds");
   const canAccess = canView || canManage;

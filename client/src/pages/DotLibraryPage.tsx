@@ -8,11 +8,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Loader2, Building2, BookOpen, Hash, Search } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
-import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
 export default function DotLibraryPage() {
-  const { user } = useAuth();
   const canManageLib = useFeaturePermission("canManageDotLibrary");
   const canViewLib = useFeaturePermission("canViewDotLibrary");
   const canAccess = canViewLib || canManageLib;

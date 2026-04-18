@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatMoney, getErrorMessage } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { ProjectDbeGoal } from "@shared/schema";
 
@@ -23,7 +22,6 @@ type Editing = ProjectDbeGoal | "new" | null;
 
 export default function DbeGoalsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
   const canManage = useFeaturePermission("canManageDbeGoals");
   const canView = useFeaturePermission("canViewDbeGoals");
   const canAccess = canView || canManage;
