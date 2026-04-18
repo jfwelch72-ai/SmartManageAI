@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import express, { Router, type Response } from "express";
 import { db } from "./db";
 import {
   dotAgencies,
@@ -92,8 +92,62 @@ function pickAllowedFields<T extends object, K extends keyof T>(
 import { eventBus } from "./events/eventBus";
 import { validateBody } from "./utils/validation";
 import { z } from "zod";
+import { logAudit } from "./auditLogger";
+import { isFeatureEnabled } from "./services/featureFlagService";
+import type { FeatureFlagKey } from "@shared/schema";
+import { exportLimiter } from "./rateLimiter";
+
+// Org-scoped feature-flag gate. SUPER_ADMIN bypasses (platform support); orgs
+// with the flag disabled get a clean 403 server-side regardless of UI gating.
+function requireOrgFeatureFlag(flag: FeatureFlagKey) {
+  return async (req: AuthRequest, res: Response, next: () => void): Promise<void> => {
+    if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
+    if (req.user.role === "SUPER_ADMIN") { next(); return; }
+    if (!req.user.organizationId) { res.status(403).json({ error: "Organization required" }); return; }
+    const enabled = await isFeatureEnabled(req.user.organizationId, flag);
+    if (!enabled) {
+      res.status(403).json({ error: `Feature disabled: ${flag}`, featureFlag: flag, upgradeRequired: true });
+      return;
+    }
+    next();
+  };
+}
+
+async function dotAudit(
+  req: AuthRequest,
+  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "SUBMIT",
+  entityType: string,
+  entityId: string,
+  oldValue: unknown,
+  newValue: unknown,
+): Promise<void> {
+  if (!req.user) return;
+  await logAudit({
+    userId: req.user.id,
+    entityType,
+    entityId,
+    action,
+    oldValue: oldValue ? JSON.stringify(oldValue) : null,
+    newValue: newValue ? JSON.stringify(newValue) : null,
+  }, req);
+}
 
 const router = Router();
+
+// =========================
+// Feature-flag gates (org-scoped). SUPER_ADMIN bypasses for support.
+// All DOT/heavy-civil routes require their corresponding feature flag to be
+// enabled on the organization or return 403 with a clear "Feature disabled" error.
+// =========================
+router.use("/api/dot", requireAuth, requireOrgFeatureFlag("DOT_PAY_ITEMS"));
+router.use("/api/projects/:projectId/dbe-goals", requireAuth, requireOrgFeatureFlag("DBE_TRACKING"));
+router.use("/api/crm/organisations/:crmOrgId/certifications", requireAuth, requireOrgFeatureFlag("DBE_TRACKING"));
+router.use("/api/surety-bonds", requireAuth, requireOrgFeatureFlag("SURETY_BONDS"));
+router.use("/api/haul-tickets", requireAuth, requireOrgFeatureFlag("HAUL_TICKETS"));
+router.use("/api/projects/:projectId/haul-reconciliation", requireAuth, requireOrgFeatureFlag("HAUL_TICKETS"));
+router.use("/api/daily-inspector-reports", requireAuth, requireOrgFeatureFlag("DAILY_INSPECTOR_REPORTS"));
+router.use("/api/swppp-inspections", requireAuth, requireOrgFeatureFlag("SWPPP_INSPECTIONS"));
+router.use("/api/material-certifications", requireAuth, requireOrgFeatureFlag("BUY_AMERICA"));
 
 // Cache TTLs
 const REFERENCE_TTL_MS = 5 * 60_000; // 5 min - global reference data
@@ -125,6 +179,7 @@ router.post("/api/dot/agencies", requireAuth, requireRole("SUPER_ADMIN"), async 
   if (!data) return;
   const [row] = await db.insert(dotAgencies).values(data).returning();
   cacheInvalidate("__global__", KEY_AGENCIES);
+  await dotAudit(req, "CREATE", "dot_agency", row.id, null, row);
   res.status(201).json(row);
 });
 
@@ -149,6 +204,7 @@ router.post("/api/dot/spec-books", requireAuth, requireRole("SUPER_ADMIN"), asyn
   if (!data) return;
   const [row] = await db.insert(dotSpecBooks).values(data).returning();
   cacheInvalidate("__global__", KEY_SPEC_BOOKS(row.agencyId));
+  await dotAudit(req, "CREATE", "dot_spec_book", row.id, null, row);
   res.status(201).json(row);
 });
 
@@ -192,17 +248,39 @@ router.get(
   },
 );
 
+const BULK_UPLOAD_MAX_ITEMS = 5000;
+const BULK_UPLOAD_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 const bulkUploadSchema = z.object({
   specBookId: z.string(),
   items: z.array(z.object({
-    itemNumber: z.string().min(1),
-    description: z.string().min(1),
-    unit: z.string().min(1),
-    specSection: z.string().optional().nullable(),
-    category: z.string().optional().nullable(),
-  })).min(1),
+    itemNumber: z.string().min(1).max(64),
+    description: z.string().min(1).max(2000),
+    unit: z.string().min(1).max(32),
+    specSection: z.string().max(64).optional().nullable(),
+    category: z.string().max(128).optional().nullable(),
+  })).min(1).max(BULK_UPLOAD_MAX_ITEMS),
 });
-router.post("/api/dot/pay-items/bulk-upload", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+function bulkUploadBodySize(req: AuthRequest, res: Response, next: () => void): void {
+  const raw = req.headers["content-length"];
+  if (raw === undefined || raw === "") {
+    res.status(411).json({ error: "Content-Length header required for bulk upload" });
+    return;
+  }
+  const len = Number(raw);
+  if (!Number.isFinite(len) || len < 0) {
+    res.status(400).json({ error: "Invalid Content-Length header" });
+    return;
+  }
+  if (len > BULK_UPLOAD_MAX_BYTES) {
+    res.status(413).json({ error: `Bulk upload exceeds ${BULK_UPLOAD_MAX_BYTES} bytes` });
+    return;
+  }
+  next();
+}
+// Per-route JSON parser with explicit byte limit; runs after the Content-Length
+// check so chunked/missing-length requests can't bypass the cap.
+const bulkUploadJsonParser = express.json({ limit: BULK_UPLOAD_MAX_BYTES });
+router.post("/api/dot/pay-items/bulk-upload", requireAuth, requireRole("SUPER_ADMIN"), exportLimiter, bulkUploadBodySize, bulkUploadJsonParser, async (req: AuthRequest, res: Response) => {
   const data = validateBody(bulkUploadSchema, req.body, res);
   if (!data) return;
   const sb = await db.select().from(dotSpecBooks).where(eq(dotSpecBooks.id, data.specBookId)).limit(1);
@@ -231,6 +309,7 @@ router.post("/api/dot/pay-items/bulk-upload", requireAuth, requireRole("SUPER_AD
     itemCount: sql`(SELECT COUNT(*) FROM dot_pay_items WHERE spec_book_id = ${data.specBookId})`,
   }).where(eq(dotSpecBooks.id, data.specBookId));
   cacheInvalidate("__global__", KEY_SPEC_BOOKS(sb[0].agencyId));
+  await dotAudit(req, "CREATE", "dot_pay_items_bulk_upload", data.specBookId, null, { specBookId: data.specBookId, inserted, skipped, total: data.items.length });
   res.json({ inserted, skipped, total: data.items.length });
 });
 
@@ -273,6 +352,7 @@ router.post(
     try {
       const [row] = await db.insert(organizationDotPreferences).values(data).returning();
       cacheInvalidate(ctx.orgId!, KEY_ORG_PREFS);
+      await dotAudit(req, "CREATE", "organization_dot_preference", row.id, null, row);
       res.status(201).json(row);
     } catch {
       res.status(409).json({ error: "Already a preferred agency" });
@@ -289,8 +369,9 @@ router.delete(
     if (!ctx) return;
     const conditions: SQL[] = [eq(organizationDotPreferences.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(organizationDotPreferences.organizationId, ctx.orgId!));
-    await db.delete(organizationDotPreferences).where(and(...conditions));
+    const [deleted] = await db.delete(organizationDotPreferences).where(and(...conditions)).returning();
     if (!ctx.isSuperAdmin) cacheInvalidate(ctx.orgId!, KEY_ORG_PREFS);
+    if (deleted) await dotAudit(req, "DELETE", "organization_dot_preference", deleted.id, deleted, null);
     res.status(204).end();
   },
 );
@@ -333,6 +414,7 @@ router.post(
     if (!data) return;
     const [row] = await db.insert(dotPayItemOverrides).values(data).returning();
     cacheInvalidate(ctx.orgId!, KEY_ORG_OVERRIDES);
+    await dotAudit(req, "CREATE", "dot_pay_item_override", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -397,6 +479,7 @@ router.post(
         actualPercent: row.actualPercent !== null && row.actualPercent !== undefined ? String(row.actualPercent) : null,
       },
     });
+    await dotAudit(req, "CREATE", "project_dbe_goal", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -416,9 +499,11 @@ router.patch(
       eq(projectDbeGoals.projectId, req.params.projectId),
     ];
     if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
+    const [existing] = await db.select().from(projectDbeGoals).where(and(...conditions));
     const [row] = await db.update(projectDbeGoals).set(data).where(and(...conditions)).returning();
     if (!row) return res.status(404).json({ error: "DBE goal not found" });
     cacheInvalidate(row.organizationId, KEY_DBE_GOALS(row.projectId));
+    await dotAudit(req, "UPDATE", "project_dbe_goal", row.id, existing ?? null, row);
     await eventBus.emit({
       version: 1,
       orgId: row.organizationId,
@@ -447,7 +532,10 @@ router.delete(
     const conditions: SQL[] = [eq(projectDbeGoals.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
     const [deleted] = await db.delete(projectDbeGoals).where(and(...conditions)).returning();
-    if (deleted) cacheInvalidate(deleted.organizationId, KEY_DBE_GOALS(deleted.projectId));
+    if (deleted) {
+      cacheInvalidate(deleted.organizationId, KEY_DBE_GOALS(deleted.projectId));
+      await dotAudit(req, "DELETE", "project_dbe_goal", deleted.id, deleted, null);
+    }
     res.status(204).end();
   },
 );
@@ -496,6 +584,7 @@ router.post(
         expirationDate: row.expirationDate ? String(row.expirationDate) : null,
       },
     });
+    await dotAudit(req, "CREATE", "crm_organisation_certification", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -523,6 +612,7 @@ router.delete(
           deletedBy: req.user!.id,
         },
       });
+      await dotAudit(req, "DELETE", "crm_organisation_certification", deleted.id, deleted, null);
     }
     res.status(204).end();
   },
@@ -581,6 +671,7 @@ router.post(
         bondAmount: row.bondAmount !== null && row.bondAmount !== undefined ? String(row.bondAmount) : null,
       },
     });
+    await dotAudit(req, "CREATE", "surety_bond", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -631,6 +722,7 @@ router.patch(
         });
       }
     }
+    await dotAudit(req, "UPDATE", "surety_bond", row.id, prev, row);
     res.json(row);
   },
 );
@@ -644,7 +736,8 @@ router.delete(
     if (!ctx) return;
     const conditions: SQL[] = [eq(suretyBonds.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(suretyBonds.organizationId, ctx.orgId!));
-    await db.delete(suretyBonds).where(and(...conditions));
+    const [deleted] = await db.delete(suretyBonds).where(and(...conditions)).returning();
+    if (deleted) await dotAudit(req, "DELETE", "surety_bond", deleted.id, deleted, null);
     res.status(204).end();
   },
 );
@@ -704,6 +797,7 @@ router.post(
         unit: row.unit ?? null,
       },
     });
+    await dotAudit(req, "CREATE", "haul_ticket", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -786,6 +880,7 @@ router.patch(
         });
       }
     }
+    await dotAudit(req, "UPDATE", "haul_ticket", row.id, prev, row);
     res.json(row);
   },
 );
@@ -799,7 +894,8 @@ router.delete(
     if (!ctx) return;
     const conditions: SQL[] = [eq(haulTickets.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(haulTickets.organizationId, ctx.orgId!));
-    await db.delete(haulTickets).where(and(...conditions));
+    const [deleted] = await db.delete(haulTickets).where(and(...conditions)).returning();
+    if (deleted) await dotAudit(req, "DELETE", "haul_ticket", deleted.id, deleted, null);
     res.status(204).end();
   },
 );
@@ -887,6 +983,7 @@ router.post(
         inspectorId: row.inspectorId,
       },
     });
+    await dotAudit(req, "CREATE", "daily_inspector_report", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -953,6 +1050,7 @@ router.patch(
         },
       });
     }
+    await dotAudit(req, "UPDATE", "daily_inspector_report", row.id, prev, row);
     res.json(row);
   },
 );
@@ -966,7 +1064,8 @@ router.delete(
     if (!ctx) return;
     const conditions: SQL[] = [eq(dailyInspectorReports.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
-    await db.delete(dailyInspectorReports).where(and(...conditions));
+    const [deleted] = await db.delete(dailyInspectorReports).where(and(...conditions)).returning();
+    if (deleted) await dotAudit(req, "DELETE", "daily_inspector_report", deleted.id, deleted, null);
     res.status(204).end();
   },
 );
@@ -1025,6 +1124,7 @@ router.post(
         deficienciesFound: Boolean(row.deficienciesFound && row.deficienciesFound.trim().length > 0),
       },
     });
+    await dotAudit(req, "CREATE", "swppp_inspection", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -1039,10 +1139,13 @@ router.patch(
     const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
     const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(swpppInspections).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
     const [row] = await db.update(swpppInspections).set({ ...patch, updatedAt: new Date() })
       .where(and(...conditions))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
+    await dotAudit(req, "UPDATE", "swppp_inspection", row.id, prev, row);
     res.json(row);
   },
 );
@@ -1056,7 +1159,8 @@ router.delete(
     if (!ctx) return;
     const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
-    await db.delete(swpppInspections).where(and(...conditions));
+    const [deleted] = await db.delete(swpppInspections).where(and(...conditions)).returning();
+    if (deleted) await dotAudit(req, "DELETE", "swppp_inspection", deleted.id, deleted, null);
     res.status(204).end();
   },
 );
@@ -1118,6 +1222,7 @@ router.post(
         isBuyAmericaCompliant: row.buyAmericaStatus === "COMPLIANT" ? true : row.buyAmericaStatus === "NON_COMPLIANT" ? false : null,
       },
     });
+    await dotAudit(req, "CREATE", "material_certification", row.id, null, row);
     res.status(201).json(row);
   },
 );
@@ -1180,6 +1285,7 @@ router.patch(
         },
       });
     }
+    await dotAudit(req, "UPDATE", "material_certification", row.id, prev, row);
     res.json(row);
   },
 );
@@ -1193,7 +1299,8 @@ router.delete(
     if (!ctx) return;
     const conditions: SQL[] = [eq(materialCertifications.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(materialCertifications.organizationId, ctx.orgId!));
-    await db.delete(materialCertifications).where(and(...conditions));
+    const [deleted] = await db.delete(materialCertifications).where(and(...conditions)).returning();
+    if (deleted) await dotAudit(req, "DELETE", "material_certification", deleted.id, deleted, null);
     res.status(204).end();
   },
 );
