@@ -100,14 +100,36 @@ function isPrivateOrReservedIp(ip: string): boolean {
  */
 export async function safeFetch(
   rawUrl: string,
-  init: RequestInit & { timeoutMs?: number } = {}
+  init: RequestInit & { timeoutMs?: number; maxRedirects?: number } = {}
 ): Promise<Response> {
-  const url = await validateOutboundUrl(rawUrl);
-  const { timeoutMs = 30000, ...rest } = init;
+  const { timeoutMs = 30000, maxRedirects = 5, ...rest } = init;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url.toString(), { ...rest, signal: controller.signal });
+    // Disable automatic redirect following so each redirect target can be
+    // re-validated against the SSRF allow-list. Without this, fetch would
+    // follow a 30x to an internal/private address even though the initial
+    // tenant-supplied URL was public.
+    let currentUrl = rawUrl;
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+      const validated = await validateOutboundUrl(currentUrl);
+      const res = await fetch(validated.toString(), {
+        ...rest,
+        redirect: "manual",
+        signal: controller.signal,
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        if (!loc) return res;
+        if (hop === maxRedirects) {
+          throw new Error(`safeFetch: redirect limit (${maxRedirects}) exceeded`);
+        }
+        currentUrl = new URL(loc, validated).toString();
+        continue;
+      }
+      return res;
+    }
+    throw new Error("safeFetch: redirect loop");
   } finally {
     clearTimeout(timer);
   }
