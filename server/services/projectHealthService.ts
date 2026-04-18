@@ -295,99 +295,121 @@ async function calculateSafetyScore(orgId: string, projectId: string): Promise<{
   };
 }
 
-async function calculateComplianceScore(orgId: string, projectId: string): Promise<{ score: number; factors: Record<string, any> }> {
+interface ComplianceFlagGates {
+  suretyBonds: boolean;
+  buyAmerica: boolean;
+  inspectorReports: boolean;
+  dbeTracking: boolean;
+}
+
+async function calculateComplianceScore(
+  orgId: string,
+  projectId: string,
+  gates: ComplianceFlagGates,
+): Promise<{ score: number; factors: Record<string, any> }> {
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
 
-  // Expired surety bonds (still active, not released)
-  const expiredBonds = await db
-    .select({ cnt: sql<number>`count(*)` })
-    .from(suretyBonds)
-    .where(and(
-      eq(suretyBonds.organizationId, orgId),
-      eq(suretyBonds.projectId, projectId),
-      sql`${suretyBonds.status} NOT IN ('RELEASED', 'CANCELED', 'EXPIRED')`,
-      sql`${suretyBonds.expirationDate} IS NOT NULL AND ${suretyBonds.expirationDate} < ${todayStr}`,
-    ));
-  const expiredBondCount = Number(expiredBonds[0]?.cnt || 0);
-
-  // Active surety bonds expiring within 30 days (early warning)
   const thirtyDaysOut = new Date(today.getTime() + 30 * 86400000).toISOString().split("T")[0];
-  const expiringSoonBonds = await db
-    .select({ cnt: sql<number>`count(*)` })
-    .from(suretyBonds)
-    .where(and(
-      eq(suretyBonds.organizationId, orgId),
-      eq(suretyBonds.projectId, projectId),
-      sql`${suretyBonds.status} NOT IN ('RELEASED', 'CANCELED', 'EXPIRED')`,
-      sql`${suretyBonds.expirationDate} IS NOT NULL AND ${suretyBonds.expirationDate} >= ${todayStr} AND ${suretyBonds.expirationDate} <= ${thirtyDaysOut}`,
-    ));
-  const expiringSoonBondCount = Number(expiringSoonBonds[0]?.cnt || 0);
 
-  // Non-compliant Buy America material certs (no waiver)
-  const nonCompliantCerts = await db
-    .select({ cnt: sql<number>`count(*)` })
-    .from(materialCertifications)
-    .where(and(
-      eq(materialCertifications.organizationId, orgId),
-      eq(materialCertifications.projectId, projectId),
-      eq(materialCertifications.buyAmericaStatus, "NON_COMPLIANT"),
-    ));
-  const nonCompliantCount = Number(nonCompliantCerts[0]?.cnt || 0);
+  // ---- Surety bonds (gated by SURETY_BONDS) ----
+  let expiredBondCount = 0;
+  let expiringSoonBondCount = 0;
+  if (gates.suretyBonds) {
+    const expiredBonds = await db
+      .select({ cnt: sql<number>`count(*)` })
+      .from(suretyBonds)
+      .where(and(
+        eq(suretyBonds.organizationId, orgId),
+        eq(suretyBonds.projectId, projectId),
+        sql`${suretyBonds.status} NOT IN ('RELEASED', 'CANCELED', 'EXPIRED')`,
+        sql`${suretyBonds.expirationDate} IS NOT NULL AND ${suretyBonds.expirationDate} < ${todayStr}`,
+      ));
+    expiredBondCount = Number(expiredBonds[0]?.cnt || 0);
 
-  // Expired material certifications (cert past expiration_date and still
-  // tracked as in-use, i.e. not WAIVER_GRANTED).
-  const expiredCertsRows = await db
-    .select({ cnt: sql<number>`count(*)` })
-    .from(materialCertifications)
-    .where(and(
-      eq(materialCertifications.organizationId, orgId),
-      eq(materialCertifications.projectId, projectId),
-      sql`${materialCertifications.expirationDate} IS NOT NULL`,
-      sql`${materialCertifications.expirationDate} < ${todayStr}`,
-      sql`${materialCertifications.buyAmericaStatus} <> 'WAIVER_GRANTED'`,
-    ));
-  const expiredCertCount = Number(expiredCertsRows[0]?.cnt || 0);
+    const expiringSoonBonds = await db
+      .select({ cnt: sql<number>`count(*)` })
+      .from(suretyBonds)
+      .where(and(
+        eq(suretyBonds.organizationId, orgId),
+        eq(suretyBonds.projectId, projectId),
+        sql`${suretyBonds.status} NOT IN ('RELEASED', 'CANCELED', 'EXPIRED')`,
+        sql`${suretyBonds.expirationDate} IS NOT NULL AND ${suretyBonds.expirationDate} >= ${todayStr} AND ${suretyBonds.expirationDate} <= ${thirtyDaysOut}`,
+      ));
+    expiringSoonBondCount = Number(expiringSoonBonds[0]?.cnt || 0);
+  }
 
-  // Compute IDR coverage over active workdays (Mon-Fri, DOW 1-5) in last 14d.
+  // ---- Material certifications (gated by BUY_AMERICA) ----
+  let nonCompliantCount = 0;
+  let expiredCertCount = 0;
+  if (gates.buyAmerica) {
+    const nonCompliantCerts = await db
+      .select({ cnt: sql<number>`count(*)` })
+      .from(materialCertifications)
+      .where(and(
+        eq(materialCertifications.organizationId, orgId),
+        eq(materialCertifications.projectId, projectId),
+        eq(materialCertifications.buyAmericaStatus, "NON_COMPLIANT"),
+      ));
+    nonCompliantCount = Number(nonCompliantCerts[0]?.cnt || 0);
+
+    const expiredCertsRows = await db
+      .select({ cnt: sql<number>`count(*)` })
+      .from(materialCertifications)
+      .where(and(
+        eq(materialCertifications.organizationId, orgId),
+        eq(materialCertifications.projectId, projectId),
+        sql`${materialCertifications.expirationDate} IS NOT NULL`,
+        sql`${materialCertifications.expirationDate} < ${todayStr}`,
+        sql`${materialCertifications.buyAmericaStatus} <> 'WAIVER_GRANTED'`,
+      ));
+    expiredCertCount = Number(expiredCertsRows[0]?.cnt || 0);
+  }
+
+  // ---- IDR coverage (gated by DAILY_INSPECTOR_REPORTS) ----
   const fourteenDaysAgo = new Date(today.getTime() - 14 * 86400000).toISOString().split("T")[0];
-  const idrWeekdayRows = await db.execute(sql`
-    WITH workdays AS (
-      SELECT generate_series(${fourteenDaysAgo}::date, ${todayStr}::date, '1 day')::date AS d
-    ),
-    active AS (
-      SELECT d FROM workdays WHERE EXTRACT(DOW FROM d) BETWEEN 1 AND 5
-    )
-    SELECT
-      (SELECT COUNT(*) FROM active) AS workday_count,
-      (SELECT COUNT(DISTINCT report_date) FROM daily_inspector_reports
-        WHERE organization_id = ${orgId} AND project_id = ${projectId}
-          AND report_date >= ${fourteenDaysAgo}
-          AND status IN ('SUBMITTED', 'APPROVED')
-          AND EXTRACT(DOW FROM report_date) BETWEEN 1 AND 5
-      ) AS reported_workdays
-  `);
-  type IdrCoverageRow = { workday_count: number | string; reported_workdays: number | string };
-  const idrCoverage = idrWeekdayRows.rows[0] as IdrCoverageRow | undefined;
-  const workdayCount = Number(idrCoverage?.workday_count ?? 0);
-  const idrDaysWithReport = Number(idrCoverage?.reported_workdays ?? 0);
-  // Only score IDR coverage when at least one IDR has ever been logged for this project
-  const anyIdrEver = await db
-    .select({ cnt: sql<number>`count(*)` })
-    .from(dailyInspectorReports)
-    .where(and(
-      eq(dailyInspectorReports.organizationId, orgId),
-      eq(dailyInspectorReports.projectId, projectId),
-    ));
-  const trackingIdr = Number(anyIdrEver[0]?.cnt || 0) > 0;
-  const missingIdrDays = trackingIdr ? Math.max(0, workdayCount - idrDaysWithReport) : 0;
+  let workdayCount = 0;
+  let idrDaysWithReport = 0;
+  let trackingIdr = false;
+  let missingIdrDays = 0;
+  if (gates.inspectorReports) {
+    const idrWeekdayRows = await db.execute(sql`
+      WITH workdays AS (
+        SELECT generate_series(${fourteenDaysAgo}::date, ${todayStr}::date, '1 day')::date AS d
+      ),
+      active AS (
+        SELECT d FROM workdays WHERE EXTRACT(DOW FROM d) BETWEEN 1 AND 5
+      )
+      SELECT
+        (SELECT COUNT(*) FROM active) AS workday_count,
+        (SELECT COUNT(DISTINCT report_date) FROM daily_inspector_reports
+          WHERE organization_id = ${orgId} AND project_id = ${projectId}
+            AND report_date >= ${fourteenDaysAgo}
+            AND status IN ('SUBMITTED', 'APPROVED')
+            AND EXTRACT(DOW FROM report_date) BETWEEN 1 AND 5
+        ) AS reported_workdays
+    `);
+    type IdrCoverageRow = { workday_count: number | string; reported_workdays: number | string };
+    const idrCoverage = idrWeekdayRows.rows[0] as IdrCoverageRow | undefined;
+    workdayCount = Number(idrCoverage?.workday_count ?? 0);
+    idrDaysWithReport = Number(idrCoverage?.reported_workdays ?? 0);
+    const anyIdrEver = await db
+      .select({ cnt: sql<number>`count(*)` })
+      .from(dailyInspectorReports)
+      .where(and(
+        eq(dailyInspectorReports.organizationId, orgId),
+        eq(dailyInspectorReports.projectId, projectId),
+      ));
+    trackingIdr = Number(anyIdrEver[0]?.cnt || 0) > 0;
+    missingIdrDays = trackingIdr ? Math.max(0, workdayCount - idrDaysWithReport) : 0;
+  }
 
-  // DBE participation shortfall: compare goalDollars vs actual PO award to
-  // crm_organisations whose certification matches the goal type and is still
-  // active (effective_date<=today, expiration_date>=today). Awarded amount =
-  // SUM(po.total_amount) for non-CANCELLED POs to those vendors. If goalDollars
-  // is null but goalPercent is set, fall back to projectValue * goalPercent/100.
-  const dbeShortfallRows = await db.execute(sql`
+  // ---- DBE participation shortfall (gated by DBE_TRACKING) ----
+  let dbeGoalCount = 0;
+  let dbeGoalsWithShortfall = 0;
+  let dbeShortfallDollars = 0;
+  if (gates.dbeTracking) {
+    const dbeShortfallRows = await db.execute(sql`
     WITH goals AS (
       SELECT pdg.id, pdg.certification_type,
              COALESCE(pdg.goal_dollars, NULL) AS goal_dollars,
@@ -416,31 +438,30 @@ async function calculateComplianceScore(orgId: string, projectId: string): Promi
        WHERE coc.id IS NOT NULL
        GROUP BY g.id
     )
-    SELECT g.id, g.certification_type,
-           COALESCE(g.goal_dollars, (g.goal_percent / 100.0) * (SELECT v FROM project_value)) AS effective_goal,
-           COALESCE(a.awarded_dollars, 0) AS awarded
-      FROM goals g
-      LEFT JOIN awarded a ON a.goal_id = g.id
-  `);
-  let dbeGoalCount = 0;
-  let dbeGoalsWithShortfall = 0;
-  let dbeShortfallDollars = 0;
-  type DbeShortfallRow = {
-    id: string;
-    certification_type: string;
-    effective_goal: number | string | null;
-    awarded: number | string | null;
-  };
-  for (const r of (dbeShortfallRows.rows as unknown as DbeShortfallRow[])) {
-    dbeGoalCount += 1;
-    const goal = Number(r.effective_goal ?? 0);
-    const awarded = Number(r.awarded ?? 0);
-    if (goal > 0 && awarded < goal) {
-      dbeGoalsWithShortfall += 1;
-      dbeShortfallDollars += goal - awarded;
+      SELECT g.id, g.certification_type,
+             COALESCE(g.goal_dollars, (g.goal_percent / 100.0) * (SELECT v FROM project_value)) AS effective_goal,
+             COALESCE(a.awarded_dollars, 0) AS awarded
+        FROM goals g
+        LEFT JOIN awarded a ON a.goal_id = g.id
+    `);
+    type DbeShortfallRow = {
+      id: string;
+      certification_type: string;
+      effective_goal: number | string | null;
+      awarded: number | string | null;
+    };
+    for (const r of (dbeShortfallRows.rows as unknown as DbeShortfallRow[])) {
+      dbeGoalCount += 1;
+      const goal = Number(r.effective_goal ?? 0);
+      const awarded = Number(r.awarded ?? 0);
+      if (goal > 0 && awarded < goal) {
+        dbeGoalsWithShortfall += 1;
+        dbeShortfallDollars += goal - awarded;
+      }
     }
   }
 
+  // Per-input penalties — disabled gates contribute zero (counts stayed at 0).
   let score = 100;
   score -= Math.min(45, expiredBondCount * 15);
   score -= Math.min(15, expiringSoonBondCount * 5);
@@ -554,13 +575,22 @@ export async function computeProjectHealth(orgId: string, projectId: string): Pr
   }
 
   const flags = await getFeatureFlags(orgId).catch(() => ({} as Record<string, boolean | undefined>));
-  const heavyCivilEnabled = HEAVY_CIVIL_FLAGS.some((f) => flags[f as keyof typeof flags]);
+  const gates: ComplianceFlagGates = {
+    suretyBonds: !!flags["SURETY_BONDS" as keyof typeof flags],
+    buyAmerica: !!flags["BUY_AMERICA" as keyof typeof flags],
+    inspectorReports: !!flags["DAILY_INSPECTOR_REPORTS" as keyof typeof flags],
+    dbeTracking: !!flags["DBE_TRACKING" as keyof typeof flags],
+  };
+  // Compliance score is computed only when at least one compliance-bearing
+  // heavy-civil flag is on. Per-input gating ensures disabled factors are
+  // zero-impact even when the score is computed.
+  const heavyCivilEnabled = gates.suretyBonds || gates.buyAmerica || gates.inspectorReports || gates.dbeTracking;
 
   const [costResult, scheduleResult, safetyResult, complianceResult] = await Promise.all([
     calculateCostScore(projectId, project),
     calculateScheduleScore(projectId, project),
     calculateSafetyScore(orgId, projectId),
-    heavyCivilEnabled ? calculateComplianceScore(orgId, projectId) : Promise.resolve(null),
+    heavyCivilEnabled ? calculateComplianceScore(orgId, projectId, gates) : Promise.resolve(null),
   ]);
 
   const overallScore = clampScore(
