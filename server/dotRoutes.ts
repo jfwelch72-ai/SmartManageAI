@@ -46,15 +46,17 @@ function superAdminTargetOrgId(req: AuthRequest): string | null {
   return v && v.length > 0 ? v : null;
 }
 
+// Strictly honor explicit permission keys. SUPER_ADMIN retains a platform bypass
+// (they can act in any org); per-role short-circuits are intentionally removed so
+// per-user permission overrides cannot be silently bypassed by role membership.
 async function userHasApprovalPermission(
   req: AuthRequest,
-  approvalRoles: string[],
+  _approvalRoles: string[],
   permKey: FeaturePermissionKey,
 ): Promise<boolean> {
   if (!req.user) return false;
   if (req.user.role === "SUPER_ADMIN") return true;
   const role = req.user.effectiveRole || req.user.role;
-  if (approvalRoles.includes(role)) return true;
   const perms = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, role);
   return Boolean(perms[permKey]);
 }
@@ -64,20 +66,26 @@ async function userHasManagePermission(
   permKey: FeaturePermissionKey,
 ): Promise<boolean> {
   if (!req.user) return false;
-  if (req.user.role === "SUPER_ADMIN" || req.user.role === "ADMIN") return true;
+  if (req.user.role === "SUPER_ADMIN") return true;
   const role = req.user.effectiveRole || req.user.role;
   const perms = await getEffectivePermissions(req.user.id, req.user.organizationId ?? null, role);
   return Boolean(perms[permKey]);
 }
 
-// Restrict an incoming PATCH body to a whitelist of fields. Returns a new object
-// containing only the allowed keys, plus a flag indicating disallowed fields were stripped.
-function pickAllowedFields<T extends Record<string, any>>(patch: T, allowed: readonly string[]): { picked: Partial<T>; rejected: string[] } {
-  const picked: Partial<T> = {};
+// Restrict an incoming PATCH body to a whitelist of fields, fully type-safe.
+function pickAllowedFields<T extends object, K extends keyof T>(
+  patch: Partial<T>,
+  allowed: readonly K[],
+): { picked: Pick<Partial<T>, K>; rejected: string[] } {
+  const picked = {} as Pick<Partial<T>, K>;
   const rejected: string[] = [];
-  for (const k of Object.keys(patch)) {
-    if (allowed.includes(k)) (picked as any)[k] = patch[k];
-    else rejected.push(k);
+  const allowedSet = new Set<string>(allowed.map((k) => String(k)));
+  for (const key of Object.keys(patch) as Array<keyof T & string>) {
+    if (allowedSet.has(key)) {
+      picked[key as K] = patch[key as K];
+    } else {
+      rejected.push(key);
+    }
   }
   return { picked, rejected };
 }
