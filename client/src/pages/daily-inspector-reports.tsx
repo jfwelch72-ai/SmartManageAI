@@ -13,6 +13,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { DailyInspectorReport } from "@shared/schema";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
@@ -24,10 +26,23 @@ type Editing = DailyInspectorReport | "new" | null;
 
 export default function DailyInspectorReportsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canManage = useFeaturePermission("canManageInspectorReports");
+  const canApprove = useFeaturePermission("canApproveInspectorReports");
+  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "SUPERINTENDENT";
+  const canAccess = isPrivilegedRole || canManage || canApprove;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/daily-inspector-reports", projectId ? { projectId } : {}];
-  const { data = [], isLoading } = useQuery<DailyInspectorReport[]>({ queryKey });
+  const { data = [], isLoading } = useQuery<DailyInspectorReport[]>({ queryKey, enabled: canAccess });
+
+  if (!canAccess) {
+    return (
+      <div className="container mx-auto p-6" data-testid="no-access-inspector-reports">
+        <Card><CardContent className="p-8 text-center text-muted-foreground">You don't have permission to view Daily Inspector Reports.</CardContent></Card>
+      </div>
+    );
+  }
 
   const delMut = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/daily-inspector-reports/${id}`); },

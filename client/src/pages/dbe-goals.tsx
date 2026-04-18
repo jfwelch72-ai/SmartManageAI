@@ -13,6 +13,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatMoney, getErrorMessage } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { ProjectDbeGoal } from "@shared/schema";
 
 const CERT_TYPES = ["DBE", "MBE", "WBE", "SBE", "VOSB", "SDVOSB", "HUBZONE", "EIGHTA", "ACDBE", "OTHER"];
@@ -21,10 +23,22 @@ type Editing = ProjectDbeGoal | "new" | null;
 
 export default function DbeGoalsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canManage = useFeaturePermission("canManageDbeGoals");
+  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "ESTIMATOR";
+  const canAccess = isPrivilegedRole || canManage;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/projects", projectId, "dbe-goals"];
-  const { data = [], isLoading } = useQuery<ProjectDbeGoal[]>({ queryKey, enabled: !!projectId });
+  const { data = [], isLoading } = useQuery<ProjectDbeGoal[]>({ queryKey, enabled: !!projectId && canAccess });
+
+  if (!canAccess) {
+    return (
+      <div className="container mx-auto p-6" data-testid="no-access-dbe-goals">
+        <Card><CardContent className="p-8 text-center text-muted-foreground">You don't have permission to view DBE Goals.</CardContent></Card>
+      </div>
+    );
+  }
 
   const delMut = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/projects/${projectId}/dbe-goals/${id}`); },

@@ -13,6 +13,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { MaterialCertification } from "@shared/schema";
 
 const STATUSES = ["PENDING", "VERIFIED", "WAIVER_REQUESTED", "WAIVER_GRANTED", "NON_COMPLIANT"];
@@ -24,10 +26,23 @@ type Editing = MaterialCertification | "new" | null;
 
 export default function MaterialCertificationsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canManage = useFeaturePermission("canManageMaterialCertifications");
+  const canVerify = useFeaturePermission("canVerifyMaterialCertifications");
+  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "SUPERINTENDENT";
+  const canAccess = isPrivilegedRole || canManage || canVerify;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/material-certifications", projectId ? { projectId } : {}];
-  const { data = [], isLoading } = useQuery<MaterialCertification[]>({ queryKey });
+  const { data = [], isLoading } = useQuery<MaterialCertification[]>({ queryKey, enabled: canAccess });
+
+  if (!canAccess) {
+    return (
+      <div className="container mx-auto p-6" data-testid="no-access-material-certifications">
+        <Card><CardContent className="p-8 text-center text-muted-foreground">You don't have permission to view Material Certifications.</CardContent></Card>
+      </div>
+    );
+  }
 
   const delMut = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/material-certifications/${id}`); },

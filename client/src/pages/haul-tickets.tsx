@@ -13,6 +13,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { HaulTicket } from "@shared/schema";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -24,10 +26,23 @@ type Editing = HaulTicket | "new" | null;
 
 export default function HaulTicketsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canManage = useFeaturePermission("canManageHaulTickets");
+  const canApprove = useFeaturePermission("canApproveHaulTickets");
+  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "SUPERINTENDENT";
+  const canAccess = isPrivilegedRole || canManage || canApprove;
   const [projectId, setProjectId] = useState<string>("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/haul-tickets", projectId ? { projectId } : {}];
-  const { data = [], isLoading } = useQuery<HaulTicket[]>({ queryKey });
+  const { data = [], isLoading } = useQuery<HaulTicket[]>({ queryKey, enabled: canAccess });
+
+  if (!canAccess) {
+    return (
+      <div className="container mx-auto p-6" data-testid="no-access-haul-tickets">
+        <Card><CardContent className="p-8 text-center text-muted-foreground">You don't have permission to view Haul Tickets.</CardContent></Card>
+      </div>
+    );
+  }
 
   const delMut = useMutation({
     mutationFn: async (id: string) => {

@@ -8,11 +8,25 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Loader2, Building2, BookOpen, Hash, Search } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
 export default function DotLibraryPage() {
+  const { user } = useAuth();
+  const canManageLib = useFeaturePermission("canManageDotLibrary");
+  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" || user?.role === "ESTIMATOR";
+  const canAccess = isPrivilegedRole || canManageLib;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [agencyFilter, setAgencyFilter] = useState("");
-  const { data: agencies = [], isLoading } = useQuery<DotAgency[]>({ queryKey: ["/api/dot/agencies"] });
+  const { data: agencies = [], isLoading } = useQuery<DotAgency[]>({ queryKey: ["/api/dot/agencies"], enabled: canAccess });
+
+  if (!canAccess) {
+    return (
+      <div className="container mx-auto p-6" data-testid="no-access-dot-library">
+        <Card><CardContent className="p-8 text-center text-muted-foreground">You don't have permission to view the DOT Library.</CardContent></Card>
+      </div>
+    );
+  }
 
   const filtered = agencies.filter((a) =>
     !agencyFilter ||

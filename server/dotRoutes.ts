@@ -554,6 +554,11 @@ router.patch(
     const [prev] = await db.select().from(haulTickets).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
 
+    if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
+      const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveHaulTickets");
+      if (!approver) return res.status(403).json({ error: "Approval permission required" });
+    }
+
     const [row] = await db.update(haulTickets).set({ ...patch, updatedAt: new Date() })
       .where(and(...conditions))
       .returning();
@@ -561,8 +566,6 @@ router.patch(
 
     if (patch.status && patch.status !== prev.status) {
       if (patch.status === "APPROVED") {
-        const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveHaulTickets");
-        if (!approver) return res.status(403).json({ error: "Approval permission required" });
         await eventBus.emit({
           version: 1,
           orgId: row.organizationId,
@@ -690,14 +693,17 @@ router.patch(
     const [prev] = await db.select().from(dailyInspectorReports).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
 
+    if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
+      const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveInspectorReports");
+      if (!approver) return res.status(403).json({ error: "Approval permission required" });
+    }
+
     const [row] = await db.update(dailyInspectorReports).set({ ...patch, updatedAt: new Date() })
       .where(and(...conditions))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
 
     if (patch.status === "APPROVED" && prev.status !== "APPROVED") {
-      const approver = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canApproveInspectorReports");
-      if (!approver) return res.status(403).json({ error: "Approval permission required" });
       await eventBus.emit({
         version: 1,
         orgId: row.organizationId,
@@ -876,17 +882,23 @@ router.patch(
     const [prev] = await db.select().from(materialCertifications).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
 
+    const wasVerified = Boolean(prev.verifiedAt || prev.verifiedById);
+    const willBeVerified = Boolean(
+      (patch.verifiedAt ?? prev.verifiedAt) || (patch.verifiedById ?? prev.verifiedById),
+    );
+    if (!wasVerified && willBeVerified) {
+      const verifier = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canVerifyMaterialCertifications");
+      if (!verifier) return res.status(403).json({ error: "Verification permission required" });
+    }
+
     const [row] = await db.update(materialCertifications).set({ ...patch, updatedAt: new Date() })
       .where(and(...conditions))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
 
-    const wasVerified = (prev as any).verifiedAt || (prev as any).verifiedById;
-    const isVerifiedNow = (row as any).verifiedAt || (row as any).verifiedById;
+    const isVerifiedNow = Boolean(row.verifiedAt || row.verifiedById);
     if (!wasVerified && isVerifiedNow) {
-      const verifier = await userHasApprovalPermission(req, ["ADMIN", "MANAGER"], "canVerifyMaterialCertifications");
-      if (!verifier) return res.status(403).json({ error: "Verification permission required" });
-      const baStatus = (row as any).buyAmericaStatus;
+      const baStatus = row.buyAmericaStatus;
       const isCompliant = baStatus === "COMPLIANT" ? true : baStatus === "NON_COMPLIANT" ? false : null;
       await eventBus.emit({
         version: 1,

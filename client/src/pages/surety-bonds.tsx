@@ -13,6 +13,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { SuretyBond } from "@shared/schema";
 
 const BOND_TYPES = ["BID", "PERFORMANCE", "PAYMENT", "MAINTENANCE", "SUPPLY", "WARRANTY", "LICENSE", "OTHER"];
@@ -25,10 +27,22 @@ type Editing = SuretyBond | "new" | null;
 
 export default function SuretyBondsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canManage = useFeaturePermission("canManageSuretyBonds");
+  const isPrivilegedRole = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN" || user?.role === "ESTIMATOR";
+  const canAccess = isPrivilegedRole || canManage;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/surety-bonds", projectId ? { projectId } : {}];
-  const { data = [], isLoading } = useQuery<SuretyBond[]>({ queryKey });
+  const { data = [], isLoading } = useQuery<SuretyBond[]>({ queryKey, enabled: canAccess });
+
+  if (!canAccess) {
+    return (
+      <div className="container mx-auto p-6" data-testid="no-access-surety-bonds">
+        <Card><CardContent className="p-8 text-center text-muted-foreground">You don't have permission to view Surety Bonds.</CardContent></Card>
+      </div>
+    );
+  }
 
   const delMut = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/surety-bonds/${id}`); },
