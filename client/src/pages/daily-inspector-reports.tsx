@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ClipboardList, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
+import { HeavyCivilDocumentList } from "@/components/dot/HeavyCivilDocumentField";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -120,6 +121,7 @@ interface FormState {
   precipitationInches: string; windSpeedMph: string; crewCount: string; crewHours: string;
   workPerformed: string; stationsWorked: string; deliveries: string; visitors: string;
   safetyIncidents: string; delaysEncountered: string;
+  photoDocumentIds: string[]; attachmentDocumentIds: string[];
 }
 
 function initial(existing: DailyInspectorReport | null, defaultProjectId?: string): FormState {
@@ -130,6 +132,7 @@ function initial(existing: DailyInspectorReport | null, defaultProjectId?: strin
       precipitationInches: "", windSpeedMph: "", crewCount: "", crewHours: "",
       workPerformed: "", stationsWorked: "", deliveries: "", visitors: "",
       safetyIncidents: "", delaysEncountered: "",
+      photoDocumentIds: [], attachmentDocumentIds: [],
     };
   }
   return {
@@ -151,6 +154,8 @@ function initial(existing: DailyInspectorReport | null, defaultProjectId?: strin
     visitors: existing.visitors ?? "",
     safetyIncidents: existing.safetyIncidents ?? "",
     delaysEncountered: existing.delaysEncountered ?? "",
+    photoDocumentIds: (existing as { photoDocumentIds?: string[] | null }).photoDocumentIds ?? [],
+    attachmentDocumentIds: (existing as { attachmentDocumentIds?: string[] | null }).attachmentDocumentIds ?? [],
   };
 }
 
@@ -175,6 +180,8 @@ function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspe
         windSpeedMph: data.windSpeedMph ? Number(data.windSpeedMph) : null,
         crewCount: data.crewCount ? Number(data.crewCount) : 0,
         crewHours: data.crewHours || "0",
+        photoDocumentIds: data.photoDocumentIds,
+        attachmentDocumentIds: data.attachmentDocumentIds,
       };
       const url = existing ? `/api/daily-inspector-reports/${existing.id}` : "/api/daily-inspector-reports";
       const r = await apiRequest(existing ? "PATCH" : "POST", url, payload);
@@ -255,6 +262,26 @@ function IdrForm({ existing, onClose, defaultProjectId }: { existing: DailyInspe
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><Label>Safety Incidents</Label><Textarea rows={2} value={form.safetyIncidents} onChange={(e) => setForm({ ...form, safetyIncidents: e.target.value })} data-testid="input-idr-safety" /></div>
           <div><Label>Delays</Label><Textarea rows={2} value={form.delaysEncountered} onChange={(e) => setForm({ ...form, delaysEncountered: e.target.value })} data-testid="input-idr-delays" /></div>
+        </div>
+        <div className="border-t pt-3 space-y-4">
+          <HeavyCivilDocumentList
+            documentIds={form.photoDocumentIds}
+            projectId={form.projectId}
+            titleBase={`IDR ${form.reportDate} Photo`}
+            docType="OTHER"
+            label="Photos"
+            testId="idr-photos"
+            onChange={(ids) => setForm({ ...form, photoDocumentIds: ids })}
+          />
+          <HeavyCivilDocumentList
+            documentIds={form.attachmentDocumentIds}
+            projectId={form.projectId}
+            titleBase={`IDR ${form.reportDate} Attachment`}
+            docType="OTHER"
+            label="Attachments"
+            testId="idr-attachments"
+            onChange={(ids) => setForm({ ...form, attachmentDocumentIds: ids })}
+          />
         </div>
         {existing && (
           <div className="flex flex-wrap gap-2 border-t pt-3">

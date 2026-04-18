@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Flag, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
+import { HeavyCivilDocumentField } from "@/components/dot/HeavyCivilDocumentField";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -118,6 +119,7 @@ interface FormState {
   manufacturerName: string; manufacturerCountry: string; millName: string; millCountry: string;
   heatNumber: string; certNumber: string; buyAmericaStatus: string;
   waiverReason: string; receivedDate: string; notes: string;
+  documentId: string;
 }
 
 function initial(existing: MaterialCertification | null, defaultProjectId?: string): FormState {
@@ -127,6 +129,7 @@ function initial(existing: MaterialCertification | null, defaultProjectId?: stri
       manufacturerName: "", manufacturerCountry: "USA", millName: "", millCountry: "USA",
       heatNumber: "", certNumber: "", buyAmericaStatus: "PENDING",
       waiverReason: "", receivedDate: "", notes: "",
+      documentId: "",
     };
   }
   return {
@@ -143,6 +146,7 @@ function initial(existing: MaterialCertification | null, defaultProjectId?: stri
     waiverReason: existing.waiverReason ?? "",
     receivedDate: toDateInput(existing.receivedDate),
     notes: existing.notes ?? "",
+    documentId: (existing as { documentId?: string | null }).documentId ?? "",
   };
 }
 
@@ -159,8 +163,8 @@ function CertForm({ existing, onClose, defaultProjectId }: { existing: MaterialC
       // /submit /verify /reject endpoints below.
       const { buyAmericaStatus, ...rest } = data;
       const payload: Record<string, unknown> = existing
-        ? { ...rest, receivedDate: rest.receivedDate || null }
-        : { ...data, receivedDate: data.receivedDate || null };
+        ? { ...rest, receivedDate: rest.receivedDate || null, documentId: rest.documentId || null }
+        : { ...data, receivedDate: data.receivedDate || null, documentId: data.documentId || null };
       const url = existing ? `/api/material-certifications/${existing.id}` : "/api/material-certifications";
       const r = await apiRequest(existing ? "PATCH" : "POST", url, payload);
       return r.json();
@@ -232,6 +236,18 @@ function CertForm({ existing, onClose, defaultProjectId }: { existing: MaterialC
         </div>
         <div><Label>Waiver Reason (if applicable)</Label><Textarea rows={2} value={form.waiverReason} onChange={(e) => setForm({ ...form, waiverReason: e.target.value })} data-testid="input-cert-waiver" /></div>
         <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-cert-notes" /></div>
+        <div className="border-t pt-3">
+          <Label className="mb-2 block">Certification Document</Label>
+          <HeavyCivilDocumentField
+            documentId={form.documentId || null}
+            projectId={form.projectId}
+            title={`Material Cert ${form.certNumber || form.materialDescription || "document"}`}
+            docType="OTHER"
+            label="Cert / mill test report"
+            testId="cert-document"
+            onChange={(id) => setForm({ ...form, documentId: id })}
+          />
+        </div>
         {existing && (
           <div className="flex flex-wrap gap-2 border-t pt-3">
             <span className="text-xs text-muted-foreground self-center mr-1">Workflow:</span>

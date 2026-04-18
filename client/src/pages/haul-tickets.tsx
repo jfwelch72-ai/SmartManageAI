@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Truck, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
+import { HeavyCivilDocumentField } from "@/components/dot/HeavyCivilDocumentField";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -141,6 +142,7 @@ interface FormState {
   costCode: string;
   payItemNumber: string;
   notes: string;
+  ticketPhotoDocumentId: string;
 }
 
 function initial(existing: HaulTicket | null, defaultProjectId?: string): FormState {
@@ -149,6 +151,7 @@ function initial(existing: HaulTicket | null, defaultProjectId?: string): FormSt
       projectId: defaultProjectId || "", ticketNumber: "", ticketDate: todayIso(), status: "DRAFT",
       materialClass: "", source: "", destination: "", truckNumber: "", driverName: "",
       quantity: "", unit: "TON", unitCost: "", costCode: "", payItemNumber: "", notes: "",
+      ticketPhotoDocumentId: "",
     };
   }
   return {
@@ -167,6 +170,7 @@ function initial(existing: HaulTicket | null, defaultProjectId?: string): FormSt
     costCode: existing.costCode ?? "",
     payItemNumber: existing.payItemNumber ?? "",
     notes: existing.notes ?? "",
+    ticketPhotoDocumentId: (existing as { ticketPhotoDocumentId?: string | null }).ticketPhotoDocumentId ?? "",
   };
 }
 
@@ -187,6 +191,7 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
         ...rest,
         unitCost: data.unitCost || null,
         totalCost,
+        ticketPhotoDocumentId: data.ticketPhotoDocumentId || null,
       };
       const url = existing ? `/api/haul-tickets/${existing.id}` : "/api/haul-tickets";
       const method = existing ? "PATCH" : "POST";
@@ -302,6 +307,18 @@ function HaulTicketForm({ existing, onClose, defaultProjectId }: { existing: Hau
         <div>
           <Label>Notes</Label>
           <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-haul-notes" />
+        </div>
+        <div className="border-t pt-3">
+          <Label className="mb-2 block">Ticket Photo</Label>
+          <HeavyCivilDocumentField
+            documentId={form.ticketPhotoDocumentId || null}
+            projectId={form.projectId}
+            title={`Haul Ticket ${form.ticketNumber || form.ticketDate}`}
+            docType="OTHER"
+            label="Ticket photo"
+            testId="haul-photo"
+            onChange={(id) => setForm({ ...form, ticketPhotoDocumentId: id })}
+          />
         </div>
         {existing && (
           <div className="flex flex-wrap gap-2 border-t pt-3">

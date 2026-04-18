@@ -14,6 +14,22 @@ export async function createRevision(
   metadata?: Record<string, any>,
   checksum?: string
 ) {
+  // Verify the target document exists and belongs to the caller's org so a
+  // user cannot create a revision against another tenant's document.
+  const { projects: projectsTbl } = await import("@shared/schema");
+  const [docOwnerRow] = await db
+    .select({ docId: planDocuments.id, projectOrg: projectsTbl.organizationId })
+    .from(planDocuments)
+    .leftJoin(projectsTbl, eq(planDocuments.projectId, projectsTbl.id))
+    .where(eq(planDocuments.id, documentId))
+    .limit(1);
+  if (!docOwnerRow) {
+    throw Object.assign(new Error("Document not found"), { status: 404 });
+  }
+  if (docOwnerRow.projectOrg && docOwnerRow.projectOrg !== orgId) {
+    throw Object.assign(new Error("Forbidden"), { status: 403 });
+  }
+
   const latestRevision = await db.select({ maxRev: sql<number>`coalesce(max(${documentRevisions.revisionNumber}), 0)` })
     .from(documentRevisions)
     .where(and(

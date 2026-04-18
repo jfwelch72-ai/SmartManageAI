@@ -31,6 +31,7 @@ import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
 import { ensureDotTables } from "./ensureDotTables";
 import { ensurePayrollFormVariantColumn } from "./ensurePayrollFormVariantColumn";
 import { ensureMaterialCertColumns } from "./ensureMaterialCertColumns";
+import { ensureHeavyCivilDocumentColumns } from "./ensureHeavyCivilDocumentColumns";
 import { ensureHeavyCivilEnumValues } from "./ensureHeavyCivilEnumValues";
 import { ensureProjectHealthSnapshotColumns } from "./ensureProjectHealthSnapshotColumns";
 
@@ -75,6 +76,7 @@ const migrations: MigrationStep[] = [
   { name: "material_cert_submit_columns", category: "ADD_COLUMN", fn: ensureMaterialCertColumns },
   { name: "heavy_civil_enum_values", category: "ADD_ENUM", fn: ensureHeavyCivilEnumValues },
   { name: "project_health_snapshot_columns", category: "ADD_COLUMN", fn: ensureProjectHealthSnapshotColumns },
+  { name: "heavy_civil_document_columns", category: "ADD_COLUMN", fn: ensureHeavyCivilDocumentColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

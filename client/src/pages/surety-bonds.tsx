@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ShieldCheck, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
+import { HeavyCivilDocumentField } from "@/components/dot/HeavyCivilDocumentField";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -116,6 +117,7 @@ interface FormState {
   projectId: string; bondType: string; status: string; bondNumber: string; suretyCompany: string;
   agentName: string; agentPhone: string; agentEmail: string;
   bondAmount: string; premiumAmount: string; effectiveDate: string; expirationDate: string; notes: string;
+  documentId: string; documentUrl: string;
 }
 
 function initial(existing: SuretyBond | null, defaultProjectId?: string): FormState {
@@ -125,6 +127,7 @@ function initial(existing: SuretyBond | null, defaultProjectId?: string): FormSt
       bondNumber: "", suretyCompany: "",
       agentName: "", agentPhone: "", agentEmail: "",
       bondAmount: "", premiumAmount: "", effectiveDate: "", expirationDate: "", notes: "",
+      documentId: "", documentUrl: "",
     };
   }
   return {
@@ -141,6 +144,8 @@ function initial(existing: SuretyBond | null, defaultProjectId?: string): FormSt
     effectiveDate: toDateInput(existing.effectiveDate),
     expirationDate: toDateInput(existing.expirationDate),
     notes: existing.notes ?? "",
+    documentId: (existing as { documentId?: string | null }).documentId ?? "",
+    documentUrl: existing.documentUrl ?? "",
   };
 }
 
@@ -157,6 +162,8 @@ function BondForm({ existing, onClose, defaultProjectId }: { existing: SuretyBon
         premiumAmount: data.premiumAmount || null,
         effectiveDate: data.effectiveDate || null,
         expirationDate: data.expirationDate || null,
+        documentId: data.documentId || null,
+        documentUrl: data.documentUrl || null,
       };
       const url = existing ? `/api/surety-bonds/${existing.id}` : "/api/surety-bonds";
       const r = await apiRequest(existing ? "PATCH" : "POST", url, payload);
@@ -212,6 +219,30 @@ function BondForm({ existing, onClose, defaultProjectId }: { existing: SuretyBon
           <div><Label>Expiration Date</Label><Input type="date" value={form.expirationDate} onChange={(e) => setForm({ ...form, expirationDate: e.target.value })} data-testid="input-bond-expiration" /></div>
         </div>
         <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-bond-notes" /></div>
+        <div className="border-t pt-3">
+          <Label className="mb-2 block">Bond Document</Label>
+          {form.projectId ? (
+            <HeavyCivilDocumentField
+              documentId={form.documentId || null}
+              projectId={form.projectId}
+              title={`Surety Bond ${form.bondNumber || form.bondType}`}
+              docType="OTHER"
+              label="Bond document"
+              testId="bond-document"
+              onChange={(id) => setForm({ ...form, documentId: id })}
+            />
+          ) : (
+            <div className="space-y-1">
+              <Input
+                placeholder="https://… (paste document link)"
+                value={form.documentUrl}
+                onChange={(e) => setForm({ ...form, documentUrl: e.target.value })}
+                data-testid="input-bond-document-url"
+              />
+              <p className="text-xs text-muted-foreground">Bonds without a project can only store a document link. Attach a project above to upload and version a file.</p>
+            </div>
+          )}
+        </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} data-testid="button-bond-cancel">Cancel</Button>
           <Button type="submit" disabled={mut.isPending} data-testid="button-bond-save">

@@ -845,6 +845,33 @@ router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN",
   }
 });
 
+router.get("/api/documents/:documentId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { documentId } = req.params;
+    const [document] = await db
+      .select()
+      .from(planDocuments)
+      .where(eq(planDocuments.id, documentId))
+      .limit(1);
+    if (!document) {
+      res.status(404).json({ error: "Document not found" });
+      return;
+    }
+    const [project] = await db
+      .select({ organizationId: projects.organizationId })
+      .from(projects)
+      .where(eq(projects.id, document.projectId))
+      .limit(1);
+    if (project && req.user!.role !== "SUPER_ADMIN" && project.organizationId !== req.user!.organizationId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    res.json(document);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { documentId } = req.params;
