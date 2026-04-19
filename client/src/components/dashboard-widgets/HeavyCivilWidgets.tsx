@@ -594,7 +594,10 @@ export function BondCertExpirationsWidget() {
   const dbeFlag = isEnabled("DBE_TRACKING");
   const anyFlag = bondsFlag || dbeFlag;
   const anyPerm = canBonds || canDbe;
-  const enabled = anyFlag && anyPerm;
+  // Only fire the API call when at least one (flag && matching permission)
+  // pair is satisfied — server filters per dataset, but we avoid useless
+  // requests when neither pair holds.
+  const enabled = (bondsFlag && canBonds) || (dbeFlag && canDbe);
 
   const { data, isLoading, isError, refetch } = useQuery<ExpirationsResponse>({
     queryKey: ["/api/dashboard/heavy-civil/expirations"],

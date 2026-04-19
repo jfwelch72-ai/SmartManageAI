@@ -2364,7 +2364,7 @@ router.get(
         todayQuantity: sql<number>`COALESCE(SUM(CASE WHEN ${haulTickets.ticketDate} = ${todayStr} THEN ${haulTickets.quantity} ELSE 0 END), 0)::float`,
         weekCount: sql<number>`SUM(CASE WHEN ${haulTickets.ticketDate} >= ${weekAgoStr} THEN 1 ELSE 0 END)::int`,
         weekQuantity: sql<number>`COALESCE(SUM(CASE WHEN ${haulTickets.ticketDate} >= ${weekAgoStr} THEN ${haulTickets.quantity} ELSE 0 END), 0)::float`,
-        oldestPendingDays: sql<number>`COALESCE(MAX(EXTRACT(DAY FROM NOW() - ${haulTickets.createdAt}))::int, 0) FILTER (WHERE ${haulTickets.status} = 'SUBMITTED')`,
+        oldestPendingDays: sql<number>`COALESCE((MAX(EXTRACT(DAY FROM NOW() - ${haulTickets.createdAt})) FILTER (WHERE ${haulTickets.status} = 'SUBMITTED'))::int, 0)`,
       }).from(haulTickets).where(conds.length ? and(...conds) : undefined);
 
       const recent = await db.select({
@@ -2648,13 +2648,28 @@ router.get(
       const endDate = endDateRaw && dateRe.test(endDateRaw) ? endDateRaw : null;
 
       const orgId = project.organizationId;
-      const [dbeOn, haulOn, idrOn, baOn, bondOn] = await Promise.all([
+      const [dbeFlag, haulFlag, idrFlag, baFlag, bondFlag] = await Promise.all([
         isFeatureEnabled(orgId, "DBE_TRACKING"),
         isFeatureEnabled(orgId, "HAUL_TICKETS"),
         isFeatureEnabled(orgId, "DAILY_INSPECTOR_REPORTS"),
         isFeatureEnabled(orgId, "BUY_AMERICA"),
         isFeatureEnabled(orgId, "SURETY_BONDS"),
       ]);
+
+      // Per-section permission gating: each section requires BOTH the
+      // org-level feature flag AND the user's matching feature permission.
+      // Super admins bypass per-section permission checks but still respect
+      // the org's feature flags (so disabled modules stay empty).
+      const effectiveRole = (req.user!.role || "").toUpperCase();
+      const perms = await getEffectivePermissions(req.user!.id, orgId, effectiveRole);
+      const isSuper = ctx.isSuperAdmin;
+      const can = (...keys: FeaturePermissionKey[]) =>
+        isSuper || keys.some(k => perms[k] === true);
+      const dbeOn = dbeFlag && can("canViewDbeGoals", "canManageDbeGoals");
+      const haulOn = haulFlag && can("canViewHaulTickets", "canManageHaulTickets", "canApproveHaulTickets");
+      const idrOn = idrFlag && can("canViewInspectorReports", "canManageInspectorReports", "canApproveInspectorReports");
+      const baOn = baFlag && can("canViewMaterialCertifications", "canManageMaterialCertifications");
+      const bondOn = bondFlag && can("canViewSuretyBonds", "canManageSuretyBonds");
 
       // Financial rollup from SOV/pay applications when present.
       const [sovAgg] = await db.select({
