@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2, Hash } from "lucide-react";
 import { PayItemPicker, type SelectedPayItem } from "@/components/dot/PayItemPicker";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -186,10 +187,17 @@ function SubcontractorAssignmentPanel({
 }
 
 function PayItemRow({ form, testPrefix }: { form: UseFormReturn<LineItemFormValues>; testPrefix: string }) {
+  const { isEnabled } = useFeatureFlags();
   const [pickerOpen, setPickerOpen] = useState(false);
   const payItemNumber = form.watch("payItemNumber");
   const specSection = form.watch("specSection");
   const dotPayItemId = form.watch("dotPayItemId");
+
+  // Hide DOT pay-item picker entirely when the org has the flag off, but keep
+  // showing existing linkage on legacy lines so users can clear or replace it.
+  if (!isEnabled("DOT_PAY_ITEMS") && !dotPayItemId) {
+    return null;
+  }
 
   const handleSelect = async (selected: SelectedPayItem) => {
     form.setValue("dotPayItemId", selected.payItem.id, { shouldDirty: true });
