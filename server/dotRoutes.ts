@@ -2291,16 +2291,32 @@ router.get(
       }
 
       // Compute actual awarded dollars per cert type by joining
-      // subcontractor contracts -> crm org certifications.
+      // subcontractor contracts -> crm org certifications. Excludes
+      // TERMINATED contracts (they aren't actually awarded), filters
+      // certifications to those currently in effect, and de-duplicates
+      // (contract, cert type) pairs so multiple cert rows for the same
+      // org+type (e.g. different certifying agencies) don't double-count.
       const paidByType = new Map<string, number>();
       let totalPaidDollars = 0;
       if (projectIds.length > 0) {
-        const paidRows = await db.select({
+        // Validity is checked at contract award time (start_date, falling back
+        // to created_at) rather than "today" so historical awards with certs
+        // that have since expired are still credited correctly.
+        const awardDateExpr = sql`COALESCE(${subcontractorContracts.startDate}, ${subcontractorContracts.createdAt})`;
+        const certConds: SQL[] = [
+          inArray(subcontractorContracts.projectId, projectIds),
+          sql`${subcontractorContracts.status} <> 'TERMINATED'`,
+          sql`(${crmOrganisationCertifications.effectiveDate} IS NULL OR ${crmOrganisationCertifications.effectiveDate} <= ${awardDateExpr})`,
+          sql`(${crmOrganisationCertifications.expirationDate} IS NULL OR ${crmOrganisationCertifications.expirationDate} >= ${awardDateExpr})`,
+        ];
+        if (!ctx.isSuperAdmin) certConds.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
+        const paidRows = await db.selectDistinct({
+          contractId: subcontractorContracts.id,
           certificationType: crmOrganisationCertifications.certificationType,
           contractAmount: subcontractorContracts.contractAmount,
         }).from(subcontractorContracts)
           .innerJoin(crmOrganisationCertifications, eq(crmOrganisationCertifications.crmOrganisationId, subcontractorContracts.subcontractorId))
-          .where(inArray(subcontractorContracts.projectId, projectIds));
+          .where(and(...certConds));
         for (const r of paidRows) {
           const amt = Number(r.contractAmount) || 0;
           paidByType.set(r.certificationType, (paidByType.get(r.certificationType) || 0) + amt);
@@ -2778,10 +2794,20 @@ router.get(
         // dollars in the DBE section match the report period. Filters by
         // contract start date if set, otherwise falls back to createdAt.
         const dbeDateExpr = sql`COALESCE(${subcontractorContracts.startDate}, ${subcontractorContracts.createdAt})`;
-        const dbeConds: SQL[] = [eq(subcontractorContracts.projectId, projectId)];
+        // Validity is checked at contract award time (start_date, falling back
+        // to created_at) rather than "today" so historical awards remain
+        // credited even if the cert has since expired.
+        const dbeConds: SQL[] = [
+          eq(subcontractorContracts.projectId, projectId),
+          sql`${subcontractorContracts.status} <> 'TERMINATED'`,
+          sql`(${crmOrganisationCertifications.effectiveDate} IS NULL OR ${crmOrganisationCertifications.effectiveDate} <= ${dbeDateExpr})`,
+          sql`(${crmOrganisationCertifications.expirationDate} IS NULL OR ${crmOrganisationCertifications.expirationDate} >= ${dbeDateExpr})`,
+          eq(crmOrganisationCertifications.organizationId, orgId),
+        ];
         if (startDate) dbeConds.push(sql`${dbeDateExpr} >= ${startDate}::timestamptz`);
         if (endDate) dbeConds.push(sql`${dbeDateExpr} <= (${endDate}::date + INTERVAL '1 day')::timestamptz`);
-        const paidRows = await db.select({
+        const paidRows = await db.selectDistinct({
+          contractId: subcontractorContracts.id,
           certificationType: crmOrganisationCertifications.certificationType,
           contractAmount: subcontractorContracts.contractAmount,
         }).from(subcontractorContracts)
