@@ -169,10 +169,16 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
   };
 
   const [downloadingHcSummary, setDownloadingHcSummary] = useState(false);
+  const [hcSummaryStart, setHcSummaryStart] = useState<string>("");
+  const [hcSummaryEnd, setHcSummaryEnd] = useState<string>("");
   const handleDownloadHeavyCivilSummary = async () => {
     setDownloadingHcSummary(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/heavy-civil-summary/pdf`, {
+      const params = new URLSearchParams();
+      if (hcSummaryStart) params.set("startDate", hcSummaryStart);
+      if (hcSummaryEnd) params.set("endDate", hcSummaryEnd);
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      const res = await fetch(`/api/projects/${projectId}/heavy-civil-summary/pdf${qs}`, {
         credentials: "include",
       });
       if (!res.ok) {
@@ -225,20 +231,45 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
           <h2 className="text-lg font-semibold" data-testid="text-reports-heading">Progress Reports</h2>
           <p className="text-sm text-muted-foreground">Generate and view weekly and monthly progress reports</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={handleDownloadHeavyCivilSummary}
-            disabled={downloadingHcSummary}
-            data-testid="button-download-heavy-civil-summary"
-          >
-            {downloadingHcSummary ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <HardHat className="h-4 w-4 mr-2" />
-            )}
-            Heavy-Civil Summary PDF
-          </Button>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex items-end gap-1.5 px-2 py-1 rounded-md border border-border/60 bg-muted/20">
+            <div className="flex flex-col">
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide" htmlFor="hc-summary-start">From</label>
+              <input
+                id="hc-summary-start"
+                type="date"
+                value={hcSummaryStart}
+                onChange={(e) => setHcSummaryStart(e.target.value)}
+                className="h-8 text-xs px-1.5 rounded border border-input bg-background"
+                data-testid="input-hc-summary-start"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide" htmlFor="hc-summary-end">To</label>
+              <input
+                id="hc-summary-end"
+                type="date"
+                value={hcSummaryEnd}
+                onChange={(e) => setHcSummaryEnd(e.target.value)}
+                className="h-8 text-xs px-1.5 rounded border border-input bg-background"
+                data-testid="input-hc-summary-end"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadHeavyCivilSummary}
+              disabled={downloadingHcSummary}
+              data-testid="button-download-heavy-civil-summary"
+            >
+              {downloadingHcSummary ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <HardHat className="h-4 w-4 mr-2" />
+              )}
+              Heavy-Civil Summary PDF
+            </Button>
+          </div>
           <Button variant="outline" onClick={() => setShowSettings(!showSettings)} data-testid="button-report-settings">
             <Settings className="h-4 w-4 mr-2" />
             Settings

@@ -364,6 +364,13 @@ export function OpenHaulTicketsWidget() {
 // 3) IDR SUBMISSION STREAK WIDGET
 // ============================================================
 
+interface IdrProjectStreak {
+  projectId: string;
+  projectName: string;
+  streakDays: number;
+  lastSubmittedDate: string | null;
+}
+
 interface IdrStreak {
   totalReports: number;
   last30Days: number;
@@ -372,6 +379,7 @@ interface IdrStreak {
   streakDays: number;
   lastSubmittedDate: string | null;
   activeProjects: number;
+  projectStreaks?: IdrProjectStreak[];
 }
 
 export function IDRStreakWidget() {
@@ -397,7 +405,8 @@ export function IDRStreakWidget() {
   if (isLoading || flagsLoading) return <LoadingCard testId="idr-widget-loading" />;
   if (isError) return <ErrorCard onRetry={() => refetch()} testId="idr-widget-error" />;
 
-  const d = data ?? { totalReports: 0, last30Days: 0, last30DaysExpected: 0, complianceRate: 0, streakDays: 0, lastSubmittedDate: null, activeProjects: 0 };
+  const d = data ?? { totalReports: 0, last30Days: 0, last30DaysExpected: 0, complianceRate: 0, streakDays: 0, lastSubmittedDate: null, activeProjects: 0, projectStreaks: [] as IdrProjectStreak[] };
+  const topProjects = (d.projectStreaks ?? []).slice().sort((a, b) => b.streakDays - a.streakDays).slice(0, 4);
   const compClamped = Math.min(100, Math.max(0, d.complianceRate));
   const streakColor = d.streakDays >= 14 ? "text-emerald-600 dark:text-emerald-400" : d.streakDays >= 7 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
   const streakBg = d.streakDays >= 14 ? "bg-emerald-500/10" : d.streakDays >= 7 ? "bg-amber-500/10" : "bg-red-500/10";
@@ -447,6 +456,28 @@ export function IDRStreakWidget() {
             <span className="font-bold tabular-nums">{d.activeProjects}</span>
           </div>
         </div>
+
+        {topProjects.length > 0 && (
+          <div className="space-y-1.5 pt-2 border-t border-border/50" data-testid="idr-project-streaks">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Project Streaks</p>
+            <div className="space-y-1">
+              {topProjects.map((p) => {
+                const c = p.streakDays >= 14 ? "text-emerald-600 dark:text-emerald-400" : p.streakDays >= 7 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
+                return (
+                  <Link
+                    key={p.projectId}
+                    href={`/projects/${p.projectId}`}
+                    className="flex items-center justify-between text-xs px-1.5 py-1 rounded hover:bg-accent/50 transition-colors"
+                    data-testid={`idr-project-streak-${p.projectId}`}
+                  >
+                    <span className="truncate flex-1 mr-2">{p.projectName}</span>
+                    <span className={cn("font-bold tabular-nums shrink-0", c)}>{p.streakDays}d</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="pt-2.5 border-t border-border/50">
           <Link href="/projects" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-idr-projects">

@@ -53,9 +53,12 @@ function isWidgetAvailableForRole(
   const hasAllowedRole = widget.allowedRoles
     ? widget.allowedRoles.includes(userRole || "")
     : true;
-  const hasFeaturePerm = widget.featurePerm
-    ? (userPermissions?.[widget.featurePerm] ?? false)
-    : true;
+  const featurePermKeys = widget.featurePerm
+    ? (Array.isArray(widget.featurePerm) ? widget.featurePerm : [widget.featurePerm])
+    : [];
+  const hasFeaturePerm = featurePermKeys.length === 0
+    ? true
+    : featurePermKeys.some(k => userPermissions?.[k] === true);
 
   if (widget.allowedRoles && widget.featurePerm) {
     return hasAllowedRole && hasFeaturePerm;

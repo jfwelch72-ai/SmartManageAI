@@ -94,7 +94,7 @@ export interface WidgetDefinition {
   maxH: number;
   singleton: boolean;
   allowedRoles?: string[];
-  featurePerm?: FeaturePermissionKey;
+  featurePerm?: FeaturePermissionKey | FeaturePermissionKey[];
   hasSettings?: boolean;
   queryKeys?: string[];
 }
@@ -729,7 +729,10 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: false,
     allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
-    featurePerm: "canViewSuretyBonds",
+    // Either bond or DBE permission qualifies — the widget surfaces both
+    // datasets, and the API filters per-dataset based on the user's actual
+    // permissions and feature flags.
+    featurePerm: ["canViewSuretyBonds", "canViewDbeGoals"],
     hasSettings: false,
     queryKeys: ["/api/dashboard/heavy-civil/expirations"],
   },
