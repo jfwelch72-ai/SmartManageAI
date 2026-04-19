@@ -481,6 +481,7 @@ export interface FeaturePerms {
   canViewMaterialCertifications?: boolean;
   canManageSuretyBonds?: boolean;
   canViewSuretyBonds?: boolean;
+  canViewComplianceDashboard?: boolean;
 }
 
 export interface NavItem {

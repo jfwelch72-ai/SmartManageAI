@@ -1477,27 +1477,7 @@ export default function CRMPage() {
                                 {org.name}
                               </h3>
                               <ComplianceBadge partyType="CRM_ORG" partyId={org.id} className="shrink-0" />
-                              {(() => {
-                                const orgCompliance =
-                                  complianceData?.items.filter(
-                                    (i) => i.orgId === org.id,
-                                  ) || [];
-                                if (orgCompliance.length === 0) return null;
-                                const hasExpired = orgCompliance.some(
-                                  (i) => i.status === "expired",
-                                );
-                                return (
-                                  <Badge
-                                    variant={
-                                      hasExpired ? "destructive" : "secondary"
-                                    }
-                                    className="text-xs shrink-0"
-                                    data-testid={`compliance-badge-${org.id}`}
-                                  >
-                                    {hasExpired ? "Expired" : "Expiring"}
-                                  </Badge>
-                                );
-                              })()}
+
                             </div>
                           </div>
                           <div className="space-y-1.5 text-sm">

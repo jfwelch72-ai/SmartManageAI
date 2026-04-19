@@ -675,6 +675,7 @@ const EMPTY_PERMISSIONS: UserPermissions = {
   canViewProjectSubcontractors: false, canCreateChangeOrders: false,
   canDeleteScopeItems: false, canEditProjectHandoff: false,
   canSubmitPeerRatings: false, canViewPeerRatings: false,
+  canViewComplianceDashboard: false,
 };
 
 export function useDashboardCustomizationSafe() {
