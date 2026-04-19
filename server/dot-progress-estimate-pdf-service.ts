@@ -128,9 +128,9 @@ export function generateDotProgressEstimatePDF(data: DotProgressEstimateData): P
   doc.fontSize(10).fillColor(navy).text('PAY ITEMS — QUANTITIES COMPLETED', leftX, y, { width: pageW });
   y += 14;
 
-  const colWidths = [22, 70, 170, 32, 50, 50, 50, 50, 38, 60, 70, 70];
+  const colWidths = [22, 60, 140, 28, 46, 46, 46, 46, 36, 56, 66, 70, 70];
   const headers = [
-    '#', 'Pay Item', 'Description', 'Unit', 'Contract Qty', 'Prior Qty', 'This Period', 'Total Qty', '% Comp', 'Unit Price', 'This Period $', 'Total Amount',
+    '#', 'Pay Item', 'Description', 'Unit', 'Contract Qty', 'Prior Qty', 'This Period', 'Total Qty', '% Comp', 'Unit Price', 'Prior $', 'This Period $', 'Total Amount',
   ];
 
   const drawHeader = (yPos: number) => {
@@ -194,6 +194,7 @@ export function generateDotProgressEstimatePDF(data: DotProgressEstimateData): P
         fmtQty(item.totalQty),
         item.percentComplete.toFixed(1) + '%',
         fmtMoney(item.unitPrice),
+        fmtMoney(item.priorAmount),
         fmtMoney(item.thisPeriodAmount),
         fmtMoney(item.totalAmount),
       ];
@@ -223,7 +224,7 @@ export function generateDotProgressEstimatePDF(data: DotProgressEstimateData): P
   doc.rect(leftX, y, pageW, 18).fill('#e2e8f0');
   let xPos = leftX;
   doc.fontSize(8).fillColor(navy);
-  const totals = ['', '', 'GRAND TOTAL', '', '', '', '', '', '', fmtMoney(totalScheduled), fmtMoney(totalThis), fmtMoney(totalSum)];
+  const totals = ['', '', 'GRAND TOTAL', '', '', '', '', '', '', fmtMoney(totalScheduled), fmtMoney(totalPrior), fmtMoney(totalThis), fmtMoney(totalSum)];
   totals.forEach((val, i) => {
     const align = i <= 2 ? 'left' : 'right';
     doc.text(val, xPos + 2, y + 5, { width: colWidths[i] - 4, align });

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ComposedChart,
@@ -11,8 +11,11 @@ import {
   Legend,
   ReferenceLine,
   ResponsiveContainer,
+  Brush,
 } from "recharts";
-import { Loader2 } from "lucide-react";
+import { Loader2, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useState } from "react";
 
 interface MassHaulMovement {
   source: string | null;
@@ -58,8 +61,8 @@ export function MassHaulDiagram({ projectId, freeHaulFt = 1000 }: MassHaulDiagra
 
   // Compute free-haul / over-haul split based on cumulative balance points.
   // Balance point = where cumulative crosses zero between two stations.
-  const { freeHaulYd, overHaulYd, balancePoints } = useMemo(() => {
-    if (!data?.massHaulCurve?.length) return { freeHaulYd: 0, overHaulYd: 0, balancePoints: [] as number[] };
+  const { freeHaulYd, overHaulYd, freeHaulCost, overHaulCost, balancePoints } = useMemo(() => {
+    if (!data?.massHaulCurve?.length) return { freeHaulYd: 0, overHaulYd: 0, freeHaulCost: 0, overHaulCost: 0, balancePoints: [] as number[] };
     const curve = data.massHaulCurve;
     const balances: number[] = [];
     for (let i = 1; i < curve.length; i++) {
@@ -74,14 +77,53 @@ export function MassHaulDiagram({ projectId, freeHaulFt = 1000 }: MassHaulDiagra
     }
     let free = 0;
     let over = 0;
+    let freeCost = 0;
+    let overCost = 0;
     for (const m of data.movements) {
       if (m.materialKind !== "FILL" && m.materialKind !== "CUT") continue;
       if (m.haulDistanceFt == null) continue;
-      if (m.haulDistanceFt <= freeHaulFt) free += m.totalQty;
-      else over += m.totalQty;
+      if (m.haulDistanceFt <= freeHaulFt) {
+        free += m.totalQty;
+        freeCost += Number(m.totalCost) || 0;
+      } else {
+        over += m.totalQty;
+        overCost += Number(m.totalCost) || 0;
+      }
     }
-    return { freeHaulYd: free, overHaulYd: over, balancePoints: balances };
+    return { freeHaulYd: free, overHaulYd: over, freeHaulCost: freeCost, overHaulCost: overCost, balancePoints: balances };
   }, [data, freeHaulFt]);
+
+  // Zoom/pan window state — applied to the Brush control on the chart.
+  const [zoomWindow, setZoomWindow] = useState<{ start: number; end: number } | null>(null);
+  const totalPoints = data?.massHaulCurve?.length ?? 0;
+  useEffect(() => {
+    setZoomWindow(null);
+  }, [projectId, totalPoints]);
+
+  const brushStart = zoomWindow?.start ?? 0;
+  const brushEnd = zoomWindow?.end ?? Math.max(0, totalPoints - 1);
+
+  const zoomIn = () => {
+    if (totalPoints < 4) return;
+    const start = brushStart;
+    const end = brushEnd;
+    const span = end - start;
+    if (span <= 2) return;
+    const shrink = Math.max(1, Math.floor(span * 0.2));
+    setZoomWindow({ start: start + shrink, end: end - shrink });
+  };
+  const zoomOut = () => {
+    if (totalPoints < 2) return;
+    const start = brushStart;
+    const end = brushEnd;
+    const span = end - start;
+    const grow = Math.max(1, Math.floor(span * 0.25));
+    setZoomWindow({
+      start: Math.max(0, start - grow),
+      end: Math.min(totalPoints - 1, end + grow),
+    });
+  };
+  const zoomReset = () => setZoomWindow(null);
 
   if (isLoading) {
     return (
@@ -157,7 +199,19 @@ export function MassHaulDiagram({ projectId, freeHaulFt = 1000 }: MassHaulDiagra
 
   return (
     <div className="space-y-3" data-testid="mass-haul-diagram">
-      <ResponsiveContainer width="100%" height={340}>
+      <div className="flex items-center justify-end gap-1" data-testid="mass-haul-zoom-controls">
+        <span className="text-xs text-muted-foreground mr-2">Drag the brush handles to pan; use buttons to zoom</span>
+        <Button type="button" size="sm" variant="outline" onClick={zoomIn} data-testid="button-mass-haul-zoom-in" aria-label="Zoom in">
+          <ZoomIn className="h-3.5 w-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={zoomOut} data-testid="button-mass-haul-zoom-out" aria-label="Zoom out">
+          <ZoomOut className="h-3.5 w-3.5" />
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={zoomReset} data-testid="button-mass-haul-zoom-reset" aria-label="Reset zoom">
+          <RotateCcw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <ResponsiveContainer width="100%" height={380}>
         <ComposedChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
@@ -194,13 +248,29 @@ export function MassHaulDiagram({ projectId, freeHaulFt = 1000 }: MassHaulDiagra
           <Bar yAxisId="left" dataKey="cut" fill="#dc2626" name="Cut" />
           <Bar yAxisId="left" dataKey="fill" fill="#16a34a" name="Fill (negative)" />
           <Line yAxisId="right" type="monotone" dataKey="cumulative" stroke="#1d4ed8" strokeWidth={2} name="Cumulative mass-haul" dot={false} />
+          {totalPoints > 1 && (
+            <Brush
+              dataKey="stationLabel"
+              height={22}
+              stroke="#1d4ed8"
+              startIndex={brushStart}
+              endIndex={brushEnd}
+              onChange={(range: any) => {
+                if (range && typeof range.startIndex === "number" && typeof range.endIndex === "number") {
+                  setZoomWindow({ start: range.startIndex, end: range.endIndex });
+                }
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
-      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded border p-2"><div className="text-muted-foreground">Total Cut</div><div className="font-semibold" data-testid="text-mass-haul-total-cut">{data.totals.cut.toLocaleString()}</div></div>
         <div className="rounded border p-2"><div className="text-muted-foreground">Total Fill</div><div className="font-semibold" data-testid="text-mass-haul-total-fill">{data.totals.fill.toLocaleString()}</div></div>
         <div className="rounded border p-2" data-testid="card-free-haul"><div className="text-muted-foreground">Free Haul (≤{freeHaulFt}ft)</div><div className="font-semibold">{freeHaulYd.toLocaleString()}</div></div>
         <div className="rounded border p-2" data-testid="card-over-haul"><div className="text-muted-foreground">Over Haul (&gt;{freeHaulFt}ft)</div><div className="font-semibold">{overHaulYd.toLocaleString()}</div></div>
+        <div className="rounded border p-2" data-testid="card-free-haul-cost"><div className="text-muted-foreground">Free Haul Cost</div><div className="font-semibold">${freeHaulCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div></div>
+        <div className="rounded border p-2" data-testid="card-over-haul-cost"><div className="text-muted-foreground">Over Haul Cost</div><div className="font-semibold">${overHaulCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div></div>
       </div>
       {balancePoints.length > 0 && (
         <p className="text-xs text-muted-foreground" data-testid="text-balance-points">
