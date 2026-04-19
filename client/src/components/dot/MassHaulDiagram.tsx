@@ -15,7 +15,11 @@ import {
 } from "recharts";
 import { Loader2, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+
+interface BrushRange {
+  startIndex?: number;
+  endIndex?: number;
+}
 
 interface MassHaulMovement {
   source: string | null;
@@ -255,7 +259,7 @@ export function MassHaulDiagram({ projectId, freeHaulFt = 1000 }: MassHaulDiagra
               stroke="#1d4ed8"
               startIndex={brushStart}
               endIndex={brushEnd}
-              onChange={(range: any) => {
+              onChange={(range: BrushRange) => {
                 if (range && typeof range.startIndex === "number" && typeof range.endIndex === "number") {
                   setZoomWindow({ start: range.startIndex, end: range.endIndex });
                 }

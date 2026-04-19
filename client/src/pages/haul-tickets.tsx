@@ -16,6 +16,7 @@ import { MassHaulDiagram } from "@/components/dot/MassHaulDiagram";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import type { HaulTicket } from "@shared/schema";
 
 interface MassHaulImbalance { material: string; issue: string; estimatedSavings?: string | number }
@@ -61,6 +62,8 @@ export default function HaulTicketsPage() {
   const canApprove = useFeaturePermission("canApproveHaulTickets");
   const canView = useFeaturePermission("canViewHaulTickets");
   const canAccess = canView || canManage || canApprove;
+  const { isEnabled } = useFeatureFlags();
+  const massHaulAnalyzerEnabled = isEnabled("MASS_HAUL_ANALYZER");
   const [projectId, setProjectId] = useState<string>("");
   const [editing, setEditing] = useState<Editing>(null);
   const queryKey = ["/api/haul-tickets", projectId ? { projectId } : {}];
@@ -106,7 +109,7 @@ export default function HaulTicketsPage() {
           <p className="text-sm text-muted-foreground">Field-recorded truck tickets — material, source, destination, quantity, and cost.</p>
         </div>
         <div className="flex items-center gap-2">
-          {canView && projectId && (
+          {canView && projectId && massHaulAnalyzerEnabled && (
             <Button variant="outline" onClick={() => { setMassHaulOpen(true); massHaulMut.mutate(); }} disabled={massHaulMut.isPending} data-testid="button-haul-mass-haul-ai">
               {massHaulMut.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}Mass-Haul AI
             </Button>
