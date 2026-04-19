@@ -155,7 +155,17 @@ const router = Router();
 // All DOT/heavy-civil routes require their corresponding feature flag to be
 // enabled on the organization or return 403 with a clear "Feature disabled" error.
 // =========================
-router.use("/api/dot", requireAuth, requireOrgFeatureFlag("DOT_PAY_ITEMS"));
+// Auth applies to all /api/dot routes; DOT_PAY_ITEMS gate applies only to the
+// pay-item / agency / spec-book / preference / override sub-paths. The new
+// progress-estimates and mass-haul routes are gated by their own feature flags
+// (DOT_PROGRESS_ESTIMATE / MASS_HAUL_ANALYZER) on the route itself.
+router.use("/api/dot", requireAuth);
+router.use("/api/dot/agencies", requireOrgFeatureFlag("DOT_PAY_ITEMS"));
+router.use("/api/dot/spec-books", requireOrgFeatureFlag("DOT_PAY_ITEMS"));
+router.use("/api/dot/pay-items", requireOrgFeatureFlag("DOT_PAY_ITEMS"));
+router.use("/api/dot/preferences", requireOrgFeatureFlag("DOT_PAY_ITEMS"));
+router.use("/api/dot/overrides", requireOrgFeatureFlag("DOT_PAY_ITEMS"));
+router.use("/api/dot/pay-item-overrides", requireOrgFeatureFlag("DOT_PAY_ITEMS"));
 router.use("/api/projects/:projectId/dbe-goals", requireAuth, requireOrgFeatureFlag("DBE_TRACKING"));
 router.use("/api/crm/organisations/:crmOrgId/certifications", requireAuth, requireOrgFeatureFlag("DBE_TRACKING"));
 router.use("/api/surety-bonds", requireAuth, requireOrgFeatureFlag("SURETY_BONDS"));
