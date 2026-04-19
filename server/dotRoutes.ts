@@ -2411,51 +2411,113 @@ router.get(
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
     try {
-      const conds: SQL[] = [];
-      if (!ctx.isSuperAdmin) conds.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+      const orgId = ctx.orgId;
+      if (!orgId) {
+        return res.json({
+          totalReports: 0, last30Days: 0, last30DaysExpected: 0, complianceRate: 0,
+          streakDays: 0, lastSubmittedDate: null, activeProjects: 0, projectStreaks: [],
+        });
+      }
+
+      // Active projects for this org are the denominator + per-project streak set.
+      const activeProjectsList = await db.select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .where(and(eq(projects.organizationId, orgId), eq(projects.status, "ACTIVE")));
+      const activeCount = activeProjectsList.length;
 
       const thirty = new Date();
       thirty.setDate(thirty.getDate() - 30);
       const thirtyStr = thirty.toISOString().slice(0, 10);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 120);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-      const [totalAgg] = await db.select({
-        total: sql<number>`COUNT(*)::int`,
-        last30: sql<number>`SUM(CASE WHEN ${dailyInspectorReports.reportDate} >= ${thirtyStr} THEN 1 ELSE 0 END)::int`,
-        lastSubmitted: sql<string | null>`MAX(${dailyInspectorReports.reportDate})`,
-        activeProjects: sql<number>`COUNT(DISTINCT ${dailyInspectorReports.projectId})::int`,
-      }).from(dailyInspectorReports).where(conds.length ? and(...conds) : undefined);
+      let totalReports = 0;
+      let last30Days = 0;
+      let lastSubmittedDate: string | null = null;
+      let projectStreaks: Array<{
+        projectId: string;
+        projectName: string;
+        streakDays: number;
+        lastSubmittedDate: string | null;
+      }> = [];
+      let aggregateStreak = 0;
 
-      // Streak calculation: distinct submission dates ordered DESC; how many
-      // consecutive days back from "today or yesterday" are present?
-      const dateRows = await db.selectDistinct({
-        d: dailyInspectorReports.reportDate,
-      }).from(dailyInspectorReports)
-        .where(conds.length ? and(...conds) : undefined)
-        .orderBy(desc(dailyInspectorReports.reportDate))
-        .limit(120);
+      if (activeCount > 0) {
+        const activeIds = activeProjectsList.map(p => p.id);
 
-      const dateSet = new Set<string>(dateRows.map(r => String(r.d)));
-      let streak = 0;
-      const cursor = new Date();
-      // If today not present, start from yesterday so a missed today doesn't
-      // immediately zero out the streak before EOD.
-      if (!dateSet.has(cursor.toISOString().slice(0, 10))) {
-        cursor.setDate(cursor.getDate() - 1);
+        const [totalAgg] = await db.select({
+          total: sql<number>`COUNT(*)::int`,
+          last30: sql<number>`SUM(CASE WHEN ${dailyInspectorReports.reportDate} >= ${thirtyStr} THEN 1 ELSE 0 END)::int`,
+          lastSubmitted: sql<string | null>`MAX(${dailyInspectorReports.reportDate})`,
+        }).from(dailyInspectorReports)
+          .where(and(
+            eq(dailyInspectorReports.organizationId, orgId),
+            inArray(dailyInspectorReports.projectId, activeIds),
+          ));
+        totalReports = totalAgg?.total ?? 0;
+        last30Days = totalAgg?.last30 ?? 0;
+        lastSubmittedDate = totalAgg?.lastSubmitted ?? null;
+
+        // Per-project distinct submission dates within streak window.
+        const dateRows = await db.selectDistinct({
+          projectId: dailyInspectorReports.projectId,
+          reportDate: dailyInspectorReports.reportDate,
+        }).from(dailyInspectorReports)
+          .where(and(
+            eq(dailyInspectorReports.organizationId, orgId),
+            inArray(dailyInspectorReports.projectId, activeIds),
+            gte(dailyInspectorReports.reportDate, cutoffStr),
+          ));
+        const dateSetByProject = new Map<string, Set<string>>();
+        for (const p of activeProjectsList) dateSetByProject.set(p.id, new Set());
+        for (const r of dateRows) {
+          const s = dateSetByProject.get(r.projectId);
+          if (s) s.add(String(r.reportDate));
+        }
+
+        const computeStreak = (dateSet: Set<string>): number => {
+          let s = 0;
+          const cursor = new Date();
+          // If today not present yet, start from yesterday so missed-today
+          // before EOD doesn't zero out the streak.
+          if (!dateSet.has(cursor.toISOString().slice(0, 10))) {
+            cursor.setDate(cursor.getDate() - 1);
+          }
+          while (dateSet.has(cursor.toISOString().slice(0, 10))) {
+            s += 1;
+            cursor.setDate(cursor.getDate() - 1);
+          }
+          return s;
+        };
+
+        projectStreaks = activeProjectsList.map(p => {
+          const set = dateSetByProject.get(p.id) ?? new Set<string>();
+          const sorted = [...set].sort();
+          return {
+            projectId: p.id,
+            projectName: p.name,
+            streakDays: computeStreak(set),
+            lastSubmittedDate: sorted.length > 0 ? sorted[sorted.length - 1] : null,
+          };
+        });
+        // Org-wide aggregate streak = consecutive days where EVERY active
+        // project submitted = min of per-project streaks.
+        aggregateStreak = projectStreaks.length > 0
+          ? Math.min(...projectStreaks.map(p => p.streakDays))
+          : 0;
       }
-      while (dateSet.has(cursor.toISOString().slice(0, 10))) {
-        streak += 1;
-        cursor.setDate(cursor.getDate() - 1);
-      }
 
-      const expectedLast30 = (totalAgg?.activeProjects ?? 0) * 30;
+      const expectedLast30 = activeCount * 30;
       res.json({
-        totalReports: totalAgg?.total ?? 0,
-        last30Days: totalAgg?.last30 ?? 0,
+        totalReports,
+        last30Days,
         last30DaysExpected: expectedLast30,
-        complianceRate: expectedLast30 > 0 ? Math.min(100, ((totalAgg?.last30 ?? 0) / expectedLast30) * 100) : 0,
-        streakDays: streak,
-        lastSubmittedDate: totalAgg?.lastSubmitted ?? null,
-        activeProjects: totalAgg?.activeProjects ?? 0,
+        complianceRate: expectedLast30 > 0 ? Math.min(100, (last30Days / expectedLast30) * 100) : 0,
+        streakDays: aggregateStreak,
+        lastSubmittedDate,
+        activeProjects: activeCount,
+        projectStreaks,
       });
     } catch (e) {
       logWarn("[heavy-civil/idr-streak] failed");

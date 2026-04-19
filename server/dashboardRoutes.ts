@@ -1730,24 +1730,29 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
   }
 });
 
+async function resolveHeavyCivilLayoutContext(orgId: string | null | undefined): Promise<{
+  tradeType: string | null;
+  heavyCivilPresetActive: boolean;
+}> {
+  if (!orgId) return { tradeType: null, heavyCivilPresetActive: false };
+  let tradeType: string | null = null;
+  let heavyCivilPresetActive = false;
+  try {
+    const [orgRow] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId));
+    tradeType = orgRow?.tradeType ?? null;
+  } catch { /* keep null */ }
+  try {
+    heavyCivilPresetActive = await isFeatureEnabled(orgId, "HEAVY_CIVIL_PRESET");
+  } catch { /* keep false */ }
+  return { tradeType, heavyCivilPresetActive };
+}
+
 router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
 
-    let orgTradeType: string | null = null;
-    let heavyCivilPresetActive = false;
-    if (orgId) {
-      const [orgRow] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId));
-      orgTradeType = orgRow?.tradeType ?? null;
-      // Explicit HEAVY_CIVIL_PRESET feature flag is the alternate trigger when
-      // the org's tradeType is not in HEAVY_CIVIL_TRADE_TYPES.
-      try {
-        heavyCivilPresetActive = await isFeatureEnabled(orgId, "HEAVY_CIVIL_PRESET");
-      } catch {
-        heavyCivilPresetActive = false;
-      }
-    }
+    const { tradeType: orgTradeType, heavyCivilPresetActive } = await resolveHeavyCivilLayoutContext(orgId);
     const roleDefault = getDefaultLayoutForRole(req.user!.role || '', orgTradeType, heavyCivilPresetActive);
 
     if (!orgId) {
@@ -1784,7 +1789,8 @@ router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
 });
 
 router.get('/api/dashboard/layout/default', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
+  const { tradeType, heavyCivilPresetActive } = await resolveHeavyCivilLayoutContext(req.user!.organizationId);
+  const roleDefault = getDefaultLayoutForRole(req.user!.role || '', tradeType, heavyCivilPresetActive);
   res.json({ layout: roleDefault });
 });
 
@@ -1875,7 +1881,8 @@ router.post('/api/dashboard/layout/reset', requireAuth, async (req: AuthRequest,
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
 
-    const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
+    const { tradeType, heavyCivilPresetActive } = await resolveHeavyCivilLayoutContext(orgId);
+    const roleDefault = getDefaultLayoutForRole(req.user!.role || '', tradeType, heavyCivilPresetActive);
 
     if (!orgId) {
       return res.json({ layout: roleDefault });
