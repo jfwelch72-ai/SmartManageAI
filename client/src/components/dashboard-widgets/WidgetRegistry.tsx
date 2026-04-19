@@ -692,6 +692,9 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: false,
     allowedRoles: MANAGEMENT_AND_SUPER_ROLES,
+    // Any inspector-report permission qualifies for adding the widget;
+    // server-side gating still enforces the actual API access.
+    featurePerm: ["canViewInspectorReports", "canManageInspectorReports", "canApproveInspectorReports"],
     hasSettings: false,
     queryKeys: ["/api/dashboard/heavy-civil/idr-streak"],
   },

@@ -2739,7 +2739,7 @@ router.get(
       // org-level feature flag AND the user's matching feature permission.
       // Super admins bypass per-section permission checks but still respect
       // the org's feature flags (so disabled modules stay empty).
-      const effectiveRole = (req.user!.role || "").toUpperCase();
+      const effectiveRole = ((req.user!.effectiveRole || req.user!.role) || "").toUpperCase();
       const perms = await getEffectivePermissions(req.user!.id, orgId, effectiveRole);
       const isSuper = ctx.isSuperAdmin;
       const can = (...keys: FeaturePermissionKey[]) =>
