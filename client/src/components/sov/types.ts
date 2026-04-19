@@ -24,6 +24,11 @@ export interface SOVLineItem {
   totalCompletedAndStored?: string | null;
   thisPeriodCompleted?: string | null;
   previouslyCompleted?: string | null;
+  itemCode?: string | null;
+  payItemNumber?: string | null;
+  specSection?: string | null;
+  dotPayItemId?: string | null;
+  dotSpecBookId?: string | null;
 }
 
 export interface SOV {

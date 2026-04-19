@@ -294,6 +294,7 @@ export function SovLineItemsEditor({ sov, canEdit, canApprove, onClose }: SovLin
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">#</TableHead>
+              <TableHead className="w-32">Pay Item</TableHead>
               <TableHead>Description</TableHead>
               <TableHead className="text-right">Scheduled Value</TableHead>
               <TableHead className="text-right">Previously Billed</TableHead>
@@ -309,6 +310,24 @@ export function SovLineItemsEditor({ sov, canEdit, canApprove, onClose }: SovLin
             {filtered.map(item => (
               <TableRow key={item.id}>
                 <TableCell>{item.itemNumber}</TableCell>
+                <TableCell>
+                  {item.payItemNumber ? (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-mono text-xs font-medium" data-testid={`text-sov-pay-item-${item.id}`}>
+                        {item.payItemNumber}
+                      </span>
+                      {item.specSection && (
+                        <span className="text-[10px] text-muted-foreground" data-testid={`text-sov-spec-section-${item.id}`}>
+                          §{item.specSection}
+                        </span>
+                      )}
+                    </div>
+                  ) : item.itemCode ? (
+                    <span className="font-mono text-xs text-muted-foreground">{item.itemCode}</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
                 <TableCell>{item.description}</TableCell>
                 <TableCell className="text-right">{formatCurrency(item.scheduledValue)}</TableCell>
                 <TableCell className="text-right">{formatCurrency(item.previouslyBilled)}</TableCell>
@@ -331,7 +350,7 @@ export function SovLineItemsEditor({ sov, canEdit, canApprove, onClose }: SovLin
             ))}
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={canEdit && sov.status === "DRAFT" ? 8 : 7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={canEdit && sov.status === "DRAFT" ? 9 : 8} className="text-center text-muted-foreground py-8">
                   No line items yet. Add items to build your SOV.
                 </TableCell>
               </TableRow>

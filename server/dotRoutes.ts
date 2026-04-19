@@ -24,6 +24,9 @@ import {
   insertDailyInspectorReportSchema,
   insertSwpppInspectionSchema,
   insertMaterialCertificationSchema,
+  estimateLineItems,
+  estimates,
+  bids,
 } from "@shared/schema";
 import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import {
@@ -251,6 +254,44 @@ router.get(
       return db.select().from(dotPayItems).where(and(...conditions)).orderBy(dotPayItems.itemNumber).limit(limit);
     });
     res.json(rows);
+  },
+);
+
+// Most-recent unit price the org used for this DOT pay item, for prefill.
+// Joins back to estimates → bids to filter to the requesting org. Returns
+// null when no historical price exists.
+router.get(
+  "/api/dot/pay-items/:id/recent-price",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const payItemId = req.params.id;
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(400).json({ error: "Organization context required" });
+    const [row] = await db
+      .select({
+        materialCost: estimateLineItems.materialCost,
+        laborCost: estimateLineItems.laborCost,
+        equipmentCost: estimateLineItems.equipmentCost,
+        unit: estimateLineItems.unit,
+        updatedAt: estimateLineItems.updatedAt,
+      })
+      .from(estimateLineItems)
+      .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
+      .innerJoin(bids, eq(bids.id, estimates.bidId))
+      .where(and(eq(estimateLineItems.dotPayItemId, payItemId), eq(bids.organizationId, orgId)))
+      .orderBy(desc(estimateLineItems.updatedAt))
+      .limit(1);
+    if (!row) return res.json({ unitPrice: null });
+    const unit = (Number(row.materialCost) || 0) + (Number(row.laborCost) || 0) + (Number(row.equipmentCost) || 0);
+    return res.json({
+      unitPrice: unit,
+      materialCost: Number(row.materialCost) || 0,
+      laborCost: Number(row.laborCost) || 0,
+      equipmentCost: Number(row.equipmentCost) || 0,
+      unit: row.unit,
+      lastUsedAt: row.updatedAt,
+    });
   },
 );
 

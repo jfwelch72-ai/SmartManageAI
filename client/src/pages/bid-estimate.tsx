@@ -524,7 +524,7 @@ export default function BidEstimate() {
         payItemNumber: values.payItemNumber ?? null,
         specSection: values.specSection ?? null,
         ...materialCalcPayload,
-      } as any);
+      });
     }
   };
 
@@ -583,10 +583,10 @@ export default function BidEstimate() {
       profitAllocation: 0,
       notes: lineItemAny.notes || "",
       photoUrl: lineItemAny.photoUrl || undefined,
-      dotPayItemId: lineItemAny.dotPayItemId ?? null,
-      dotSpecBookId: lineItemAny.dotSpecBookId ?? null,
-      payItemNumber: lineItemAny.payItemNumber ?? null,
-      specSection: lineItemAny.specSection ?? null,
+      dotPayItemId: item.dotPayItemId ?? null,
+      dotSpecBookId: item.dotSpecBookId ?? null,
+      payItemNumber: item.payItemNumber ?? null,
+      specSection: item.specSection ?? null,
     });
     setMaterialCalcData({
       concreteDepthInches: lineItemAny.concreteDepthInches || "",

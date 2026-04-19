@@ -101,6 +101,7 @@ import { verifyProjectAccess, verifySOVAccess, calculateSOVTotals } from "./sovH
 import { createApprovalRequest } from "./services/approvalService";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { generateSOVPDF } from "./sov-pdf-service";
+import { validateDotPayItemLink } from "./utils/dotPayItemValidation";
 import { insertNotifications } from "./services/notificationService";
 import * as workflowEngine from "./services/workflowEngine";
 
@@ -351,12 +352,12 @@ router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
           balanceToFinish: String(balance),
           retainageAmount: String(retainageAmt.toFixed(2)),
           notes: item.notes || null,
-          estimateLineItemId: (item as any).estimateLineItemId || null,
-          organizationSowItemId: (item as any).organizationSowItemId || null,
-          dotPayItemId: (item as any).dotPayItemId || null,
-          dotSpecBookId: (item as any).dotSpecBookId || null,
-          payItemNumber: (item as any).payItemNumber || null,
-          specSection: (item as any).specSection || null,
+          estimateLineItemId: item.estimateLineItemId || null,
+          organizationSowItemId: item.organizationSowItemId || null,
+          dotPayItemId: item.dotPayItemId ?? null,
+          dotSpecBookId: item.dotSpecBookId ?? null,
+          payItemNumber: item.payItemNumber ?? null,
+          specSection: item.specSection ?? null,
         };
       });
 
@@ -384,6 +385,11 @@ router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
               lineItem.specSection = estItem.specSection ?? lineItem.specSection;
             }
           }
+        }
+
+        const dotCheck = await validateDotPayItemLink(lineItem);
+        if (!dotCheck.ok) {
+          return res.status(400).json({ error: `Line ${lineItem.lineNumber}: ${dotCheck.error}` });
         }
       }
 
@@ -939,6 +945,14 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
     const scheduled = Math.max(0, Number(scheduledValue) || 0);
     const retainagePct = Math.max(0, Math.min(100, Number(sov.retainagePercent || 10))) / 100;
 
+    // Up-front guard: orphan DOT fields without dotPayItemId must be rejected
+    // before we attempt the estimate-line fallback below.
+    if (!dotPayItemId && (payItemNumber || specSection || dotSpecBookId)) {
+      return res.status(400).json({
+        error: "payItemNumber/specSection/dotSpecBookId require dotPayItemId for canonical resolution",
+      });
+    }
+
     let resolvedSowItemId = organizationSowItemId || null;
     if (estimateLineItemId) {
       const [estItem] = await db
@@ -965,6 +979,12 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
       }
     }
 
+    const dotFields = { dotPayItemId, dotSpecBookId, payItemNumber, specSection };
+    const dotCheck = await validateDotPayItemLink(dotFields);
+    if (!dotCheck.ok) {
+      return res.status(400).json({ error: dotCheck.error });
+    }
+
     const [newItem] = await db
       .insert(sovLineItems)
       .values({
@@ -984,10 +1004,10 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
         notes: notes || null,
         estimateLineItemId: estimateLineItemId || null,
         organizationSowItemId: resolvedSowItemId,
-        dotPayItemId,
-        dotSpecBookId,
-        payItemNumber,
-        specSection,
+        dotPayItemId: dotFields.dotPayItemId,
+        dotSpecBookId: dotFields.dotSpecBookId,
+        payItemNumber: dotFields.payItemNumber,
+        specSection: dotFields.specSection,
       })
       .returning();
 

@@ -191,7 +191,7 @@ function PayItemRow({ form, testPrefix }: { form: UseFormReturn<LineItemFormValu
   const specSection = form.watch("specSection");
   const dotPayItemId = form.watch("dotPayItemId");
 
-  const handleSelect = (selected: SelectedPayItem) => {
+  const handleSelect = async (selected: SelectedPayItem) => {
     form.setValue("dotPayItemId", selected.payItem.id, { shouldDirty: true });
     form.setValue("dotSpecBookId", selected.specBook.id, { shouldDirty: true });
     form.setValue("payItemNumber", selected.payItem.itemNumber, { shouldDirty: true });
@@ -201,6 +201,27 @@ function PayItemRow({ form, testPrefix }: { form: UseFormReturn<LineItemFormValu
     }
     if (!form.getValues("unit") && selected.payItem.unit) {
       form.setValue("unit", selected.payItem.unit, { shouldDirty: true });
+    }
+    // Prefill unit price from the org's most recent estimate that used this
+    // pay item, when the line has no cost yet. Splits the historical unit
+    // price back into material/labor/equipment components as recorded.
+    const currentMat = Number(form.getValues("materialCost")) || 0;
+    const currentLabor = Number(form.getValues("laborCost")) || 0;
+    const currentEquip = Number(form.getValues("equipmentCost")) || 0;
+    if (currentMat === 0 && currentLabor === 0 && currentEquip === 0) {
+      try {
+        const r = await fetch(`/api/dot/pay-items/${selected.payItem.id}/recent-price`, { credentials: "include" });
+        if (r.ok) {
+          const data: { unitPrice: number | null; materialCost?: number; laborCost?: number; equipmentCost?: number } = await r.json();
+          if (data && data.unitPrice && data.unitPrice > 0) {
+            form.setValue("materialCost", data.materialCost ?? data.unitPrice, { shouldDirty: true });
+            if (data.laborCost) form.setValue("laborCost", data.laborCost, { shouldDirty: true });
+            if (data.equipmentCost) form.setValue("equipmentCost", data.equipmentCost, { shouldDirty: true });
+          }
+        }
+      } catch {
+        /* prefill is best-effort */
+      }
     }
     setPickerOpen(false);
   };
