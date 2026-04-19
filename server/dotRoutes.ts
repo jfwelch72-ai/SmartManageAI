@@ -37,7 +37,7 @@ import {
   crmOrganisations,
 } from "@shared/schema";
 import { generateDotProgressEstimatePDF, type DotProgressLineItem } from "./dot-progress-estimate-pdf-service";
-import { generateHeavyCivilProjectSummaryPDF } from "./dot-project-summary-pdf-service";
+import { generateHeavyCivilProjectSummaryPDF, type HeavyCivilProjectSummaryData } from "./dot-project-summary-pdf-service";
 import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   requireAuth,
@@ -2612,6 +2612,22 @@ router.get(
   "/api/projects/:projectId/heavy-civil-summary/pdf",
   requireAuth,
   exportLimiter,
+  requireAnyFeaturePermission(
+    "canViewProjects",
+    "canManageProjects",
+    "canViewDbeGoals",
+    "canManageDbeGoals",
+    "canViewHaulTickets",
+    "canManageHaulTickets",
+    "canApproveHaulTickets",
+    "canViewInspectorReports",
+    "canManageInspectorReports",
+    "canApproveInspectorReports",
+    "canViewMaterialCertifications",
+    "canManageMaterialCertifications",
+    "canViewSuretyBonds",
+    "canManageSuretyBonds",
+  ),
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;

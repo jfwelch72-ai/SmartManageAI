@@ -108,6 +108,7 @@ const HEAVY_CIVIL_FLAGS: FeatureFlagKey[] = [
   "SURETY_BONDS",
   "BUY_AMERICA",
   "MASS_HAUL_ANALYZER",
+  "HEAVY_CIVIL_PRESET",
 ];
 
 const HEAVY_CIVIL_PRESET = buildPreset([

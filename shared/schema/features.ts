@@ -45,6 +45,7 @@ export const FEATURE_FLAG_KEYS = [
   "BUY_AMERICA",
   "MASS_HAUL_ANALYZER",
   "DOT_PROGRESS_ESTIMATE",
+  "HEAVY_CIVIL_PRESET",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -87,6 +88,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   BUY_AMERICA: "Buy America Compliance",
   MASS_HAUL_ANALYZER: "Mass Haul Analyzer",
   DOT_PROGRESS_ESTIMATE: "DOT Progress Estimate",
+  HEAVY_CIVIL_PRESET: "Heavy Civil Preset",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -127,6 +129,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   BUY_AMERICA: "Capture Buy America material certifications and waiver requests.",
   MASS_HAUL_ANALYZER: "Cut/fill balance and mass-haul diagrams for earthwork projects.",
   DOT_PROGRESS_ESTIMATE: "Generate state-DOT-style monthly progress estimate PDFs grouped by spec section.",
+  HEAVY_CIVIL_PRESET: "Activate the heavy-civil dashboard layout, bundled features, and DOT-focused defaults for this organization.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -186,6 +189,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   BUY_AMERICA: "Heavy Civil & DOT",
   MASS_HAUL_ANALYZER: "Heavy Civil & DOT",
   DOT_PROGRESS_ESTIMATE: "Heavy Civil & DOT",
+  HEAVY_CIVIL_PRESET: "Heavy Civil & DOT",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -229,6 +233,7 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   "BUY_AMERICA",
   "MASS_HAUL_ANALYZER",
   "DOT_PROGRESS_ESTIMATE",
+  "HEAVY_CIVIL_PRESET",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {

@@ -1740,20 +1740,10 @@ router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
     if (orgId) {
       const [orgRow] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId));
       orgTradeType = orgRow?.tradeType ?? null;
-      // The HEAVY_CIVIL_PRESET trade bundle grants the core heavy-civil flags
-      // (DOT_PAY_ITEMS, HAUL_TICKETS, DAILY_INSPECTOR_REPORTS, etc). Treat any
-      // two of those being enabled as the "preset is active" signal so orgs
-      // that opted into the heavy-civil bundle without setting tradeType still
-      // get the heavy-civil dashboard layout.
+      // Explicit HEAVY_CIVIL_PRESET feature flag is the alternate trigger when
+      // the org's tradeType is not in HEAVY_CIVIL_TRADE_TYPES.
       try {
-        const heavyCivilFlagChecks = await Promise.all([
-          isFeatureEnabled(orgId, "DOT_PAY_ITEMS"),
-          isFeatureEnabled(orgId, "HAUL_TICKETS"),
-          isFeatureEnabled(orgId, "DAILY_INSPECTOR_REPORTS"),
-          isFeatureEnabled(orgId, "DBE_TRACKING"),
-        ]);
-        const enabledCount = heavyCivilFlagChecks.filter(Boolean).length;
-        heavyCivilPresetActive = enabledCount >= 2;
+        heavyCivilPresetActive = await isFeatureEnabled(orgId, "HEAVY_CIVIL_PRESET");
       } catch {
         heavyCivilPresetActive = false;
       }
