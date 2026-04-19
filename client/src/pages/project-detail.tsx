@@ -129,6 +129,7 @@ import ProjectReportsTab from "@/components/project-tabs/ProjectReportsTab";
 import PermitsTab from "@/components/PermitsTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
+import { ComplianceBadge } from "@/components/ComplianceBadge";
 import type { LucideIcon } from "lucide-react";
 
 interface ProjectFinancials {
@@ -776,6 +777,7 @@ export default function ProjectDetailPage() {
                     size="sm"
                   />
                 )}
+                <ComplianceBadge partyType="PROJECT" partyId={project.id} />
               </div>
               <h1 className="text-xl sm:text-2xl font-bold text-foreground">
                 {project.name}

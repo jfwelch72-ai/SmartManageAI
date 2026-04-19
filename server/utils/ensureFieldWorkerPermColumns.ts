@@ -6,6 +6,7 @@ export async function ensureFieldWorkerPermColumns(): Promise<void> {
   const columns = [
     { name: "can_view_safety", table: "user_dashboard_permissions" },
     { name: "can_view_ai_summaries", table: "user_dashboard_permissions" },
+    { name: "can_view_compliance_dashboard", table: "user_dashboard_permissions" },
   ];
 
   for (const col of columns) {

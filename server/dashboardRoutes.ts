@@ -237,7 +237,8 @@ type FeaturePermissionKeys =
   | 'canViewInspectorReports' | 'canSubmitInspectorReports' | 'canManageInspectorReports' | 'canApproveInspectorReports'
   | 'canViewSwppp' | 'canManageSwppp'
   | 'canViewMaterialCertifications' | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
-  | 'canViewSuretyBonds' | 'canManageSuretyBonds';
+  | 'canViewSuretyBonds' | 'canManageSuretyBonds'
+  | 'canViewComplianceDashboard';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean> & { projectScope: "ALL" | "ACTIVE_ONLY" };
 
@@ -279,6 +280,7 @@ const ALL_FALSE: PermissionSet = {
   canViewMaterialCertifications: false,
   canManageMaterialCertifications: false, canVerifyMaterialCertifications: false,
   canViewSuretyBonds: false, canManageSuretyBonds: false,
+  canViewComplianceDashboard: false,
 };
 
 const ALL_TRUE: PermissionSet = {
@@ -319,6 +321,7 @@ const ALL_TRUE: PermissionSet = {
   canViewMaterialCertifications: true,
   canManageMaterialCertifications: true, canVerifyMaterialCertifications: true,
   canViewSuretyBonds: true, canManageSuretyBonds: true,
+  canViewComplianceDashboard: true,
 };
 
 export const ROLE_HIERARCHY: UserRole[] = [
@@ -392,6 +395,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canViewMaterialCertifications: true,
     canManageDbeGoals: true, canViewDbeGoals: true,
     canViewSuretyBonds: true, canViewDotLibrary: true,
+    canViewComplianceDashboard: true,
   },
   ESTIMATOR: {
     ...ALL_FALSE,

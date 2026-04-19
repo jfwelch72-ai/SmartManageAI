@@ -4796,6 +4796,7 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canVerifyMaterialCertifications: boolean("can_verify_material_certifications").default(false),
   canViewSuretyBonds: boolean("can_view_surety_bonds").default(false),
   canManageSuretyBonds: boolean("can_manage_surety_bonds").default(false),
+  canViewComplianceDashboard: boolean("can_view_compliance_dashboard").default(false),
 
   // Granted by admin
   grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
