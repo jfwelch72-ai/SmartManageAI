@@ -23,6 +23,7 @@ import {
   Plus, Download, Send, Package, Shield, TrendingUp, Loader2,
   Building2, BarChart3, RefreshCw,
 } from "lucide-react";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 
 interface BillingProject {
   projectId: string;
@@ -218,6 +219,8 @@ function AgingBar({ aging }: { aging: BillingSummary["aging"] }) {
 
 export default function ProgressBillingPage() {
   const { toast } = useToast();
+  const { isEnabled } = useFeatureFlags();
+  const dotProgressEstimateEnabled = isEnabled("DOT_PROGRESS_ESTIMATE");
   const [activeTab, setActiveTab] = useState("overview");
   const [createPayAppOpen, setCreatePayAppOpen] = useState(false);
   const [createMaterialOpen, setCreateMaterialOpen] = useState(false);
@@ -581,6 +584,13 @@ export default function ProgressBillingPage() {
                                 <FileText className="h-3.5 w-3.5" />
                               </a>
                             </Button>
+                            {dotProgressEstimateEnabled && (
+                              <Button size="sm" variant="ghost" asChild data-testid={`button-dot-progress-estimate-${app.id}`}>
+                                <a href={`/api/dot/progress-estimates/${app.id}/pdf`} target="_blank" rel="noopener noreferrer" title="DOT Progress Estimate PDF">
+                                  <BarChart3 className="h-3.5 w-3.5" />
+                                </a>
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

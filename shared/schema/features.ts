@@ -44,6 +44,7 @@ export const FEATURE_FLAG_KEYS = [
   "SURETY_BONDS",
   "BUY_AMERICA",
   "MASS_HAUL_ANALYZER",
+  "DOT_PROGRESS_ESTIMATE",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -85,6 +86,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   SURETY_BONDS: "Surety Bonds",
   BUY_AMERICA: "Buy America Compliance",
   MASS_HAUL_ANALYZER: "Mass Haul Analyzer",
+  DOT_PROGRESS_ESTIMATE: "DOT Progress Estimate",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -124,6 +126,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   SURETY_BONDS: "Track bid, performance, payment, and maintenance bonds with expirations.",
   BUY_AMERICA: "Capture Buy America material certifications and waiver requests.",
   MASS_HAUL_ANALYZER: "Cut/fill balance and mass-haul diagrams for earthwork projects.",
+  DOT_PROGRESS_ESTIMATE: "Generate state-DOT-style monthly progress estimate PDFs grouped by spec section.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -182,6 +185,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   SURETY_BONDS: "Heavy Civil & DOT",
   BUY_AMERICA: "Heavy Civil & DOT",
   MASS_HAUL_ANALYZER: "Heavy Civil & DOT",
+  DOT_PROGRESS_ESTIMATE: "Heavy Civil & DOT",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [

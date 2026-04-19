@@ -12,6 +12,7 @@ import { Truck, Plus, Loader2, Pencil, Trash2, Sparkles, Wand2 } from "lucide-re
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, formatMoney, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { HeavyCivilDocumentField } from "@/components/dot/HeavyCivilDocumentField";
+import { MassHaulDiagram } from "@/components/dot/MassHaulDiagram";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -117,7 +118,7 @@ export default function HaulTicketsPage() {
       </div>
 
       <Dialog open={massHaulOpen} onOpenChange={setMassHaulOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Mass-Haul AI Analysis</DialogTitle></DialogHeader>
           {massHaulMut.isPending ? (
             <div className="flex items-center justify-center py-10 text-muted-foreground"><Loader2 className="h-5 w-5 mr-2 animate-spin" />Analyzing haul movements…</div>
@@ -146,6 +147,12 @@ export default function HaulTicketsPage() {
             <div className="text-sm text-muted-foreground" data-testid="text-mass-haul-empty">{massHaulMut.data.message}</div>
           ) : (
             <div className="text-sm text-muted-foreground">No analysis available.</div>
+          )}
+          {projectId && (
+            <div className="mt-6 border-t pt-4">
+              <h3 className="text-sm font-semibold mb-2">Mass-Haul Diagram</h3>
+              <MassHaulDiagram projectId={projectId} />
+            </div>
           )}
         </DialogContent>
       </Dialog>

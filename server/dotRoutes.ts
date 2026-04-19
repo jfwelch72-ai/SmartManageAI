@@ -27,7 +27,14 @@ import {
   estimateLineItems,
   estimates,
   bids,
+  scheduleOfValues,
+  sovLineItems,
+  payApplications,
+  projects,
+  changeOrders,
+  organizations,
 } from "@shared/schema";
+import { generateDotProgressEstimatePDF, type DotProgressLineItem } from "./dot-progress-estimate-pdf-service";
 import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import {
   requireAuth,
@@ -1945,6 +1952,265 @@ router.post(
     }
     await dotAudit(req, "UPDATE", "haul_ticket", row.id, prev, row);
     res.json({ ...row, workflow: delegation });
+  },
+);
+
+// =====================================================================
+// DOT PROGRESS ESTIMATE PDF
+// State-DOT-style monthly progress estimate, grouped by spec section.
+// Distinct from AIA G702/G703; gated by DOT_PROGRESS_ESTIMATE.
+// =====================================================================
+router.get(
+  "/api/dot/progress-estimates/:payApplicationId/pdf",
+  requireOrgFeatureFlag("DOT_PROGRESS_ESTIMATE"),
+  requireFeaturePermission("canViewFinancials"),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { payApplicationId } = req.params;
+      const userOrgId = req.user?.organizationId ?? null;
+      const isSuperAdmin = req.user?.role === "SUPER_ADMIN";
+
+      const [app] = await db
+        .select()
+        .from(payApplications)
+        .where(eq(payApplications.id, payApplicationId))
+        .limit(1);
+      if (!app) { res.status(404).json({ error: "Pay application not found" }); return; }
+      if (!isSuperAdmin && app.organizationId !== userOrgId) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, app.projectId))
+        .limit(1);
+
+      const [org] = await db
+        .select({ id: organizations.id, name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, app.organizationId))
+        .limit(1);
+
+      // Pull SOV lines joined with the org's preferred DOT agency for header context
+      const lineRows = await db
+        .select({
+          li: sovLineItems,
+          payItem: dotPayItems,
+        })
+        .from(sovLineItems)
+        .leftJoin(dotPayItems, eq(sovLineItems.dotPayItemId, dotPayItems.id))
+        .where(eq(sovLineItems.sovId, app.sovId))
+        .orderBy(sovLineItems.lineNumber);
+
+      // Try to infer agency from any pay-item present, fall back to org preference
+      let agencyName: string | null = null;
+      let agencyCode: string | null = null;
+      const firstPayItemAgency = lineRows.find(r => r.payItem?.agencyId)?.payItem?.agencyId;
+      if (firstPayItemAgency) {
+        const [agency] = await db
+          .select({ name: dotAgencies.name, code: dotAgencies.code })
+          .from(dotAgencies)
+          .where(eq(dotAgencies.id, firstPayItemAgency))
+          .limit(1);
+        if (agency) {
+          agencyName = agency.name;
+          agencyCode = agency.code;
+        }
+      }
+
+      const lineItems: DotProgressLineItem[] = lineRows.map(({ li, payItem }) => {
+        const scheduled = parseFloat(li.scheduledValue || "0");
+        const prior = parseFloat(li.previouslyCompleted || "0");
+        const thisPeriod = parseFloat(li.thisPeriodCompleted || "0");
+        const total = parseFloat(li.totalCompletedAndStored || "0") || (prior + thisPeriod);
+
+        // Treat scheduledValue as the lump-sum contract amount; quantities are
+        // expressed as a percent of the total scheduled value (1.0 = 100%).
+        // For unit-priced lines, contract qty/unit price would ideally come from
+        // the linked estimate line — until estimate quantity is denormalized
+        // onto sov_line_items, we report dollars-as-quantities for clarity.
+        const unitPrice = scheduled > 0 ? 1 : 0; // each "unit" == $1 of scheduled value
+        const contractQty = scheduled;
+        const priorQty = prior;
+        const thisPeriodQty = thisPeriod;
+        const totalQty = total;
+        const percent = scheduled > 0 ? (total / scheduled) * 100 : 0;
+
+        return {
+          lineNumber: li.lineNumber,
+          payItemNumber: li.payItemNumber || payItem?.itemNumber || null,
+          itemCode: li.itemCode,
+          description: li.description,
+          unit: payItem?.unit || "LS",
+          specSection: li.specSection || payItem?.specSection || null,
+          contractQty,
+          priorQty,
+          thisPeriodQty,
+          totalQty,
+          percentComplete: percent,
+          unitPrice,
+          priorAmount: prior,
+          thisPeriodAmount: thisPeriod,
+          totalAmount: total,
+        };
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="DOT-Progress-Estimate-${app.applicationNumber}.pdf"`);
+
+      const stream = generateDotProgressEstimatePDF({
+        applicationNumber: app.applicationNumber,
+        periodFrom: '',
+        periodTo: app.periodTo || '',
+        projectName: project?.name || '',
+        projectCode: project?.code || null,
+        projectLocation: [project?.locationAddress, project?.city, project?.state].filter(Boolean).join(', '),
+        contractorName: app.contractorName || '',
+        ownerName: app.ownerName || org?.name || '',
+        agencyName,
+        agencyCode,
+        contractNumber: app.contractFor || null,
+        originalContractSum: parseFloat(app.originalContractSum || "0"),
+        netChangeOrders: parseFloat(app.netChangeByChangeOrders || "0"),
+        contractSumToDate: parseFloat(app.contractSumToDate || "0"),
+        totalCompletedToDate: parseFloat(app.totalCompletedAndStored || "0"),
+        retainagePercent: parseFloat(app.retainagePercent || "0"),
+        totalRetained: parseFloat(app.totalRetained || "0"),
+        lessPreviousCertificates: parseFloat(app.lessPreviousCertificates || "0"),
+        currentPaymentDue: parseFloat(app.currentPaymentDue || "0"),
+        balanceToFinish: parseFloat(app.balanceToFinish || "0"),
+        lineItems,
+      });
+
+      stream.pipe(res);
+    } catch (error) {
+      logWarn("[DOT progress estimate PDF] generation failed", {
+        payApplicationId: req.params.payApplicationId,
+      });
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to generate DOT progress estimate PDF" });
+      }
+    }
+  },
+);
+
+// Aggregated mass-haul movement series for diagram rendering.
+// Returns one row per (source, destination, materialClass) plus parsed station
+// hints when source/destination strings contain "STA <num>+<offset>" tokens.
+router.get(
+  "/api/dot/mass-haul/:projectId/series",
+  requireOrgFeatureFlag("MASS_HAUL_ANALYZER"),
+  requireFeaturePermission("canViewHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const userOrgId = req.user?.organizationId ?? null;
+      const isSuperAdmin = req.user?.role === "SUPER_ADMIN";
+
+      // Verify project access
+      const [project] = await db
+        .select({ id: projects.id, organizationId: projects.organizationId })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!isSuperAdmin && project.organizationId !== userOrgId) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+
+      const movements = await db
+        .select({
+          source: haulTickets.source,
+          destination: haulTickets.destination,
+          materialClass: haulTickets.materialClass,
+          unit: haulTickets.unit,
+          totalQty: sql<number>`COALESCE(SUM(${haulTickets.quantity}::numeric), 0)`.as("totalQty"),
+          totalCost: sql<number>`COALESCE(SUM(${haulTickets.totalCost}::numeric), 0)`.as("totalCost"),
+          tickets: sql<number>`COUNT(*)`.as("tickets"),
+        })
+        .from(haulTickets)
+        .where(and(
+          eq(haulTickets.projectId, projectId),
+          eq(haulTickets.organizationId, project.organizationId),
+          sql`${haulTickets.status} IN ('SUBMITTED', 'APPROVED')`,
+        ))
+        .groupBy(haulTickets.source, haulTickets.destination, haulTickets.materialClass, haulTickets.unit);
+
+      // Parse "STA 12+34" or "12+34" tokens into linear feet.
+      // 1 station = 100 ft; "STA 12+34" => 12*100 + 34 = 1234 ft.
+      const parseStation = (s: string | null | undefined): number | null => {
+        if (!s) return null;
+        const m = s.match(/(?:STA\s*)?(\d{1,4})\s*\+\s*(\d{1,3})/i);
+        if (!m) return null;
+        return parseInt(m[1], 10) * 100 + parseInt(m[2], 10);
+      };
+
+      const enriched = movements.map(m => {
+        const fromSta = parseStation(m.source);
+        const toSta = parseStation(m.destination);
+        const haulDistance = (fromSta != null && toSta != null) ? Math.abs(toSta - fromSta) : null;
+        const isCut = /CUT|EXCAVAT/i.test(m.materialClass);
+        const isFill = /FILL|EMBANK|BORROW/i.test(m.materialClass);
+        return {
+          source: m.source,
+          destination: m.destination,
+          fromStation: fromSta,
+          toStation: toSta,
+          haulDistanceFt: haulDistance,
+          materialClass: m.materialClass,
+          materialKind: isCut ? "CUT" : isFill ? "FILL" : "OTHER",
+          unit: m.unit,
+          totalQty: Number(m.totalQty) || 0,
+          totalCost: Number(m.totalCost) || 0,
+          tickets: Number(m.tickets) || 0,
+        };
+      });
+
+      // Build cumulative cut/fill curve when stations are present.
+      // Each cut at station X contributes +qty, each fill at station X contributes -qty.
+      // Sort by station, accumulate.
+      type StationPoint = { station: number; cut: number; fill: number; cumulative: number };
+      const stationDeltas = new Map<number, { cut: number; fill: number }>();
+      for (const m of enriched) {
+        if (m.materialKind === "CUT" && m.fromStation != null) {
+          const cur = stationDeltas.get(m.fromStation) || { cut: 0, fill: 0 };
+          cur.cut += m.totalQty;
+          stationDeltas.set(m.fromStation, cur);
+        }
+        if (m.materialKind === "FILL" && m.toStation != null) {
+          const cur = stationDeltas.get(m.toStation) || { cut: 0, fill: 0 };
+          cur.fill += m.totalQty;
+          stationDeltas.set(m.toStation, cur);
+        }
+      }
+      const stationsSorted = Array.from(stationDeltas.keys()).sort((a, b) => a - b);
+      let cumulative = 0;
+      const massHaulCurve: StationPoint[] = stationsSorted.map(st => {
+        const d = stationDeltas.get(st)!;
+        cumulative += d.cut - d.fill;
+        return { station: st, cut: d.cut, fill: -d.fill, cumulative };
+      });
+
+      const totalCut = enriched.filter(m => m.materialKind === "CUT").reduce((a, b) => a + b.totalQty, 0);
+      const totalFill = enriched.filter(m => m.materialKind === "FILL").reduce((a, b) => a + b.totalQty, 0);
+
+      res.json({
+        movements: enriched,
+        massHaulCurve,
+        totals: {
+          cut: totalCut,
+          fill: totalFill,
+          balance: totalCut - totalFill,
+        },
+        hasStationData: massHaulCurve.length > 0,
+      });
+    } catch (error) {
+      logWarn("[mass-haul series] aggregation failed", { projectId: req.params.projectId });
+      res.status(500).json({ error: "Failed to load mass-haul series" });
+    }
   },
 );
 
