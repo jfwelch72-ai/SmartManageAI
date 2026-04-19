@@ -2476,17 +2476,34 @@ router.get(
           if (s) s.add(String(r.reportDate));
         }
 
+        // Streak counts only WORKING days (Mon-Fri). Weekends are skipped
+        // (cursor advances) but do not break the streak — a Friday with an
+        // IDR followed by Mon with an IDR keeps the streak alive across
+        // Sat/Sun. Holiday calendar is not yet wired in.
+        const isWorkingDay = (dt: Date) => {
+          const dow = dt.getDay();
+          return dow !== 0 && dow !== 6; // skip Sun(0), Sat(6)
+        };
         const computeStreak = (dateSet: Set<string>): number => {
           let s = 0;
           const cursor = new Date();
-          // If today not present yet, start from yesterday so missed-today
-          // before EOD doesn't zero out the streak.
-          if (!dateSet.has(cursor.toISOString().slice(0, 10))) {
+          // If today is a working day but not yet submitted, start from the
+          // previous working day so missed-today before EOD doesn't reset.
+          if (isWorkingDay(cursor) && !dateSet.has(cursor.toISOString().slice(0, 10))) {
             cursor.setDate(cursor.getDate() - 1);
           }
-          while (dateSet.has(cursor.toISOString().slice(0, 10))) {
-            s += 1;
-            cursor.setDate(cursor.getDate() - 1);
+          // Hard cap to prevent runaway loops if data is sparse.
+          for (let i = 0; i < 365; i++) {
+            if (!isWorkingDay(cursor)) {
+              cursor.setDate(cursor.getDate() - 1);
+              continue;
+            }
+            if (dateSet.has(cursor.toISOString().slice(0, 10))) {
+              s += 1;
+              cursor.setDate(cursor.getDate() - 1);
+            } else {
+              break;
+            }
           }
           return s;
         };
@@ -2757,12 +2774,19 @@ router.get(
 
         // Compute actual awarded dollars per cert type for THIS project, by
         // joining subcontractorContracts -> crmOrganisationCertifications.
+        // Apply the same date range to subcontractor contracts so the awarded
+        // dollars in the DBE section match the report period. Filters by
+        // contract start date if set, otherwise falls back to createdAt.
+        const dbeDateExpr = sql`COALESCE(${subcontractorContracts.startDate}, ${subcontractorContracts.createdAt})`;
+        const dbeConds: SQL[] = [eq(subcontractorContracts.projectId, projectId)];
+        if (startDate) dbeConds.push(sql`${dbeDateExpr} >= ${startDate}::timestamptz`);
+        if (endDate) dbeConds.push(sql`${dbeDateExpr} <= (${endDate}::date + INTERVAL '1 day')::timestamptz`);
         const paidRows = await db.select({
           certificationType: crmOrganisationCertifications.certificationType,
           contractAmount: subcontractorContracts.contractAmount,
         }).from(subcontractorContracts)
           .innerJoin(crmOrganisationCertifications, eq(crmOrganisationCertifications.crmOrganisationId, subcontractorContracts.subcontractorId))
-          .where(eq(subcontractorContracts.projectId, projectId));
+          .where(and(...dbeConds));
         const paidByType = new Map<string, number>();
         let totalAwarded = 0;
         for (const r of paidRows) {
@@ -2854,10 +2878,16 @@ router.get(
         const dateSet = new Set<string>(dateRows.map(r => String(r.d)));
         let streak = 0;
         const cursor = new Date();
-        if (!dateSet.has(cursor.toISOString().slice(0, 10))) cursor.setDate(cursor.getDate() - 1);
-        while (dateSet.has(cursor.toISOString().slice(0, 10))) {
-          streak += 1;
+        const isWorkingDay = (dt: Date) => { const d = dt.getDay(); return d !== 0 && d !== 6; };
+        if (isWorkingDay(cursor) && !dateSet.has(cursor.toISOString().slice(0, 10))) {
           cursor.setDate(cursor.getDate() - 1);
+        }
+        for (let i = 0; i < 365; i++) {
+          if (!isWorkingDay(cursor)) { cursor.setDate(cursor.getDate() - 1); continue; }
+          if (dateSet.has(cursor.toISOString().slice(0, 10))) {
+            streak += 1;
+            cursor.setDate(cursor.getDate() - 1);
+          } else { break; }
         }
         idrSection = {
           enabled: true,
@@ -2874,11 +2904,14 @@ router.get(
         enabled: baOn, total: 0, compliant: 0, waiver: 0, pending: 0, nonCompliant: 0,
       };
       if (baOn) {
+        const baConds: SQL[] = [eq(materialCertifications.projectId, projectId)];
+        if (startDate) baConds.push(gte(materialCertifications.receivedDate, startDate));
+        if (endDate) baConds.push(lte(materialCertifications.receivedDate, endDate));
         const rows = await db.select({
           status: materialCertifications.buyAmericaStatus,
           count: sql<number>`COUNT(*)::int`,
         }).from(materialCertifications)
-          .where(eq(materialCertifications.projectId, projectId))
+          .where(and(...baConds))
           .groupBy(materialCertifications.buyAmericaStatus);
         for (const r of rows) {
           const c = Number(r.count) || 0;

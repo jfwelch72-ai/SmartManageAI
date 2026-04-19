@@ -17,6 +17,7 @@ import {
   BarChart3, Users, Shield, HardHat, Settings, Mail
 } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 
 interface ReportData {
   project: { id: string; name: string; projectCode: string | null; status: string };
@@ -171,6 +172,15 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
   const [downloadingHcSummary, setDownloadingHcSummary] = useState(false);
   const [hcSummaryStart, setHcSummaryStart] = useState<string>("");
   const [hcSummaryEnd, setHcSummaryEnd] = useState<string>("");
+  // Only show the heavy-civil summary controls when the org has the
+  // heavy-civil preset on, or has at least one heavy-civil module enabled.
+  const { isEnabled: ffEnabled } = useFeatureFlags();
+  const showHeavyCivilSummary = ffEnabled("HEAVY_CIVIL_PRESET")
+    || ffEnabled("DAILY_INSPECTOR_REPORTS")
+    || ffEnabled("HAUL_TICKETS")
+    || ffEnabled("DBE_TRACKING")
+    || ffEnabled("BUY_AMERICA")
+    || ffEnabled("SURETY_BONDS");
   const handleDownloadHeavyCivilSummary = async () => {
     setDownloadingHcSummary(true);
     try {
@@ -232,7 +242,8 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
           <p className="text-sm text-muted-foreground">Generate and view weekly and monthly progress reports</p>
         </div>
         <div className="flex flex-wrap gap-2 items-end">
-          <div className="flex items-end gap-1.5 px-2 py-1 rounded-md border border-border/60 bg-muted/20">
+          {showHeavyCivilSummary && (
+          <div className="flex items-end gap-1.5 px-2 py-1 rounded-md border border-border/60 bg-muted/20" data-testid="hc-summary-controls">
             <div className="flex flex-col">
               <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide" htmlFor="hc-summary-start">From</label>
               <input
@@ -270,6 +281,7 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
               Heavy-Civil Summary PDF
             </Button>
           </div>
+          )}
           <Button variant="outline" onClick={() => setShowSettings(!showSettings)} data-testid="button-report-settings">
             <Settings className="h-4 w-4 mr-2" />
             Settings
