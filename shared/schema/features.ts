@@ -228,6 +228,7 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   "SURETY_BONDS",
   "BUY_AMERICA",
   "MASS_HAUL_ANALYZER",
+  "DOT_PROGRESS_ESTIMATE",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {

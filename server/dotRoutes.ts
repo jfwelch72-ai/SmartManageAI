@@ -35,7 +35,7 @@ import {
   organizations,
 } from "@shared/schema";
 import { generateDotProgressEstimatePDF, type DotProgressLineItem } from "./dot-progress-estimate-pdf-service";
-import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, lt, or, sql, type SQL } from "drizzle-orm";
 import {
   requireAuth,
   requireRole,
@@ -1987,6 +1987,28 @@ router.get(
         .where(eq(projects.id, app.projectId))
         .limit(1);
 
+      // Derive periodFrom = prior pay-app's periodTo (next-day) or project start date.
+      const [priorApp] = await db
+        .select({ periodTo: payApplications.periodTo })
+        .from(payApplications)
+        .where(and(
+          eq(payApplications.projectId, app.projectId),
+          lt(payApplications.applicationNumber, app.applicationNumber),
+        ))
+        .orderBy(desc(payApplications.applicationNumber))
+        .limit(1);
+      let periodFrom = '';
+      if (priorApp?.periodTo) {
+        const d = new Date(priorApp.periodTo);
+        if (!isNaN(d.getTime())) {
+          d.setDate(d.getDate() + 1);
+          periodFrom = d.toISOString().slice(0, 10);
+        }
+      } else if (project?.startDate) {
+        const d = new Date(project.startDate);
+        if (!isNaN(d.getTime())) periodFrom = d.toISOString().slice(0, 10);
+      }
+
       const [org] = await db
         .select({ id: organizations.id, name: organizations.name })
         .from(organizations)
@@ -2062,7 +2084,7 @@ router.get(
 
       const stream = generateDotProgressEstimatePDF({
         applicationNumber: app.applicationNumber,
-        periodFrom: '',
+        periodFrom,
         periodTo: app.periodTo || '',
         projectName: project?.name || '',
         projectCode: project?.code || null,
