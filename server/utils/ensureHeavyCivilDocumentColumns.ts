@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { logError, logInfo } from "./logger";
+import { logError, logInfo, logWarn } from "./logger";
 
 /**
  * Adds nullable document_id FK columns to heavy-civil tables so document
@@ -9,20 +9,22 @@ import { logError, logInfo } from "./logger";
  * versioning system. Backfills rows that have a legacy URL but no FK by
  * creating a planDocuments parent + initial revision when a project +
  * uploader can be inferred.
+ *
+ * Each step is guarded by a `to_regclass()` existence check so the
+ * migration is a no-op (with an INFO line) when the underlying heavy-civil
+ * tables have not been pushed to this database yet. This keeps the boot
+ * sequence robust against schema drift.
  */
 export async function ensureHeavyCivilDocumentColumns(): Promise<void> {
   try {
-    await db.execute(sql`ALTER TABLE "surety_bonds" ADD COLUMN IF NOT EXISTS "document_id" varchar REFERENCES "plan_documents"("id") ON DELETE SET NULL`);
-    await db.execute(sql`ALTER TABLE "material_certifications" ADD COLUMN IF NOT EXISTS "document_id" varchar REFERENCES "plan_documents"("id") ON DELETE SET NULL`);
-    await db.execute(sql`ALTER TABLE "haul_tickets" ADD COLUMN IF NOT EXISTS "ticket_photo_document_id" varchar REFERENCES "plan_documents"("id") ON DELETE SET NULL`);
-    await db.execute(sql`ALTER TABLE "daily_inspector_reports" ADD COLUMN IF NOT EXISTS "photo_document_ids" text[]`);
-    await db.execute(sql`ALTER TABLE "daily_inspector_reports" ADD COLUMN IF NOT EXISTS "attachment_document_ids" text[]`);
+    await ensureFkColumn("surety_bonds", "document_id");
+    await ensureFkColumn("material_certifications", "document_id");
+    await ensureFkColumn("haul_tickets", "ticket_photo_document_id");
+    await ensureArrayColumn("daily_inspector_reports", "photo_document_ids");
+    await ensureArrayColumn("daily_inspector_reports", "attachment_document_ids");
 
     let totalBackfilled = 0;
 
-    // Backfill: for each row with a legacy URL but no document FK, when we
-    // can identify a project + uploader, create a planDocuments parent and
-    // an initial document_revision so re-uploads can supersede it.
     totalBackfilled += await backfillSingleDocFk({
       table: "surety_bonds",
       urlCol: "document_url",
@@ -71,8 +73,38 @@ export async function ensureHeavyCivilDocumentColumns(): Promise<void> {
       logInfo("[migration] heavy_civil_document_columns — no legacy documents needed backfill");
     }
   } catch (err) {
-    logError("[migration] Failed to ensure heavy-civil document columns:", {}, err instanceof Error ? err : new Error(String(err)));
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/relation .* does not exist|column .* does not exist/i.test(msg)) {
+      logWarn(`[migration] heavy_civil_document_columns — skipped due to known schema drift: ${msg}`);
+    } else {
+      logError("[migration] Failed to ensure heavy-civil document columns:", {}, err instanceof Error ? err : new Error(String(err)));
+    }
   }
+}
+
+async function tableExists(table: string): Promise<boolean> {
+  const r = await db.execute(sql`SELECT to_regclass(${table}) AS exists`);
+  return Boolean((r.rows[0] as { exists: string | null } | undefined)?.exists);
+}
+
+async function ensureFkColumn(table: string, column: string): Promise<void> {
+  if (!(await tableExists(table))) {
+    logInfo(`[migration] heavy_civil_document_columns — skipped ${table}.${column} (table not yet created)`);
+    return;
+  }
+  const tableSql = sql.raw(`"${table}"`);
+  const colSql = sql.raw(`"${column}"`);
+  await db.execute(sql`ALTER TABLE ${tableSql} ADD COLUMN IF NOT EXISTS ${colSql} varchar REFERENCES "plan_documents"("id") ON DELETE SET NULL`);
+}
+
+async function ensureArrayColumn(table: string, column: string): Promise<void> {
+  if (!(await tableExists(table))) {
+    logInfo(`[migration] heavy_civil_document_columns — skipped ${table}.${column} (table not yet created)`);
+    return;
+  }
+  const tableSql = sql.raw(`"${table}"`);
+  const colSql = sql.raw(`"${column}"`);
+  await db.execute(sql`ALTER TABLE ${tableSql} ADD COLUMN IF NOT EXISTS ${colSql} text[]`);
 }
 
 interface BackfillSpec {
@@ -86,6 +118,9 @@ interface BackfillSpec {
 }
 
 async function backfillSingleDocFk(spec: BackfillSpec): Promise<number> {
+  if (!(await tableExists(spec.table))) {
+    return 0;
+  }
   const tableSql = sql.raw(`"${spec.table}"`);
   const urlSql = sql.raw(`"${spec.urlCol}"`);
   const docSql = sql.raw(`"${spec.docCol}"`);
@@ -99,18 +134,28 @@ async function backfillSingleDocFk(spec: BackfillSpec): Promise<number> {
   // bail when a batch makes no forward progress to avoid an infinite loop.
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const rows = await db.execute(sql`
-      SELECT id, ${urlSql} AS url, ${projectSql} AS project_id,
-             ${uploaderSql} AS uploader_id, organization_id,
-             ${spec.titleExpr} AS title
-      FROM ${tableSql}
-      WHERE ${urlSql} IS NOT NULL
-        AND ${urlSql} <> ''
-        AND ${docSql} IS NULL
-        AND ${projectSql} IS NOT NULL
-        AND ${uploaderSql} IS NOT NULL
-      LIMIT 500
-    `);
+    let rows;
+    try {
+      rows = await db.execute(sql`
+        SELECT id, ${urlSql} AS url, ${projectSql} AS project_id,
+               ${uploaderSql} AS uploader_id, organization_id,
+               ${spec.titleExpr} AS title
+        FROM ${tableSql}
+        WHERE ${urlSql} IS NOT NULL
+          AND ${urlSql} <> ''
+          AND ${docSql} IS NULL
+          AND ${projectSql} IS NOT NULL
+          AND ${uploaderSql} IS NOT NULL
+        LIMIT 500
+      `);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/column .* does not exist/i.test(msg)) {
+        logInfo(`[migration] heavy_civil_document_columns — skipped backfill for ${spec.table} (missing column: ${msg})`);
+        return total;
+      }
+      throw err;
+    }
     if (rows.rows.length === 0) break;
 
     let batchCount = 0;
@@ -159,21 +204,34 @@ interface IdrArraySpec {
  * array is empty/null, and a project + inspector are known.
  */
 async function backfillIdrUrlArray(spec: IdrArraySpec): Promise<number> {
+  if (!(await tableExists("daily_inspector_reports"))) {
+    return 0;
+  }
   const urlSql = sql.raw(`"${spec.urlArrayCol}"`);
   const docSql = sql.raw(`"${spec.docArrayCol}"`);
 
   let total = 0;
   while (true) {
-    const rows = await db.execute(sql`
-      SELECT id, ${urlSql} AS urls, project_id, inspector_id, organization_id
-      FROM daily_inspector_reports
-      WHERE ${urlSql} IS NOT NULL
-        AND array_length(${urlSql}, 1) > 0
-        AND (${docSql} IS NULL OR array_length(${docSql}, 1) IS NULL)
-        AND project_id IS NOT NULL
-        AND inspector_id IS NOT NULL
-      LIMIT 200
-    `);
+    let rows;
+    try {
+      rows = await db.execute(sql`
+        SELECT id, ${urlSql} AS urls, project_id, inspector_id, organization_id
+        FROM daily_inspector_reports
+        WHERE ${urlSql} IS NOT NULL
+          AND array_length(${urlSql}, 1) > 0
+          AND (${docSql} IS NULL OR array_length(${docSql}, 1) IS NULL)
+          AND project_id IS NOT NULL
+          AND inspector_id IS NOT NULL
+        LIMIT 200
+      `);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/column .* does not exist/i.test(msg)) {
+        logInfo(`[migration] heavy_civil_document_columns — skipped IDR backfill (${spec.urlArrayCol}): ${msg}`);
+        return total;
+      }
+      throw err;
+    }
     if (rows.rows.length === 0) break;
 
     let batchCount = 0;

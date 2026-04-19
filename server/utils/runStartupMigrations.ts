@@ -34,6 +34,7 @@ import { ensurePayrollFormVariantColumn } from "./ensurePayrollFormVariantColumn
 import { ensureMaterialCertColumns } from "./ensureMaterialCertColumns";
 import { ensureHeavyCivilDocumentColumns } from "./ensureHeavyCivilDocumentColumns";
 import { ensureHeavyCivilEnumValues } from "./ensureHeavyCivilEnumValues";
+import { ensureHeavyCivilTables } from "./ensureHeavyCivilTables";
 import { ensureProjectHealthSnapshotColumns } from "./ensureProjectHealthSnapshotColumns";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
@@ -78,6 +79,7 @@ const migrations: MigrationStep[] = [
   { name: "material_cert_submit_columns", category: "ADD_COLUMN", fn: ensureMaterialCertColumns },
   { name: "heavy_civil_enum_values", category: "ADD_ENUM", fn: ensureHeavyCivilEnumValues },
   { name: "project_health_snapshot_columns", category: "ADD_COLUMN", fn: ensureProjectHealthSnapshotColumns },
+  { name: "heavy_civil_tables", category: "CREATE_TABLE", fn: ensureHeavyCivilTables },
   { name: "heavy_civil_document_columns", category: "ADD_COLUMN", fn: ensureHeavyCivilDocumentColumns },
 ];
 
