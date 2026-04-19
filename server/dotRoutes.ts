@@ -33,6 +33,8 @@ import {
   projects,
   changeOrders,
   organizations,
+  subcontractorContracts,
+  crmOrganisations,
 } from "@shared/schema";
 import { generateDotProgressEstimatePDF, type DotProgressLineItem } from "./dot-progress-estimate-pdf-service";
 import { generateHeavyCivilProjectSummaryPDF } from "./dot-project-summary-pdf-service";
@@ -2287,18 +2289,45 @@ router.get(
         cur.count += 1;
         byType.set(r.certificationType, cur);
       }
-      const breakdown = Array.from(byType.entries()).map(([certificationType, v]) => ({
-        certificationType,
-        avgGoalPercent: v.count > 0 ? v.goalPercentSum / v.count : 0,
-        totalGoalDollars: v.goalDollarsSum,
-        projectCount: v.count,
-      })).sort((a, b) => b.totalGoalDollars - a.totalGoalDollars);
+
+      // Compute actual awarded dollars per cert type by joining
+      // subcontractor contracts -> crm org certifications.
+      const paidByType = new Map<string, number>();
+      let totalPaidDollars = 0;
+      if (projectIds.length > 0) {
+        const paidRows = await db.select({
+          certificationType: crmOrganisationCertifications.certificationType,
+          contractAmount: subcontractorContracts.contractAmount,
+        }).from(subcontractorContracts)
+          .innerJoin(crmOrganisationCertifications, eq(crmOrganisationCertifications.crmOrganisationId, subcontractorContracts.subcontractorId))
+          .where(inArray(subcontractorContracts.projectId, projectIds));
+        for (const r of paidRows) {
+          const amt = Number(r.contractAmount) || 0;
+          paidByType.set(r.certificationType, (paidByType.get(r.certificationType) || 0) + amt);
+          totalPaidDollars += amt;
+        }
+      }
+
+      const breakdown = Array.from(byType.entries()).map(([certificationType, v]) => {
+        const paid = paidByType.get(certificationType) || 0;
+        const actualPercent = v.goalDollarsSum > 0 ? (paid / v.goalDollarsSum) * 100 : 0;
+        return {
+          certificationType,
+          avgGoalPercent: v.count > 0 ? v.goalPercentSum / v.count : 0,
+          totalGoalDollars: v.goalDollarsSum,
+          actualPaidDollars: paid,
+          actualVsGoalPercent: actualPercent,
+          projectCount: v.count,
+        };
+      }).sort((a, b) => b.totalGoalDollars - a.totalGoalDollars);
 
       res.json({
         projectsWithGoals: projectIds.length,
         totalGoals: rows.length,
         avgGoalPercent: rows.length > 0 ? totalGoalPercent / rows.length : 0,
         totalGoalDollars,
+        totalActualPaidDollars: totalPaidDollars,
+        totalActualVsGoalPercent: totalGoalDollars > 0 ? (totalPaidDollars / totalGoalDollars) * 100 : 0,
         breakdown,
       });
     } catch (e) {
@@ -2319,6 +2348,11 @@ router.get(
     try {
       const conds: SQL[] = [];
       if (!ctx.isSuperAdmin) conds.push(eq(haulTickets.organizationId, ctx.orgId!));
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 6);
+      const weekAgoStr = weekAgo.toISOString().slice(0, 10);
       const [agg] = await db.select({
         total: sql<number>`COUNT(*)::int`,
         submitted: sql<number>`SUM(CASE WHEN ${haulTickets.status} = 'SUBMITTED' THEN 1 ELSE 0 END)::int`,
@@ -2326,6 +2360,10 @@ router.get(
         rejected: sql<number>`SUM(CASE WHEN ${haulTickets.status} = 'REJECTED' THEN 1 ELSE 0 END)::int`,
         totalQuantity: sql<number>`COALESCE(SUM(${haulTickets.quantity}), 0)::float`,
         totalCost: sql<number>`COALESCE(SUM(${haulTickets.totalCost}), 0)::float`,
+        todayCount: sql<number>`SUM(CASE WHEN ${haulTickets.ticketDate} = ${todayStr} THEN 1 ELSE 0 END)::int`,
+        todayQuantity: sql<number>`COALESCE(SUM(CASE WHEN ${haulTickets.ticketDate} = ${todayStr} THEN ${haulTickets.quantity} ELSE 0 END), 0)::float`,
+        weekCount: sql<number>`SUM(CASE WHEN ${haulTickets.ticketDate} >= ${weekAgoStr} THEN 1 ELSE 0 END)::int`,
+        weekQuantity: sql<number>`COALESCE(SUM(CASE WHEN ${haulTickets.ticketDate} >= ${weekAgoStr} THEN ${haulTickets.quantity} ELSE 0 END), 0)::float`,
         oldestPendingDays: sql<number>`COALESCE(MAX(EXTRACT(DAY FROM NOW() - ${haulTickets.createdAt}))::int, 0) FILTER (WHERE ${haulTickets.status} = 'SUBMITTED')`,
       }).from(haulTickets).where(conds.length ? and(...conds) : undefined);
 
@@ -2350,6 +2388,10 @@ router.get(
         rejected: agg?.rejected ?? 0,
         totalQuantity: Number(agg?.totalQuantity ?? 0),
         totalCost: Number(agg?.totalCost ?? 0),
+        todayCount: agg?.todayCount ?? 0,
+        todayQuantity: Number(agg?.todayQuantity ?? 0),
+        weekCount: agg?.weekCount ?? 0,
+        weekQuantity: Number(agg?.weekQuantity ?? 0),
         oldestPendingDays: Number(agg?.oldestPendingDays ?? 0),
         recentPending: recent.map(r => ({ ...r, quantity: Number(r.quantity) })),
       });
@@ -2472,10 +2514,20 @@ router.get(
       ninety.setDate(ninety.getDate() + 90);
       const ninetyStr = ninety.toISOString().slice(0, 10);
 
-      const [bondsFlag, dbeFlag] = await Promise.all([
+      // Per-dataset gating: must have BOTH the relevant flag AND the matching
+      // permission to receive that dataset. This prevents a user with only DBE
+      // permission from receiving bond data, and vice versa.
+      const effectiveRole = req.user!.effectiveRole || req.user!.role;
+      const perms = await getEffectivePermissions(req.user!.id, ctx.orgId, effectiveRole);
+      const canBondsPerm = !!(perms.canViewSuretyBonds || perms.canManageSuretyBonds) || ctx.isSuperAdmin;
+      const canDbePerm = !!(perms.canViewDbeGoals || perms.canManageDbeGoals) || ctx.isSuperAdmin;
+
+      const [bondsFlagOn, dbeFlagOn] = await Promise.all([
         ctx.isSuperAdmin ? Promise.resolve(true) : isFeatureEnabled(ctx.orgId!, "SURETY_BONDS"),
         ctx.isSuperAdmin ? Promise.resolve(true) : isFeatureEnabled(ctx.orgId!, "DBE_TRACKING"),
       ]);
+      const bondsFlag = bondsFlagOn && canBondsPerm;
+      const dbeFlag = dbeFlagOn && canDbePerm;
 
       let bonds: Array<{ id: string; bondNumber: string; bondType: string; suretyCompany: string; expirationDate: string; bondAmount: number; daysUntilExpiry: number }> = [];
       if (bondsFlag) {
@@ -2571,6 +2623,14 @@ router.get(
       const [project] = await db.select().from(projects).where(and(...projConds)).limit(1);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
+      // Optional date range. Defaults to project lifetime (no filter applied).
+      // Format: YYYY-MM-DD. If only one bound is provided, the other is left open.
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const startDateRaw = typeof req.query.startDate === "string" ? req.query.startDate : null;
+      const endDateRaw = typeof req.query.endDate === "string" ? req.query.endDate : null;
+      const startDate = startDateRaw && dateRe.test(startDateRaw) ? startDateRaw : null;
+      const endDate = endDateRaw && dateRe.test(endDateRaw) ? endDateRaw : null;
+
       const orgId = project.organizationId;
       const [dbeOn, haulOn, idrOn, baOn, bondOn] = await Promise.all([
         isFeatureEnabled(orgId, "DBE_TRACKING"),
@@ -2601,19 +2661,40 @@ router.get(
       };
       if (dbeOn) {
         const goals = await db.select().from(projectDbeGoals).where(eq(projectDbeGoals.projectId, projectId));
+
+        // Compute actual awarded dollars per cert type for THIS project, by
+        // joining subcontractorContracts -> crmOrganisationCertifications.
+        const paidRows = await db.select({
+          certificationType: crmOrganisationCertifications.certificationType,
+          contractAmount: subcontractorContracts.contractAmount,
+        }).from(subcontractorContracts)
+          .innerJoin(crmOrganisationCertifications, eq(crmOrganisationCertifications.crmOrganisationId, subcontractorContracts.subcontractorId))
+          .where(eq(subcontractorContracts.projectId, projectId));
+        const paidByType = new Map<string, number>();
+        let totalAwarded = 0;
+        for (const r of paidRows) {
+          const amt = Number(r.contractAmount) || 0;
+          paidByType.set(r.certificationType, (paidByType.get(r.certificationType) || 0) + amt);
+          totalAwarded += amt;
+        }
+
         let totalGP = 0;
+        let totalGoalDollars = 0;
         dbeSection.goals = goals.map(g => {
           const gp = Number(g.goalPercent) || 0;
+          const gd = Number(g.goalDollars) || 0;
           totalGP += gp;
+          totalGoalDollars += gd;
+          const awarded = paidByType.get(g.certificationType) || 0;
           return {
             certificationType: g.certificationType,
             goalPercent: gp,
-            awardedDollars: 0, // awarded tracking requires subcontract module — not yet implemented
-            awardedPercent: 0,
+            awardedDollars: awarded,
+            awardedPercent: gd > 0 ? (awarded / gd) * 100 : 0,
           };
         });
         dbeSection.totalGoalPercent = totalGP;
-        dbeSection.totalAwardedPercent = 0;
+        dbeSection.totalAwardedPercent = totalGoalDollars > 0 ? (totalAwarded / totalGoalDollars) * 100 : 0;
       }
 
       // Haul
@@ -2621,19 +2702,22 @@ router.get(
         enabled: haulOn, totalTickets: 0, pendingApproval: 0, totalQuantity: 0, totalCost: 0, byMaterial: [],
       };
       if (haulOn) {
+        const haulConds: SQL[] = [eq(haulTickets.projectId, projectId)];
+        if (startDate) haulConds.push(gte(haulTickets.ticketDate, startDate));
+        if (endDate) haulConds.push(lte(haulTickets.ticketDate, endDate));
         const [agg] = await db.select({
           total: sql<number>`COUNT(*)::int`,
           pending: sql<number>`SUM(CASE WHEN ${haulTickets.status} = 'SUBMITTED' THEN 1 ELSE 0 END)::int`,
           qty: sql<number>`COALESCE(SUM(${haulTickets.quantity}), 0)::float`,
           cost: sql<number>`COALESCE(SUM(${haulTickets.totalCost}), 0)::float`,
-        }).from(haulTickets).where(eq(haulTickets.projectId, projectId));
+        }).from(haulTickets).where(and(...haulConds));
         const byMaterial = await db.select({
           material: haulTickets.materialClass,
           unit: haulTickets.unit,
           quantity: sql<number>`COALESCE(SUM(${haulTickets.quantity}), 0)::float`,
           cost: sql<number>`COALESCE(SUM(${haulTickets.totalCost}), 0)::float`,
         }).from(haulTickets)
-          .where(eq(haulTickets.projectId, projectId))
+          .where(and(...haulConds))
           .groupBy(haulTickets.materialClass, haulTickets.unit)
           .orderBy(desc(sql`SUM(${haulTickets.totalCost})`))
           .limit(8);
@@ -2660,15 +2744,18 @@ router.get(
         const thirty = new Date();
         thirty.setDate(thirty.getDate() - 30);
         const thirtyStr = thirty.toISOString().slice(0, 10);
+        const idrConds: SQL[] = [eq(dailyInspectorReports.projectId, projectId)];
+        if (startDate) idrConds.push(gte(dailyInspectorReports.reportDate, startDate));
+        if (endDate) idrConds.push(lte(dailyInspectorReports.reportDate, endDate));
         const [agg] = await db.select({
           total: sql<number>`COUNT(*)::int`,
           last30: sql<number>`SUM(CASE WHEN ${dailyInspectorReports.reportDate} >= ${thirtyStr} THEN 1 ELSE 0 END)::int`,
           last: sql<string | null>`MAX(${dailyInspectorReports.reportDate})`,
-        }).from(dailyInspectorReports).where(eq(dailyInspectorReports.projectId, projectId));
+        }).from(dailyInspectorReports).where(and(...idrConds));
 
         const dateRows = await db.selectDistinct({ d: dailyInspectorReports.reportDate })
           .from(dailyInspectorReports)
-          .where(eq(dailyInspectorReports.projectId, projectId))
+          .where(and(...idrConds))
           .orderBy(desc(dailyInspectorReports.reportDate))
           .limit(120);
         const dateSet = new Set<string>(dateRows.map(r => String(r.d)));

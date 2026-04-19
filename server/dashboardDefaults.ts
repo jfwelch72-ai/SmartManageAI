@@ -855,12 +855,14 @@ export const HEAVY_CIVIL_LAYOUT: DashboardLayoutConfig = {
   version: 3,
 };
 
-export function getDefaultLayoutForRole(role: string, tradeType?: string | null): DashboardLayoutConfig {
+export function getDefaultLayoutForRole(role: string, tradeType?: string | null, forceHeavyCivilPreset = false): DashboardLayoutConfig {
   // Heavy-civil tenants get a specialized default layout for management roles.
   // Field-only roles keep their lean role-default layout regardless of trade.
-  // Use canonical HEAVY_CIVIL_TRADE_TYPES from shared/schema/features.ts.
+  // Triggered by either:
+  //   1. Org's tradeType being heavy-civil (canonical HEAVY_CIVIL_TRADE_TYPES), OR
+  //   2. The HEAVY_CIVIL_PRESET feature flag being explicitly enabled for the org.
   const heavyCivilEligibleRoles = new Set(['SUPER_ADMIN', 'ADMIN', 'HUSTLER', 'MANAGER', 'SUPERINTENDENT']);
-  if (isHeavyCivilTrade(tradeType) && heavyCivilEligibleRoles.has(role)) {
+  if ((forceHeavyCivilPreset || isHeavyCivilTrade(tradeType)) && heavyCivilEligibleRoles.has(role)) {
     return HEAVY_CIVIL_LAYOUT;
   }
   switch (role) {

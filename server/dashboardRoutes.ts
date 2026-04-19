@@ -194,6 +194,7 @@ import type { UserRole } from "@shared/schema";
 import { eq, and, sql, gte, lte, desc, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { KNOWN_WIDGET_TYPES, migrateV2ToV3, getDefaultLayoutForRole, PRESET_PALETTES } from "./dashboardDefaults";
+import { isFeatureEnabled } from "./services/featureFlagService";
 import { sensitiveLimiter } from "./rateLimiter";
 import { logAudit, logUpdate } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
@@ -1735,11 +1736,29 @@ router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
     const orgId = req.user!.organizationId;
 
     let orgTradeType: string | null = null;
+    let heavyCivilPresetActive = false;
     if (orgId) {
       const [orgRow] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId));
       orgTradeType = orgRow?.tradeType ?? null;
+      // The HEAVY_CIVIL_PRESET trade bundle grants the core heavy-civil flags
+      // (DOT_PAY_ITEMS, HAUL_TICKETS, DAILY_INSPECTOR_REPORTS, etc). Treat any
+      // two of those being enabled as the "preset is active" signal so orgs
+      // that opted into the heavy-civil bundle without setting tradeType still
+      // get the heavy-civil dashboard layout.
+      try {
+        const heavyCivilFlagChecks = await Promise.all([
+          isFeatureEnabled(orgId, "DOT_PAY_ITEMS"),
+          isFeatureEnabled(orgId, "HAUL_TICKETS"),
+          isFeatureEnabled(orgId, "DAILY_INSPECTOR_REPORTS"),
+          isFeatureEnabled(orgId, "DBE_TRACKING"),
+        ]);
+        const enabledCount = heavyCivilFlagChecks.filter(Boolean).length;
+        heavyCivilPresetActive = enabledCount >= 2;
+      } catch {
+        heavyCivilPresetActive = false;
+      }
     }
-    const roleDefault = getDefaultLayoutForRole(req.user!.role || '', orgTradeType);
+    const roleDefault = getDefaultLayoutForRole(req.user!.role || '', orgTradeType, heavyCivilPresetActive);
 
     if (!orgId) {
       return res.json({ layout: roleDefault, isCustom: false });

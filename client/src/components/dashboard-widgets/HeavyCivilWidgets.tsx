@@ -86,11 +86,15 @@ interface DbeProgress {
   totalGoals: number;
   avgGoalPercent: number;
   totalGoalDollars: number;
+  totalActualPaidDollars?: number;
+  totalActualVsGoalPercent?: number;
   breakdown: Array<{
     certificationType: string;
     avgGoalPercent: number;
     totalGoalDollars: number;
     projectCount: number;
+    actualPaidDollars?: number;
+    actualVsGoalPercent?: number;
   }>;
 }
 
@@ -115,8 +119,11 @@ export function DBEParticipationWidget() {
   if (isLoading || flagsLoading) return <LoadingCard testId="dbe-widget-loading" />;
   if (isError) return <ErrorCard onRetry={() => refetch()} testId="dbe-widget-error" />;
 
-  const d = data ?? { projectsWithGoals: 0, totalGoals: 0, avgGoalPercent: 0, totalGoalDollars: 0, breakdown: [] };
+  const d = data ?? { projectsWithGoals: 0, totalGoals: 0, avgGoalPercent: 0, totalGoalDollars: 0, totalActualPaidDollars: 0, totalActualVsGoalPercent: 0, breakdown: [] };
   const isEmpty = d.totalGoals === 0;
+  const hasActuals = (d.totalActualPaidDollars ?? 0) > 0;
+  const actualPctClamped = Math.min(100, Math.max(0, d.totalActualVsGoalPercent ?? 0));
+  const actualColor = actualPctClamped >= 100 ? "text-emerald-600 dark:text-emerald-400" : actualPctClamped >= 75 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
 
   return (
     <Card className="transition-all duration-200 hover:shadow-md" data-testid="widget-dbe-participation">
@@ -154,18 +161,47 @@ export function DBEParticipationWidget() {
               </div>
             </div>
 
+            {hasActuals && (
+              <div className="rounded-lg bg-muted/50 p-3 space-y-1.5" data-testid="dbe-actual-vs-goal">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground uppercase tracking-wide font-medium text-[11px]">Awarded vs Goal</span>
+                  <span className={cn("font-bold tabular-nums", actualColor)} data-testid="dbe-actual-pct">
+                    {actualPctClamped.toFixed(0)}%
+                  </span>
+                </div>
+                <Progress value={actualPctClamped} className="h-1.5" />
+                <p className="text-[11px] text-muted-foreground tabular-nums">
+                  {fmtMoney(d.totalActualPaidDollars ?? 0)} awarded of {fmtMoney(d.totalGoalDollars)} goal
+                </p>
+              </div>
+            )}
+
             {d.breakdown.length > 0 && (
               <div className="space-y-1.5" data-testid="dbe-breakdown">
                 <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">By Certification</p>
-                {d.breakdown.slice(0, 5).map((b, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0" data-testid={`dbe-cert-row-${b.certificationType}`}>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">{b.certificationType}</Badge>
-                    <div className="flex items-center gap-2">
-                      <span className="tabular-nums text-foreground">{b.avgGoalPercent.toFixed(1)}%</span>
-                      <span className="text-muted-foreground tabular-nums">{fmtMoney(b.totalGoalDollars)}</span>
+                {d.breakdown.slice(0, 5).map((b, i) => {
+                  const actualPct = Math.min(100, Math.max(0, b.actualVsGoalPercent ?? 0));
+                  const rowActualColor = actualPct >= 100
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : actualPct >= 75
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-600 dark:text-red-400";
+                  return (
+                    <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0" data-testid={`dbe-cert-row-${b.certificationType}`}>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">{b.certificationType}</Badge>
+                      <div className="flex items-center gap-2">
+                        <span className="tabular-nums text-foreground">{b.avgGoalPercent.toFixed(1)}%</span>
+                        {(b.actualPaidDollars ?? 0) > 0 ? (
+                          <span className={cn("tabular-nums font-medium", rowActualColor)} data-testid={`dbe-cert-actual-${b.certificationType}`}>
+                            {actualPct.toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground tabular-nums">{fmtMoney(b.totalGoalDollars)}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
@@ -191,6 +227,10 @@ interface OpenHaulTickets {
   rejected: number;
   totalQuantity: number;
   totalCost: number;
+  todayCount?: number;
+  todayQuantity?: number;
+  weekCount?: number;
+  weekQuantity?: number;
   oldestPendingDays: number;
   recentPending: Array<{
     id: string;
@@ -225,10 +265,14 @@ export function OpenHaulTicketsWidget() {
   if (isLoading || flagsLoading) return <LoadingCard testId="haul-widget-loading" />;
   if (isError) return <ErrorCard onRetry={() => refetch()} testId="haul-widget-error" />;
 
-  const d = data ?? { total: 0, pendingApproval: 0, approved: 0, rejected: 0, totalQuantity: 0, totalCost: 0, oldestPendingDays: 0, recentPending: [] };
+  const d = data ?? { total: 0, pendingApproval: 0, approved: 0, rejected: 0, totalQuantity: 0, totalCost: 0, todayCount: 0, todayQuantity: 0, weekCount: 0, weekQuantity: 0, oldestPendingDays: 0, recentPending: [] };
   const isEmpty = d.total === 0;
 
   const oldAlert = d.oldestPendingDays >= 7;
+  const todayQty = d.todayQuantity ?? 0;
+  const weekQty = d.weekQuantity ?? 0;
+  const todayCount = d.todayCount ?? 0;
+  const weekCount = d.weekCount ?? 0;
 
   return (
     <Card className="transition-all duration-200 hover:shadow-md" data-testid="widget-open-haul-tickets">
@@ -260,6 +304,19 @@ export function OpenHaulTicketsWidget() {
               <div className="rounded-lg bg-red-500/10 p-3" data-testid="haul-rejected">
                 <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Rejected</p>
                 <p className="text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">{d.rejected}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2" data-testid="haul-today-week">
+              <div className="rounded-md border border-border/60 p-2" data-testid="haul-today">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase">Today</p>
+                <p className="text-sm font-bold tabular-nums">{todayQty.toLocaleString(undefined, { maximumFractionDigits: 1 })}</p>
+                <p className="text-[10px] text-muted-foreground">{todayCount} ticket{todayCount === 1 ? "" : "s"}</p>
+              </div>
+              <div className="rounded-md border border-border/60 p-2" data-testid="haul-week">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase">Last 7 Days</p>
+                <p className="text-sm font-bold tabular-nums">{weekQty.toLocaleString(undefined, { maximumFractionDigits: 1 })}</p>
+                <p className="text-[10px] text-muted-foreground">{weekCount} ticket{weekCount === 1 ? "" : "s"}</p>
               </div>
             </div>
 
@@ -597,8 +654,13 @@ export function BondCertExpirationsWidget() {
             {d.bonds.length > 0 && (
               <div className="space-y-1" data-testid="exp-bonds-list">
                 <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Bonds</p>
-                {d.bonds.slice(0, 4).map(b => (
-                  <div key={b.id} className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0" data-testid={`exp-bond-${b.id}`}>
+                {d.bonds.slice(0, 5).map(b => (
+                  <Link
+                    key={b.id}
+                    href={`/surety-bonds?id=${b.id}`}
+                    className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0 hover:bg-accent/40 px-1 rounded transition-colors"
+                    data-testid={`exp-bond-${b.id}`}
+                  >
                     <div className="truncate max-w-[55%]">
                       <span className="font-mono text-foreground">#{b.bondNumber}</span>
                       <span className="text-muted-foreground ml-1.5">{b.bondType}</span>
@@ -606,7 +668,7 @@ export function BondCertExpirationsWidget() {
                     <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", dayBadge(b.daysUntilExpiry))}>
                       {b.daysUntilExpiry}d
                     </Badge>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -614,8 +676,13 @@ export function BondCertExpirationsWidget() {
             {d.certifications.length > 0 && (
               <div className="space-y-1" data-testid="exp-certs-list">
                 <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Certifications</p>
-                {d.certifications.slice(0, 4).map(c => (
-                  <div key={c.id} className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0" data-testid={`exp-cert-${c.id}`}>
+                {d.certifications.slice(0, 5).map(c => (
+                  <Link
+                    key={c.id}
+                    href={`/crm/organizations?certificationId=${c.id}`}
+                    className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0 hover:bg-accent/40 px-1 rounded transition-colors"
+                    data-testid={`exp-cert-${c.id}`}
+                  >
                     <div className="truncate max-w-[55%]">
                       <span className="text-foreground">{c.organisationName}</span>
                       <span className="text-muted-foreground ml-1.5 font-mono">{c.certificationType}</span>
@@ -623,12 +690,21 @@ export function BondCertExpirationsWidget() {
                     <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", dayBadge(c.daysUntilExpiry))}>
                       {c.daysUntilExpiry}d
                     </Badge>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
           </>
         )}
+        <div className="pt-2.5 border-t border-border/50 flex items-center justify-between gap-3">
+          <Link href="/surety-bonds" className="flex-1 text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-exp-bonds">
+            All bonds
+          </Link>
+          <span className="text-muted-foreground/40">·</span>
+          <Link href="/crm/organizations" className="flex-1 text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-exp-certs">
+            All certifications
+          </Link>
+        </div>
       </CardContent>
     </Card>
   );
