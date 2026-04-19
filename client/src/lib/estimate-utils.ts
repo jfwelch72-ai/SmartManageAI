@@ -66,6 +66,10 @@ export const lineItemSchema = z.object({
   notes: z.string().optional(),
   scopeWorkTypeId: z.string().optional(),
   photoUrl: z.string().optional().nullable(),
+  dotPayItemId: z.string().optional().nullable(),
+  dotSpecBookId: z.string().optional().nullable(),
+  payItemNumber: z.string().optional().nullable(),
+  specSection: z.string().optional().nullable(),
 });
 
 export type LineItemFormValues = z.infer<typeof lineItemSchema>;
@@ -222,4 +226,8 @@ export const LINE_ITEM_DEFAULT_VALUES: LineItemFormValues = {
   notes: "",
   scopeWorkTypeId: undefined,
   photoUrl: undefined,
+  dotPayItemId: null,
+  dotSpecBookId: null,
+  payItemNumber: null,
+  specSection: null,
 };

@@ -254,6 +254,10 @@ const createSOVSchema = z.object({
     notes: z.string().optional(),
     estimateLineItemId: z.string().optional(),
     organizationSowItemId: z.string().optional(),
+    dotPayItemId: z.string().nullable().optional(),
+    dotSpecBookId: z.string().nullable().optional(),
+    payItemNumber: z.string().nullable().optional(),
+    specSection: z.string().nullable().optional(),
   })).optional(),
 });
 
@@ -349,18 +353,36 @@ router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
           notes: item.notes || null,
           estimateLineItemId: (item as any).estimateLineItemId || null,
           organizationSowItemId: (item as any).organizationSowItemId || null,
+          dotPayItemId: (item as any).dotPayItemId || null,
+          dotSpecBookId: (item as any).dotSpecBookId || null,
+          payItemNumber: (item as any).payItemNumber || null,
+          specSection: (item as any).specSection || null,
         };
       });
 
       for (const lineItem of lineItemsToInsert) {
-        if (!lineItem.organizationSowItemId && lineItem.estimateLineItemId) {
+        if (lineItem.estimateLineItemId) {
           const [estItem] = await db
-            .select({ organizationSowItemId: estimateLineItems.organizationSowItemId })
+            .select({
+              organizationSowItemId: estimateLineItems.organizationSowItemId,
+              dotPayItemId: estimateLineItems.dotPayItemId,
+              dotSpecBookId: estimateLineItems.dotSpecBookId,
+              payItemNumber: estimateLineItems.payItemNumber,
+              specSection: estimateLineItems.specSection,
+            })
             .from(estimateLineItems)
             .where(eq(estimateLineItems.id, lineItem.estimateLineItemId))
             .limit(1);
-          if (estItem?.organizationSowItemId) {
-            lineItem.organizationSowItemId = estItem.organizationSowItemId;
+          if (estItem) {
+            if (!lineItem.organizationSowItemId && estItem.organizationSowItemId) {
+              lineItem.organizationSowItemId = estItem.organizationSowItemId;
+            }
+            if (!lineItem.dotPayItemId && estItem.dotPayItemId) {
+              lineItem.dotPayItemId = estItem.dotPayItemId;
+              lineItem.dotSpecBookId = estItem.dotSpecBookId ?? lineItem.dotSpecBookId;
+              lineItem.payItemNumber = estItem.payItemNumber ?? lineItem.payItemNumber;
+              lineItem.specSection = estItem.specSection ?? lineItem.specSection;
+            }
           }
         }
       }
@@ -869,6 +891,10 @@ const addLineItemSchema = z.object({
   notes: z.string().optional(),
   estimateLineItemId: z.string().optional(),
   organizationSowItemId: z.string().optional(),
+  dotPayItemId: z.string().nullable().optional(),
+  dotSpecBookId: z.string().nullable().optional(),
+  payItemNumber: z.string().nullable().optional(),
+  specSection: z.string().nullable().optional(),
 });
 
 router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -889,6 +915,10 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
     }
 
     const { description, scheduledValue, itemCode, category, notes, estimateLineItemId, organizationSowItemId } = validationResult.data;
+    let dotPayItemId = validationResult.data.dotPayItemId ?? null;
+    let dotSpecBookId = validationResult.data.dotSpecBookId ?? null;
+    let payItemNumber = validationResult.data.payItemNumber ?? null;
+    let specSection = validationResult.data.specSection ?? null;
 
     const { sov, hasAccess } = await verifySOVAccess(sovId, orgId, shouldFilter);
 
@@ -910,14 +940,28 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
     const retainagePct = Math.max(0, Math.min(100, Number(sov.retainagePercent || 10))) / 100;
 
     let resolvedSowItemId = organizationSowItemId || null;
-    if (!resolvedSowItemId && estimateLineItemId) {
+    if (estimateLineItemId) {
       const [estItem] = await db
-        .select({ organizationSowItemId: estimateLineItems.organizationSowItemId })
+        .select({
+          organizationSowItemId: estimateLineItems.organizationSowItemId,
+          dotPayItemId: estimateLineItems.dotPayItemId,
+          dotSpecBookId: estimateLineItems.dotSpecBookId,
+          payItemNumber: estimateLineItems.payItemNumber,
+          specSection: estimateLineItems.specSection,
+        })
         .from(estimateLineItems)
         .where(eq(estimateLineItems.id, estimateLineItemId))
         .limit(1);
-      if (estItem?.organizationSowItemId) {
-        resolvedSowItemId = estItem.organizationSowItemId;
+      if (estItem) {
+        if (!resolvedSowItemId && estItem.organizationSowItemId) {
+          resolvedSowItemId = estItem.organizationSowItemId;
+        }
+        if (!dotPayItemId && estItem.dotPayItemId) {
+          dotPayItemId = estItem.dotPayItemId;
+          dotSpecBookId = dotSpecBookId ?? estItem.dotSpecBookId ?? null;
+          payItemNumber = payItemNumber ?? estItem.payItemNumber ?? null;
+          specSection = specSection ?? estItem.specSection ?? null;
+        }
       }
     }
 
@@ -940,6 +984,10 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
         notes: notes || null,
         estimateLineItemId: estimateLineItemId || null,
         organizationSowItemId: resolvedSowItemId,
+        dotPayItemId,
+        dotSpecBookId,
+        payItemNumber,
+        specSection,
       })
       .returning();
 

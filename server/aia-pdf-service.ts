@@ -30,6 +30,8 @@ interface G702Data {
 interface G703LineItem {
   lineNumber: number;
   itemCode: string | null;
+  payItemNumber?: string | null;
+  specSection?: string | null;
   description: string;
   scheduledValue: number;
   previouslyCompleted: number;
@@ -216,8 +218,8 @@ export function generateAIAG703PDF(data: G703Data): PassThrough {
   doc.moveDown(0.5);
 
   const tableTop = doc.y + 4;
-  const colWidths = [30, 45, 170, 70, 70, 70, 60, 75, 50, 70, 55];
-  const headers = ['#', 'Code', 'Description of Work', 'Scheduled Value', 'From Previous', 'This Period', 'Materials Stored', 'Total Completed', '% Comp', 'Balance', 'Retainage'];
+  const colWidths = [25, 70, 150, 65, 65, 65, 55, 70, 45, 65, 57];
+  const headers = ['#', 'Pay Item / Code', 'Description of Work', 'Scheduled Value', 'From Previous', 'This Period', 'Materials Stored', 'Total Completed', '% Comp', 'Balance', 'Retainage'];
 
   doc.rect(leftX, tableTop, pageW, 18).fill(navy);
   let xPos = leftX;
@@ -253,10 +255,15 @@ export function generateAIAG703PDF(data: G703Data): PassThrough {
 
     xPos = leftX;
     doc.fontSize(7).fillColor('#111827');
+    const codeParts: string[] = [];
+    if (item.payItemNumber) codeParts.push(item.payItemNumber);
+    if (item.itemCode && item.itemCode !== item.payItemNumber) codeParts.push(item.itemCode);
+    const codeLabel = codeParts.length > 0 ? codeParts.join(' / ') : '-';
+    const codeWithSpec = item.specSection ? `${codeLabel}\n§${item.specSection}` : codeLabel;
     const rowData = [
       String(item.lineNumber),
-      item.itemCode || '-',
-      item.description.length > 38 ? item.description.substring(0, 38) + '...' : item.description,
+      codeWithSpec,
+      item.description.length > 34 ? item.description.substring(0, 34) + '...' : item.description,
       fmt(item.scheduledValue),
       fmt(item.previouslyCompleted),
       fmt(item.thisPeriodCompleted),

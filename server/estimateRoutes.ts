@@ -26,6 +26,7 @@ import {
   vendorPricingCatalogs,
   type EstimateLineItem,
   type EstimateLineItemSubcontractor,
+  dotPayItems,
 } from "@shared/schema";
 import { computeAssemblyQuantity, type FormulaContext } from "@shared/utils/assemblyFormula";
 import { computeNetAreaInFt2 } from "@shared/utils/geometry";
@@ -293,6 +294,43 @@ function normalizeCategory(value: string | undefined | null): string {
 }
 
 // Transform line item data to match database schema
+async function validateDotPayItemLink(data: any): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = data?.dotPayItemId;
+  if (!id) {
+    if (data?.payItemNumber || data?.specSection || data?.dotSpecBookId) {
+      return { ok: false, error: "payItemNumber/specSection/dotSpecBookId require dotPayItemId for canonical resolution" };
+    }
+    return { ok: true };
+  }
+  const [row] = await db
+    .select({
+      id: dotPayItems.id,
+      itemNumber: dotPayItems.itemNumber,
+      specBookId: dotPayItems.specBookId,
+      specSection: dotPayItems.specSection,
+    })
+    .from(dotPayItems)
+    .where(eq(dotPayItems.id, id))
+    .limit(1);
+  if (!row) {
+    return { ok: false, error: `Unknown DOT pay item: ${id}` };
+  }
+  if (data.payItemNumber && data.payItemNumber !== row.itemNumber) {
+    return { ok: false, error: `payItemNumber "${data.payItemNumber}" does not match DOT pay item record (expected "${row.itemNumber}")` };
+  }
+  if (data.dotSpecBookId && data.dotSpecBookId !== row.specBookId) {
+    return { ok: false, error: `dotSpecBookId does not match the spec book of the selected pay item` };
+  }
+  if (data.specSection && row.specSection && data.specSection !== row.specSection) {
+    return { ok: false, error: `specSection "${data.specSection}" does not match DOT pay item record (expected "${row.specSection}")` };
+  }
+  // Always overwrite to canonical values from the DOT pay item record.
+  data.payItemNumber = row.itemNumber;
+  data.dotSpecBookId = row.specBookId;
+  data.specSection = row.specSection ?? data.specSection ?? null;
+  return { ok: true };
+}
+
 function normalizeLineItemData(data: any): any {
   const { subcontractorAssignments, ...rest } = data;
   return {
@@ -1738,6 +1776,9 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         Number(lineItem.profitAllocation || 0)
       ).toString();
 
+      const dotCheck = await validateDotPayItemLink(lineItem);
+      if (!dotCheck.ok) return res.status(400).json({ error: dotCheck.error });
+
       // Normalize data to fix frontend/backend enum mismatches
       const normalizedLineItem = normalizeLineItemData(lineItem);
 
@@ -1908,6 +1949,9 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         Number(updates.overheadAllocation || 0) +
         Number(updates.profitAllocation || 0)
       ).toString();
+
+      const dotCheck = await validateDotPayItemLink(updates);
+      if (!dotCheck.ok) return res.status(400).json({ error: dotCheck.error });
 
       const normalizedUpdates: Record<string, any> = normalizeLineItemData(updates);
 

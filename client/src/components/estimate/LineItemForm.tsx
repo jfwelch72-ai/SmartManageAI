@@ -22,7 +22,8 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2 } from "lucide-react";
+import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2, Hash } from "lucide-react";
+import { PayItemPicker, type SelectedPayItem } from "@/components/dot/PayItemPicker";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -180,6 +181,65 @@ function SubcontractorAssignmentPanel({
           <span className="font-semibold">${totalAllocated.toLocaleString()}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function PayItemRow({ form, testPrefix }: { form: UseFormReturn<LineItemFormValues>; testPrefix: string }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const payItemNumber = form.watch("payItemNumber");
+  const specSection = form.watch("specSection");
+  const dotPayItemId = form.watch("dotPayItemId");
+
+  const handleSelect = (selected: SelectedPayItem) => {
+    form.setValue("dotPayItemId", selected.payItem.id, { shouldDirty: true });
+    form.setValue("dotSpecBookId", selected.specBook.id, { shouldDirty: true });
+    form.setValue("payItemNumber", selected.payItem.itemNumber, { shouldDirty: true });
+    form.setValue("specSection", selected.payItem.specSection ?? null, { shouldDirty: true });
+    if (!form.getValues("description")) {
+      form.setValue("description", selected.payItem.description, { shouldDirty: true });
+    }
+    if (!form.getValues("unit") && selected.payItem.unit) {
+      form.setValue("unit", selected.payItem.unit, { shouldDirty: true });
+    }
+    setPickerOpen(false);
+  };
+
+  const handleClear = () => {
+    form.setValue("dotPayItemId", null, { shouldDirty: true });
+    form.setValue("dotSpecBookId", null, { shouldDirty: true });
+    form.setValue("payItemNumber", null, { shouldDirty: true });
+    form.setValue("specSection", null, { shouldDirty: true });
+  };
+
+  return (
+    <div className="col-span-2 flex flex-wrap items-center gap-2 p-3 bg-muted/30 rounded-md border">
+      <Hash className="h-4 w-4 text-primary" />
+      <span className="text-sm font-medium">DOT Pay Item</span>
+      {dotPayItemId && payItemNumber ? (
+        <>
+          <Badge variant="secondary" className="font-mono" data-testid={`badge-${testPrefix}pay-item-number`}>
+            {payItemNumber}
+          </Badge>
+          {specSection && (
+            <span className="text-xs text-muted-foreground" data-testid={`text-${testPrefix}spec-section`}>
+              §{specSection}
+            </span>
+          )}
+          <Button type="button" size="sm" variant="ghost" onClick={() => setPickerOpen(true)} data-testid={`button-${testPrefix}change-pay-item`}>
+            Change
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={handleClear} data-testid={`button-${testPrefix}clear-pay-item`}>
+            <X className="h-3 w-3" />
+          </Button>
+        </>
+      ) : (
+        <Button type="button" size="sm" variant="outline" onClick={() => setPickerOpen(true)} data-testid={`button-${testPrefix}select-pay-item`}>
+          <Plus className="h-3 w-3 mr-1" /> Link DOT Pay Item
+        </Button>
+      )}
+      <span className="text-xs text-muted-foreground ml-auto">Optional — required for DOT/heavy-civil bids</span>
+      <PayItemPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={handleSelect} />
     </div>
   );
 }
@@ -555,6 +615,7 @@ export function LineItemFormDialog({
           
           {(isEdit || (isAdd && !useHierarchicalBuilder)) && (
             <div className="grid grid-cols-2 gap-4">
+              <PayItemRow form={form} testPrefix={testPrefix} />
               <FormField
                 control={form.control}
                 name="description"

@@ -186,6 +186,7 @@ export function LineItemsTable({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="whitespace-nowrap">Pay Item</TableHead>
                 <TableHead className="min-w-[180px]">Description</TableHead>
                 <TableHead className="whitespace-nowrap">Source</TableHead>
                 <TableHead className="whitespace-nowrap">Category</TableHead>
@@ -212,6 +213,18 @@ export function LineItemsTable({
 
                 return (
                   <TableRow key={item.id} data-testid={`row-line-item-${item.id}`}>
+                    <TableCell className="text-xs">
+                      {item.payItemNumber ? (
+                        <div className="flex flex-col">
+                          <span className="font-mono font-medium" data-testid={`text-pay-item-number-${item.id}`}>{item.payItemNumber}</span>
+                          {item.specSection && (
+                            <span className="text-muted-foreground" data-testid={`text-spec-section-${item.id}`}>§{item.specSection}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-medium max-w-[250px]">
                       <span className="line-clamp-3">{item.description}</span>
                     </TableCell>

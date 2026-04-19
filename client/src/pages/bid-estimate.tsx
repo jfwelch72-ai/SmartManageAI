@@ -480,6 +480,10 @@ export default function BidEstimate() {
           profitAllocation: values.profitAllocation,
           notes: values.notes || null,
           scopeWorkTypeId: values.scopeWorkTypeId || undefined,
+          dotPayItemId: values.dotPayItemId ?? null,
+          dotSpecBookId: values.dotSpecBookId ?? null,
+          payItemNumber: values.payItemNumber ?? null,
+          specSection: values.specSection ?? null,
           ...materialCalcPayload,
         },
       });
@@ -515,6 +519,10 @@ export default function BidEstimate() {
           undefined,
         organizationSowItemId:
           hierarchicalSelection?.organizationSowItemId || undefined,
+        dotPayItemId: values.dotPayItemId ?? null,
+        dotSpecBookId: values.dotSpecBookId ?? null,
+        payItemNumber: values.payItemNumber ?? null,
+        specSection: values.specSection ?? null,
         ...materialCalcPayload,
       } as any);
     }
@@ -575,6 +583,10 @@ export default function BidEstimate() {
       profitAllocation: 0,
       notes: lineItemAny.notes || "",
       photoUrl: lineItemAny.photoUrl || undefined,
+      dotPayItemId: lineItemAny.dotPayItemId ?? null,
+      dotSpecBookId: lineItemAny.dotSpecBookId ?? null,
+      payItemNumber: lineItemAny.payItemNumber ?? null,
+      specSection: lineItemAny.specSection ?? null,
     });
     setMaterialCalcData({
       concreteDepthInches: lineItemAny.concreteDepthInches || "",
