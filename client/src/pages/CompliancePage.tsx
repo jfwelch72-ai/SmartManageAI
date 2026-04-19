@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ShieldAlert, AlertTriangle, CalendarClock, Loader2, ExternalLink } from "lucide-react";
+import { ShieldAlert, AlertTriangle, CalendarClock, Loader2, ExternalLink, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
@@ -95,6 +95,23 @@ export default function CompliancePage() {
   const [partyType, setPartyType] = useState<PartyType | "ALL">("ALL");
   const [agency, setAgency] = useState("");
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<"type" | "party" | "agency" | "expires" | "status">("expires");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (key: typeof sortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+  const sortIcon = (key: typeof sortKey) => {
+    if (sortKey !== key) return <ArrowUpDown className="inline h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === "asc"
+      ? <ArrowUp className="inline h-3 w-3 ml-1" />
+      : <ArrowDown className="inline h-3 w-3 ml-1" />;
+  };
 
   const { data = [], isLoading, error } = useQuery<ComplianceItem[]>({
     queryKey: ["/api/compliance/expirations"],
@@ -126,7 +143,7 @@ export default function CompliancePage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return data.filter((it) => {
+    const filteredList = data.filter((it) => {
       if (type !== "ALL" && it.type !== type) return false;
       if (status !== "ALL" && it.status !== status) return false;
       if (partyType !== "ALL" && it.partyType !== partyType) return false;
@@ -137,7 +154,29 @@ export default function CompliancePage() {
       }
       return true;
     });
-  }, [data, type, status, partyType, agency, search]);
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: ComplianceItem, b: ComplianceItem): number => {
+      switch (sortKey) {
+        case "type":
+          return a.typeLabel.localeCompare(b.typeLabel);
+        case "party":
+          return a.partyName.localeCompare(b.partyName);
+        case "agency":
+          return (a.agency ?? "").localeCompare(b.agency ?? "");
+        case "status": {
+          const order: Record<Status, number> = { EXPIRED: 0, EXPIRING: 1, ACTIVE: 2 };
+          return order[a.status] - order[b.status];
+        }
+        case "expires":
+        default: {
+          const av = a.daysUntilExpiry ?? Number.POSITIVE_INFINITY;
+          const bv = b.daysUntilExpiry ?? Number.POSITIVE_INFINITY;
+          return av - bv;
+        }
+      }
+    };
+    return [...filteredList].sort((a, b) => cmp(a, b) * dir);
+  }, [data, type, status, partyType, agency, search, sortKey, sortDir]);
 
   if (!canView) {
     return (
@@ -267,12 +306,32 @@ export default function CompliancePage() {
             <table className="w-full text-sm" data-testid="table-compliance">
               <thead className="bg-muted/50">
                 <tr className="text-left">
-                  <th className="px-3 py-2 font-medium">Type</th>
-                  <th className="px-3 py-2 font-medium">Party</th>
+                  <th className="px-3 py-2 font-medium">
+                    <button type="button" onClick={() => toggleSort("type")} className="hover:underline" data-testid="sort-type">
+                      Type{sortIcon("type")}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 font-medium">
+                    <button type="button" onClick={() => toggleSort("party")} className="hover:underline" data-testid="sort-party">
+                      Party{sortIcon("party")}
+                    </button>
+                  </th>
                   <th className="px-3 py-2 font-medium">Identifier</th>
-                  <th className="px-3 py-2 font-medium">Agency / Carrier</th>
-                  <th className="px-3 py-2 font-medium">Expires</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">
+                    <button type="button" onClick={() => toggleSort("agency")} className="hover:underline" data-testid="sort-agency">
+                      Agency / Carrier{sortIcon("agency")}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 font-medium">
+                    <button type="button" onClick={() => toggleSort("expires")} className="hover:underline" data-testid="sort-expires">
+                      Expires{sortIcon("expires")}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 font-medium">
+                    <button type="button" onClick={() => toggleSort("status")} className="hover:underline" data-testid="sort-status">
+                      Status{sortIcon("status")}
+                    </button>
+                  </th>
                   <th className="px-3 py-2 font-medium"></th>
                 </tr>
               </thead>

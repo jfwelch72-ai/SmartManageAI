@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ComplianceBadge } from "@/components/ComplianceBadge";
 import {
   Select,
   SelectContent,
@@ -1475,6 +1476,7 @@ export default function CRMPage() {
                               <h3 className="font-semibold text-foreground truncate">
                                 {org.name}
                               </h3>
+                              <ComplianceBadge partyType="CRM_ORG" partyId={org.id} className="shrink-0" />
                               {(() => {
                                 const orgCompliance =
                                   complianceData?.items.filter(
