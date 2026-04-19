@@ -1,10 +1,12 @@
 import type { DashboardLayoutConfig } from "@shared/schema";
+import { isHeavyCivilTrade } from "@shared/schema/features";
 
 export const KNOWN_WIDGET_TYPES = [
   'QUICK_STATS', 'KPI_SUMMARY', 'TREND_CHART', 'DATA_LIST', 'ALERTS', 'WORKFORCE_SNAPSHOT', 'CASH_POSITION', 'SOV_PROGRESS', 'BID_PIPELINE', 'COST_CODE_BREAKDOWN', 'SCHEDULE_IMPACT', 'WEATHER', 'AI_INSIGHTS', 'MESSAGES', 'NOTIFICATIONS',
   'CALENDAR_EVENTS', 'AI_TASKS', 'OUTSTANDING_ITEMS', 'ACTIVE_PROJECTS',
   'ACTIVE_BIDS', 'CREW_OVERVIEW', 'PROJECT_ASSIGNMENTS', 'QUICK_ACTIONS',
   'LABOR_UTILIZATION', 'PROJECT_HEALTH_SUMMARY', 'RFI_STATUS', 'CHANGE_ORDERS_PENDING', 'SAFETY_ALERTS',
+  'DBE_PARTICIPATION', 'OPEN_HAUL_TICKETS', 'IDR_STREAK', 'BUY_AMERICA', 'BOND_CERT_EXPIRATIONS',
 ];
 
 export function migrateV2ToV3(config: any): DashboardLayoutConfig {
@@ -778,7 +780,89 @@ export const PRESET_PALETTES = {
   }
 };
 
-export function getDefaultLayoutForRole(role: string): DashboardLayoutConfig {
+export const HEAVY_CIVIL_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-hc-overview',
+      title: 'Overview',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'hc-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-hc-quick-actions',
+      title: 'Quick Actions',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'hc-actions', type: 'QUICK_ACTIONS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 4, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-hc-compliance',
+      title: 'DOT Compliance',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'hc-dbe', type: 'DBE_PARTICIPATION', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 10 },
+        { id: 'hc-buy-america', type: 'BUY_AMERICA', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-hc-field-ops',
+      title: 'Field Operations',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'hc-haul', type: 'OPEN_HAUL_TICKETS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 10 },
+        { id: 'hc-idr', type: 'IDR_STREAK', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-hc-expirations',
+      title: 'Expirations & Risk',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'hc-bond-cert', type: 'BOND_CERT_EXPIRATIONS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 10 },
+        { id: 'hc-alerts', type: 'ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-hc-financial',
+      title: 'Financial & Pipeline',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'hc-sov', type: 'SOV_PROGRESS', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'hc-pipeline', type: 'BID_PIPELINE', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+    {
+      id: 'section-hc-projects',
+      title: 'Projects',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'hc-active-projects', type: 'ACTIVE_PROJECTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'hc-weather', type: 'WEATHER', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+export function getDefaultLayoutForRole(role: string, tradeType?: string | null): DashboardLayoutConfig {
+  // Heavy-civil tenants get a specialized default layout for management roles.
+  // Field-only roles keep their lean role-default layout regardless of trade.
+  // Use canonical HEAVY_CIVIL_TRADE_TYPES from shared/schema/features.ts.
+  const heavyCivilEligibleRoles = new Set(['SUPER_ADMIN', 'ADMIN', 'HUSTLER', 'MANAGER', 'SUPERINTENDENT']);
+  if (isHeavyCivilTrade(tradeType) && heavyCivilEligibleRoles.has(role)) {
+    return HEAVY_CIVIL_LAYOUT;
+  }
   switch (role) {
     case 'SUPER_ADMIN':
     case 'ADMIN':

@@ -1734,7 +1734,12 @@ router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
 
-    const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
+    let orgTradeType: string | null = null;
+    if (orgId) {
+      const [orgRow] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId));
+      orgTradeType = orgRow?.tradeType ?? null;
+    }
+    const roleDefault = getDefaultLayoutForRole(req.user!.role || '', orgTradeType);
 
     if (!orgId) {
       return res.json({ layout: roleDefault, isCustom: false });

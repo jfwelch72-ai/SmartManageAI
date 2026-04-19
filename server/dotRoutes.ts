@@ -35,7 +35,8 @@ import {
   organizations,
 } from "@shared/schema";
 import { generateDotProgressEstimatePDF, type DotProgressLineItem } from "./dot-progress-estimate-pdf-service";
-import { and, desc, eq, ilike, lt, or, sql, type SQL } from "drizzle-orm";
+import { generateHeavyCivilProjectSummaryPDF } from "./dot-project-summary-pdf-service";
+import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   requireAuth,
   requireRole,
@@ -2242,6 +2243,533 @@ router.get(
     } catch (error) {
       logWarn("[mass-haul series] aggregation failed", { projectId: req.params.projectId });
       res.status(500).json({ error: "Failed to load mass-haul series" });
+    }
+  },
+);
+
+// ============================================
+// HEAVY-CIVIL DASHBOARD AGGREGATORS
+// Thin, pre-aggregated endpoints for the 5 heavy-civil dashboard widgets.
+// Each is gated by its corresponding feature flag + permission key.
+// ============================================
+
+router.get(
+  "/api/dashboard/heavy-civil/dbe-progress",
+  requireAuth,
+  requireOrgFeatureFlag("DBE_TRACKING"),
+  requireAnyFeaturePermission("canViewDbeGoals", "canManageDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    try {
+      const conds: SQL[] = [];
+      if (!ctx.isSuperAdmin) conds.push(eq(projectDbeGoals.organizationId, ctx.orgId!));
+      const rows = await db.select({
+        certificationType: projectDbeGoals.certificationType,
+        goalPercent: projectDbeGoals.goalPercent,
+        goalDollars: projectDbeGoals.goalDollars,
+        projectId: projectDbeGoals.projectId,
+      }).from(projectDbeGoals)
+        .where(conds.length ? and(...conds) : undefined);
+
+      const projectIds = Array.from(new Set(rows.map(r => r.projectId)));
+      const byType = new Map<string, { goalPercentSum: number; goalDollarsSum: number; count: number }>();
+      let totalGoalPercent = 0;
+      let totalGoalDollars = 0;
+      for (const r of rows) {
+        const gp = Number(r.goalPercent) || 0;
+        const gd = Number(r.goalDollars) || 0;
+        totalGoalPercent += gp;
+        totalGoalDollars += gd;
+        const cur = byType.get(r.certificationType) || { goalPercentSum: 0, goalDollarsSum: 0, count: 0 };
+        cur.goalPercentSum += gp;
+        cur.goalDollarsSum += gd;
+        cur.count += 1;
+        byType.set(r.certificationType, cur);
+      }
+      const breakdown = Array.from(byType.entries()).map(([certificationType, v]) => ({
+        certificationType,
+        avgGoalPercent: v.count > 0 ? v.goalPercentSum / v.count : 0,
+        totalGoalDollars: v.goalDollarsSum,
+        projectCount: v.count,
+      })).sort((a, b) => b.totalGoalDollars - a.totalGoalDollars);
+
+      res.json({
+        projectsWithGoals: projectIds.length,
+        totalGoals: rows.length,
+        avgGoalPercent: rows.length > 0 ? totalGoalPercent / rows.length : 0,
+        totalGoalDollars,
+        breakdown,
+      });
+    } catch (e) {
+      logWarn("[heavy-civil/dbe-progress] failed");
+      res.status(500).json({ error: "Failed to load DBE progress" });
+    }
+  },
+);
+
+router.get(
+  "/api/dashboard/heavy-civil/open-haul-tickets",
+  requireAuth,
+  requireOrgFeatureFlag("HAUL_TICKETS"),
+  requireAnyFeaturePermission("canViewHaulTickets", "canManageHaulTickets"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    try {
+      const conds: SQL[] = [];
+      if (!ctx.isSuperAdmin) conds.push(eq(haulTickets.organizationId, ctx.orgId!));
+      const [agg] = await db.select({
+        total: sql<number>`COUNT(*)::int`,
+        submitted: sql<number>`SUM(CASE WHEN ${haulTickets.status} = 'SUBMITTED' THEN 1 ELSE 0 END)::int`,
+        approved: sql<number>`SUM(CASE WHEN ${haulTickets.status} = 'APPROVED' THEN 1 ELSE 0 END)::int`,
+        rejected: sql<number>`SUM(CASE WHEN ${haulTickets.status} = 'REJECTED' THEN 1 ELSE 0 END)::int`,
+        totalQuantity: sql<number>`COALESCE(SUM(${haulTickets.quantity}), 0)::float`,
+        totalCost: sql<number>`COALESCE(SUM(${haulTickets.totalCost}), 0)::float`,
+        oldestPendingDays: sql<number>`COALESCE(MAX(EXTRACT(DAY FROM NOW() - ${haulTickets.createdAt}))::int, 0) FILTER (WHERE ${haulTickets.status} = 'SUBMITTED')`,
+      }).from(haulTickets).where(conds.length ? and(...conds) : undefined);
+
+      const recent = await db.select({
+        id: haulTickets.id,
+        ticketNumber: haulTickets.ticketNumber,
+        ticketDate: haulTickets.ticketDate,
+        materialClass: haulTickets.materialClass,
+        quantity: haulTickets.quantity,
+        unit: haulTickets.unit,
+        status: haulTickets.status,
+        projectId: haulTickets.projectId,
+      }).from(haulTickets)
+        .where(and(...conds, eq(haulTickets.status, "SUBMITTED")))
+        .orderBy(desc(haulTickets.ticketDate))
+        .limit(5);
+
+      res.json({
+        total: agg?.total ?? 0,
+        pendingApproval: agg?.submitted ?? 0,
+        approved: agg?.approved ?? 0,
+        rejected: agg?.rejected ?? 0,
+        totalQuantity: Number(agg?.totalQuantity ?? 0),
+        totalCost: Number(agg?.totalCost ?? 0),
+        oldestPendingDays: Number(agg?.oldestPendingDays ?? 0),
+        recentPending: recent.map(r => ({ ...r, quantity: Number(r.quantity) })),
+      });
+    } catch (e) {
+      logWarn("[heavy-civil/open-haul-tickets] failed");
+      res.status(500).json({ error: "Failed to load haul tickets" });
+    }
+  },
+);
+
+router.get(
+  "/api/dashboard/heavy-civil/idr-streak",
+  requireAuth,
+  requireOrgFeatureFlag("DAILY_INSPECTOR_REPORTS"),
+  requireAnyFeaturePermission("canViewInspectorReports", "canManageInspectorReports", "canApproveInspectorReports"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    try {
+      const conds: SQL[] = [];
+      if (!ctx.isSuperAdmin) conds.push(eq(dailyInspectorReports.organizationId, ctx.orgId!));
+
+      const thirty = new Date();
+      thirty.setDate(thirty.getDate() - 30);
+      const thirtyStr = thirty.toISOString().slice(0, 10);
+
+      const [totalAgg] = await db.select({
+        total: sql<number>`COUNT(*)::int`,
+        last30: sql<number>`SUM(CASE WHEN ${dailyInspectorReports.reportDate} >= ${thirtyStr} THEN 1 ELSE 0 END)::int`,
+        lastSubmitted: sql<string | null>`MAX(${dailyInspectorReports.reportDate})`,
+        activeProjects: sql<number>`COUNT(DISTINCT ${dailyInspectorReports.projectId})::int`,
+      }).from(dailyInspectorReports).where(conds.length ? and(...conds) : undefined);
+
+      // Streak calculation: distinct submission dates ordered DESC; how many
+      // consecutive days back from "today or yesterday" are present?
+      const dateRows = await db.selectDistinct({
+        d: dailyInspectorReports.reportDate,
+      }).from(dailyInspectorReports)
+        .where(conds.length ? and(...conds) : undefined)
+        .orderBy(desc(dailyInspectorReports.reportDate))
+        .limit(120);
+
+      const dateSet = new Set<string>(dateRows.map(r => String(r.d)));
+      let streak = 0;
+      const cursor = new Date();
+      // If today not present, start from yesterday so a missed today doesn't
+      // immediately zero out the streak before EOD.
+      if (!dateSet.has(cursor.toISOString().slice(0, 10))) {
+        cursor.setDate(cursor.getDate() - 1);
+      }
+      while (dateSet.has(cursor.toISOString().slice(0, 10))) {
+        streak += 1;
+        cursor.setDate(cursor.getDate() - 1);
+      }
+
+      const expectedLast30 = (totalAgg?.activeProjects ?? 0) * 30;
+      res.json({
+        totalReports: totalAgg?.total ?? 0,
+        last30Days: totalAgg?.last30 ?? 0,
+        last30DaysExpected: expectedLast30,
+        complianceRate: expectedLast30 > 0 ? Math.min(100, ((totalAgg?.last30 ?? 0) / expectedLast30) * 100) : 0,
+        streakDays: streak,
+        lastSubmittedDate: totalAgg?.lastSubmitted ?? null,
+        activeProjects: totalAgg?.activeProjects ?? 0,
+      });
+    } catch (e) {
+      logWarn("[heavy-civil/idr-streak] failed");
+      res.status(500).json({ error: "Failed to load IDR streak" });
+    }
+  },
+);
+
+router.get(
+  "/api/dashboard/heavy-civil/buy-america",
+  requireAuth,
+  requireOrgFeatureFlag("BUY_AMERICA"),
+  requireAnyFeaturePermission("canViewMaterialCertifications", "canManageMaterialCertifications"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    try {
+      const conds: SQL[] = [];
+      if (!ctx.isSuperAdmin) conds.push(eq(materialCertifications.organizationId, ctx.orgId!));
+      const rows = await db.select({
+        status: materialCertifications.buyAmericaStatus,
+        count: sql<number>`COUNT(*)::int`,
+      }).from(materialCertifications)
+        .where(conds.length ? and(...conds) : undefined)
+        .groupBy(materialCertifications.buyAmericaStatus);
+
+      const summary = { compliant: 0, waiver: 0, pending: 0, nonCompliant: 0, total: 0 };
+      for (const r of rows) {
+        const c = Number(r.count) || 0;
+        summary.total += c;
+        if (r.status === "VERIFIED") summary.compliant = c;
+        else if (r.status === "WAIVER_GRANTED" || r.status === "WAIVER_REQUESTED") summary.waiver += c;
+        else if (r.status === "PENDING") summary.pending = c;
+        else if (r.status === "NON_COMPLIANT") summary.nonCompliant = c;
+      }
+      const compliancePercent = summary.total > 0 ? (summary.compliant / summary.total) * 100 : 0;
+      res.json({ ...summary, compliancePercent });
+    } catch (e) {
+      logWarn("[heavy-civil/buy-america] failed");
+      res.status(500).json({ error: "Failed to load Buy America status" });
+    }
+  },
+);
+
+router.get(
+  "/api/dashboard/heavy-civil/expirations",
+  requireAuth,
+  requireAnyFeaturePermission("canViewSuretyBonds", "canManageSuretyBonds", "canViewDbeGoals", "canManageDbeGoals"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    try {
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      const ninety = new Date();
+      ninety.setDate(ninety.getDate() + 90);
+      const ninetyStr = ninety.toISOString().slice(0, 10);
+
+      const [bondsFlag, dbeFlag] = await Promise.all([
+        ctx.isSuperAdmin ? Promise.resolve(true) : isFeatureEnabled(ctx.orgId!, "SURETY_BONDS"),
+        ctx.isSuperAdmin ? Promise.resolve(true) : isFeatureEnabled(ctx.orgId!, "DBE_TRACKING"),
+      ]);
+
+      let bonds: Array<{ id: string; bondNumber: string; bondType: string; suretyCompany: string; expirationDate: string; bondAmount: number; daysUntilExpiry: number }> = [];
+      if (bondsFlag) {
+        const bondConds: SQL[] = [
+          gte(suretyBonds.expirationDate, todayStr),
+          lte(suretyBonds.expirationDate, ninetyStr),
+          eq(suretyBonds.status, "ACTIVE"),
+        ];
+        if (!ctx.isSuperAdmin) bondConds.push(eq(suretyBonds.organizationId, ctx.orgId!));
+        const bondRows = await db.select({
+          id: suretyBonds.id,
+          bondNumber: suretyBonds.bondNumber,
+          bondType: suretyBonds.bondType,
+          suretyCompany: suretyBonds.suretyCompany,
+          expirationDate: suretyBonds.expirationDate,
+          bondAmount: suretyBonds.bondAmount,
+        }).from(suretyBonds).where(and(...bondConds)).orderBy(suretyBonds.expirationDate).limit(20);
+        bonds = bondRows.map(b => ({
+          id: b.id,
+          bondNumber: b.bondNumber,
+          bondType: b.bondType,
+          suretyCompany: b.suretyCompany,
+          expirationDate: String(b.expirationDate),
+          bondAmount: Number(b.bondAmount) || 0,
+          daysUntilExpiry: Math.ceil((new Date(String(b.expirationDate)).getTime() - today.getTime()) / 86400000),
+        }));
+      }
+
+      let certifications: Array<{ id: string; organisationName: string; certificationType: string; certifyingAgency: string | null; expirationDate: string; daysUntilExpiry: number }> = [];
+      if (dbeFlag) {
+        const certConds: SQL[] = [
+          gte(crmOrganisationCertifications.expirationDate, todayStr),
+          lte(crmOrganisationCertifications.expirationDate, ninetyStr),
+        ];
+        if (!ctx.isSuperAdmin) certConds.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
+        const certRows = await db.select({
+          id: crmOrganisationCertifications.id,
+          organisationName: crmOrganisations.name,
+          certificationType: crmOrganisationCertifications.certificationType,
+          certifyingAgency: crmOrganisationCertifications.certifyingAgency,
+          expirationDate: crmOrganisationCertifications.expirationDate,
+        }).from(crmOrganisationCertifications)
+          .innerJoin(crmOrganisations, eq(crmOrganisations.id, crmOrganisationCertifications.crmOrganisationId))
+          .where(and(...certConds))
+          .orderBy(crmOrganisationCertifications.expirationDate)
+          .limit(20);
+        certifications = certRows.map(c => ({
+          id: c.id,
+          organisationName: c.organisationName,
+          certificationType: c.certificationType,
+          certifyingAgency: c.certifyingAgency,
+          expirationDate: String(c.expirationDate),
+          daysUntilExpiry: Math.ceil((new Date(String(c.expirationDate)).getTime() - today.getTime()) / 86400000),
+        }));
+      }
+
+      res.json({
+        bondsEnabled: bondsFlag,
+        dbeEnabled: dbeFlag,
+        bonds,
+        certifications,
+        totals: {
+          bondsExpiringSoon: bonds.length,
+          certsExpiringSoon: certifications.length,
+        },
+      });
+    } catch (e) {
+      logWarn("[heavy-civil/expirations] failed");
+      res.status(500).json({ error: "Failed to load expirations" });
+    }
+  },
+);
+
+// ============================================
+// HEAVY-CIVIL PROJECT SUMMARY PDF (per project)
+// Streams a printable summary of DBE, haul, IDR, Buy America, and bonds.
+// Does not require any single feature flag — sections degrade individually
+// based on per-flag enablement so a partial heavy-civil setup still works.
+// ============================================
+
+router.get(
+  "/api/projects/:projectId/heavy-civil-summary/pdf",
+  requireAuth,
+  exportLimiter,
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { projectId } = req.params;
+
+    try {
+      const projConds: SQL[] = [eq(projects.id, projectId)];
+      if (!ctx.isSuperAdmin) projConds.push(eq(projects.organizationId, ctx.orgId!));
+      const [project] = await db.select().from(projects).where(and(...projConds)).limit(1);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const orgId = project.organizationId;
+      const [dbeOn, haulOn, idrOn, baOn, bondOn] = await Promise.all([
+        isFeatureEnabled(orgId, "DBE_TRACKING"),
+        isFeatureEnabled(orgId, "HAUL_TICKETS"),
+        isFeatureEnabled(orgId, "DAILY_INSPECTOR_REPORTS"),
+        isFeatureEnabled(orgId, "BUY_AMERICA"),
+        isFeatureEnabled(orgId, "SURETY_BONDS"),
+      ]);
+
+      // Financial rollup from SOV/pay applications when present.
+      const [sovAgg] = await db.select({
+        scheduled: sql<number>`COALESCE(SUM(${sovLineItems.scheduledValue}), 0)::float`,
+        completed: sql<number>`COALESCE(SUM(${sovLineItems.totalCompletedAndStored}), 0)::float`,
+      }).from(sovLineItems)
+        .innerJoin(scheduleOfValues, eq(scheduleOfValues.id, sovLineItems.sovId))
+        .where(eq(scheduleOfValues.projectId, projectId));
+
+      const budget = project.budget ? Number(project.budget) : null;
+      const contractSumToDate = sovAgg?.scheduled ? Number(sovAgg.scheduled) : null;
+      const totalCompletedToDate = sovAgg?.completed ? Number(sovAgg.completed) : null;
+      const percentComplete = contractSumToDate && contractSumToDate > 0 && totalCompletedToDate != null
+        ? (totalCompletedToDate / contractSumToDate) * 100
+        : 0;
+
+      // DBE
+      let dbeSection: HeavyCivilProjectSummaryData["dbe"] = {
+        enabled: dbeOn, goals: [], totalGoalPercent: 0, totalAwardedPercent: 0,
+      };
+      if (dbeOn) {
+        const goals = await db.select().from(projectDbeGoals).where(eq(projectDbeGoals.projectId, projectId));
+        let totalGP = 0;
+        dbeSection.goals = goals.map(g => {
+          const gp = Number(g.goalPercent) || 0;
+          totalGP += gp;
+          return {
+            certificationType: g.certificationType,
+            goalPercent: gp,
+            awardedDollars: 0, // awarded tracking requires subcontract module — not yet implemented
+            awardedPercent: 0,
+          };
+        });
+        dbeSection.totalGoalPercent = totalGP;
+        dbeSection.totalAwardedPercent = 0;
+      }
+
+      // Haul
+      let haulSection: HeavyCivilProjectSummaryData["haul"] = {
+        enabled: haulOn, totalTickets: 0, pendingApproval: 0, totalQuantity: 0, totalCost: 0, byMaterial: [],
+      };
+      if (haulOn) {
+        const [agg] = await db.select({
+          total: sql<number>`COUNT(*)::int`,
+          pending: sql<number>`SUM(CASE WHEN ${haulTickets.status} = 'SUBMITTED' THEN 1 ELSE 0 END)::int`,
+          qty: sql<number>`COALESCE(SUM(${haulTickets.quantity}), 0)::float`,
+          cost: sql<number>`COALESCE(SUM(${haulTickets.totalCost}), 0)::float`,
+        }).from(haulTickets).where(eq(haulTickets.projectId, projectId));
+        const byMaterial = await db.select({
+          material: haulTickets.materialClass,
+          unit: haulTickets.unit,
+          quantity: sql<number>`COALESCE(SUM(${haulTickets.quantity}), 0)::float`,
+          cost: sql<number>`COALESCE(SUM(${haulTickets.totalCost}), 0)::float`,
+        }).from(haulTickets)
+          .where(eq(haulTickets.projectId, projectId))
+          .groupBy(haulTickets.materialClass, haulTickets.unit)
+          .orderBy(desc(sql`SUM(${haulTickets.totalCost})`))
+          .limit(8);
+        haulSection = {
+          enabled: true,
+          totalTickets: agg?.total ?? 0,
+          pendingApproval: agg?.pending ?? 0,
+          totalQuantity: Number(agg?.qty ?? 0),
+          totalCost: Number(agg?.cost ?? 0),
+          byMaterial: byMaterial.map(m => ({
+            material: m.material,
+            unit: m.unit,
+            quantity: Number(m.quantity),
+            cost: Number(m.cost),
+          })),
+        };
+      }
+
+      // IDR
+      let idrSection: HeavyCivilProjectSummaryData["idr"] = {
+        enabled: idrOn, totalReports: 0, last30Days: 0, last30DaysExpected: 30, streakDays: 0, lastSubmittedDate: null,
+      };
+      if (idrOn) {
+        const thirty = new Date();
+        thirty.setDate(thirty.getDate() - 30);
+        const thirtyStr = thirty.toISOString().slice(0, 10);
+        const [agg] = await db.select({
+          total: sql<number>`COUNT(*)::int`,
+          last30: sql<number>`SUM(CASE WHEN ${dailyInspectorReports.reportDate} >= ${thirtyStr} THEN 1 ELSE 0 END)::int`,
+          last: sql<string | null>`MAX(${dailyInspectorReports.reportDate})`,
+        }).from(dailyInspectorReports).where(eq(dailyInspectorReports.projectId, projectId));
+
+        const dateRows = await db.selectDistinct({ d: dailyInspectorReports.reportDate })
+          .from(dailyInspectorReports)
+          .where(eq(dailyInspectorReports.projectId, projectId))
+          .orderBy(desc(dailyInspectorReports.reportDate))
+          .limit(120);
+        const dateSet = new Set<string>(dateRows.map(r => String(r.d)));
+        let streak = 0;
+        const cursor = new Date();
+        if (!dateSet.has(cursor.toISOString().slice(0, 10))) cursor.setDate(cursor.getDate() - 1);
+        while (dateSet.has(cursor.toISOString().slice(0, 10))) {
+          streak += 1;
+          cursor.setDate(cursor.getDate() - 1);
+        }
+        idrSection = {
+          enabled: true,
+          totalReports: agg?.total ?? 0,
+          last30Days: agg?.last30 ?? 0,
+          last30DaysExpected: 30,
+          streakDays: streak,
+          lastSubmittedDate: agg?.last ?? null,
+        };
+      }
+
+      // Buy America
+      let baSection: HeavyCivilProjectSummaryData["buyAmerica"] = {
+        enabled: baOn, total: 0, compliant: 0, waiver: 0, pending: 0, nonCompliant: 0,
+      };
+      if (baOn) {
+        const rows = await db.select({
+          status: materialCertifications.buyAmericaStatus,
+          count: sql<number>`COUNT(*)::int`,
+        }).from(materialCertifications)
+          .where(eq(materialCertifications.projectId, projectId))
+          .groupBy(materialCertifications.buyAmericaStatus);
+        for (const r of rows) {
+          const c = Number(r.count) || 0;
+          baSection.total += c;
+          if (r.status === "VERIFIED") baSection.compliant = c;
+          else if (r.status === "WAIVER_GRANTED" || r.status === "WAIVER_REQUESTED") baSection.waiver += c;
+          else if (r.status === "PENDING") baSection.pending = c;
+          else if (r.status === "NON_COMPLIANT") baSection.nonCompliant = c;
+        }
+      }
+
+      // Bonds
+      let bondSection: HeavyCivilProjectSummaryData["bonds"] = {
+        enabled: bondOn, active: 0, totalAmount: 0, expiringSoon: [],
+      };
+      if (bondOn) {
+        const bondConds: SQL[] = [eq(suretyBonds.projectId, projectId), eq(suretyBonds.status, "ACTIVE")];
+        const [agg] = await db.select({
+          active: sql<number>`COUNT(*)::int`,
+          total: sql<number>`COALESCE(SUM(${suretyBonds.bondAmount}), 0)::float`,
+        }).from(suretyBonds).where(and(...bondConds));
+        const today = new Date();
+        const ninety = new Date();
+        ninety.setDate(ninety.getDate() + 90);
+        const expiring = await db.select().from(suretyBonds).where(and(
+          eq(suretyBonds.projectId, projectId),
+          eq(suretyBonds.status, "ACTIVE"),
+          gte(suretyBonds.expirationDate, today.toISOString().slice(0, 10)),
+          lte(suretyBonds.expirationDate, ninety.toISOString().slice(0, 10)),
+        )).orderBy(suretyBonds.expirationDate).limit(8);
+        bondSection = {
+          enabled: true,
+          active: agg?.active ?? 0,
+          totalAmount: Number(agg?.total ?? 0),
+          expiringSoon: expiring.map(b => ({
+            bondNumber: b.bondNumber,
+            bondType: b.bondType,
+            suretyCompany: b.suretyCompany,
+            expirationDate: String(b.expirationDate),
+            bondAmount: Number(b.bondAmount) || 0,
+          })),
+        };
+      }
+
+      const data: HeavyCivilProjectSummaryData = {
+        projectName: project.name,
+        projectCode: project.code ?? null,
+        clientName: project.clientName ?? null,
+        location: project.locationAddress ?? null,
+        status: project.status,
+        startDate: project.startDate ? new Date(project.startDate).toISOString() : null,
+        endDate: project.endDate ? new Date(project.endDate).toISOString() : null,
+        budget,
+        contractSumToDate,
+        totalCompletedToDate,
+        percentComplete,
+        dbe: dbeSection,
+        haul: haulSection,
+        idr: idrSection,
+        buyAmerica: baSection,
+        bonds: bondSection,
+        certifications: [],
+      };
+
+      const stream = generateHeavyCivilProjectSummaryPDF(data);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="heavy-civil-summary-${projectId}.pdf"`);
+      stream.pipe(res);
+    } catch (e) {
+      logWarn("[heavy-civil-summary/pdf] failed", { projectId });
+      res.status(500).json({ error: "Failed to generate Heavy-Civil summary PDF" });
     }
   },
 );

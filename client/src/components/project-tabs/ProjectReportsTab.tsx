@@ -168,6 +168,35 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
     }
   };
 
+  const [downloadingHcSummary, setDownloadingHcSummary] = useState(false);
+  const handleDownloadHeavyCivilSummary = async () => {
+    setDownloadingHcSummary(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/heavy-civil-summary/pdf`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || "Heavy-civil summary download failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `heavy-civil-summary-${projectId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to download summary.",
+      });
+    } finally {
+      setDownloadingHcSummary(false);
+    }
+  };
+
   const statusIcon = (status: string) => {
     switch (status) {
       case "COMPLETED": return <CheckCircle className="h-4 w-4 text-green-600" />;
@@ -196,7 +225,20 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
           <h2 className="text-lg font-semibold" data-testid="text-reports-heading">Progress Reports</h2>
           <p className="text-sm text-muted-foreground">Generate and view weekly and monthly progress reports</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={handleDownloadHeavyCivilSummary}
+            disabled={downloadingHcSummary}
+            data-testid="button-download-heavy-civil-summary"
+          >
+            {downloadingHcSummary ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <HardHat className="h-4 w-4 mr-2" />
+            )}
+            Heavy-Civil Summary PDF
+          </Button>
           <Button variant="outline" onClick={() => setShowSettings(!showSettings)} data-testid="button-report-settings">
             <Settings className="h-4 w-4 mr-2" />
             Settings
