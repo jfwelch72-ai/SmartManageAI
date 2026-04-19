@@ -1010,9 +1010,31 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         createdById: req.user?.id || null,
       }).returning();
 
+      const { validateDotPayItemLink } = await import("./utils/dotPayItemValidation");
       for (let i = 0; i < sovSeedLineItems.length; i++) {
         const li = sovSeedLineItems[i];
         const scheduledValue = Number(li.totalCost || 0);
+        // Carry DOT pay-item identity through bid → SOV so the AIA G703 PDF
+        // and DOT progress estimates can render the agency pay item number.
+        // Defense-in-depth: re-validate against dot_pay_items in case the
+        // estimate row was seeded by an importer that bypassed estimate
+        // validation. On mismatch, drop the DOT fields rather than fail
+        // the conversion (legacy data shouldn't block project creation).
+        const dotFields = {
+          dotPayItemId: (li as any).dotPayItemId ?? null,
+          payItemNumber: (li as any).payItemNumber ?? null,
+          specSection: (li as any).specSection ?? null,
+          dotSpecBookId: (li as any).dotSpecBookId ?? null,
+        };
+        if (dotFields.dotPayItemId) {
+          const check = await validateDotPayItemLink(dotFields);
+          if (!check.ok) {
+            console.warn(`[Bid Conversion] Dropping invalid DOT pay-item link on estimate line ${li.id}: ${check.error}`);
+            dotFields.dotPayItemId = null;
+            dotFields.payItemNumber = null;
+            dotFields.specSection = null;
+          }
+        }
         await tx.insert(sovLineItems).values({
           sovId: newSov.id,
           lineNumber: i + 1,
@@ -1022,6 +1044,9 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
           scheduledValue: scheduledValue.toFixed(2),
           estimateLineItemId: li.id,
           balanceToFinish: scheduledValue.toFixed(2),
+          dotPayItemId: dotFields.dotPayItemId,
+          payItemNumber: dotFields.payItemNumber,
+          specSection: dotFields.specSection,
         });
       }
       console.log(`[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${createdProject.code}`);
