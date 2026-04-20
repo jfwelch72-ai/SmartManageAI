@@ -3,11 +3,26 @@ import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import ProjectsTable from "@/components/ProjectsTable";
-import ProjectsViewSwitcher, { type ProjectsViewType } from "@/components/ProjectsViewSwitcher";
+import ViewSwitcher, { type ViewType as ProjectsViewType } from "@/components/ViewSwitcher";
 import ProjectsKanbanView from "@/components/ProjectsKanbanView";
 import ProjectsCalendarView from "@/components/ProjectsCalendarView";
 import ProjectsMapView from "@/components/ProjectsMapView";
-import SavedViewsDropdown, { type AppliedView } from "@/components/SavedViewsDropdown";
+import SavedViewsDropdown, { type AppliedView, type BuiltInView } from "@/components/SavedViewsDropdown";
+
+interface ProjectsFilterState {
+  status: string;
+  search: string;
+  special: string | null;
+}
+
+const PROJECTS_DEFAULT_FILTERS: ProjectsFilterState = { status: "ALL", search: "", special: null };
+
+const PROJECTS_BUILT_IN_VIEWS: BuiltInView<ProjectsFilterState>[] = [
+  { id: "builtin-all", name: "All projects", apply: { view: "table", filters: { status: "ALL", search: "", special: null } } },
+  { id: "builtin-active", name: "My active projects", apply: { view: "table", filters: { status: "ACTIVE", search: "", special: "myProjects" } } },
+  { id: "builtin-bidding", name: "Bidding", apply: { view: "kanban", filters: { status: "BID", search: "", special: null } } },
+  { id: "builtin-onhold", name: "On hold > 14 days", apply: { view: "table", filters: { status: "PLANNING", search: "", special: "onHoldStale14" } } },
+];
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Input } from "@/components/ui/input";
@@ -95,7 +110,7 @@ export default function ProjectsPage() {
     }
   }, [viewType]);
 
-  const handleApplyView = (applied: AppliedView) => {
+  const handleApplyView = (applied: AppliedView<ProjectsFilterState>) => {
     setViewType(applied.view);
     setStatusFilter(applied.filters.status || "ALL");
     setSearchTerm(applied.filters.search || "");
@@ -433,8 +448,11 @@ export default function ProjectsPage() {
             )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            <ProjectsViewSwitcher value={viewType} onChange={setViewType} />
-            <SavedViewsDropdown
+            <ViewSwitcher value={viewType} onChange={setViewType} testId="projects-view-switcher" />
+            <SavedViewsDropdown<ProjectsFilterState>
+              viewKey="projects"
+              builtInViews={PROJECTS_BUILT_IN_VIEWS}
+              defaultFilters={PROJECTS_DEFAULT_FILTERS}
               current={{ view: viewType, filters: { status: statusFilter, search: searchTerm, special: specialFilter } }}
               onApply={handleApplyView}
             />

@@ -24,63 +24,45 @@ import { Bookmark, Plus, Trash2, ChevronDown, Users, Share2, Pencil, RefreshCw }
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
-export interface ProjectsFilterState {
-  status: string;
-  search: string;
-  special: string | null;
-}
+export type ViewType = "table" | "kanban" | "calendar" | "map";
 
-export interface AppliedView {
-  view: "table" | "kanban" | "calendar" | "map";
-  filters: ProjectsFilterState;
+export interface AppliedView<F = Record<string, any>> {
+  view: ViewType;
+  filters: F;
 }
 
 interface SavedView {
   id: string;
   userId: string;
   name: string;
-  view: "table" | "kanban" | "calendar" | "map";
+  view: ViewType;
   filtersJson: string;
   isShared: boolean;
   creatorName: string | null;
   creatorInitials: string | null;
 }
 
-interface BuiltInView {
+export interface BuiltInView<F = Record<string, any>> {
   id: string;
   name: string;
-  apply: AppliedView;
+  apply: AppliedView<F>;
 }
 
-const BUILT_IN_VIEWS: BuiltInView[] = [
-  {
-    id: "builtin-all",
-    name: "All projects",
-    apply: { view: "table", filters: { status: "ALL", search: "", special: null } },
-  },
-  {
-    id: "builtin-active",
-    name: "My active projects",
-    apply: { view: "table", filters: { status: "ACTIVE", search: "", special: "myProjects" } },
-  },
-  {
-    id: "builtin-bidding",
-    name: "Bidding",
-    apply: { view: "kanban", filters: { status: "BID", search: "", special: null } },
-  },
-  {
-    id: "builtin-onhold",
-    name: "On hold > 14 days",
-    apply: { view: "table", filters: { status: "PLANNING", search: "", special: "onHoldStale14" } },
-  },
-];
-
-interface Props {
-  current: AppliedView;
-  onApply: (view: AppliedView) => void;
+interface Props<F = Record<string, any>> {
+  viewKey: string;
+  current: AppliedView<F>;
+  onApply: (view: AppliedView<F>) => void;
+  builtInViews?: BuiltInView<F>[];
+  defaultFilters: F;
 }
 
-export default function SavedViewsDropdown({ current, onApply }: Props) {
+export default function SavedViewsDropdown<F extends Record<string, any> = Record<string, any>>({
+  viewKey,
+  current,
+  onApply,
+  builtInViews = [],
+  defaultFilters,
+}: Props<F>) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -93,9 +75,9 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
   const currentUserId = user?.id;
 
   const { data: savedViews = [] } = useQuery<SavedView[]>({
-    queryKey: ["/api/saved-views", { viewKey: "projects" }],
+    queryKey: ["/api/saved-views", { viewKey }],
     queryFn: async () => {
-      const res = await fetch("/api/saved-views?viewKey=projects", { credentials: "include" });
+      const res = await fetch(`/api/saved-views?viewKey=${encodeURIComponent(viewKey)}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load saved views");
       return res.json();
     },
@@ -104,7 +86,7 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; isShared: boolean }) => {
       const res = await apiRequest("POST", "/api/saved-views", {
-        viewKey: "projects",
+        viewKey,
         name: data.name,
         view: current.view,
         filters: current.filters,
@@ -113,7 +95,7 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey }] });
       toast({
         title: "View saved",
         description: vars.isShared
@@ -135,7 +117,7 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
       await apiRequest("DELETE", `/api/saved-views/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey }] });
       toast({ title: "View removed" });
     },
     onError: (err: unknown) => {
@@ -198,14 +180,10 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
   });
 
   const applySaved = (sv: SavedView) => {
-    let filters: ProjectsFilterState = { status: "ALL", search: "", special: null };
+    let filters: F = { ...defaultFilters };
     try {
       const parsed = JSON.parse(sv.filtersJson || "{}");
-      filters = {
-        status: parsed.status ?? "ALL",
-        search: parsed.search ?? "",
-        special: parsed.special ?? null,
-      };
+      filters = { ...defaultFilters, ...parsed } as F;
     } catch {}
     onApply({ view: sv.view, filters });
   };
@@ -306,16 +284,20 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-72" data-testid="menu-saved-views">
-          <DropdownMenuLabel className="text-xs">Built-in</DropdownMenuLabel>
-          {BUILT_IN_VIEWS.map((bv) => (
-            <DropdownMenuItem
-              key={bv.id}
-              onClick={() => onApply(bv.apply)}
-              data-testid={`saved-view-${bv.id}`}
-            >
-              {bv.name}
-            </DropdownMenuItem>
-          ))}
+          {builtInViews.length > 0 && (
+            <>
+              <DropdownMenuLabel className="text-xs">Built-in</DropdownMenuLabel>
+              {builtInViews.map((bv) => (
+                <DropdownMenuItem
+                  key={bv.id}
+                  onClick={() => onApply(bv.apply)}
+                  data-testid={`saved-view-${bv.id}`}
+                >
+                  {bv.name}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
           {teamViews.length > 0 && (
             <>
               <DropdownMenuSeparator />

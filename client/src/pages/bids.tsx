@@ -2,7 +2,11 @@ import { useState, useMemo, lazy, Suspense, useRef } from "react";
 import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
-import BidCard from "@/components/BidCard";
+import BidsTable from "@/components/BidsTable";
+import ViewSwitcher, { type ViewType } from "@/components/ViewSwitcher";
+import SavedViewsDropdown, { type AppliedView, type BuiltInView } from "@/components/SavedViewsDropdown";
+import BidsKanbanView from "@/components/BidsKanbanView";
+import EntityCalendarView, { type CalendarEntityItem } from "@/components/EntityCalendarView";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { AIBidAnalysisPanel } from "@/components/AIBidAnalysisPanel";
@@ -58,7 +62,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
-  format,
   isAfter,
   isBefore,
   startOfWeek,
@@ -177,6 +180,27 @@ const DUE_DATE_FILTERS = [
   { value: "NO_DATE", label: "No Due Date" },
 ];
 
+interface BidsFilterState {
+  search: string;
+  dueDate: string;
+  status: string;
+  estimator: string;
+}
+
+const BIDS_DEFAULT_FILTERS: BidsFilterState = {
+  search: "",
+  dueDate: "ALL",
+  status: "ALL",
+  estimator: "ALL",
+};
+
+const BIDS_BUILT_IN_VIEWS: BuiltInView<BidsFilterState>[] = [
+  { id: "builtin-all-bids", name: "All bids", apply: { view: "table", filters: BIDS_DEFAULT_FILTERS } },
+  { id: "builtin-due-this-week", name: "Due this week", apply: { view: "calendar", filters: { ...BIDS_DEFAULT_FILTERS, dueDate: "THIS_WEEK" } } },
+  { id: "builtin-overdue-bids", name: "Overdue", apply: { view: "table", filters: { ...BIDS_DEFAULT_FILTERS, dueDate: "OVERDUE" } } },
+  { id: "builtin-pending-bids", name: "Pending approval", apply: { view: "kanban", filters: { ...BIDS_DEFAULT_FILTERS, status: "PENDING_APPROVAL" } } },
+];
+
 // Estimate status filter options
 const ESTIMATE_STATUS_FILTERS = [
   { value: "ALL", label: "All Statuses" },
@@ -197,6 +221,15 @@ export default function BidsPage() {
   const [dueDateFilter, setDueDateFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [estimatorFilter, setEstimatorFilter] = useState("ALL");
+  const [bidsView, setBidsView] = useState<ViewType>(() => {
+    if (typeof window === "undefined") return "table";
+    const saved = window.localStorage.getItem("bids-view");
+    return saved === "kanban" || saved === "calendar" || saved === "table" ? (saved as ViewType) : "table";
+  });
+  const handleBidsViewChange = (v: ViewType) => {
+    setBidsView(v);
+    if (typeof window !== "undefined") window.localStorage.setItem("bids-view", v);
+  };
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
   const [pendingConversionBidCode, setPendingConversionBidCode] = useState<
     string | null
@@ -768,7 +801,21 @@ export default function BidsPage() {
               Track opportunities, bids in progress, and incoming invitations
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <ViewSwitcher value={bidsView} onChange={handleBidsViewChange} views={["table", "kanban", "calendar"]} testId="bids-view-switcher" />
+            <SavedViewsDropdown<BidsFilterState>
+              viewKey="bids"
+              defaultFilters={BIDS_DEFAULT_FILTERS}
+              builtInViews={BIDS_BUILT_IN_VIEWS}
+              current={{ view: bidsView, filters: { search: searchTerm, dueDate: dueDateFilter, status: statusFilter, estimator: estimatorFilter } }}
+              onApply={(applied) => {
+                handleBidsViewChange(applied.view === "map" ? "table" : applied.view);
+                setSearchTerm(applied.filters.search ?? "");
+                setDueDateFilter(applied.filters.dueDate ?? "ALL");
+                setStatusFilter(applied.filters.status ?? "ALL");
+                setEstimatorFilter(applied.filters.estimator ?? "ALL");
+              }}
+            />
             <AIAnalysisButton module="BIDS" />
             <AIFeatureTrigger feature="document-analysis" variant="outline" size="sm" label="AI Doc Analysis" data-testid="button-open-bid-doc-analysis" />
             {canEditBids(user?.role) && (
@@ -981,60 +1028,50 @@ export default function BidsPage() {
             actionLabel={!(searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL") ? "New Bid" : undefined}
             onAction={!(searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL") ? () => setShowCreateDialog(true) : undefined}
           />
+        ) : bidsView === "kanban" ? (
+          <BidsKanbanView
+            bids={filteredBids}
+            onCardClick={(b) => setLocation(`/bids/${b.code}`)}
+          />
+        ) : bidsView === "calendar" ? (
+          <EntityCalendarView<typeof filteredBids[number]>
+            items={filteredBids
+              .filter((b) => !!b.dueDate)
+              .map<CalendarEntityItem<typeof filteredBids[number]>>((b) => ({
+                id: b.id,
+                label: `${b.code} · ${b.name}`,
+                date: new Date(b.dueDate as string),
+                colorClass: b.status === "AWARDED"
+                  ? "bg-emerald-500 hover:bg-emerald-600"
+                  : b.status === "LOST" || b.status === "CANCELLED"
+                  ? "bg-rose-500 hover:bg-rose-600"
+                  : b.status === "SUBMITTED"
+                  ? "bg-blue-500 hover:bg-blue-600"
+                  : b.status === "ACTIVE"
+                  ? "bg-amber-500 hover:bg-amber-600"
+                  : "bg-slate-500 hover:bg-slate-600",
+                data: b,
+              }))}
+            onItemClick={(b) => setLocation(`/bids/${b.code}`)}
+            legend={[
+              { label: "Draft", colorClass: "bg-slate-500" },
+              { label: "Active", colorClass: "bg-amber-500" },
+              { label: "Submitted", colorClass: "bg-blue-500" },
+              { label: "Awarded", colorClass: "bg-emerald-500" },
+              { label: "Lost / Cancelled", colorClass: "bg-rose-500" },
+            ]}
+            testIdPrefix="bids-calendar"
+          />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {filteredBids.map((bid, bidIdx) => (
-              <div
-                key={bid.id}
-                className="rounded-lg data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background transition-shadow"
-                {...getBidRowProps(bidIdx)}
-              >
-              <BidCard
-                key={bid.id}
-                code={bid.code}
-                name={bid.name}
-                clientName={bid.clientName}
-                bidAmount={
-                  bid.bidAmount
-                    ? `$${Number(bid.bidAmount).toLocaleString()}`
-                    : "TBD"
-                }
-                dueDate={
-                  bid.dueDate
-                    ? format(new Date(bid.dueDate), "yyyy-MM-dd")
-                    : undefined
-                }
-                location={
-                  [bid.city, bid.state].filter(Boolean).join(", ") ||
-                  bid.locationAddress ||
-                  undefined
-                }
-                estimator={bid.estimatorName || "Unassigned"}
-                status={
-                  bid.status as
-                    | "DRAFT"
-                    | "ACTIVE"
-                    | "SUBMITTED"
-                    | "AWARDED"
-                    | "LOST"
-                    | "CANCELLED"
-                }
-                onClick={() => setLocation(`/bids/${bid.code}`)}
-                onConvertToProject={
-                  canEditBids(user?.role)
-                    ? () => handleConvertToProject(bid.code)
-                    : undefined
-                }
-                onDelete={
-                  canDeleteBids(user?.role)
-                    ? () => handleDeleteBid(bid.code, bid.name)
-                    : undefined
-                }
-                estimateData={bid.estimateSummary}
-              />
-              </div>
-            ))}
-          </div>
+          <BidsTable
+            bids={filteredBids}
+            onRowClick={(bid) => setLocation(`/bids/${bid.code}`)}
+            canDelete={canDeleteBids(user?.role)}
+            onDelete={handleDeleteBid}
+            canConvert={canEditBids(user?.role)}
+            onConvert={handleConvertToProject}
+            getRowProps={getBidRowProps}
+          />
         )}
         </>
         )}

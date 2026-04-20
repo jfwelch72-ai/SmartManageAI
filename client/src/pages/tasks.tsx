@@ -5,6 +5,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import TaskDetailModal from "@/components/TaskDetailModal";
+import ViewSwitcher, { type ViewType } from "@/components/ViewSwitcher";
+import SavedViewsDropdown, { type BuiltInView } from "@/components/SavedViewsDropdown";
+import TasksKanbanView from "@/components/TasksKanbanView";
+import EntityCalendarView, { type CalendarEntityItem } from "@/components/EntityCalendarView";
 import {
   Table,
   TableBody,
@@ -67,6 +71,22 @@ interface TaskItem {
   dismissReason?: string;
 }
 
+interface TasksFilterState {
+  search: string;
+  priority: string;
+  category: string;
+  status: string | null;
+}
+
+const TASKS_DEFAULT_FILTERS: TasksFilterState = { search: "", priority: "ALL", category: "ALL", status: null };
+
+const TASKS_BUILT_IN_VIEWS: BuiltInView<TasksFilterState>[] = [
+  { id: "builtin-all-tasks", name: "All tasks", apply: { view: "table", filters: TASKS_DEFAULT_FILTERS } },
+  { id: "builtin-my-open", name: "Open tasks", apply: { view: "kanban", filters: { ...TASKS_DEFAULT_FILTERS, status: "PENDING" } } },
+  { id: "builtin-critical-tasks", name: "Critical priority", apply: { view: "table", filters: { ...TASKS_DEFAULT_FILTERS, priority: "CRITICAL" } } },
+  { id: "builtin-due-cal", name: "Due dates", apply: { view: "calendar", filters: TASKS_DEFAULT_FILTERS } },
+];
+
 const PRIORITY_OPTIONS = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const CATEGORY_OPTIONS = [
   { value: "ALL", label: "All Categories" },
@@ -93,6 +113,15 @@ export default function Tasks() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [selectedTask, setSelectedTask] = useState<Record<string, unknown> | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [tasksView, setTasksView] = useState<ViewType>(() => {
+    if (typeof window === "undefined") return "table";
+    const saved = window.localStorage.getItem("tasks-view");
+    return saved === "kanban" || saved === "calendar" || saved === "table" ? (saved as ViewType) : "table";
+  });
+  const handleTasksViewChange = (v: ViewType) => {
+    setTasksView(v);
+    if (typeof window !== "undefined") window.localStorage.setItem("tasks-view", v);
+  };
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
@@ -303,6 +332,29 @@ export default function Tasks() {
           </p>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewSwitcher
+            value={tasksView}
+            onChange={handleTasksViewChange}
+            views={["table", "kanban", "calendar"]}
+            testId="tasks-view-switcher"
+          />
+          <SavedViewsDropdown<TasksFilterState>
+            viewKey="tasks"
+            defaultFilters={TASKS_DEFAULT_FILTERS}
+            builtInViews={TASKS_BUILT_IN_VIEWS}
+            current={{
+              view: tasksView,
+              filters: { search: searchTerm, priority: priorityFilter, category: categoryFilter, status: statusFilter },
+            }}
+            onApply={(applied) => {
+              handleTasksViewChange(applied.view === "map" ? "table" : applied.view);
+              setSearchTerm(applied.filters.search ?? "");
+              setPriorityFilter(applied.filters.priority ?? "ALL");
+              setCategoryFilter(applied.filters.category ?? "ALL");
+              setStatusFilter(applied.filters.status ?? null);
+            }}
+          />
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-task">
@@ -490,6 +542,7 @@ export default function Tasks() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Filters Section */}
@@ -642,6 +695,47 @@ export default function Tasks() {
             ? "Try adjusting your search or filter criteria."
             : "Create your first task to track and manage work."}
           testId="empty-state-tasks"
+        />
+      ) : tasksView === "kanban" ? (
+        <TasksKanbanView
+          tasks={filteredTasks}
+          onCardClick={(t) => {
+            const full = filteredTasks.find((x) => x.id === t.id);
+            if (full) {
+              setSelectedTask(full as unknown as Record<string, unknown>);
+              setIsDetailModalOpen(true);
+            }
+          }}
+        />
+      ) : tasksView === "calendar" ? (
+        <EntityCalendarView<TaskItem>
+          items={filteredTasks
+            .filter((t) => !!t.dueDate)
+            .map<CalendarEntityItem<TaskItem>>((t) => ({
+              id: t.id,
+              label: t.title,
+              date: new Date(t.dueDate as string),
+              colorClass:
+                t.priority === "CRITICAL"
+                  ? "bg-red-500 hover:bg-red-600"
+                  : t.priority === "HIGH"
+                  ? "bg-orange-500 hover:bg-orange-600"
+                  : t.priority === "MEDIUM"
+                  ? "bg-blue-500 hover:bg-blue-600"
+                  : "bg-slate-500 hover:bg-slate-600",
+              data: t,
+            }))}
+          onItemClick={(t) => {
+            setSelectedTask(t as unknown as Record<string, unknown>);
+            setIsDetailModalOpen(true);
+          }}
+          legend={[
+            { label: "Critical", colorClass: "bg-red-500" },
+            { label: "High", colorClass: "bg-orange-500" },
+            { label: "Medium", colorClass: "bg-blue-500" },
+            { label: "Low", colorClass: "bg-slate-500" },
+          ]}
+          testIdPrefix="tasks-calendar"
         />
       ) : (
         <>
