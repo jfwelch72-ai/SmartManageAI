@@ -38,6 +38,8 @@ import {
   Plus,
   Lightbulb,
   X,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -142,6 +144,27 @@ interface AiSchedulingPanelProps {
   tradeType?: string;
 }
 
+function workingDaysBetweenDates(
+  fromIso: string,
+  toIso: string,
+  workingDays: number[] = [1, 2, 3, 4, 5],
+): number {
+  const from = parseISO(fromIso);
+  const to = parseISO(toIso);
+  if (from.getTime() === to.getTime()) return 0;
+  const sign = to < from ? -1 : 1;
+  const start = sign > 0 ? from : to;
+  const end = sign > 0 ? to : from;
+  const wd = workingDays.length > 0 ? workingDays : [1, 2, 3, 4, 5];
+  let count = 0;
+  const cur = new Date(start);
+  while (cur < end) {
+    cur.setDate(cur.getDate() + 1);
+    if (wd.includes(cur.getDay())) count++;
+  }
+  return sign * count;
+}
+
 const STATUS_CONFIG = {
   NOT_STARTED: { color: "bg-gray-100 text-gray-600", icon: Clock, label: "Not Started" },
   IN_PROGRESS: { color: "bg-blue-100 text-blue-600", icon: Play, label: "In Progress" },
@@ -171,6 +194,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [editDescription, setEditDescription] = useState("");
   const [editDuration, setEditDuration] = useState(1);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [showBaseline, setShowBaseline] = useState(true);
 
   const { toast } = useToast();
 
@@ -392,6 +416,10 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
 
   const schedule = scheduleData?.schedule;
   const tasks = scheduleData?.tasks || [];
+
+  useEffect(() => {
+    if (schedule) setShowBaseline(!!schedule.baselineLocked);
+  }, [schedule?.id, schedule?.baselineLocked]);
   const criticalPathTasks = tasks.filter(t => t.isCriticalPath);
   const completedTasks = tasks.filter(t => t.status === "COMPLETE");
   const delayedTasks = tasks.filter(t => t.status === "DELAYED");
@@ -611,6 +639,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
             </TabsList>
 
             <TabsContent value="gantt">
+              <ScheduleVarianceKpi schedule={schedule} tasks={tasks} />
               <GanttChart
                 tasks={sortedTasks}
                 wbsTasks={wbsTasks}
@@ -622,6 +651,8 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
                 onEditDeps={openDepDialog}
                 collapsedGroups={collapsedGroups}
                 onToggleCollapse={toggleCollapse}
+                showBaseline={showBaseline}
+                onToggleShowBaseline={() => setShowBaseline(v => !v)}
               />
               <RecommendationsPanel
                 recommendations={recommendationsData?.recommendations || []}
@@ -1007,6 +1038,8 @@ function GanttChart({
   onEditDeps,
   collapsedGroups,
   onToggleCollapse,
+  showBaseline,
+  onToggleShowBaseline,
 }: {
   tasks: ScheduleTask[];
   wbsTasks: Array<{ task: ScheduleTask; depth: number; hasChildren: boolean }>;
@@ -1018,7 +1051,12 @@ function GanttChart({
   onEditDeps: (task: ScheduleTask) => void;
   collapsedGroups: Set<string>;
   onToggleCollapse: (taskId: string) => void;
+  showBaseline: boolean;
+  onToggleShowBaseline: () => void;
 }) {
+  const hasAnyBaseline = !!schedule.baselineLocked || tasks.some(t => t.baselineStartDate && t.baselineEndDate);
+  const baselineVisible = showBaseline && hasAnyBaseline;
+  const workingDaysList = (schedule.workingDays && schedule.workingDays.length > 0) ? schedule.workingDays : [1, 2, 3, 4, 5];
   const ganttBodyRef = useRef<HTMLDivElement>(null);
   const { start: ganttStart, end: ganttEnd, totalDays } = getGanttRange();
 
@@ -1058,11 +1096,25 @@ function GanttChart({
         <CardTitle className="flex items-center gap-2">
           <BarChart3 className="w-5 h-5" />
           Gantt Chart
-          <div className="ml-auto flex items-center gap-3 text-xs font-normal text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-red-400 rounded-sm inline-block" />Critical</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-primary/60 rounded-sm inline-block" />Normal</span>
-            {schedule.baselineLocked && <span className="flex items-center gap-1"><span className="w-3 h-2 bg-gray-300 rounded-sm inline-block" />Baseline</span>}
-            <span className="flex items-center gap-1"><span className="w-3 h-1 bg-blue-200 rounded-sm inline-block" />Float</span>
+          <div className="ml-auto flex items-center gap-3 text-xs font-normal text-muted-foreground flex-wrap">
+            {hasAnyBaseline && (
+              <Button
+                variant={baselineVisible ? "secondary" : "outline"}
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={onToggleShowBaseline}
+                data-testid="button-toggle-baseline"
+              >
+                {baselineVisible ? <Eye className="w-3.5 h-3.5 mr-1" /> : <EyeOff className="w-3.5 h-3.5 mr-1" />}
+                {baselineVisible ? "Hide baseline" : "Show baseline"}
+              </Button>
+            )}
+            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-destructive rounded-sm inline-block" />Critical</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-2 bg-primary/60 rounded-sm inline-block" />Planned</span>
+            {baselineVisible && <span className="flex items-center gap-1"><span className="w-3 h-2 bg-muted-foreground/40 rounded-sm inline-block" />Baseline</span>}
+            {baselineVisible && <span className="flex items-center gap-1"><span className="w-3 h-2 bg-destructive/80 rounded-sm inline-block" />Slip</span>}
+            {baselineVisible && <span className="flex items-center gap-1"><span className="w-3 h-2 bg-emerald-500 rounded-sm inline-block" />Ahead</span>}
+            <span className="flex items-center gap-1"><span className="w-3 h-1 bg-blue-200 dark:bg-blue-900 rounded-sm inline-block" />Float</span>
           </div>
         </CardTitle>
       </CardHeader>
@@ -1111,18 +1163,41 @@ function GanttChart({
                 {wbsTasks.map(({ task, depth, hasChildren }) => {
                   const StatusIcon = STATUS_CONFIG[task.status].icon;
                   const barStyle = task.plannedStartDate && task.plannedEndDate ? getBarPosition(task.plannedStartDate, task.plannedEndDate) : { left: "0%", width: "2%" };
-                  const hasBaseline = task.baselineStartDate && task.baselineEndDate;
+                  const hasBaseline = !!(task.baselineStartDate && task.baselineEndDate);
+                  const showBaselineForRow = hasBaseline && baselineVisible;
                   const baselineStyle = hasBaseline ? getBarPosition(task.baselineStartDate!, task.baselineEndDate!) : null;
 
                   const floatWidth = (task.freeFloat || 0) > 0
                     ? `${((task.freeFloat || 0) / totalDays) * 100}%`
                     : "0%";
 
-                  const baselineVariance = hasBaseline && task.plannedEndDate
-                    ? differenceInDays(parseISO(task.plannedEndDate), parseISO(task.baselineEndDate!))
+                  const slipDays = hasBaseline && task.plannedEndDate
+                    ? workingDaysBetweenDates(task.baselineEndDate!, task.plannedEndDate, workingDaysList)
+                    : null;
+
+                  const slipStyle = (showBaselineForRow && slipDays != null && slipDays > 0 && task.baselineEndDate && task.plannedEndDate)
+                    ? getBarPosition(task.baselineEndDate, task.plannedEndDate)
+                    : null;
+                  const aheadStyle = (showBaselineForRow && slipDays != null && slipDays < 0 && task.baselineEndDate && task.plannedEndDate)
+                    ? getBarPosition(task.plannedEndDate, task.baselineEndDate)
                     : null;
 
                   const isCollapsed = collapsedGroups.has(task.id);
+
+                  const tooltipLines: string[] = [task.name];
+                  if (task.plannedStartDate && task.plannedEndDate) {
+                    tooltipLines.push(`Planned: ${format(parseISO(task.plannedStartDate), "MMM d, yyyy")} → ${format(parseISO(task.plannedEndDate), "MMM d, yyyy")}`);
+                  }
+                  if (hasBaseline) {
+                    tooltipLines.push(`Baseline: ${format(parseISO(task.baselineStartDate!), "MMM d, yyyy")} → ${format(parseISO(task.baselineEndDate!), "MMM d, yyyy")}`);
+                  }
+                  if (slipDays != null) {
+                    if (slipDays > 0) tooltipLines.push(`Slip: +${slipDays} working day${slipDays === 1 ? "" : "s"} late`);
+                    else if (slipDays < 0) tooltipLines.push(`Slip: ${slipDays} working day${slipDays === -1 ? "" : "s"} ahead`);
+                    else tooltipLines.push("Slip: on baseline");
+                  }
+                  tooltipLines.push(`Progress: ${task.percentComplete}%`);
+                  const tooltip = tooltipLines.join("\n");
 
                   return (
                     <div
@@ -1145,40 +1220,72 @@ function GanttChart({
                         <StatusIcon className={cn("w-3.5 h-3.5 shrink-0", STATUS_CONFIG[task.status].color.split(" ")[1])} />
                         <span className={cn("text-xs truncate", hasChildren && "font-semibold")}>{task.name}</span>
                         {task.isCriticalPath && <Badge variant="destructive" className="text-[10px] px-1 py-0 shrink-0">CP</Badge>}
-                        {baselineVariance != null && baselineVariance > 0 && (
-                          <span className="text-[10px] text-red-500 shrink-0">+{baselineVariance}d</span>
-                        )}
                       </div>
-                      <div className="flex-1 relative h-7 bg-muted/30 rounded" onClick={(e) => e.stopPropagation()}>
-                        {hasBaseline && baselineStyle && (
+                      <div className="flex-1 relative h-7 bg-muted/30 rounded" onClick={(e) => e.stopPropagation()} title={tooltip}>
+                        {showBaselineForRow && baselineStyle && (
                           <div
-                            className="absolute h-2 rounded bg-gray-300 opacity-60"
+                            className="absolute h-2 rounded bg-muted-foreground/30 dark:bg-muted-foreground/40 border border-muted-foreground/40"
                             style={{ ...baselineStyle, top: 2 }}
-                            title="Baseline"
+                            title={`Baseline: ${format(parseISO(task.baselineStartDate!), "MMM d")} → ${format(parseISO(task.baselineEndDate!), "MMM d")}`}
+                          />
+                        )}
+                        {aheadStyle && (
+                          <div
+                            className="absolute h-2 rounded bg-emerald-500/70 dark:bg-emerald-400/70"
+                            style={{ ...aheadStyle, top: 2 }}
+                            title={`Ahead of baseline by ${Math.abs(slipDays!)} working days`}
                           />
                         )}
                         <div
                           className={cn(
                             "absolute rounded",
-                            task.isCriticalPath ? "bg-red-400" : "bg-primary/60",
-                            task.status === "COMPLETE" && "bg-green-400",
-                            task.status === "DELAYED" && "bg-yellow-400",
-                            hasBaseline ? "h-3 top-3" : "h-5 top-1"
+                            task.isCriticalPath
+                              ? "bg-destructive/70 ring-1 ring-destructive"
+                              : "bg-primary/60",
+                            task.status === "COMPLETE" && "bg-emerald-500/70",
+                            task.status === "DELAYED" && "bg-amber-500/80",
+                            showBaselineForRow ? "h-3 top-3" : "h-5 top-1"
                           )}
                           style={barStyle}
                           onClick={() => onTaskClick(task)}
                         >
                           {task.percentComplete > 0 && task.percentComplete < 100 && (
-                            <div className="h-full bg-primary rounded" style={{ width: `${task.percentComplete}%` }} />
+                            <div className="h-full bg-primary rounded-l" style={{ width: `${task.percentComplete}%` }} />
                           )}
                         </div>
+                        {slipStyle && (
+                          <div
+                            className="absolute h-3 rounded-r bg-destructive dark:bg-destructive/90"
+                            style={{ ...slipStyle, top: 12 }}
+                            title={`Slipped ${slipDays} working days past baseline`}
+                          />
+                        )}
+                        {showBaselineForRow && slipDays != null && slipDays !== 0 && (
+                          <div
+                            className={cn(
+                              "absolute -top-0.5 px-1 py-px rounded text-[9px] font-semibold leading-tight whitespace-nowrap",
+                              slipDays > 0
+                                ? "bg-destructive text-destructive-foreground"
+                                : "bg-emerald-600 text-white dark:bg-emerald-500"
+                            )}
+                            style={{
+                              left: slipDays > 0
+                                ? `calc(${slipStyle?.left || barStyle.left} + ${slipStyle?.width || "0%"})`
+                                : `calc(${barStyle.left} + ${barStyle.width})`,
+                              transform: "translateX(2px)",
+                            }}
+                            data-testid={`pill-slip-${task.id}`}
+                          >
+                            {slipDays > 0 ? `+${slipDays}d` : `${slipDays}d`}
+                          </div>
+                        )}
                         {(task.freeFloat || 0) > 0 && (
                           <div
-                            className="absolute h-2 bg-blue-200 rounded opacity-50"
+                            className="absolute h-2 bg-blue-200 dark:bg-blue-900 rounded opacity-50"
                             style={{
                               left: `calc(${barStyle.left} + ${barStyle.width})`,
                               width: floatWidth,
-                              top: hasBaseline ? 12 : 8,
+                              top: showBaselineForRow ? 22 : 8,
                             }}
                             title={`Float: ${task.freeFloat} days`}
                           />
@@ -1196,6 +1303,74 @@ function GanttChart({
               </div>
             </div>
           </ScrollArea>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScheduleVarianceKpi({ schedule, tasks }: { schedule: ProjectSchedule; tasks: ScheduleTask[] }) {
+  const baselineEnd = schedule.baselineLocked ? schedule.baselineEndDate : undefined;
+  const projectedEnd = schedule.projectedCompletionDate
+    || (tasks.length > 0
+      ? tasks.reduce<string | null>((latest, t) => {
+          const end = t.plannedEndDate;
+          if (!end) return latest;
+          return !latest || end > latest ? end : latest;
+        }, null) || undefined
+      : undefined);
+
+  if (!baselineEnd || !projectedEnd) {
+    return null;
+  }
+
+  const workingDays = (schedule.workingDays && schedule.workingDays.length > 0) ? schedule.workingDays : [1, 2, 3, 4, 5];
+  const variance = workingDaysBetweenDates(baselineEnd, projectedEnd, workingDays);
+
+  const isLate = variance > 0;
+  const isAhead = variance < 0;
+  const label = isLate
+    ? `+${variance} working day${variance === 1 ? "" : "s"} late`
+    : isAhead
+      ? `${Math.abs(variance)} working day${Math.abs(variance) === 1 ? "" : "s"} ahead`
+      : "On schedule";
+
+  return (
+    <Card className={cn(
+      "mb-3 border",
+      isLate ? "border-destructive/40 bg-destructive/5" : "border-emerald-500/30 bg-emerald-500/5",
+    )} data-testid="kpi-schedule-variance">
+      <CardContent className="py-3 px-4">
+        <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">Schedule Variance</span>
+            <Badge
+              className={cn(
+                "text-xs font-semibold",
+                isLate
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive"
+                  : "bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500",
+              )}
+              data-testid="badge-schedule-variance"
+            >
+              {label}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-4 text-xs md:ml-auto">
+            <div className="flex flex-col">
+              <span className="text-muted-foreground">Baseline finish</span>
+              <span className="font-medium" data-testid="text-kpi-baseline-end">
+                {format(parseISO(baselineEnd), "MMM d, yyyy")}
+              </span>
+            </div>
+            <ArrowRight className="w-4 h-4 text-muted-foreground" />
+            <div className="flex flex-col">
+              <span className="text-muted-foreground">Projected finish</span>
+              <span className={cn("font-medium", isLate ? "text-destructive" : isAhead ? "text-emerald-600 dark:text-emerald-400" : "")} data-testid="text-kpi-projected-end">
+                {format(parseISO(projectedEnd), "MMM d, yyyy")}
+              </span>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
