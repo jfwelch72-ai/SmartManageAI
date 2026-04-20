@@ -373,9 +373,12 @@ export async function exitEnrollment(
   enrollmentId: string,
   reason: "REPLIED" | "OPPORTUNITY_WON" | "OPPORTUNITY_LOST" | "MANUAL_REMOVE" | "BOUNCED",
   newStatus: "PAUSED" | "REPLIED" | "BOUNCED" | "REMOVED" | "FINISHED" = "REMOVED",
+  extras: { bounceEmailMessageId?: string | null } = {},
 ): Promise<void> {
+  const patch: Record<string, any> = { status: newStatus, exitReason: reason, exitedAt: new Date(), updatedAt: new Date() };
+  if (extras.bounceEmailMessageId) patch.bounceEmailMessageId = extras.bounceEmailMessageId;
   await db.update(crmSequenceEnrollments)
-    .set({ status: newStatus, exitReason: reason, exitedAt: new Date(), updatedAt: new Date() })
+    .set(patch)
     .where(eq(crmSequenceEnrollments.id, enrollmentId));
   // Cancel pending executions
   await db.update(crmSequenceStepExecutions)
@@ -414,6 +417,7 @@ export async function recordEmailEvent(
   executionId: string,
   eventType: "OPEN" | "CLICK" | "REPLY" | "BOUNCE",
   payload: Record<string, any> = {},
+  extras: { inboundEmailMessageId?: string | null } = {},
 ): Promise<void> {
   const [exec] = await db.select().from(crmSequenceStepExecutions).where(eq(crmSequenceStepExecutions.id, executionId)).limit(1);
   if (!exec) return;
@@ -450,7 +454,11 @@ export async function recordEmailEvent(
     await db.update(crmSequenceStepExecutions).set({ bouncedAt: new Date(), status: "BOUNCED" }).where(eq(crmSequenceStepExecutions.id, executionId));
     const [enrollment] = await db.select().from(crmSequenceEnrollments).where(eq(crmSequenceEnrollments.id, exec.enrollmentId)).limit(1);
     if (enrollment && enrollment.status === "ACTIVE") {
-      await exitEnrollment(enrollment.id, "BOUNCED", "BOUNCED");
+      await exitEnrollment(enrollment.id, "BOUNCED", "BOUNCED", { bounceEmailMessageId: extras.inboundEmailMessageId || null });
+    } else if (enrollment && extras.inboundEmailMessageId && !enrollment.bounceEmailMessageId) {
+      await db.update(crmSequenceEnrollments)
+        .set({ bounceEmailMessageId: extras.inboundEmailMessageId, updatedAt: new Date() })
+        .where(eq(crmSequenceEnrollments.id, enrollment.id));
     }
   }
 }
@@ -580,6 +588,7 @@ export async function detectInboundBounce(opts: {
   bodyHtml?: string | null;
   inReplyTo?: string | null;
   references?: string | null;
+  inboundEmailMessageId?: string | null;
 }): Promise<{ matched: number }> {
   if (!opts.isIncoming || !opts.fromAddress) return { matched: 0 };
   if (!looksLikeBounce({ fromAddress: opts.fromAddress, subject: opts.subject })) {
@@ -617,6 +626,7 @@ export async function detectInboundBounce(opts: {
     source: "inbound_dsn",
     from: opts.fromAddress.trim().toLowerCase(),
     subject: opts.subject || null,
-  });
+    inboundEmailMessageId: opts.inboundEmailMessageId || null,
+  }, { inboundEmailMessageId: opts.inboundEmailMessageId || null });
   return { matched: 1 };
 }

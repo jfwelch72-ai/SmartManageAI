@@ -2700,6 +2700,7 @@ async function persistGmailMessage(
         bodyHtml: parsed.bodyHtml,
         inReplyTo: parsed.inReplyTo,
         references: parsed.references,
+        inboundEmailMessageId: newMessageId,
       });
     } catch (err) {
       logError("sequence bounce detection failed", { error: String(err) });
@@ -3174,6 +3175,7 @@ export async function syncGmailAccount(
             bodyHtml: parsed.bodyHtml,
             inReplyTo: parsed.inReplyTo,
             references: parsed.references,
+            inboundEmailMessageId: newMessageId,
           });
         } catch (err) {
           logError("sequence bounce detection failed", { error: String(err) });
@@ -3484,6 +3486,7 @@ async function persistOutlookMessage(
         bodyHtml: parsed.bodyHtml,
         inReplyTo: parsed.inReplyTo,
         references: parsed.references,
+        inboundEmailMessageId: newMessageId,
       });
     } catch (err) {
       logError("sequence bounce detection failed", { error: String(err) });
@@ -3879,6 +3882,7 @@ export async function syncImapAccount(
               bodyHtml: msg.bodyHtml,
               inReplyTo: (msg as any).inReplyTo,
               references: (msg as any).references,
+              inboundEmailMessageId: newMessageId,
             });
           } catch (err) {
             logError("sequence bounce detection failed", { error: String(err) });

@@ -10,6 +10,7 @@ import {
   crmContacts,
   crmOpportunities,
   crmTasks,
+  emailMessages,
   users,
   insertCrmSequenceSchema,
   insertCrmSequenceStepSchema,
@@ -335,6 +336,29 @@ router.get("/api/crm/sequences/:id/enrollments", requireAuth, requireRole(...ROL
     if (!seq) return res.status(404).json({ error: "Not found" });
     if (!isSuperAdmin && orgId && seq.organizationId !== orgId) return res.status(403).json({ error: "Access denied" });
 
+    const EXIT_REASON_VALUES = ["REPLIED", "OPPORTUNITY_WON", "OPPORTUNITY_LOST", "MANUAL_REMOVE", "BOUNCED", "COMPLETED"] as const;
+    type ExitReasonValue = typeof EXIT_REASON_VALUES[number];
+    const rawExitReason = typeof req.query.exitReason === "string" ? req.query.exitReason : null;
+    let exitReasonFilter: "NONE" | ExitReasonValue | null = null;
+    if (rawExitReason === "NONE") {
+      exitReasonFilter = "NONE";
+    } else if (rawExitReason && (EXIT_REASON_VALUES as readonly string[]).includes(rawExitReason)) {
+      exitReasonFilter = rawExitReason as ExitReasonValue;
+    }
+
+    const SORT_FIELDS = { createdAt: crmSequenceEnrollments.createdAt, exitedAt: crmSequenceEnrollments.exitedAt, exitReason: crmSequenceEnrollments.exitReason, status: crmSequenceEnrollments.status } as const;
+    const sortParam = typeof req.query.sort === "string" ? req.query.sort : "createdAt:desc";
+    const [sortField, sortDir] = sortParam.split(":");
+    const dir = sortDir === "asc" ? asc : desc;
+    const orderCol = (SORT_FIELDS as Record<string, typeof crmSequenceEnrollments.createdAt>)[sortField] || crmSequenceEnrollments.createdAt;
+
+    const conds = [eq(crmSequenceEnrollments.sequenceId, seq.id)];
+    if (exitReasonFilter === "NONE") {
+      conds.push(isNull(crmSequenceEnrollments.exitReason));
+    } else if (exitReasonFilter) {
+      conds.push(eq(crmSequenceEnrollments.exitReason, exitReasonFilter));
+    }
+
     const rows = await db.select({
       enrollment: crmSequenceEnrollments,
       contactFirst: crmContacts.firstName,
@@ -342,11 +366,14 @@ router.get("/api/crm/sequences/:id/enrollments", requireAuth, requireRole(...ROL
       contactEmail: crmContacts.email,
       senderFirst: users.firstName,
       senderLast: users.lastName,
+      bounceEmailThreadId: emailMessages.threadId,
+      bounceEmailSubject: emailMessages.subject,
     }).from(crmSequenceEnrollments)
       .leftJoin(crmContacts, eq(crmSequenceEnrollments.contactId, crmContacts.id))
       .leftJoin(users, eq(crmSequenceEnrollments.senderId, users.id))
-      .where(eq(crmSequenceEnrollments.sequenceId, seq.id))
-      .orderBy(desc(crmSequenceEnrollments.createdAt));
+      .leftJoin(emailMessages, eq(crmSequenceEnrollments.bounceEmailMessageId, emailMessages.id))
+      .where(and(...conds))
+      .orderBy(dir(orderCol));
 
     // Per-step metrics
     const steps = await db.select().from(crmSequenceSteps).where(eq(crmSequenceSteps.sequenceId, seq.id)).orderBy(asc(crmSequenceSteps.stepOrder));
@@ -374,6 +401,8 @@ router.get("/api/crm/sequences/:id/enrollments", requireAuth, requireRole(...ROL
         contactName: r.contactFirst ? `${r.contactFirst} ${r.contactLast || ""}`.trim() : null,
         contactEmail: r.contactEmail,
         senderName: r.senderFirst ? `${r.senderFirst} ${r.senderLast || ""}`.trim() : null,
+        bounceEmailThreadId: r.bounceEmailThreadId,
+        bounceEmailSubject: r.bounceEmailSubject,
       })),
       metrics,
       steps,
@@ -388,14 +417,22 @@ router.get("/api/crm/sequences/enrollments/by-contact/:contactId", requireAuth, 
     const rows = await db.select({
       enrollment: crmSequenceEnrollments,
       sequenceName: crmSequences.name,
+      bounceEmailThreadId: emailMessages.threadId,
+      bounceEmailSubject: emailMessages.subject,
     })
       .from(crmSequenceEnrollments)
       .leftJoin(crmSequences, eq(crmSequenceEnrollments.sequenceId, crmSequences.id))
+      .leftJoin(emailMessages, eq(crmSequenceEnrollments.bounceEmailMessageId, emailMessages.id))
       .where(and(
         eq(crmSequenceEnrollments.contactId, req.params.contactId),
         eq(crmSequenceEnrollments.organizationId, orgId),
       )).orderBy(desc(crmSequenceEnrollments.createdAt));
-    res.json(rows.map(r => ({ ...r.enrollment, sequenceName: r.sequenceName })));
+    res.json(rows.map(r => ({
+      ...r.enrollment,
+      sequenceName: r.sequenceName,
+      bounceEmailThreadId: r.bounceEmailThreadId,
+      bounceEmailSubject: r.bounceEmailSubject,
+    })));
   } catch (e) { next(e); }
 });
 
@@ -406,14 +443,22 @@ router.get("/api/crm/sequences/enrollments/by-opportunity/:oppId", requireAuth, 
     const rows = await db.select({
       enrollment: crmSequenceEnrollments,
       sequenceName: crmSequences.name,
+      bounceEmailThreadId: emailMessages.threadId,
+      bounceEmailSubject: emailMessages.subject,
     })
       .from(crmSequenceEnrollments)
       .leftJoin(crmSequences, eq(crmSequenceEnrollments.sequenceId, crmSequences.id))
+      .leftJoin(emailMessages, eq(crmSequenceEnrollments.bounceEmailMessageId, emailMessages.id))
       .where(and(
         eq(crmSequenceEnrollments.opportunityId, req.params.oppId),
         eq(crmSequenceEnrollments.organizationId, orgId),
       )).orderBy(desc(crmSequenceEnrollments.createdAt));
-    res.json(rows.map(r => ({ ...r.enrollment, sequenceName: r.sequenceName })));
+    res.json(rows.map(r => ({
+      ...r.enrollment,
+      sequenceName: r.sequenceName,
+      bounceEmailThreadId: r.bounceEmailThreadId,
+      bounceEmailSubject: r.bounceEmailSubject,
+    })));
   } catch (e) { next(e); }
 });
 

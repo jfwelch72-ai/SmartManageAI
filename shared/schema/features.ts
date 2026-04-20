@@ -9334,6 +9334,9 @@ export const crmSequenceEnrollments = pgTable("crm_sequence_enrollments", {
   startAt: timestamp("start_at").notNull().defaultNow(),
   exitReason: crmSequenceExitReasonEnum("exit_reason"),
   exitedAt: timestamp("exited_at"),
+  // When the enrollment exits with reason BOUNCED, points at the inbound DSN
+  // email message so the UI can link the user to the underlying bounce.
+  bounceEmailMessageId: varchar("bounce_email_message_id").references(() => emailMessages.id, { onDelete: "set null" }),
   lastActivityAt: timestamp("last_activity_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
+import { ContactSequenceTimeline } from "@/components/crm/ContactSequenceTimeline";
 import { Textarea } from "@/components/ui/textarea";
 import { Edit, User, Mail, Phone } from "lucide-react";
 import type { CrmContact } from "@shared/schema";
@@ -338,6 +339,12 @@ export function CrmContactDialogs({
                 values={selectedContact.customFields}
                 testIdPrefix="contact-"
               />
+            )}
+            {selectedContact?.id && (
+              <div className="pt-2 border-t">
+                <p className="text-sm font-medium mb-2">Sequence history</p>
+                <ContactSequenceTimeline contactId={selectedContact.id} />
+              </div>
             )}
           </div>
         </DialogContent>

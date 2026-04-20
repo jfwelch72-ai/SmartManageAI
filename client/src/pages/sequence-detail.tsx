@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, Mail, Phone, MessageSquare, Linkedin, ListChecks, Trash2, ChevronLeft, Pause, Play, X } from "lucide-react";
+import { Plus, Mail, Phone, MessageSquare, Linkedin, ListChecks, Trash2, ChevronLeft, Pause, Play, X, AlertTriangle, Reply, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const STEP_TYPES = [
@@ -56,12 +56,28 @@ export default function SequenceDetailPage() {
     queryKey: ["/api/crm/sequences", id],
   });
 
+  const [exitReasonFilter, setExitReasonFilter] = useState<string>("ALL");
+  const [sort, setSort] = useState<string>("createdAt:desc");
+
+  const enrollmentsQS = (() => {
+    const p = new URLSearchParams();
+    if (exitReasonFilter !== "ALL") p.set("exitReason", exitReasonFilter);
+    if (sort) p.set("sort", sort);
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  })();
+
   const { data: enrollData } = useQuery<{
     enrollments: any[];
     metrics: any[];
     steps: Step[];
   }>({
-    queryKey: ["/api/crm/sequences", id, "enrollments"],
+    queryKey: ["/api/crm/sequences", id, "enrollments", exitReasonFilter, sort],
+    queryFn: async () => {
+      const r = await fetch(`/api/crm/sequences/${id}/enrollments${enrollmentsQS}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load enrollments");
+      return r.json();
+    },
   });
 
   const updateMut = useMutation({
@@ -172,7 +188,39 @@ export default function SequenceDetailPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Enrollees</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-2 flex-wrap">
+                <span>Enrollees</span>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Exit reason</Label>
+                  <Select value={exitReasonFilter} onValueChange={setExitReasonFilter}>
+                    <SelectTrigger className="w-44 h-8" data-testid="select-filter-exit-reason"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      <SelectItem value="NONE">Still running</SelectItem>
+                      <SelectItem value="REPLIED">Replied</SelectItem>
+                      <SelectItem value="BOUNCED">Bounced</SelectItem>
+                      <SelectItem value="OPPORTUNITY_WON">Opportunity won</SelectItem>
+                      <SelectItem value="OPPORTUNITY_LOST">Opportunity lost</SelectItem>
+                      <SelectItem value="MANUAL_REMOVE">Manually removed</SelectItem>
+                      <SelectItem value="COMPLETED">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Label className="text-xs text-muted-foreground">Sort</Label>
+                  <Select value={sort} onValueChange={setSort}>
+                    <SelectTrigger className="w-48 h-8" data-testid="select-sort-enrollees"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="createdAt:desc">Newest enrolled</SelectItem>
+                      <SelectItem value="createdAt:asc">Oldest enrolled</SelectItem>
+                      <SelectItem value="exitReason:asc">Exit reason (A→Z)</SelectItem>
+                      <SelectItem value="exitReason:desc">Exit reason (Z→A)</SelectItem>
+                      <SelectItem value="exitedAt:desc">Recently exited</SelectItem>
+                      <SelectItem value="status:asc">Status (A→Z)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               {!enrollData || enrollData.enrollments.length === 0 ? (
                 <p className="text-muted-foreground text-sm">Nobody enrolled yet.</p>
@@ -180,7 +228,7 @@ export default function SequenceDetailPage() {
                 <table className="w-full text-sm" data-testid="table-enrollees">
                   <thead>
                     <tr className="text-left text-muted-foreground">
-                      <th className="py-2">Contact</th><th>Email</th><th>Sender</th><th>Step</th><th>Status</th><th>Started</th><th></th>
+                      <th className="py-2">Contact</th><th>Email</th><th>Sender</th><th>Step</th><th>Status</th><th>Exit reason</th><th>Started</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -191,6 +239,7 @@ export default function SequenceDetailPage() {
                         <td>{e.senderName || "—"}</td>
                         <td>{e.currentStepIndex + 1}</td>
                         <td><Badge variant="secondary" data-testid={`badge-enroll-status-${e.id}`}>{e.status}</Badge></td>
+                        <td><ExitReasonCell enrollment={e} /></td>
                         <td>{new Date(e.startAt).toLocaleDateString()}</td>
                         <td className="flex gap-1">
                           {e.status === "ACTIVE" && (
@@ -246,6 +295,42 @@ export default function SequenceDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function ExitReasonCell({ enrollment }: { enrollment: any }) {
+  const reason: string | null = enrollment.exitReason || null;
+  if (!reason) return <span className="text-muted-foreground text-xs" data-testid={`exit-reason-${enrollment.id}`}>—</span>;
+  const exitedAt = enrollment.exitedAt ? new Date(enrollment.exitedAt).toLocaleString() : null;
+  const cfg: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon?: any }> = {
+    REPLIED: { label: "Replied", variant: "default", icon: Reply },
+    BOUNCED: { label: "Bounced", variant: "destructive", icon: AlertTriangle },
+    OPPORTUNITY_WON: { label: "Deal won", variant: "default" },
+    OPPORTUNITY_LOST: { label: "Deal lost", variant: "secondary" },
+    MANUAL_REMOVE: { label: "Removed", variant: "outline" },
+    COMPLETED: { label: "Completed", variant: "secondary" },
+  };
+  const c = cfg[reason] || { label: reason, variant: "secondary" as const };
+  const Icon = c.icon;
+  return (
+    <div className="flex flex-col gap-1" data-testid={`exit-reason-${enrollment.id}`}>
+      <Badge variant={c.variant} className="w-fit gap-1" data-testid={`badge-exit-reason-${reason}-${enrollment.id}`}>
+        {Icon && <Icon className="h-3 w-3" />}
+        {c.label}
+      </Badge>
+      {exitedAt && <span className="text-[10px] text-muted-foreground" title={exitedAt}>{exitedAt}</span>}
+      {reason === "BOUNCED" && enrollment.bounceEmailThreadId && (
+        <Link href={`/email-assistant?threadId=${encodeURIComponent(enrollment.bounceEmailThreadId)}`}>
+          <span className="text-xs text-primary inline-flex items-center gap-1 hover:underline cursor-pointer" data-testid={`link-bounce-email-${enrollment.id}`}>
+            <ExternalLink className="h-3 w-3" />
+            View bounce email
+          </span>
+        </Link>
+      )}
+      {reason === "BOUNCED" && !enrollment.bounceEmailThreadId && (
+        <span className="text-[10px] text-muted-foreground italic">DSN not linked</span>
+      )}
     </div>
   );
 }

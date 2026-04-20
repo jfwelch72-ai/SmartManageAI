@@ -90,6 +90,16 @@ export async function ensureSequenceTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_seq_enroll_sender_idx" ON "crm_sequence_enrollments"("sender_id")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_seq_enroll_status_idx" ON "crm_sequence_enrollments"("status")`);
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "crm_seq_enroll_unique_contact" ON "crm_sequence_enrollments"("sequence_id","contact_id")`);
+  // Task #560 — link bounced enrollments to the inbound DSN email so the UI
+  // can let users open the underlying bounce notification.
+  await db.execute(sql`ALTER TABLE "crm_sequence_enrollments" ADD COLUMN IF NOT EXISTS "bounce_email_message_id" varchar`);
+  await db.execute(sql`
+    DO $$ BEGIN
+      ALTER TABLE "crm_sequence_enrollments"
+        ADD CONSTRAINT "crm_seq_enroll_bounce_email_fk"
+        FOREIGN KEY ("bounce_email_message_id") REFERENCES "email_messages"("id") ON DELETE SET NULL;
+    EXCEPTION WHEN duplicate_object THEN NULL; WHEN undefined_table THEN NULL; END $$;
+  `);
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "crm_sequence_step_executions" (
