@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,8 +58,23 @@ function ListEditor({
     initial ? [...initial.contactEmails, ...initial.extraEmails].join(", ") : "",
   );
 
+  useEffect(() => {
+    if (open) {
+      setName(initial?.name ?? "");
+      setEmailsText(initial ? [...initial.contactEmails, ...initial.extraEmails].join(", ") : "");
+    }
+  }, [open, initial]);
+
   const saveMutation = useMutation({
     mutationFn: async (vars: { name: string; extraEmails: string[] }) => {
+      if (initial) {
+        const res = await apiRequest("PATCH", `/api/distribution-lists/${initial.id}`, {
+          name: vars.name,
+          contactEmails: [],
+          extraEmails: vars.extraEmails,
+        });
+        return res.json();
+      }
       const res = await apiRequest("POST", "/api/distribution-lists", {
         name: vars.name,
         contactEmails: [],

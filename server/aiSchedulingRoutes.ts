@@ -757,6 +757,21 @@ const orgDistributionListPayloadSchema = z.object({
   extraEmails: z.array(z.string().email()).max(100).default([]),
 });
 
+const orgDistributionListUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  contactEmails: z.array(z.string().email()).max(100).optional(),
+  extraEmails: z.array(z.string().email()).max(100).optional(),
+});
+
+function isPgUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "23505"
+  );
+}
+
 function normalizeEmails(arr: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -996,6 +1011,80 @@ router.post(
         .returning();
 
       res.json({ list: saved });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// PATCH /api/distribution-lists/:listId  — rename/update an org-level list
+router.patch(
+  "/distribution-lists/:listId",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = orgDistributionListUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+      }
+
+      const [existing] = await db.select()
+        .from(projectEmailDistributionLists)
+        .where(and(
+          eq(projectEmailDistributionLists.id, req.params.listId),
+          eq(projectEmailDistributionLists.organizationId, organizationId),
+          isNull(projectEmailDistributionLists.projectId),
+        ));
+
+      if (!existing) {
+        return res.status(404).json({ error: "Distribution list not found" });
+      }
+
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+
+      if (parsed.data.name !== undefined) {
+        updates.name = parsed.data.name.trim();
+      }
+
+      const nextContact = parsed.data.contactEmails !== undefined
+        ? normalizeEmails(parsed.data.contactEmails)
+        : existing.contactEmails;
+      const nextExtra = parsed.data.extraEmails !== undefined
+        ? normalizeEmails(parsed.data.extraEmails)
+        : existing.extraEmails;
+
+      if (nextContact.length === 0 && nextExtra.length === 0) {
+        return res.status(400).json({ error: "List must include at least one email" });
+      }
+
+      if (parsed.data.contactEmails !== undefined) updates.contactEmails = nextContact;
+      if (parsed.data.extraEmails !== undefined) updates.extraEmails = nextExtra;
+
+      try {
+        const [updated] = await db.update(projectEmailDistributionLists)
+          .set(updates)
+          .where(and(
+            eq(projectEmailDistributionLists.id, req.params.listId),
+            eq(projectEmailDistributionLists.organizationId, organizationId),
+            isNull(projectEmailDistributionLists.projectId),
+          ))
+          .returning();
+
+        if (!updated) {
+          return res.status(404).json({ error: "Distribution list not found" });
+        }
+
+        res.json({ list: updated });
+      } catch (err: unknown) {
+        if (isPgUniqueViolation(err)) {
+          return res.status(409).json({ error: "A list with that name already exists" });
+        }
+        throw err;
+      }
     } catch (error) {
       next(error);
     }
