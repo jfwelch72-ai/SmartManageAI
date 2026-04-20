@@ -12,3 +12,4 @@ audit/reports/*.json
 audit/reports/*.html
 audit/reports/*.md
 test-results/
+nohup.out
