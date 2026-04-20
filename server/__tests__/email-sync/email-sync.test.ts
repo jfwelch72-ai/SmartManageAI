@@ -446,15 +446,16 @@ describe("Two-way email sync (mocked Gmail / Outlook providers)", () => {
       // Order of selects in the full sync path:
       //   1) existing message ids in candidate set    -> []
       //   2..) per message: existing thread           -> []
+      //        per inbound message: detectInboundReply runs 2 selects
       //        per outbound message: crm contact      -> []
       //        per message: msg counts                -> [{ total: 1, unread: 0, maxReceivedAt: now }]
       const now = new Date();
       selectQueue = [
         [], // existing externalIds among candidates
-        [], // existing thread for msg 1
+        [], // existing thread for msg 1 (inbound)
+        [], // detectInboundReply enrollment lookup (msg 1, short-circuits when no rows)
         [{ total: 1, unread: 0, maxReceivedAt: now }], // counts after msg 1
-        [], // existing thread for msg 2
-        [], // crm contact lookup (msg 2 is outbound)
+        [], // existing thread for msg 2 (outbound)
         [{ total: 1, unread: 0, maxReceivedAt: now }], // counts after msg 2
       ];
 
@@ -892,6 +893,83 @@ describe("Two-way email sync (mocked Gmail / Outlook providers)", () => {
   });
 
   describe("Token-refresh failure paths", () => {
+    it("Gmail: provider returns 401 after refresh → account marked NEEDS_RECONNECT", async () => {
+      const { syncGmailAccount } = await import("../../emailRoutes");
+      // Force the in-memory access token to be stale so gmailApiFetch's first
+      // call goes out with it; provider returns 401 and the refresh-then-retry
+      // path runs. We then return 401 a second time, simulating a refresh
+      // token that no longer grants Gmail scopes.
+      const account = gmailAccount({
+        accessToken: "stale",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        gmailHistoryId: null,
+        lastSyncedAt: null,
+      });
+
+      let listCalls = 0;
+      // Two 401s for the messages-list endpoint (initial + post-refresh retry).
+      pushHandler((url) => {
+        if (!url.includes("/users/me/messages?q=")) return undefined as unknown as Response;
+        listCalls += 1;
+        return new Response("Unauthorized", { status: 401 });
+      });
+      pushHandler((url) => {
+        if (!url.includes("/users/me/messages?q=")) return undefined as unknown as Response;
+        listCalls += 1;
+        return new Response("Unauthorized", { status: 401 });
+      });
+
+      const res = await syncGmailAccount(account, "user-1");
+      expect(listCalls).toBe(2);
+      expect(res.errors.length).toBeGreaterThan(0);
+      expect(res.errors.join(" ")).toMatch(/401/);
+
+      // The account row should be updated with NEEDS_RECONNECT and a
+      // populated lastSyncError describing the auth failure.
+      const accountUpdate = [...dbCalls].reverse().find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { syncStatus?: string; lastSyncError?: string } } | undefined;
+      expect(accountUpdate?.values.syncStatus).toBe("NEEDS_RECONNECT");
+      expect(accountUpdate?.values.lastSyncError).toBeTruthy();
+      expect(accountUpdate?.values.lastSyncError).toMatch(/401|auth/i);
+    });
+
+    it("Gmail: refresh endpoint returns invalid_grant → account marked NEEDS_RECONNECT", async () => {
+      const { syncGmailAccount } = await import("../../emailRoutes");
+      // Stale token forces gmailApiFetch's first call to receive 401 from
+      // Gmail; that triggers refreshGmailAccessToken, which then itself
+      // fails (invalid_grant — the refresh token has been revoked or the
+      // user has changed their password).
+      const account = gmailAccount({
+        accessToken: "stale",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        gmailHistoryId: null,
+        lastSyncedAt: null,
+      });
+
+      // Gmail messages list returns 401 → refresh path will run.
+      pushHandler((url) => {
+        if (!url.includes("/users/me/messages?q=")) return undefined as unknown as Response;
+        return new Response("Unauthorized", { status: 401 });
+      });
+      // Override the default token-endpoint success: refresh itself fails
+      // with invalid_grant.
+      pushHandler((url) => {
+        if (!url.includes("oauth2.googleapis.com/token")) return undefined as unknown as Response;
+        return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
+      });
+
+      const res = await syncGmailAccount(account, "user-1");
+      expect(res.errors.length).toBeGreaterThan(0);
+      expect(res.errors.join(" ")).toMatch(/auth|refresh|invalid_grant/i);
+
+      const accountUpdate = [...dbCalls].reverse().find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { syncStatus?: string; lastSyncError?: string } } | undefined;
+      expect(accountUpdate?.values.syncStatus).toBe("NEEDS_RECONNECT");
+      expect(accountUpdate?.values.lastSyncError).toBeTruthy();
+    });
+
     it("Outlook: provider returns 401 after refresh → account marked NEEDS_RECONNECT", async () => {
       const { syncOutlookAccount } = await import("../../emailRoutes");
       // Force the in-memory access token to be expired so outlookApiFetch's

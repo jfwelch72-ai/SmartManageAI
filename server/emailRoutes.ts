@@ -2018,9 +2018,22 @@ async function pushOutlookMessageState(
   }
 }
 
+// Sentinel error so the sync wrapper can distinguish auth failures (which
+// require the user to reconnect) from transient/unknown failures that should
+// just be marked DEGRADED. Thrown from refreshGmailAccessToken when Google
+// rejects the refresh token (e.g. user revoked access, password change,
+// 7-day inactivity expiry on test-mode OAuth clients), and from the
+// gmail.googleapis.com paths when a 401/403 survives the refresh-and-retry.
+class GmailAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GmailAuthError";
+  }
+}
+
 async function refreshGmailAccessToken(account: typeof emailAccounts.$inferSelect): Promise<string> {
   if (!account.refreshToken) {
-    throw new Error("No refresh token available for account " + account.emailAddress);
+    throw new GmailAuthError("No refresh token available for account " + account.emailAddress);
   }
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -2037,6 +2050,13 @@ async function refreshGmailAccessToken(account: typeof emailAccounts.$inferSelec
   if (!response.ok) {
     const errText = await response.text();
     logError("Gmail token refresh failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
+    // Google returns 4xx (typically 400 invalid_grant) when the refresh token
+    // can no longer be exchanged. Surface this as an auth error so the caller
+    // marks the account NEEDS_RECONNECT instead of DEGRADED — there's no
+    // amount of retrying that will fix a revoked refresh token.
+    if (response.status >= 400 && response.status < 500) {
+      throw new GmailAuthError(`Failed to refresh Gmail access token: ${response.status} ${errText.substring(0, 200)}`);
+    }
     throw new Error("Failed to refresh Gmail access token");
   }
 
@@ -2434,6 +2454,12 @@ export async function gmailApiFetch(url: string, account: typeof emailAccounts.$
   if (response.status === 401) {
     token = await refreshGmailAccessToken(account);
     response = await fetch(url, buildInit(token));
+    // If we still get 401 (or 403) after a successful refresh, the granted
+    // scopes have likely been narrowed/revoked — surface as an auth error so
+    // the sync wrapper can mark the account NEEDS_RECONNECT.
+    if (response.status === 401 || response.status === 403) {
+      throw new GmailAuthError(`Gmail API auth failed after refresh: ${response.status}`);
+    }
   }
 
   return response;
@@ -2865,19 +2891,36 @@ export async function syncGmailAccount(
   account: typeof emailAccounts.$inferSelect,
   userId: string,
 ): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
+  const markNeedsReconnect = async (msg: string) => {
+    await db
+      .update(emailAccounts)
+      .set({
+        lastSyncedAt: new Date(),
+        lastSyncError: msg.substring(0, 500),
+        syncStatus: "NEEDS_RECONNECT",
+        updatedAt: new Date(),
+      })
+      .where(eq(emailAccounts.id, account.id));
+  };
+
   // Incremental path using historyId cursor (Task #522)
   if (account.gmailHistoryId) {
     try {
       const incr = await syncGmailIncremental(account, account.gmailHistoryId);
       if (!incr.needsFullResync) {
         await runEmailAiClassification(account, userId, incr.messagesToClassify, incr.result);
+        const incrAuthFailed = incr.result.errors.some((e) => /\b(401|403)\b/.test(e));
         await db
           .update(emailAccounts)
           .set({
             lastSyncedAt: new Date(),
             lastSyncError: incr.result.errors[0]?.substring(0, 500) ?? null,
             gmailHistoryId: incr.newHistoryId ?? account.gmailHistoryId,
-            syncStatus: incr.result.errors.length > 0 ? "DEGRADED" : "OK",
+            syncStatus: incrAuthFailed
+              ? "NEEDS_RECONNECT"
+              : incr.result.errors.length > 0
+                ? "DEGRADED"
+                : "OK",
             updatedAt: new Date(),
           })
           .where(eq(emailAccounts.id, account.id));
@@ -2887,6 +2930,16 @@ export async function syncGmailAccount(
       logInfo(`Gmail history expired for ${account.emailAddress}, doing full resync`);
     } catch (err) {
       logError(`Gmail incremental sync failed for ${account.emailAddress}, falling back to full sync`, {}, err instanceof Error ? err : new Error(String(err)));
+      // If the incremental sync threw an auth error (refresh token revoked
+      // or 401/403 surviving the refresh-and-retry inside gmailApiFetch),
+      // don't keep retrying via the full path — the same auth wall will
+      // block us. Mark the account NEEDS_RECONNECT so the user is prompted
+      // to re-authenticate.
+      if (err instanceof GmailAuthError) {
+        const errMsg = `Gmail sync auth failed: ${err.message}`;
+        await markNeedsReconnect(errMsg);
+        return { messagesImported: 0, threadsCreated: 0, errors: [errMsg] };
+      }
     }
   }
 
@@ -2909,31 +2962,47 @@ export async function syncGmailAccount(
   const allMessageRefs: { id: string; threadId: string }[] = [];
   let pageToken: string | undefined;
 
-  for (let page = 0; page < MAX_PAGES; page++) {
-    let listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${PAGE_SIZE}`;
-    if (pageToken) {
-      listUrl += `&pageToken=${encodeURIComponent(pageToken)}`;
+  try {
+    for (let page = 0; page < MAX_PAGES; page++) {
+      let listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${PAGE_SIZE}`;
+      if (pageToken) {
+        listUrl += `&pageToken=${encodeURIComponent(pageToken)}`;
+      }
+
+      const listResponse = await gmailApiFetch(listUrl, account);
+
+      if (!listResponse.ok) {
+        const errText = await listResponse.text();
+        logError("Gmail list messages failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
+        // 401/403 here would normally be turned into a GmailAuthError by
+        // gmailApiFetch's refresh-and-retry, but keep this defensive branch
+        // in case the first call already returned 403 (no refresh path).
+        if (listResponse.status === 401 || listResponse.status === 403) {
+          throw new GmailAuthError(`Gmail API auth failed: ${listResponse.status}`);
+        }
+        throw new Error(`Gmail API error: ${listResponse.status}`);
+      }
+
+      const listData = await listResponse.json() as {
+        messages?: { id: string; threadId: string }[];
+        nextPageToken?: string;
+      };
+
+      if (listData.messages) {
+        allMessageRefs.push(...listData.messages);
+      }
+
+      if (!listData.nextPageToken) break;
+      pageToken = listData.nextPageToken;
     }
-
-    const listResponse = await gmailApiFetch(listUrl, account);
-
-    if (!listResponse.ok) {
-      const errText = await listResponse.text();
-      logError("Gmail list messages failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
-      throw new Error(`Gmail API error: ${listResponse.status}`);
+  } catch (err) {
+    if (err instanceof GmailAuthError) {
+      const errMsg = `Gmail sync auth failed: ${err.message}`;
+      result.errors.push(errMsg);
+      await markNeedsReconnect(errMsg);
+      return result;
     }
-
-    const listData = await listResponse.json() as {
-      messages?: { id: string; threadId: string }[];
-      nextPageToken?: string;
-    };
-
-    if (listData.messages) {
-      allMessageRefs.push(...listData.messages);
-    }
-
-    if (!listData.nextPageToken) break;
-    pageToken = listData.nextPageToken;
+    throw err;
   }
 
   // Always advance the historyId cursor so subsequent syncs use incremental mode,
