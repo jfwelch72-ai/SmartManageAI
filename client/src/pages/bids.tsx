@@ -527,18 +527,6 @@ export default function BidsPage() {
     });
   }, [bids, searchTerm, dueDateFilter, statusFilter, estimatorFilter]);
 
-  const isBoardTab = bidsTab === "board";
-  const { getRowProps: getBidRowProps } = useTableKeyboardNav({
-    rowCount: isBoardTab ? filteredBids.length : 0,
-    onActivate: (idx) => {
-      if (!isBoardTab) return;
-      const bid = filteredBids[idx];
-      if (bid) setLocation(`/bids/${bid.code}`);
-    },
-  });
-  useGlobalSearchFocus(searchInputRef, isBoardTab);
-  useRegisterShortcuts("bids-list", TABLE_NAV_SHORTCUTS, isBoardTab);
-
   const handleConvertToProject = async (bidCode: string) => {
     const bid = bids.find((b) => b.code === bidCode);
     if (bid?.status === "AWARDED") {
@@ -755,6 +743,18 @@ export default function BidsPage() {
   const [bidsTab, setBidsTab] = useState(initialBidsTab);
   const userRole = user?.effectiveRole || user?.role;
   const showInboxTab = canAccessBidNetworkAsSub(userRole);
+
+  const isBoardTab = bidsTab === "board";
+  const { getRowProps: getBidRowProps } = useTableKeyboardNav({
+    rowCount: isBoardTab ? filteredBids.length : 0,
+    onActivate: (idx) => {
+      if (!isBoardTab) return;
+      const bid = filteredBids[idx];
+      if (bid) setLocation(`/bids/${bid.code}`);
+    },
+  });
+  useGlobalSearchFocus(searchInputRef, isBoardTab);
+  useRegisterShortcuts("bids-list", TABLE_NAV_SHORTCUTS, isBoardTab);
 
   return (
     <div className="min-h-screen bg-background">
