@@ -515,6 +515,92 @@ describe("Email read/archive push-back to Gmail and Outlook", () => {
   // uses (drainMessageProviderPush) and then read mailbox state back from the
   // provider to confirm the message left INBOX / moved to the archive folder.
   // -------------------------------------------------------------------------
+  describe("Scheduled push-back drain (Task #546)", () => {
+    beforeEach(async () => {
+      await db
+        .update(emailMessages)
+        .set({
+          isRead: false,
+          isArchived: false,
+          folder: "INBOX",
+          pendingProviderPush: null,
+        })
+        .where(eq(emailMessages.id, fx.gmailMessageId));
+      await db
+        .update(emailMessages)
+        .set({
+          isRead: false,
+          isArchived: false,
+          folder: "INBOX",
+          pendingProviderPush: null,
+        })
+        .where(eq(emailMessages.id, fx.outlookMessageId));
+      await db
+        .update(emailAccounts)
+        .set({ syncStatus: "OK", lastSyncError: null })
+        .where(eq(emailAccounts.id, fx.gmailAccount.id));
+      await db
+        .update(emailAccounts)
+        .set({ syncStatus: "OK", lastSyncError: null })
+        .where(eq(emailAccounts.id, fx.outlookAccount.id));
+    });
+
+    it("drains pending Gmail and Outlook push-backs across active accounts on a single tick", async () => {
+      const { processProviderPushDrain } = await import("../jobs/jobRunner");
+
+      await setPendingPush(fx.gmailMessageId, { isArchived: true });
+      await setPendingPush(fx.outlookMessageId, { isRead: true });
+
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(okResponse());
+      global.fetch = fetchMock;
+
+      await processProviderPushDrain();
+
+      const gmailAfter = await getMessage(fx.gmailMessageId);
+      const outlookAfter = await getMessage(fx.outlookMessageId);
+      expect(gmailAfter?.pendingProviderPush).toBeNull();
+      expect(outlookAfter?.pendingProviderPush).toBeNull();
+
+      const gmailCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).startsWith("https://gmail.googleapis.com/"),
+      );
+      const outlookCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).startsWith("https://graph.microsoft.com/"),
+      );
+      expect(gmailCall).toBeDefined();
+      expect(outlookCall).toBeDefined();
+    });
+
+    it("skips accounts marked NEEDS_RECONNECT and leaves their pending pushes in place", async () => {
+      const { processProviderPushDrain } = await import("../jobs/jobRunner");
+
+      await db
+        .update(emailAccounts)
+        .set({ syncStatus: "NEEDS_RECONNECT" })
+        .where(eq(emailAccounts.id, fx.gmailAccount.id));
+      await setPendingPush(fx.gmailMessageId, { isArchived: true });
+
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(okResponse());
+      global.fetch = fetchMock;
+
+      await processProviderPushDrain();
+
+      const gmailCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).startsWith("https://gmail.googleapis.com/"),
+      );
+      expect(gmailCall).toBeUndefined();
+
+      const after = await getMessage(fx.gmailMessageId);
+      expect(after?.pendingProviderPush).toMatchObject({ isArchived: true });
+    });
+
+    it("is registered as a recurring job in the job registry", async () => {
+      const { jobRegistry } = await import("../jobs/jobRunner");
+      expect(jobRegistry.provider_push_drain).toBeDefined();
+      expect(jobRegistry.provider_push_drain.schedule).toBe("*/2 * * * *");
+    });
+  });
+
   describe.skipIf(!process.env.GMAIL_SANDBOX_ACCESS_TOKEN || !process.env.GMAIL_SANDBOX_MESSAGE_ID)(
     "Gmail sandbox: archive really lands in the mailbox",
     () => {

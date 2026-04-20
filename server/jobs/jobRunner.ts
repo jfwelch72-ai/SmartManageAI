@@ -33,6 +33,7 @@ let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
 let bidDueDateTask: ReturnType<typeof cron.schedule> | null = null;
 let imapSyncTask: ReturnType<typeof cron.schedule> | null = null;
 let providerSyncTask: ReturnType<typeof cron.schedule> | null = null;
+let providerPushDrainTask: ReturnType<typeof cron.schedule> | null = null;
 let emailPushRenewalTask: ReturnType<typeof cron.schedule> | null = null;
 let weeklyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let monthlyReportTask: ReturnType<typeof cron.schedule> | null = null;
@@ -144,6 +145,21 @@ export function startJobRunner() {
     }
   });
 
+  // Task #546: dedicated retry loop for queued read/archive push-backs to
+  // Gmail/Outlook. `processProviderEmailSync` already drains pushes inline,
+  // but it runs on a 5-minute cadence behind a single-flight lock, can be
+  // skipped while a long pull is in flight, and a thrown sync error bypasses
+  // the rest of an account's drain. This dedicated job runs every 2 minutes
+  // and only walks pendingProviderPush rows, so failed PATCHes get retried
+  // promptly even when the safety-net poller is busy.
+  providerPushDrainTask = cron.schedule("*/2 * * * *", async () => {
+    try {
+      await processProviderPushDrain();
+    } catch (err) {
+      logError("Provider push-back drain failed", { error: String(err) });
+    }
+  });
+
   // Task #524: keep Gmail watches and Outlook subscriptions alive. Gmail
   // watches expire after up to 7 days; Outlook subscriptions after ~70
   // hours. Renewing every 15 minutes leaves comfortable headroom.
@@ -211,7 +227,7 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, periodic report, DB health check, and scheduled campaign schedulers)");
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, and scheduled campaign schedulers)");
 }
 
 export function stopJobRunner() {
@@ -263,6 +279,10 @@ export function stopJobRunner() {
     providerSyncTask.stop();
     providerSyncTask = null;
   }
+  if (providerPushDrainTask) {
+    providerPushDrainTask.stop();
+    providerPushDrainTask = null;
+  }
   if (emailPushRenewalTask) {
     emailPushRenewalTask.stop();
     emailPushRenewalTask = null;
@@ -307,6 +327,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   bid_due_dates:       { fn: () => processBidDueDateApproaching(),     description: "Notify on approaching bid due dates",     schedule: "0 * * * *" },
   imap_sync:           { fn: () => processImapEmailSync(),             description: "Sync IMAP email accounts",               schedule: "*/15 * * * *" },
   provider_sync:       { fn: () => processProviderEmailSync(),         description: "Sync Gmail/Outlook accounts (2-way safety net)",     schedule: "*/5 * * * *" },
+  provider_push_drain: { fn: () => processProviderPushDrain(),         description: "Retry queued read/archive push-backs to Gmail/Outlook", schedule: "*/2 * * * *" },
   email_push_renewal:  { fn: () => ensureAllEmailPushSubscriptions(),  description: "Renew Gmail watch + Outlook subscriptions",          schedule: "*/15 * * * *" },
   weekly_report:       { fn: () => processPeriodicReports("WEEKLY"),   description: "Generate weekly reports",                 schedule: "0 7 * * 1" },
   monthly_report:      { fn: () => processPeriodicReports("MONTHLY"),  description: "Generate monthly reports",                schedule: "0 7 1 * *" },
@@ -1414,6 +1435,77 @@ async function processProviderEmailSync() {
   } finally {
     providerSyncRunning = false;
     providerSyncStartedAt = null;
+  }
+}
+
+let providerPushDrainRunning = false;
+let providerPushDrainStartedAt: number | null = null;
+const PROVIDER_PUSH_DRAIN_STALE_TIMEOUT_MS = 5 * 60 * 1000;
+
+export async function processProviderPushDrain(): Promise<void> {
+  if (providerPushDrainRunning) {
+    if (
+      providerPushDrainStartedAt &&
+      Date.now() - providerPushDrainStartedAt > PROVIDER_PUSH_DRAIN_STALE_TIMEOUT_MS
+    ) {
+      logError("Provider push-back drain lock appears stale, resetting", {
+        startedAt: new Date(providerPushDrainStartedAt).toISOString(),
+      });
+      providerPushDrainRunning = false;
+      providerPushDrainStartedAt = null;
+    } else {
+      logInfo("Provider push-back drain already in progress, skipping");
+      return;
+    }
+  }
+  providerPushDrainRunning = true;
+  providerPushDrainStartedAt = Date.now();
+
+  try {
+    const accounts = await db
+      .select()
+      .from(emailAccounts)
+      .where(
+        and(
+          eq(emailAccounts.isActive, true),
+          inArray(emailAccounts.provider, ["GMAIL", "OUTLOOK"]),
+        ),
+      );
+
+    if (accounts.length === 0) {
+      logInfo("Provider push-back drain tick: no active Gmail/Outlook accounts");
+      return;
+    }
+
+    let drained = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const account of accounts) {
+      if (account.syncStatus === "NEEDS_RECONNECT") {
+        skipped++;
+        continue;
+      }
+      try {
+        await drainAccountProviderPushes(account);
+        drained++;
+      } catch (err) {
+        failed++;
+        logError("Provider push-back drain failed for account", {
+          account: account.emailAddress,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    logInfo("Provider push-back drain tick complete", {
+      total: accounts.length,
+      drained,
+      skipped,
+      failed,
+    });
+  } finally {
+    providerPushDrainRunning = false;
+    providerPushDrainStartedAt = null;
   }
 }
 
