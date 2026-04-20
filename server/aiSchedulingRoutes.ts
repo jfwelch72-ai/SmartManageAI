@@ -1,13 +1,20 @@
 import { Router , NextFunction } from "express";
+import multer from "multer";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";
-import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media } from "@shared/schema";
-import { eq, desc, and, sql, isNotNull } from "drizzle-orm";
+import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media, crmContacts, activityLog } from "@shared/schema";
+import { eq, desc, and, sql, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logError, logWarn } from "./utils/logger";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
+import { sendEmail } from "./email";
+
+const ganttPdfUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
+});
 
 const router = Router();
 
@@ -731,5 +738,237 @@ router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireR
     next(error);
   }
 });
+
+// ============================================
+// EMAIL GANTT EXPORT TO PROJECT CONTACTS
+// ============================================
+
+// GET /api/ai-features/schedule/:projectId/email-recipients
+// Returns the project's owner/GC contacts (for the "Send to..." picker on the schedule tab)
+router.get("/ai-features/schedule/:projectId/email-recipients", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const [project] = await db.select()
+      .from(projects)
+      .where(and(
+        eq(projects.id, req.params.projectId),
+        eq(projects.organizationId, organizationId),
+      ))
+      .limit(1);
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const recipients: Array<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      source: "PROJECT_CLIENT" | "GC_CONTACT" | "OWNER_REP_CONTACT";
+    }> = [];
+
+    if (project.clientContactEmail) {
+      recipients.push({
+        id: `project:${project.id}:client`,
+        name: project.clientContactName || project.clientName || "Owner contact",
+        email: project.clientContactEmail,
+        role: "Owner / Client",
+        source: "PROJECT_CLIENT",
+      });
+    }
+
+    const orgIdsToLoad: string[] = [];
+    if (project.gcOrganizationId) orgIdsToLoad.push(project.gcOrganizationId);
+    if (project.ownerRepOrganizationId) orgIdsToLoad.push(project.ownerRepOrganizationId);
+
+    if (orgIdsToLoad.length > 0) {
+      const contacts = await db.select()
+        .from(crmContacts)
+        .where(and(
+          eq(crmContacts.organizationId, organizationId),
+          inArray(crmContacts.organisationId, orgIdsToLoad),
+          eq(crmContacts.isActive, true),
+        ));
+
+      for (const c of contacts) {
+        if (!c.email) continue;
+        const isGc = c.organisationId === project.gcOrganizationId;
+        const fullName = `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.email;
+        recipients.push({
+          id: c.id,
+          name: fullName,
+          email: c.email,
+          role: c.title || (isGc ? "General Contractor" : "Owner Rep"),
+          source: isGc ? "GC_CONTACT" : "OWNER_REP_CONTACT",
+        });
+      }
+    }
+
+    // Deduplicate by email (case-insensitive), keeping the first occurrence
+    const seen = new Set<string>();
+    const deduped = recipients.filter(r => {
+      const key = r.email.trim().toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    res.json({ recipients: deduped });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const emailRecipientSchema = z.object({
+  email: z.string().email(),
+  name: z.string().optional(),
+});
+
+const emailGanttPayloadSchema = z.object({
+  recipients: z.array(emailRecipientSchema).min(1).max(25),
+  subject: z.string().trim().min(1).max(300),
+  message: z.string().max(5000).optional().default(""),
+  filename: z.string().trim().min(1).max(200).optional(),
+});
+
+// POST /api/ai-features/schedule/:projectId/email
+// Body: multipart with `pdf` file and `payload` JSON string
+router.post(
+  "/ai-features/schedule/:projectId/email",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  sensitiveLimiter,
+  ganttPdfUpload.single("pdf"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const organizationId = req.user?.organizationId;
+      if (!userId || !organizationId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+        return res.status(400).json({ error: "Gantt PDF attachment is required" });
+      }
+
+      let payloadRaw: any;
+      try {
+        payloadRaw = JSON.parse(typeof req.body?.payload === "string" ? req.body.payload : "{}");
+      } catch {
+        return res.status(400).json({ error: "Invalid payload JSON" });
+      }
+
+      const parsed = emailGanttPayloadSchema.safeParse(payloadRaw);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+      }
+      const { recipients, subject, message, filename } = parsed.data;
+
+      const [project] = await db.select()
+        .from(projects)
+        .where(and(
+          eq(projects.id, req.params.projectId),
+          eq(projects.organizationId, organizationId),
+        ))
+        .limit(1);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const safeFilename = (filename || `${project.code || "project"}-schedule.pdf`)
+        .replace(/[^a-zA-Z0-9._-]/g, "_");
+
+      const escapeHtml = (s: string) => s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+      const noteHtml = message
+        ? `<p style="white-space:pre-wrap;">${escapeHtml(message)}</p>`
+        : `<p>Attached is the latest Gantt schedule for <strong>${escapeHtml(project.name)}</strong> (${escapeHtml(project.code)}).</p>`;
+
+      const html = `
+        <div style="font-family:Arial,sans-serif;max-width:600px;color:#111;">
+          <h2 style="margin:0 0 12px 0;">${escapeHtml(project.name)} — Schedule update</h2>
+          <p style="color:#555;margin:0 0 16px 0;">Project ${escapeHtml(project.code)}</p>
+          ${noteHtml}
+          <p style="color:#555;font-size:12px;margin-top:24px;">The latest Gantt PDF is attached.</p>
+        </div>
+      `;
+      const text = `${project.name} (${project.code}) — Schedule update\n\n${message || "Attached is the latest Gantt schedule."}\n`;
+
+      const sendResults = await Promise.all(
+        recipients.map(async (r) => {
+          const ok = await sendEmail({
+            to: r.email,
+            subject,
+            html,
+            text,
+            attachments: [
+              {
+                filename: safeFilename,
+                content: req.file!.buffer,
+                contentType: "application/pdf",
+              },
+            ],
+          });
+          return { email: r.email, name: r.name, success: ok };
+        })
+      );
+
+      const successCount = sendResults.filter(r => r.success).length;
+      const failureCount = sendResults.length - successCount;
+
+      try {
+        await db.insert(activityLog).values({
+          userId,
+          organizationId,
+          action: "GANTT_EMAILED",
+          details: JSON.stringify({
+            projectId: project.id,
+            projectCode: project.code,
+            projectName: project.name,
+            subject,
+            filename: safeFilename,
+            recipients: sendResults,
+            successCount,
+            failureCount,
+          }),
+          ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
+          userAgent: (req.headers["user-agent"] as string) || null,
+        });
+      } catch (logErr) {
+        logWarn("Failed to write Gantt email activity log", {
+          projectId: project.id,
+          error: logErr instanceof Error ? logErr.message : String(logErr),
+        });
+      }
+
+      if (successCount === 0) {
+        return res.status(502).json({
+          error: "Failed to send Gantt email to any recipient",
+          results: sendResults,
+        });
+      }
+
+      res.json({
+        success: true,
+        successCount,
+        failureCount,
+        results: sendResults,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;

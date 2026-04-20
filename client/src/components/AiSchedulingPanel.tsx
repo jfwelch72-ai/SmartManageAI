@@ -48,7 +48,11 @@ import {
   Trash2,
   Save,
   History,
+  Mail,
+  Send,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -239,49 +243,88 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [newBaselineNotes, setNewBaselineNotes] = useState("");
   const [manageBaselinesOpen, setManageBaselinesOpen] = useState(false);
 
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [selectedRecipientEmails, setSelectedRecipientEmails] = useState<Set<string>>(new Set());
+  const [extraRecipientsInput, setExtraRecipientsInput] = useState("");
+  const [sendSubject, setSendSubject] = useState("");
+  const [sendMessage, setSendMessage] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
   const { toast } = useToast();
+
+  const renderGanttPdf = useCallback(async (): Promise<{ blob: Blob; filename: string } | null> => {
+    if (!ganttExportRef.current) return null;
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    const html2canvasMod = await import("html2canvas");
+    const html2canvas = html2canvasMod.default;
+    const isDark = document.documentElement.classList.contains("dark");
+    const bgColor = isDark ? "#0a0a0a" : "#ffffff";
+    const target = ganttExportRef.current!;
+    const canvas = await html2canvas(target, {
+      backgroundColor: bgColor,
+      scale: 2,
+      useCORS: true,
+      windowWidth: target.scrollWidth,
+    });
+    const jsPdfMod = await import("jspdf");
+    const JsPDF = jsPdfMod.jsPDF;
+    const orientation = canvas.width >= canvas.height ? "landscape" : "portrait";
+    const pdf = new JsPDF({
+      orientation,
+      unit: "pt",
+      format: [canvas.width, canvas.height],
+    });
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
+    const today = format(new Date(), "yyyy-MM-dd");
+    const safeCode = (projectCode || "project").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `${safeCode}-schedule-${today}.pdf`;
+    const blob = pdf.output("blob");
+    return { blob, filename };
+  }, [projectCode]);
 
   const handleExportGantt = useCallback(async (kind: "png" | "pdf") => {
     if (!ganttExportRef.current) return;
     setIsExporting(true);
     try {
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
-      const html2canvasMod = await import("html2canvas");
-      const html2canvas = html2canvasMod.default;
-      const isDark = document.documentElement.classList.contains("dark");
-      const bgColor = isDark ? "#0a0a0a" : "#ffffff";
-      const target = ganttExportRef.current!;
-      const canvas = await html2canvas(target, {
-        backgroundColor: bgColor,
-        scale: 2,
-        useCORS: true,
-        windowWidth: target.scrollWidth,
-      });
-      const today = format(new Date(), "yyyy-MM-dd");
-      const safeCode = (projectCode || "project").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const baseName = `${safeCode}-schedule-${today}`;
-      if (kind === "png") {
+      if (kind === "pdf") {
+        const result = await renderGanttPdf();
+        if (!result) return;
+        const link = document.createElement("a");
+        link.download = result.filename;
+        link.href = URL.createObjectURL(result.blob);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        toast({ title: "Gantt exported", description: result.filename });
+      } else {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+        const html2canvasMod = await import("html2canvas");
+        const html2canvas = html2canvasMod.default;
+        const isDark = document.documentElement.classList.contains("dark");
+        const bgColor = isDark ? "#0a0a0a" : "#ffffff";
+        const target = ganttExportRef.current!;
+        const canvas = await html2canvas(target, {
+          backgroundColor: bgColor,
+          scale: 2,
+          useCORS: true,
+          windowWidth: target.scrollWidth,
+        });
+        const today = format(new Date(), "yyyy-MM-dd");
+        const safeCode = (projectCode || "project").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const baseName = `${safeCode}-schedule-${today}`;
         const link = document.createElement("a");
         link.download = `${baseName}.png`;
         link.href = canvas.toDataURL("image/png");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      } else {
-        const jsPdfMod = await import("jspdf");
-        const JsPDF = jsPdfMod.jsPDF;
-        const orientation = canvas.width >= canvas.height ? "landscape" : "portrait";
-        const pdf = new JsPDF({
-          orientation,
-          unit: "pt",
-          format: [canvas.width, canvas.height],
-        });
-        pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
-        pdf.save(`${baseName}.pdf`);
+        toast({ title: "Gantt exported", description: `${baseName}.png` });
       }
-      toast({ title: "Gantt exported", description: `${baseName}.${kind}` });
     } catch (err) {
       console.error("Gantt export failed", err);
       toast({
@@ -292,7 +335,149 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     } finally {
       setIsExporting(false);
     }
-  }, [projectCode, toast]);
+  }, [projectCode, renderGanttPdf, toast]);
+
+  interface ScheduleEmailRecipient {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    source: "PROJECT_CLIENT" | "GC_CONTACT" | "OWNER_REP_CONTACT";
+  }
+
+  const { data: recipientData, isLoading: isRecipientsLoading } = useQuery<{ recipients: ScheduleEmailRecipient[] }>({
+    queryKey: ["/api/ai-features/schedule", projectId, "email-recipients"],
+    enabled: sendDialogOpen && !!projectId,
+  });
+
+  const openSendDialog = useCallback(() => {
+    setSendSubject(`${projectName} (${projectCode}) — Schedule update`);
+    setSendMessage("Sharing the latest project schedule for your review. Please let us know if you have any questions before our next progress meeting.");
+    setSelectedRecipientEmails(new Set());
+    setExtraRecipientsInput("");
+    setSendDialogOpen(true);
+  }, [projectCode, projectName]);
+
+  const toggleRecipient = useCallback((email: string) => {
+    setSelectedRecipientEmails(prev => {
+      const next = new Set(prev);
+      const key = email.trim().toLowerCase();
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleSendGanttEmail = useCallback(async () => {
+    const directory = recipientData?.recipients || [];
+    const directoryByEmail = new Map(directory.map(r => [r.email.trim().toLowerCase(), r] as const));
+    const collected: Array<{ email: string; name?: string }> = [];
+    const seen = new Set<string>();
+
+    for (const key of Array.from(selectedRecipientEmails)) {
+      const r = directoryByEmail.get(key);
+      if (!r) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push({ email: r.email, name: r.name });
+    }
+
+    const extraRaw = extraRecipientsInput
+      .split(/[\s,;]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalid: string[] = [];
+    for (const e of extraRaw) {
+      if (!emailRe.test(e)) {
+        invalid.push(e);
+        continue;
+      }
+      const key = e.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push({ email: e });
+    }
+
+    if (invalid.length > 0) {
+      toast({
+        title: "Invalid email address",
+        description: `Could not parse: ${invalid.join(", ")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (collected.length === 0) {
+      toast({
+        title: "No recipients selected",
+        description: "Pick at least one project contact or enter an email.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!sendSubject.trim()) {
+      toast({
+        title: "Subject is required",
+        description: "Add a subject line before sending.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      const rendered = await renderGanttPdf();
+      if (!rendered) throw new Error("Could not render the Gantt PDF");
+
+      const fd = new FormData();
+      fd.append(
+        "payload",
+        JSON.stringify({
+          recipients: collected,
+          subject: sendSubject.trim(),
+          message: sendMessage,
+          filename: rendered.filename,
+        }),
+      );
+      fd.append("pdf", new File([rendered.blob], rendered.filename, { type: "application/pdf" }));
+
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+      const csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : "";
+
+      const res = await fetch(`/api/ai-features/schedule/${projectId}/email`, {
+        method: "POST",
+        headers: csrfToken ? { "x-csrf-token": csrfToken } : {},
+        body: fd,
+        credentials: "include",
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || `Send failed (${res.status})`);
+      }
+
+      const sentCount = data?.successCount ?? collected.length;
+      const failed = data?.failureCount ?? 0;
+      toast({
+        title: "Schedule emailed",
+        description:
+          failed > 0
+            ? `Sent to ${sentCount} of ${sentCount + failed} recipients`
+            : `Sent to ${sentCount} recipient${sentCount === 1 ? "" : "s"}`,
+      });
+      setSendDialogOpen(false);
+    } catch (err) {
+      toast({
+        title: "Failed to send",
+        description: err instanceof Error ? err.message : "Unable to email the Gantt PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSending(false);
+    }
+  }, [extraRecipientsInput, projectId, recipientData, renderGanttPdf, selectedRecipientEmails, sendMessage, sendSubject, toast]);
 
   interface ScheduleResponse {
     schedule: ProjectSchedule | null;
@@ -852,6 +1037,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
                   onToggleShowBaseline={() => setShowBaseline(v => !v)}
                   isExporting={isExporting}
                   onExport={handleExportGantt}
+                  onSend={openSendDialog}
                 />
               </div>
               <RecommendationsPanel
@@ -1142,6 +1328,111 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
         </DialogContent>
       </Dialog>
 
+      <Dialog open={sendDialogOpen} onOpenChange={(open) => { if (!isSending) setSendDialogOpen(open); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Email Gantt to project contacts</DialogTitle>
+            <DialogDescription>
+              The current Gantt view will be rendered as a PDF and emailed to the recipients you select.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="mb-2 block">Project contacts</Label>
+              <ScrollArea className="max-h-48 rounded border">
+                <div className="p-2 space-y-1">
+                  {isRecipientsLoading ? (
+                    <div className="flex items-center text-sm text-muted-foreground p-2" data-testid="text-recipients-loading">
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Loading contacts…
+                    </div>
+                  ) : (recipientData?.recipients || []).length === 0 ? (
+                    <div className="text-sm text-muted-foreground p-2" data-testid="text-recipients-empty">
+                      No project contacts on file. Add an email below.
+                    </div>
+                  ) : (
+                    (recipientData?.recipients || []).map((r) => {
+                      const key = r.email.trim().toLowerCase();
+                      const checked = selectedRecipientEmails.has(key);
+                      return (
+                        <label
+                          key={r.id}
+                          className="flex items-start gap-2 p-2 rounded hover-elevate cursor-pointer"
+                          data-testid={`row-recipient-${r.id}`}
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => toggleRecipient(r.email)}
+                            data-testid={`checkbox-recipient-${r.id}`}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{r.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">{r.email}</div>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] shrink-0">{r.role}</Badge>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+            <div>
+              <Label htmlFor="extra-recipients" className="mb-1 block">Additional emails</Label>
+              <Input
+                id="extra-recipients"
+                placeholder="name@example.com, another@example.com"
+                value={extraRecipientsInput}
+                onChange={(e) => setExtraRecipientsInput(e.target.value)}
+                data-testid="input-extra-recipients"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Separate multiple addresses with commas.</p>
+            </div>
+            <div>
+              <Label htmlFor="email-subject" className="mb-1 block">Subject</Label>
+              <Input
+                id="email-subject"
+                value={sendSubject}
+                onChange={(e) => setSendSubject(e.target.value)}
+                data-testid="input-email-subject"
+              />
+            </div>
+            <div>
+              <Label htmlFor="email-message" className="mb-1 block">Note</Label>
+              <Textarea
+                id="email-message"
+                rows={4}
+                value={sendMessage}
+                onChange={(e) => setSendMessage(e.target.value)}
+                data-testid="textarea-email-message"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSendDialogOpen(false)}
+              disabled={isSending}
+              data-testid="button-cancel-send-gantt"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendGanttEmail}
+              disabled={isSending}
+              data-testid="button-confirm-send-gantt"
+            >
+              {isSending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 mr-2" />
+              )}
+              Send Gantt PDF
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={manualCreateOpen} onOpenChange={setManualCreateOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1375,6 +1666,7 @@ function GanttChart({
   onToggleShowBaseline,
   isExporting,
   onExport,
+  onSend,
 }: {
   tasks: ScheduleTask[];
   wbsTasks: Array<{ task: ScheduleTask; depth: number; hasChildren: boolean }>;
@@ -1390,6 +1682,7 @@ function GanttChart({
   onToggleShowBaseline: () => void;
   isExporting?: boolean;
   onExport?: (kind: "png" | "pdf") => void;
+  onSend?: () => void;
 }) {
   const hasAnyBaseline = !!schedule.baselineLocked || tasks.some(t => t.baselineStartDate && t.baselineEndDate);
   const baselineVisible = showBaseline && hasAnyBaseline;
@@ -1481,6 +1774,18 @@ function GanttChart({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            )}
+            {onSend && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={onSend}
+                data-testid="button-send-gantt"
+              >
+                <Mail className="w-3.5 h-3.5 mr-1" />
+                Send to...
+              </Button>
             )}
           </div>
         </CardTitle>

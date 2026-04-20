@@ -426,13 +426,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use(emailCampaignRoutes);
 
-<<<<<<< HEAD
   // Saved views (Task #575)
   app.use(savedViewsRoutes);
-=======
+
   // My Day — personal work inbox aggregator
   app.use(myDayRoutes);
->>>>>>> 7267bbeb (Task #574: Build "My Day" personal work inbox)
 
   if (process.env.NODE_ENV === "development") {
     app.use("/api/dev", devSeedEnterpriseRoutes);
