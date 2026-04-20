@@ -42,6 +42,7 @@ import { ensureEmailAccountPushColumns } from "./ensureEmailAccountPushColumns";
 import { ensureSequenceTables } from "./ensureSequenceTables";
 import { ensureUserSettingsTableDensity } from "./ensureUserSettingsTableDensity";
 import { ensureCrmCustomFieldTables } from "./ensureCrmCustomFieldTables";
+import { ensureGeocodeStatusColumns } from "./ensureGeocodeStatusColumns";
 import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
 import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
@@ -101,6 +102,7 @@ const migrations: MigrationStep[] = [
   { name: "schedule_baselines_table", category: "CREATE_TABLE", fn: ensureScheduleBaselinesTable },
   { name: "plan_pins_table", category: "CREATE_TABLE", fn: ensurePlanPinsTable },
   { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
+  { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

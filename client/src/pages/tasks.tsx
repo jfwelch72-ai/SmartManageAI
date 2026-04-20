@@ -339,7 +339,7 @@ export default function Tasks() {
             views={["table", "kanban", "calendar"]}
             testId="tasks-view-switcher"
           />
-          <SavedViewsDropdown<TasksFilterState>
+          <SavedViewsDropdown
             viewKey="tasks"
             defaultFilters={TASKS_DEFAULT_FILTERS}
             builtInViews={TASKS_BUILT_IN_VIEWS}

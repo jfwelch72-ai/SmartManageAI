@@ -449,7 +449,7 @@ export default function ProjectsPage() {
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             <ViewSwitcher value={viewType} onChange={setViewType} testId="projects-view-switcher" />
-            <SavedViewsDropdown<ProjectsFilterState>
+            <SavedViewsDropdown
               viewKey="projects"
               builtInViews={PROJECTS_BUILT_IN_VIEWS}
               defaultFilters={PROJECTS_DEFAULT_FILTERS}

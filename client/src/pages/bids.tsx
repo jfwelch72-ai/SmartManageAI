@@ -803,7 +803,7 @@ export default function BidsPage() {
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             <ViewSwitcher value={bidsView} onChange={handleBidsViewChange} views={["table", "kanban", "calendar"]} testId="bids-view-switcher" />
-            <SavedViewsDropdown<BidsFilterState>
+            <SavedViewsDropdown
               viewKey="bids"
               defaultFilters={BIDS_DEFAULT_FILTERS}
               builtInViews={BIDS_BUILT_IN_VIEWS}
