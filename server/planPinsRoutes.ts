@@ -1,11 +1,14 @@
 import { Router, type Response, type NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import {
   planPins,
   planDocuments,
   projects,
   insertPlanPinSchema,
+  rfis,
+  punchListItems,
+  submittals,
 } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -19,6 +22,91 @@ async function getProjectByCode(code: string) {
   const [project] = await db.select().from(projects).where(eq(projects.code, code)).limit(1);
   return project;
 }
+
+// SUMMARY: open pin counts per plan document for a project, with breakdown by pin type
+router.get(
+  "/projects/:code/plan-pins/summary",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.json({});
+
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.json({});
+      }
+
+      const pins = await db
+        .select({
+          id: planPins.id,
+          planDocumentId: planPins.planDocumentId,
+          pinType: planPins.pinType,
+          refTable: planPins.refTable,
+          refId: planPins.refId,
+        })
+        .from(planPins)
+        .where(eq(planPins.projectCode, req.params.code));
+
+      if (pins.length === 0) return res.json({});
+
+      const rfiIds = Array.from(new Set(pins.filter(p => p.refTable === "rfis").map(p => p.refId)));
+      const punchIds = Array.from(new Set(pins.filter(p => p.refTable === "punch_list_items").map(p => p.refId)));
+      const submittalIds = Array.from(new Set(pins.filter(p => p.refTable === "submittals").map(p => p.refId)));
+
+      const RFI_CLOSED = new Set(["ANSWERED", "CLOSED"]);
+      const PUNCH_CLOSED = new Set(["RESOLVED", "VERIFIED"]);
+      const SUBMITTAL_CLOSED = new Set(["APPROVED", "APPROVED_AS_NOTED", "REJECTED"]);
+
+      const openRefs = new Set<string>();
+      const markOpen = (table: string, id: string) => openRefs.add(`${table}:${id}`);
+
+      if (rfiIds.length > 0) {
+        const rows = await db
+          .select({ id: rfis.id, status: rfis.status })
+          .from(rfis)
+          .where(inArray(rfis.id, rfiIds));
+        for (const r of rows) {
+          if (!RFI_CLOSED.has(r.status as string)) markOpen("rfis", r.id);
+        }
+      }
+      if (punchIds.length > 0) {
+        const rows = await db
+          .select({ id: punchListItems.id, status: punchListItems.status })
+          .from(punchListItems)
+          .where(inArray(punchListItems.id, punchIds));
+        for (const r of rows) {
+          if (!PUNCH_CLOSED.has(r.status as string)) markOpen("punch_list_items", r.id);
+        }
+      }
+      if (submittalIds.length > 0) {
+        const rows = await db
+          .select({ id: submittals.id, status: submittals.status })
+          .from(submittals)
+          .where(inArray(submittals.id, submittalIds));
+        for (const r of rows) {
+          if (!SUBMITTAL_CLOSED.has(r.status as string)) markOpen("submittals", r.id);
+        }
+      }
+
+      const summary: Record<string, { total: number; rfi: number; punch: number; submittal: number }> = {};
+      for (const p of pins) {
+        if (!openRefs.has(`${p.refTable}:${p.refId}`)) continue;
+        const entry = summary[p.planDocumentId] ||= { total: 0, rfi: 0, punch: 0, submittal: 0 };
+        entry.total++;
+        if (p.pinType === "RFI") entry.rfi++;
+        else if (p.pinType === "PUNCH") entry.punch++;
+        else if (p.pinType === "SUBMITTAL") entry.submittal++;
+      }
+
+      res.json(summary);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // LIST pins for a project (optional filter by documentId & page)
 router.get(

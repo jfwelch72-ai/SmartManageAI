@@ -29,6 +29,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -99,6 +100,15 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const bimEnabled = isFeatureFlagEnabled("BIM_VIEWER");
 
   const { data: documents = [], isLoading: documentsLoading } = useProjectDocuments(projectCode);
+  const { data: planPinSummary = {} } = useQuery<Record<string, { total: number; rfi: number; punch: number; submittal: number }>>({
+    queryKey: ["/api/projects", projectCode, "plan-pins", "summary"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectCode}/plan-pins/summary`, { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: !!projectCode,
+  });
   const { data: sheets = [] } = useQuery<TakeoffSheet[]>({
     queryKey: ["/api/projects", project?.id, "takeoff", "sheets"],
     enabled: !!project?.id,
@@ -975,7 +985,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   {documentsLoading ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">Loading...</div>
                   ) : (
-                    groupedDocuments.map((group) => (
+                    <TooltipProvider delayDuration={200}>{groupedDocuments.map((group) => (
                       <div key={group.name}>
                         <div
                           className={cn(
@@ -1134,6 +1144,25 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                     <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                                   )}
                                   <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
+                                  {planPinSummary[doc.id]?.total > 0 && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-[10px] h-4 px-1 shrink-0 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
+                                          data-testid={`badge-plan-pins-${doc.id}`}
+                                        >
+                                          {planPinSummary[doc.id].total}
+                                        </Badge>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="text-xs">
+                                        <div className="font-medium mb-0.5">Open pins</div>
+                                        <div>RFI: {planPinSummary[doc.id].rfi}</div>
+                                        <div>Punch: {planPinSummary[doc.id].punch}</div>
+                                        <div>Submittal: {planPinSummary[doc.id].submittal}</div>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <Button
@@ -1299,7 +1328,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                           </div>
                         )}
                       </div>
-                    ))
+                    ))}</TooltipProvider>
                   )}
 
                   {effectiveSetId && (
