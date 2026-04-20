@@ -550,3 +550,73 @@ export async function detectInboundReply(opts: {
   }
   return { matched };
 }
+
+/**
+ * Detect inbound DSN/bounce notifications and auto-exit the matching enrollment
+ * with reason BOUNCED. We identify a bounce by sender address (MAILER-DAEMON,
+ * postmaster) or by a Delivery Status Notification subject, then locate the
+ * original outbound Message-Id either in the In-Reply-To/References headers or
+ * embedded in the bounce body.
+ */
+const BOUNCE_FROM_RE = /(mailer-daemon|postmaster|mail-daemon)@/i;
+const BOUNCE_SUBJECT_RE = /(undelivered|undeliverable|delivery (status notification|failure)|failure notice|returned mail|mail delivery (failed|failure)|delivery has failed)/i;
+const MSGID_RE = /<[^<>\s]+@[^<>\s]+>/g;
+
+export function looksLikeBounce(opts: {
+  fromAddress: string;
+  subject?: string | null;
+}): boolean {
+  if (BOUNCE_FROM_RE.test(opts.fromAddress || "")) return true;
+  if (opts.subject && BOUNCE_SUBJECT_RE.test(opts.subject)) return true;
+  return false;
+}
+
+export async function detectInboundBounce(opts: {
+  organizationId: string;
+  fromAddress: string;
+  isIncoming: boolean;
+  subject?: string | null;
+  bodyText?: string | null;
+  bodyHtml?: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
+}): Promise<{ matched: number }> {
+  if (!opts.isIncoming || !opts.fromAddress) return { matched: 0 };
+  if (!looksLikeBounce({ fromAddress: opts.fromAddress, subject: opts.subject })) {
+    return { matched: 0 };
+  }
+
+  const candidateMsgIds = new Set<string>();
+  if (opts.inReplyTo) candidateMsgIds.add(opts.inReplyTo.trim());
+  if (opts.references) {
+    for (const ref of opts.references.split(/\s+/)) {
+      const r = ref.trim();
+      if (r) candidateMsgIds.add(r);
+    }
+  }
+  // DSNs commonly embed the original message-id in the report body (e.g.
+  // "Original-Message-ID: <...>" or referenced inline in the body text).
+  const haystack = `${opts.bodyText || ""}\n${opts.bodyHtml || ""}`;
+  const found = haystack.match(MSGID_RE);
+  if (found) {
+    for (const m of found) candidateMsgIds.add(m.trim());
+  }
+  if (candidateMsgIds.size === 0) return { matched: 0 };
+
+  const exec = await db
+    .select()
+    .from(crmSequenceStepExecutions)
+    .where(and(
+      eq(crmSequenceStepExecutions.organizationId, opts.organizationId),
+      inArray(crmSequenceStepExecutions.outboundMessageId, Array.from(candidateMsgIds)),
+    ))
+    .limit(1);
+  if (exec.length === 0) return { matched: 0 };
+
+  await recordEmailEvent(exec[0].id, "BOUNCE", {
+    source: "inbound_dsn",
+    from: opts.fromAddress.trim().toLowerCase(),
+    subject: opts.subject || null,
+  });
+  return { matched: 1 };
+}

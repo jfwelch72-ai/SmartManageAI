@@ -31,7 +31,7 @@ import {
   isGmailPushConfigured,
   isOutlookPushConfigured,
 } from "./emailPushNotifications";
-import { detectInboundReply } from "./services/sequenceService";
+import { detectInboundReply, detectInboundBounce } from "./services/sequenceService";
 
 type EmailPushStatus = "REALTIME" | "POLLING" | "UNAVAILABLE";
 
@@ -2690,6 +2690,20 @@ async function persistGmailMessage(
     } catch (err) {
       logError("sequence reply detection failed", { error: String(err) });
     }
+    try {
+      await detectInboundBounce({
+        organizationId: account.organizationId,
+        fromAddress: parsed.fromAddress,
+        isIncoming: true,
+        subject: parsed.subject,
+        bodyText: parsed.bodyText,
+        bodyHtml: parsed.bodyHtml,
+        inReplyTo: parsed.inReplyTo,
+        references: parsed.references,
+      });
+    } catch (err) {
+      logError("sequence bounce detection failed", { error: String(err) });
+    }
   }
 
   const [msgCounts] = await db
@@ -3150,6 +3164,20 @@ export async function syncGmailAccount(
         } catch (err) {
           logError("sequence reply detection failed", { error: String(err) });
         }
+        try {
+          await detectInboundBounce({
+            organizationId: account.organizationId,
+            fromAddress: parsed.fromAddress,
+            isIncoming: true,
+            subject: parsed.subject,
+            bodyText: parsed.bodyText,
+            bodyHtml: parsed.bodyHtml,
+            inReplyTo: parsed.inReplyTo,
+            references: parsed.references,
+          });
+        } catch (err) {
+          logError("sequence bounce detection failed", { error: String(err) });
+        }
       }
 
       const [msgCounts] = await db
@@ -3445,6 +3473,20 @@ async function persistOutlookMessage(
       });
     } catch (err) {
       logError("sequence reply detection failed", { error: String(err) });
+    }
+    try {
+      await detectInboundBounce({
+        organizationId: account.organizationId,
+        fromAddress: parsed.fromAddress,
+        isIncoming: true,
+        subject: parsed.subject,
+        bodyText: parsed.bodyText,
+        bodyHtml: parsed.bodyHtml,
+        inReplyTo: parsed.inReplyTo,
+        references: parsed.references,
+      });
+    } catch (err) {
+      logError("sequence bounce detection failed", { error: String(err) });
     }
   }
 
@@ -3826,6 +3868,20 @@ export async function syncImapAccount(
             });
           } catch (err) {
             logError("sequence reply detection failed", { error: String(err) });
+          }
+          try {
+            await detectInboundBounce({
+              organizationId: account.organizationId,
+              fromAddress: msg.fromAddress,
+              isIncoming: true,
+              subject: msg.subject,
+              bodyText: msg.bodyText,
+              bodyHtml: msg.bodyHtml,
+              inReplyTo: (msg as any).inReplyTo,
+              references: (msg as any).references,
+            });
+          } catch (err) {
+            logError("sequence bounce detection failed", { error: String(err) });
           }
         }
 
