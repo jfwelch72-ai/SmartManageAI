@@ -35,7 +35,7 @@ async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function sendEmail(options: EmailOptions): Promise<boolean> {
+export async function sendEmail(options: EmailOptions & { headers?: Record<string, string> }): Promise<boolean> {
   let lastError: any;
 
   let recipients: string[] = [];
@@ -62,6 +62,10 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 
       if (options.replyTo) {
         emailPayload.replyTo = options.replyTo;
+      }
+
+      if (options.headers && Object.keys(options.headers).length > 0) {
+        emailPayload.headers = options.headers;
       }
 
       if (options.attachments && options.attachments.length > 0) {

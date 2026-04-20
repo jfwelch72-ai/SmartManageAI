@@ -7,6 +7,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { logError } from "./utils/logger";
 import { validateOrgRefs } from "./utils/orgRefValidator";
+import { onManualStepCompleted } from "./services/sequenceService";
 
 const router = Router();
 const ROLES = ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"] as const;
@@ -99,6 +100,9 @@ router.patch("/api/crm/tasks/:id", requireAuth, requireRole(...ROLES), async (re
     }
 
     const [updated] = await db.update(crmTasks).set(patch).where(eq(crmTasks.id, req.params.id)).returning();
+    if (body.status === "COMPLETED" && existing.status !== "COMPLETED") {
+      onManualStepCompleted(updated.id).catch((err) => logError("sequence advance failed", { error: String(err) }));
+    }
     res.json(updated);
   } catch (error) {
     next(error);

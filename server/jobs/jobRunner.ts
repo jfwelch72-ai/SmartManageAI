@@ -19,6 +19,7 @@ import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/sc
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
+import { processDueExecutions } from "../services/sequenceService";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -38,6 +39,7 @@ let monthlyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let dbHealthCheckTask: ReturnType<typeof cron.schedule> | null = null;
 let socialEngagementTask: ReturnType<typeof cron.schedule> | null = null;
 let scheduledCampaignTask: ReturnType<typeof cron.schedule> | null = null;
+let sequenceCadenceTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -201,6 +203,14 @@ export function startJobRunner() {
     }
   });
 
+  sequenceCadenceTask = cron.schedule("*/2 * * * *", async () => {
+    try {
+      await processDueExecutions();
+    } catch (err) {
+      logError("Sequence cadence runner failed", { error: String(err) });
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, periodic report, DB health check, and scheduled campaign schedulers)");
 }
 
@@ -277,6 +287,10 @@ export function stopJobRunner() {
     scheduledCampaignTask.stop();
     scheduledCampaignTask = null;
   }
+  if (sequenceCadenceTask) {
+    sequenceCadenceTask.stop();
+    sequenceCadenceTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -299,6 +313,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   db_health_check:     { fn: () => runDbHealthCheck(),                 description: "Run database health check",              schedule: "0 */6 * * *" },
   social_engagement:   { fn: () => processSocialEngagement(),          description: "Sync social media engagement metrics",    schedule: "0 */4 * * *" },
   scheduled_campaigns: { fn: () => processScheduledCampaigns(),        description: "Send scheduled email campaigns",          schedule: "*/2 * * * *" },
+  sequence_cadences:   { fn: async () => { await processDueExecutions(); }, description: "Run CRM sequence cadence executions",   schedule: "*/2 * * * *" },
 };
 
 async function processOutbox() {

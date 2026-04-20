@@ -26,6 +26,7 @@ import { governedAiCall } from "./services/aiGovernance";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { testFullConnection, fetchImapMessages, sendSmtpEmail } from "./services/imapService";
 import { ensureGmailWatch, ensureOutlookSubscription } from "./emailPushNotifications";
+import { detectInboundReply } from "./services/sequenceService";
 
 const router = Router();
 
@@ -1928,6 +1929,8 @@ function parseGmailMessage(msg: GmailMessage, accountEmail: string): {
   isIncoming: boolean;
   hasAttachments: boolean;
   isRead: boolean;
+  inReplyTo: string;
+  references: string;
 } {
   const headers = msg.payload?.headers || [];
   const fromRaw = getGmailHeader(headers, "From");
@@ -1974,6 +1977,8 @@ function parseGmailMessage(msg: GmailMessage, accountEmail: string): {
     isIncoming,
     hasAttachments,
     isRead,
+    inReplyTo: getGmailHeader(headers, "In-Reply-To") || "",
+    references: getGmailHeader(headers, "References") || "",
   };
 }
 
@@ -2206,6 +2211,21 @@ async function persistGmailMessage(
       parsed.toAddresses,
       parsed.ccAddresses,
     );
+  }
+
+  if (parsed.isIncoming) {
+    try {
+      await detectInboundReply({
+        organizationId: account.organizationId,
+        fromAddress: parsed.fromAddress,
+        isIncoming: true,
+        receivedAt: parsed.receivedAt,
+        inReplyTo: parsed.inReplyTo,
+        references: parsed.references,
+      });
+    } catch (err) {
+      logError("sequence reply detection failed", { error: String(err) });
+    }
   }
 
   const [msgCounts] = await db
@@ -2608,6 +2628,23 @@ export async function syncGmailAccount(
         );
       }
 
+      // Sequence reply detection: if this is an incoming reply from a contact
+      // currently enrolled in a sequence, auto-pause the enrollment.
+      if (parsed.isIncoming) {
+        try {
+          await detectInboundReply({
+            organizationId: account.organizationId,
+            fromAddress: parsed.fromAddress,
+            isIncoming: true,
+            receivedAt: parsed.receivedAt,
+            inReplyTo: parsed.inReplyTo,
+            references: parsed.references,
+          });
+        } catch (err) {
+          logError("sequence reply detection failed", { error: String(err) });
+        }
+      }
+
       const [msgCounts] = await db
         .select({
           total: sql<number>`count(*)::int`,
@@ -2715,6 +2752,7 @@ interface OutlookMessage {
   isRead: boolean;
   hasAttachments: boolean;
   internetMessageId?: string;
+  internetMessageHeaders?: { name: string; value: string }[];
 }
 
 function parseOutlookMessage(msg: OutlookMessage, accountEmail: string): {
@@ -2732,8 +2770,12 @@ function parseOutlookMessage(msg: OutlookMessage, accountEmail: string): {
   isIncoming: boolean;
   hasAttachments: boolean;
   isRead: boolean;
+  inReplyTo: string;
+  references: string;
 } {
   const fromAddress = msg.from?.emailAddress?.address || "unknown@unknown.com";
+  const findHeader = (n: string) =>
+    (msg.internetMessageHeaders || []).find(h => h.name?.toLowerCase() === n.toLowerCase())?.value || "";
   const fromName = msg.from?.emailAddress?.name || "";
   const toAddresses = JSON.stringify(
     (msg.toRecipients || []).map(r => r.emailAddress?.address).filter(Boolean)
@@ -2770,6 +2812,8 @@ function parseOutlookMessage(msg: OutlookMessage, accountEmail: string): {
     isIncoming,
     hasAttachments: msg.hasAttachments,
     isRead: msg.isRead,
+    inReplyTo: findHeader("In-Reply-To"),
+    references: findHeader("References"),
   };
 }
 
@@ -2880,6 +2924,21 @@ async function persistOutlookMessage(
       parsed.toAddresses,
       parsed.ccAddresses,
     );
+  }
+
+  if (parsed.isIncoming) {
+    try {
+      await detectInboundReply({
+        organizationId: account.organizationId,
+        fromAddress: parsed.fromAddress,
+        isIncoming: true,
+        receivedAt: parsed.receivedAt,
+        inReplyTo: parsed.inReplyTo,
+        references: parsed.references,
+      });
+    } catch (err) {
+      logError("sequence reply detection failed", { error: String(err) });
+    }
   }
 
   const [msgCounts] = await db
@@ -3247,6 +3306,21 @@ export async function syncImapAccount(
           hasAttachments: msg.hasAttachments,
         });
         result.messagesImported++;
+
+        if (isIncoming) {
+          try {
+            await detectInboundReply({
+              organizationId: account.organizationId,
+              fromAddress: msg.fromAddress,
+              isIncoming: true,
+              receivedAt: msg.receivedAt,
+              inReplyTo: (msg as any).inReplyTo,
+              references: (msg as any).references,
+            });
+          } catch (err) {
+            logError("sequence reply detection failed", { error: String(err) });
+          }
+        }
 
         const [msgCounts] = await db
           .select({

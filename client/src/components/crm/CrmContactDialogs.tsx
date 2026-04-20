@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Edit, User, Mail, Phone } from "lucide-react";
 import type { CrmContact } from "@shared/schema";
@@ -262,20 +263,25 @@ export function CrmContactDialogs({
                   </Badge>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (selectedContact) {
-                    openEditContact(selectedContact);
-                    setViewContactOpen(false);
-                  }
-                }}
-                data-testid="button-edit-from-view"
-              >
-                <Edit className="w-4 h-4 mr-1" />
-                Edit
-              </Button>
+              <div className="flex items-center gap-2">
+                {selectedContact?.id && (
+                  <EnrollSequenceDialog contactIds={[selectedContact.id]} />
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedContact) {
+                      openEditContact(selectedContact);
+                      setViewContactOpen(false);
+                    }
+                  }}
+                  data-testid="button-edit-from-view"
+                >
+                  <Edit className="w-4 h-4 mr-1" />
+                  Edit
+                </Button>
+              </div>
             </div>
           </DialogHeader>
           <div className="space-y-4 py-4">

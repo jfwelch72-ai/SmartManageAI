@@ -164,6 +164,7 @@ import materialTrackingRoutes from "./materialTrackingRoutes";
 import productionRateRoutes from "./productionRateRoutes";
 import crmRoutes from "./crmRoutes";
 import crmTasksRoutes from "./crmTasksRoutes";
+import sequenceRoutes from "./sequenceRoutes";
 import crmQuotesRoutes from "./crmQuotesRoutes";
 import crmAssignmentRulesRoutes from "./crmAssignmentRulesRoutes";
 import publicLeadsRoutes from "./publicLeadsRoutes";
@@ -563,6 +564,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CRM Routes (consolidated: vendor, contact, pipeline, enrollment, pricing)
   app.use(crmRoutes);
   app.use(crmTasksRoutes);
+  app.use(sequenceRoutes);
   app.use(crmQuotesRoutes);
   app.use(crmAssignmentRulesRoutes);
   app.use(publicLeadsRoutes);

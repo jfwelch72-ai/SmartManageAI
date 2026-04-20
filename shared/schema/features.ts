@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, uniqueIndex, json, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmCustomFieldEntityEnum, crmCustomFieldTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, crmLostCategoryEnum, crmQuoteAcceptanceStatusEnum, crmLeadScoringOperatorEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmCustomFieldEntityEnum, crmCustomFieldTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, crmLostCategoryEnum, crmQuoteAcceptanceStatusEnum, crmLeadScoringOperatorEnum, crmSequenceStatusEnum, crmSequenceStepTypeEnum, crmSequenceEnrollmentStatusEnum, crmSequenceExecutionStatusEnum, crmSequenceEmailEventTypeEnum, crmSequenceExitReasonEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tasks, tmTickets } from "./operations";
 
@@ -9272,3 +9272,118 @@ export const insertMaterialCertificationSchema = createInsertSchema(materialCert
 export type InsertMaterialCertification = z.infer<typeof insertMaterialCertificationSchema>;
 export type MaterialCertification = typeof materialCertifications.$inferSelect;
 
+
+// ============================================
+// CRM SEQUENCES & CADENCES
+// ============================================
+export const crmSequences = pgTable("crm_sequences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: crmSequenceStatusEnum("status").notNull().default("DRAFT"),
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
+  businessHoursOnly: boolean("business_hours_only").notNull().default(true),
+  weekdaysOnly: boolean("weekdays_only").notNull().default(true),
+  dailySendCap: integer("daily_send_cap").notNull().default(200),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_sequences_org_idx").on(table.organizationId),
+  statusIdx: index("crm_sequences_status_idx").on(table.status),
+}));
+export const insertCrmSequenceSchema = createInsertSchema(crmSequences).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmSequence = z.infer<typeof insertCrmSequenceSchema>;
+export type CrmSequence = typeof crmSequences.$inferSelect;
+
+export const crmSequenceSteps = pgTable("crm_sequence_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sequenceId: varchar("sequence_id").notNull().references(() => crmSequences.id, { onDelete: "cascade" }),
+  stepOrder: integer("step_order").notNull(),
+  stepType: crmSequenceStepTypeEnum("step_type").notNull(),
+  delayDays: integer("delay_days").notNull().default(0),
+  sendHourLocal: integer("send_hour_local").notNull().default(9),
+  subject: text("subject"),
+  body: text("body"),
+  instructions: text("instructions"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  sequenceIdx: index("crm_sequence_steps_seq_idx").on(table.sequenceId),
+  orderIdx: index("crm_sequence_steps_order_idx").on(table.sequenceId, table.stepOrder),
+}));
+export const insertCrmSequenceStepSchema = createInsertSchema(crmSequenceSteps).omit({ id: true, createdAt: true });
+export type InsertCrmSequenceStep = z.infer<typeof insertCrmSequenceStepSchema>;
+export type CrmSequenceStep = typeof crmSequenceSteps.$inferSelect;
+
+export const crmSequenceEnrollments = pgTable("crm_sequence_enrollments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  sequenceId: varchar("sequence_id").notNull().references(() => crmSequences.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "cascade" }),
+  opportunityId: varchar("opportunity_id").references(() => crmOpportunities.id, { onDelete: "set null" }),
+  senderId: varchar("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: crmSequenceEnrollmentStatusEnum("status").notNull().default("ACTIVE"),
+  currentStepIndex: integer("current_step_index").notNull().default(0),
+  startAt: timestamp("start_at").notNull().defaultNow(),
+  exitReason: crmSequenceExitReasonEnum("exit_reason"),
+  exitedAt: timestamp("exited_at"),
+  lastActivityAt: timestamp("last_activity_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_seq_enroll_org_idx").on(table.organizationId),
+  seqIdx: index("crm_seq_enroll_seq_idx").on(table.sequenceId),
+  contactIdx: index("crm_seq_enroll_contact_idx").on(table.contactId),
+  oppIdx: index("crm_seq_enroll_opp_idx").on(table.opportunityId),
+  senderIdx: index("crm_seq_enroll_sender_idx").on(table.senderId),
+  statusIdx: index("crm_seq_enroll_status_idx").on(table.status),
+  uniqueActiveContact: uniqueIndex("crm_seq_enroll_unique_contact").on(table.sequenceId, table.contactId),
+}));
+export const insertCrmSequenceEnrollmentSchema = createInsertSchema(crmSequenceEnrollments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmSequenceEnrollment = z.infer<typeof insertCrmSequenceEnrollmentSchema>;
+export type CrmSequenceEnrollment = typeof crmSequenceEnrollments.$inferSelect;
+
+export const crmSequenceStepExecutions = pgTable("crm_sequence_step_executions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  enrollmentId: varchar("enrollment_id").notNull().references(() => crmSequenceEnrollments.id, { onDelete: "cascade" }),
+  stepId: varchar("step_id").notNull().references(() => crmSequenceSteps.id, { onDelete: "cascade" }),
+  stepOrder: integer("step_order").notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  sentAt: timestamp("sent_at"),
+  completedAt: timestamp("completed_at"),
+  taskId: varchar("task_id").references(() => crmTasks.id, { onDelete: "set null" }),
+  status: crmSequenceExecutionStatusEnum("status").notNull().default("PENDING"),
+  errorMessage: text("error_message"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  outboundMessageId: text("outbound_message_id"),
+  openCount: integer("open_count").notNull().default(0),
+  clickCount: integer("click_count").notNull().default(0),
+  repliedAt: timestamp("replied_at"),
+  bouncedAt: timestamp("bounced_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_seq_exec_org_idx").on(table.organizationId),
+  enrollIdx: index("crm_seq_exec_enroll_idx").on(table.enrollmentId),
+  stepIdx: index("crm_seq_exec_step_idx").on(table.stepId),
+  scheduledIdx: index("crm_seq_exec_scheduled_idx").on(table.scheduledAt),
+  statusIdx: index("crm_seq_exec_status_idx").on(table.status),
+}));
+export const insertCrmSequenceStepExecutionSchema = createInsertSchema(crmSequenceStepExecutions).omit({ id: true, createdAt: true });
+export type InsertCrmSequenceStepExecution = z.infer<typeof insertCrmSequenceStepExecutionSchema>;
+export type CrmSequenceStepExecution = typeof crmSequenceStepExecutions.$inferSelect;
+
+export const crmSequenceEmailEvents = pgTable("crm_sequence_email_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  executionId: varchar("execution_id").notNull().references(() => crmSequenceStepExecutions.id, { onDelete: "cascade" }),
+  eventType: crmSequenceEmailEventTypeEnum("event_type").notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+}, (table) => ({
+  execIdx: index("crm_seq_email_events_exec_idx").on(table.executionId),
+  typeIdx: index("crm_seq_email_events_type_idx").on(table.eventType),
+}));
+export const insertCrmSequenceEmailEventSchema = createInsertSchema(crmSequenceEmailEvents).omit({ id: true, occurredAt: true });
+export type InsertCrmSequenceEmailEvent = z.infer<typeof insertCrmSequenceEmailEventSchema>;
+export type CrmSequenceEmailEvent = typeof crmSequenceEmailEvents.$inferSelect;

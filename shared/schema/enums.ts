@@ -97,6 +97,14 @@ export const crmLostCategoryEnum = pgEnum("crm_lost_category", ["PRICE", "TIMING
 export const crmQuoteAcceptanceStatusEnum = pgEnum("crm_quote_acceptance_status", ["PENDING", "VIEWED", "ACCEPTED", "DECLINED", "EXPIRED"]);
 export const crmLeadScoringOperatorEnum = pgEnum("crm_lead_scoring_operator", ["EQUALS", "NOT_EQUALS", "CONTAINS", "GTE", "LTE", "IS_SET", "IS_NOT_SET"]);
 
+// CRM Sequences / Cadences
+export const crmSequenceStatusEnum = pgEnum("crm_sequence_status", ["DRAFT", "ACTIVE", "ARCHIVED"]);
+export const crmSequenceStepTypeEnum = pgEnum("crm_sequence_step_type", ["AUTOMATED_EMAIL", "MANUAL_EMAIL", "CALL_TASK", "LINKEDIN_TASK", "TODO"]);
+export const crmSequenceEnrollmentStatusEnum = pgEnum("crm_sequence_enrollment_status", ["ACTIVE", "PAUSED", "REPLIED", "BOUNCED", "FINISHED", "REMOVED"]);
+export const crmSequenceExecutionStatusEnum = pgEnum("crm_sequence_execution_status", ["PENDING", "SENT", "COMPLETED", "SKIPPED", "FAILED", "BOUNCED"]);
+export const crmSequenceEmailEventTypeEnum = pgEnum("crm_sequence_email_event_type", ["OPEN", "CLICK", "REPLY", "BOUNCE"]);
+export const crmSequenceExitReasonEnum = pgEnum("crm_sequence_exit_reason", ["REPLIED", "OPPORTUNITY_WON", "OPPORTUNITY_LOST", "MANUAL_REMOVE", "BOUNCED", "COMPLETED"]);
+
 // Vendor Pricing Integration Enums
 export const pricingSourceTypeEnum = pgEnum("pricing_source_type", ["MANUAL", "PRICEBOOK_IMPORT", "VENDOR_PORTAL"]);
 export const vendorEnrollmentStatusEnum = pgEnum("vendor_enrollment_status", ["PENDING", "ACTIVE", "SUSPENDED", "REJECTED"]);

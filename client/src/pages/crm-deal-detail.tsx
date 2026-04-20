@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CrmActivityTimeline } from "@/components/crm/CrmActivityTimeline";
 import { CrmCustomFieldsDisplay } from "@/components/crm/CrmCustomFieldsForm";
+import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import {
   ArrowLeft, Building2, User, Calendar, MapPin, Mail, Phone, DollarSign,
   Trophy, AlertCircle, Brain, Target, ChevronRight, FileText, CheckSquare,
@@ -251,6 +252,7 @@ export default function CrmDealDetailPage() {
             </div>
             {canEdit && opp.stage !== "WON" && opp.stage !== "LOST" && (
               <div className="flex items-center gap-2 flex-wrap">
+                <EnrollSequenceDialog opportunityId={opp.id} />
                 <Select value={opp.stage} onValueChange={(v) => {
                   if (v === "LOST") { setLostOpen(true); return; }
                   stageMutation.mutate(v as StageKey);

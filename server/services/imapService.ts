@@ -23,6 +23,8 @@ export interface ImapFetchedMessage {
   isRead: boolean;
   hasAttachments: boolean;
   messageId: string;
+  inReplyTo: string;
+  references: string;
 }
 
 function buildImapConfig(account: EmailAccount) {
@@ -197,6 +199,8 @@ export async function fetchImapMessages(
                 isRead: msg.flags ? msg.flags.has("\\Seen") : false,
                 hasAttachments,
                 messageId: envelope.messageId || `imap-${msg.uid}`,
+                inReplyTo: (envelope as any).inReplyTo || "",
+                references: "",
               });
             } catch (parseErr) {
               logError(`Error parsing IMAP message UID ${msg.uid}:`, {}, parseErr instanceof Error ? parseErr : new Error(String(parseErr)));

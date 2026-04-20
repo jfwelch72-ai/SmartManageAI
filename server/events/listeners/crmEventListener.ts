@@ -1,6 +1,7 @@
 import { eventBus } from "../eventBus";
 import { scoreWinProbability } from "../../ai/winProbabilityService";
 import { logInfo, logError } from "../../utils/logger";
+import { handleOpportunityStageChange } from "../../services/sequenceService";
 
 export function registerCrmEventListener(): void {
   eventBus.on("crm.opportunity_created", async (event) => {
@@ -27,6 +28,14 @@ export function registerCrmEventListener(): void {
       await scoreWinProbability(event.payload.opportunityId);
     } catch (err) {
       logError("CRM: failed to re-score after stage change", {
+        error: String(err),
+        opportunityId: event.payload.opportunityId,
+      });
+    }
+    try {
+      await handleOpportunityStageChange(event.payload.opportunityId, event.payload.newStage);
+    } catch (err) {
+      logError("CRM: failed to auto-exit sequences on stage change", {
         error: String(err),
         opportunityId: event.payload.opportunityId,
       });

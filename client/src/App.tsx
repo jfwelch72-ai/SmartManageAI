@@ -143,6 +143,8 @@ const TasksPage = lazy(() => import("@/pages/tasks"));
 const CRMPage = lazy(() => import("@/pages/crm"));
 const CrmSettingsPage = lazy(() => import("@/pages/crm-settings"));
 const CrmDealDetailPage = lazy(() => import("@/pages/crm-deal-detail"));
+const SequencesPage = lazy(() => import("@/pages/sequences"));
+const SequenceDetailPage = lazy(() => import("@/pages/sequence-detail"));
 const PublicLeadFormPage = lazy(() => import("@/pages/public-lead-form"));
 const PublicQuoteAcceptPage = lazy(() => import("@/pages/public-quote-accept"));
 const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
@@ -398,6 +400,8 @@ function Router() {
       <Route path="/production-rates" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=production-rates" />} permission={RoutePermissions.PRODUCTION_RATES} />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crm/deals/:id" component={() => <ProtectedRoute component={CrmDealDetailPage} permission={RoutePermissions.CRM} />} />
+      <Route path="/sequences" component={() => <ProtectedRoute component={SequencesPage} permission={RoutePermissions.CRM} />} />
+      <Route path="/sequences/:id" component={() => <ProtectedRoute component={SequenceDetailPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crm-settings" component={() => <ProtectedRoute component={CrmSettingsPage} permission={RoutePermissions.CRM} />} />
       <Route path="/leads/:orgSlug" component={PublicLeadFormPage} />
       <Route path="/quotes/accept/:token" component={PublicQuoteAcceptPage} />
