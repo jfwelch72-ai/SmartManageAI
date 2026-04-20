@@ -1,6 +1,8 @@
+import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import type { EmailAccount, EmailMessage, EmailThread } from "@/components/email/shared";
 
 function extractErrorMessage(error: any, fallback: string): string {
@@ -416,11 +418,12 @@ interface UpdateThreadVars {
   threadId: string;
   isRead?: boolean;
   isArchived?: boolean;
+  silent?: boolean;
 }
 
 export function useUpdateThreadState() {
   const { toast } = useToast();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: async ({ threadId, isRead, isArchived }: UpdateThreadVars) => {
       const body: Record<string, boolean> = {};
       if (isRead !== undefined) body.isRead = isRead;
@@ -458,19 +461,40 @@ export function useUpdateThreadState() {
       });
     },
     onSuccess: (_data, vars) => {
-      const action = vars.isArchived === true
+      if (vars.silent) return;
+      const title = vars.isArchived === true
         ? "Thread archived"
         : vars.isArchived === false
         ? "Thread restored"
         : vars.isRead === true
         ? "Thread marked read"
         : "Thread marked unread";
-      toast({ title: action });
+      const undo: Pick<UpdateThreadVars, "isRead" | "isArchived"> = {};
+      if (vars.isArchived !== undefined) undo.isArchived = !vars.isArchived;
+      if (vars.isRead !== undefined) undo.isRead = !vars.isRead;
+      const hasUndo = Object.keys(undo).length > 0;
+      toast({
+        title,
+        action: hasUndo
+          ? React.createElement(
+              ToastAction,
+              {
+                altText: "Undo",
+                "data-testid": `button-toast-undo-thread-${vars.threadId}`,
+                onClick: () => {
+                  mutation.mutate({ threadId: vars.threadId, ...undo });
+                },
+              },
+              "Undo",
+            )
+          : undefined,
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
     },
   });
+  return mutation;
 }
 
 export function useSummarizeThread(threadId: string) {

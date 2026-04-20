@@ -21,6 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ToastAction } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast";
 import { ClassificationBadge, CLASSIFICATION_LABELS } from "./shared";
 import type { EmailThread } from "./shared";
 import { useUpdateThreadState } from "@/hooks/useEmailMutations";
@@ -49,6 +51,7 @@ export function EmailThreadList({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const updateThreadMutation = useUpdateThreadState();
+  const { toast } = useToast();
 
   const filteredThreads = useMemo(
     () =>
@@ -107,18 +110,47 @@ export function EmailThreadList({
   const runBulk = async (action: "read" | "archive" | "unarchive") => {
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
+    const patch =
+      action === "read"
+        ? { isRead: true as boolean }
+        : action === "archive"
+        ? { isArchived: true as boolean }
+        : { isArchived: false as boolean };
+    const undoPatch =
+      action === "read"
+        ? { isRead: false as boolean }
+        : action === "archive"
+        ? { isArchived: false as boolean }
+        : { isArchived: true as boolean };
     await Promise.all(
-      ids.map((threadId) => {
-        if (action === "read") {
-          return updateThreadMutation.mutateAsync({ threadId, isRead: true });
-        }
-        if (action === "archive") {
-          return updateThreadMutation.mutateAsync({ threadId, isArchived: true });
-        }
-        return updateThreadMutation.mutateAsync({ threadId, isArchived: false });
-      }),
+      ids.map((threadId) =>
+        updateThreadMutation.mutateAsync({ threadId, ...patch, silent: true }),
+      ),
     );
     setSelectedIds(new Set());
+    const noun = ids.length === 1 ? "thread" : "threads";
+    const title =
+      action === "read"
+        ? `${ids.length} ${noun} marked read`
+        : action === "archive"
+        ? `${ids.length} ${noun} archived`
+        : `${ids.length} ${noun} restored`;
+    toast({
+      title,
+      action: (
+        <ToastAction
+          altText="Undo"
+          data-testid="button-toast-undo-bulk"
+          onClick={() => {
+            ids.forEach((threadId) =>
+              updateThreadMutation.mutate({ threadId, ...undoPatch, silent: true }),
+            );
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    });
   };
 
   const selectionAllArchived =
