@@ -25,7 +25,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { useToast } from "@/hooks/use-toast";
 import { ClassificationBadge, CLASSIFICATION_LABELS } from "./shared";
 import type { EmailThread } from "./shared";
-import { useUpdateThreadState } from "@/hooks/useEmailMutations";
+import { useUpdateThreadState, useBulkUpdateThreadState } from "@/hooks/useEmailMutations";
 
 interface EmailThreadListProps {
   threads: EmailThread[] | undefined;
@@ -51,6 +51,7 @@ export function EmailThreadList({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const updateThreadMutation = useUpdateThreadState();
+  const bulkUpdateMutation = useBulkUpdateThreadState();
   const { toast } = useToast();
 
   const filteredThreads = useMemo(
@@ -122,34 +123,43 @@ export function EmailThreadList({
         : action === "archive"
         ? { isArchived: false as boolean }
         : { isArchived: true as boolean };
-    await Promise.all(
-      ids.map((threadId) =>
-        updateThreadMutation.mutateAsync({ threadId, ...patch, silent: true }),
-      ),
-    );
     setSelectedIds(new Set());
-    const noun = ids.length === 1 ? "thread" : "threads";
+    let result;
+    try {
+      result = await bulkUpdateMutation.mutateAsync({ threadIds: ids, ...patch, silent: true });
+    } catch {
+      // toast handled in mutation
+      return;
+    }
+    const successCount = result.successCount;
+    const failureCount = result.failureCount;
+    const noun = successCount === 1 ? "thread" : "threads";
     const title =
       action === "read"
-        ? `${ids.length} ${noun} marked read`
+        ? `${successCount} ${noun} marked read`
         : action === "archive"
-        ? `${ids.length} ${noun} archived`
-        : `${ids.length} ${noun} restored`;
+        ? `${successCount} ${noun} archived`
+        : `${successCount} ${noun} restored`;
+    const successIds = result.results.filter((r) => r.success).map((r) => r.threadId);
     toast({
       title,
-      action: (
+      description: failureCount > 0
+        ? failureCount === 1
+          ? "1 thread could not be updated"
+          : `${failureCount} threads could not be updated`
+        : undefined,
+      variant: failureCount > 0 ? "destructive" : undefined,
+      action: successIds.length > 0 ? (
         <ToastAction
           altText="Undo"
           data-testid="button-toast-undo-bulk"
           onClick={() => {
-            ids.forEach((threadId) =>
-              updateThreadMutation.mutate({ threadId, ...undoPatch, silent: true }),
-            );
+            bulkUpdateMutation.mutate({ threadIds: successIds, ...undoPatch, silent: true });
           }}
         >
           Undo
         </ToastAction>
-      ),
+      ) : undefined,
     });
   };
 
@@ -219,7 +229,7 @@ export function EmailThreadList({
                   size="sm"
                   variant="outline"
                   className="h-7 px-2 text-xs"
-                  disabled={updateThreadMutation.isPending}
+                  disabled={bulkUpdateMutation.isPending}
                   onClick={() => runBulk("read")}
                   data-testid="button-bulk-mark-read"
                 >
@@ -231,7 +241,7 @@ export function EmailThreadList({
                     size="sm"
                     variant="outline"
                     className="h-7 px-2 text-xs"
-                    disabled={updateThreadMutation.isPending}
+                    disabled={bulkUpdateMutation.isPending}
                     onClick={() => runBulk("unarchive")}
                     data-testid="button-bulk-unarchive"
                   >
@@ -243,7 +253,7 @@ export function EmailThreadList({
                     size="sm"
                     variant="outline"
                     className="h-7 px-2 text-xs"
-                    disabled={updateThreadMutation.isPending}
+                    disabled={bulkUpdateMutation.isPending}
                     onClick={() => runBulk("archive")}
                     data-testid="button-bulk-archive"
                   >

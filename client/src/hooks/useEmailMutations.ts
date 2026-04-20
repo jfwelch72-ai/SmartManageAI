@@ -497,6 +497,86 @@ export function useUpdateThreadState() {
   return mutation;
 }
 
+interface BulkUpdateThreadVars {
+  threadIds: string[];
+  isRead?: boolean;
+  isArchived?: boolean;
+  silent?: boolean;
+}
+
+interface BulkUpdateThreadResult {
+  results: { threadId: string; success: boolean; error?: string; messagesUpdated?: number; status?: string; unreadCount?: number }[];
+  successCount: number;
+  failureCount: number;
+  messagesUpdated: number;
+}
+
+export function useBulkUpdateThreadState() {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ threadIds, isRead, isArchived }: BulkUpdateThreadVars): Promise<BulkUpdateThreadResult> => {
+      const body: Record<string, unknown> = { threadIds };
+      if (isRead !== undefined) body.isRead = isRead;
+      if (isArchived !== undefined) body.isArchived = isArchived;
+      const res = await apiRequest("PATCH", `/api/email/threads/bulk`, body);
+      return res.json();
+    },
+    onMutate: async ({ threadIds, isRead, isArchived }: BulkUpdateThreadVars) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/email/threads"] });
+      const previousLists = queryClient.getQueriesData<EmailThread[]>({ queryKey: ["/api/email/threads"] });
+      const idSet = new Set(threadIds);
+      previousLists.forEach(([key, list]) => {
+        if (!Array.isArray(list)) return;
+        queryClient.setQueryData<EmailThread[]>(
+          key,
+          list.map((t) => {
+            if (!idSet.has(t.id)) return t;
+            const next = { ...t };
+            if (isRead === true) next.unreadCount = 0;
+            if (isArchived !== undefined) next.status = isArchived ? "ARCHIVED" : "OPEN";
+            return next;
+          }),
+        );
+      });
+      return { previousLists };
+    },
+    onError: (error: any, _vars, context) => {
+      context?.previousLists?.forEach(([key, list]) => {
+        queryClient.setQueryData(key, list);
+      });
+      toast({
+        title: "Bulk update failed",
+        description: extractErrorMessage(error, "Could not update threads"),
+        variant: "destructive",
+      });
+    },
+    onSuccess: (data, vars) => {
+      if (vars.silent) return;
+      const verb = vars.isArchived === true
+        ? "archived"
+        : vars.isArchived === false
+        ? "restored"
+        : vars.isRead === true
+        ? "marked read"
+        : "marked unread";
+      if (data.failureCount > 0) {
+        toast({
+          title: `${data.successCount} ${verb}, ${data.failureCount} failed`,
+          description: data.failureCount === 1 ? "1 thread could not be updated" : `${data.failureCount} threads could not be updated`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: `${data.successCount} thread${data.successCount === 1 ? "" : "s"} ${verb}`,
+        });
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
+    },
+  });
+}
+
 export function useSummarizeThread(threadId: string) {
   const { toast } = useToast();
   return useMutation({

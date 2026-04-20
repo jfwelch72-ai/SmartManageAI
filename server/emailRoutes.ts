@@ -1388,6 +1388,168 @@ router.get("/threads/:id", requireAuth, requireInternalRole, async (req: AuthReq
   }
 });
 
+router.patch("/threads/bulk", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: "Organization required" });
+    }
+
+    const bulkSchema = z.object({
+      threadIds: z.array(z.string().uuid()).min(1).max(500),
+      isRead: z.boolean().optional(),
+      isArchived: z.boolean().optional(),
+    }).refine(
+      (data) => data.isRead !== undefined || data.isArchived !== undefined,
+      { message: "Must provide isRead or isArchived" },
+    );
+
+    const parseResult = bulkSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: fromZodError(parseResult.error).message });
+    }
+
+    const { threadIds, isRead, isArchived } = parseResult.data;
+    const uniqueIds = Array.from(new Set(threadIds));
+
+    const existingThreads = await db
+      .select()
+      .from(emailThreads)
+      .where(
+        and(
+          inArray(emailThreads.id, uniqueIds),
+          eq(emailThreads.organizationId, orgId),
+        ),
+      );
+    const existingById = new Map(existingThreads.map((t) => [t.id, t]));
+
+    const results: { threadId: string; success: boolean; error?: string; messagesUpdated?: number; status?: string; unreadCount?: number }[] = [];
+    let totalMessagesUpdated = 0;
+    let successCount = 0;
+
+    for (const threadId of uniqueIds) {
+      const existing = existingById.get(threadId);
+      if (!existing) {
+        results.push({ threadId, success: false, error: "Thread not found" });
+        continue;
+      }
+
+      try {
+        let derivedStatus: typeof existing.status | undefined;
+        if (isArchived === true) derivedStatus = "ARCHIVED";
+        else if (isArchived === false && existing.status === "ARCHIVED") derivedStatus = "OPEN";
+
+        let messagesUpdated = 0;
+        const messageRows = await db
+          .select()
+          .from(emailMessages)
+          .where(eq(emailMessages.threadId, existing.id));
+
+        const accountIds = Array.from(new Set(messageRows.map((m) => m.emailAccountId)));
+        const accountRows = accountIds.length
+          ? await db.select().from(emailAccounts).where(inArray(emailAccounts.id, accountIds))
+          : [];
+        const accountById = new Map(accountRows.map((a) => [a.id, a]));
+
+        const targets = messageRows.filter((m) => {
+          if (isRead !== undefined && m.isRead !== isRead) return true;
+          if (isArchived !== undefined && (m.isArchived ?? false) !== isArchived) return true;
+          return false;
+        });
+
+        for (const msg of targets) {
+          const updates: Partial<typeof emailMessages.$inferInsert> = { updatedAt: new Date() };
+          if (isRead !== undefined) updates.isRead = isRead;
+          if (isArchived !== undefined) {
+            updates.isArchived = isArchived;
+            updates.folder = isArchived ? "ARCHIVE" : "INBOX";
+          }
+          const account = accountById.get(msg.emailAccountId);
+          if (account && (account.provider === "GMAIL" || account.provider === "OUTLOOK")) {
+            const existingPending = (msg.pendingProviderPush as Record<string, unknown> | null) || {};
+            const patch: Record<string, boolean> = {};
+            if (isRead !== undefined) patch.isRead = isRead;
+            if (isArchived !== undefined) patch.isArchived = isArchived;
+            updates.pendingProviderPush = { ...existingPending, ...patch, attempts: 0 };
+          }
+          await db.update(emailMessages).set(updates).where(eq(emailMessages.id, msg.id));
+          messagesUpdated++;
+        }
+
+        for (const msg of targets) {
+          const account = accountById.get(msg.emailAccountId);
+          if (account && (account.provider === "GMAIL" || account.provider === "OUTLOOK")) {
+            drainMessageProviderPush(account, msg.id).catch((err) => {
+              logError(
+                "Background email push attempt failed (will retry via job)",
+                {},
+                err instanceof Error ? err : new Error(String(err)),
+              );
+            });
+          }
+        }
+
+        const [counts] = await db
+          .select({
+            unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+          })
+          .from(emailMessages)
+          .where(eq(emailMessages.threadId, existing.id));
+
+        const updateSet: Partial<typeof emailThreads.$inferInsert> = {
+          updatedAt: new Date(),
+          unreadCount: counts?.unread ?? 0,
+        };
+        if (derivedStatus !== undefined) updateSet.status = derivedStatus;
+
+        const [updated] = await db
+          .update(emailThreads)
+          .set(updateSet)
+          .where(eq(emailThreads.id, existing.id))
+          .returning();
+
+        await logUpdate(
+          req.user.id,
+          "EMAIL_THREAD",
+          updated.id,
+          { status: existing.status },
+          { status: updated.status },
+          req,
+        );
+
+        totalMessagesUpdated += messagesUpdated;
+        successCount++;
+        results.push({
+          threadId,
+          success: true,
+          messagesUpdated,
+          status: updated.status,
+          unreadCount: updated.unreadCount ?? 0,
+        });
+      } catch (err) {
+        results.push({
+          threadId,
+          success: false,
+          error: err instanceof Error ? err.message : "Update failed",
+        });
+      }
+    }
+
+    return res.json({
+      results,
+      successCount,
+      failureCount: uniqueIds.length - successCount,
+      messagesUpdated: totalMessagesUpdated,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) {
