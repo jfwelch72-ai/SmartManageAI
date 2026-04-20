@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   ChevronLeft,
   ChevronRight,
@@ -171,6 +172,14 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
 
   return (
     <div className="flex flex-col h-full" data-testid="pdf-preview">
+      {pdfDoc && numPages > 1 && (
+        <PageThumbStrip
+          pdfDoc={pdfDoc}
+          numPages={numPages}
+          currentPage={pageNum}
+          onSelect={(n) => setPageNum(n)}
+        />
+      )}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b bg-muted/30 shrink-0">
         <div className="flex items-center gap-1">
           <Button
@@ -298,5 +307,135 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
         </div>
       </div>
     </div>
+  );
+}
+
+interface PageThumbStripProps {
+  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  numPages: number;
+  currentPage: number;
+  onSelect: (n: number) => void;
+}
+
+function PageThumbStrip({ pdfDoc, numPages, currentPage, onSelect }: PageThumbStripProps) {
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [currentPage]);
+
+  return (
+    <div
+      className="flex items-center gap-1.5 px-2 py-1.5 border-b bg-muted/20 shrink-0 overflow-x-auto"
+      data-testid="pdf-page-strip"
+    >
+      {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
+        <PageThumb
+          key={n}
+          pdfDoc={pdfDoc}
+          pageNumber={n}
+          active={n === currentPage}
+          onSelect={onSelect}
+          buttonRef={n === currentPage ? activeRef : undefined}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface PageThumbProps {
+  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  pageNumber: number;
+  active: boolean;
+  onSelect: (n: number) => void;
+  buttonRef?: React.MutableRefObject<HTMLButtonElement | null>;
+}
+
+function PageThumb({ pdfDoc, pageNumber, active, onSelect, buttonRef }: PageThumbProps) {
+  const localRef = useRef<HTMLButtonElement | null>(null);
+  const [thumb, setThumb] = useState<string | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = localRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setVisible(true);
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible || thumb) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(pageNumber);
+        const v = page.getViewport({ scale: 1 });
+        const targetW = 72;
+        const scale = targetW / v.width;
+        const sv = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = sv.width;
+        canvas.height = sv.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        await page.render({ canvasContext: ctx, viewport: sv, canvas }).promise;
+        if (cancelled) return;
+        setThumb(canvas.toDataURL("image/jpeg", 0.7));
+        canvas.width = 0;
+        canvas.height = 0;
+      } catch {
+        // Ignore render failures; tile remains as numbered placeholder
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, thumb, pdfDoc, pageNumber]);
+
+  return (
+    <button
+      ref={(el) => {
+        localRef.current = el;
+        if (buttonRef) buttonRef.current = el;
+      }}
+      type="button"
+      onClick={() => onSelect(pageNumber)}
+      className={cn(
+        "relative shrink-0 flex flex-col items-center w-[72px] rounded border transition-all bg-background",
+        active ? "border-primary shadow-sm" : "border-border hover:border-primary/50",
+        "data-[pin-drop-active=true]:ring-2 data-[pin-drop-active=true]:ring-primary data-[pin-drop-active=true]:bg-primary/10 data-[pin-drop-active=true]:border-primary"
+      )}
+      data-pin-drop-target=""
+      data-pin-drop-page={pageNumber}
+      data-testid={`pdf-page-thumb-${pageNumber}`}
+      title={`Page ${pageNumber}`}
+    >
+      <div className="w-full h-[72px] bg-muted flex items-center justify-center overflow-hidden rounded-t">
+        {thumb ? (
+          <img
+            src={thumb}
+            alt={`Page ${pageNumber}`}
+            className="max-w-full max-h-full object-contain"
+            draggable={false}
+          />
+        ) : (
+          <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/60" />
+        )}
+      </div>
+      <span
+        className={cn(
+          "text-[10px] leading-none py-0.5",
+          active ? "font-semibold text-primary" : "text-muted-foreground"
+        )}
+      >
+        {pageNumber}
+      </span>
+    </button>
   );
 }

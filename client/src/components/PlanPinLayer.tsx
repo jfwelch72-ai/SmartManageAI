@@ -300,6 +300,30 @@ function PinItem({
   const movedRef = useRef(false);
   const startRef = useRef<{ px: number; py: number; rect: DOMRect } | null>(null);
   const suppressClickRef = useRef(false);
+  const dropTargetRef = useRef<Element | null>(null);
+
+  const clearDropTarget = () => {
+    if (dropTargetRef.current) {
+      try { (dropTargetRef.current as HTMLElement).removeAttribute("data-pin-drop-active"); } catch {}
+      dropTargetRef.current = null;
+    }
+  };
+
+  const updateDropTarget = (clientX: number, clientY: number, btn: HTMLElement) => {
+    const prevDisplay = btn.style.display;
+    btn.style.display = "none";
+    const el = document.elementFromPoint(clientX, clientY);
+    btn.style.display = prevDisplay;
+    const target = el && (el.closest('[data-pin-drop-target]') as HTMLElement | null);
+    if (target !== dropTargetRef.current) {
+      clearDropTarget();
+      if (target) {
+        target.setAttribute("data-pin-drop-active", "true");
+        dropTargetRef.current = target;
+      }
+    }
+    return target;
+  };
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0) return;
@@ -323,12 +347,42 @@ function PinItem({
     const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
     setDragPos({ x, y });
+    updateDropTarget(e.clientX, e.clientY, e.currentTarget);
   };
 
   const finishDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+
+    const target = movedRef.current
+      ? updateDropTarget(e.clientX, e.clientY, e.currentTarget)
+      : null;
+    clearDropTarget();
+
+    if (target) {
+      const pageStr = target.getAttribute("data-pin-drop-page");
+      const docId = target.getAttribute("data-pin-drop-doc");
+      const targetPage = pageStr ? parseInt(pageStr, 10) : NaN;
+      const crossDoc = !!docId && docId !== pin.planDocumentId;
+      const samePage = Number.isInteger(targetPage) && targetPage === pin.pageNumber;
+      if (crossDoc || (Number.isInteger(targetPage) && !samePage)) {
+        suppressClickRef.current = true;
+        setDragPos(null);
+        const pageNumber = Number.isInteger(targetPage) ? targetPage : 1;
+        onMoveToPage(pin.id, pageNumber, crossDoc ? docId! : undefined);
+        startRef.current = null;
+        return;
+      }
+      // Dropped on a target that doesn't change page or document (e.g. the
+      // pin's own document row, or its current page thumbnail) — treat as a
+      // no-op rather than snapping the pin to the cursor's clamped coords.
+      suppressClickRef.current = true;
+      setDragPos(null);
+      startRef.current = null;
+      return;
+    }
+
     if (movedRef.current && dragPos) {
       suppressClickRef.current = true;
       onMove(pin.id, dragPos.x, dragPos.y, () => setDragPos(null));

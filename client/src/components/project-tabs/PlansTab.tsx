@@ -1123,7 +1123,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                             {group.docs.length === 0 ? (
                               <div className="px-6 py-1 text-xs text-muted-foreground italic">No files</div>
                             ) : (
-                              group.docs.map((doc: any) => (
+                              group.docs.map((doc: any) => {
+                                const isPdfDoc = (doc.mimeType || "").toLowerCase().includes("pdf") || (doc.fileName || "").toLowerCase().endsWith(".pdf");
+                                return (
                                 <div
                                   key={doc.id}
                                   draggable
@@ -1132,10 +1134,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   className={cn(
                                     "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset",
                                     selectedDocId === doc.id && "bg-accent",
-                                    draggedDocId === doc.id && "opacity-50"
+                                    draggedDocId === doc.id && "opacity-50",
+                                    isPdfDoc && "data-[pin-drop-active=true]:ring-2 data-[pin-drop-active=true]:ring-primary data-[pin-drop-active=true]:bg-primary/10"
                                   )}
                                   onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                   data-testid={`document-${doc.id}`}
+                                  {...(isPdfDoc ? { "data-pin-drop-target": "", "data-pin-drop-doc": doc.id } : {})}
                                   {...getDocRowProps(doc.id)}
                                 >
                                   <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
@@ -1264,7 +1268,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                 </div>
-                              ))
+                                );
+                              })
                             )}
                             {(group.children || []).map((child) => {
                               const sfKey = subFolderKey(group.name, child.name);
@@ -1336,7 +1341,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                       {sfDocs.length === 0 ? (
                                         <div className="px-2 py-1 text-xs text-muted-foreground italic">No files — drag documents here</div>
                                       ) : (
-                                        sfDocs.map((doc: any) => (
+                                        sfDocs.map((doc: any) => {
+                                          const isPdfDoc = (doc.mimeType || "").toLowerCase().includes("pdf") || (doc.fileName || "").toLowerCase().endsWith(".pdf");
+                                          return (
                                           <div
                                             key={doc.id}
                                             draggable
@@ -1345,10 +1352,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                             className={cn(
                                               "flex items-start gap-1.5 px-2 py-1 text-xs cursor-pointer hover:bg-accent/50 transition-colors group data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset",
                                               selectedDocId === doc.id && "bg-accent",
-                                              draggedDocId === doc.id && "opacity-50"
+                                              draggedDocId === doc.id && "opacity-50",
+                                              isPdfDoc && "data-[pin-drop-active=true]:ring-2 data-[pin-drop-active=true]:ring-primary data-[pin-drop-active=true]:bg-primary/10"
                                             )}
                                             onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                             data-testid={`subfolder-doc-${doc.id}`}
+                                            {...(isPdfDoc ? { "data-pin-drop-target": "", "data-pin-drop-doc": doc.id } : {})}
                                             {...getDocRowProps(doc.id)}
                                           >
                                             <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
@@ -1374,7 +1383,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                               </Tooltip>
                                             )}
                                           </div>
-                                        ))
+                                          );
+                                        })
                                       )}
                                     </div>
                                   )}
