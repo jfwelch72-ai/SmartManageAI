@@ -59,6 +59,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { CrmActivityTimeline } from "./CrmActivityTimeline";
+import { useLocation } from "wouter";
+import { differenceInDays } from "date-fns";
 import {
   Tooltip,
   TooltipContent,
@@ -163,6 +165,13 @@ function formatCurrency(value: number | string | null | undefined): string {
   return `$${num.toLocaleString()}`;
 }
 
+function staleness(updatedAt: string): { dot: string; tooltip: string } {
+  const days = differenceInDays(new Date(), new Date(updatedAt));
+  if (days <= 3) return { dot: "bg-green-500", tooltip: `Active — updated ${days}d ago` };
+  if (days <= 14) return { dot: "bg-yellow-500", tooltip: `${days}d since last update` };
+  return { dot: "bg-red-500", tooltip: `Stale — ${days}d since last update` };
+}
+
 function getStageInfo(stage: PipelineStage) {
   return STAGES.find(s => s.key === stage) ?? STAGES[0];
 }
@@ -255,6 +264,7 @@ export default function CrmPipelineView() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const canEdit = ["ADMIN", "MANAGER", "ESTIMATOR"].includes(user?.role ?? "");
+  const [, navigate] = useLocation();
   const canDelete = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
   const canManageProjects = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
 
@@ -814,25 +824,58 @@ export default function CrmPipelineView() {
                 <div className="flex flex-col gap-2 min-h-[80px]">
                   {isLoading
                     ? [1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-lg" />)
-                    : stageOpps.map(opp => (
+                    : stageOpps.map(opp => {
+                      const stale = staleness(opp.updatedAt);
+                      const initials = `${opp.assignedFirstName?.[0] ?? ""}${opp.assignedLastName?.[0] ?? ""}`.toUpperCase();
+                      const closeIn = opp.expectedCloseDate ? differenceInDays(new Date(opp.expectedCloseDate), new Date()) : null;
+                      return (
                       <Card
                         key={opp.id}
-                        className="cursor-pointer hover-elevate"
-                        onClick={() => openDetail(opp)}
+                        className="cursor-pointer hover-elevate active-elevate-2 group relative overflow-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        onClick={() => navigate(`/crm/deals/${opp.id}`)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/crm/deals/${opp.id}`); } }}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Open deal ${opp.name}`}
                         data-testid={`card-opp-${opp.id}`}
                       >
-                        <CardContent className="p-3 flex flex-col gap-1.5">
-                          <p className="text-sm font-medium leading-tight line-clamp-2">{opp.name}</p>
-                          {opp.crmOrgName && <p className="text-xs text-muted-foreground truncate">{opp.crmOrgName}</p>}
-                          {opp.dealValue && <p className="text-sm font-semibold text-primary">{formatCurrency(opp.dealValue)}</p>}
-                          <div className="flex items-center justify-between">
+                        {/* Stale indicator stripe on left edge */}
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${stale.dot}`} title={stale.tooltip} />
+                        <CardContent className="p-3 pl-3.5 flex flex-col gap-1.5">
+                          {/* Top row: name + staleness dot */}
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-medium leading-tight line-clamp-2 flex-1">{opp.name}</p>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className={`shrink-0 mt-0.5 w-2 h-2 rounded-full ${stale.dot}`} data-testid={`stale-dot-${opp.id}`} />
+                                </TooltipTrigger>
+                                <TooltipContent side="top"><p className="text-xs">{stale.tooltip}</p></TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
+
+                          {opp.crmOrgName && (
+                            <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                              <Users className="w-3 h-3" />{opp.crmOrgName}
+                            </p>
+                          )}
+
+                          {opp.dealValue && (
+                            <p className="text-base font-semibold text-primary leading-tight" data-testid={`text-value-${opp.id}`}>
+                              {formatCurrency(opp.dealValue)}
+                            </p>
+                          )}
+
+                          {/* Badges row */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {opp.aiWinProbability != null ? (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Badge
                                       variant="outline"
-                                      className={`text-xs gap-1 ${
+                                      className={`text-[10px] h-5 gap-0.5 px-1.5 ${
                                         opp.aiWinProbability >= 60
                                           ? "border-green-300 text-green-700 dark:border-green-700 dark:text-green-400"
                                           : opp.aiWinProbability >= 30
@@ -841,8 +884,7 @@ export default function CrmPipelineView() {
                                       }`}
                                       data-testid={`badge-ai-prob-${opp.id}`}
                                     >
-                                      <Brain className="w-3 h-3" />
-                                      {opp.aiWinProbability}%
+                                      <Brain className="w-2.5 h-2.5" />{opp.aiWinProbability}%
                                     </Badge>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-[220px]">
@@ -851,31 +893,62 @@ export default function CrmPipelineView() {
                                 </Tooltip>
                               </TooltipProvider>
                             ) : (
-                              <Badge variant="outline" className="text-xs">{opp.probability ?? 10}%</Badge>
+                              <Badge variant="outline" className="text-[10px] h-5 px-1.5">{opp.probability ?? 10}%</Badge>
+                            )}
+                            {opp.leadScore != null && (
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] h-5 gap-0.5 px-1.5 ${
+                                  opp.leadScore >= 70 ? "border-green-300 text-green-700 dark:border-green-700 dark:text-green-400" :
+                                  opp.leadScore >= 40 ? "border-yellow-300 text-yellow-700 dark:border-yellow-700 dark:text-yellow-400" :
+                                  "border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-400"
+                                }`}
+                                data-testid={`badge-score-${opp.id}`}
+                              >
+                                <Target className="w-2.5 h-2.5" />{opp.leadScore}
+                              </Badge>
+                            )}
+                          </div>
+
+                          {/* Bottom row: avatar + close date */}
+                          <div className="flex items-center justify-between mt-1 gap-2">
+                            {(opp.assignedFirstName || opp.assignedLastName) ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="w-6 h-6 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0" data-testid={`avatar-assigned-${opp.id}`}>
+                                      <span className="text-[10px] font-semibold text-primary uppercase leading-none">{initials || "?"}</span>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    <p className="text-xs">{opp.assignedFirstName} {opp.assignedLastName}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <div className="w-6 h-6 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center shrink-0">
+                                <User className="w-3 h-3 text-muted-foreground" />
+                              </div>
                             )}
                             {opp.expectedCloseDate && (
-                              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
+                              <span className={`text-[10px] flex items-center gap-1 ${
+                                closeIn != null && closeIn < 0 ? "text-red-600 dark:text-red-400 font-medium" :
+                                closeIn != null && closeIn < 7 ? "text-orange-600 dark:text-orange-400" :
+                                "text-muted-foreground"
+                              }`}>
+                                <Calendar className="w-2.5 h-2.5" />
                                 {format(new Date(opp.expectedCloseDate), "MMM d")}
+                                {closeIn != null && closeIn < 0 && " (late)"}
                               </span>
                             )}
                           </div>
-                          {(opp.assignedFirstName || opp.assignedLastName) && (
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <div className="w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0" data-testid={`avatar-assigned-${opp.id}`}>
-                                <span className="text-[9px] font-semibold text-primary uppercase leading-none">
-                                  {(opp.assignedFirstName?.[0] ?? "")}{(opp.assignedLastName?.[0] ?? "")}
-                                </span>
-                              </div>
-                              <span className="text-xs text-muted-foreground truncate">{opp.assignedFirstName} {opp.assignedLastName}</span>
-                            </div>
-                          )}
+
                           {canEdit && (
-                            <div className="flex gap-1 mt-1 flex-wrap">
+                            <div className="flex gap-1 mt-1 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
                               {STAGES.filter(s => s.key !== opp.stage).slice(0, 2).map(s => (
                                 <button
                                   key={s.key}
-                                  className="text-xs text-muted-foreground hover:text-primary underline-offset-2 hover:underline"
+                                  className="text-[10px] text-muted-foreground hover:text-primary underline-offset-2 hover:underline"
                                   onClick={e => { e.stopPropagation(); stageMutation.mutate({ id: opp.id, stage: s.key }); }}
                                   data-testid={`button-move-${opp.id}-${s.key}`}
                                 >
@@ -886,7 +959,8 @@ export default function CrmPipelineView() {
                           )}
                         </CardContent>
                       </Card>
-                    ))}
+                      );
+                    })}
                 </div>
               </div>
             );
