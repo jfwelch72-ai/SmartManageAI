@@ -1201,6 +1201,8 @@ router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthR
       projectId: z.string().uuid().nullable().optional(),
       bidId: z.string().uuid().nullable().optional(),
       vendorId: z.string().uuid().nullable().optional(),
+      isRead: z.boolean().optional(),
+      isArchived: z.boolean().optional(),
     });
 
     const parseResult = updateSchema.safeParse(req.body);
@@ -1273,12 +1275,83 @@ router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthR
       }
     }
 
+    const { isRead, isArchived, ...threadFields } = data;
+
+    let derivedStatus = threadFields.status;
+    if (isArchived === true) derivedStatus = "ARCHIVED";
+    else if (isArchived === false && existing.status === "ARCHIVED") derivedStatus = "OPEN";
+
+    let messagesUpdated = 0;
+    if (isRead !== undefined || isArchived !== undefined) {
+      const messageRows = await db
+        .select()
+        .from(emailMessages)
+        .where(eq(emailMessages.threadId, existing.id));
+
+      const accountIds = Array.from(new Set(messageRows.map((m) => m.emailAccountId)));
+      const accountRows = accountIds.length
+        ? await db.select().from(emailAccounts).where(inArray(emailAccounts.id, accountIds))
+        : [];
+      const accountById = new Map(accountRows.map((a) => [a.id, a]));
+
+      const targets = messageRows.filter((m) => {
+        if (isRead !== undefined && m.isRead !== isRead) return true;
+        if (isArchived !== undefined && (m.isArchived ?? false) !== isArchived) return true;
+        return false;
+      });
+
+      for (const msg of targets) {
+        const updates: Partial<typeof emailMessages.$inferInsert> = { updatedAt: new Date() };
+        if (isRead !== undefined) updates.isRead = isRead;
+        if (isArchived !== undefined) {
+          updates.isArchived = isArchived;
+          updates.folder = isArchived ? "ARCHIVE" : "INBOX";
+        }
+        const account = accountById.get(msg.emailAccountId);
+        if (account && (account.provider === "GMAIL" || account.provider === "OUTLOOK")) {
+          const existingPending = (msg.pendingProviderPush as Record<string, unknown> | null) || {};
+          const patch: Record<string, boolean> = {};
+          if (isRead !== undefined) patch.isRead = isRead;
+          if (isArchived !== undefined) patch.isArchived = isArchived;
+          updates.pendingProviderPush = { ...existingPending, ...patch, attempts: 0 };
+        }
+        await db.update(emailMessages).set(updates).where(eq(emailMessages.id, msg.id));
+        messagesUpdated++;
+      }
+
+      // Best-effort async push to provider for affected messages
+      for (const msg of targets) {
+        const account = accountById.get(msg.emailAccountId);
+        if (account && (account.provider === "GMAIL" || account.provider === "OUTLOOK")) {
+          drainMessageProviderPush(account, msg.id).catch((err) => {
+            logError(
+              "Background email push attempt failed (will retry via job)",
+              {},
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          });
+        }
+      }
+    }
+
+    // Recompute thread unread count from current message state
+    const [counts] = await db
+      .select({
+        unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+      })
+      .from(emailMessages)
+      .where(eq(emailMessages.threadId, existing.id));
+
+    const updateSet: Partial<typeof emailThreads.$inferInsert> = {
+      ...threadFields,
+      updatedAt: new Date(),
+      unreadCount: counts?.unread ?? 0,
+    };
+    if (derivedStatus !== undefined) updateSet.status = derivedStatus;
+
     const [updated] = await db
       .update(emailThreads)
-      .set({
-        ...data,
-        updatedAt: new Date(),
-      })
+      .set(updateSet)
       .where(eq(emailThreads.id, req.params.id))
       .returning();
 
@@ -1291,7 +1364,7 @@ router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthR
       req
     );
 
-    return res.json(updated);
+    return res.json({ ...updated, messagesUpdated });
   } catch (error) {
         return next(error);
   }

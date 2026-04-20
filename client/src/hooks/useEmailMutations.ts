@@ -397,23 +397,12 @@ export function useUpdateThreadState() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ threadId, isRead, isArchived }: UpdateThreadVars) => {
-      const detailRes = await apiRequest("GET", `/api/email/threads/${threadId}`);
-      const detail = await detailRes.json();
-      const messages: EmailMessage[] = detail.messages || [];
-      const targets = messages.filter((m) => {
-        if (isRead !== undefined && m.isRead !== isRead) return true;
-        if (isArchived !== undefined && (m.isArchived ?? false) !== isArchived) return true;
-        return false;
-      });
-      await Promise.all(
-        targets.map((m) => {
-          const body: Record<string, boolean> = {};
-          if (isRead !== undefined) body.isRead = isRead;
-          if (isArchived !== undefined) body.isArchived = isArchived;
-          return apiRequest("PATCH", `/api/email/messages/${m.id}`, body);
-        }),
-      );
-      return { threadId, updated: targets.length };
+      const body: Record<string, boolean> = {};
+      if (isRead !== undefined) body.isRead = isRead;
+      if (isArchived !== undefined) body.isArchived = isArchived;
+      const res = await apiRequest("PATCH", `/api/email/threads/${threadId}`, body);
+      const data = await res.json();
+      return { threadId, updated: data?.messagesUpdated ?? 0 };
     },
     onMutate: async ({ threadId, isRead, isArchived }: UpdateThreadVars) => {
       await queryClient.cancelQueries({ queryKey: ["/api/email/threads"] });
