@@ -37,15 +37,29 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
 
   const registerShortcuts = useMemo(
     () => (id: string, shortcuts: KeyboardShortcut[]) => {
-      setRegistry((prev) => ({ ...prev, [id]: shortcuts }));
+      setRegistry((prev) => {
+        if (prev[id] === shortcuts) return prev;
+        return { ...prev, [id]: shortcuts };
+      });
       return () => {
         setRegistry((prev) => {
+          if (!(id in prev)) return prev;
           const { [id]: _removed, ...rest } = prev;
           return rest;
         });
       };
     },
     [],
+  );
+
+  // NOTE: The context value MUST be memoized. If a new object is returned on
+  // every render, consumers using `useRegisterShortcuts` see a new `ctx` each
+  // render, re-run their effect, call `setRegistry` again, and trigger a
+  // "Maximum update depth exceeded" loop on pages that register shortcuts
+  // (e.g. /crm). See task-571.
+  const contextValue = useMemo(
+    () => ({ registerShortcuts }),
+    [registerShortcuts],
   );
 
   useEffect(() => {
@@ -65,7 +79,7 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
   );
 
   return (
-    <ShortcutsContext.Provider value={{ registerShortcuts }}>
+    <ShortcutsContext.Provider value={contextValue}>
       {children}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md" data-testid="dialog-keyboard-shortcuts">
