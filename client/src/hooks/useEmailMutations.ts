@@ -340,11 +340,12 @@ interface UpdateMessageVars {
   messageId: string;
   isRead?: boolean;
   isArchived?: boolean;
+  silent?: boolean;
 }
 
 export function useUpdateMessageState(threadId?: string) {
   const { toast } = useToast();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: async ({ messageId, isRead, isArchived }: UpdateMessageVars) => {
       const body: Record<string, boolean> = {};
       if (isRead !== undefined) body.isRead = isRead;
@@ -408,10 +409,41 @@ export function useUpdateMessageState(threadId?: string) {
         variant: "destructive",
       });
     },
+    onSuccess: (_data, vars) => {
+      if (vars.silent) return;
+      const title = vars.isArchived === true
+        ? "Message archived"
+        : vars.isArchived === false
+        ? "Message restored"
+        : vars.isRead === true
+        ? "Message marked read"
+        : "Message marked unread";
+      const undo: Pick<UpdateMessageVars, "isRead" | "isArchived"> = {};
+      if (vars.isArchived !== undefined) undo.isArchived = !vars.isArchived;
+      if (vars.isRead !== undefined) undo.isRead = !vars.isRead;
+      const hasUndo = Object.keys(undo).length > 0;
+      toast({
+        title,
+        action: hasUndo
+          ? React.createElement(
+              ToastAction,
+              {
+                altText: "Undo",
+                "data-testid": `button-toast-undo-message-${vars.messageId}`,
+                onClick: () => {
+                  mutation.mutate({ messageId: vars.messageId, ...undo });
+                },
+              },
+              "Undo",
+            )
+          : undefined,
+      });
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
     },
   });
+  return mutation;
 }
 
 interface UpdateThreadVars {

@@ -58,7 +58,7 @@ export function EmailThreadDetail({ thread, onClose }: ThreadDetailViewProps) {
 
   const markThreadRead = () => {
     unreadMessages.forEach((m) => {
-      updateStateMutation.mutate({ messageId: m.id, isRead: true });
+      updateStateMutation.mutate({ messageId: m.id, isRead: true, silent: true });
     });
   };
 
@@ -66,7 +66,7 @@ export function EmailThreadDetail({ thread, onClose }: ThreadDetailViewProps) {
     const targetArchived = !allArchived;
     messages.forEach((m) => {
       if ((m.isArchived ?? false) !== targetArchived) {
-        updateStateMutation.mutate({ messageId: m.id, isArchived: targetArchived });
+        updateStateMutation.mutate({ messageId: m.id, isArchived: targetArchived, silent: true });
       }
     });
   };
