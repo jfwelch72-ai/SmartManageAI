@@ -10,6 +10,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project } from "@shared/schema";
+import { CrmCustomFieldsForm, type CustomFieldsValue } from "./CrmCustomFieldsForm";
 
 type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP" | "RENTAL_VENDOR";
 
@@ -49,13 +50,17 @@ interface CrmOrgDialogsProps {
   selectedOrgId: string | undefined;
   createOrgMutation: any;
   updateOrgMutation: any;
+  customFields?: CustomFieldsValue;
+  setCustomFields?: (v: CustomFieldsValue) => void;
 }
 
-function OrgFormFields({ newOrg, setNewOrg, allProjects, prefix }: {
+function OrgFormFields({ newOrg, setNewOrg, allProjects, prefix, customFields, setCustomFields }: {
   newOrg: OrgFormState;
   setNewOrg: (o: OrgFormState) => void;
   allProjects: Project[];
   prefix: string;
+  customFields?: CustomFieldsValue;
+  setCustomFields?: (v: CustomFieldsValue) => void;
 }) {
   return (
     <div className="grid gap-4 py-4">
@@ -353,6 +358,14 @@ function OrgFormFields({ newOrg, setNewOrg, allProjects, prefix }: {
           data-testid={`input-${prefix}org-notes`}
         />
       </div>
+      {setCustomFields && (
+        <CrmCustomFieldsForm
+          entityType="ORGANISATION"
+          values={customFields ?? {}}
+          onChange={setCustomFields}
+          prefix={prefix}
+        />
+      )}
     </div>
   );
 }
@@ -368,6 +381,8 @@ export function CrmOrgDialogs({
   selectedOrgId,
   createOrgMutation,
   updateOrgMutation,
+  customFields,
+  setCustomFields,
 }: CrmOrgDialogsProps) {
   return (
     <>
@@ -379,7 +394,7 @@ export function CrmOrgDialogs({
               Add a new contractor, subcontractor, supplier, or vendor to your CRM.
             </DialogDescription>
           </DialogHeader>
-          <OrgFormFields newOrg={newOrg} setNewOrg={setNewOrg} allProjects={allProjects} prefix="" />
+          <OrgFormFields newOrg={newOrg} setNewOrg={setNewOrg} allProjects={allProjects} prefix="" customFields={customFields} setCustomFields={setCustomFields} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOrgOpen(false)} data-testid="button-cancel-org">
               Cancel
@@ -403,7 +418,7 @@ export function CrmOrgDialogs({
               Update organization details.
             </DialogDescription>
           </DialogHeader>
-          <OrgFormFields newOrg={newOrg} setNewOrg={setNewOrg} allProjects={allProjects} prefix="edit-" />
+          <OrgFormFields newOrg={newOrg} setNewOrg={setNewOrg} allProjects={allProjects} prefix="edit-" customFields={customFields} setCustomFields={setCustomFields} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOrgOpen(false)} data-testid="button-cancel-edit-org">
               Cancel

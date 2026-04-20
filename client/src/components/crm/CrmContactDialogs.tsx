@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Edit, User, Mail, Phone } from "lucide-react";
 import type { CrmContact } from "@shared/schema";
+import { CrmCustomFieldsForm, CrmCustomFieldsDisplay, type CustomFieldsValue } from "./CrmCustomFieldsForm";
 
 type ContactRole = "PM" | "ESTIMATOR" | "SUPERINTENDENT" | "SALES" | "ACCOUNTS_PAYABLE" | "ACCOUNTS_RECEIVABLE" | "OWNER" | "GENERAL_MANAGER" | "FOREMAN" | "OTHER";
 
@@ -44,18 +45,22 @@ interface CrmContactDialogsProps {
   setViewContactOpen: (open: boolean) => void;
   newContact: ContactFormState;
   setNewContact: (contact: ContactFormState) => void;
-  selectedContact: CrmContact | null;
+  selectedContact: (CrmContact & { customFields?: Record<string, unknown> }) | null;
   selectedOrgName: string | undefined;
   selectedOrgId: string | undefined;
   createContactMutation: any;
   updateContactMutation: any;
   openEditContact: (contact: CrmContact) => void;
+  customFields?: CustomFieldsValue;
+  setCustomFields?: (v: CustomFieldsValue) => void;
 }
 
-function ContactFormFields({ newContact, setNewContact, prefix }: {
+function ContactFormFields({ newContact, setNewContact, prefix, customFields, setCustomFields }: {
   newContact: ContactFormState;
   setNewContact: (c: ContactFormState) => void;
   prefix: string;
+  customFields?: CustomFieldsValue;
+  setCustomFields?: (v: CustomFieldsValue) => void;
 }) {
   return (
     <div className="grid gap-4 py-4">
@@ -160,6 +165,14 @@ function ContactFormFields({ newContact, setNewContact, prefix }: {
           data-testid={`input-${prefix}contact-notes`}
         />
       </div>
+      {setCustomFields && (
+        <CrmCustomFieldsForm
+          entityType="CONTACT"
+          values={customFields ?? {}}
+          onChange={setCustomFields}
+          prefix={prefix}
+        />
+      )}
     </div>
   );
 }
@@ -179,6 +192,8 @@ export function CrmContactDialogs({
   createContactMutation,
   updateContactMutation,
   openEditContact,
+  customFields,
+  setCustomFields,
 }: CrmContactDialogsProps) {
   return (
     <>
@@ -190,7 +205,7 @@ export function CrmContactDialogs({
               Add a new contact to {selectedOrgName}
             </DialogDescription>
           </DialogHeader>
-          <ContactFormFields newContact={newContact} setNewContact={setNewContact} prefix="" />
+          <ContactFormFields newContact={newContact} setNewContact={setNewContact} prefix="" customFields={customFields} setCustomFields={setCustomFields} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateContactOpen(false)} data-testid="button-cancel-contact">
               Cancel
@@ -214,7 +229,7 @@ export function CrmContactDialogs({
               Update contact information
             </DialogDescription>
           </DialogHeader>
-          <ContactFormFields newContact={newContact} setNewContact={setNewContact} prefix="edit-" />
+          <ContactFormFields newContact={newContact} setNewContact={setNewContact} prefix="edit-" customFields={customFields} setCustomFields={setCustomFields} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditContactOpen(false)} data-testid="button-cancel-edit-contact">
               Cancel
@@ -310,6 +325,13 @@ export function CrmContactDialogs({
                   <p className="text-sm text-muted-foreground">{selectedContact.notes}</p>
                 </div>
               </div>
+            )}
+            {selectedContact?.customFields && (
+              <CrmCustomFieldsDisplay
+                entityType="CONTACT"
+                values={selectedContact.customFields}
+                testIdPrefix="contact-"
+              />
             )}
           </div>
         </DialogContent>

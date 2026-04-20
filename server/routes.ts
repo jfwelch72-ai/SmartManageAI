@@ -166,6 +166,7 @@ import crmQuotesRoutes from "./crmQuotesRoutes";
 import crmAssignmentRulesRoutes from "./crmAssignmentRulesRoutes";
 import publicLeadsRoutes from "./publicLeadsRoutes";
 import crmCatalogRoutes from "./crmCatalogRoutes";
+import crmCustomFieldsRoutes from "./crmCustomFieldsRoutes";
 import crmAnalyticsRoutes from "./crmAnalyticsRoutes";
 import crmDuplicatesRoutes from "./crmDuplicatesRoutes";
 import crmLeadScoringRoutes from "./crmLeadScoringRoutes";
@@ -560,6 +561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(crmAssignmentRulesRoutes);
   app.use(publicLeadsRoutes);
   app.use(crmCatalogRoutes);
+  app.use(crmCustomFieldsRoutes);
   app.use(crmAnalyticsRoutes);
   app.use(crmDuplicatesRoutes);
   app.use(crmLeadScoringRoutes);

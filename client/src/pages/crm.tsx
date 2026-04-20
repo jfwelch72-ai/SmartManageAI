@@ -95,7 +95,10 @@ type ContactRole =
 
 interface OrganizationWithContacts extends CrmOrganization {
   contacts: CrmContact[];
+  customFields?: Record<string, unknown>;
 }
+
+type CrmContactWithCustomFields = CrmContact & { customFields?: Record<string, unknown> };
 
 const TYPE_LABELS: Record<OrganizationType, string> = {
   CONTRACTOR: "GC / Contractor",
@@ -607,6 +610,19 @@ export default function CRMPage() {
 
   const [newOrg, setNewOrg] = useState<OrgFormState>({ ...DEFAULT_ORG });
   const [newContact, setNewContact] = useState({ ...DEFAULT_CONTACT });
+  const [orgCustomFields, setOrgCustomFields] = useState<Record<string, unknown>>({});
+  const [contactCustomFields, setContactCustomFields] = useState<Record<string, unknown>>({});
+
+  // Reset custom field state when create dialogs open or close so prior edit
+  // values cannot leak into a new record. (Edit flows seed from the entity.)
+  const handleCreateOrgOpenChange = (open: boolean) => {
+    setOrgCustomFields({});
+    setCreateOrgOpen(open);
+  };
+  const handleCreateContactOpenChange = (open: boolean) => {
+    setContactCustomFields({});
+    setCreateContactOpen(open);
+  };
 
   const orgQueryParams = {
     search: searchTerm,
@@ -723,10 +739,11 @@ export default function CRMPage() {
   const createOrgMutationWrapped = {
     ...mutations.createOrgMutation,
     mutate: (data: any) => {
-      mutations.createOrgMutation.mutate(data, {
+      mutations.createOrgMutation.mutate({ ...data, customFields: orgCustomFields }, {
         onSuccess: () => {
           setCreateOrgOpen(false);
           setNewOrg({ ...DEFAULT_ORG });
+          setOrgCustomFields({});
         },
       });
     },
@@ -735,7 +752,7 @@ export default function CRMPage() {
   const updateOrgMutationWrapped = {
     ...mutations.updateOrgMutation,
     mutate: (data: any) => {
-      mutations.updateOrgMutation.mutate(data, {
+      mutations.updateOrgMutation.mutate({ ...data, customFields: orgCustomFields }, {
         onSuccess: () => {
           setEditOrgOpen(false);
         },
@@ -746,10 +763,11 @@ export default function CRMPage() {
   const createContactMutationWrapped = {
     ...mutations.createContactMutation,
     mutate: (data: any) => {
-      mutations.createContactMutation.mutate(data, {
+      mutations.createContactMutation.mutate({ ...data, customFields: contactCustomFields }, {
         onSuccess: () => {
           setCreateContactOpen(false);
           setNewContact({ ...DEFAULT_CONTACT });
+          setContactCustomFields({});
         },
       });
     },
@@ -758,7 +776,7 @@ export default function CRMPage() {
   const updateContactMutationWrapped = {
     ...mutations.updateContactMutation,
     mutate: (data: any) => {
-      mutations.updateContactMutation.mutate(data, {
+      mutations.updateContactMutation.mutate({ ...data, customFields: contactCustomFields }, {
         onSuccess: () => {
           setEditContactOpen(false);
         },
@@ -852,11 +870,12 @@ export default function CRMPage() {
       companyRepresented: org.companyRepresented || "",
       activeProjectIds: org.activeProjectIds || [],
     });
+    setOrgCustomFields(org.customFields ?? {});
     setSelectedOrg(org as OrganizationWithContacts);
     setEditOrgOpen(true);
   };
 
-  const openEditContact = (contact: CrmContact) => {
+  const openEditContact = (contact: CrmContactWithCustomFields) => {
     setNewContact({
       firstName: contact.firstName,
       lastName: contact.lastName,
@@ -868,6 +887,7 @@ export default function CRMPage() {
       isPrimary: contact.isPrimary,
       notes: contact.notes || "",
     });
+    setContactCustomFields(contact.customFields ?? {});
     setSelectedContact(contact);
     setEditContactOpen(true);
   };
@@ -1631,15 +1651,17 @@ export default function CRMPage() {
 
       <CrmOrgDialogs
         createOrgOpen={createOrgOpen}
-        setCreateOrgOpen={setCreateOrgOpen}
+        setCreateOrgOpen={handleCreateOrgOpenChange}
         editOrgOpen={editOrgOpen}
-        setEditOrgOpen={setEditOrgOpen}
+        setEditOrgOpen={(open) => { if (!open) setOrgCustomFields({}); setEditOrgOpen(open); }}
         newOrg={newOrg}
         setNewOrg={setNewOrg}
         allProjects={allProjects}
         selectedOrgId={selectedOrg?.id}
         createOrgMutation={createOrgMutationWrapped}
         updateOrgMutation={updateOrgMutationWrapped}
+        customFields={orgCustomFields}
+        setCustomFields={setOrgCustomFields}
       />
 
       <CrmOrgDetail
@@ -1649,7 +1671,7 @@ export default function CRMPage() {
         allProjects={allProjects}
         openEditOrg={openEditOrg}
         openEditContact={openEditContact}
-        setCreateContactOpen={setCreateContactOpen}
+        setCreateContactOpen={handleCreateContactOpenChange}
         resetNewContact={() => setNewContact({ ...DEFAULT_CONTACT })}
         setSelectedContact={setSelectedContact}
         setViewContactOpen={setViewContactOpen}
@@ -1661,9 +1683,9 @@ export default function CRMPage() {
 
       <CrmContactDialogs
         createContactOpen={createContactOpen}
-        setCreateContactOpen={setCreateContactOpen}
+        setCreateContactOpen={handleCreateContactOpenChange}
         editContactOpen={editContactOpen}
-        setEditContactOpen={setEditContactOpen}
+        setEditContactOpen={(open) => { if (!open) setContactCustomFields({}); setEditContactOpen(open); }}
         viewContactOpen={viewContactOpen}
         setViewContactOpen={setViewContactOpen}
         newContact={newContact}
@@ -1674,6 +1696,8 @@ export default function CRMPage() {
         createContactMutation={createContactMutationWrapped}
         updateContactMutation={updateContactMutationWrapped}
         openEditContact={openEditContact}
+        customFields={contactCustomFields}
+        setCustomFields={setContactCustomFields}
       />
 
       {/* Duplicate Detection Dialog */}

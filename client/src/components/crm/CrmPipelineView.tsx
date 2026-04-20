@@ -60,6 +60,7 @@ import {
   User,
 } from "lucide-react";
 import { CrmActivityTimeline } from "./CrmActivityTimeline";
+import { CrmCustomFieldsForm, type CustomFieldsValue } from "./CrmCustomFieldsForm";
 import { useLocation } from "wouter";
 import { differenceInDays } from "date-fns";
 import {
@@ -101,6 +102,7 @@ interface Opportunity {
   contactLastName: string | null;
   assignedFirstName: string | null;
   assignedLastName: string | null;
+  customFields?: Record<string, unknown>;
 }
 
 interface Activity {
@@ -249,6 +251,8 @@ export default function CrmPipelineView() {
   const [assignedFilter, setAssignedFilter] = useState<string>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ ...DEFAULT_FORM });
+  const [formCustomFields, setFormCustomFields] = useState<CustomFieldsValue>({});
+  const [editFormCustomFields, setEditFormCustomFields] = useState<CustomFieldsValue>({});
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [activityForm, setActivityForm] = useState({ activityType: "NOTE" as ActivityType, description: "", scheduledAt: "" });
@@ -352,6 +356,7 @@ export default function CrmPipelineView() {
       invalidateAll();
       setAddOpen(false);
       setForm({ ...DEFAULT_FORM });
+      setFormCustomFields({});
       toast({ title: "Opportunity created" });
     },
     onError: () => toast({ title: "Failed to create opportunity", variant: "destructive" }),
@@ -488,6 +493,7 @@ export default function CrmPipelineView() {
       notes: opp.notes ?? "",
       lostReason: opp.lostReason ?? "",
     });
+    setEditFormCustomFields((opp.customFields as CustomFieldsValue) ?? {});
     setEditOpen(true);
   };
 
@@ -515,10 +521,12 @@ export default function CrmPipelineView() {
   const stageTotal = (stage: PipelineStage) => oppsByStage(stage).reduce((sum, o) => sum + (parseFloat(o.dealValue ?? "0") || 0), 0);
   const sortedOpps = sortOpportunities(opportunities, sortField, sortDir);
 
-  const OppFormFields = ({ formData, onUpdate, isEdit = false }: {
+  const OppFormFields = ({ formData, onUpdate, isEdit = false, customFields, setCustomFields }: {
     formData: typeof DEFAULT_FORM;
     onUpdate: (patch: Partial<typeof DEFAULT_FORM>) => void;
     isEdit?: boolean;
+    customFields: CustomFieldsValue;
+    setCustomFields: (v: CustomFieldsValue) => void;
   }) => (
     <div className="flex flex-col gap-4 py-2">
       <div>
@@ -677,6 +685,12 @@ export default function CrmPipelineView() {
           />
         </div>
       )}
+      <CrmCustomFieldsForm
+        entityType="OPPORTUNITY"
+        values={customFields}
+        onChange={setCustomFields}
+        prefix={isEdit ? "edit-" : ""}
+      />
     </div>
   );
 
@@ -1096,11 +1110,13 @@ export default function CrmPipelineView() {
           <OppFormFields
             formData={form}
             onUpdate={patch => setForm(f => ({ ...f, ...patch }))}
+            customFields={formCustomFields}
+            setCustomFields={setFormCustomFields}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} data-testid="button-cancel-add">Cancel</Button>
             <Button
-              onClick={() => createMutation.mutate(form)}
+              onClick={() => createMutation.mutate({ ...form, customFields: formCustomFields })}
               disabled={!form.name.trim() || createMutation.isPending}
               data-testid="button-submit-add"
             >
@@ -1121,11 +1137,13 @@ export default function CrmPipelineView() {
             formData={editForm}
             onUpdate={patch => setEditForm(f => ({ ...f, ...patch }))}
             isEdit
+            customFields={editFormCustomFields}
+            setCustomFields={setEditFormCustomFields}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} data-testid="button-cancel-edit">Cancel</Button>
             <Button
-              onClick={() => selectedOpp && updateMutation.mutate({ id: selectedOpp.id, data: editForm })}
+              onClick={() => selectedOpp && updateMutation.mutate({ id: selectedOpp.id, data: { ...editForm, customFields: editFormCustomFields } })}
               disabled={!editForm.name.trim() || updateMutation.isPending}
               data-testid="button-submit-edit"
             >

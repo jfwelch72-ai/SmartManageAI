@@ -208,6 +208,7 @@ import { eventBus } from "./events";
 import { scoreWinProbability } from "./ai/winProbabilityService";
 import { evaluateAssignment } from "./utils/crmAssignmentEngine";
 import { scoreOpportunity } from "./utils/crmLeadScorer";
+import { upsertCustomFieldValues, getCustomFieldsMap, getCustomFieldsMapBatch, getEntityIdsMatchingCustomFieldFilters, deleteCustomFieldValuesForEntity } from "./crmCustomFieldsRoutes";
 
 const router = Router();
 
@@ -258,13 +259,25 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
           sql`LOWER(${crmOrganisations.name}) LIKE LOWER(${'%' + search + '%'})`
         );
       }
-      
+
+      if (orgId) {
+        const cfFilter = await getEntityIdsMatchingCustomFieldFilters(orgId, "ORGANISATION", req.query as Record<string, any>);
+        if (cfFilter.applies) {
+          if (cfFilter.ids.length === 0) return res.json([]);
+          conditions.push(inArray(crmOrganisations.id, cfFilter.ids));
+        }
+      }
+
       const results = await db
         .select()
         .from(crmOrganisations)
         .where(and(...conditions))
         .orderBy(crmOrganisations.name);
-      
+
+      if (orgId && results.length) {
+        const cfMap = await getCustomFieldsMapBatch(orgId, "ORGANISATION", results.map((r: any) => r.id));
+        return res.json(results.map((r: any) => ({ ...r, customFields: cfMap[r.id] ?? {} })));
+      }
       res.json(results);
     } catch (error) {
       next(error);
@@ -686,8 +699,15 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         .from(crmContacts)
         .where(eq(crmContacts.organisationId, req.params.id))
         .orderBy(desc(crmContacts.isPrimary), crmContacts.lastName, crmContacts.firstName);
-      
-      res.json({ ...organisation, contacts });
+
+      const orgIdEffective = orgId ?? organisation.organizationId;
+      const [customFields, contactCustomFields] = await Promise.all([
+        getCustomFieldsMap(orgIdEffective, "ORGANISATION", organisation.id),
+        getCustomFieldsMapBatch(orgIdEffective, "CONTACT", contacts.map(c => c.id)),
+      ]);
+      const contactsWithCf = contacts.map(c => ({ ...c, customFields: contactCustomFields[c.id] ?? {} }));
+
+      res.json({ ...organisation, contacts: contactsWithCf, customFields });
     } catch (error) {
       next(error);
     }
@@ -721,11 +741,31 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         return;
       }
       
-      const [newOrg] = await db
-        .insert(crmOrganisations)
-        .values(validationResult.data)
-        .returning();
-      
+      let newOrg: typeof crmOrganisations.$inferSelect;
+      try {
+        newOrg = await db.transaction(async (tx) => {
+          const [n] = await tx
+            .insert(crmOrganisations)
+            .values(validationResult.data)
+            .returning();
+          const cfRes = await upsertCustomFieldValues({
+            orgId,
+            entityType: "ORGANISATION",
+            entityId: n.id,
+            customFields: req.body?.customFields,
+            executor: tx,
+          });
+          if (!cfRes.ok) throw new Error(`__CF_VALIDATION__:${cfRes.error}`);
+          return n;
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.startsWith("__CF_VALIDATION__:")) {
+          return res.status(400).json({ error: msg.slice("__CF_VALIDATION__:".length) });
+        }
+        throw e;
+      }
+
       await db.insert(auditLog).values({
         userId: req.user!.id,
         action: "CREATE",
@@ -733,8 +773,9 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         entityId: newOrg.id,
         newValue: JSON.stringify({ name: newOrg.name, type: newOrg.type }),
       });
-      
-      res.status(201).json(newOrg);
+
+      const customFields = await getCustomFieldsMap(orgId, "ORGANISATION", newOrg.id);
+      res.status(201).json({ ...newOrg, customFields });
     } catch (error) {
       next(error);
     }
@@ -782,16 +823,39 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
       }
       
       const { organizationId: _, ...safeData } = validationResult.data;
-      
-      const [updated] = await db
-        .update(crmOrganisations)
-        .set({
-          ...safeData,
-          updatedAt: new Date(),
-        })
-        .where(eq(crmOrganisations.id, req.params.id))
-        .returning();
-      
+
+      let updated: typeof existing;
+      try {
+        updated = await db.transaction(async (tx) => {
+          const [u] = await tx
+            .update(crmOrganisations)
+            .set({
+              ...safeData,
+              updatedAt: new Date(),
+            })
+            .where(eq(crmOrganisations.id, req.params.id))
+            .returning();
+
+          if (req.body?.customFields !== undefined && orgId) {
+            const cfRes = await upsertCustomFieldValues({
+              orgId,
+              entityType: "ORGANISATION",
+              entityId: u.id,
+              customFields: req.body.customFields,
+              executor: tx,
+            });
+            if (!cfRes.ok) throw new Error(`__CF_VALIDATION__:${cfRes.error}`);
+          }
+          return u;
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.startsWith("__CF_VALIDATION__:")) {
+          return res.status(400).json({ error: msg.slice("__CF_VALIDATION__:".length) });
+        }
+        throw e;
+      }
+
       await db.insert(auditLog).values({
         userId: req.user!.id,
         action: "UPDATE",
@@ -800,8 +864,9 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         oldValue: JSON.stringify({ name: existing.name, type: existing.type }),
         newValue: JSON.stringify({ name: updated.name, type: updated.type }),
       });
-      
-      res.json(updated);
+
+      const customFields = orgId ? await getCustomFieldsMap(orgId, "ORGANISATION", updated.id) : {};
+      res.json({ ...updated, customFields });
     } catch (error) {
       next(error);
     }
@@ -832,8 +897,11 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         return;
       }
       
-      await db.delete(crmOrganisations).where(and(...conditions));
-      
+      await db.transaction(async (tx) => {
+        await deleteCustomFieldValuesForEntity(existing.organizationId, "ORGANISATION", existing.id, tx);
+        await tx.delete(crmOrganisations).where(and(...conditions));
+      });
+
       await db.insert(auditLog).values({
         userId: req.user!.id,
         action: "DELETE",
@@ -1258,6 +1326,14 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
       );
     }
 
+    if (orgId) {
+      const cfFilter = await getEntityIdsMatchingCustomFieldFilters(orgId, "CONTACT", req.query as Record<string, any>);
+      if (cfFilter.applies) {
+        if (cfFilter.ids.length === 0) return res.json([]);
+        conditions.push(inArray(crmContacts.id, cfFilter.ids));
+      }
+    }
+
     const contacts = await db
       .select({
         id: crmContacts.id,
@@ -1283,6 +1359,10 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(crmContacts.isPrimary), asc(crmContacts.lastName), asc(crmContacts.firstName));
 
+    if (orgId && contacts.length) {
+      const cfMap = await getCustomFieldsMapBatch(orgId, "CONTACT", contacts.map(c => c.id));
+      return res.json(contacts.map(c => ({ ...c, customFields: cfMap[c.id] ?? {} })));
+    }
     res.json(contacts);
   } catch (error) {
     next(error);
@@ -1344,17 +1424,36 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
       return;
     }
 
-    if (validationResult.data.isPrimary) {
-      await db
-        .update(crmContacts)
-        .set({ isPrimary: false })
-        .where(eq(crmContacts.organisationId, validationResult.data.organisationId));
+    let newContact: typeof crmContacts.$inferSelect;
+    try {
+      newContact = await db.transaction(async (tx) => {
+        if (validationResult.data.isPrimary) {
+          await tx
+            .update(crmContacts)
+            .set({ isPrimary: false })
+            .where(eq(crmContacts.organisationId, validationResult.data.organisationId));
+        }
+        const [n] = await tx
+          .insert(crmContacts)
+          .values(validationResult.data)
+          .returning();
+        const cfRes = await upsertCustomFieldValues({
+          orgId: orgId!,
+          entityType: "CONTACT",
+          entityId: n.id,
+          customFields: req.body?.customFields,
+          executor: tx,
+        });
+        if (!cfRes.ok) throw new Error(`__CF_VALIDATION__:${cfRes.error}`);
+        return n;
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("__CF_VALIDATION__:")) {
+        return res.status(400).json({ error: msg.slice("__CF_VALIDATION__:".length) });
+      }
+      throw e;
     }
-
-    const [newContact] = await db
-      .insert(crmContacts)
-      .values(validationResult.data)
-      .returning();
 
     await db.insert(auditLog).values({
       userId: req.user!.id,
@@ -1364,7 +1463,8 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
       newValue: JSON.stringify({ firstName: newContact.firstName, lastName: newContact.lastName }),
     });
 
-    res.status(201).json(newContact);
+    const customFields = await getCustomFieldsMap(orgId!, "CONTACT", newContact.id);
+    res.status(201).json({ ...newContact, customFields });
   } catch (error) {
     next(error);
   }
@@ -1397,20 +1497,43 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
 
     const { organizationId: _, ...safeData } = validationResult.data;
 
-    if (safeData.isPrimary) {
-      const primaryConditions: SQL[] = [
-        eq(crmContacts.organisationId, existing.organisationId),
-        sql`${crmContacts.id} != ${req.params.id}`,
-      ];
-      if (shouldFilter && orgId) primaryConditions.push(eq(crmContacts.organizationId, orgId));
-      await db.update(crmContacts).set({ isPrimary: false }).where(and(...primaryConditions));
-    }
+    let updated: typeof existing;
+    try {
+      updated = await db.transaction(async (tx) => {
+        if (safeData.isPrimary) {
+          const primaryConditions: SQL[] = [
+            eq(crmContacts.organisationId, existing.organisationId),
+            sql`${crmContacts.id} != ${req.params.id}`,
+          ];
+          if (shouldFilter && orgId) primaryConditions.push(eq(crmContacts.organizationId, orgId));
+          await tx.update(crmContacts).set({ isPrimary: false }).where(and(...primaryConditions));
+        }
 
-    const [updated] = await db
-      .update(crmContacts)
-      .set({ ...safeData, updatedAt: new Date() })
-      .where(eq(crmContacts.id, req.params.id))
-      .returning();
+        const [u] = await tx
+          .update(crmContacts)
+          .set({ ...safeData, updatedAt: new Date() })
+          .where(eq(crmContacts.id, req.params.id))
+          .returning();
+
+        if (req.body?.customFields !== undefined && orgId) {
+          const cfRes = await upsertCustomFieldValues({
+            orgId,
+            entityType: "CONTACT",
+            entityId: u.id,
+            customFields: req.body.customFields,
+            executor: tx,
+          });
+          if (!cfRes.ok) throw new Error(`__CF_VALIDATION__:${cfRes.error}`);
+        }
+        return u;
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+        if (msg.startsWith("__CF_VALIDATION__:")) {
+        return res.status(400).json({ error: msg.slice("__CF_VALIDATION__:".length) });
+      }
+      throw e;
+    }
 
     await db.insert(auditLog).values({
       userId: req.user!.id,
@@ -1421,7 +1544,8 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
       newValue: JSON.stringify({ firstName: updated.firstName, lastName: updated.lastName }),
     });
 
-    res.json(updated);
+    const customFields = orgId ? await getCustomFieldsMap(orgId, "CONTACT", updated.id) : {};
+    res.json({ ...updated, customFields });
   } catch (error) {
     next(error);
   }
@@ -1446,7 +1570,10 @@ router.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGE
       return;
     }
 
-    await db.delete(crmContacts).where(and(...conditions));
+    await db.transaction(async (tx) => {
+      await deleteCustomFieldValuesForEntity(existing.organizationId, "CONTACT", existing.id, tx);
+      await tx.delete(crmContacts).where(and(...conditions));
+    });
 
     await db.insert(auditLog).values({
       userId: req.user!.id,
@@ -1623,12 +1750,25 @@ router.get("/api/crm/opportunities", requireAuth, requireRole(...PIPELINE_ROLES)
       );
     }
 
+    if (orgId) {
+      const cfFilter = await getEntityIdsMatchingCustomFieldFilters(orgId, "OPPORTUNITY", req.query as Record<string, any>);
+      if (cfFilter.applies) {
+        if (cfFilter.ids.length === 0) return res.json([]);
+        conditions.push(inArray(crmOpportunities.id, cfFilter.ids));
+      }
+    }
+
     const results = await buildOppBaseQuery()
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(crmOpportunities.updatedAt))
       .limit(limitNum)
       .offset(offset);
 
+    if (orgId && results.length) {
+      const cfMap = await getCustomFieldsMapBatch(orgId, "OPPORTUNITY", results.map((r: any) => r.id));
+      res.json(results.map((r: any) => ({ ...r, customFields: cfMap[r.id] ?? {} })));
+      return;
+    }
     res.json(results);
   } catch (error) {
     next(error);
@@ -1649,7 +1789,11 @@ router.get("/api/crm/opportunities/:id", requireAuth, requireRole(...PIPELINE_RO
 
     if (!opp) return res.status(404).json({ error: "Opportunity not found" });
 
-    res.json(opp);
+    const orgIdEffective = orgId ?? opp.organizationId;
+    const customFields = orgIdEffective
+      ? await getCustomFieldsMap(orgIdEffective, "OPPORTUNITY", opp.id)
+      : {};
+    res.json({ ...opp, customFields });
   } catch (error) {
     next(error);
   }
@@ -1686,7 +1830,27 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
       toInsert = { ...toInsert, leadScore: score };
     } catch { /* non-fatal */ }
 
-    const [created] = await db.insert(crmOpportunities).values(toInsert).returning();
+    let created: typeof crmOpportunities.$inferSelect;
+    try {
+      created = await db.transaction(async (tx) => {
+        const [c] = await tx.insert(crmOpportunities).values(toInsert).returning();
+        const cfRes = await upsertCustomFieldValues({
+          orgId,
+          entityType: "OPPORTUNITY",
+          entityId: c.id,
+          customFields: req.body?.customFields,
+          executor: tx,
+        });
+        if (!cfRes.ok) throw new Error(`__CF_VALIDATION__:${cfRes.error}`);
+        return c;
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+        if (msg.startsWith("__CF_VALIDATION__:")) {
+        return res.status(400).json({ error: msg.slice("__CF_VALIDATION__:".length) });
+      }
+      throw e;
+    }
 
     await db.insert(crmOpportunityActivities).values({
       opportunityId: created.id,
@@ -1712,7 +1876,8 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
       payload: { opportunityId: created.id, name: created.name, stage: created.stage },
     });
 
-    res.status(201).json(created);
+    const customFields = await getCustomFieldsMap(orgId, "OPPORTUNITY", created.id);
+    res.status(201).json({ ...created, customFields });
   } catch (error) {
     next(error);
   }
@@ -1748,11 +1913,34 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
       patchExtras.leadScore = score;
     } catch { /* non-fatal */ }
 
-    const [updated] = await db
-      .update(crmOpportunities)
-      .set({ ...safeData, ...patchExtras, updatedAt: new Date() })
-      .where(eq(crmOpportunities.id, req.params.id))
-      .returning();
+    let updated: typeof existing;
+    try {
+      updated = await db.transaction(async (tx) => {
+        const [u] = await tx
+          .update(crmOpportunities)
+          .set({ ...safeData, ...patchExtras, updatedAt: new Date() })
+          .where(eq(crmOpportunities.id, req.params.id))
+          .returning();
+
+        if (req.body?.customFields !== undefined && orgId) {
+          const cfRes = await upsertCustomFieldValues({
+            orgId,
+            entityType: "OPPORTUNITY",
+            entityId: u.id,
+            customFields: req.body.customFields,
+            executor: tx,
+          });
+          if (!cfRes.ok) throw new Error(`__CF_VALIDATION__:${cfRes.error}`);
+        }
+        return u;
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+        if (msg.startsWith("__CF_VALIDATION__:")) {
+        return res.status(400).json({ error: msg.slice("__CF_VALIDATION__:".length) });
+      }
+      throw e;
+    }
 
     if (safeData.stage && safeData.stage !== existing.stage) {
       await db.insert(crmOpportunityActivities).values({
@@ -1807,7 +1995,10 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
       newValue: JSON.stringify({ stage: updated.stage }),
     });
 
-    res.json(updated);
+    const customFields = orgId
+      ? await getCustomFieldsMap(orgId, "OPPORTUNITY", updated.id)
+      : {};
+    res.json({ ...updated, customFields });
   } catch (error) {
     next(error);
   }
@@ -1824,7 +2015,10 @@ router.delete("/api/crm/opportunities/:id", requireAuth, requireRole(...DELETE_R
     const [existing] = await db.select().from(crmOpportunities).where(and(...conditions)).limit(1);
     if (!existing) return res.status(404).json({ error: "Opportunity not found" });
 
-    await db.delete(crmOpportunities).where(and(...conditions));
+    await db.transaction(async (tx) => {
+      await deleteCustomFieldValuesForEntity(existing.organizationId, "OPPORTUNITY", existing.id, tx);
+      await tx.delete(crmOpportunities).where(and(...conditions));
+    });
 
     await db.insert(auditLog).values({
       userId: req.user!.id,

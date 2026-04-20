@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Globe, Copy, Check, Plus, Trash2, Settings, Package, Target, Users } from "lucide-react";
+import { Globe, Copy, Check, Plus, Trash2, Settings, Package, Target, Users, ListPlus, ArrowUp, ArrowDown, Pencil } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface OrgUser { id: string; firstName: string | null; lastName: string | null; email: string }
@@ -80,14 +80,16 @@ export default function CrmSettingsPage() {
       <AssignmentRulesCard />
 
       <Tabs defaultValue="catalog" className="w-full">
-        <TabsList className="grid grid-cols-3 w-full sm:w-auto">
+        <TabsList className="grid grid-cols-4 w-full sm:w-auto">
           <TabsTrigger value="catalog" data-testid="tab-settings-catalog"><Package className="w-4 h-4 mr-1" /> Catalog</TabsTrigger>
           <TabsTrigger value="scoring" data-testid="tab-settings-scoring"><Target className="w-4 h-4 mr-1" /> Lead Scoring</TabsTrigger>
           <TabsTrigger value="duplicates" data-testid="tab-settings-duplicates"><Users className="w-4 h-4 mr-1" /> Duplicates</TabsTrigger>
+          <TabsTrigger value="customfields" data-testid="tab-settings-customfields"><ListPlus className="w-4 h-4 mr-1" /> Custom Fields</TabsTrigger>
         </TabsList>
         <TabsContent value="catalog" className="mt-4"><CatalogManagerCard /></TabsContent>
         <TabsContent value="scoring" className="mt-4"><LeadScoringRulesCard /></TabsContent>
         <TabsContent value="duplicates" className="mt-4"><DuplicatesCard /></TabsContent>
+        <TabsContent value="customfields" className="mt-4"><CustomFieldsCard /></TabsContent>
       </Tabs>
     </div>
   );
@@ -575,5 +577,304 @@ function DuplicatesCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+interface CustomFieldDef {
+  id: string;
+  organizationId: string;
+  entityType: "CONTACT" | "ORGANISATION" | "OPPORTUNITY";
+  key: string;
+  label: string;
+  fieldType: "TEXT" | "LONG_TEXT" | "NUMBER" | "CURRENCY" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "CHECKBOX" | "URL" | "EMAIL" | "PHONE";
+  options: string[] | null;
+  isRequired: boolean;
+  defaultValue: unknown;
+  helpText: string | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+const FIELD_TYPE_OPTIONS: { value: CustomFieldDef["fieldType"]; label: string }[] = [
+  { value: "TEXT", label: "Text" },
+  { value: "LONG_TEXT", label: "Long text" },
+  { value: "NUMBER", label: "Number" },
+  { value: "CURRENCY", label: "Currency" },
+  { value: "DATE", label: "Date" },
+  { value: "DROPDOWN", label: "Dropdown" },
+  { value: "MULTI_SELECT", label: "Multi-select" },
+  { value: "CHECKBOX", label: "Checkbox" },
+  { value: "URL", label: "URL" },
+  { value: "EMAIL", label: "Email" },
+  { value: "PHONE", label: "Phone" },
+];
+
+function CustomFieldsCard() {
+  const [tab, setTab] = useState<"CONTACT" | "ORGANISATION" | "OPPORTUNITY">("ORGANISATION");
+  return (
+    <Card data-testid="card-custom-fields">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><ListPlus className="w-5 h-5" /> Custom Fields</CardTitle>
+        <CardDescription>Define custom fields that appear on contact, organization, and opportunity forms.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Tabs value={tab} onValueChange={v => {
+          if (v === "CONTACT" || v === "ORGANISATION" || v === "OPPORTUNITY") setTab(v);
+        }}>
+          <TabsList className="grid grid-cols-3 w-full sm:w-auto">
+            <TabsTrigger value="ORGANISATION" data-testid="tab-cf-org">Organizations</TabsTrigger>
+            <TabsTrigger value="CONTACT" data-testid="tab-cf-contact">Contacts</TabsTrigger>
+            <TabsTrigger value="OPPORTUNITY" data-testid="tab-cf-opp">Opportunities</TabsTrigger>
+          </TabsList>
+          <TabsContent value={tab} className="mt-4">
+            <CustomFieldsList entityType={tab} />
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CustomFieldsList({ entityType }: { entityType: "CONTACT" | "ORGANISATION" | "OPPORTUNITY" }) {
+  const { toast } = useToast();
+  const queryKey = ["/api/crm/custom-field-definitions", { entityType }];
+  const { data: defs, isLoading } = useQuery<CustomFieldDef[]>({ queryKey });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<CustomFieldDef | null>(null);
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+
+  const del = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/crm/custom-field-definitions/${id}`),
+    onSuccess: () => { invalidate(); toast({ title: "Field archived" }); },
+    onError: (e: any) => toast({ title: "Failed to archive", description: e?.message, variant: "destructive" }),
+  });
+
+  const reorder = useMutation({
+    mutationFn: (items: { id: string; sortOrder: number }[]) =>
+      apiRequest("POST", `/api/crm/custom-field-definitions/reorder`, { items }),
+    onSuccess: () => invalidate(),
+    onError: (e: any) => toast({ title: "Failed to reorder", description: e?.message, variant: "destructive" }),
+  });
+
+  const move = (idx: number, dir: -1 | 1) => {
+    if (!defs) return;
+    const sorted = [...defs].sort((a, b) => a.sortOrder - b.sortOrder);
+    const next = [...sorted];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    reorder.mutate(next.map((d, i) => ({ id: d.id, sortOrder: i })));
+  };
+
+  const list = (defs ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return (
+    <div className="space-y-3" data-testid={`cf-list-${entityType}`}>
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }} data-testid={`button-add-cf-${entityType}`}>
+          <Plus className="w-4 h-4 mr-1" /> Add Field
+        </Button>
+      </div>
+      {isLoading ? <Skeleton className="h-20 w-full" /> : list.length === 0 ? (
+        <EmptyState icon={ListPlus} title="No custom fields" description="Add a field to start collecting custom data." />
+      ) : (
+        <div className="space-y-2">
+          {list.map((d, idx) => (
+            <div key={d.id} className="flex items-center gap-2 p-3 border rounded-md" data-testid={`row-cf-${d.id}`}>
+              <div className="flex flex-col gap-1">
+                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => move(idx, -1)} disabled={idx === 0} data-testid={`button-up-${d.id}`}>
+                  <ArrowUp className="w-3 h-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => move(idx, 1)} disabled={idx === list.length - 1} data-testid={`button-down-${d.id}`}>
+                  <ArrowDown className="w-3 h-3" />
+                </Button>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium" data-testid={`text-cf-label-${d.id}`}>{d.label}</span>
+                  <Badge variant="outline" className="text-xs">{d.fieldType}</Badge>
+                  {d.isRequired && <Badge variant="secondary" className="text-xs">Required</Badge>}
+                  {!d.isActive && <Badge variant="destructive" className="text-xs">Archived</Badge>}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">key: <span className="font-mono">{d.key}</span>{d.helpText ? ` • ${d.helpText}` : ""}</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => { setEditing(d); setDialogOpen(true); }} data-testid={`button-edit-cf-${d.id}`}>
+                <Pencil className="w-4 h-4" />
+              </Button>
+              {d.isActive && (
+                <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Archive field "${d.label}"? Existing values are preserved.`)) del.mutate(d.id); }} data-testid={`button-delete-cf-${d.id}`}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <CustomFieldDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        entityType={entityType}
+        editing={editing}
+        onSaved={() => { setDialogOpen(false); invalidate(); }}
+      />
+    </div>
+  );
+}
+
+function CustomFieldDialog({ open, onOpenChange, entityType, editing, onSaved }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  entityType: "CONTACT" | "ORGANISATION" | "OPPORTUNITY";
+  editing: CustomFieldDef | null;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [fieldType, setFieldType] = useState<CustomFieldDef["fieldType"]>("TEXT");
+  const [optionsText, setOptionsText] = useState("");
+  const [isRequired, setIsRequired] = useState(false);
+  const [helpText, setHelpText] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [defaultValueText, setDefaultValueText] = useState("");
+  const [defaultValueBool, setDefaultValueBool] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLabel(editing?.label ?? "");
+      setKey(editing?.key ?? "");
+      setFieldType(editing?.fieldType ?? "TEXT");
+      setOptionsText((editing?.options ?? []).join("\n"));
+      setIsRequired(editing?.isRequired ?? false);
+      setHelpText(editing?.helpText ?? "");
+      setIsActive(editing?.isActive ?? true);
+      const dv = editing?.defaultValue;
+      if (typeof dv === "boolean") { setDefaultValueBool(dv); setDefaultValueText(""); }
+      else if (Array.isArray(dv)) { setDefaultValueText(dv.join(", ")); setDefaultValueBool(false); }
+      else if (dv === null || dv === undefined) { setDefaultValueText(""); setDefaultValueBool(false); }
+      else { setDefaultValueText(String(dv)); setDefaultValueBool(false); }
+    }
+  }, [open, editing]);
+
+  const slugifyKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+
+  const computeDefaultValue = (): unknown => {
+    const t = defaultValueText.trim();
+    switch (fieldType) {
+      case "CHECKBOX": return defaultValueBool;
+      case "NUMBER":
+      case "CURRENCY": {
+        if (t === "") return null;
+        const n = Number(t);
+        return Number.isFinite(n) ? n : null;
+      }
+      case "MULTI_SELECT":
+        return t ? t.split(",").map(s => s.trim()).filter(Boolean) : null;
+      default:
+        return t === "" ? null : t;
+    }
+  };
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const needsOptions = fieldType === "DROPDOWN" || fieldType === "MULTI_SELECT";
+      const opts = needsOptions ? optionsText.split("\n").map(s => s.trim()).filter(Boolean) : null;
+      const body: Record<string, unknown> = {
+        entityType, label, key: key || slugifyKey(label),
+        fieldType, options: opts, isRequired, helpText: helpText || null, isActive,
+        defaultValue: computeDefaultValue(),
+      };
+      if (editing) return apiRequest("PATCH", `/api/crm/custom-field-definitions/${editing.id}`, body);
+      return apiRequest("POST", `/api/crm/custom-field-definitions`, body);
+    },
+    onSuccess: () => { toast({ title: editing ? "Field updated" : "Field added" }); onSaved(); },
+    onError: (e: any) => toast({ title: "Failed to save", description: e?.message, variant: "destructive" }),
+  });
+
+  const needsOptions = fieldType === "DROPDOWN" || fieldType === "MULTI_SELECT";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="dialog-custom-field">
+        <DialogHeader>
+          <DialogTitle>{editing ? "Edit Custom Field" : "Add Custom Field"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Label *</Label>
+            <Input value={label} onChange={e => { setLabel(e.target.value); if (!editing && !key) setKey(slugifyKey(e.target.value)); }} data-testid="input-cf-label" />
+          </div>
+          <div>
+            <Label>Key * <span className="text-xs text-muted-foreground">(unique, lowercase)</span></Label>
+            <Input value={key} onChange={e => setKey(slugifyKey(e.target.value))} disabled={!!editing} data-testid="input-cf-key" />
+          </div>
+          <div>
+            <Label>Type *</Label>
+            <Select value={fieldType} onValueChange={v => {
+              if (FIELD_TYPE_OPTIONS.some(o => o.value === v)) setFieldType(v as CustomFieldDef["fieldType"]);
+            }} disabled={!!editing}>
+              <SelectTrigger data-testid="select-cf-type"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {FIELD_TYPE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {needsOptions && (
+            <div>
+              <Label>Options (one per line) *</Label>
+              <Textarea value={optionsText} onChange={e => setOptionsText(e.target.value)} rows={4} data-testid="textarea-cf-options" />
+            </div>
+          )}
+          <div>
+            <Label>Help text</Label>
+            <Input value={helpText} onChange={e => setHelpText(e.target.value)} data-testid="input-cf-help" />
+          </div>
+          <div>
+            <Label>Default value <span className="text-xs text-muted-foreground">(optional)</span></Label>
+            {fieldType === "CHECKBOX" ? (
+              <div className="flex items-center gap-2 pt-2">
+                <Switch checked={defaultValueBool} onCheckedChange={setDefaultValueBool} data-testid="switch-cf-default-bool" />
+                <span className="text-sm text-muted-foreground">{defaultValueBool ? "Checked" : "Unchecked"}</span>
+              </div>
+            ) : fieldType === "MULTI_SELECT" ? (
+              <Input
+                value={defaultValueText}
+                onChange={e => setDefaultValueText(e.target.value)}
+                placeholder="Comma-separated values"
+                data-testid="input-cf-default"
+              />
+            ) : (
+              <Input
+                value={defaultValueText}
+                onChange={e => setDefaultValueText(e.target.value)}
+                type={fieldType === "NUMBER" || fieldType === "CURRENCY" ? "number" : fieldType === "DATE" ? "date" : "text"}
+                data-testid="input-cf-default"
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch checked={isRequired} onCheckedChange={setIsRequired} data-testid="switch-cf-required" />
+            <Label>Required</Label>
+          </div>
+          {editing && (
+            <div className="flex items-center gap-3">
+              <Switch checked={isActive} onCheckedChange={setIsActive} data-testid="switch-cf-active" />
+              <Label>Active</Label>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => save.mutate()}
+            disabled={!label.trim() || (!editing && !slugifyKey(key || label)) || (needsOptions && optionsText.trim().split("\n").filter(s => s.trim()).length === 0) || save.isPending}
+            data-testid="button-save-cf"
+          >
+            {save.isPending ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

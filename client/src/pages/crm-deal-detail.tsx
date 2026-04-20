@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CrmActivityTimeline } from "@/components/crm/CrmActivityTimeline";
+import { CrmCustomFieldsDisplay } from "@/components/crm/CrmCustomFieldsForm";
 import {
   ArrowLeft, Building2, User, Calendar, MapPin, Mail, Phone, DollarSign,
   Trophy, AlertCircle, Brain, Target, ChevronRight, FileText, CheckSquare,
@@ -65,6 +66,7 @@ interface Opportunity {
   contactPhone?: string | null;
   assignedFirstName?: string | null;
   assignedLastName?: string | null;
+  customFields?: Record<string, unknown>;
 }
 
 function formatCurrency(value: number | string | null | undefined): string {
@@ -420,6 +422,15 @@ export default function CrmDealDetailPage() {
                           Lost — {opp.lostCategory ?? "Unknown"}
                         </p>
                         <p className="text-sm whitespace-pre-wrap">{opp.lostReason}</p>
+                      </div>
+                    )}
+                    {opp.customFields && (
+                      <div className="mt-4 pt-4 border-t">
+                        <CrmCustomFieldsDisplay
+                          entityType="OPPORTUNITY"
+                          values={opp.customFields}
+                          testIdPrefix="opp-"
+                        />
                       </div>
                     )}
                   </CardContent>

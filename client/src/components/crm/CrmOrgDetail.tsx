@@ -22,6 +22,7 @@ import {
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
 import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog, Project } from "@shared/schema";
+import { CrmCustomFieldsDisplay } from "./CrmCustomFieldsForm";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ interface OrgNote extends CrmOrganisationNote {
 
 interface OrganizationWithContacts extends CrmOrganization {
   contacts: CrmContact[];
+  customFields?: Record<string, unknown>;
 }
 
 interface VendorEnrollment {
@@ -699,6 +701,14 @@ export function CrmOrgDetail({
                   <p className="text-sm font-medium mb-1">Notes</p>
                   <p className="text-sm text-muted-foreground">{selectedOrg.notes}</p>
                 </div>
+              )}
+
+              {selectedOrg?.customFields && (
+                <CrmCustomFieldsDisplay
+                  entityType="ORGANISATION"
+                  values={selectedOrg.customFields}
+                  testIdPrefix="org-"
+                />
               )}
             </TabsContent>
 
