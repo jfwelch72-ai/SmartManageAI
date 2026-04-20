@@ -196,10 +196,8 @@ const stubbedFetch = vi.fn(async (url: string | URL | Request, init?: RequestIni
   const method = (init?.method || "GET").toUpperCase();
   const body = typeof init?.body === "string" ? init.body : undefined;
   fetchLog.push({ url: u, method, body });
-  // Token endpoints — answer generically with a fresh access token
-  if (u.includes("oauth2.googleapis.com/token") || u.includes("login.microsoftonline.com")) {
-    return jsonResp({ access_token: "new-access-token", expires_in: 3600 });
-  }
+  // Try staged handlers first so individual tests can override token endpoints
+  // (e.g. simulate refresh failure).
   for (let i = 0; i < fetchHandlers.length; i++) {
     const h = fetchHandlers[i];
     try {
@@ -211,6 +209,10 @@ const stubbedFetch = vi.fn(async (url: string | URL | Request, init?: RequestIni
     } catch {
       // fall through
     }
+  }
+  // Default: token endpoints answer generically with a fresh access token.
+  if (u.includes("oauth2.googleapis.com/token") || u.includes("login.microsoftonline.com")) {
+    return jsonResp({ access_token: "new-access-token", expires_in: 3600 });
   }
   throw new Error(`Unhandled fetch in test: ${method} ${u}`);
 });
@@ -259,6 +261,21 @@ function gmailAccount(overrides: Record<string, unknown> = {}) {
 
 function outlookAccount(overrides: Record<string, unknown> = {}) {
   return gmailAccount({ id: "acct-outlook-1", provider: "OUTLOOK", ...overrides });
+}
+
+function imapAccount(overrides: Record<string, unknown> = {}) {
+  return gmailAccount({
+    id: "acct-imap-1",
+    provider: "IMAP",
+    accessToken: null,
+    refreshToken: null,
+    imapHost: "imap.example.com",
+    imapPort: 993,
+    imapSecure: true,
+    imapPassword: "secret",
+    imapUsername: "rep@example.com",
+    ...overrides,
+  });
 }
 
 function buildGmailMessage(
@@ -735,6 +752,343 @@ describe("Two-way email sync (mocked Gmail / Outlook providers)", () => {
 
       await drainAccountProviderPushes(account);
       expect(seen.sort()).toEqual(["p1", "p2"]);
+    });
+  });
+
+  describe("IMAP sync", () => {
+    it("imports newly-fetched IMAP messages and persists lastSyncedAt", async () => {
+      const imap = await import("../../services/imapService");
+      const { syncImapAccount } = await import("../../emailRoutes");
+      const account = imapAccount({ lastSyncedAt: null });
+
+      const now = new Date();
+      vi.mocked(imap.fetchImapMessages).mockResolvedValueOnce([
+        {
+          externalId: "imap-uid-1",
+          subject: "RFP from customer",
+          fromAddress: "buyer@external.com",
+          fromName: "Buyer",
+          toAddresses: "rep@example.com",
+          ccAddresses: "",
+          bodyText: "Please quote the attached scope.",
+          bodyHtml: "",
+          snippet: "Please quote",
+          receivedAt: now,
+          isRead: false,
+          hasAttachments: false,
+          messageId: "<imap-uid-1@example.com>",
+        },
+      ]);
+
+      // selects in order:
+      //  1) existing message ids among candidates -> []
+      //  2) existing thread by subject            -> []
+      //  3) msg counts after insert               -> [{...}]
+      selectQueue = [
+        [],
+        [],
+        [{ total: 1, unread: 1, maxReceivedAt: now }],
+      ];
+
+      const res = await syncImapAccount(account, "user-1");
+      expect(res.errors).toEqual([]);
+      expect(res.messagesImported).toBe(1);
+      expect(res.threadsCreated).toBe(1);
+
+      const messageInsert = dbCalls.find(
+        (c) => c.op === "insert" && c.tableName === "email_messages",
+      ) as { values: { externalId?: string; isIncoming?: boolean } } | undefined;
+      expect(messageInsert?.values.externalId).toBe("imap-uid-1");
+      expect(messageInsert?.values.isIncoming).toBe(true);
+
+      const accountUpdate = [...dbCalls].reverse().find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { lastSyncedAt?: Date; lastSyncError?: string | null } } | undefined;
+      expect(accountUpdate?.values.lastSyncedAt).toBeInstanceOf(Date);
+      expect(accountUpdate?.values.lastSyncError).toBeNull();
+    });
+
+    it("is idempotent: re-importing an already-stored uid inserts nothing", async () => {
+      const imap = await import("../../services/imapService");
+      const { syncImapAccount } = await import("../../emailRoutes");
+      const account = imapAccount({ lastSyncedAt: new Date(Date.now() - 60_000) });
+
+      vi.mocked(imap.fetchImapMessages).mockResolvedValueOnce([
+        {
+          externalId: "imap-uid-1",
+          subject: "RFP from customer",
+          fromAddress: "buyer@external.com",
+          fromName: "Buyer",
+          toAddresses: "rep@example.com",
+          ccAddresses: "",
+          bodyText: "dup",
+          bodyHtml: "",
+          snippet: "dup",
+          receivedAt: new Date(),
+          isRead: true,
+          hasAttachments: false,
+          messageId: "<imap-uid-1@example.com>",
+        },
+      ]);
+
+      // Existing-message lookup returns the uid, so the function early-exits.
+      selectQueue = [
+        [{ externalId: "imap-uid-1" }],
+      ];
+
+      const res = await syncImapAccount(account, "user-1");
+      expect(res.errors).toEqual([]);
+      expect(res.messagesImported).toBe(0);
+      expect(res.threadsCreated).toBe(0);
+
+      const messageInsert = dbCalls.find(
+        (c) => c.op === "insert" && c.tableName === "email_messages",
+      );
+      expect(messageInsert).toBeUndefined();
+
+      // Still bumps lastSyncedAt so future runs use the narrower since-window.
+      const accountUpdate = dbCalls.find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { lastSyncedAt?: Date } } | undefined;
+      expect(accountUpdate?.values.lastSyncedAt).toBeInstanceOf(Date);
+    });
+
+    it("reports an error and persists lastSyncError when fetchImapMessages throws", async () => {
+      const imap = await import("../../services/imapService");
+      const { syncImapAccount } = await import("../../emailRoutes");
+      const account = imapAccount();
+
+      vi.mocked(imap.fetchImapMessages).mockRejectedValueOnce(
+        new Error("IMAP connection refused"),
+      );
+
+      const res = await syncImapAccount(account, "user-1");
+      expect(res.errors.length).toBe(1);
+      expect(res.errors[0]).toContain("IMAP sync failed");
+      expect(res.errors[0]).toContain("connection refused");
+
+      const accountUpdate = dbCalls.find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { lastSyncError?: string } } | undefined;
+      expect(accountUpdate?.values.lastSyncError).toContain("IMAP sync failed");
+    });
+
+    it("flags missing IMAP configuration without making a network call", async () => {
+      const imap = await import("../../services/imapService");
+      const { syncImapAccount } = await import("../../emailRoutes");
+      const fetchSpy = vi.mocked(imap.fetchImapMessages);
+      const callsBefore = fetchSpy.mock.calls.length;
+
+      const account = imapAccount({ imapPassword: null });
+      const res = await syncImapAccount(account, "user-1");
+
+      expect(res.errors[0]).toContain("IMAP configuration incomplete");
+      expect(fetchSpy.mock.calls.length).toBe(callsBefore);
+      const accountUpdate = dbCalls.find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { lastSyncError?: string } } | undefined;
+      expect(accountUpdate?.values.lastSyncError).toContain("IMAP configuration incomplete");
+    });
+  });
+
+  describe("Token-refresh failure paths", () => {
+    it("Outlook: provider returns 401 after refresh → account marked NEEDS_RECONNECT", async () => {
+      const { syncOutlookAccount } = await import("../../emailRoutes");
+      // Force the in-memory access token to be expired so outlookApiFetch's
+      // first call goes out with a stale token; provider returns 401 and the
+      // refresh-then-retry path runs. We then return 401 a second time,
+      // simulating a refresh token that no longer grants Mail.* scopes.
+      const account = outlookAccount({
+        accessToken: "stale",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        outlookDeltaInbox:
+          "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=abc",
+        outlookDeltaSent: null,
+      });
+
+      let inboxCalls = 0;
+      // Two 401s for the inbox delta endpoint (initial + post-refresh retry).
+      pushHandler((url) => {
+        if (!url.includes("/mailFolders/inbox/messages/delta")) return undefined as unknown as Response;
+        inboxCalls += 1;
+        return new Response("Unauthorized", { status: 401 });
+      });
+      pushHandler((url) => {
+        if (!url.includes("/mailFolders/inbox/messages/delta")) return undefined as unknown as Response;
+        inboxCalls += 1;
+        return new Response("Unauthorized", { status: 401 });
+      });
+
+      const res = await syncOutlookAccount(account, "user-1");
+      expect(inboxCalls).toBe(2);
+      expect(res.errors.length).toBeGreaterThan(0);
+      // syncOutlookFolderDelta throws "Outlook delta auth failed: 401" on the
+      // second 401; the outer catch must mark the account NEEDS_RECONNECT.
+      expect(res.errors.join(" ")).toMatch(/401/);
+
+      const accountUpdate = [...dbCalls].reverse().find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { syncStatus?: string; lastSyncError?: string } } | undefined;
+      expect(accountUpdate?.values.syncStatus).toBe("NEEDS_RECONNECT");
+      expect(accountUpdate?.values.lastSyncError).toBeTruthy();
+    });
+
+    it("Outlook: 401 + refresh endpoint also fails → sync errors and lastSyncError records the failure", async () => {
+      const { syncOutlookAccount } = await import("../../emailRoutes");
+      const account = outlookAccount({
+        accessToken: "stale",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        outlookDeltaInbox:
+          "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=abc",
+        outlookDeltaSent: null,
+      });
+
+      // Inbox returns 401 — this triggers refresh inside outlookApiFetch.
+      pushHandler((url) => {
+        if (!url.includes("/mailFolders/inbox/messages/delta")) return undefined as unknown as Response;
+        return new Response("Unauthorized", { status: 401 });
+      });
+      // Override the default token-endpoint success: refresh itself fails.
+      pushHandler((url) => {
+        if (!url.includes("login.microsoftonline.com")) return undefined as unknown as Response;
+        return new Response("invalid_grant", { status: 400 });
+      });
+
+      const res = await syncOutlookAccount(account, "user-1");
+      expect(res.errors.length).toBeGreaterThan(0);
+      expect(res.errors.join(" ")).toMatch(/refresh|access token/i);
+
+      const accountUpdate = [...dbCalls].reverse().find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { lastSyncError?: string; syncStatus?: string } } | undefined;
+      expect(accountUpdate?.values.lastSyncError).toBeTruthy();
+      // Refresh threw "Failed to refresh Outlook access token" — that string
+      // doesn't match /401|403/, so syncStatus stays DEGRADED rather than
+      // NEEDS_RECONNECT. Document the current behavior so a regression that
+      // accidentally suppresses the error surface is caught.
+      expect(accountUpdate?.values.syncStatus).toBe("DEGRADED");
+    });
+  });
+
+  describe("Outlook delta page-cap (degraded path)", () => {
+    it("persists @odata.nextLink as the cursor and marks account DEGRADED when MAX_PAGES is hit", async () => {
+      const { syncOutlookAccount } = await import("../../emailRoutes");
+      const account = outlookAccount({
+        outlookDeltaInbox:
+          "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=p0",
+        outlookDeltaSent:
+          "https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages/delta?$skiptoken=sok",
+      });
+
+      // Stage 50 inbox responses, each handing off the next skiptoken via
+      // @odata.nextLink and never producing an @odata.deltaLink. After 50
+      // pages the function should give up, persist the last nextLink, and
+      // surface a degraded warning.
+      for (let i = 0; i < 50; i++) {
+        const next = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=p${i + 1}`;
+        pushHandler((url) => {
+          if (!url.includes("/mailFolders/inbox/messages/delta")) return undefined as unknown as Response;
+          return jsonResp({ value: [], "@odata.nextLink": next });
+        });
+      }
+      // Sent folder finishes immediately with a fresh delta link.
+      pushHandler((url) => {
+        if (!url.includes("/mailFolders/sentitems/messages/delta")) return undefined as unknown as Response;
+        return jsonResp({
+          value: [],
+          "@odata.deltaLink":
+            "https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages/delta?$deltatoken=SENT-OK",
+        });
+      });
+
+      const res = await syncOutlookAccount(account, "user-1");
+      expect(res.errors.length).toBeGreaterThanOrEqual(1);
+      expect(res.errors.join(" ")).toMatch(/page cap/i);
+
+      const inboxCalls = fetchLog.filter((e) => e.url.includes("/mailFolders/inbox/messages/delta"));
+      expect(inboxCalls.length).toBe(50);
+
+      const accountUpdate = [...dbCalls].reverse().find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { outlookDeltaInbox?: string; syncStatus?: string } } | undefined;
+      // The 50th response handed back $skiptoken=p50 — that nextLink must be
+      // persisted so the next run resumes exactly there instead of restarting.
+      expect(accountUpdate?.values.outlookDeltaInbox).toContain("$skiptoken=p50");
+      expect(accountUpdate?.values.syncStatus).toBe("DEGRADED");
+    });
+  });
+
+  describe("Push-back retry / backoff", () => {
+    it("increments attempts on a transient provider failure (still pending)", async () => {
+      const { drainMessageProviderPush } = await import("../../emailRoutes");
+      const account = gmailAccount();
+      selectQueue = [[
+        {
+          id: "m-retry-1",
+          externalId: "ext-r1",
+          emailAccountId: account.id,
+          threadId: "t-r1",
+          pendingProviderPush: { isRead: true, attempts: 0 },
+        },
+      ]];
+
+      // Provider returns 500 — pushGmailMessageState throws.
+      pushHandler((url) => {
+        if (!url.includes("/messages/ext-r1/modify")) return undefined as unknown as Response;
+        return new Response("server boom", { status: 500 });
+      });
+
+      await expect(drainMessageProviderPush(account, "m-retry-1")).rejects.toThrow();
+
+      // The message row should be updated with attempts=1 and pendingProviderPush
+      // still populated (i.e. NOT cleared).
+      const msgUpdate = (dbCalls.filter(
+        (c) => c.op === "update" && c.tableName === "email_messages",
+      ) as { values: Record<string, unknown> }[]).find(
+        (u) => u.values.pendingProviderPush && (u.values.pendingProviderPush as { attempts?: number }).attempts === 1,
+      );
+      expect(msgUpdate).toBeDefined();
+
+      // No final-failure record on the account yet.
+      const accountFailure = dbCalls.find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      );
+      expect(accountFailure).toBeUndefined();
+    });
+
+    it("gives up after MAX_PUSH_ATTEMPTS, clearing the pending push and recording the failure on the account", async () => {
+      const { drainMessageProviderPush } = await import("../../emailRoutes");
+      const account = gmailAccount();
+      // attempts=4 → next failure pushes to 5 == MAX_PUSH_ATTEMPTS → give up.
+      selectQueue = [[
+        {
+          id: "m-retry-2",
+          externalId: "ext-r2",
+          emailAccountId: account.id,
+          threadId: "t-r2",
+          pendingProviderPush: { isRead: true, attempts: 4 },
+        },
+      ]];
+
+      pushHandler((url) => {
+        if (!url.includes("/messages/ext-r2/modify")) return undefined as unknown as Response;
+        return new Response("still broken", { status: 500 });
+      });
+
+      await expect(drainMessageProviderPush(account, "m-retry-2")).rejects.toThrow();
+
+      // Pending push must be cleared.
+      const cleared = (dbCalls.filter(
+        (c) => c.op === "update" && c.tableName === "email_messages",
+      ) as { values: Record<string, unknown> }[]).find((u) => u.values.pendingProviderPush === null);
+      expect(cleared).toBeDefined();
+
+      // Failure recorded on the account so the user can see why pushes stopped.
+      const accountUpdate = dbCalls.find(
+        (c) => c.op === "update" && c.tableName === "email_accounts",
+      ) as { values: { lastSyncError?: string } } | undefined;
+      expect(accountUpdate?.values.lastSyncError).toContain("Push-back gave up");
+      expect(accountUpdate?.values.lastSyncError).toContain("ext-r2");
     });
   });
 });
