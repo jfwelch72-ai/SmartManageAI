@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -1145,23 +1146,59 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   )}
                                   <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
                                   {planPinSummary[doc.id]?.total > 0 && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Badge
-                                          variant="secondary"
-                                          className="text-[10px] h-4 px-1 shrink-0 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
+                                    <HoverCard openDelay={150} closeDelay={100}>
+                                      <HoverCardTrigger asChild>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedDocId(doc.id);
+                                            setPreviewDocId(doc.id);
+                                            setPinModeActive(true);
+                                            setPinFilter({ type: "ALL", openOnly: true });
+                                          }}
+                                          className="shrink-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                          title="Open plan with pin layer"
                                           data-testid={`badge-plan-pins-${doc.id}`}
                                         >
-                                          {planPinSummary[doc.id].total}
-                                        </Badge>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="left" className="text-xs">
-                                        <div className="font-medium mb-0.5">Open pins</div>
-                                        <div>RFI: {planPinSummary[doc.id].rfi}</div>
-                                        <div>Punch: {planPinSummary[doc.id].punch}</div>
-                                        <div>Submittal: {planPinSummary[doc.id].submittal}</div>
-                                      </TooltipContent>
-                                    </Tooltip>
+                                          <Badge
+                                            variant="secondary"
+                                            className="text-[10px] h-4 px-1 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60 cursor-pointer"
+                                          >
+                                            {planPinSummary[doc.id].total}
+                                          </Badge>
+                                        </button>
+                                      </HoverCardTrigger>
+                                      <HoverCardContent side="left" className="w-44 p-2 text-xs">
+                                        <div className="font-medium mb-1.5">Open pins</div>
+                                        <div className="flex flex-col gap-0.5">
+                                          {(["RFI", "PUNCH", "SUBMITTAL"] as const).map((t) => {
+                                            const counts = planPinSummary[doc.id];
+                                            const count = t === "RFI" ? counts.rfi : t === "PUNCH" ? counts.punch : counts.submittal;
+                                            const label = t === "RFI" ? "RFI" : t === "PUNCH" ? "Punch" : "Submittal";
+                                            return (
+                                              <button
+                                                key={t}
+                                                type="button"
+                                                disabled={count === 0}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedDocId(doc.id);
+                                                  setPreviewDocId(doc.id);
+                                                  setPinModeActive(true);
+                                                  setPinFilter({ type: t, openOnly: true });
+                                                }}
+                                                className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                                                data-testid={`button-plan-pins-filter-${t.toLowerCase()}-${doc.id}`}
+                                              >
+                                                <span>{label}</span>
+                                                <span className="font-medium tabular-nums">{count}</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </HoverCardContent>
+                                    </HoverCard>
                                   )}
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
