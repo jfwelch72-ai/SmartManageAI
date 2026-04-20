@@ -82,6 +82,7 @@ import complianceRoutes from "./complianceRoutes";
 import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
 import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
+import projectDistributionListRoutes from "./projectDistributionListRoutes";
 import aiOnboardingRoutes from "./aiOnboardingRoutes";
 import scheduleRoutes from "./scheduleRoutes";
 import notesRoutes from "./notesRoutes";
@@ -284,6 +285,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register AI routes through single orchestration layer (consolidates document, scheduling, takeoff, CFO analytics routes)
   app.use("/api", aiOrchestrationRoutes);
   app.use("/api", aiOnboardingRoutes);
+
+  // Project-scoped reusable email distribution lists
+  app.use("/api", projectDistributionListRoutes);
 
   // Register schedule management routes (CPM engine, baseline, resource loading, forecasting)
   app.use("/api", scheduleRoutes);

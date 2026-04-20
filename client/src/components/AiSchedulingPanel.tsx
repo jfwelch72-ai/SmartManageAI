@@ -10,6 +10,11 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  SavedDistributionLists,
+  SaveDistributionListDialog,
+  type DistributionList,
+} from "@/components/email/DistributionListPicker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -250,8 +255,6 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [sendMessage, setSendMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [saveListDialogOpen, setSaveListDialogOpen] = useState(false);
-  const [saveListName, setSaveListName] = useState("");
-  const [saveListOrgScope, setSaveListOrgScope] = useState(false);
 
   const { toast } = useToast();
 
@@ -441,25 +444,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   });
 
 
-  interface DistributionList {
-    id: string;
-    name: string;
-    contactEmails: string[];
-    extraEmails: string[];
-    projectId: string | null;
-    updatedAt: string;
-  }
-
-  const distributionListsQueryKey = ["/api/ai-features/schedule", projectId, "distribution-lists"] as const;
-  const { data: distributionListsData } = useQuery<{ lists: DistributionList[] }>({
-    queryKey: distributionListsQueryKey,
-    enabled: sendDialogOpen && !!projectId,
-  });
-  const distributionLists = distributionListsData?.lists || [];
-
-  const loadDistributionList = useCallback((listId: string) => {
-    const list = distributionLists.find(l => l.id === listId);
-    if (!list) return;
+  const loadDistributionList = useCallback((list: DistributionList) => {
     const directory = recipientData?.recipients || [];
     const directoryByEmail = new Map(directory.map(r => [r.email.trim().toLowerCase(), r] as const));
     const next = new Set<string>();
@@ -486,66 +471,9 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
       title: "List loaded",
       description: `Loaded "${list.name}" — adjust recipients before sending.`,
     });
-  }, [distributionLists, recipientData, toast]);
+  }, [recipientData, toast]);
 
-  const saveDistributionListMutation = useMutation({
-    mutationFn: async (vars: { name: string; contactEmails: string[]; extraEmails: string[]; scope: "PROJECT" | "ORGANIZATION" }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/ai-features/schedule/${projectId}/distribution-lists`,
-        vars,
-      );
-      return res.json();
-    },
-    onSuccess: (data: { list: DistributionList }) => {
-      queryClient.invalidateQueries({ queryKey: distributionListsQueryKey });
-      const isOrg = data.list.projectId === null;
-      toast({
-        title: isOrg ? "Organization list saved" : "Distribution list saved",
-        description: isOrg
-          ? `"${data.list.name}" is now available across every project.`
-          : `"${data.list.name}" can be reused for future sends.`,
-      });
-      setSaveListDialogOpen(false);
-      setSaveListName("");
-      setSaveListOrgScope(false);
-    },
-    onError: (err: Error) => {
-      toast({
-        title: "Failed to save list",
-        description: err.message || "Unable to save distribution list",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteDistributionListMutation = useMutation({
-    mutationFn: async (listId: string) => {
-      const res = await apiRequest(
-        "DELETE",
-        `/api/ai-features/schedule/${projectId}/distribution-lists/${listId}`,
-      );
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: distributionListsQueryKey });
-      toast({ title: "Distribution list deleted" });
-    },
-    onError: (err: Error) => {
-      toast({
-        title: "Failed to delete list",
-        description: err.message || "Unable to delete distribution list",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleSaveDistributionList = useCallback(() => {
-    const name = saveListName.trim();
-    if (!name) {
-      toast({ title: "Name required", description: "Give the list a name before saving.", variant: "destructive" });
-      return;
-    }
+  const collectDistributionListPayload = useCallback(() => {
     const directory = recipientData?.recipients || [];
     const directoryByEmail = new Map(directory.map(r => [r.email.trim().toLowerCase(), r] as const));
     const contactEmails: string[] = [];
@@ -571,23 +499,10 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
         description: `Could not parse: ${invalid.join(", ")}`,
         variant: "destructive",
       });
-      return;
+      return null;
     }
-    if (contactEmails.length === 0 && extraEmails.length === 0) {
-      toast({
-        title: "List is empty",
-        description: "Pick at least one contact or enter an email before saving.",
-        variant: "destructive",
-      });
-      return;
-    }
-    saveDistributionListMutation.mutate({
-      name,
-      contactEmails,
-      extraEmails,
-      scope: saveListOrgScope ? "ORGANIZATION" : "PROJECT",
-    });
-  }, [extraRecipientsInput, recipientData, saveDistributionListMutation, saveListName, saveListOrgScope, selectedRecipientEmails, toast]);
+    return { contactEmails, extraEmails };
+  }, [extraRecipientsInput, recipientData, selectedRecipientEmails, toast]);
 
   const openSendDialog = useCallback(() => {
     setSendSubject(`${projectName} (${projectCode}) — Schedule update`);
@@ -1588,57 +1503,15 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {distributionLists.length > 0 && (
-              <div>
-                <Label className="mb-2 block">Saved distribution lists</Label>
-                <div className="space-y-1 rounded border p-2">
-                  {distributionLists.map((list) => {
-                    const total = list.contactEmails.length + list.extraEmails.length;
-                    const isOrg = list.projectId === null;
-                    return (
-                      <div
-                        key={list.id}
-                        className="flex items-center justify-between gap-2 p-1.5 rounded hover-elevate"
-                        data-testid={`row-distribution-list-${list.id}`}
-                      >
-                        <button
-                          type="button"
-                          className="flex-1 min-w-0 text-left disabled:opacity-50"
-                          onClick={() => loadDistributionList(list.id)}
-                          disabled={isRecipientsLoading}
-                          title={isRecipientsLoading ? "Loading project contacts…" : undefined}
-                          data-testid={`button-load-list-${list.id}`}
-                        >
-                          <div className="text-sm font-medium truncate flex items-center gap-2" data-testid={`text-list-name-${list.id}`}>
-                            <span className="truncate">{list.name}</span>
-                            {isOrg && (
-                              <Badge variant="secondary" className="text-[10px] shrink-0" data-testid={`badge-list-scope-${list.id}`}>
-                                Organization
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {total} recipient{total === 1 ? "" : "s"}
-                          </div>
-                        </button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0"
-                          onClick={() => deleteDistributionListMutation.mutate(list.id)}
-                          disabled={deleteDistributionListMutation.isPending}
-                          data-testid={`button-delete-list-${list.id}`}
-                          aria-label={`Delete ${list.name}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <SavedDistributionLists
+              projectId={projectId}
+              enabled={sendDialogOpen}
+              loading={isRecipientsLoading}
+              loadingHint="Loading project contacts…"
+              onLoad={loadDistributionList}
+              testIdPrefix="distribution-list"
+            />
+
             <div>
               <Label className="mb-2 block">Project contacts</Label>
               <ScrollArea className="max-h-48 rounded border">
@@ -1714,11 +1587,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                setSaveListName("");
-                setSaveListOrgScope(false);
-                setSaveListDialogOpen(true);
-              }}
+              onClick={() => setSaveListDialogOpen(true)}
               disabled={isSending}
               data-testid="button-save-distribution-list"
             >
@@ -1751,67 +1620,14 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
         </DialogContent>
       </Dialog>
 
-      <Dialog open={saveListDialogOpen} onOpenChange={(open) => { if (!saveDistributionListMutation.isPending) setSaveListDialogOpen(open); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Save distribution list</DialogTitle>
-            <DialogDescription>
-              Save the currently selected contacts and additional emails as a reusable list for this project.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="distribution-list-name">List name</Label>
-              <Input
-                id="distribution-list-name"
-                placeholder="e.g. Weekly progress meeting"
-                value={saveListName}
-                onChange={(e) => setSaveListName(e.target.value)}
-                data-testid="input-distribution-list-name"
-                autoFocus
-              />
-              <p className="text-xs text-muted-foreground">
-                Saving with an existing name will overwrite that list.
-              </p>
-            </div>
-            <label className="flex items-start gap-2 p-2 rounded border cursor-pointer hover-elevate" data-testid="row-distribution-list-scope">
-              <Checkbox
-                checked={saveListOrgScope}
-                onCheckedChange={(v) => setSaveListOrgScope(v === true)}
-                data-testid="checkbox-distribution-list-org-scope"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">Share with the whole organization</div>
-                <div className="text-xs text-muted-foreground">
-                  Available in the Send Gantt dialog on every project, not just this one.
-                </div>
-              </div>
-            </label>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSaveListDialogOpen(false)}
-              disabled={saveDistributionListMutation.isPending}
-              data-testid="button-cancel-save-list"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveDistributionList}
-              disabled={saveDistributionListMutation.isPending}
-              data-testid="button-confirm-save-list"
-            >
-              {saveDistributionListMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4 mr-2" />
-              )}
-              Save list
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SaveDistributionListDialog
+        projectId={projectId}
+        open={saveListDialogOpen}
+        onOpenChange={setSaveListDialogOpen}
+        collect={collectDistributionListPayload}
+        allowOrgScope
+      />
+
 
       <Dialog open={manualCreateOpen} onOpenChange={setManualCreateOpen}>
         <DialogContent>

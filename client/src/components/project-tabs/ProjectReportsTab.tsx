@@ -1,7 +1,12 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import {
+  SavedDistributionLists,
+  SaveDistributionListDialog,
+  type DistributionList,
+} from "@/components/email/DistributionListPicker";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +76,7 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
   const [recipientInput, setRecipientInput] = useState("");
   const [emailRecipients, setEmailRecipients] = useState<string[]>([]);
+  const [saveListDialogOpen, setSaveListDialogOpen] = useState(false);
 
   const { data: reports = [], isLoading } = useQuery<ProjectReport[]>({
     queryKey: ["/api/projects", projectId, "progress-reports"],
@@ -385,6 +391,45 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
                 Email Recipients
               </Label>
               <p className="text-xs text-muted-foreground">Add email addresses to receive auto-generated reports</p>
+              <SavedDistributionLists
+                projectId={projectId}
+                onLoad={(list: DistributionList) => {
+                  const emails = [...list.contactEmails, ...list.extraEmails];
+                  const seen = new Set(emailRecipients.map((e) => e.trim().toLowerCase()));
+                  const merged = [...emailRecipients];
+                  for (const e of emails) {
+                    const key = e.trim().toLowerCase();
+                    if (!key || seen.has(key)) continue;
+                    seen.add(key);
+                    merged.push(e);
+                  }
+                  setEmailRecipients(merged);
+                  settingsMutation.mutate({
+                    autoWeekly: settings?.autoWeekly ?? false,
+                    autoMonthly: settings?.autoMonthly ?? false,
+                    emailRecipients: merged,
+                  });
+                  toast({
+                    title: "List loaded",
+                    description: `Added recipients from "${list.name}".`,
+                  });
+                }}
+                testIdPrefix="report-distribution-list"
+              />
+              {emailRecipients.length > 0 && (
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSaveListDialogOpen(true)}
+                    data-testid="button-save-report-distribution-list"
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    Save as distribution list
+                  </Button>
+                </div>
+              )}
               <div className="flex gap-2">
                 <Input
                   type="email"
@@ -631,6 +676,13 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SaveDistributionListDialog
+        projectId={projectId}
+        open={saveListDialogOpen}
+        onOpenChange={setSaveListDialogOpen}
+        collect={() => ({ contactEmails: [], extraEmails: emailRecipients })}
+      />
     </div>
   );
 }
