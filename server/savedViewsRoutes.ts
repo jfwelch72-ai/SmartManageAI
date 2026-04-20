@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { userSavedViews } from "@shared/schema";
+import { userSavedViews, users } from "@shared/schema";
 import { and, eq, or } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
@@ -25,8 +25,13 @@ router.get("/api/saved-views", requireAuth, async (req: AuthRequest, res, next) 
       return res.status(400).json({ error: "viewKey query param required" });
     }
     const rows = await db
-      .select()
+      .select({
+        view: userSavedViews,
+        creatorFirstName: users.firstName,
+        creatorLastName: users.lastName,
+      })
       .from(userSavedViews)
+      .leftJoin(users, eq(users.id, userSavedViews.userId))
       .where(and(
         eq(userSavedViews.organizationId, orgId),
         eq(userSavedViews.viewKey, viewKey),
@@ -35,8 +40,19 @@ router.get("/api/saved-views", requireAuth, async (req: AuthRequest, res, next) 
           eq(userSavedViews.isShared, true),
         ),
       ));
-    rows.sort((a, b) => (b.createdAt?.getTime?.() ?? 0) - (a.createdAt?.getTime?.() ?? 0));
-    return res.json(rows);
+    const result = rows.map((r) => {
+      const first = (r.creatorFirstName || "").trim();
+      const last = (r.creatorLastName || "").trim();
+      const fullName = [first, last].filter(Boolean).join(" ");
+      const initials = `${first.charAt(0)}${last.charAt(0)}`.toUpperCase() || null;
+      return {
+        ...r.view,
+        creatorName: fullName || null,
+        creatorInitials: initials,
+      };
+    });
+    result.sort((a, b) => (b.createdAt?.getTime?.() ?? 0) - (a.createdAt?.getTime?.() ?? 0));
+    return res.json(result);
   } catch (err) {
     return next(err);
   }

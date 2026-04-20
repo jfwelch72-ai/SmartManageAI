@@ -42,6 +42,8 @@ interface SavedView {
   view: "table" | "kanban" | "calendar" | "map";
   filtersJson: string;
   isShared: boolean;
+  creatorName: string | null;
+  creatorInitials: string | null;
 }
 
 interface BuiltInView {
@@ -213,7 +215,7 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
   const personalViews = savedViews.filter((v) => !v.isShared && v.userId === currentUserId);
   const teamViews = savedViews.filter((v) => v.isShared);
 
-  const renderRow = (sv: SavedView, testIdPrefix: string) => (
+  const renderRow = (sv: SavedView, testIdPrefix: string, showCreator: boolean) => (
     <div key={sv.id} className="flex items-center justify-between pr-1">
       <DropdownMenuItem
         className="flex-1"
@@ -221,6 +223,15 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
         data-testid={`${testIdPrefix}-${sv.id}`}
       >
         <span className="truncate">{sv.name}</span>
+        {showCreator && (sv.creatorName || sv.creatorInitials) && (
+          <span
+            className="ml-2 text-[10px] text-muted-foreground"
+            title={sv.creatorName ?? undefined}
+            data-testid={`text-saved-view-creator-${sv.id}`}
+          >
+            · {sv.creatorName || sv.creatorInitials}
+          </span>
+        )}
         <span className="ml-2 text-[10px] text-muted-foreground uppercase">{sv.view}</span>
       </DropdownMenuItem>
       {canModify(sv) && (
@@ -312,14 +323,14 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
                 <Users className="w-3 h-3" />
                 Team views
               </DropdownMenuLabel>
-              {teamViews.map((sv) => renderRow(sv, "team-saved-view"))}
+              {teamViews.map((sv) => renderRow(sv, "team-saved-view", true))}
             </>
           )}
           {personalViews.length > 0 && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs">Your views</DropdownMenuLabel>
-              {personalViews.map((sv) => renderRow(sv, "saved-view"))}
+              {personalViews.map((sv) => renderRow(sv, "saved-view", false))}
             </>
           )}
           <DropdownMenuSeparator />
