@@ -1121,7 +1121,28 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
     }
 
     const updateData: any = { ...validationResult, updatedAt: new Date() };
-    
+
+    // Task #590: when an address-affecting field changes, reset the cached
+    // geocode outcome so the nightly job (and the on-demand button) will
+    // immediately retry instead of waiting for the previous backoff window
+    // to expire.
+    const addressFields = ["locationAddress", "city", "state"] as const;
+    const addressChanged = addressFields.some((f) => {
+      if (!(f in validationResult)) return false;
+      const next = validationResult[f] ?? null;
+      const prev = existingProject[f] ?? null;
+      return (next || "") !== (prev || "");
+    });
+    if (addressChanged) {
+      updateData.lastGeocodeAttemptAt = null;
+      updateData.lastGeocodeStatus = null;
+      updateData.geocodeAttemptCount = 0;
+      // Also clear stale coordinates so the map view stops showing the old pin
+      // for what is now a different address until the next geocode runs.
+      updateData.siteLatitude = null;
+      updateData.siteLongitude = null;
+    }
+
     const [updatedProject] = await db
       .update(projects)
       .set(updateData)

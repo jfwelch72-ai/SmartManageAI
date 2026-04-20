@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { EmptyState } from "./EmptyState";
-import { MapPin, Loader2 } from "lucide-react";
+import { MapPin, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -56,6 +56,18 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
     [projects],
   );
 
+  // Task #590: surface projects whose addresses have already failed to resolve
+  // so admins know which records need manual address fixes instead of just
+  // assuming the geocoder hasn't run yet.
+  const unresolvedProjects = useMemo(
+    () => projects.filter(p =>
+      (p.siteLatitude == null || p.siteLongitude == null)
+      && hasGeocodableAddress(p)
+      && (p.lastGeocodeStatus === "NOT_FOUND" || p.lastGeocodeStatus === "FAILED")
+    ),
+    [projects],
+  );
+
   const handleGeocode = async () => {
     if (isGeocoding) return;
     setIsGeocoding(true);
@@ -88,6 +100,27 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
   if (located.length === 0) {
     return (
       <div className="space-y-3" data-testid="view-map">
+        {unresolvedProjects.length > 0 && (
+          <div
+            className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-3 py-2 text-xs"
+            data-testid="banner-unresolved-addresses"
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <div>
+              <span className="font-medium text-amber-900 dark:text-amber-200">
+                {unresolvedProjects.length} project address{unresolvedProjects.length === 1 ? "" : "es"} couldn't be located.
+              </span>{" "}
+              <span className="text-amber-800/80 dark:text-amber-200/70">
+                Update the address on{" "}
+                {unresolvedProjects.slice(0, 3).map((p, i) => (
+                  <span key={p.id}>{i > 0 && ", "}<span className="font-mono">{p.code}</span></span>
+                ))}
+                {unresolvedProjects.length > 3 && ` and ${unresolvedProjects.length - 3} more`}
+                {" "}to retry automatically.
+              </span>
+            </div>
+          </div>
+        )}
         <EmptyState
           icon={MapPin}
           title="No projects on the map yet"
@@ -122,8 +155,35 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
     );
   }
 
+  const unresolvedBanner = unresolvedProjects.length > 0 && (
+    <div
+      className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-3 py-2 text-xs"
+      data-testid="banner-unresolved-addresses"
+    >
+      <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-600 dark:text-amber-400 shrink-0" />
+      <div className="space-y-1">
+        <div className="font-medium text-amber-900 dark:text-amber-200">
+          {unresolvedProjects.length} project address{unresolvedProjects.length === 1 ? "" : "es"} couldn't be located
+        </div>
+        <div className="text-amber-800/80 dark:text-amber-200/70">
+          Check the address on{" "}
+          {unresolvedProjects.slice(0, 3).map((p, i) => (
+            <span key={p.id} data-testid={`text-unresolved-${p.code}`}>
+              {i > 0 && ", "}
+              <span className="font-mono">{p.code}</span>
+            </span>
+          ))}
+          {unresolvedProjects.length > 3 && ` and ${unresolvedProjects.length - 3} more`}
+          {" "}so it can be re-tried automatically.
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="rounded-md border overflow-hidden" data-testid="view-map">
+    <div className="space-y-3" data-testid="view-map">
+      {unresolvedBanner}
+      <div className="rounded-md border overflow-hidden">
       <div className="h-[60vh] min-h-96 w-full">
         <MapContainer center={center} zoom={located.length === 1 ? 11 : 5} scrollWheelZoom className="h-full w-full">
           <TileLayer
@@ -181,6 +241,7 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
