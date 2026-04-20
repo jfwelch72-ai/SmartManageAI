@@ -5,6 +5,9 @@ import { logError } from "./logger";
 /**
  * Task #575: Create user_saved_views table — per-user saved view + filter
  * combinations for list pages (e.g. /projects). Org-scoped, user-scoped.
+ *
+ * Task #580: Add `is_shared` column so saved views can be marked shared
+ * (org-wide) and surfaced as "Team views" in the dropdown.
  */
 export async function ensureUserSavedViewsTable(): Promise<void> {
   try {
@@ -17,10 +20,16 @@ export async function ensureUserSavedViewsTable(): Promise<void> {
         "name" text NOT NULL,
         "view" text NOT NULL,
         "filters_json" text NOT NULL DEFAULT '{}',
+        "is_shared" boolean NOT NULL DEFAULT false,
         "created_at" timestamp NOT NULL DEFAULT now()
       )
     `);
+    await db.execute(sql`
+      ALTER TABLE "user_saved_views"
+      ADD COLUMN IF NOT EXISTS "is_shared" boolean NOT NULL DEFAULT false
+    `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "user_saved_views_user_view_key_idx" ON "user_saved_views"("user_id","view_key")`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS "user_saved_views_org_shared_view_key_idx" ON "user_saved_views"("organization_id","is_shared","view_key")`);
     console.log("[migration] user_saved_views table ready");
   } catch (err) {
     logError(

@@ -1,13 +1,17 @@
 import { Router } from "express";
 import { db } from "./db";
-import { userSavedViews, insertUserSavedViewSchema } from "@shared/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { userSavedViews } from "@shared/schema";
+import { and, eq, or } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
 
 const router = Router();
 
 const VALID_VIEWS = ["table", "kanban", "calendar", "map"] as const;
+
+function isAdmin(role: string | undefined): boolean {
+  return role === "ADMIN" || role === "SUPER_ADMIN";
+}
 
 router.get("/api/saved-views", requireAuth, async (req: AuthRequest, res, next) => {
   try {
@@ -24,11 +28,14 @@ router.get("/api/saved-views", requireAuth, async (req: AuthRequest, res, next) 
       .select()
       .from(userSavedViews)
       .where(and(
-        eq(userSavedViews.userId, userId),
         eq(userSavedViews.organizationId, orgId),
         eq(userSavedViews.viewKey, viewKey),
-      ))
-      .orderBy(desc(userSavedViews.createdAt));
+        or(
+          eq(userSavedViews.userId, userId),
+          eq(userSavedViews.isShared, true),
+        ),
+      ));
+    rows.sort((a, b) => (b.createdAt?.getTime?.() ?? 0) - (a.createdAt?.getTime?.() ?? 0));
     return res.json(rows);
   } catch (err) {
     return next(err);
@@ -47,6 +54,7 @@ router.post("/api/saved-views", requireAuth, async (req: AuthRequest, res, next)
       name: z.string().min(1).max(120),
       view: z.enum(VALID_VIEWS),
       filters: z.record(z.any()).optional(),
+      isShared: z.boolean().optional(),
     });
     const parsed = schema.parse(req.body);
     const [created] = await db
@@ -58,6 +66,7 @@ router.post("/api/saved-views", requireAuth, async (req: AuthRequest, res, next)
         name: parsed.name,
         view: parsed.view,
         filtersJson: JSON.stringify(parsed.filters || {}),
+        isShared: parsed.isShared === true,
       })
       .returning();
     return res.status(201).json(created);
@@ -69,10 +78,70 @@ router.post("/api/saved-views", requireAuth, async (req: AuthRequest, res, next)
   }
 });
 
+router.patch("/api/saved-views/:id", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const role = req.user!.role;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+    const { id } = req.params;
+    const schema = z.object({
+      name: z.string().min(1).max(120).optional(),
+      isShared: z.boolean().optional(),
+      filters: z.record(z.any()).optional(),
+      view: z.enum(VALID_VIEWS).optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const [existing] = await db
+      .select()
+      .from(userSavedViews)
+      .where(and(
+        eq(userSavedViews.id, id),
+        eq(userSavedViews.organizationId, orgId),
+      ))
+      .limit(1);
+    if (!existing) {
+      return res.status(404).json({ error: "Saved view not found" });
+    }
+    if (existing.userId !== userId && !isAdmin(role)) {
+      return res.status(403).json({ error: "Only the creator or an admin can edit this view" });
+    }
+
+    const updates: Partial<typeof existing> = {};
+    if (parsed.name !== undefined) updates.name = parsed.name;
+    if (parsed.isShared !== undefined) updates.isShared = parsed.isShared;
+    if (parsed.view !== undefined) updates.view = parsed.view;
+    if (parsed.filters !== undefined) updates.filtersJson = JSON.stringify(parsed.filters);
+
+    if (Object.keys(updates).length === 0) {
+      return res.json(existing);
+    }
+
+    const [updated] = await db
+      .update(userSavedViews)
+      .set(updates)
+      .where(and(
+        eq(userSavedViews.id, id),
+        eq(userSavedViews.organizationId, orgId),
+      ))
+      .returning();
+    return res.json(updated);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid update", details: err.errors });
+    }
+    return next(err);
+  }
+});
+
 router.delete("/api/saved-views/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
+    const role = req.user!.role;
     if (!orgId) {
       return res.status(400).json({ error: "Organization context required" });
     }
@@ -82,16 +151,17 @@ router.delete("/api/saved-views/:id", requireAuth, async (req: AuthRequest, res,
       .from(userSavedViews)
       .where(and(
         eq(userSavedViews.id, id),
-        eq(userSavedViews.userId, userId),
         eq(userSavedViews.organizationId, orgId),
       ))
       .limit(1);
     if (!existing) {
       return res.status(404).json({ error: "Saved view not found" });
     }
+    if (existing.userId !== userId && !isAdmin(role)) {
+      return res.status(403).json({ error: "Only the creator or an admin can delete this view" });
+    }
     await db.delete(userSavedViews).where(and(
       eq(userSavedViews.id, id),
-      eq(userSavedViews.userId, userId),
       eq(userSavedViews.organizationId, orgId),
     ));
     return res.json({ success: true });

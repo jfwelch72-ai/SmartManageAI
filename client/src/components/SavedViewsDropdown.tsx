@@ -4,6 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,8 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Bookmark, Plus, Trash2, ChevronDown } from "lucide-react";
+import { Bookmark, Plus, Trash2, ChevronDown, Users, Share2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 export interface ProjectsFilterState {
   status: string;
@@ -35,9 +37,11 @@ export interface AppliedView {
 
 interface SavedView {
   id: string;
+  userId: string;
   name: string;
   view: "table" | "kanban" | "calendar" | "map";
   filtersJson: string;
+  isShared: boolean;
 }
 
 interface BuiltInView {
@@ -76,8 +80,13 @@ interface Props {
 
 export default function SavedViewsDropdown({ current, onApply }: Props) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newName, setNewName] = useState("");
+  const [shareWithTeam, setShareWithTeam] = useState(false);
+
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const currentUserId = user?.id;
 
   const { data: savedViews = [] } = useQuery<SavedView[]>({
     queryKey: ["/api/saved-views", { viewKey: "projects" }],
@@ -89,20 +98,27 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string }) => {
+    mutationFn: async (data: { name: string; isShared: boolean }) => {
       const res = await apiRequest("POST", "/api/saved-views", {
         viewKey: "projects",
         name: data.name,
         view: current.view,
         filters: current.filters,
+        isShared: data.isShared,
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
-      toast({ title: "View saved", description: `"${newName}" is now in your saved views.` });
+      toast({
+        title: "View saved",
+        description: vars.isShared
+          ? `"${vars.name}" is now shared with your team.`
+          : `"${vars.name}" is now in your saved views.`,
+      });
       setShowSaveDialog(false);
       setNewName("");
+      setShareWithTeam(false);
     },
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : "Could not save view";
@@ -117,6 +133,25 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
       toast({ title: "View removed" });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "Could not remove view";
+      toast({ title: "Remove failed", description: message, variant: "destructive" });
+    },
+  });
+
+  const toggleShareMutation = useMutation({
+    mutationFn: async ({ id, isShared }: { id: string; isShared: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/saved-views/${id}`, { isShared });
+      return res.json();
+    },
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      toast({ title: vars.isShared ? "Shared with team" : "Now private" });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "Could not update view";
+      toast({ title: "Update failed", description: message, variant: "destructive" });
     },
   });
 
@@ -133,6 +168,54 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
     onApply({ view: sv.view, filters });
   };
 
+  const canModify = (sv: SavedView) => sv.userId === currentUserId || isAdmin;
+
+  const personalViews = savedViews.filter((v) => !v.isShared && v.userId === currentUserId);
+  const teamViews = savedViews.filter((v) => v.isShared);
+
+  const renderRow = (sv: SavedView, testIdPrefix: string) => (
+    <div key={sv.id} className="flex items-center justify-between pr-1">
+      <DropdownMenuItem
+        className="flex-1"
+        onClick={() => applySaved(sv)}
+        data-testid={`${testIdPrefix}-${sv.id}`}
+      >
+        <span className="truncate">{sv.name}</span>
+        <span className="ml-2 text-[10px] text-muted-foreground uppercase">{sv.view}</span>
+      </DropdownMenuItem>
+      {canModify(sv) && (
+        <>
+          <button
+            type="button"
+            className="p-1.5 text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleShareMutation.mutate({ id: sv.id, isShared: !sv.isShared });
+            }}
+            title={sv.isShared ? "Make private" : "Share with team"}
+            data-testid={`toggle-share-saved-view-${sv.id}`}
+          >
+            <Share2 className={`w-3.5 h-3.5 ${sv.isShared ? "text-primary" : ""}`} />
+          </button>
+          <button
+            type="button"
+            className="p-1.5 text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              deleteMutation.mutate(sv.id);
+            }}
+            title="Delete saved view"
+            data-testid={`delete-saved-view-${sv.id}`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <>
       <DropdownMenu>
@@ -143,7 +226,7 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
             <ChevronDown className="w-3.5 h-3.5 opacity-60" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64" data-testid="menu-saved-views">
+        <DropdownMenuContent align="end" className="w-72" data-testid="menu-saved-views">
           <DropdownMenuLabel className="text-xs">Built-in</DropdownMenuLabel>
           {BUILT_IN_VIEWS.map((bv) => (
             <DropdownMenuItem
@@ -154,31 +237,21 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
               {bv.name}
             </DropdownMenuItem>
           ))}
-          {savedViews.length > 0 && (
+          {teamViews.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs flex items-center gap-1.5">
+                <Users className="w-3 h-3" />
+                Team views
+              </DropdownMenuLabel>
+              {teamViews.map((sv) => renderRow(sv, "team-saved-view"))}
+            </>
+          )}
+          {personalViews.length > 0 && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs">Your views</DropdownMenuLabel>
-              {savedViews.map((sv) => (
-                <div key={sv.id} className="flex items-center justify-between pr-1">
-                  <DropdownMenuItem
-                    className="flex-1"
-                    onClick={() => applySaved(sv)}
-                    data-testid={`saved-view-${sv.id}`}
-                  >
-                    {sv.name}
-                    <span className="ml-2 text-[10px] text-muted-foreground uppercase">{sv.view}</span>
-                  </DropdownMenuItem>
-                  <button
-                    type="button"
-                    className="p-1.5 text-muted-foreground hover:text-destructive"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteMutation.mutate(sv.id); }}
-                    title="Delete saved view"
-                    data-testid={`delete-saved-view-${sv.id}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+              {personalViews.map((sv) => renderRow(sv, "saved-view"))}
             </>
           )}
           <DropdownMenuSeparator />
@@ -197,26 +270,46 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
           <DialogHeader>
             <DialogTitle>Save current view</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="saved-view-name">Name</Label>
-            <Input
-              id="saved-view-name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="e.g. My active jobs"
-              data-testid="input-saved-view-name"
-              autoFocus
-            />
-            <p className="text-xs text-muted-foreground">
-              Saves the {current.view} view with the current filters. Visible only to you.
-            </p>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="saved-view-name">Name</Label>
+              <Input
+                id="saved-view-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Q3 Active Jobs"
+                data-testid="input-saved-view-name"
+                autoFocus
+              />
+            </div>
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="saved-view-shared"
+                checked={shareWithTeam}
+                onCheckedChange={(v) => setShareWithTeam(v === true)}
+                data-testid="checkbox-share-with-team"
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="saved-view-shared" className="cursor-pointer">
+                  Share with team
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {shareWithTeam
+                    ? `Everyone in your organization will see this ${current.view} view under "Team views".`
+                    : `Saves the ${current.view} view with the current filters. Visible only to you.`}
+                </p>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSaveDialog(false)} data-testid="button-cancel-save-view">
               Cancel
             </Button>
             <Button
-              onClick={() => newName.trim() && createMutation.mutate({ name: newName.trim() })}
+              onClick={() =>
+                newName.trim() &&
+                createMutation.mutate({ name: newName.trim(), isShared: shareWithTeam })
+              }
               disabled={!newName.trim() || createMutation.isPending}
               data-testid="button-confirm-save-view"
             >

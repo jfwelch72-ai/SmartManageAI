@@ -8658,9 +8658,11 @@ export const userSavedViews = pgTable("user_saved_views", {
   name: text("name").notNull(),
   view: text("view").notNull(),
   filtersJson: text("filters_json").notNull().default("{}"),
+  isShared: boolean("is_shared").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   userViewKeyIdx: index("user_saved_views_user_view_key_idx").on(table.userId, table.viewKey),
+  orgSharedViewKeyIdx: index("user_saved_views_org_shared_view_key_idx").on(table.organizationId, table.isShared, table.viewKey),
 }));
 
 export const insertUserSavedViewSchema = createInsertSchema(userSavedViews).omit({ id: true, createdAt: true });
