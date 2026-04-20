@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, Save, Trash2 } from "lucide-react";
+import { formatDistanceToNowStrict } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,10 @@ export interface DistributionList {
   /** null when the list is shared across the entire organization. */
   projectId: string | null;
   updatedAt: string;
+  /** Display name of the user who created the list, when known. */
+  createdByName?: string | null;
+  /** Email of the user who created the list, used as a fallback display. */
+  createdByEmail?: string | null;
 }
 
 export type DistributionListScope = "PROJECT" | "ORGANIZATION";
@@ -154,6 +159,21 @@ export function SavedDistributionLists({
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {total} recipient{total === 1 ? "" : "s"}
+                </div>
+                <div
+                  className="text-xs text-muted-foreground truncate"
+                  data-testid={`text-${testIdPrefix}-meta-${list.id}`}
+                >
+                  <span data-testid={`text-${testIdPrefix}-creator-${list.id}`}>
+                    By {list.createdByName || list.createdByEmail || "Unknown"}
+                  </span>
+                  <span aria-hidden> · </span>
+                  <span
+                    data-testid={`text-${testIdPrefix}-updated-${list.id}`}
+                    title={new Date(list.updatedAt).toLocaleString()}
+                  >
+                    Updated {formatDistanceToNowStrict(new Date(list.updatedAt), { addSuffix: true })}
+                  </span>
                 </div>
               </button>
               <Button

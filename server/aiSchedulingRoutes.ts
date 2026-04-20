@@ -805,8 +805,22 @@ router.get("/ai-features/schedule/:projectId/distribution-lists", requireAuth, a
     const project = await assertProjectAccess(req.params.projectId, organizationId);
     if (!project) return res.status(404).json({ error: "Project not found" });
 
-    const lists = await db.select()
+    const rows = await db.select({
+      id: projectEmailDistributionLists.id,
+      organizationId: projectEmailDistributionLists.organizationId,
+      projectId: projectEmailDistributionLists.projectId,
+      name: projectEmailDistributionLists.name,
+      contactEmails: projectEmailDistributionLists.contactEmails,
+      extraEmails: projectEmailDistributionLists.extraEmails,
+      createdById: projectEmailDistributionLists.createdById,
+      createdAt: projectEmailDistributionLists.createdAt,
+      updatedAt: projectEmailDistributionLists.updatedAt,
+      createdByFirstName: users.firstName,
+      createdByLastName: users.lastName,
+      createdByEmail: users.email,
+    })
       .from(projectEmailDistributionLists)
+      .leftJoin(users, eq(users.id, projectEmailDistributionLists.createdById))
       .where(and(
         eq(projectEmailDistributionLists.organizationId, organizationId),
         or(
@@ -815,6 +829,14 @@ router.get("/ai-features/schedule/:projectId/distribution-lists", requireAuth, a
         ),
       ))
       .orderBy(desc(projectEmailDistributionLists.updatedAt));
+
+    const lists = rows.map(({ createdByFirstName, createdByLastName, createdByEmail, ...rest }) => ({
+      ...rest,
+      createdByName: createdByFirstName || createdByLastName
+        ? `${createdByFirstName ?? ""} ${createdByLastName ?? ""}`.trim()
+        : null,
+      createdByEmail: createdByEmail ?? null,
+    }));
 
     res.json({ lists });
   } catch (error) {
@@ -951,13 +973,35 @@ router.get("/distribution-lists", requireAuth, async (req: AuthRequest, res, nex
     const organizationId = req.user?.organizationId;
     if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
 
-    const lists = await db.select()
+    const rows = await db.select({
+      id: projectEmailDistributionLists.id,
+      organizationId: projectEmailDistributionLists.organizationId,
+      projectId: projectEmailDistributionLists.projectId,
+      name: projectEmailDistributionLists.name,
+      contactEmails: projectEmailDistributionLists.contactEmails,
+      extraEmails: projectEmailDistributionLists.extraEmails,
+      createdById: projectEmailDistributionLists.createdById,
+      createdAt: projectEmailDistributionLists.createdAt,
+      updatedAt: projectEmailDistributionLists.updatedAt,
+      createdByFirstName: users.firstName,
+      createdByLastName: users.lastName,
+      createdByEmail: users.email,
+    })
       .from(projectEmailDistributionLists)
+      .leftJoin(users, eq(users.id, projectEmailDistributionLists.createdById))
       .where(and(
         eq(projectEmailDistributionLists.organizationId, organizationId),
         isNull(projectEmailDistributionLists.projectId),
       ))
       .orderBy(desc(projectEmailDistributionLists.updatedAt));
+
+    const lists = rows.map(({ createdByFirstName, createdByLastName, createdByEmail, ...rest }) => ({
+      ...rest,
+      createdByName: createdByFirstName || createdByLastName
+        ? `${createdByFirstName ?? ""} ${createdByLastName ?? ""}`.trim()
+        : null,
+      createdByEmail: createdByEmail ?? null,
+    }));
 
     res.json({ lists });
   } catch (error) {

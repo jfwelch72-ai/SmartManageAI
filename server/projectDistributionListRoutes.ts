@@ -3,6 +3,7 @@ import { db } from "./db";
 import {
   projectEmailDistributionLists,
   projects,
+  users,
 } from "@shared/schema";
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -52,9 +53,23 @@ router.get(
 
       // Returns both project-scoped lists for this project and any
       // organization-wide (project_id IS NULL) lists in the same org.
-      const lists = await db
-        .select()
+      const rows = await db
+        .select({
+          id: projectEmailDistributionLists.id,
+          organizationId: projectEmailDistributionLists.organizationId,
+          projectId: projectEmailDistributionLists.projectId,
+          name: projectEmailDistributionLists.name,
+          contactEmails: projectEmailDistributionLists.contactEmails,
+          extraEmails: projectEmailDistributionLists.extraEmails,
+          createdById: projectEmailDistributionLists.createdById,
+          createdAt: projectEmailDistributionLists.createdAt,
+          updatedAt: projectEmailDistributionLists.updatedAt,
+          createdByFirstName: users.firstName,
+          createdByLastName: users.lastName,
+          createdByEmail: users.email,
+        })
         .from(projectEmailDistributionLists)
+        .leftJoin(users, eq(users.id, projectEmailDistributionLists.createdById))
         .where(
           and(
             eq(projectEmailDistributionLists.organizationId, organizationId),
@@ -65,6 +80,14 @@ router.get(
           ),
         )
         .orderBy(desc(projectEmailDistributionLists.updatedAt));
+
+      const lists = rows.map(({ createdByFirstName, createdByLastName, createdByEmail, ...rest }) => ({
+        ...rest,
+        createdByName: createdByFirstName || createdByLastName
+          ? `${createdByFirstName ?? ""} ${createdByLastName ?? ""}`.trim()
+          : null,
+        createdByEmail: createdByEmail ?? null,
+      }));
 
       res.json({ lists });
     } catch (error) {

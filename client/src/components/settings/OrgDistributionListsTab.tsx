@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Plus, Pencil, Trash2, Users, Loader2, Mail } from "lucide-react";
+import { formatDistanceToNowStrict } from "date-fns";
 
 interface OrgDistributionList {
   id: string;
@@ -19,6 +20,8 @@ interface OrgDistributionList {
   extraEmails: string[];
   projectId: string | null;
   updatedAt: string;
+  createdByName: string | null;
+  createdByEmail: string | null;
 }
 
 const QUERY_KEY = ["/api/distribution-lists"] as const;
@@ -263,6 +266,15 @@ export function OrgDistributionListsTab() {
                     </div>
                     <div className="text-xs text-muted-foreground truncate mt-1" data-testid={`text-org-list-emails-${list.id}`}>
                       {allEmails.slice(0, 5).join(", ")}{allEmails.length > 5 ? `, +${allEmails.length - 5} more` : ""}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2" data-testid={`text-org-list-meta-${list.id}`}>
+                      <span data-testid={`text-org-list-creator-${list.id}`}>
+                        Created by {list.createdByName || list.createdByEmail || "Unknown"}
+                      </span>
+                      <span aria-hidden>·</span>
+                      <span data-testid={`text-org-list-updated-${list.id}`} title={new Date(list.updatedAt).toLocaleString()}>
+                        Updated {formatDistanceToNowStrict(new Date(list.updatedAt), { addSuffix: true })}
+                      </span>
                     </div>
                   </div>
                   {canManage && (
