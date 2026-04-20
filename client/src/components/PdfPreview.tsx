@@ -25,11 +25,13 @@ interface PdfPreviewProps {
   onPageChange?: (pageNumber: number) => void;
   overlay?: (info: { pageNumber: number; canvasWidth: number; canvasHeight: number }) => React.ReactNode;
   pageBadges?: Record<number, number>;
+  pageBadgesClosed?: Record<number, number>;
+  pageBadgeMode?: "open" | "all";
 }
 
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
-export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay, pageBadges }: PdfPreviewProps) {
+export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay, pageBadges, pageBadgesClosed, pageBadgeMode = "open" }: PdfPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -242,8 +244,15 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
           data-testid="pdf-page-strip"
         >
           {Array.from({ length: numPages }, (_, i) => i + 1).map((pn) => {
-            const count = pageBadges?.[pn] || 0;
+            const openCount = pageBadges?.[pn] || 0;
+            const closedCount = pageBadgesClosed?.[pn] || 0;
+            const displayCount = pageBadgeMode === "all" ? openCount + closedCount : openCount;
             const active = pn === pageNum;
+            const titleParts = [`Page ${pn}`];
+            if (openCount > 0 || closedCount > 0) {
+              titleParts.push(`${openCount} open`);
+              if (closedCount > 0) titleParts.push(`${closedCount} closed`);
+            }
             return (
               <button
                 key={pn}
@@ -254,16 +263,21 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
                     ? "bg-primary text-primary-foreground border-primary"
                     : "bg-card hover:bg-accent border-border text-muted-foreground")
                 }
-                title={count > 0 ? `Page ${pn} • ${count} open pin${count === 1 ? "" : "s"}` : `Page ${pn}`}
+                title={titleParts.join(" • ")}
                 data-testid={`pdf-page-strip-page-${pn}`}
               >
                 {pn}
-                {count > 0 && (
+                {displayCount > 0 && (
                   <span
-                    className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-blue-500 text-white text-[9px] leading-[16px] text-center font-semibold border border-background"
+                    className={
+                      "absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-white text-[9px] leading-[16px] text-center font-semibold border border-background " +
+                      (pageBadgeMode === "all" && openCount === 0
+                        ? "bg-slate-400 dark:bg-slate-500"
+                        : "bg-blue-500")
+                    }
                     data-testid={`pdf-page-strip-badge-${pn}`}
                   >
-                    {count > 99 ? "99+" : count}
+                    {displayCount > 99 ? "99+" : displayCount}
                   </span>
                 )}
               </button>

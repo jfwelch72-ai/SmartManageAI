@@ -62,7 +62,9 @@ router.get(
       const SUBMITTAL_CLOSED = new Set(["APPROVED", "APPROVED_AS_NOTED", "REJECTED"]);
 
       const openRefs = new Set<string>();
+      const closedRefs = new Set<string>();
       const markOpen = (table: string, id: string) => openRefs.add(`${table}:${id}`);
+      const markClosed = (table: string, id: string) => closedRefs.add(`${table}:${id}`);
 
       if (rfiIds.length > 0) {
         const rows = await db
@@ -70,7 +72,8 @@ router.get(
           .from(rfis)
           .where(inArray(rfis.id, rfiIds));
         for (const r of rows) {
-          if (!RFI_CLOSED.has(r.status as string)) markOpen("rfis", r.id);
+          if (RFI_CLOSED.has(r.status as string)) markClosed("rfis", r.id);
+          else markOpen("rfis", r.id);
         }
       }
       if (punchIds.length > 0) {
@@ -79,7 +82,8 @@ router.get(
           .from(punchListItems)
           .where(inArray(punchListItems.id, punchIds));
         for (const r of rows) {
-          if (!PUNCH_CLOSED.has(r.status as string)) markOpen("punch_list_items", r.id);
+          if (PUNCH_CLOSED.has(r.status as string)) markClosed("punch_list_items", r.id);
+          else markOpen("punch_list_items", r.id);
         }
       }
       if (submittalIds.length > 0) {
@@ -88,29 +92,56 @@ router.get(
           .from(submittals)
           .where(inArray(submittals.id, submittalIds));
         for (const r of rows) {
-          if (!SUBMITTAL_CLOSED.has(r.status as string)) markOpen("submittals", r.id);
+          if (SUBMITTAL_CLOSED.has(r.status as string)) markClosed("submittals", r.id);
+          else markOpen("submittals", r.id);
         }
       }
 
-      const summary: Record<
-        string,
-        { total: number; rfi: number; punch: number; submittal: number; pages: Record<number, number> }
-      > = {};
+      type SummaryEntry = {
+        total: number;
+        rfi: number;
+        punch: number;
+        submittal: number;
+        pages: Record<number, number>;
+        closedTotal: number;
+        closedRfi: number;
+        closedPunch: number;
+        closedSubmittal: number;
+        closedPages: Record<number, number>;
+      };
+      const summary: Record<string, SummaryEntry> = {};
+      const makeEntry = (): SummaryEntry => ({
+        total: 0,
+        rfi: 0,
+        punch: 0,
+        submittal: 0,
+        pages: {},
+        closedTotal: 0,
+        closedRfi: 0,
+        closedPunch: 0,
+        closedSubmittal: 0,
+        closedPages: {},
+      });
       for (const p of pins) {
-        if (!openRefs.has(`${p.refTable}:${p.refId}`)) continue;
-        const entry = summary[p.planDocumentId] ||= {
-          total: 0,
-          rfi: 0,
-          punch: 0,
-          submittal: 0,
-          pages: {},
-        };
-        entry.total++;
-        if (p.pinType === "RFI") entry.rfi++;
-        else if (p.pinType === "PUNCH") entry.punch++;
-        else if (p.pinType === "SUBMITTAL") entry.submittal++;
+        const refKey = `${p.refTable}:${p.refId}`;
+        const isOpen = openRefs.has(refKey);
+        const isClosed = closedRefs.has(refKey);
+        if (!isOpen && !isClosed) continue;
+        const entry = (summary[p.planDocumentId] ||= makeEntry());
         const pn = Number(p.pageNumber) || 1;
-        entry.pages[pn] = (entry.pages[pn] || 0) + 1;
+        if (isOpen) {
+          entry.total++;
+          if (p.pinType === "RFI") entry.rfi++;
+          else if (p.pinType === "PUNCH") entry.punch++;
+          else if (p.pinType === "SUBMITTAL") entry.submittal++;
+          entry.pages[pn] = (entry.pages[pn] || 0) + 1;
+        } else {
+          entry.closedTotal++;
+          if (p.pinType === "RFI") entry.closedRfi++;
+          else if (p.pinType === "PUNCH") entry.closedPunch++;
+          else if (p.pinType === "SUBMITTAL") entry.closedSubmittal++;
+          entry.closedPages[pn] = (entry.closedPages[pn] || 0) + 1;
+        }
       }
 
       res.json(summary);

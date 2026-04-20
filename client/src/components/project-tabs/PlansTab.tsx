@@ -101,7 +101,19 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const bimEnabled = isFeatureFlagEnabled("BIM_VIEWER");
 
   const { data: documents = [], isLoading: documentsLoading } = useProjectDocuments(projectCode);
-  const { data: planPinSummary = {} } = useQuery<Record<string, { total: number; rfi: number; punch: number; submittal: number; pages: Record<number, number> }>>({
+  type PinSummaryEntry = {
+    total: number;
+    rfi: number;
+    punch: number;
+    submittal: number;
+    pages: Record<number, number>;
+    closedTotal: number;
+    closedRfi: number;
+    closedPunch: number;
+    closedSubmittal: number;
+    closedPages: Record<number, number>;
+  };
+  const { data: planPinSummary = {} } = useQuery<Record<string, PinSummaryEntry>>({
     queryKey: ["/api/projects", projectCode, "plan-pins", "summary"],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectCode}/plan-pins/summary`, { credentials: "include" });
@@ -110,6 +122,17 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     },
     enabled: !!projectCode,
   });
+  const [pinCountMode, setPinCountMode] = useState<"open" | "all">(() => {
+    if (typeof window === "undefined") return "open";
+    try {
+      return (sessionStorage.getItem("plan-pin-count-mode") as "open" | "all") || "open";
+    } catch {
+      return "open";
+    }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem("plan-pin-count-mode", pinCountMode); } catch {}
+  }, [pinCountMode]);
   const { data: sheets = [] } = useQuery<TakeoffSheet[]>({
     queryKey: ["/api/projects", project?.id, "takeoff", "sheets"],
     enabled: !!project?.id,
@@ -1149,7 +1172,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                     <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                                   )}
                                   <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
-                                  {planPinSummary[doc.id]?.total > 0 && (
+                                  {(() => {
+                                    const counts = planPinSummary[doc.id];
+                                    if (!counts || counts.total + counts.closedTotal === 0) return null;
+                                    const displayCount = pinCountMode === "all" ? counts.total + counts.closedTotal : counts.total;
+                                    const noOpen = counts.total === 0;
+                                    return (
                                     <HoverCard openDelay={150} closeDelay={100}>
                                       <HoverCardTrigger asChild>
                                         <button
@@ -1159,51 +1187,79 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                             setSelectedDocId(doc.id);
                                             setPreviewDocId(doc.id);
                                             setPinModeActive(true);
-                                            setPinFilter({ type: "ALL", openOnly: true });
+                                            setPinFilter({ type: "ALL", openOnly: pinCountMode === "open" });
                                           }}
                                           className="shrink-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                                          title="Open plan with pin layer"
+                                          title={pinCountMode === "all" ? "Open plan with pin layer (showing total)" : "Open plan with pin layer (open pins)"}
                                           data-testid={`badge-plan-pins-${doc.id}`}
                                         >
                                           <Badge
                                             variant="secondary"
-                                            className="text-[10px] h-4 px-1 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60 cursor-pointer"
+                                            className={
+                                              "text-[10px] h-4 px-1 cursor-pointer " +
+                                              (pinCountMode === "all" && noOpen
+                                                ? "bg-slate-200 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700"
+                                                : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60")
+                                            }
                                           >
-                                            {planPinSummary[doc.id].total}
+                                            {displayCount}
                                           </Badge>
                                         </button>
                                       </HoverCardTrigger>
-                                      <HoverCardContent side="left" className="w-44 p-2 text-xs">
-                                        <div className="font-medium mb-1.5">Open pins</div>
-                                        <div className="flex flex-col gap-0.5">
+                                      <HoverCardContent side="left" className="w-56 p-2 text-xs" data-testid={`hovercard-plan-pins-${doc.id}`}>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                          <div className="font-medium">Pin counts</div>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setPinCountMode((m) => (m === "open" ? "all" : "open"));
+                                            }}
+                                            className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-accent"
+                                            data-testid="button-toggle-pin-count-mode"
+                                          >
+                                            {pinCountMode === "open" ? "Show total" : "Open only"}
+                                          </button>
+                                        </div>
+                                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-2 gap-y-0.5 items-center">
+                                          <span className="text-muted-foreground"></span>
+                                          <span className="text-[10px] text-muted-foreground text-right">Open</span>
+                                          <span className="text-[10px] text-muted-foreground text-right">Closed</span>
                                           {(["RFI", "PUNCH", "SUBMITTAL"] as const).map((t) => {
-                                            const counts = planPinSummary[doc.id];
-                                            const count = t === "RFI" ? counts.rfi : t === "PUNCH" ? counts.punch : counts.submittal;
+                                            const open = t === "RFI" ? counts.rfi : t === "PUNCH" ? counts.punch : counts.submittal;
+                                            const closed = t === "RFI" ? counts.closedRfi : t === "PUNCH" ? counts.closedPunch : counts.closedSubmittal;
                                             const label = t === "RFI" ? "RFI" : t === "PUNCH" ? "Punch" : "Submittal";
                                             return (
-                                              <button
-                                                key={t}
-                                                type="button"
-                                                disabled={count === 0}
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setSelectedDocId(doc.id);
-                                                  setPreviewDocId(doc.id);
-                                                  setPinModeActive(true);
-                                                  setPinFilter({ type: t, openOnly: true });
-                                                }}
-                                                className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed text-left"
-                                                data-testid={`button-plan-pins-filter-${t.toLowerCase()}-${doc.id}`}
-                                              >
-                                                <span>{label}</span>
-                                                <span className="font-medium tabular-nums">{count}</span>
-                                              </button>
+                                              <div key={t} className="contents">
+                                                <button
+                                                  type="button"
+                                                  disabled={open + closed === 0}
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedDocId(doc.id);
+                                                    setPreviewDocId(doc.id);
+                                                    setPinModeActive(true);
+                                                    setPinFilter({ type: t, openOnly: pinCountMode === "open" });
+                                                  }}
+                                                  className="text-left px-1 py-0.5 rounded hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                                                  data-testid={`button-plan-pins-filter-${t.toLowerCase()}-${doc.id}`}
+                                                >
+                                                  {label}
+                                                </button>
+                                                <span className="font-medium tabular-nums text-right">{open}</span>
+                                                <span className="tabular-nums text-right text-muted-foreground">{closed}</span>
+                                              </div>
                                             );
                                           })}
+                                          <div className="col-span-3 border-t my-0.5" />
+                                          <span className="font-medium">Total</span>
+                                          <span className="font-medium tabular-nums text-right">{counts.total}</span>
+                                          <span className="tabular-nums text-right text-muted-foreground">{counts.closedTotal}</span>
                                         </div>
                                       </HoverCardContent>
                                     </HoverCard>
-                                  )}
+                                    );
+                                  })()}
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <Button
@@ -1363,25 +1419,37 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                             <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
                                             <File className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
                                             <span className="break-words flex-1 min-w-0 leading-snug">{doc.title || doc.fileName}</span>
-                                            {planPinSummary[doc.id]?.total > 0 && (
+                                            {(() => {
+                                              const counts = planPinSummary[doc.id];
+                                              if (!counts || counts.total + counts.closedTotal === 0) return null;
+                                              const displayCount = pinCountMode === "all" ? counts.total + counts.closedTotal : counts.total;
+                                              const noOpen = counts.total === 0;
+                                              return (
                                               <Tooltip>
                                                 <TooltipTrigger asChild>
                                                   <Badge
                                                     variant="secondary"
-                                                    className="text-[10px] h-4 px-1 shrink-0 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
+                                                    className={
+                                                      "text-[10px] h-4 px-1 shrink-0 " +
+                                                      (pinCountMode === "all" && noOpen
+                                                        ? "bg-slate-200 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200"
+                                                        : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200")
+                                                    }
                                                     data-testid={`badge-plan-pins-${doc.id}`}
                                                   >
-                                                    {planPinSummary[doc.id].total}
+                                                    {displayCount}
                                                   </Badge>
                                                 </TooltipTrigger>
                                                 <TooltipContent side="left" className="text-xs">
-                                                  <div className="font-medium mb-0.5">Open pins</div>
-                                                  <div>RFI: {planPinSummary[doc.id].rfi}</div>
-                                                  <div>Punch: {planPinSummary[doc.id].punch}</div>
-                                                  <div>Submittal: {planPinSummary[doc.id].submittal}</div>
+                                                  <div className="font-medium mb-0.5">Pins (open / closed)</div>
+                                                  <div>RFI: {counts.rfi} / {counts.closedRfi}</div>
+                                                  <div>Punch: {counts.punch} / {counts.closedPunch}</div>
+                                                  <div>Submittal: {counts.submittal} / {counts.closedSubmittal}</div>
+                                                  <div className="mt-0.5 pt-0.5 border-t border-border/50">Total: {counts.total} / {counts.closedTotal}</div>
                                                 </TooltipContent>
                                               </Tooltip>
-                                            )}
+                                              );
+                                            })()}
                                           </div>
                                           );
                                         })
@@ -1897,6 +1965,31 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                           pinModeActive={pinModeActive}
                           onTogglePinMode={() => setPinModeActive((v) => !v)}
                         />
+                        <div className="ml-auto flex items-center gap-1 text-xs">
+                          <span className="text-muted-foreground">Counts:</span>
+                          <button
+                            type="button"
+                            onClick={() => setPinCountMode("open")}
+                            className={
+                              "px-2 py-0.5 rounded border " +
+                              (pinCountMode === "open" ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent border-border")
+                            }
+                            data-testid="button-pin-count-mode-open"
+                          >
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPinCountMode("all")}
+                            className={
+                              "px-2 py-0.5 rounded border " +
+                              (pinCountMode === "all" ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent border-border")
+                            }
+                            data-testid="button-pin-count-mode-all"
+                          >
+                            All
+                          </button>
+                        </div>
                       </div>
                     )}
                     <div className="flex-1 min-h-0 overflow-hidden">
@@ -1909,6 +2002,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                             onPinDrop={handlePinDrop}
                             onPageChange={setPreviewPageNumber}
                             pageBadges={planPinSummary[doc.id]?.pages}
+                            pageBadgesClosed={planPinSummary[doc.id]?.closedPages}
+                            pageBadgeMode={pinCountMode}
                             overlay={({ pageNumber }) => (
                               <>
                                 <PlanPinLayer
