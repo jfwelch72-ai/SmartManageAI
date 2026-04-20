@@ -183,6 +183,7 @@ import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
+import { geocodePendingProjects } from "./utils/geocodingService";
 
 const router = Router();
 
@@ -1487,5 +1488,43 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
   }
 });
 
+
+// Task #581: on-demand trigger for the project geocoder. Scoped to the
+// caller's org for non-SUPER_ADMIN users so admins can backfill their own
+// projects without waiting for the nightly run.
+router.post("/api/projects/geocode-pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER_ADMIN"), async (req: AuthRequest, res, next) => {
+  try {
+    const { shouldFilter, orgId, isSuperAdmin, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const rawLimit = Number(req.body?.limit);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : undefined;
+
+    const targetOrgId = isSuperAdmin
+      ? (typeof req.body?.organizationId === "string" ? req.body.organizationId : undefined)
+      : (shouldFilter && orgId ? orgId : undefined);
+
+    const result = await geocodePendingProjects({
+      organizationId: targetOrgId,
+      limit,
+    });
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "background_job",
+      entityId: "geocode_projects",
+      action: "EXECUTE",
+      newValue: JSON.stringify({ ...result, organizationId: targetOrgId || "all" }),
+    }, req);
+
+    res.json(result);
+  } catch (error) {
+    logError("On-demand project geocoding failed", {}, error instanceof Error ? error : new Error(String(error)));
+    next(error);
+  }
+});
 
 export default router;

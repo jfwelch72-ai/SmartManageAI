@@ -20,6 +20,7 @@ import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProv
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
 import { processDueExecutions } from "../services/sequenceService";
+import { geocodePendingProjects } from "../utils/geocodingService";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -41,6 +42,7 @@ let dbHealthCheckTask: ReturnType<typeof cron.schedule> | null = null;
 let socialEngagementTask: ReturnType<typeof cron.schedule> | null = null;
 let scheduledCampaignTask: ReturnType<typeof cron.schedule> | null = null;
 let sequenceCadenceTask: ReturnType<typeof cron.schedule> | null = null;
+let projectGeocodeTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -227,7 +229,17 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, and scheduled campaign schedulers)");
+  // Task #581: nightly geocode projects with addresses but no coordinates
+  // so they appear on the Projects map view automatically.
+  projectGeocodeTask = cron.schedule("30 4 * * *", async () => {
+    try {
+      await geocodePendingProjects();
+    } catch (err) {
+      logError("Project geocoding job failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, and project geocoding schedulers)");
 }
 
 export function stopJobRunner() {
@@ -311,6 +323,10 @@ export function stopJobRunner() {
     sequenceCadenceTask.stop();
     sequenceCadenceTask = null;
   }
+  if (projectGeocodeTask) {
+    projectGeocodeTask.stop();
+    projectGeocodeTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -335,6 +351,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   social_engagement:   { fn: () => processSocialEngagement(),          description: "Sync social media engagement metrics",    schedule: "0 */4 * * *" },
   scheduled_campaigns: { fn: () => processScheduledCampaigns(),        description: "Send scheduled email campaigns",          schedule: "*/2 * * * *" },
   sequence_cadences:   { fn: async () => { await processDueExecutions(); }, description: "Run CRM sequence cadence executions",   schedule: "*/2 * * * *" },
+  geocode_projects:    { fn: async () => { await geocodePendingProjects(); }, description: "Geocode projects with addresses but no coordinates",   schedule: "30 4 * * *" },
 };
 
 async function processOutbox() {

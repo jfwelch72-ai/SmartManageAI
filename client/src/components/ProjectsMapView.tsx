@@ -1,11 +1,14 @@
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import type { ProjectWithNames } from "@/hooks/use-data";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { EmptyState } from "./EmptyState";
-import { MapPin } from "lucide-react";
+import { MapPin, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const defaultIcon = new L.Icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -23,6 +26,10 @@ interface Props {
 }
 
 export default function ProjectsMapView({ projects, onProjectClick }: Props) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [isGeocoding, setIsGeocoding] = useState(false);
+
   useEffect(() => {
     L.Marker.prototype.options.icon = defaultIcon;
   }, []);
@@ -38,6 +45,39 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
     });
   }, [projects]);
 
+  const canGeocode = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN";
+  const missingCount = projects.length - located.length;
+
+  const hasGeocodableAddress = (p: ProjectWithNames) =>
+    Boolean((p.locationAddress && p.locationAddress.trim()) || (p.city && p.city.trim()));
+
+  const pendingGeocodeCount = useMemo(
+    () => projects.filter(p => (p.siteLatitude == null || p.siteLongitude == null) && hasGeocodableAddress(p)).length,
+    [projects],
+  );
+
+  const handleGeocode = async () => {
+    if (isGeocoding) return;
+    setIsGeocoding(true);
+    try {
+      const res = await apiRequest("POST", "/api/projects/geocode-pending", {});
+      const data = await res.json() as { scanned: number; geocoded: number; failed: number; notFound: number };
+      toast({
+        title: "Geocoding complete",
+        description: `Scanned ${data.scanned}, located ${data.geocoded}, not found ${data.notFound}, failed ${data.failed}.`,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    } catch (err) {
+      toast({
+        title: "Geocoding failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
   const center: [number, number] = located.length
     ? [
         located.reduce((s, p) => s + p.siteLatitude, 0) / located.length,
@@ -47,12 +87,37 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
 
   if (located.length === 0) {
     return (
-      <div data-testid="view-map">
+      <div className="space-y-3" data-testid="view-map">
         <EmptyState
           icon={MapPin}
           title="No projects on the map yet"
-          description="Add a site latitude and longitude to a project (Project → Settings → Location) and it will show up here as a pin."
+          description={
+            pendingGeocodeCount > 0
+              ? `${pendingGeocodeCount} project(s) have an address but no coordinates. Click below to look them up automatically.`
+              : "Add a site latitude and longitude to a project (Project → Settings → Location) and it will show up here as a pin."
+          }
         />
+        {canGeocode && pendingGeocodeCount > 0 && (
+          <div className="flex justify-center">
+            <Button
+              onClick={handleGeocode}
+              disabled={isGeocoding}
+              data-testid="button-geocode-projects"
+            >
+              {isGeocoding ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Locating addresses…
+                </>
+              ) : (
+                <>
+                  <MapPin className="mr-2 h-4 w-4" />
+                  Locate {pendingGeocodeCount} project address{pendingGeocodeCount === 1 ? "" : "es"}
+                </>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -88,9 +153,32 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
           })}
         </MapContainer>
       </div>
-      {located.length < projects.length && (
-        <div className="px-3 py-2 text-xs text-muted-foreground border-t bg-muted/30">
-          Showing {located.length} of {projects.length} projects. {projects.length - located.length} project(s) are missing site coordinates.
+      {missingCount > 0 && (
+        <div className="px-3 py-2 text-xs border-t bg-muted/30 flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-muted-foreground">
+            Showing {located.length} of {projects.length} projects. {missingCount} project(s) are missing site coordinates.
+          </span>
+          {canGeocode && pendingGeocodeCount > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleGeocode}
+              disabled={isGeocoding}
+              data-testid="button-geocode-projects"
+            >
+              {isGeocoding ? (
+                <>
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  Locating…
+                </>
+              ) : (
+                <>
+                  <MapPin className="mr-2 h-3 w-3" />
+                  Locate {pendingGeocodeCount} address{pendingGeocodeCount === 1 ? "" : "es"}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       )}
     </div>
