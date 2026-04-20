@@ -221,6 +221,44 @@ describe("gantt-pdf-service browser pooling and queueing", () => {
     await Promise.all(blockers);
   });
 
+  it("records render history with successes and failures and prunes old samples", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const mod = await freshImport();
+    const { renderGanttPdf, getGanttPdfHistory, __resetGanttPdfHistoryForTests } = mod;
+    __resetGanttPdfHistoryForTests();
+
+    await renderGanttPdf(RENDER_OPTS);
+    await renderGanttPdf(RENDER_OPTS);
+
+    let history = getGanttPdfHistory();
+    expect(history.retainedSamples).toBe(2);
+    expect(history.lastHour.total).toBe(2);
+    expect(history.lastHour.failures).toBe(0);
+    expect(history.lastDay.total).toBe(2);
+    expect(history.lastHour.avgDurationMs).not.toBeNull();
+    expect(history.lastHour.buckets.length).toBeGreaterThan(0);
+    const lastHourBucketsWithData = history.lastHour.buckets.filter((b) => b.total > 0);
+    expect(lastHourBucketsWithData.length).toBeGreaterThan(0);
+
+    // Force a failure by making newContext throw.
+    const failingBrowser = launchedBrowsers[launchedBrowsers.length - 1];
+    failingBrowser.newContext = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    await expect(renderGanttPdf(RENDER_OPTS)).rejects.toThrow("boom");
+
+    history = getGanttPdfHistory();
+    expect(history.retainedSamples).toBe(3);
+    expect(history.lastHour.failures).toBe(1);
+
+    // Advance well beyond the 24h retention window; old samples must drop.
+    vi.setSystemTime(Date.now() + 25 * 60 * 60 * 1000);
+    history = getGanttPdfHistory();
+    expect(history.retainedSamples).toBe(0);
+    expect(history.lastHour.total).toBe(0);
+    expect(history.lastDay.total).toBe(0);
+  });
+
   it("queues bursts of concurrent exports and completes them all", async () => {
     const { renderGanttPdf } = await freshImport();
 

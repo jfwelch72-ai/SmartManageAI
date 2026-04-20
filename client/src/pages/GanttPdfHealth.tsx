@@ -5,9 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, RotateCcw, Activity, Clock, FileText, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { ArrowLeft, RefreshCw, RotateCcw, Activity, Clock, FileText, CheckCircle2, XCircle, AlertTriangle, TrendingUp } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 interface GanttPdfStats {
   cachedBrowser: {
@@ -43,12 +56,56 @@ function formatDuration(ms: number | null): string {
 }
 
 const HEALTH_KEY = ["/api/admin/gantt-pdf/health"] as const;
+const HISTORY_KEY = ["/api/admin/gantt-pdf/history"] as const;
+
+interface GanttPdfHistoryBucket {
+  bucketStart: number;
+  bucketEnd: number;
+  total: number;
+  failures: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
+}
+
+interface GanttPdfHistoryWindow {
+  rangeMs: number;
+  bucketMs: number;
+  buckets: GanttPdfHistoryBucket[];
+  total: number;
+  failures: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
+}
+
+interface GanttPdfHistory {
+  generatedAt: number;
+  retentionMs: number;
+  retainedSamples: number;
+  lastHour: GanttPdfHistoryWindow;
+  lastDay: GanttPdfHistoryWindow;
+}
+
+function formatBucketLabel(ts: number, bucketMs: number): string {
+  const d = new Date(ts);
+  if (bucketMs >= 60 * 60 * 1000) {
+    const h = d.getHours().toString().padStart(2, "0");
+    return `${h}:00`;
+  }
+  const h = d.getHours().toString().padStart(2, "0");
+  const m = d.getMinutes().toString().padStart(2, "0");
+  return `${h}:${m}`;
+}
 
 export default function GanttPdfHealth() {
   const { toast } = useToast();
+  const [historyRange, setHistoryRange] = useState<"hour" | "day">("hour");
   const { data, isLoading, isError, refetch, isFetching } = useQuery<GanttPdfStats>({
     queryKey: HEALTH_KEY,
     refetchInterval: 5000,
+  });
+  const { data: history, isLoading: historyLoading } = useQuery<GanttPdfHistory>({
+    queryKey: HISTORY_KEY,
+    refetchInterval: 15000,
   });
 
   const recycleMutation = useMutation({
@@ -64,6 +121,7 @@ export default function GanttPdfHealth() {
           : "There is no cached browser to recycle right now.",
       });
       queryClient.invalidateQueries({ queryKey: HEALTH_KEY });
+      queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
     },
     onError: (err: Error) => {
       toast({
@@ -218,6 +276,97 @@ export default function GanttPdfHealth() {
           </CardContent>
         </Card>
       </div>
+
+      <Card data-testid="card-history">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" /> Render history
+              </CardTitle>
+              <CardDescription>
+                Rolling render counts, durations, and failures. Samples older than{" "}
+                {history ? formatDuration(history.retentionMs) : "24h"} are pruned automatically.
+              </CardDescription>
+            </div>
+            <Tabs value={historyRange} onValueChange={(v) => setHistoryRange(v as "hour" | "day")}>
+              <TabsList>
+                <TabsTrigger value="hour" data-testid="tab-history-hour">Last hour</TabsTrigger>
+                <TabsTrigger value="day" data-testid="tab-history-day">Last 24h</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {historyLoading || !history ? (
+            <Skeleton className="h-64 w-full" />
+          ) : (() => {
+            const win = historyRange === "hour" ? history.lastHour : history.lastDay;
+            const chartData = win.buckets.map((b) => ({
+              label: formatBucketLabel(b.bucketStart, win.bucketMs),
+              ts: b.bucketStart,
+              total: b.total,
+              failures: b.failures,
+              avgSec: b.avgDurationMs != null ? Math.round(b.avgDurationMs / 100) / 10 : 0,
+              maxSec: b.maxDurationMs != null ? Math.round(b.maxDurationMs / 100) / 10 : 0,
+            }));
+            const failureRate = win.total > 0 ? Math.round((win.failures / win.total) * 1000) / 10 : 0;
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">Renders</div>
+                    <div className="font-medium" data-testid="text-history-total">{win.total}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Failures</div>
+                    <div className="font-medium" data-testid="text-history-failures">
+                      {win.failures} ({failureRate}%)
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Avg duration</div>
+                    <div className="font-medium" data-testid="text-history-avg">
+                      {win.avgDurationMs != null ? formatDuration(win.avgDurationMs) : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Max duration</div>
+                    <div className="font-medium" data-testid="text-history-max">
+                      {win.maxDurationMs != null ? formatDuration(win.maxDurationMs) : "—"}
+                    </div>
+                  </div>
+                </div>
+                {win.total === 0 ? (
+                  <div className="h-64 flex items-center justify-center text-sm text-muted-foreground" data-testid="text-history-empty">
+                    No renders recorded in this window yet.
+                  </div>
+                ) : (
+                  <div className="h-64 w-full" data-testid="chart-history">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis yAxisId="count" tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <YAxis yAxisId="dur" orientation="right" tick={{ fontSize: 11 }} unit="s" />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Bar yAxisId="count" dataKey="total" name="Renders" fill="hsl(var(--primary))" />
+                        <Bar yAxisId="count" dataKey="failures" name="Failures" fill="hsl(var(--destructive))" />
+                        <Line yAxisId="dur" type="monotone" dataKey="avgSec" name="Avg (s)" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={false} />
+                        <Line yAxisId="dur" type="monotone" dataKey="maxSec" name="Max (s)" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <div className="text-xs text-muted-foreground" data-testid="text-history-retained">
+                  {history.retainedSamples} sample{history.retainedSamples === 1 ? "" : "s"} retained.
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

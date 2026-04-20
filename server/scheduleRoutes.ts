@@ -209,7 +209,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { recalculateSchedule, computeScheduleImpact, detectCycle } from "./cpmEngine";
-import { renderGanttPdf, GanttPdfQueueFullError, getGanttPdfStats, recycleGanttBrowser } from "./gantt-pdf-service";
+import { renderGanttPdf, GanttPdfQueueFullError, getGanttPdfStats, recycleGanttBrowser, getGanttPdfHistory } from "./gantt-pdf-service";
 
 const router = Router();
 
@@ -1200,6 +1200,24 @@ router.post("/admin/gantt-pdf/recycle", requireAuth, requireRole("SUPER_ADMIN"),
   try {
     const result = await recycleGanttBrowser();
     res.json({ ...result, stats: getGanttPdfStats() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /api/admin/gantt-pdf/history:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get rolling Gantt PDF render history (last hour and last day buckets)
+ *     description: Returns aggregated render counts, failures, and durations bucketed for charting. Requires SUPER_ADMIN.
+ *     responses:
+ *       200: { description: Render history snapshot }
+ */
+router.get("/admin/gantt-pdf/history", requireAuth, requireRole("SUPER_ADMIN"), (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json(getGanttPdfHistory());
   } catch (error) {
     next(error);
   }

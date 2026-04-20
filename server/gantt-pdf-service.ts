@@ -218,11 +218,148 @@ function releaseSlot(): void {
   if (next) next();
 }
 
+interface RenderSample {
+  startedAt: number;
+  durationMs: number;
+  success: boolean;
+}
+
+const HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
+const MAX_HISTORY_SAMPLES = 2000;
+const renderHistory: RenderSample[] = [];
+
+function pruneHistory(now: number): void {
+  const cutoff = now - HISTORY_RETENTION_MS;
+  // Filter by timestamp — concurrent renders can insert out-of-order
+  // startedAt values (samples are appended on completion, not start),
+  // so a simple front-trim isn't sufficient.
+  for (let i = renderHistory.length - 1; i >= 0; i--) {
+    if (renderHistory[i].startedAt < cutoff) {
+      renderHistory.splice(i, 1);
+    }
+  }
+  if (renderHistory.length > MAX_HISTORY_SAMPLES) {
+    renderHistory.splice(0, renderHistory.length - MAX_HISTORY_SAMPLES);
+  }
+}
+
+function recordRenderSample(sample: RenderSample): void {
+  renderHistory.push(sample);
+  pruneHistory(Date.now());
+}
+
+export interface GanttPdfHistoryBucket {
+  bucketStart: number;
+  bucketEnd: number;
+  total: number;
+  failures: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
+}
+
+export interface GanttPdfHistoryWindow {
+  rangeMs: number;
+  bucketMs: number;
+  buckets: GanttPdfHistoryBucket[];
+  total: number;
+  failures: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
+}
+
+export interface GanttPdfHistory {
+  generatedAt: number;
+  retentionMs: number;
+  retainedSamples: number;
+  lastHour: GanttPdfHistoryWindow;
+  lastDay: GanttPdfHistoryWindow;
+}
+
+function summarize(samples: RenderSample[]): { total: number; failures: number; avg: number | null; max: number | null } {
+  if (samples.length === 0) return { total: 0, failures: 0, avg: null, max: null };
+  let sum = 0;
+  let max = 0;
+  let failures = 0;
+  for (const s of samples) {
+    sum += s.durationMs;
+    if (s.durationMs > max) max = s.durationMs;
+    if (!s.success) failures++;
+  }
+  return { total: samples.length, failures, avg: Math.round(sum / samples.length), max };
+}
+
+function buildWindow(now: number, rangeMs: number, bucketMs: number): GanttPdfHistoryWindow {
+  const start = now - rangeMs;
+  const firstBucketStart = Math.floor(start / bucketMs) * bucketMs;
+  // +1 ensures a bucket exists for samples timestamped at or after `now`
+  // when `start` does not align to `bucketMs`.
+  const bucketCount = Math.ceil(rangeMs / bucketMs) + 1;
+  const buckets: GanttPdfHistoryBucket[] = [];
+  for (let i = 0; i < bucketCount; i++) {
+    const bs = firstBucketStart + i * bucketMs;
+    buckets.push({
+      bucketStart: bs,
+      bucketEnd: bs + bucketMs,
+      total: 0,
+      failures: 0,
+      avgDurationMs: null,
+      maxDurationMs: null,
+    });
+  }
+  const accum = buckets.map(() => ({ sum: 0, max: 0 }));
+  const inWindow: RenderSample[] = [];
+  for (const s of renderHistory) {
+    if (s.startedAt < start) continue;
+    inWindow.push(s);
+    const idx = Math.floor((s.startedAt - firstBucketStart) / bucketMs);
+    if (idx < 0 || idx >= buckets.length) continue;
+    const b = buckets[idx];
+    b.total++;
+    if (!s.success) b.failures++;
+    accum[idx].sum += s.durationMs;
+    if (s.durationMs > accum[idx].max) accum[idx].max = s.durationMs;
+  }
+  for (let i = 0; i < buckets.length; i++) {
+    if (buckets[i].total > 0) {
+      buckets[i].avgDurationMs = Math.round(accum[i].sum / buckets[i].total);
+      buckets[i].maxDurationMs = accum[i].max;
+    }
+  }
+  const summary = summarize(inWindow);
+  return {
+    rangeMs,
+    bucketMs,
+    buckets,
+    total: summary.total,
+    failures: summary.failures,
+    avgDurationMs: summary.avg,
+    maxDurationMs: summary.max,
+  };
+}
+
+export function getGanttPdfHistory(): GanttPdfHistory {
+  const now = Date.now();
+  pruneHistory(now);
+  return {
+    generatedAt: now,
+    retentionMs: HISTORY_RETENTION_MS,
+    retainedSamples: renderHistory.length,
+    lastHour: buildWindow(now, 60 * 60 * 1000, 5 * 60 * 1000),
+    lastDay: buildWindow(now, 24 * 60 * 60 * 1000, 60 * 60 * 1000),
+  };
+}
+
+export function __resetGanttPdfHistoryForTests(): void {
+  renderHistory.length = 0;
+}
+
 export async function renderGanttPdf(opts: GanttPdfOptions): Promise<Buffer> {
   const { projectCode, theme = "light", showBaseline = true, authCookie, origin } = opts;
 
+  const startedAt = Date.now();
   await acquireSlot();
   let cached: CachedBrowser | null = null;
+  let success = false;
   try {
     cached = await leaseBrowser();
     const context = await cached.browser.newContext({
@@ -274,6 +411,7 @@ export async function renderGanttPdf(opts: GanttPdfOptions): Promise<Buffer> {
         margin: { top: "12mm", bottom: "12mm", left: "12mm", right: "12mm" },
       });
 
+      success = true;
       return pdfBuffer;
     } finally {
       await context.close().catch(() => undefined);
@@ -281,6 +419,11 @@ export async function renderGanttPdf(opts: GanttPdfOptions): Promise<Buffer> {
   } finally {
     if (cached) releaseBrowser(cached);
     releaseSlot();
+    recordRenderSample({
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      success,
+    });
   }
 }
 
