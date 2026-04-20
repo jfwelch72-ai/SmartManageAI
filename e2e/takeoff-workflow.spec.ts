@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { installCsrf } from "./helpers/csrf";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -74,6 +75,10 @@ interface ComparisonResponse {
 }
 
 test.describe("Takeoff Workflow - Playwright E2E", () => {
+  test.beforeEach(async ({ page }) => {
+    await installCsrf(page);
+  });
+
   test("full takeoff lifecycle: plan upload through versioning and sheet operations", async ({
     page,
   }) => {

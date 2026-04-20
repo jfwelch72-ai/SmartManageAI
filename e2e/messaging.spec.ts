@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { installCsrf } from "./helpers/csrf";
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
@@ -38,6 +39,10 @@ async function devLogin(page: Page, role: string): Promise<DevLoginResponse> {
 }
 
 test.describe("Messaging E2E", () => {
+  test.beforeEach(async ({ page }) => {
+    await installCsrf(page);
+  });
+
   test("create conversation, send message, and verify it appears", async ({ page }) => {
     const adminLogin = await devLogin(page, "ADMIN");
     const adminId = adminLogin.user.id;

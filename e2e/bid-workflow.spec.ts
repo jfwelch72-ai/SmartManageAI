@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { installCsrf } from "./helpers/csrf";
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
@@ -11,6 +12,7 @@ async function devLogin(page: Page, role: string) {
 
 test.describe("Bid Workflow - Playwright E2E", () => {
   test.beforeEach(async ({ page }) => {
+    await installCsrf(page);
     await devLogin(page, "ADMIN");
   });
 

@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Browser, type Page } from "@playwright/test";
+import { installCsrf, installCsrfOnRequest } from "./helpers/csrf";
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
@@ -207,6 +208,7 @@ async function setFlagAsSuperAdmin(
 ) {
   const ctx = await browser.newContext();
   try {
+    await installCsrfOnRequest(ctx.request, ctx);
     await devLogin(ctx.request, "SUPER_ADMIN");
     const res = await ctx.request.patch(`${BASE_URL}/api/feature-flags/${orgId}`, {
       data: { flag, enabled },
@@ -226,6 +228,7 @@ test.describe("Heavy-Civil Dashboard E2E", () => {
     const ctx = await browser.newContext();
     primaryPage = await ctx.newPage();
 
+    await installCsrf(primaryPage);
     await devLogin(primaryPage.request, "ADMIN");
     const me = await getMe(primaryPage.request);
     expect(me.user.organizationId).toBeTruthy();
@@ -342,6 +345,7 @@ test.describe("Heavy-Civil Dashboard E2E", () => {
     // FIELD_WORKER lacks canViewHaulTickets/canManageHaulTickets and other heavy-civil perms.
     const ctx = await browser.newContext();
     try {
+      await installCsrfOnRequest(ctx.request, ctx);
       await devLogin(ctx.request, "FIELD_WORKER");
       const endpoints = [
         "/api/dashboard/heavy-civil/dbe-progress",

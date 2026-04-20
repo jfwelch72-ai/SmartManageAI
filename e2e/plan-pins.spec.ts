@@ -1,39 +1,8 @@
-import { test, expect, type APIRequestContext, type Page, type Route } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
+import { authedRequest, getCsrfHeader } from "./helpers/csrf";
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
-
-// ─── Auth + CSRF helpers ────────────────────────────────────────────────────
-async function getCsrfHeader(page: Page): Promise<Record<string, string>> {
-  const cookies = await page.context().cookies();
-  const csrf = cookies.find((c) => c.name === "csrf_token");
-  return csrf ? { "x-csrf-token": csrf.value } : {};
-}
-
-async function getCsrfToken(page: Page): Promise<string> {
-  // GET request seeds the csrf_token cookie via setCsrfToken middleware
-  await page.request.get(`${BASE_URL}/api/auth/me`).catch(() => undefined);
-  const cookies = await page.context().cookies();
-  const csrf = cookies.find((c) => c.name === "csrf_token");
-  return csrf?.value ?? "";
-}
-
-async function authedRequest(
-  page: Page,
-  method: "POST" | "PATCH" | "PUT" | "DELETE",
-  url: string,
-  options: Parameters<APIRequestContext["post"]>[1] = {},
-) {
-  const token = await getCsrfToken(page);
-  const opts = {
-    ...options,
-    headers: { ...(options?.headers ?? {}), "x-csrf-token": token },
-  };
-  if (method === "POST") return page.request.post(url, opts);
-  if (method === "PATCH") return page.request.patch(url, opts);
-  if (method === "PUT") return page.request.put(url, opts);
-  return page.request.delete(url, opts);
-}
 
 async function devLogin(page: Page, role: string, endpoint = "/api/dev/test-login") {
   const response = await page.request.post(`${BASE_URL}${endpoint}`, {

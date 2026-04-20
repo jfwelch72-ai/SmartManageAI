@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { installCsrf } from "./helpers/csrf";
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
@@ -33,6 +34,10 @@ async function devLogin(page: Page, role: string): Promise<DevLoginResponse> {
 
 test.describe("Auth Flow E2E", () => {
   const suffix = Date.now();
+
+  test.beforeEach(async ({ page }) => {
+    await installCsrf(page);
+  });
 
   test("register with valid credentials creates user and sets cookie", async ({ page }) => {
     const email = `pw-register-${suffix}@e2e.test`;
