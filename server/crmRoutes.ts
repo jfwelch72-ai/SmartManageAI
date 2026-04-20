@@ -207,6 +207,7 @@ import { insertNotification } from "./services/notificationService";
 import { eventBus } from "./events";
 import { scoreWinProbability } from "./ai/winProbabilityService";
 import { evaluateAssignment } from "./utils/crmAssignmentEngine";
+import { scoreOpportunity } from "./utils/crmLeadScorer";
 
 const router = Router();
 
@@ -1679,6 +1680,12 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
       if (autoAssignedTo) toInsert = { ...toInsert, assignedToId: autoAssignedTo };
     }
 
+    // Auto lead-scoring
+    try {
+      const score = await scoreOpportunity(orgId, toInsert);
+      toInsert = { ...toInsert, leadScore: score };
+    } catch { /* non-fatal */ }
+
     const [created] = await db.insert(crmOpportunities).values(toInsert).returning();
 
     await db.insert(crmOpportunityActivities).values({
@@ -1727,9 +1734,23 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
 
     const { organizationId: _orgId, ...safeData } = parsed.data;
 
+    // Win/loss timestamps + leadScore recalc on stage change
+    const stageChange = safeData.stage && safeData.stage !== existing.stage;
+    const patchExtras: Record<string, unknown> = {};
+    if (stageChange) {
+      if (safeData.stage === "WON" && !existing.wonAt) patchExtras.wonAt = new Date();
+      if (safeData.stage === "LOST" && !existing.lostAt) patchExtras.lostAt = new Date();
+    }
+    // Recalc leadScore if any scorable field changed
+    try {
+      const merged = { ...existing, ...safeData };
+      const score = await scoreOpportunity(existing.organizationId, merged as any);
+      patchExtras.leadScore = score;
+    } catch { /* non-fatal */ }
+
     const [updated] = await db
       .update(crmOpportunities)
-      .set({ ...safeData, updatedAt: new Date() })
+      .set({ ...safeData, ...patchExtras, updatedAt: new Date() })
       .where(eq(crmOpportunities.id, req.params.id))
       .returning();
 

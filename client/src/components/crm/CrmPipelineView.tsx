@@ -58,6 +58,7 @@ import {
   Brain,
   RefreshCw,
 } from "lucide-react";
+import { CrmActivityTimeline } from "./CrmActivityTimeline";
 import {
   Tooltip,
   TooltipContent,
@@ -86,6 +87,10 @@ interface Opportunity {
   source: string | null;
   notes: string | null;
   lostReason: string | null;
+  lostCategory: string | null;
+  leadScore: number | null;
+  wonAt: string | null;
+  lostAt: string | null;
   createdAt: string;
   updatedAt: string;
   crmOrgName: string | null;
@@ -244,6 +249,8 @@ export default function CrmPipelineView() {
   const [convertForm, setConvertForm] = useState({ ...DEFAULT_CONVERT_FORM });
   const [createBidOpen, setCreateBidOpen] = useState(false);
   const [createBidForm, setCreateBidForm] = useState({ name: "", description: "" });
+  const [lostDialogOpen, setLostDialogOpen] = useState(false);
+  const [lostForm, setLostForm] = useState({ lostCategory: "PRICE", lostReason: "" });
   const [sortField, setSortField] = useState<SortField>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -1159,6 +1166,22 @@ export default function CrmPipelineView() {
                     const si = getStageInfo(selectedOpp.stage);
                     return <Badge className={`${si.bgColor} ${si.color} border-0`}>{si.label}</Badge>;
                   })()}
+                  {selectedOpp.leadScore != null && (
+                    <Badge
+                      variant="outline"
+                      className={
+                        selectedOpp.leadScore >= 70 ? "border-green-500 text-green-700 dark:text-green-400" :
+                        selectedOpp.leadScore >= 40 ? "border-yellow-500 text-yellow-700 dark:text-yellow-400" :
+                        "border-slate-400 text-slate-600 dark:text-slate-400"
+                      }
+                      data-testid="badge-lead-score"
+                    >
+                      <Target className="w-3 h-3 mr-1" /> Score {selectedOpp.leadScore}
+                    </Badge>
+                  )}
+                  {selectedOpp.lostCategory && (
+                    <Badge variant="destructive" className="text-xs" data-testid="badge-lost-category">{selectedOpp.lostCategory}</Badge>
+                  )}
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-1 flex-wrap">
@@ -1167,7 +1190,10 @@ export default function CrmPipelineView() {
                       <button
                         key={s.key}
                         className="text-xs text-muted-foreground hover:text-primary flex items-center gap-0.5 border rounded px-1.5 py-0.5 hover:border-primary transition-colors"
-                        onClick={() => stageMutation.mutate({ id: selectedOpp.id, stage: s.key })}
+                        onClick={() => {
+                          if (s.key === "LOST") { setLostDialogOpen(true); return; }
+                          stageMutation.mutate({ id: selectedOpp.id, stage: s.key });
+                        }}
                         disabled={stageMutation.isPending}
                         data-testid={`button-detail-move-${s.key}`}
                       >
@@ -1327,6 +1353,12 @@ export default function CrmPipelineView() {
                 )}
               </div>
 
+              {/* Unified Timeline (activities + tasks + quotes) */}
+              <div>
+                <p className="font-semibold text-sm mb-3">Timeline</p>
+                <CrmActivityTimeline opportunityId={selectedOpp.id} />
+              </div>
+
               {/* Activity Log */}
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -1396,6 +1428,65 @@ export default function CrmPipelineView() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Lost Capture Dialog */}
+      <Dialog open={lostDialogOpen} onOpenChange={setLostDialogOpen}>
+        <DialogContent data-testid="dialog-mark-lost">
+          <DialogHeader>
+            <DialogTitle>Mark as Lost</DialogTitle>
+            <DialogDescription>Capture why this deal was lost so you can analyze trends.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div>
+              <Label>Lost Category *</Label>
+              <Select value={lostForm.lostCategory} onValueChange={v => setLostForm(f => ({ ...f, lostCategory: v }))}>
+                <SelectTrigger data-testid="select-lost-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["PRICE","TIMING","COMPETITOR","SCOPE","RELATIONSHIP","NO_DECISION","OTHER"].map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Reason / Notes</Label>
+              <Textarea
+                value={lostForm.lostReason}
+                onChange={e => setLostForm(f => ({ ...f, lostReason: e.target.value }))}
+                rows={3}
+                placeholder="What happened? (competitor name, price gap, etc.)"
+                data-testid="textarea-lost-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLostDialogOpen(false)} data-testid="button-lost-cancel">Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!selectedOpp || stageMutation.isPending}
+              onClick={async () => {
+                if (!selectedOpp) return;
+                try {
+                  await apiRequest("PATCH", `/api/crm/opportunities/${selectedOpp.id}`, {
+                    stage: "LOST",
+                    lostCategory: lostForm.lostCategory,
+                    lostReason: lostForm.lostReason || null,
+                  });
+                  invalidateAll();
+                  queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", selectedOpp.id, "activities"] });
+                  setSelectedOpp(prev => prev ? { ...prev, stage: "LOST" as PipelineStage, lostCategory: lostForm.lostCategory, lostReason: lostForm.lostReason } : null);
+                  setLostDialogOpen(false);
+                  setLostForm({ lostCategory: "PRICE", lostReason: "" });
+                  toast({ title: "Marked as Lost" });
+                } catch (e: any) {
+                  toast({ title: "Failed to update", description: e?.message, variant: "destructive" });
+                }
+              }}
+              data-testid="button-lost-confirm"
+            >Mark as Lost</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Activity Dialog */}
       <Dialog open={addActivityOpen} onOpenChange={setAddActivityOpen}>

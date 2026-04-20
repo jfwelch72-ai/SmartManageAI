@@ -57,6 +57,7 @@ import { Link } from "wouter";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import { CrmTasksView } from "@/components/crm/CrmTasksView";
 import { CrmQuotesView } from "@/components/crm/CrmQuotesView";
+import { CrmAnalyticsView } from "@/components/crm/CrmAnalyticsView";
 import type {
   CrmOrganisation as CrmOrganization,
   CrmContact,
@@ -577,7 +578,7 @@ export default function CRMPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports">("orgs");
+  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports" | "analytics">("orgs");
   const [contactSearch, setContactSearch] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -962,6 +963,11 @@ export default function CRMPage() {
               <span className="whitespace-nowrap">Quotes</span>
             </button>
             <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "analytics" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("analytics")}
+              data-testid="tab-crm-analytics"
+            >Analytics</button>
+            <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "reports" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
               onClick={() => setCrmTab("reports")}
               data-testid="tab-pipeline-reports"
@@ -977,6 +983,7 @@ export default function CRMPage() {
 
           {crmTab === "quotes" && <CrmQuotesView />}
 
+          {crmTab === "analytics" && <CrmAnalyticsView />}
           {crmTab === "reports" && <CrmPipelineReports />}
 
           {crmTab === "contacts" && (

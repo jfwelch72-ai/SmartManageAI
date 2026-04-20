@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
-import { FileText, Plus, Download, Trash2 } from "lucide-react";
+import { FileText, Plus, Download, Trash2, FileSignature, Save, FolderOpen, Package, Copy } from "lucide-react";
 import { format } from "date-fns";
 
 interface OpportunityLite { id: string; name: string }
@@ -260,6 +260,26 @@ function QuoteDialog({ open, onOpenChange, quote, opportunities }: {
             </div>
           </div>
         </div>
+        <QuoteTemplateAndCatalogActions
+          quote={quote}
+          title={title}
+          taxRate={taxRate}
+          discountAmount={discountAmount}
+          notes={notes}
+          terms={terms}
+          items={items}
+          onApplyTemplate={(t) => {
+            setTitle(t.title || title);
+            setTaxRate(String(t.taxRate ?? taxRate));
+            setDiscountAmount(String(t.discountAmount ?? discountAmount));
+            setNotes(t.notes ?? notes);
+            setTerms(t.terms ?? terms);
+            if (Array.isArray(t.lineItems) && t.lineItems.length > 0) {
+              setItems(t.lineItems.map((li: any) => ({ description: li.description, quantity: Number(li.quantity ?? 1), unitPrice: Number(li.unitPrice ?? 0) })));
+            }
+          }}
+          onAddCatalogItem={(c) => setItems(arr => [...arr.filter(i => i.description.trim()), { description: c.name, quantity: 1, unitPrice: Number(c.unitPrice ?? 0) }])}
+        />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-quote-cancel">Cancel</Button>
           <Button onClick={() => saveMutation.mutate()} disabled={!title || saveMutation.isPending} data-testid="button-quote-save">
@@ -268,5 +288,134 @@ function QuoteDialog({ open, onOpenChange, quote, opportunities }: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface CatalogItem { id: string; name: string; description?: string | null; unitPrice: string | number; sku?: string | null }
+interface QuoteTemplate { id: string; name: string; title: string | null; taxRate: string | number | null; discountAmount: string | number | null; notes: string | null; terms: string | null; lineItems?: any[] }
+
+function QuoteTemplateAndCatalogActions({ quote, title, taxRate, discountAmount, notes, terms, items, onApplyTemplate, onAddCatalogItem }: {
+  quote: QuoteWithItems | null;
+  title: string; taxRate: string; discountAmount: string; notes: string; terms: string;
+  items: LineItemDraft[];
+  onApplyTemplate: (t: QuoteTemplate) => void;
+  onAddCatalogItem: (c: CatalogItem) => void;
+}) {
+  const { toast } = useToast();
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [signatureLink, setSignatureLink] = useState<string | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+
+  const { data: templates = [] } = useQuery<QuoteTemplate[]>({ queryKey: ["/api/crm/quote-templates"], enabled: showTemplates });
+  const { data: catalog = [] } = useQuery<CatalogItem[]>({ queryKey: ["/api/crm/catalog-items"], enabled: showCatalog });
+
+  const sendForSig = useMutation({
+    mutationFn: async () => apiRequest("POST", `/api/crm/quotes/${quote!.id}/send-for-acceptance`, {}),
+    onSuccess: async (res: any) => {
+      const data = await res.json();
+      const link = `${window.location.origin}/quotes/accept/${data.token}`;
+      setSignatureLink(link);
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/quotes"] });
+      toast({ title: "Signature link generated", description: "Copy and share with the client." });
+    },
+    onError: (e: Error) => toast({ title: "Failed to generate link", description: e.message, variant: "destructive" }),
+  });
+
+  const saveAsTemplate = useMutation({
+    mutationFn: async () => apiRequest("POST", `/api/crm/quotes/${quote!.id}/save-as-template`, { name: templateName || `Template — ${title}` }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/quote-templates"] });
+      setSavingTemplate(false);
+      setTemplateName("");
+      toast({ title: "Saved as template" });
+    },
+    onError: (e: Error) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="border-t pt-3 mt-1 flex flex-wrap gap-2 items-center">
+      <Button variant="outline" size="sm" onClick={() => setShowTemplates(true)} data-testid="button-apply-template">
+        <FolderOpen className="w-4 h-4 mr-1" /> Apply Template
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => setShowCatalog(true)} data-testid="button-add-catalog">
+        <Package className="w-4 h-4 mr-1" /> Add from Catalog
+      </Button>
+      {quote && (
+        <>
+          <Button variant="outline" size="sm" onClick={() => setSavingTemplate(true)} data-testid="button-save-template">
+            <Save className="w-4 h-4 mr-1" /> Save as Template
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => sendForSig.mutate()} disabled={sendForSig.isPending} data-testid="button-send-signature">
+            <FileSignature className="w-4 h-4 mr-1" /> {sendForSig.isPending ? "Generating..." : "Send for Signature"}
+          </Button>
+        </>
+      )}
+
+      {signatureLink && (
+        <div className="w-full mt-2 p-2 bg-muted rounded-md flex items-center gap-2 text-xs" data-testid="signature-link-display">
+          <Input readOnly value={signatureLink} className="text-xs h-7" />
+          <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(signatureLink); toast({ title: "Copied" }); }} data-testid="button-copy-sig-link">
+            <Copy className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      )}
+
+      <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
+        <DialogContent data-testid="dialog-apply-template">
+          <DialogHeader><DialogTitle>Apply Template</DialogTitle></DialogHeader>
+          {templates.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No templates yet. Save a quote as a template first.</p>
+          ) : (
+            <div className="space-y-1 max-h-80 overflow-y-auto">
+              {templates.map(t => (
+                <button key={t.id} className="w-full text-left p-2 rounded hover-elevate border" onClick={() => { onApplyTemplate(t); setShowTemplates(false); toast({ title: "Template applied" }); }} data-testid={`button-template-${t.id}`}>
+                  <div className="font-medium text-sm">{t.name}</div>
+                  {t.title && <div className="text-xs text-muted-foreground">{t.title}</div>}
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCatalog} onOpenChange={setShowCatalog}>
+        <DialogContent data-testid="dialog-add-catalog">
+          <DialogHeader><DialogTitle>Add from Catalog</DialogTitle></DialogHeader>
+          {catalog.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No catalog items yet. Add some in CRM Settings.</p>
+          ) : (
+            <div className="space-y-1 max-h-80 overflow-y-auto">
+              {catalog.map(c => (
+                <button key={c.id} className="w-full text-left p-2 rounded hover-elevate border flex items-center justify-between" onClick={() => { onAddCatalogItem(c); toast({ title: "Item added" }); }} data-testid={`button-catalog-${c.id}`}>
+                  <div>
+                    <div className="font-medium text-sm">{c.name}</div>
+                    {c.sku && <div className="text-xs text-muted-foreground">{c.sku}</div>}
+                  </div>
+                  <span className="font-mono text-sm">${Number(c.unitPrice).toFixed(2)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={savingTemplate} onOpenChange={setSavingTemplate}>
+        <DialogContent data-testid="dialog-save-template">
+          <DialogHeader><DialogTitle>Save as Template</DialogTitle></DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Template Name</Label>
+            <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder={`Template — ${title}`} data-testid="input-template-name" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSavingTemplate(false)} data-testid="button-template-cancel">Cancel</Button>
+            <Button onClick={() => saveAsTemplate.mutate()} disabled={saveAsTemplate.isPending} data-testid="button-template-confirm">
+              {saveAsTemplate.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

@@ -6,6 +6,8 @@ import { and, eq, desc, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { generateQuotePdf } from "./quote-pdf-service";
+import crypto from "crypto";
+import { crmQuoteAcceptanceTokens, crmQuoteTemplates, crmQuoteTemplateItems } from "@shared/schema";
 
 const router = Router();
 const ROLES = ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"] as const;
@@ -186,6 +188,102 @@ router.delete("/api/crm/quotes/:id", requireAuth, requireRole(...ROLES), async (
   } catch (error) {
     next(error);
   }
+});
+
+// Apply a quote template — returns a hydrated draft (does NOT save)
+router.get("/api/crm/quotes/from-template/:templateId", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+    const [tmpl] = await db.select().from(crmQuoteTemplates).where(and(eq(crmQuoteTemplates.id, req.params.templateId), eq(crmQuoteTemplates.organizationId, orgId))).limit(1);
+    if (!tmpl) return res.status(404).json({ error: "Template not found" });
+    const items = await db.select().from(crmQuoteTemplateItems).where(eq(crmQuoteTemplateItems.templateId, tmpl.id)).orderBy(crmQuoteTemplateItems.sortOrder);
+    res.json({
+      title: tmpl.name,
+      taxRate: tmpl.defaultTaxRate,
+      notes: tmpl.defaultNotes,
+      terms: tmpl.defaultTerms,
+      lineItems: items.map((it, idx) => ({
+        sortOrder: idx, description: it.description, quantity: it.quantity, unit: it.unit, unitPrice: it.unitPrice,
+      })),
+    });
+  } catch (e) { next(e); }
+});
+
+// Save an existing quote AS a template
+router.post("/api/crm/quotes/:id/save-as-template", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+    const schema = z.object({ name: z.string().min(1).max(200), description: z.string().max(2000).optional() });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+    const [quote] = await db.select().from(crmQuotes).where(and(eq(crmQuotes.id, req.params.id), eq(crmQuotes.organizationId, orgId))).limit(1);
+    if (!quote) return res.status(404).json({ error: "Quote not found" });
+    const items = await db.select().from(crmQuoteLineItems).where(eq(crmQuoteLineItems.quoteId, quote.id));
+    const [tmpl] = await db.insert(crmQuoteTemplates).values({
+      organizationId: orgId, name: parsed.data.name, description: parsed.data.description ?? null,
+      defaultTerms: quote.terms, defaultNotes: quote.notes, defaultTaxRate: quote.taxRate,
+    }).returning();
+    if (items.length) {
+      await db.insert(crmQuoteTemplateItems).values(items.map((it, idx) => ({
+        templateId: tmpl.id, sortOrder: it.sortOrder ?? idx,
+        description: it.description, quantity: it.quantity, unit: it.unit, unitPrice: it.unitPrice,
+      })));
+    }
+    res.status(201).json(tmpl);
+  } catch (e) { next(e); }
+});
+
+// Generate signed acceptance link
+router.post("/api/crm/quotes/:id/send-for-acceptance", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+    const schema = z.object({ expiresInDays: z.number().int().min(1).max(90).default(14) });
+    const parsed = schema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+    const [quote] = await db.select().from(crmQuotes).where(and(eq(crmQuotes.id, req.params.id), eq(crmQuotes.organizationId, orgId))).limit(1);
+    if (!quote) return res.status(404).json({ error: "Quote not found" });
+
+    const token = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + parsed.data.expiresInDays * 86400000);
+
+    await db.insert(crmQuoteAcceptanceTokens).values({
+      organizationId: orgId, quoteId: quote.id, tokenHash, expiresAt, createdById: req.user!.id,
+    });
+    await db.update(crmQuotes).set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() }).where(eq(crmQuotes.id, quote.id));
+
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
+    res.status(201).json({
+      ok: true,
+      acceptUrl: `${baseUrl}/quotes/accept/${token}`,
+      expiresAt,
+    });
+  } catch (e) { next(e); }
+});
+
+// List acceptance tokens for a quote (latest first)
+router.get("/api/crm/quotes/:id/acceptance-tokens", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+    const rows = await db.select({
+      id: crmQuoteAcceptanceTokens.id,
+      status: crmQuoteAcceptanceTokens.status,
+      expiresAt: crmQuoteAcceptanceTokens.expiresAt,
+      viewedAt: crmQuoteAcceptanceTokens.viewedAt,
+      decidedAt: crmQuoteAcceptanceTokens.decidedAt,
+      signedName: crmQuoteAcceptanceTokens.signedName,
+      signedEmail: crmQuoteAcceptanceTokens.signedEmail,
+      declineReason: crmQuoteAcceptanceTokens.declineReason,
+      createdAt: crmQuoteAcceptanceTokens.createdAt,
+    }).from(crmQuoteAcceptanceTokens)
+      .where(and(eq(crmQuoteAcceptanceTokens.quoteId, req.params.id), eq(crmQuoteAcceptanceTokens.organizationId, orgId)))
+      .orderBy(desc(crmQuoteAcceptanceTokens.createdAt));
+    res.json(rows);
+  } catch (e) { next(e); }
 });
 
 router.get("/api/crm/quotes/:id/pdf", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {

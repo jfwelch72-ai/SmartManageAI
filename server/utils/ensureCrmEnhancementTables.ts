@@ -2,24 +2,18 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 
 /**
- * Ensure CRM Enhancement Tables: quotes/proposals, tasks/reminders, auto-assignment rules.
+ * Ensure CRM Enhancement Tables — quotes/proposals, tasks/reminders, auto-assignment rules,
+ * catalog items, quote templates, quote acceptance tokens, lead scoring rules,
+ * plus additive columns on crm_opportunities (lostCategory, leadScore, wonAt, lostAt).
  * Idempotent — safe to run on every cold start.
  */
 export async function ensureCrmEnhancementTables(): Promise<void> {
-  const result = await db.execute(sql`
-    SELECT
-      EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'crm_quotes') AS quotes_exist,
-      EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'crm_quote_line_items') AS quote_items_exist,
-      EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'crm_tasks') AS tasks_exist,
-      EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'crm_assignment_rules') AS rules_exist
-  `);
+  // --- New enums ---
+  await db.execute(sql`DO $$ BEGIN CREATE TYPE "crm_lost_category" AS ENUM ('PRICE','TIMING','COMPETITOR','SCOPE','RELATIONSHIP','NO_DECISION','NO_RESPONSE','OTHER'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`);
+  await db.execute(sql`DO $$ BEGIN CREATE TYPE "crm_quote_acceptance_status" AS ENUM ('PENDING','VIEWED','ACCEPTED','DECLINED','EXPIRED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`);
+  await db.execute(sql`DO $$ BEGIN CREATE TYPE "crm_lead_scoring_operator" AS ENUM ('EQUALS','NOT_EQUALS','CONTAINS','GTE','LTE','IS_SET','IS_NOT_SET'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`);
 
-  const row = result.rows[0] as Record<string, boolean>;
-  if (row.quotes_exist && row.quote_items_exist && row.tasks_exist && row.rules_exist) {
-    console.log("[migration] crm_enhancement_tables — all 4 tables already present, skipped");
-    return;
-  }
-
+  // --- crm_quotes (initial release) ---
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "crm_quotes" (
       "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -110,5 +104,99 @@ export async function ensureCrmEnhancementTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_assignment_rules_org_idx" ON "crm_assignment_rules"("organization_id")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_assignment_rules_active_idx" ON "crm_assignment_rules"("organization_id","is_active","priority")`);
 
-  console.log("[migration] crm_enhancement_tables — created (4 tables: quotes, line_items, tasks, assignment_rules)");
+  // --- Phase 2: catalog, templates, acceptance tokens, lead scoring ---
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "crm_catalog_items" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "organization_id" varchar NOT NULL REFERENCES "organizations"("id") ON DELETE CASCADE,
+      "name" text NOT NULL,
+      "description" text,
+      "category" text,
+      "unit" text,
+      "unit_price" decimal(14,4) NOT NULL DEFAULT 0,
+      "is_active" boolean NOT NULL DEFAULT true,
+      "created_at" timestamp NOT NULL DEFAULT now(),
+      "updated_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_catalog_items_org_idx" ON "crm_catalog_items"("organization_id")`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_catalog_items_active_idx" ON "crm_catalog_items"("organization_id","is_active")`);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "crm_quote_templates" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "organization_id" varchar NOT NULL REFERENCES "organizations"("id") ON DELETE CASCADE,
+      "name" text NOT NULL,
+      "description" text,
+      "default_terms" text,
+      "default_notes" text,
+      "default_tax_rate" decimal(5,2) NOT NULL DEFAULT 0,
+      "is_active" boolean NOT NULL DEFAULT true,
+      "created_at" timestamp NOT NULL DEFAULT now(),
+      "updated_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_quote_templates_org_idx" ON "crm_quote_templates"("organization_id")`);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "crm_quote_template_items" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "template_id" varchar NOT NULL REFERENCES "crm_quote_templates"("id") ON DELETE CASCADE,
+      "sort_order" integer NOT NULL DEFAULT 0,
+      "description" text NOT NULL,
+      "quantity" decimal(14,4) NOT NULL DEFAULT 1,
+      "unit" text,
+      "unit_price" decimal(14,4) NOT NULL DEFAULT 0,
+      "catalog_item_id" varchar REFERENCES "crm_catalog_items"("id") ON DELETE SET NULL,
+      "created_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_quote_template_items_tmpl_idx" ON "crm_quote_template_items"("template_id")`);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "crm_quote_acceptance_tokens" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "organization_id" varchar NOT NULL REFERENCES "organizations"("id") ON DELETE CASCADE,
+      "quote_id" varchar NOT NULL REFERENCES "crm_quotes"("id") ON DELETE CASCADE,
+      "token_hash" varchar NOT NULL UNIQUE,
+      "status" "crm_quote_acceptance_status" NOT NULL DEFAULT 'PENDING',
+      "expires_at" timestamp NOT NULL,
+      "viewed_at" timestamp,
+      "decided_at" timestamp,
+      "signed_name" text,
+      "signed_email" text,
+      "decline_reason" text,
+      "ip_address" varchar,
+      "user_agent" text,
+      "created_by_id" varchar REFERENCES "users"("id") ON DELETE SET NULL,
+      "created_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_quote_acc_tok_org_idx" ON "crm_quote_acceptance_tokens"("organization_id")`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_quote_acc_tok_quote_idx" ON "crm_quote_acceptance_tokens"("quote_id")`);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "crm_lead_scoring_rules" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "organization_id" varchar NOT NULL REFERENCES "organizations"("id") ON DELETE CASCADE,
+      "name" text NOT NULL,
+      "field" text NOT NULL,
+      "operator" "crm_lead_scoring_operator" NOT NULL,
+      "value" text,
+      "points" integer NOT NULL DEFAULT 0,
+      "is_active" boolean NOT NULL DEFAULT true,
+      "created_at" timestamp NOT NULL DEFAULT now(),
+      "updated_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_lead_scoring_rules_org_idx" ON "crm_lead_scoring_rules"("organization_id")`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_lead_scoring_rules_active_idx" ON "crm_lead_scoring_rules"("organization_id","is_active")`);
+
+  // --- Additive columns on crm_opportunities ---
+  await db.execute(sql`ALTER TABLE "crm_opportunities" ADD COLUMN IF NOT EXISTS "lost_category" "crm_lost_category"`);
+  await db.execute(sql`ALTER TABLE "crm_opportunities" ADD COLUMN IF NOT EXISTS "lead_score" integer DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE "crm_opportunities" ADD COLUMN IF NOT EXISTS "won_at" timestamp`);
+  await db.execute(sql`ALTER TABLE "crm_opportunities" ADD COLUMN IF NOT EXISTS "lost_at" timestamp`);
+
+  console.log("[migration] crm_enhancement_tables — ensured (quotes, line_items, tasks, assignment_rules, catalog_items, quote_templates, template_items, acceptance_tokens, lead_scoring_rules + opp columns)");
 }

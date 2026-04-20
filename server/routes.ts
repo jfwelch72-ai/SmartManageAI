@@ -165,6 +165,11 @@ import crmTasksRoutes from "./crmTasksRoutes";
 import crmQuotesRoutes from "./crmQuotesRoutes";
 import crmAssignmentRulesRoutes from "./crmAssignmentRulesRoutes";
 import publicLeadsRoutes from "./publicLeadsRoutes";
+import crmCatalogRoutes from "./crmCatalogRoutes";
+import crmAnalyticsRoutes from "./crmAnalyticsRoutes";
+import crmDuplicatesRoutes from "./crmDuplicatesRoutes";
+import crmLeadScoringRoutes from "./crmLeadScoringRoutes";
+import publicQuoteAcceptRoutes from "./publicQuoteAcceptRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
 import notificationRoutes2 from "./notificationRoutes2";
 import notificationPreferencesRoutes from "./notificationPreferencesRoutes";
@@ -554,6 +559,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(crmQuotesRoutes);
   app.use(crmAssignmentRulesRoutes);
   app.use(publicLeadsRoutes);
+  app.use(crmCatalogRoutes);
+  app.use(crmAnalyticsRoutes);
+  app.use(crmDuplicatesRoutes);
+  app.use(crmLeadScoringRoutes);
+  app.use(publicQuoteAcceptRoutes);
 
   // Location Routes (project locations + field takeoff)
   app.use(locationRoutes);

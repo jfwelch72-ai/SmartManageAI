@@ -40,6 +40,7 @@ function handleGlobal401(url: string) {
       !path.startsWith("/shared-preview/") &&
       !path.startsWith("/rfq-response/") &&
       !path.startsWith("/leads/") &&
+      !path.startsWith("/quotes/accept/") &&
       path !== "/portal" &&
       !path.startsWith("/portal/") &&
       !path.startsWith("/sub-portal")) {

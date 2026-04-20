@@ -91,6 +91,9 @@ export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL",
 export const crmNoteTypeEnum = pgEnum("crm_note_type", ["CALL", "EMAIL", "MEETING", "HOT_LEAD", "COLD_LEAD", "FOLLOW_UP", "ISSUE", "GENERAL"]);
 export const crmPipelineStageEnum = pgEnum("crm_pipeline_stage", ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION", "WON", "LOST"]);
 export const crmActivityTypeEnum = pgEnum("crm_activity_type", ["CALL", "EMAIL", "MEETING", "NOTE", "FOLLOW_UP", "SITE_VISIT"]);
+export const crmLostCategoryEnum = pgEnum("crm_lost_category", ["PRICE", "TIMING", "COMPETITOR", "SCOPE", "RELATIONSHIP", "NO_DECISION", "NO_RESPONSE", "OTHER"]);
+export const crmQuoteAcceptanceStatusEnum = pgEnum("crm_quote_acceptance_status", ["PENDING", "VIEWED", "ACCEPTED", "DECLINED", "EXPIRED"]);
+export const crmLeadScoringOperatorEnum = pgEnum("crm_lead_scoring_operator", ["EQUALS", "NOT_EQUALS", "CONTAINS", "GTE", "LTE", "IS_SET", "IS_NOT_SET"]);
 
 // Vendor Pricing Integration Enums
 export const pricingSourceTypeEnum = pgEnum("pricing_source_type", ["MANUAL", "PRICEBOOK_IMPORT", "VENDOR_PORTAL"]);
