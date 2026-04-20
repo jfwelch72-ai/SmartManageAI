@@ -541,3 +541,370 @@ describe("syncImapAccount → detectInboundBounce → enrollment BOUNCED (integr
     expect(enrollExitUpdate?.values.exitedAt).toBeInstanceOf(Date);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Integration: the same DSN protection applies to the other three inbox
+// ingestion paths — Gmail incremental persist, Gmail full-sync persist, and
+// the Outlook persist path. (Task #563.)
+//
+// Each test stages provider HTTP responses via a stubbed `global.fetch`,
+// pre-loads `selectQueue` with the rows the corresponding persist path will
+// look up in order, and asserts the BOUNCE event + execution flip + auto-exit
+// of the matching enrollment to BOUNCED.
+// ---------------------------------------------------------------------------
+
+type FetchHandler = (url: string, init?: RequestInit) => Response | Promise<Response> | undefined;
+
+function jsonResp(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function makeStubbedFetch(handlers: FetchHandler[]) {
+  return vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    const u = typeof url === "string" ? url : url instanceof URL ? url.toString() : String(url);
+    for (let i = 0; i < handlers.length; i++) {
+      const h = handlers[i];
+      const result = await h(u, init);
+      if (result) {
+        handlers.splice(i, 1);
+        return result;
+      }
+    }
+    // Token endpoints answer generically with a fresh access token so that the
+    // refresh-and-retry path in the provider clients is happy.
+    if (u.includes("oauth2.googleapis.com/token") || u.includes("login.microsoftonline.com")) {
+      return jsonResp({ access_token: "new-access-token", expires_in: 3600 });
+    }
+    throw new Error(`Unhandled fetch in test: ${u}`);
+  });
+}
+
+const farFutureExpiry = new Date(Date.now() + 60 * 60 * 1000);
+
+const DSN_BODY = [
+  "This is the mail system at mail.external.com.",
+  "I'm sorry to have to inform you that your message could not be delivered.",
+  "Original-Message-ID: <outbound-msg-provider@my-app>",
+].join("\n");
+
+function expectBounceWritesFor(executionId: string, enrollmentId: string) {
+  const bounceEvent = dbCalls.find(
+    (c) => c.op === "insert" && c.tableName === "crm_sequence_email_events",
+  ) as { values: { eventType?: string; executionId?: string } } | undefined;
+  expect(bounceEvent?.values.eventType).toBe("BOUNCE");
+  expect(bounceEvent?.values.executionId).toBe(executionId);
+
+  const execStatusUpdate = dbCalls.find(
+    (c) =>
+      c.op === "update" &&
+      c.tableName === "crm_sequence_step_executions" &&
+      (c.values as { status?: string }).status === "BOUNCED",
+  );
+  expect(execStatusUpdate).toBeTruthy();
+
+  const enrollExitUpdate = dbCalls.find(
+    (c) =>
+      c.op === "update" &&
+      c.tableName === "crm_sequence_enrollments" &&
+      (c.values as { status?: string }).status === "BOUNCED",
+  ) as { values: { status: string; exitReason: string; exitedAt: Date } } | undefined;
+  expect(enrollExitUpdate).toBeTruthy();
+  expect(enrollExitUpdate?.values.exitReason).toBe("BOUNCED");
+  expect(enrollExitUpdate?.values.exitedAt).toBeInstanceOf(Date);
+  // Exactly one enrollment auto-exit fires per inbound DSN. Since each test
+  // queued a single enrollment row (with id === `enrollmentId`) for the
+  // recordEmailEvent enrollment lookup, this confirms the BOUNCED exit was
+  // applied to that specific enrollment and not to any other row.
+  const allEnrollmentBouncedUpdates = dbCalls.filter(
+    (c) =>
+      c.op === "update" &&
+      c.tableName === "crm_sequence_enrollments" &&
+      (c.values as { status?: string }).status === "BOUNCED",
+  );
+  expect(allEnrollmentBouncedUpdates.length).toBe(1);
+  // Sanity: enrollmentId is part of the test contract; surfaced here so a
+  // reader can trace it back to the queued enrollment row.
+  expect(enrollmentId).toMatch(/^enroll-/);
+}
+
+describe("syncGmailAccount incremental → detectInboundBounce → enrollment BOUNCED (integration)", () => {
+  it("ingests a DSN through the Gmail history (messagesAdded) path and moves the matching enrollment to BOUNCED", async () => {
+    const { syncGmailAccount } = await import("../emailRoutes");
+
+    const account = {
+      id: "acct-gmail-incr-1",
+      organizationId: "org-1",
+      userId: "user-1",
+      provider: "GMAIL",
+      emailAddress: "rep@example.com",
+      accessToken: "valid-token",
+      refreshToken: "refresh",
+      expiresAt: farFutureExpiry,
+      gmailHistoryId: "100",
+      lastSyncedAt: new Date(),
+      isActive: true,
+      syncStatus: "OK",
+    } as never;
+
+    const handlers: FetchHandler[] = [
+      (url) => {
+        if (!url.includes("/users/me/history")) return undefined;
+        expect(url).toContain("startHistoryId=100");
+        return jsonResp({
+          historyId: "150",
+          history: [
+            {
+              id: "h1",
+              messagesAdded: [
+                { message: { id: "g-dsn-1", threadId: "g-th-dsn-1", labelIds: ["INBOX"] } },
+              ],
+            },
+          ],
+        });
+      },
+      (url) => {
+        if (!url.includes("/users/me/messages/g-dsn-1")) return undefined;
+        return jsonResp({
+          id: "g-dsn-1",
+          threadId: "g-th-dsn-1",
+          labelIds: ["INBOX"],
+          snippet: "delivery failed",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "From", value: "Mail Delivery System <MAILER-DAEMON@mail.external.com>" },
+              { name: "To", value: "rep@example.com" },
+              { name: "Subject", value: "Delivery Status Notification (Failure)" },
+            ],
+            body: { data: Buffer.from(DSN_BODY).toString("base64url") },
+          },
+        });
+      },
+    ];
+    vi.stubGlobal("fetch", makeStubbedFetch(handlers));
+
+    const exec = { id: "exec-gmail-incr", organizationId: "org-1", enrollmentId: "enroll-gmail-incr" };
+    const enrollment = {
+      id: "enroll-gmail-incr",
+      organizationId: "org-1",
+      senderId: "user-1",
+      status: "ACTIVE",
+    };
+
+    // Order of selects through persistGmailMessage for one DSN:
+    //   1) existing emailMessage by externalId (idempotency)   → []
+    //   2) existing emailThread by externalThreadId            → []
+    //   3) detectInboundReply Path B: crmContacts lookup       → []
+    //   4) detectInboundBounce: candidate exec lookup          → [exec]
+    //   5) recordEmailEvent: re-fetch exec                     → [exec]
+    //   6) recordEmailEvent: enrollment lookup → auto-exit     → [enrollment]
+    //   7) thread-counts recompute                             → [{counts}]
+    selectQueue = [
+      [],
+      [],
+      [],
+      [exec],
+      [exec],
+      [enrollment],
+      [{ total: 1, unread: 1, maxReceivedAt: new Date() }],
+    ];
+
+    const res = await syncGmailAccount(account, "user-1");
+    vi.unstubAllGlobals();
+
+    expect(res.errors).toEqual([]);
+    expect(res.messagesImported).toBe(1);
+    expectBounceWritesFor("exec-gmail-incr", "enroll-gmail-incr");
+  });
+});
+
+describe("syncGmailAccount full sync → detectInboundBounce → enrollment BOUNCED (integration)", () => {
+  it("ingests a DSN through the Gmail full-sync (messages?q=) path and moves the matching enrollment to BOUNCED", async () => {
+    const { syncGmailAccount } = await import("../emailRoutes");
+
+    const account = {
+      id: "acct-gmail-full-1",
+      organizationId: "org-1",
+      userId: "user-1",
+      provider: "GMAIL",
+      emailAddress: "rep@example.com",
+      accessToken: "valid-token",
+      refreshToken: "refresh",
+      expiresAt: farFutureExpiry,
+      gmailHistoryId: null,
+      lastSyncedAt: null,
+      isActive: true,
+      syncStatus: "OK",
+    } as never;
+
+    const handlers: FetchHandler[] = [
+      (url) => {
+        if (!url.includes("/users/me/messages?q=")) return undefined;
+        // Full-sync path uses the 30-day backfill query when there is no cursor.
+        expect(decodeURIComponent(url)).toContain("(in:inbox OR in:sent)");
+        expect(decodeURIComponent(url)).toContain("newer_than:30d");
+        return jsonResp({ messages: [{ id: "g-dsn-full-1", threadId: "g-th-dsn-full-1" }] });
+      },
+      (url) => {
+        if (!url.includes("/users/me/messages/g-dsn-full-1")) return undefined;
+        return jsonResp({
+          id: "g-dsn-full-1",
+          threadId: "g-th-dsn-full-1",
+          labelIds: ["INBOX"],
+          snippet: "delivery failed",
+          internalDate: String(Date.now()),
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "From", value: "MAILER-DAEMON@mail.external.com" },
+              { name: "To", value: "rep@example.com" },
+              { name: "Subject", value: "Undeliverable: Mail Delivery Failure" },
+            ],
+            body: { data: Buffer.from(DSN_BODY).toString("base64url") },
+          },
+        });
+      },
+      (url) => {
+        if (!url.endsWith("/users/me/profile")) return undefined;
+        return jsonResp({ historyId: "999" });
+      },
+    ];
+    vi.stubGlobal("fetch", makeStubbedFetch(handlers));
+
+    const exec = { id: "exec-gmail-full", organizationId: "org-1", enrollmentId: "enroll-gmail-full" };
+    const enrollment = {
+      id: "enroll-gmail-full",
+      organizationId: "org-1",
+      senderId: "user-1",
+      status: "ACTIVE",
+    };
+
+    // Order of selects through the Gmail full-sync persist loop for one DSN:
+    //   1) existing externalIds among candidates                   → []
+    //   2) existing emailThread by externalThreadId                → []
+    //   3) detectInboundReply Path B: crmContacts lookup           → []
+    //   4) detectInboundBounce: candidate exec lookup              → [exec]
+    //   5) recordEmailEvent: re-fetch exec                         → [exec]
+    //   6) recordEmailEvent: enrollment lookup → auto-exit         → [enrollment]
+    //   7) thread-counts recompute                                 → [{counts}]
+    selectQueue = [
+      [],
+      [],
+      [],
+      [exec],
+      [exec],
+      [enrollment],
+      [{ total: 1, unread: 1, maxReceivedAt: new Date() }],
+    ];
+
+    const res = await syncGmailAccount(account, "user-1");
+    vi.unstubAllGlobals();
+
+    expect(res.errors).toEqual([]);
+    expect(res.messagesImported).toBe(1);
+    expectBounceWritesFor("exec-gmail-full", "enroll-gmail-full");
+  });
+});
+
+describe("syncOutlookAccount → detectInboundBounce → enrollment BOUNCED (integration)", () => {
+  it("ingests a DSN through the Outlook delta path and moves the matching enrollment to BOUNCED", async () => {
+    const { syncOutlookAccount } = await import("../emailRoutes");
+
+    const account = {
+      id: "acct-outlook-1",
+      organizationId: "org-1",
+      userId: "user-1",
+      provider: "OUTLOOK",
+      emailAddress: "rep@example.com",
+      accessToken: "valid-token",
+      refreshToken: "refresh",
+      expiresAt: farFutureExpiry,
+      outlookDeltaInbox:
+        "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=abc",
+      outlookDeltaSent:
+        "https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages/delta?$skiptoken=def",
+      lastSyncedAt: new Date(),
+      isActive: true,
+      syncStatus: "OK",
+    } as never;
+
+    const handlers: FetchHandler[] = [
+      (url) => {
+        if (!url.includes("/mailFolders/inbox/messages/delta")) return undefined;
+        return jsonResp({
+          value: [
+            {
+              id: "ol-dsn-1",
+              conversationId: "ol-conv-dsn-1",
+              subject: "Undeliverable: Mail Delivery Failure",
+              bodyPreview: "delivery failed",
+              body: { contentType: "text", content: DSN_BODY },
+              from: {
+                emailAddress: {
+                  name: "Mail Delivery System",
+                  address: "MAILER-DAEMON@mail.external.com",
+                },
+              },
+              toRecipients: [
+                { emailAddress: { name: "Rep", address: "rep@example.com" } },
+              ],
+              ccRecipients: [],
+              receivedDateTime: new Date().toISOString(),
+              isRead: false,
+              hasAttachments: false,
+              internetMessageHeaders: [],
+            },
+          ],
+          "@odata.deltaLink":
+            "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=next",
+        });
+      },
+      (url) => {
+        if (!url.includes("/mailFolders/sentitems/messages/delta")) return undefined;
+        return jsonResp({
+          value: [],
+          "@odata.deltaLink":
+            "https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages/delta?$deltatoken=next",
+        });
+      },
+    ];
+    vi.stubGlobal("fetch", makeStubbedFetch(handlers));
+
+    const exec = { id: "exec-outlook", organizationId: "org-1", enrollmentId: "enroll-outlook" };
+    const enrollment = {
+      id: "enroll-outlook",
+      organizationId: "org-1",
+      senderId: "user-1",
+      status: "ACTIVE",
+    };
+
+    // Order of selects through persistOutlookMessage for one inbound DSN:
+    //   1) existing emailMessage by externalId (idempotency)   → []
+    //   2) existing emailThread by externalThreadId            → []
+    //   3) detectInboundReply Path B: crmContacts lookup       → []
+    //   4) detectInboundBounce: candidate exec lookup          → [exec]
+    //   5) recordEmailEvent: re-fetch exec                     → [exec]
+    //   6) recordEmailEvent: enrollment lookup → auto-exit     → [enrollment]
+    //   7) thread-counts recompute                             → [{counts}]
+    selectQueue = [
+      [],
+      [],
+      [],
+      [exec],
+      [exec],
+      [enrollment],
+      [{ total: 1, unread: 1, maxReceivedAt: new Date() }],
+    ];
+
+    const res = await syncOutlookAccount(account, "user-1");
+    vi.unstubAllGlobals();
+
+    expect(res.errors).toEqual([]);
+    expect(res.messagesImported).toBe(1);
+    expectBounceWritesFor("exec-outlook", "enroll-outlook");
+  });
+});
