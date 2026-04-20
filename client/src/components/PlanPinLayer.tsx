@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { AlertCircle, Wrench, FileCheck, X, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -166,6 +166,19 @@ export function PlanPinLayer({
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: async ({ pinId, x, y }: { pinId: string; x: number; y: number; onError?: () => void }) =>
+      apiRequest("PATCH", `/api/plan-pins/${pinId}`, { x, y }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "plan-pins"] });
+    },
+    onError: (e: Error, vars) => {
+      vars.onError?.();
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "plan-pins"] });
+      toast({ title: "Could not move pin", description: e.message, variant: "destructive" });
+    },
+  });
+
   const visiblePins = useMemo(() => {
     return pins.filter((p) => {
       if (filter.type !== "ALL" && p.pinType !== filter.type) return false;
@@ -179,90 +192,187 @@ export function PlanPinLayer({
 
   return (
     <>
-      {visiblePins.map((pin) => {
-        const styleDef = PIN_STYLE[pin.pinType];
-        const Icon = styleDef.icon;
-        const meta = metaMap.get(pin.refId);
-        const dot = statusDotColor(meta?.status);
-        return (
-          <Popover key={pin.id}>
-            <PopoverTrigger asChild>
-              <button
-                className={cn(
-                  "absolute -translate-x-1/2 -translate-y-full pointer-events-auto",
-                  "flex items-center justify-center rounded-full shadow-md hover:scale-110 transition-transform",
-                  "min-w-[28px] min-h-[28px] sm:min-w-[24px] sm:min-h-[24px]",
-                  styleDef.bg,
-                )}
-                style={{
-                  left: `${pin.x * 100}%`,
-                  top: `${pin.y * 100}%`,
-                }}
-                title={meta?.title || styleDef.label}
-                data-testid={`plan-pin-${pin.id}`}
-              >
-                <Icon className={cn("w-3.5 h-3.5", styleDef.color)} />
-                <span
-                  className={cn(
-                    "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-white",
-                    dot,
-                  )}
-                />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent side="top" className="w-64 p-3 text-sm" data-testid={`plan-pin-popover-${pin.id}`}>
-              <div className="flex items-start gap-2 mb-2">
-                <span className={cn("inline-flex items-center justify-center w-6 h-6 rounded", styleDef.bg)}>
-                  <Icon className="w-3.5 h-3.5 text-white" />
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate" data-testid="plan-pin-popover-title">
-                    {meta?.title || `${styleDef.label} pin`}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <Badge variant="outline" className="text-[10px] h-4 px-1">{styleDef.label}</Badge>
-                    {meta?.status && (
-                      <Badge variant="secondary" className="text-[10px] h-4 px-1">{meta.status}</Badge>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {meta?.dueDate && (
-                <div className="text-xs text-muted-foreground mb-1">
-                  Due: {new Date(meta.dueDate).toLocaleDateString()}
-                </div>
-              )}
-              {meta?.ownerName && (
-                <div className="text-xs text-muted-foreground mb-2">
-                  Owner: {meta.ownerName}
-                </div>
-              )}
-              <div className="flex items-center gap-2 mt-2">
-                <Button
-                  size="sm"
-                  variant="default"
-                  className="h-7 text-xs flex-1"
-                  onClick={() => onOpenSource?.(pin)}
-                  data-testid={`button-open-pin-source-${pin.id}`}
-                >
-                  Open
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2"
-                  onClick={() => deleteMutation.mutate(pin.id)}
-                  disabled={deleteMutation.isPending}
-                  data-testid={`button-delete-pin-${pin.id}`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
-        );
-      })}
+      {visiblePins.map((pin) => (
+        <PinItem
+          key={pin.id}
+          pin={pin}
+          meta={metaMap.get(pin.refId)}
+          onOpenSource={onOpenSource}
+          onDelete={(id) => deleteMutation.mutate(id)}
+          deletePending={deleteMutation.isPending}
+          onMove={(id, x, y, onError) => moveMutation.mutate({ pinId: id, x, y, onError })}
+        />
+      ))}
     </>
+  );
+}
+
+interface PinItemProps {
+  pin: PlanPin;
+  meta?: PinMeta;
+  onOpenSource?: (pin: PlanPin) => void;
+  onDelete: (pinId: string) => void;
+  deletePending: boolean;
+  onMove: (pinId: string, x: number, y: number, onError?: () => void) => void;
+}
+
+const DRAG_THRESHOLD_PX = 4;
+
+function PinItem({ pin, meta, onOpenSource, onDelete, deletePending, onMove }: PinItemProps) {
+  const styleDef = PIN_STYLE[pin.pinType];
+  const Icon = styleDef.icon;
+  const dot = statusDotColor(meta?.status);
+
+  // Transient drag position (fractions 0..1) — null when not dragging
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const draggingRef = useRef(false);
+  const movedRef = useRef(false);
+  const startRef = useRef<{ px: number; py: number; rect: DOMRect } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    const parent = e.currentTarget.offsetParent as HTMLElement | null;
+    if (!parent) return;
+    const rect = parent.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    startRef.current = { px: e.clientX, py: e.clientY, rect };
+    draggingRef.current = true;
+    movedRef.current = false;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!draggingRef.current || !startRef.current) return;
+    const { px, py, rect } = startRef.current;
+    const dx = e.clientX - px;
+    const dy = e.clientY - py;
+    if (!movedRef.current && Math.abs(dx) < DRAG_THRESHOLD_PX && Math.abs(dy) < DRAG_THRESHOLD_PX) return;
+    movedRef.current = true;
+    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    setDragPos({ x, y });
+  };
+
+  const finishDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    if (movedRef.current && dragPos) {
+      suppressClickRef.current = true;
+      onMove(pin.id, dragPos.x, dragPos.y, () => setDragPos(null));
+    } else {
+      setDragPos(null);
+    }
+    startRef.current = null;
+  };
+
+  const onClickCapture = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const displayX = dragPos ? dragPos.x : pin.x;
+  const displayY = dragPos ? dragPos.y : pin.y;
+
+  // Reconcile transient drag position with refreshed canonical pin data.
+  // Clears the override when the server result is close enough (epsilon),
+  // ensuring we don't get stuck if there's any rounding drift.
+  useEffect(() => {
+    if (!dragPos) return;
+    const epsilon = 1e-4;
+    if (Math.abs(pin.x - dragPos.x) < epsilon && Math.abs(pin.y - dragPos.y) < epsilon) {
+      setDragPos(null);
+    }
+  }, [pin.x, pin.y, dragPos]);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "absolute -translate-x-1/2 -translate-y-full pointer-events-auto touch-none cursor-grab active:cursor-grabbing",
+            "flex items-center justify-center rounded-full shadow-md hover:scale-110 transition-transform",
+            "min-w-[28px] min-h-[28px] sm:min-w-[24px] sm:min-h-[24px]",
+            styleDef.bg,
+          )}
+          style={{
+            left: `${displayX * 100}%`,
+            top: `${displayY * 100}%`,
+          }}
+          title={meta?.title || styleDef.label}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+          onClickCapture={onClickCapture}
+          data-testid={`plan-pin-${pin.id}`}
+        >
+          <Icon className={cn("w-3.5 h-3.5", styleDef.color)} />
+          <span
+            className={cn(
+              "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-white",
+              dot,
+            )}
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" className="w-64 p-3 text-sm" data-testid={`plan-pin-popover-${pin.id}`}>
+        <div className="flex items-start gap-2 mb-2">
+          <span className={cn("inline-flex items-center justify-center w-6 h-6 rounded", styleDef.bg)}>
+            <Icon className="w-3.5 h-3.5 text-white" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium truncate" data-testid="plan-pin-popover-title">
+              {meta?.title || `${styleDef.label} pin`}
+            </div>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <Badge variant="outline" className="text-[10px] h-4 px-1">{styleDef.label}</Badge>
+              {meta?.status && (
+                <Badge variant="secondary" className="text-[10px] h-4 px-1">{meta.status}</Badge>
+              )}
+            </div>
+          </div>
+        </div>
+        {meta?.dueDate && (
+          <div className="text-xs text-muted-foreground mb-1">
+            Due: {new Date(meta.dueDate).toLocaleDateString()}
+          </div>
+        )}
+        {meta?.ownerName && (
+          <div className="text-xs text-muted-foreground mb-2">
+            Owner: {meta.ownerName}
+          </div>
+        )}
+        <div className="text-[10px] text-muted-foreground mb-2">
+          Tip: drag the pin to reposition it on this page.
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          <Button
+            size="sm"
+            variant="default"
+            className="h-7 text-xs flex-1"
+            onClick={() => onOpenSource?.(pin)}
+            data-testid={`button-open-pin-source-${pin.id}`}
+          >
+            Open
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2"
+            onClick={() => onDelete(pin.id)}
+            disabled={deletePending}
+            data-testid={`button-delete-pin-${pin.id}`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

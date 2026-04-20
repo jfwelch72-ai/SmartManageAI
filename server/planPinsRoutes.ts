@@ -141,6 +141,69 @@ router.post(
   },
 );
 
+// PATCH pin position (x, y on same page)
+router.patch(
+  "/plan-pins/:id",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+      const [pin] = await db.select().from(planPins).where(eq(planPins.id, req.params.id)).limit(1);
+      if (!pin) return res.status(404).json({ error: "Pin not found" });
+
+      if (shouldFilter && orgId && pin.organizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const body = req.body || {};
+      const updates: { x?: number; y?: number } = {};
+
+      if (body.x !== undefined) {
+        const x = Number(body.x);
+        if (!Number.isFinite(x) || x < 0 || x > 1) {
+          return res.status(400).json({ error: "x must be between 0 and 1" });
+        }
+        updates.x = x;
+      }
+      if (body.y !== undefined) {
+        const y = Number(body.y);
+        if (!Number.isFinite(y) || y < 0 || y > 1) {
+          return res.status(400).json({ error: "y must be between 0 and 1" });
+        }
+        updates.y = y;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      const [updated] = await db
+        .update(planPins)
+        .set(updates)
+        .where(eq(planPins.id, req.params.id))
+        .returning();
+
+      await logAudit(
+        {
+          userId: req.user!.id,
+          action: "UPDATE",
+          entityType: "planPin",
+          entityId: pin.id,
+          oldValue: JSON.stringify({ x: pin.x, y: pin.y }),
+          newValue: JSON.stringify({ x: updated.x, y: updated.y }),
+        },
+        req,
+      );
+
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // DELETE pin
 router.delete(
   "/plan-pins/:id",
