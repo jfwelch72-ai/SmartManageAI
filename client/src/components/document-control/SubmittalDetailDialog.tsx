@@ -788,7 +788,7 @@ export function SubmittalDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" data-testid={`${testIdPrefix}dialog-submittal-detail`}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 flex-wrap" data-testid={`${testIdPrefix}text-detail-title`}>
               <FileCheck className="h-5 w-5" />

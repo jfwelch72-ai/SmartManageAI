@@ -186,11 +186,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   }, []);
 
   const handleOpenPinSource = useCallback((pin: PlanPin) => {
-    const tab = pin.refTable === "rfis" ? "rfis"
-      : pin.refTable === "punch_list_items" ? "punch-list"
-      : pin.refTable === "submittals" ? "submittals"
-      : null;
-    if (tab) navigate(`/projects/${projectCode}?tab=${tab}&id=${pin.refId}`);
+    if (pin.refTable === "rfis") {
+      navigate(`/projects/${projectCode}?tab=rfis&rfiId=${pin.refId}`);
+    } else if (pin.refTable === "punch_list_items") {
+      navigate(`/projects/${projectCode}?tab=punch-list&itemId=${pin.refId}`);
+    } else if (pin.refTable === "submittals") {
+      navigate(`/projects/${projectCode}?tab=submittals&submittalId=${pin.refId}`);
+    }
   }, [navigate, projectCode]);
   const sheetStorageKey = project?.id ? `takeoff-sheet-${project.id}` : null;
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(() => {

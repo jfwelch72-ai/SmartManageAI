@@ -694,7 +694,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
       {/* ─────────────────────────────────────────────────────────────── */}
       {selected && (
         <Dialog open={showDetail} onOpenChange={(o) => { setShowDetail(o); if (!o) setSelected(null); }}>
-          <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto" data-testid="dialog-punch-detail">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-sm text-muted-foreground">{selected.itemNumber}</span>

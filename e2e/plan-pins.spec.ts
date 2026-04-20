@@ -567,10 +567,117 @@ test.describe("Plan Pins E2E", () => {
     await expect(openBtn).toBeVisible();
     await openBtn.click();
 
-    await expect(page).toHaveURL(new RegExp(`/projects/${project.code}\\?tab=rfis&id=${newPin.refId}`));
-    // The destination tab actually renders the RFI subject we just created,
+    await expect(page).toHaveURL(new RegExp(`/projects/${project.code}\\?tab=rfis&rfiId=${newPin.refId}`));
+    // The detail dialog (not just the list) opens for the RFI we created,
     // proving the click-through reaches the RFI panel and not just the URL.
-    await expect(page.getByText(rfiSubject)).toBeVisible({ timeout: 15_000 });
+    const rfiDetail = page.getByTestId("proj-dialog-rfi-detail");
+    await expect(rfiDetail).toBeVisible({ timeout: 15_000 });
+    await expect(rfiDetail.getByTestId("proj-text-detail-subject")).toContainText(rfiSubject);
+  });
+
+  test("UI: clicking an RFI pin opens the RFI detail dialog", async ({ page }) => {
+    test.setTimeout(90_000);
+    const suffix = Date.now();
+    await stubPlanStream(page);
+    await devLogin(page, "ADMIN");
+
+    const project = await createProject(page, `${suffix}-rfi-ui`);
+    const doc = await createPlanDocument(page, project.id, suffix);
+    const rfi = await createRfi(page, project.id, suffix);
+    const rfiPin = await createPin(page, project.code, {
+      planDocumentId: doc.id, pageNumber: 1, x: 0.4, y: 0.4,
+      pinType: "RFI", refTable: "rfis", refId: rfi.id,
+    });
+
+    await page.goto(`${BASE_URL}/projects/${project.code}?tab=plans&documentId=${doc.id}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("plan-pin-toolbar")).toBeVisible({ timeout: 30_000 });
+
+    const pinEl = page.getByTestId(`plan-pin-${rfiPin.id}`);
+    await expect(pinEl).toBeVisible({ timeout: 30_000 });
+
+    await pinEl.click();
+    const openBtn = page.getByTestId(`button-open-pin-source-${rfiPin.id}`);
+    await expect(openBtn).toBeVisible();
+    await openBtn.click();
+
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.code}\\?tab=rfis&rfiId=${rfi.id}`),
+    );
+    const detail = page.getByTestId("proj-dialog-rfi-detail");
+    await expect(detail).toBeVisible({ timeout: 15_000 });
+    await expect(detail.getByTestId("proj-text-detail-subject")).toContainText(rfi.subject);
+  });
+
+  test("UI: clicking a PUNCH pin opens the punch list detail dialog", async ({ page }) => {
+    test.setTimeout(90_000);
+    const suffix = Date.now();
+    await stubPlanStream(page);
+    await devLogin(page, "ADMIN");
+
+    const project = await createProject(page, `${suffix}-punch-ui`);
+    const doc = await createPlanDocument(page, project.id, suffix);
+    const punch = await createPunch(page, project.code, suffix);
+    const punchPin = await createPin(page, project.code, {
+      planDocumentId: doc.id, pageNumber: 1, x: 0.4, y: 0.5,
+      pinType: "PUNCH", refTable: "punch_list_items", refId: punch.id,
+    });
+
+    await page.goto(`${BASE_URL}/projects/${project.code}?tab=plans&documentId=${doc.id}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("plan-pin-toolbar")).toBeVisible({ timeout: 30_000 });
+
+    const pinEl = page.getByTestId(`plan-pin-${punchPin.id}`);
+    await expect(pinEl).toBeVisible({ timeout: 30_000 });
+
+    await pinEl.click();
+    const openBtn = page.getByTestId(`button-open-pin-source-${punchPin.id}`);
+    await expect(openBtn).toBeVisible();
+    await openBtn.click();
+
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.code}\\?tab=punch-list&itemId=${punch.id}`),
+    );
+    const detail = page.getByTestId("dialog-punch-detail");
+    await expect(detail).toBeVisible({ timeout: 15_000 });
+    await expect(detail).toContainText(punch.title);
+  });
+
+  test("UI: clicking a SUBMITTAL pin opens the submittal detail dialog", async ({ page }) => {
+    test.setTimeout(90_000);
+    const suffix = Date.now();
+    await stubPlanStream(page);
+    await devLogin(page, "ADMIN");
+
+    const project = await createProject(page, `${suffix}-sub-ui`);
+    const doc = await createPlanDocument(page, project.id, suffix);
+    const submittal = await createSubmittal(page, project.id, suffix);
+    const submittalPin = await createPin(page, project.code, {
+      planDocumentId: doc.id, pageNumber: 1, x: 0.6, y: 0.4,
+      pinType: "SUBMITTAL", refTable: "submittals", refId: submittal.id,
+    });
+
+    await page.goto(`${BASE_URL}/projects/${project.code}?tab=plans&documentId=${doc.id}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("plan-pin-toolbar")).toBeVisible({ timeout: 30_000 });
+
+    const pinEl = page.getByTestId(`plan-pin-${submittalPin.id}`);
+    await expect(pinEl).toBeVisible({ timeout: 30_000 });
+
+    await pinEl.click();
+    const openBtn = page.getByTestId(`button-open-pin-source-${submittalPin.id}`);
+    await expect(openBtn).toBeVisible();
+    await openBtn.click();
+
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.code}\\?tab=submittals&submittalId=${submittal.id}`),
+    );
+    const detail = page.getByTestId("proj-sub-dialog-submittal-detail");
+    await expect(detail).toBeVisible({ timeout: 15_000 });
+    await expect(detail).toContainText(submittal.subject);
   });
 
   test("API: validates input, scopes to project, and supports list/delete", async ({ page }) => {
