@@ -345,7 +345,7 @@ export default function CrmDealDetailPage() {
                     <Plus className="w-4 h-4 mr-1" /> Log Activity
                   </Button>
                 </div>
-                <CrmActivityTimeline opportunityId={id} />
+                <CrmActivityTimeline opportunityId={id} urlSync />
               </TabsContent>
 
               <TabsContent value="quotes" className="mt-4">
