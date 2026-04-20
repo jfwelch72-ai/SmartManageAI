@@ -23,6 +23,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
 import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog, Project } from "@shared/schema";
 import { CrmCustomFieldsDisplay } from "./CrmCustomFieldsForm";
+import { EnrollSequenceDialog } from "./EnrollSequenceDialog";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -768,7 +769,20 @@ export function CrmOrgDetail({
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <EnrollSequenceDialog
+                              contactIds={[contact.id]}
+                              trigger={
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  data-testid={`button-enroll-sequence-contact-${contact.id}`}
+                                  title="Enroll in sequence"
+                                >
+                                  <Mail className="w-4 h-4" />
+                                </Button>
+                              }
+                            />
                             <Button
                               variant="ghost"
                               size="icon"

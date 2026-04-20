@@ -70,6 +70,8 @@ import {
   type OrgFormState,
 } from "@/components/crm/CrmOrgDialogs";
 import { CrmContactDialogs } from "@/components/crm/CrmContactDialogs";
+import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CrmOrgDetail } from "@/components/crm/CrmOrgDetail";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -583,6 +585,11 @@ export default function CRMPage() {
 
   const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports" | "analytics">("orgs");
   const [contactSearch, setContactSearch] = useState("");
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setSelectedContactIds(new Set());
+  }, [crmTab, contactSearch]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
@@ -1084,6 +1091,28 @@ export default function CRMPage() {
                     {!contactsLoading && (
                       <Badge variant="secondary" className="ml-1 text-xs font-normal">{allContacts.length}</Badge>
                     )}
+                    {selectedContactIds.size > 0 && (
+                      <span className="ml-2 flex items-center gap-2" data-testid="bulk-contact-actions">
+                        <Badge variant="default" className="text-xs">{selectedContactIds.size} selected</Badge>
+                        <EnrollSequenceDialog
+                          contactIds={Array.from(selectedContactIds)}
+                          trigger={
+                            <Button size="sm" variant="outline" data-testid="button-bulk-enroll-sequence">
+                              <Mail className="h-4 w-4 mr-1" />
+                              Enroll {selectedContactIds.size} in sequence
+                            </Button>
+                          }
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSelectedContactIds(new Set())}
+                          data-testid="button-clear-contact-selection"
+                        >
+                          Clear
+                        </Button>
+                      </span>
+                    )}
                   </CardTitle>
                   <div className="relative flex-1 max-w-sm">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1115,6 +1144,32 @@ export default function CRMPage() {
                     <table className="w-full text-sm" data-testid="table-contacts">
                       <thead>
                         <tr className="border-b bg-muted/40">
+                          <th className="px-4 py-3 w-10">
+                            {(() => {
+                              const visibleSelected = sortedContacts.filter((c) => selectedContactIds.has(c.id)).length;
+                              const allSelected = sortedContacts.length > 0 && visibleSelected === sortedContacts.length;
+                              const someSelected = visibleSelected > 0 && !allSelected;
+                              const checkedValue: boolean | "indeterminate" = allSelected
+                                ? true
+                                : someSelected
+                                  ? "indeterminate"
+                                  : false;
+                              return (
+                                <Checkbox
+                                  checked={checkedValue}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setSelectedContactIds(new Set(sortedContacts.map((c) => c.id)));
+                                    } else {
+                                      setSelectedContactIds(new Set());
+                                    }
+                                  }}
+                                  aria-label="Select all contacts"
+                                  data-testid="checkbox-select-all-contacts"
+                                />
+                              );
+                            })()}
+                          </th>
                           {(
                             [
                               { key: "name", label: "Name" },
@@ -1144,6 +1199,7 @@ export default function CRMPage() {
                               </span>
                             </th>
                           ))}
+                          <th className="px-4 py-3 w-10" />
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -1157,6 +1213,21 @@ export default function CRMPage() {
                             }}
                             data-testid={`row-contact-${contact.id}`}
                           >
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selectedContactIds.has(contact.id)}
+                                onCheckedChange={(checked) => {
+                                  setSelectedContactIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) next.add(contact.id);
+                                    else next.delete(contact.id);
+                                    return next;
+                                  });
+                                }}
+                                aria-label={`Select ${contact.firstName} ${contact.lastName}`}
+                                data-testid={`checkbox-select-contact-${contact.id}`}
+                              />
+                            </td>
                             <td className="px-4 py-3 font-medium">
                               <div className="flex items-center gap-2">
                                 {contact.firstName} {contact.lastName}
@@ -1200,6 +1271,21 @@ export default function CRMPage() {
                               ) : (
                                 <span className="text-muted-foreground/50">—</span>
                               )}
+                            </td>
+                            <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <EnrollSequenceDialog
+                                contactIds={[contact.id]}
+                                trigger={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Enroll in sequence"
+                                    data-testid={`button-enroll-sequence-row-${contact.id}`}
+                                  >
+                                    <Mail className="w-4 h-4" />
+                                  </Button>
+                                }
+                              />
                             </td>
                           </tr>
                         ))}

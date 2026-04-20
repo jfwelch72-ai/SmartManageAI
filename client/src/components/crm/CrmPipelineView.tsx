@@ -60,6 +60,7 @@ import {
   User,
 } from "lucide-react";
 import { CrmActivityTimeline } from "./CrmActivityTimeline";
+import { EnrollSequenceDialog } from "./EnrollSequenceDialog";
 import { CrmCustomFieldsForm, type CustomFieldsValue } from "./CrmCustomFieldsForm";
 import { useLocation } from "wouter";
 import { differenceInDays } from "date-fns";
@@ -1393,6 +1394,9 @@ export default function CrmPipelineView() {
 
               {/* Actions */}
               <div className="flex gap-2 flex-wrap">
+                {canEdit && selectedOpp.stage !== "WON" && selectedOpp.stage !== "LOST" && (
+                  <EnrollSequenceDialog opportunityId={selectedOpp.id} />
+                )}
                 {canEdit && (
                   <Button
                     size="sm"
