@@ -246,7 +246,12 @@ router.patch(
       }
 
       const body = req.body || {};
-      const updates: { x?: number; y?: number } = {};
+      const updates: {
+        x?: number;
+        y?: number;
+        pageNumber?: number;
+        planDocumentId?: string;
+      } = {};
 
       if (body.x !== undefined) {
         const x = Number(body.x);
@@ -261,6 +266,31 @@ router.patch(
           return res.status(400).json({ error: "y must be between 0 and 1" });
         }
         updates.y = y;
+      }
+      if (body.pageNumber !== undefined) {
+        const pageNumber = Number(body.pageNumber);
+        if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+          return res.status(400).json({ error: "pageNumber must be a positive integer" });
+        }
+        updates.pageNumber = pageNumber;
+      }
+      if (body.planDocumentId !== undefined && body.planDocumentId !== pin.planDocumentId) {
+        if (typeof body.planDocumentId !== "string" || !body.planDocumentId) {
+          return res.status(400).json({ error: "planDocumentId must be a string" });
+        }
+
+        const project = await getProjectByCode(pin.projectCode);
+        if (!project) return res.status(404).json({ error: "Project not found" });
+
+        const [targetDoc] = await db
+          .select()
+          .from(planDocuments)
+          .where(eq(planDocuments.id, body.planDocumentId))
+          .limit(1);
+        if (!targetDoc || targetDoc.projectId !== project.id) {
+          return res.status(404).json({ error: "Target plan document not found in this project" });
+        }
+        updates.planDocumentId = body.planDocumentId;
       }
 
       if (Object.keys(updates).length === 0) {
@@ -279,8 +309,18 @@ router.patch(
           action: "UPDATE",
           entityType: "planPin",
           entityId: pin.id,
-          oldValue: JSON.stringify({ x: pin.x, y: pin.y }),
-          newValue: JSON.stringify({ x: updated.x, y: updated.y }),
+          oldValue: JSON.stringify({
+            x: pin.x,
+            y: pin.y,
+            pageNumber: pin.pageNumber,
+            planDocumentId: pin.planDocumentId,
+          }),
+          newValue: JSON.stringify({
+            x: updated.x,
+            y: updated.y,
+            pageNumber: updated.pageNumber,
+            planDocumentId: updated.planDocumentId,
+          }),
         },
         req,
       );

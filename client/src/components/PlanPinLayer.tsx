@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { AlertCircle, Wrench, FileCheck, X, Trash2 } from "lucide-react";
+import { AlertCircle, Wrench, FileCheck, X, Trash2, Move } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -179,6 +180,35 @@ export function PlanPinLayer({
     },
   });
 
+  const movePageMutation = useMutation({
+    mutationFn: async (vars: { pinId: string; pageNumber: number; planDocumentId?: string }) => {
+      const body: Record<string, unknown> = { pageNumber: vars.pageNumber };
+      if (vars.planDocumentId) body.planDocumentId = vars.planDocumentId;
+      return apiRequest("PATCH", `/api/plan-pins/${vars.pinId}`, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "plan-pins"] });
+      toast({ title: "Pin moved" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Could not move pin", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const { data: projectDocs = [] } = useQuery<Array<{ id: string; title: string; fileName: string; mimeType: string | null; type: string }>>({
+    queryKey: ["/api/projects", projectCode, "documents"],
+    enabled: !!projectCode,
+  });
+
+  const movableDocs = useMemo(
+    () =>
+      projectDocs.filter((d) =>
+        (d.mimeType || "").toLowerCase().includes("pdf") ||
+        (d.fileName || "").toLowerCase().endsWith(".pdf"),
+      ),
+    [projectDocs],
+  );
+
   const visiblePins = useMemo(() => {
     return pins.filter((p) => {
       if (filter.type !== "ALL" && p.pinType !== filter.type) return false;
@@ -201,6 +231,11 @@ export function PlanPinLayer({
           onDelete={(id) => deleteMutation.mutate(id)}
           deletePending={deleteMutation.isPending}
           onMove={(id, x, y, onError) => moveMutation.mutate({ pinId: id, x, y, onError })}
+          onMoveToPage={(id, pageNumber, planDocumentId) =>
+            movePageMutation.mutate({ pinId: id, pageNumber, planDocumentId })
+          }
+          movePagePending={movePageMutation.isPending}
+          documents={movableDocs}
         />
       ))}
     </>
@@ -214,11 +249,47 @@ interface PinItemProps {
   onDelete: (pinId: string) => void;
   deletePending: boolean;
   onMove: (pinId: string, x: number, y: number, onError?: () => void) => void;
+  onMoveToPage: (pinId: string, pageNumber: number, planDocumentId?: string) => void;
+  movePagePending: boolean;
+  documents: Array<{ id: string; title: string; fileName: string }>;
 }
 
 const DRAG_THRESHOLD_PX = 4;
 
-function PinItem({ pin, meta, onOpenSource, onDelete, deletePending, onMove }: PinItemProps) {
+function PinItem({
+  pin,
+  meta,
+  onOpenSource,
+  onDelete,
+  deletePending,
+  onMove,
+  onMoveToPage,
+  movePagePending,
+  documents,
+}: PinItemProps) {
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveDocId, setMoveDocId] = useState<string>(pin.planDocumentId);
+  const [movePage, setMovePage] = useState<string>(String(pin.pageNumber));
+
+  useEffect(() => {
+    if (moveOpen) {
+      setMoveDocId(pin.planDocumentId);
+      setMovePage(String(pin.pageNumber));
+    }
+  }, [moveOpen, pin.planDocumentId, pin.pageNumber]);
+
+  const submitMove = () => {
+    const pageNumber = parseInt(movePage, 10);
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) return;
+    const targetDocId = moveDocId !== pin.planDocumentId ? moveDocId : undefined;
+    if (targetDocId === undefined && pageNumber === pin.pageNumber) {
+      setMoveOpen(false);
+      return;
+    }
+    onMoveToPage(pin.id, pageNumber, targetDocId);
+    setMoveOpen(false);
+  };
+
   const styleDef = PIN_STYLE[pin.pinType];
   const Icon = styleDef.icon;
   const dot = statusDotColor(meta?.status);
@@ -348,7 +419,7 @@ function PinItem({ pin, meta, onOpenSource, onDelete, deletePending, onMove }: P
           </div>
         )}
         <div className="text-[10px] text-muted-foreground mb-2">
-          Tip: drag the pin to reposition it on this page.
+          Tip: drag the pin to reposition it on this page, or use Move to send it to another page.
         </div>
         <div className="flex items-center gap-2 mt-2">
           <Button
@@ -362,6 +433,18 @@ function PinItem({ pin, meta, onOpenSource, onDelete, deletePending, onMove }: P
           </Button>
           <Button
             size="sm"
+            variant="outline"
+            className="h-7 px-2 text-xs"
+            onClick={() => setMoveOpen(true)}
+            disabled={movePagePending}
+            data-testid={`button-move-pin-${pin.id}`}
+            title="Move to another page or document"
+          >
+            <Move className="w-3.5 h-3.5 mr-1" />
+            Move
+          </Button>
+          <Button
+            size="sm"
             variant="ghost"
             className="h-7 px-2"
             onClick={() => onDelete(pin.id)}
@@ -372,6 +455,68 @@ function PinItem({ pin, meta, onOpenSource, onDelete, deletePending, onMove }: P
           </Button>
         </div>
       </PopoverContent>
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent data-testid={`dialog-move-pin-${pin.id}`}>
+          <DialogHeader>
+            <DialogTitle>Move pin</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {documents.length > 1 && (
+              <div>
+                <Label htmlFor={`move-doc-${pin.id}`}>Plan document</Label>
+                <Select value={moveDocId} onValueChange={setMoveDocId}>
+                  <SelectTrigger id={`move-doc-${pin.id}`} data-testid={`select-move-pin-doc-${pin.id}`}>
+                    <SelectValue placeholder="Choose a plan document" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {documents.map((d) => (
+                      <SelectItem key={d.id} value={d.id} data-testid={`option-move-pin-doc-${d.id}`}>
+                        {d.title || d.fileName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div>
+              <Label htmlFor={`move-page-${pin.id}`}>Page number</Label>
+              <Input
+                id={`move-page-${pin.id}`}
+                type="number"
+                min={1}
+                step={1}
+                value={movePage}
+                onChange={(e) => setMovePage(e.target.value)}
+                data-testid={`input-move-pin-page-${pin.id}`}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                The pin will keep its current x/y position on the new page.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setMoveOpen(false)}
+              data-testid={`button-move-pin-cancel-${pin.id}`}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={submitMove}
+              disabled={
+                movePagePending ||
+                !movePage ||
+                !Number.isInteger(parseInt(movePage, 10)) ||
+                parseInt(movePage, 10) < 1
+              }
+              data-testid={`button-move-pin-confirm-${pin.id}`}
+            >
+              {movePagePending ? "Moving…" : "Move pin"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Popover>
   );
 }
