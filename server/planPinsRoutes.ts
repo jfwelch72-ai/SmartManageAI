@@ -43,6 +43,7 @@ router.get(
         .select({
           id: planPins.id,
           planDocumentId: planPins.planDocumentId,
+          pageNumber: planPins.pageNumber,
           pinType: planPins.pinType,
           refTable: planPins.refTable,
           refId: planPins.refId,
@@ -91,14 +92,25 @@ router.get(
         }
       }
 
-      const summary: Record<string, { total: number; rfi: number; punch: number; submittal: number }> = {};
+      const summary: Record<
+        string,
+        { total: number; rfi: number; punch: number; submittal: number; pages: Record<number, number> }
+      > = {};
       for (const p of pins) {
         if (!openRefs.has(`${p.refTable}:${p.refId}`)) continue;
-        const entry = summary[p.planDocumentId] ||= { total: 0, rfi: 0, punch: 0, submittal: 0 };
+        const entry = summary[p.planDocumentId] ||= {
+          total: 0,
+          rfi: 0,
+          punch: 0,
+          submittal: 0,
+          pages: {},
+        };
         entry.total++;
         if (p.pinType === "RFI") entry.rfi++;
         else if (p.pinType === "PUNCH") entry.punch++;
         else if (p.pinType === "SUBMITTAL") entry.submittal++;
+        const pn = Number(p.pageNumber) || 1;
+        entry.pages[pn] = (entry.pages[pn] || 0) + 1;
       }
 
       res.json(summary);

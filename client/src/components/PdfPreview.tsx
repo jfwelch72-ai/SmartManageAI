@@ -23,11 +23,12 @@ interface PdfPreviewProps {
   onPinDrop?: (info: { x: number; y: number; pageNumber: number }) => void;
   onPageChange?: (pageNumber: number) => void;
   overlay?: (info: { pageNumber: number; canvasWidth: number; canvasHeight: number }) => React.ReactNode;
+  pageBadges?: Record<number, number>;
 }
 
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
-export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay }: PdfPreviewProps) {
+export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay, pageBadges }: PdfPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -226,6 +227,41 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
           </Button>
         </div>
       </div>
+      {numPages > 1 && (
+        <div
+          className="flex items-center gap-1 px-3 py-1 border-b bg-muted/10 shrink-0 overflow-x-auto"
+          data-testid="pdf-page-strip"
+        >
+          {Array.from({ length: numPages }, (_, i) => i + 1).map((pn) => {
+            const count = pageBadges?.[pn] || 0;
+            const active = pn === pageNum;
+            return (
+              <button
+                key={pn}
+                onClick={() => setPageNum(pn)}
+                className={
+                  "relative shrink-0 inline-flex items-center justify-center text-[11px] h-6 min-w-[28px] px-1.5 rounded border transition-colors " +
+                  (active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-card hover:bg-accent border-border text-muted-foreground")
+                }
+                title={count > 0 ? `Page ${pn} • ${count} open pin${count === 1 ? "" : "s"}` : `Page ${pn}`}
+                data-testid={`pdf-page-strip-page-${pn}`}
+              >
+                {pn}
+                {count > 0 && (
+                  <span
+                    className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-blue-500 text-white text-[9px] leading-[16px] text-center font-semibold border border-background"
+                    data-testid={`pdf-page-strip-badge-${pn}`}
+                  >
+                    {count > 99 ? "99+" : count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div
         className="flex-1 min-h-0 overflow-auto flex items-start justify-center bg-muted/10 p-4"
         data-testid="pdf-preview-canvas-container"
