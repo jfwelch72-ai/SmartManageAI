@@ -9,7 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot, Settings } from "lucide-react";
+import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot, Settings, Search } from "lucide-react";
+import { openCommandPalette } from "./CommandPalette";
 import ThemeToggle from "./ThemeToggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
@@ -92,7 +93,35 @@ export default function TopHeader() {
           {userRole === 'HUSTLER' && <OrganizationSwitcher />}
         </div>
 
+        <div className="flex-1 flex justify-center px-2 max-w-xl mx-auto hidden sm:flex">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full max-w-md justify-between text-muted-foreground"
+            onClick={openCommandPalette}
+            data-testid="button-command-palette"
+          >
+            <span className="flex items-center gap-2">
+              <Search className="w-4 h-4" />
+              Search…
+            </span>
+            <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              <span className="text-xs">⌘</span>K
+            </kbd>
+          </Button>
+        </div>
+
         <div className="flex items-center gap-1 sm:gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sm:hidden"
+            onClick={openCommandPalette}
+            data-testid="button-command-palette-mobile"
+            aria-label="Search"
+          >
+            <Search className="w-5 h-5" />
+          </Button>
           {hasContractorAccess(userRole) && (
             <Button variant="ghost" size="icon" className="relative" onClick={() => window.dispatchEvent(new CustomEvent("open-messaging-widget"))} data-testid="button-messages">
                 <MessageSquare className="w-5 h-5" />

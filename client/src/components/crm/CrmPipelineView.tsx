@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useState, Fragment, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -250,6 +250,11 @@ export default function CrmPipelineView() {
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [assignedFilter, setAssignedFilter] = useState<string>("all");
   const [addOpen, setAddOpen] = useState(false);
+  useEffect(() => {
+    const handler = () => setAddOpen(true);
+    window.addEventListener("crm:open-create-deal", handler);
+    return () => window.removeEventListener("crm:open-create-deal", handler);
+  }, []);
   const [form, setForm] = useState({ ...DEFAULT_FORM });
   const [formCustomFields, setFormCustomFields] = useState<CustomFieldsValue>({});
   const [editFormCustomFields, setEditFormCustomFields] = useState<CustomFieldsValue>({});

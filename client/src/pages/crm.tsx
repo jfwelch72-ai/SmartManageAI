@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from "recharts";
@@ -623,6 +623,74 @@ export default function CRMPage() {
     setContactCustomFields({});
     setCreateContactOpen(open);
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab");
+    const tabMap: Record<string, "orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports" | "analytics"> = {
+      orgs: "orgs",
+      organisations: "orgs",
+      organizations: "orgs",
+      vendors: "orgs",
+      subcontractors: "orgs",
+      contacts: "contacts",
+      pipeline: "pipeline",
+      opportunities: "pipeline",
+      deals: "pipeline",
+      tasks: "tasks",
+      activities: "tasks",
+      quotes: "quotes",
+      reports: "reports",
+      analytics: "analytics",
+    };
+    if (tabParam && tabMap[tabParam]) {
+      setCrmTab(tabMap[tabParam]);
+    }
+    const newParam = params.get("new");
+    if (newParam === "1" || newParam === "true" || newParam === "call") {
+      const target = tabParam ? tabMap[tabParam] : "orgs";
+      if (target === "contacts") setCreateContactOpen(true);
+      else if (target === "orgs") setCreateOrgOpen(true);
+      else if (target === "pipeline") {
+        setCrmTab("pipeline");
+        setTimeout(() => window.dispatchEvent(new CustomEvent("crm:open-create-deal")), 50);
+      } else setCrmTab(target ?? "orgs");
+    }
+    const orgId = params.get("organisationId") || params.get("organizationId");
+    if (orgId) {
+      setCrmTab("orgs");
+      fetch(`/api/crm/organisations/${encodeURIComponent(orgId)}`, { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((org) => {
+          if (org) {
+            setSelectedOrg(org as OrganizationWithContacts);
+            setDetailOrgOpen(true);
+          }
+        })
+        .catch(() => undefined);
+    }
+    const contactId = params.get("contactId");
+    if (contactId) {
+      setCrmTab("contacts");
+      fetch(`/api/crm/contacts/${encodeURIComponent(contactId)}`, { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((contact) => {
+          if (contact) {
+            setSelectedContact(contact as CrmContact);
+            setViewContactOpen(true);
+          }
+        })
+        .catch(() => undefined);
+    }
+    if (tabParam || newParam || orgId || contactId) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("new");
+      url.searchParams.delete("organisationId");
+      url.searchParams.delete("organizationId");
+      url.searchParams.delete("contactId");
+      window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+    }
+  }, []);
 
   const orgQueryParams = {
     search: searchTerm,

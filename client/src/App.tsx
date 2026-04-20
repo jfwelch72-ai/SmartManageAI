@@ -83,6 +83,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
+import { CommandPaletteProvider } from "@/components/CommandPalette";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import EmailVerificationBanner from "@/components/EmailVerificationBanner";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
@@ -549,17 +550,19 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider style={sidebarStyle}>
-      <AppSidebar />
-      <SidebarInset className="flex flex-col min-h-screen">
-        <ImpersonationBanner />
-        <EmailVerificationBanner />
-        <OfflineStatusBanner />
-        <TopHeader />
-        <main className="flex-1 overflow-auto">
-          {children}
-        </main>
-      </SidebarInset>
-      <PushNotificationBanner />
+      <CommandPaletteProvider>
+        <AppSidebar />
+        <SidebarInset className="flex flex-col min-h-screen">
+          <ImpersonationBanner />
+          <EmailVerificationBanner />
+          <OfflineStatusBanner />
+          <TopHeader />
+          <main className="flex-1 overflow-auto">
+            {children}
+          </main>
+        </SidebarInset>
+        <PushNotificationBanner />
+      </CommandPaletteProvider>
     </SidebarProvider>
   );
 }

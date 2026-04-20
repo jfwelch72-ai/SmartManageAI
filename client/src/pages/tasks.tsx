@@ -125,6 +125,16 @@ export default function Tasks() {
     }
   }, [tasks]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "true" || params.get("new") === "1") {
+      setIsCreateDialogOpen(true);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("new");
+      window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
+    }
+  }, []);
+
   // Fetch projects for dropdown
   const { data: projects = [] } = useQuery<{ data: Array<{ id: string; code: string; name: string }>; pagination: any }, Error, Array<{ id: string; code: string; name: string }>>({
     queryKey: ["/api/projects"],

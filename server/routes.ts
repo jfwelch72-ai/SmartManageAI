@@ -71,6 +71,7 @@ import timeClockRoutes from "./timeClockRoutes";
 import overtimeRoutes from "./overtimeRoutes";
 import timeEntryRoutes from "./timeEntryRoutes";
 import payrollRoutes from "./payrollRoutes";
+import searchRoutes from "./searchRoutes";
 import changeOrderCrudRoutes from "./changeOrderCrudRoutes";
 import changeOrderApprovalRoutes from "./changeOrderApprovalRoutes";
 import changeOrderExportRoutes from "./changeOrderExportRoutes";
@@ -243,6 +244,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register payroll routes
   app.use(payrollRoutes);
+
+  // Global Cmd-K search
+  app.use(searchRoutes);
 
   // Register change order state machine routes
   app.use("/api/change-orders", changeOrderCrudRoutes);

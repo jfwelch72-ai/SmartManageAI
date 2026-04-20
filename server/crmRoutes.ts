@@ -1470,6 +1470,20 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
   }
 });
 
+router.get("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
+    const conditions = [eq(crmContacts.id, req.params.id)];
+    if (shouldFilter && orgId) conditions.push(eq(crmContacts.organizationId, orgId));
+    const [contact] = await db.select().from(crmContacts).where(and(...conditions)).limit(1);
+    if (!contact) return res.status(404).json({ error: "Contact not found" });
+    res.json(contact);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
