@@ -119,6 +119,7 @@ import SafetyTrainingTab from "@/components/project-tabs/SafetyTrainingTab";
 import ProjectVaultTab from "@/components/project-tabs/ProjectVaultTab";
 import RisksTab from "@/components/project-tabs/RisksTab";
 import LocationManagerTab from "@/components/project-tabs/LocationManagerTab";
+import MapPickerDialog from "@/components/MapPickerDialog";
 import FieldTakeoffTab from "@/components/project-tabs/FieldTakeoffTab";
 import LidarTab from "@/components/project-tabs/LidarTab";
 import ProjectNotesTab from "@/components/project-tabs/ProjectNotesTab";
@@ -1350,6 +1351,7 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
   const [siteLat, setSiteLat] = useState(String(project.siteLatitude || ""));
   const [siteLng, setSiteLng] = useState(String(project.siteLongitude || ""));
   const [radius, setRadius] = useState(String(project.geofenceRadius || "200"));
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const updateMutation = useMutation({
     mutationFn: async (updates: Record<string, unknown>) => {
@@ -1437,9 +1439,15 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
                 </div>
               )}
               {canManage && (
-                <Button variant="outline" size="sm" onClick={() => setEditingCoords(true)} data-testid="button-edit-geofence-coords">
-                  {project.siteLatitude ? "Edit Site Coordinates" : "Set Site Coordinates"}
-                </Button>
+                <div className="flex gap-2 flex-wrap">
+                  <Button variant="outline" size="sm" onClick={() => setEditingCoords(true)} data-testid="button-edit-geofence-coords">
+                    {project.siteLatitude ? "Edit Site Coordinates" : "Set Site Coordinates"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)} data-testid="button-pick-on-map">
+                    <MapPin className="w-4 h-4 mr-1" />
+                    Pick on map
+                  </Button>
+                </div>
               )}
             </div>
           ) : (
@@ -1485,7 +1493,7 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
                   50m for tight sites, 200m typical, 2000m+ for highway/civil projects
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button
                   size="sm"
                   disabled={updateMutation.isPending}
@@ -1507,6 +1515,10 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
                 >
                   Save
                 </Button>
+                <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)} data-testid="button-pick-on-map-edit">
+                  <MapPin className="w-4 h-4 mr-1" />
+                  Pick on map
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => setEditingCoords(false)} data-testid="button-cancel-geofence-coords">
                   Cancel
                 </Button>
@@ -1514,6 +1526,33 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
             </div>
           )}
         </div>
+        <MapPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          initialLat={
+            siteLat && !isNaN(parseFloat(siteLat))
+              ? parseFloat(siteLat)
+              : (project.siteLatitude as number | null | undefined) ?? null
+          }
+          initialLng={
+            siteLng && !isNaN(parseFloat(siteLng))
+              ? parseFloat(siteLng)
+              : (project.siteLongitude as number | null | undefined) ?? null
+          }
+          isSaving={updateMutation.isPending}
+          onConfirm={async (lat, lng) => {
+            setSiteLat(String(lat));
+            setSiteLng(String(lng));
+            const r = parseInt(radius, 10);
+            const safeRadius = isNaN(r) || r < 10 || r > 10000 ? 200 : r;
+            await updateMutation.mutateAsync({
+              siteLatitude: lat,
+              siteLongitude: lng,
+              geofenceRadius: safeRadius,
+            });
+            setPickerOpen(false);
+          }}
+        />
       </CardContent>
     </Card>
   );
