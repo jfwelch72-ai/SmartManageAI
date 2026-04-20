@@ -158,6 +158,79 @@ reconnect, no duplicated messages, status returns to `OK`.
 
 ---
 
+## 7b. Scripted archive verification (Task #545)
+
+Section 5 verifies archive push-back through the CRM UI. For a scripted,
+loggable pass — the original confidence goal of Task #537 / #545 — use:
+
+  `scripts/email-sync-live-archive-test.ts`
+
+It calls `PATCH /api/email/messages/:id` against a running CRM and then polls
+the live Gmail / Microsoft Graph API for the same message until INBOX is gone
+(or a timeout is hit). Run once per provider whenever the push-back code in
+`server/emailRoutes.ts` (`drainMessageProviderPush`, `pushGmailMessageState`,
+`pushOutlookMessageState`) changes meaningfully.
+
+**Gather inputs once per provider:**
+
+1. Connect the sandbox mailbox via Settings → Email Accounts (Section 1).
+2. Send yourself a fresh message so it lands in Inbox / has the `INBOX`
+   label.
+3. From a DB shell, grab the CRM-side message id and the provider-side id:
+   ```sql
+   SELECT id, external_id, subject
+   FROM email_messages
+   WHERE email_account_id = '<account uuid>'
+   ORDER BY received_at DESC
+   LIMIT 5;
+   ```
+   `id` → `CRM_MESSAGE_ID`, `external_id` → `PROVIDER_MESSAGE_ID`.
+4. Get an authenticated CRM cookie (browser devtools → Network → copy any
+   `/api/...` request's `Cookie` header), and a CSRF token if your session
+   requires it.
+5. Mint a short-lived provider access token for verification:
+   - **Gmail**: in OAuth Playground or via your refresh token, request scope
+     `https://www.googleapis.com/auth/gmail.modify` and copy the access
+     token.
+   - **Outlook**: get a token with `Mail.Read` scope (the Graph Explorer
+     "Access token" tab works for personal accounts; `az account get-access-token
+     --resource https://graph.microsoft.com` for tenant accounts).
+
+**Run (Gmail):**
+
+```bash
+PROVIDER=gmail \
+CRM_BASE_URL=https://<your-crm-host> \
+CRM_SESSION_COOKIE='connect.sid=s%3A...' \
+CSRF_TOKEN='<token if required>' \
+CRM_MESSAGE_ID=<uuid from step 3> \
+PROVIDER_MESSAGE_ID=<external_id from step 3> \
+PROVIDER_ACCESS_TOKEN=<gmail access token> \
+npx tsx scripts/email-sync-live-archive-test.ts \
+  | tee live-archive-gmail-$(date +%Y%m%d).log
+```
+
+**Run (Outlook):** identical, with `PROVIDER=outlook` and the Graph token.
+
+**Pass criteria:** script prints
+`SUCCESS: Gmail message no longer carries INBOX label.` (or
+`SUCCESS: Outlook message moved out of Inbox.`) and exits 0. The captured
+`live-archive-<provider>-<date>.log` is the artifact attached to the
+regression-pass record (alongside an Inbox-after screenshot from the
+provider's web UI).
+
+If the script times out, check:
+- The CRM PATCH response was 200 (logged by the script).
+- The `provider_sync` job is running (`processProviderEmailSync` in
+  `server/jobs/jobRunner.ts`) — `drainMessageProviderPush` is called both
+  inline by the PATCH handler and again by the cron, so a stuck cron will
+  still let an inline push succeed.
+- The mailbox is the same one whose tokens were minted (a common foot-gun:
+  `PROVIDER_ACCESS_TOKEN` belongs to a different account than
+  `CRM_MESSAGE_ID`).
+
+---
+
 ## 8. Wrap-up
 
 - Capture the date, app version / commit SHA, and any anomalies in the
