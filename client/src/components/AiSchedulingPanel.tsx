@@ -326,7 +326,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     }
   }, [projectCode, toast]);
 
-  const handleExportGantt = useCallback(async (kind: "png" | "pdf") => {
+  const handleExportGantt = useCallback(async (kind: "png" | "pdf" | "pdf-server") => {
     if (!ganttExportRef.current) return;
     setIsExporting(true);
     try {
@@ -344,8 +344,9 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
         }
       }
       const shouldUseServer =
-        kind === "pdf" &&
-        (taskCount > SERVER_RENDER_TASK_THRESHOLD || durationDays > SERVER_RENDER_DAY_THRESHOLD);
+        kind === "pdf-server" ||
+        (kind === "pdf" &&
+          (taskCount > SERVER_RENDER_TASK_THRESHOLD || durationDays > SERVER_RENDER_DAY_THRESHOLD));
 
       if (shouldUseServer) {
         const ok = await exportGanttServerSide();
@@ -359,7 +360,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
         });
       }
 
-      if (kind === "pdf") {
+      if (kind === "pdf" || kind === "pdf-server") {
         const result = await renderGanttPdf();
         if (!result) return;
         const link = document.createElement("a");
@@ -2027,7 +2028,7 @@ function GanttChart({
   showBaseline: boolean;
   onToggleShowBaseline: () => void;
   isExporting?: boolean;
-  onExport?: (kind: "png" | "pdf") => void;
+  onExport?: (kind: "png" | "pdf" | "pdf-server") => void;
   onSend?: () => void;
 }) {
   const hasAnyBaseline = !!schedule.baselineLocked || tasks.some(t => t.baselineStartDate && t.baselineEndDate);
@@ -2113,6 +2114,10 @@ function GanttChart({
                   <DropdownMenuItem onClick={() => onExport("pdf")} data-testid="button-export-gantt-pdf">
                     <FileText className="w-4 h-4 mr-2" />
                     Export as PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onExport("pdf-server")} data-testid="button-export-gantt-pdf-server">
+                    <FileText className="w-4 h-4 mr-2" />
+                    High-quality PDF (server)
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onExport("png")} data-testid="button-export-gantt-png">
                     <FileImage className="w-4 h-4 mr-2" />
