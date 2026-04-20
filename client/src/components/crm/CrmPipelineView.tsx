@@ -57,6 +57,7 @@ import {
   GitBranch,
   Brain,
   RefreshCw,
+  User,
 } from "lucide-react";
 import { CrmActivityTimeline } from "./CrmActivityTimeline";
 import { useLocation } from "wouter";
