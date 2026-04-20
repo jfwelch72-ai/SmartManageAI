@@ -235,6 +235,7 @@ const WipReportPage = lazy(() => import("@/pages/wip-report"));
 const CFODashboardPage = lazy(() => import("@/pages/cfo-dashboard"));
 const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const MyDayPage = lazy(() => import("@/pages/my-day"));
 
 function FeatureFlagGate({ flag, children }: { flag: FeatureFlagKey; children: React.ReactNode }) {
   const { isEnabled } = useFeatureFlagsHook();
@@ -365,6 +366,7 @@ function Router() {
       <Route path="/leave-management" component={() => <ProtectedRoute component={LeaveManagementPage} permission={RoutePermissions.LEAVE_MANAGEMENT} />} />
       <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} permission={RoutePermissions.BULLETINS} />} />
       <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} permission={RoutePermissions.TASKS} />} />
+      <Route path="/my-day" component={() => <ProtectedRoute component={MyDayPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} permission={RoutePermissions.TIME_CLOCK} />} />
       <Route path="/messages" component={() => <ProtectedRoute component={UnifiedMessagesPage} permission={RoutePermissions.MESSAGES} />} />
       <Route path="/portal-chat" component={() => <ProtectedRoute component={UnifiedMessagesPage} permission={RoutePermissions.MESSAGES} />} />

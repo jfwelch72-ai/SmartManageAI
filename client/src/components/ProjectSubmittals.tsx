@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
@@ -108,6 +108,19 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
     setSelectedSubmittal(submittal);
     setShowDetailDialog(true);
   };
+
+  useEffect(() => {
+    if (submittals.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const deepLinkId = params.get("submittalId");
+    if (deepLinkId) {
+      const found = submittals.find((s) => s.id === deepLinkId);
+      if (found) {
+        setSelectedSubmittal(found);
+        setShowDetailDialog(true);
+      }
+    }
+  }, [submittals]);
 
   const { getRowProps: getSubmittalRowProps } = useTableKeyboardNav({
     rowCount: submittals.length,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -336,6 +336,20 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
     setStatusNote("");
     setShowDetail(true);
   };
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const deepLinkId = params.get("itemId");
+    if (deepLinkId) {
+      const found = items.find((p) => p.id === deepLinkId);
+      if (found) {
+        setSelected(found);
+        setStatusNote("");
+        setShowDetail(true);
+      }
+    }
+  }, [items]);
 
   const handleOpenEdit = (item: PunchListItem) => {
     setSelected(item);

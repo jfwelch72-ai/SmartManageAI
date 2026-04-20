@@ -51,6 +51,7 @@ import {
   BarChart3,
   Megaphone,
   Inbox,
+  Sun,
   Home,
   TrendingUp,
   CalendarDays,
@@ -90,6 +91,20 @@ const GROUP_ICONS: Record<SidebarSection, LucideIcon> = {
   reports: BarChart3,
   info: Info,
 };
+
+function MyDayBadge() {
+  const { data } = useQuery<{ counts?: { overdue: number; today: number } }>({
+    queryKey: ["/api/my-day"],
+    refetchInterval: 60000,
+  });
+  const count = (data?.counts?.overdue ?? 0) + (data?.counts?.today ?? 0);
+  if (count <= 0) return null;
+  return (
+    <Badge variant="default" className="h-5 min-w-5 flex items-center justify-center rounded-full px-1.5 py-0 text-xs ml-auto" data-testid="badge-my-day-count">
+      {count}
+    </Badge>
+  );
+}
 
 function SidebarSkeleton() {
   return (
@@ -350,6 +365,21 @@ export function AppSidebar() {
           </Link>
         </SidebarHeader>
         <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/my-day")} tooltip="My Day">
+                    <Link href="/my-day" data-testid="sidebar-my-day-fw">
+                      <Sun className="w-4 h-4 text-amber-500" />
+                      <span>My Day</span>
+                      <MyDayBadge />
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
           {workflowGroups.map((group) => {
             const visibleItems = getVisibleGroupItems(group, userRole, perms);
             if (visibleItems.length === 0) return null;
@@ -415,6 +445,21 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/my-day")} tooltip="My Day">
+                  <Link href="/my-day" data-testid="sidebar-my-day">
+                    <Sun className="w-4 h-4 text-amber-500" />
+                    <span>My Day</span>
+                    <MyDayBadge />
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
         {workflowGroups.map((group) => {
           if (group.key === 'portfolio') {
             if (!isHustlerUser) return null;
