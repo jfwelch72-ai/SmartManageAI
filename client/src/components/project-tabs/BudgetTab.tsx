@@ -11,6 +11,8 @@ import { Progress } from "@/components/ui/progress";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
 interface BudgetLineItem {
   id: string;
@@ -544,6 +546,14 @@ export default function BudgetTab({ projectCode, projectId, userRole, projectBud
     },
   });
 
+  const { getRowProps: getBudgetRowProps } = useTableKeyboardNav({
+    rowCount: lines.length,
+  });
+  useRegisterShortcuts(
+    "project-budget",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   const addLine = () => {
     setLines(prev => [...prev, {
       key: `new-${Date.now()}`,
@@ -703,7 +713,12 @@ export default function BudgetTab({ projectCode, projectId, userRole, projectBud
                   </TableRow>
                 )}
                 {lines.map((line, idx) => (
-                  <TableRow key={line.key} className={line.isDirty ? "bg-amber-50/30 dark:bg-amber-950/20" : ""} data-testid={`row-budget-line-${idx}`}>
+                  <TableRow
+                    key={line.key}
+                    className={`${line.isDirty ? "bg-amber-50/30 dark:bg-amber-950/20" : ""} data-[focused=true]:bg-muted data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset`}
+                    data-testid={`row-budget-line-${idx}`}
+                    {...getBudgetRowProps(idx)}
+                  >
                     <TableCell>
                       {canEdit && line.isNew ? (
                         <CostCodeCombobox

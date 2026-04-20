@@ -7,6 +7,8 @@ import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
 import ProjectAddenda from "@/components/ProjectAddenda";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import BidLibrarySection from "@/components/bid/BidLibrarySection";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
@@ -154,6 +156,30 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     setPreviewDocId(null);
     setSelectedSheetId(sheetId);
   };
+  const docIdIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    documents.forEach((d: any, i: number) => m.set(d.id, i));
+    return m;
+  }, [documents]);
+  const { getRowProps: getDocRowPropsRaw } = useTableKeyboardNav({
+    rowCount: documents.length,
+    onActivate: (idx) => {
+      const d = documents[idx];
+      if (d) {
+        setSelectedDocId(d.id);
+        setPreviewDocId(d.id);
+      }
+    },
+  });
+  const getDocRowProps = (docId: string) => {
+    const idx = docIdIndex.get(docId);
+    return idx === undefined ? {} : getDocRowPropsRaw(idx);
+  };
+  useRegisterShortcuts(
+    "project-plans",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   const [panelWidth, setPanelWidth] = useState(256);
   const isResizingRef = useRef(false);
   const resizeStartXRef = useRef(0);
@@ -1063,12 +1089,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   onDragStart={(e) => handleDocDragStart(e, doc.id)}
                                   onDragEnd={handleDocDragEnd}
                                   className={cn(
-                                    "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
+                                    "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset",
                                     selectedDocId === doc.id && "bg-accent",
                                     draggedDocId === doc.id && "opacity-50"
                                   )}
                                   onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                   data-testid={`document-${doc.id}`}
+                                  {...getDocRowProps(doc.id)}
                                 >
                                   <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
                                   {doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc") ? (
@@ -1220,12 +1247,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                             onDragStart={(e) => handleDocDragStart(e, doc.id)}
                                             onDragEnd={handleDocDragEnd}
                                             className={cn(
-                                              "flex items-start gap-1.5 px-2 py-1 text-xs cursor-pointer hover:bg-accent/50 transition-colors group",
+                                              "flex items-start gap-1.5 px-2 py-1 text-xs cursor-pointer hover:bg-accent/50 transition-colors group data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset",
                                               selectedDocId === doc.id && "bg-accent",
                                               draggedDocId === doc.id && "opacity-50"
                                             )}
                                             onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                             data-testid={`subfolder-doc-${doc.id}`}
+                                            {...getDocRowProps(doc.id)}
                                           >
                                             <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
                                             <File className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />

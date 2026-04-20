@@ -22,6 +22,8 @@ import { SovCoTieoutPanel } from "@/components/sov/SovCoTieoutPanel";
 import { SovSummaryCards } from "@/components/sov/SovSummaryCards";
 import type { SovProject, SOV } from "@/components/sov/types";
 import { WorkflowTracker } from "@/components/workflow-tracker";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
 interface SovTabProps {
   projectId: string;
@@ -129,6 +131,20 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
       return completed === 0 && current === 0;
     });
   });
+  const openSov = (sov: SOV) => { setSelectedSOV(sov); setShowDetailDialog(true); };
+
+  const { getRowProps: getSovRowProps } = useTableKeyboardNav({
+    rowCount: sovs.length,
+    onActivate: (idx) => {
+      const sov = sovs[idx];
+      if (sov) openSov(sov);
+    },
+  });
+  useRegisterShortcuts(
+    "project-sov",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   const sovGapAmount = gapSov
     ? parseFloat(gapSov.contractAmount ?? "0") -
       gapSov.lineItems.reduce((acc, li) => acc + parseFloat(li.scheduledValue ?? "0"), 0)
@@ -235,8 +251,14 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {sovs.map(sov => (
-                            <TableRow key={sov.id} data-testid={`row-sov-${sov.id}`}>
+                          {sovs.map((sov, idx) => (
+                            <TableRow
+                              key={sov.id}
+                              data-testid={`row-sov-${sov.id}`}
+                              className="cursor-pointer data-[focused=true]:bg-muted data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset"
+                              onClick={() => openSov(sov)}
+                              {...getSovRowProps(idx)}
+                            >
                               <TableCell className="font-mono text-sm">{sov.sovNumber}</TableCell>
                               <TableCell className="font-medium">{sov.title}</TableCell>
                               <TableCell>{getStatusBadge(sov.status)}</TableCell>
@@ -244,11 +266,11 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
                               <TableCell className="text-right">{formatCurrency(sov.totalCompleted)}</TableCell>
                               <TableCell className="text-right">{formatPercent(sov.overallPercentComplete)}</TableCell>
                               <TableCell className="text-right">{formatCurrency(sov.totalBalanceToFinish)}</TableCell>
-                              <TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => { setSelectedSOV(sov); setShowDetailDialog(true); }}
+                                  onClick={() => openSov(sov)}
                                   data-testid={`button-view-sov-${sov.id}`}
                                 >
                                   <Eye className="h-4 w-4 mr-1" />
@@ -262,8 +284,14 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
                     </div>
 
                     <div className="md:hidden divide-y">
-                      {sovs.map(sov => (
-                        <div key={sov.id} className="p-3 space-y-2" data-testid={`card-sov-${sov.id}`}>
+                      {sovs.map((sov, idx) => (
+                        <div
+                          key={sov.id}
+                          className="p-3 space-y-2 cursor-pointer data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                          data-testid={`card-sov-${sov.id}`}
+                          onClick={() => openSov(sov)}
+                          {...getSovRowProps(idx)}
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="font-medium text-sm truncate">{sov.title}</p>
@@ -289,7 +317,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
                             variant="outline"
                             size="sm"
                             className="w-full"
-                            onClick={() => { setSelectedSOV(sov); setShowDetailDialog(true); }}
+                            onClick={(e) => { e.stopPropagation(); openSov(sov); }}
                             data-testid={`button-view-sov-m-${sov.id}`}
                           >
                             <Eye className="h-4 w-4 mr-1" />

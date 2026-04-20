@@ -20,6 +20,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
 interface ProjectEquipmentTabProps {
   projectId: string;
@@ -990,6 +992,21 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
   const ownedPlans = equipmentPlans.filter((p: any) => p.source === "OWNED");
   const rentalPlans = equipmentPlans.filter((p: any) => p.source === "RENTAL");
 
+  const { getRowProps: getPlanRowProps } = useTableKeyboardNav({
+    rowCount: equipmentPlans.length,
+    onActivate: (idx) => {
+      const plan = equipmentPlans[idx];
+      if (plan && canManagePlans) {
+        setSelectedPlanForEdit(plan);
+        setShowEditPlanDialog(true);
+      }
+    },
+  });
+  useRegisterShortcuts(
+    "project-equipment",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   if (isLoading) {
     return (
       <Card>
@@ -1058,8 +1075,12 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {equipmentPlans.map((plan: any) => (
-                    <TableRow key={plan.id}>
+                  {equipmentPlans.map((plan: any, idx: number) => (
+                    <TableRow
+                      key={plan.id}
+                      className="data-[focused=true]:bg-muted data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset"
+                      {...getPlanRowProps(idx)}
+                    >
                       <TableCell className="font-medium">{plan.equipmentName}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{plan.equipmentType}</Badge>
@@ -1201,8 +1222,13 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
             </div>
 
             <div className="md:hidden space-y-3">
-              {equipmentPlans.map((plan: any) => (
-                <div key={plan.id} className="border rounded-md p-4 space-y-3" data-testid={`card-equipment-plan-mobile-${plan.id}`}>
+              {equipmentPlans.map((plan: any, idx: number) => (
+                <div
+                  key={plan.id}
+                  className="border rounded-md p-4 space-y-3 data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                  data-testid={`card-equipment-plan-mobile-${plan.id}`}
+                  {...getPlanRowProps(idx)}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-medium">{plan.equipmentName}</span>
                     <div className="flex items-center gap-1 shrink-0">

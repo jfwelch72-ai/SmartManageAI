@@ -14,7 +14,7 @@ interface UseTableKeyboardNavOptions {
   enabled?: boolean;
 }
 
-interface RowProps {
+export interface RowProps {
   "data-focused": "true" | undefined;
   "data-row-index": number;
   tabIndex: -1;

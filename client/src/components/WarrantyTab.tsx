@@ -22,6 +22,8 @@ import {
   ChevronDown, ChevronRight, ListChecks, Wrench, FileText,
 } from "lucide-react";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { useTableKeyboardNav, type RowProps } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -268,20 +270,22 @@ function StatsBar({ cases }: { cases: WarrantyCase[] }) {
 // ─── Case Card ────────────────────────────────────────────────────────────────
 
 function CaseCard({
-  wc, onSelect, onDelete, canDelete,
+  wc, onSelect, onDelete, canDelete, rowProps,
 }: {
   wc: WarrantyCase;
   onSelect: () => void;
   onDelete: () => void;
   canDelete: boolean;
+  rowProps?: RowProps;
 }) {
   const StatusIcon = STATUS_ICONS[wc.status] ?? Clock;
 
   return (
     <Card
-      className="hover:shadow-md transition-shadow cursor-pointer"
+      className="hover:shadow-md transition-shadow cursor-pointer data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
       data-testid={`card-warranty-case-${wc.id}`}
       onClick={onSelect}
+      {...rowProps}
     >
       <CardContent className="pt-4 pb-3">
         <div className="flex items-start justify-between gap-2">
@@ -1116,6 +1120,18 @@ export function WarrantyTab({ projectId, projectCode, userRole, handoverComplete
   const PRIORITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
   const sorted = [...cases].sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
 
+  const { getRowProps: getCaseRowProps } = useTableKeyboardNav({
+    rowCount: sorted.length,
+    onActivate: (idx) => {
+      const c = sorted[idx];
+      if (c) setSelectedCase(c);
+    },
+  });
+  useRegisterShortcuts(
+    "project-warranty",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   const WARRANTY_PERIODS = [
     { name: "General Contractor Warranty", years: 1, color: "bg-blue-500" },
     { name: "Mechanical Systems (HVAC/Plumbing)", years: 2, color: "bg-cyan-500" },
@@ -1296,13 +1312,14 @@ export function WarrantyTab({ projectId, projectCode, userRole, handoverComplete
         <EmptyState onAdd={() => setShowCreate(true)} canAdd={isManager} handoverComplete={handoverComplete} />
       ) : (
         <div className="space-y-2">
-          {sorted.map((wc) => (
+          {sorted.map((wc, idx) => (
             <CaseCard
               key={wc.id}
               wc={wc}
               onSelect={() => setSelectedCase(wc)}
               onDelete={() => deleteMutation.mutate(wc.id)}
               canDelete={isCloser}
+              rowProps={getCaseRowProps(idx)}
             />
           ))}
         </div>

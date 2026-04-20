@@ -15,6 +15,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useCreateSubcontractorPayment } from "@/hooks/use-data";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
 interface SubcontractorsTabProps {
   projectCode: string;
@@ -170,6 +172,23 @@ export default function SubcontractorsTab({ projectCode }: SubcontractorsTabProp
     },
   });
 
+  const openPayment = (contractId: string) => {
+    setSelectedContractId(contractId);
+    setShowPaymentDialog(true);
+  };
+
+  const { getRowProps: getContractRowProps } = useTableKeyboardNav({
+    rowCount: subcontractors.length,
+    onActivate: (idx) => {
+      const c = subcontractors[idx];
+      if (c) openPayment(c.id);
+    },
+  });
+  useRegisterShortcuts(
+    "project-subcontractors",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   const handleCreatePayment = async () => {
     if (!selectedContractId || !paymentAmount) {
       toast({ title: "Error", description: "Amount is required", variant: "destructive" });
@@ -215,8 +234,13 @@ export default function SubcontractorsTab({ projectCode }: SubcontractorsTabProp
             />
           ) : (
             <div className="space-y-4">
-              {subcontractors.map((contract) => (
-                <Card key={contract.id} data-testid={`subcontractor-${contract.id}`}>
+              {subcontractors.map((contract, idx) => (
+                <Card
+                  key={contract.id}
+                  data-testid={`subcontractor-${contract.id}`}
+                  className="cursor-pointer data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                  {...getContractRowProps(idx)}
+                >
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
                       <div className="flex-1">

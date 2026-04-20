@@ -12,6 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { BarChart3, ChevronDown, ChevronRight, RefreshCw, AlertTriangle, CheckCircle, Edit2, X, Save, TrendingDown, TrendingUp, Target, MapPin } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
 interface CostCodeLedgerRow {
   costCode: string;
@@ -226,6 +228,32 @@ export default function CostLedgerTab({ projectCode, projectId }: { projectCode:
 
   const collapseAll = () => setExpandedDivisions(new Set());
 
+  const divisionGroupsAll = new Map<string, CostCodeLedgerRow[]>();
+  if (ledger) {
+    for (const row of ledger.rows) {
+      const group = divisionGroupsAll.get(row.division) || [];
+      group.push(row);
+      divisionGroupsAll.set(row.division, group);
+    }
+  }
+  const sortedDivisionsAll = [...divisionGroupsAll.keys()].sort((a, b) => {
+    if (a === "Unassigned") return 1;
+    if (b === "Unassigned") return -1;
+    return a.localeCompare(b);
+  });
+
+  const { getRowProps: getDivRowProps } = useTableKeyboardNav({
+    rowCount: sortedDivisionsAll.length,
+    onActivate: (idx) => {
+      const div = sortedDivisionsAll[idx];
+      if (div) toggleDivision(div);
+    },
+  });
+  useRegisterShortcuts(
+    "project-cost-ledger",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground" data-testid="cost-ledger-loading">Loading cost ledger...</div>;
   }
@@ -242,18 +270,8 @@ export default function CostLedgerTab({ projectCode, projectId }: { projectCode:
     );
   }
 
-  const divisionGroups = new Map<string, CostCodeLedgerRow[]>();
-  for (const row of ledger.rows) {
-    const group = divisionGroups.get(row.division) || [];
-    group.push(row);
-    divisionGroups.set(row.division, group);
-  }
-
-  const sortedDivisions = [...divisionGroups.keys()].sort((a, b) => {
-    if (a === "Unassigned") return 1;
-    if (b === "Unassigned") return -1;
-    return a.localeCompare(b);
-  });
+  const divisionGroups = divisionGroupsAll;
+  const sortedDivisions = sortedDivisionsAll;
 
   const { totals } = ledger;
 
@@ -325,7 +343,7 @@ export default function CostLedgerTab({ projectCode, projectId }: { projectCode:
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedDivisions.map(divName => {
+                {sortedDivisions.map((divName, divIdx) => {
                   const rows = divisionGroups.get(divName) || [];
                   const isExpanded = expandedDivisions.has(divName);
                   const divBudget = rows.reduce((s, r) => s + r.budgetedTotal, 0);
@@ -339,7 +357,12 @@ export default function CostLedgerTab({ projectCode, projectId }: { projectCode:
 
                   return (
                     <Fragment key={divName}>
-                      <TableRow className="cursor-pointer hover:bg-muted/50 bg-muted/30 font-medium" onClick={() => toggleDivision(divName)} data-testid={`row-division-${divName}`}>
+                      <TableRow
+                        className="cursor-pointer hover:bg-muted/50 bg-muted/30 font-medium data-[focused=true]:bg-muted data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset"
+                        onClick={() => toggleDivision(divName)}
+                        data-testid={`row-division-${divName}`}
+                        {...getDivRowProps(divIdx)}
+                      >
                         <TableCell>
                           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </TableCell>

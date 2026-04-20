@@ -21,6 +21,8 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { ProjectDelay, ChangeOrder } from "@shared/schema";
 import { WeatherEvidenceCard } from "./WeatherEvidenceCard";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
 interface DelaySectionProps {
   projectId: string;
@@ -436,6 +438,18 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
     return true;
   });
 
+  const { getRowProps: getDelayRowProps } = useTableKeyboardNav({
+    rowCount: filteredDelays.length,
+    onActivate: (idx) => {
+      const d = filteredDelays[idx];
+      if (d && canCreateDelay) openEditDialog(d);
+    },
+  });
+  useRegisterShortcuts(
+    "project-delays",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   const getReasonIcon = (reason: string) => {
     const option = DELAY_REASON_OPTIONS.find(o => o.value === reason);
     return option ? option.icon : AlertTriangle;
@@ -545,10 +559,15 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
         </Card>
       ) : (
         <div className="grid gap-4">
-          {filteredDelays.map((delay) => {
+          {filteredDelays.map((delay, idx) => {
             const ReasonIcon = getReasonIcon(delay.reason);
             return (
-              <Card key={delay.id} className="hover-elevate" data-testid={`delay-card-${delay.id}`}>
+              <Card
+                key={delay.id}
+                className="hover-elevate data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                data-testid={`delay-card-${delay.id}`}
+                {...getDelayRowProps(idx)}
+              >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">

@@ -38,7 +38,11 @@ import {
   type DeliveryScheduleItem,
 } from "@/hooks/use-data";
 import { useAuth } from "@/hooks/use-auth";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import type { Project } from "@shared/schema";
+
+const PROCUREMENT_NAV_SHORTCUTS = TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/");
 
 const PR_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"];
 const PO_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED", "CANCELLED"];
@@ -213,6 +217,15 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
   const [form, setForm] = useState({ title: "", neededByDate: "", notes: "" });
   const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
 
+  const { getRowProps: getPRRowProps } = useTableKeyboardNav({
+    rowCount: pagedPRs.length,
+    onActivate: (idx) => {
+      const pr = pagedPRs[idx];
+      if (pr) setExpandedPRId(expandedPRId === pr.id ? null : pr.id);
+    },
+  });
+  useRegisterShortcuts("project-procurement-prs", TABLE_NAV_SHORTCUTS);
+
   const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
   const updateLineItem = (i: number, field: string, value: string) => {
@@ -331,8 +344,13 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
           ) : (
             <>
             <div className="space-y-3">
-              {pagedPRs.map((pr: PurchaseRequest) => (
-                <div key={pr.id} className="border rounded-md" data-testid={`pr-${pr.id}`}>
+              {pagedPRs.map((pr: PurchaseRequest, idx: number) => (
+                <div
+                  key={pr.id}
+                  className="border rounded-md data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                  data-testid={`pr-${pr.id}`}
+                  {...getPRRowProps(idx)}
+                >
                   <div className="flex items-start justify-between p-4 gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setExpandedPRId(expandedPRId === pr.id ? null : pr.id)}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -528,6 +546,16 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
   };
 
   const pendingPOs = useMemo(() => pos.filter((po: PurchaseOrder) => po.status === "PENDING_APPROVAL"), [pos]);
+
+  const { getRowProps: getPORowProps } = useTableKeyboardNav({
+    rowCount: pagedPOs.length,
+    onActivate: (idx) => {
+      const po = pagedPOs[idx];
+      if (po) setSelectedPOId(po.id);
+    },
+  });
+  useRegisterShortcuts("project-procurement-pos", TABLE_NAV_SHORTCUTS);
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -598,10 +626,16 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
           ) : (
             <>
             <div className="space-y-3">
-              {pagedPOs.map((po: PurchaseOrder) => {
+              {pagedPOs.map((po: PurchaseOrder, poIdx: number) => {
                 const committed = computeCommittedCost(po);
                 return (
-                <div key={po.id} className="p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedPOId(po.id)} data-testid={`po-${po.id}`}>
+                <div
+                  key={po.id}
+                  className="p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                  onClick={() => setSelectedPOId(po.id)}
+                  data-testid={`po-${po.id}`}
+                  {...getPORowProps(poIdx)}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-2 flex-1 min-w-0">
                       {canApprove && po.status === "PENDING_APPROVAL" && (
@@ -1428,6 +1462,8 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
 
 function ProjectReceiptsTab({ projectId }: { projectId: string }) {
   const { data: receipts = [], isLoading } = useProcurementReceipts(projectId);
+  const { getRowProps: getReceiptRowProps } = useTableKeyboardNav({ rowCount: receipts.length });
+  useRegisterShortcuts("project-procurement-receipts", PROCUREMENT_NAV_SHORTCUTS);
 
   return (
     <Card>
@@ -1441,8 +1477,13 @@ function ProjectReceiptsTab({ projectId }: { projectId: string }) {
           <div className="text-center py-8 text-muted-foreground">No delivery receipts for this project. Record receipts from a PO detail view.</div>
         ) : (
           <div className="space-y-3">
-            {receipts.map((r: ProcurementReceipt) => (
-              <div key={r.id} className="p-4 border rounded-md" data-testid={`receipt-${r.id}`}>
+            {receipts.map((r: ProcurementReceipt, idx: number) => (
+              <div
+                key={r.id}
+                className="p-4 border rounded-md data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                data-testid={`receipt-${r.id}`}
+                {...getReceiptRowProps(idx)}
+              >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     {r.poNumber && <span className="font-mono text-xs text-muted-foreground">PO: {r.poNumber}</span>}
@@ -1495,6 +1536,15 @@ function ProjectInvoicesTab({ projectId }: { projectId: string }) {
   const [isUploading, setIsUploading] = useState(false);
   const [payInvoice, setPayInvoice] = useState<InvoiceRow | null>(null);
   const [payForm, setPayForm] = useState({ amount: "", paymentDate: "", method: "", referenceNumber: "", notes: "" });
+
+  const { getRowProps: getInvRowProps } = useTableKeyboardNav({
+    rowCount: pagedInvoices.length,
+    onActivate: (idx) => {
+      const inv = pagedInvoices[idx];
+      if (inv) setSelectedInvoice(inv);
+    },
+  });
+  useRegisterShortcuts("project-procurement-invoices", TABLE_NAV_SHORTCUTS);
   const payMutation = useMutation({
     mutationFn: async (data: { invoiceId: string; amount: string; paymentDate: string; method?: string; referenceNumber?: string; notes?: string }) => {
       await apiRequest("POST", `/api/procurement-module/invoices/${data.invoiceId}/payments`, data);
@@ -1567,12 +1617,18 @@ function ProjectInvoicesTab({ projectId }: { projectId: string }) {
           ) : (
             <>
             <div className="space-y-3">
-              {pagedInvoices.map((inv: InvoiceRow) => {
+              {pagedInvoices.map((inv: InvoiceRow, invIdx: number) => {
                 const totalPaid = parseFloat(inv.totalPaid || "0");
                 const totalAmt = parseFloat(inv.totalAmount || "0");
                 const remaining = Math.max(0, totalAmt - totalPaid);
                 return (
-                  <div key={inv.id} className="p-4 border rounded-md cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedInvoice(inv)} data-testid={`invoice-${inv.id}`}>
+                  <div
+                    key={inv.id}
+                    className="p-4 border rounded-md cursor-pointer hover:bg-muted/50 transition-colors data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                    onClick={() => setSelectedInvoice(inv)}
+                    data-testid={`invoice-${inv.id}`}
+                    {...getInvRowProps(invIdx)}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -1942,6 +1998,9 @@ function ProjectDeliveryScheduleTab({ projectId }: { projectId: string }) {
     return items;
   }, [items, dateFilter]);
 
+  const { getRowProps: getDeliveryRowProps } = useTableKeyboardNav({ rowCount: filteredItems.length });
+  useRegisterShortcuts("project-procurement-delivery", PROCUREMENT_NAV_SHORTCUTS);
+
   return (
     <Card>
       <CardHeader>
@@ -1972,7 +2031,12 @@ function ProjectDeliveryScheduleTab({ projectId }: { projectId: string }) {
             {filteredItems.map((item: DeliveryScheduleItem, idx: number) => {
               const isOverdue = new Date(item.expectedDeliveryDate) < new Date();
               return (
-                <div key={`${item.poId}-${item.itemId}-${idx}`} className={`p-3 border rounded-md flex items-center justify-between ${isOverdue ? "border-destructive/50 bg-destructive/5" : ""}`} data-testid={`delivery-item-${idx}`}>
+                <div
+                  key={`${item.poId}-${item.itemId}-${idx}`}
+                  className={`p-3 border rounded-md flex items-center justify-between data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background ${isOverdue ? "border-destructive/50 bg-destructive/5" : ""}`}
+                  data-testid={`delivery-item-${idx}`}
+                  {...getDeliveryRowProps(idx)}
+                >
                   <div>
                     <p className="font-medium text-sm">{item.description}</p>
                     <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-1">
