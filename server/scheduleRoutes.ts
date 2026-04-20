@@ -209,7 +209,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { recalculateSchedule, computeScheduleImpact, detectCycle } from "./cpmEngine";
-import { renderGanttPdf } from "./gantt-pdf-service";
+import { renderGanttPdf, GanttPdfQueueFullError } from "./gantt-pdf-service";
 
 const router = Router();
 
@@ -1144,6 +1144,13 @@ router.post("/projects/:code/schedule/export-pdf", requireAuth, async (req: Auth
         origin,
       });
     } catch (err) {
+      if (err instanceof GanttPdfQueueFullError) {
+        res.setHeader("Retry-After", "10");
+        return res.status(503).json({
+          error: "Server-side Gantt rendering is busy",
+          message: err.message,
+        });
+      }
       logError("Server-side Gantt PDF render failed", err as Error);
       return res.status(503).json({
         error: "Server-side Gantt rendering is unavailable",
