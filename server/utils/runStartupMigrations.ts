@@ -36,6 +36,7 @@ import { ensureHeavyCivilDocumentColumns } from "./ensureHeavyCivilDocumentColum
 import { ensureHeavyCivilEnumValues } from "./ensureHeavyCivilEnumValues";
 import { ensureHeavyCivilTables } from "./ensureHeavyCivilTables";
 import { ensureProjectHealthSnapshotColumns } from "./ensureProjectHealthSnapshotColumns";
+import { ensureCrmEnhancementTables } from "./ensureCrmEnhancementTables";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -81,6 +82,7 @@ const migrations: MigrationStep[] = [
   { name: "project_health_snapshot_columns", category: "ADD_COLUMN", fn: ensureProjectHealthSnapshotColumns },
   { name: "heavy_civil_tables", category: "CREATE_TABLE", fn: ensureHeavyCivilTables },
   { name: "heavy_civil_document_columns", category: "ADD_COLUMN", fn: ensureHeavyCivilDocumentColumns },
+  { name: "crm_enhancement_tables", category: "CREATE_TABLE", fn: ensureCrmEnhancementTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

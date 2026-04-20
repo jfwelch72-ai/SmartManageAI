@@ -206,6 +206,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { insertNotification } from "./services/notificationService";
 import { eventBus } from "./events";
 import { scoreWinProbability } from "./ai/winProbabilityService";
+import { evaluateAssignment } from "./utils/crmAssignmentEngine";
 
 const router = Router();
 
@@ -1666,7 +1667,19 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
 
     if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
 
-    const [created] = await db.insert(crmOpportunities).values(parsed.data).returning();
+    // Auto-assignment: if no assignedToId provided, evaluate rules
+    let toInsert = parsed.data;
+    if (!toInsert.assignedToId) {
+      const autoAssignedTo = await evaluateAssignment(orgId, {
+        source: toInsert.source,
+        projectType: toInsert.projectType,
+        projectLocation: toInsert.projectLocation,
+        dealValue: toInsert.dealValue,
+      });
+      if (autoAssignedTo) toInsert = { ...toInsert, assignedToId: autoAssignedTo };
+    }
+
+    const [created] = await db.insert(crmOpportunities).values(toInsert).returning();
 
     await db.insert(crmOpportunityActivities).values({
       opportunityId: created.id,

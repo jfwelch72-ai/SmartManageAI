@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, uniqueIndex, json } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, uniqueIndex, json, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
@@ -1602,6 +1602,107 @@ export const crmOpportunityActivities = pgTable("crm_opportunity_activities", {
 export const insertCrmOpportunityActivitySchema = createInsertSchema(crmOpportunityActivities).omit({ id: true, createdAt: true });
 export type InsertCrmOpportunityActivity = z.infer<typeof insertCrmOpportunityActivitySchema>;
 export type CrmOpportunityActivity = typeof crmOpportunityActivities.$inferSelect;
+
+// CRM Quotes - lightweight proposals/quotes generated directly from opportunities
+export const crmQuotes = pgTable("crm_quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  opportunityId: varchar("opportunity_id").references(() => crmOpportunities.id, { onDelete: "set null" }),
+  crmOrganisationId: varchar("crm_organisation_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }),
+  quoteNumber: text("quote_number").notNull(),
+  title: text("title").notNull(),
+  status: text("status").notNull().default("DRAFT"),
+  validUntil: date("valid_until"),
+  subtotal: decimal("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
+  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).notNull().default("0"),
+  taxAmount: decimal("tax_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  discountAmount: decimal("discount_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  totalAmount: decimal("total_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  terms: text("terms"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  sentAt: timestamp("sent_at"),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_quotes_org_idx").on(table.organizationId),
+  oppIdx: index("crm_quotes_opp_idx").on(table.opportunityId),
+  statusIdx: index("crm_quotes_status_idx").on(table.status),
+  numberIdx: index("crm_quotes_number_idx").on(table.organizationId, table.quoteNumber),
+}));
+export const insertCrmQuoteSchema = createInsertSchema(crmQuotes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmQuote = z.infer<typeof insertCrmQuoteSchema>;
+export type CrmQuote = typeof crmQuotes.$inferSelect;
+
+export const crmQuoteLineItems = pgTable("crm_quote_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => crmQuotes.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 14, scale: 4 }).notNull().default("1"),
+  unit: text("unit"),
+  unitPrice: decimal("unit_price", { precision: 14, scale: 4 }).notNull().default("0"),
+  lineTotal: decimal("line_total", { precision: 14, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  quoteIdx: index("crm_quote_line_items_quote_idx").on(table.quoteId),
+}));
+export const insertCrmQuoteLineItemSchema = createInsertSchema(crmQuoteLineItems).omit({ id: true, createdAt: true, lineTotal: true });
+export type InsertCrmQuoteLineItem = z.infer<typeof insertCrmQuoteLineItemSchema>;
+export type CrmQuoteLineItem = typeof crmQuoteLineItems.$inferSelect;
+
+// CRM Tasks / Follow-ups - reminders attached to opportunities, orgs, or contacts
+export const crmTasks = pgTable("crm_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  priority: text("priority").notNull().default("NORMAL"),
+  assignedToId: varchar("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  opportunityId: varchar("opportunity_id").references(() => crmOpportunities.id, { onDelete: "cascade" }),
+  crmOrganisationId: varchar("crm_organisation_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  completedAt: timestamp("completed_at"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_tasks_org_idx").on(table.organizationId),
+  assignedIdx: index("crm_tasks_assigned_idx").on(table.assignedToId),
+  dueDateIdx: index("crm_tasks_due_date_idx").on(table.dueDate),
+  statusIdx: index("crm_tasks_status_idx").on(table.status),
+  opportunityIdx: index("crm_tasks_opportunity_idx").on(table.opportunityId),
+}));
+export const insertCrmTaskSchema = createInsertSchema(crmTasks).omit({ id: true, createdAt: true, updatedAt: true, reminderSentAt: true, completedAt: true });
+export type InsertCrmTask = z.infer<typeof insertCrmTaskSchema>;
+export type CrmTask = typeof crmTasks.$inferSelect;
+
+// CRM Auto-Assignment Rules - assign new opportunities/leads to users by territory/source/value
+export const crmAssignmentRules = pgTable("crm_assignment_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  priority: integer("priority").notNull().default(100),
+  isActive: boolean("is_active").notNull().default(true),
+  conditions: jsonb("conditions").notNull().default({}),
+  assignmentType: text("assignment_type").notNull().default("USER"),
+  assignedToId: varchar("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  roundRobinUserIds: jsonb("round_robin_user_ids").notNull().default([]),
+  lastAssignedIndex: integer("last_assigned_index").notNull().default(-1),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_assignment_rules_org_idx").on(table.organizationId),
+  activeIdx: index("crm_assignment_rules_active_idx").on(table.organizationId, table.isActive, table.priority),
+}));
+export const insertCrmAssignmentRuleSchema = createInsertSchema(crmAssignmentRules).omit({ id: true, createdAt: true, updatedAt: true, lastAssignedIndex: true });
+export type InsertCrmAssignmentRule = z.infer<typeof insertCrmAssignmentRuleSchema>;
+export type CrmAssignmentRule = typeof crmAssignmentRules.$inferSelect;
 
 // Takeoff + Estimating Insert/Select Schemas
 export const insertProjectPlanSchema = createInsertSchema(projectPlans).omit({ id: true, createdAt: true, updatedAt: true });

@@ -49,8 +49,14 @@ import {
   ChevronRight,
   DollarSign,
   Brain,
+  CheckSquare,
+  FileText,
+  Settings as SettingsIcon,
 } from "lucide-react";
+import { Link } from "wouter";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
+import { CrmTasksView } from "@/components/crm/CrmTasksView";
+import { CrmQuotesView } from "@/components/crm/CrmQuotesView";
 import type {
   CrmOrganisation as CrmOrganization,
   CrmContact,
@@ -571,7 +577,7 @@ export default function CRMPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "reports">("orgs");
+  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports">("orgs");
   const [contactSearch, setContactSearch] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -885,6 +891,12 @@ export default function CRMPage() {
             </div>
             <div className="flex gap-2">
               <AIAnalysisButton module="VENDOR_PRICING" />
+              <Button variant="outline" asChild data-testid="button-crm-settings">
+                <Link href="/crm-settings">
+                  <SettingsIcon className="w-4 h-4 mr-2" />
+                  CRM Settings
+                </Link>
+              </Button>
               {crmTab === "orgs" && isAdminOrManager && (
                 <Button
                   variant="outline"
@@ -934,6 +946,22 @@ export default function CRMPage() {
               <span className="whitespace-nowrap">Pipeline</span>
             </button>
             <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "tasks" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("tasks")}
+              data-testid="tab-tasks"
+            >
+              <CheckSquare className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              <span className="whitespace-nowrap">Tasks</span>
+            </button>
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "quotes" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("quotes")}
+              data-testid="tab-quotes"
+            >
+              <FileText className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              <span className="whitespace-nowrap">Quotes</span>
+            </button>
+            <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "reports" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
               onClick={() => setCrmTab("reports")}
               data-testid="tab-pipeline-reports"
@@ -944,6 +972,10 @@ export default function CRMPage() {
           </div>
 
           {crmTab === "pipeline" && <CrmPipelineView />}
+
+          {crmTab === "tasks" && <CrmTasksView />}
+
+          {crmTab === "quotes" && <CrmQuotesView />}
 
           {crmTab === "reports" && <CrmPipelineReports />}
 
