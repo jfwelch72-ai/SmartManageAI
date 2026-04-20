@@ -419,6 +419,23 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     enabled: sendDialogOpen && !!projectId,
   });
 
+  interface ScheduleEmailHistoryEntry {
+    id: string;
+    createdAt: string;
+    senderName: string;
+    senderEmail: string | null;
+    subject: string;
+    filename: string;
+    recipients: Array<{ email: string; name: string; success: boolean }>;
+    successCount: number;
+    failureCount: number;
+  }
+
+  const { data: emailHistoryData, isLoading: isEmailHistoryLoading } = useQuery<{ history: ScheduleEmailHistoryEntry[] }>({
+    queryKey: ["/api/ai-features/schedule", projectId, "email-history"],
+    enabled: !!projectId,
+  });
+
   const openSendDialog = useCallback(() => {
     setSendSubject(`${projectName} (${projectCode}) — Schedule update`);
     setSendMessage("Sharing the latest project schedule for your review. Please let us know if you have any questions before our next progress meeting.");
@@ -537,7 +554,9 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
             : `Sent to ${sentCount} recipient${sentCount === 1 ? "" : "s"}`,
       });
       setSendDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/schedule", projectId, "email-history"] });
     } catch (err) {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/schedule", projectId, "email-history"] });
       toast({
         title: "Failed to send",
         description: err instanceof Error ? err.message : "Unable to email the Gantt PDF",
@@ -1103,6 +1122,25 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
               <RecommendationsPanel
                 recommendations={recommendationsData?.recommendations || []}
                 onDismiss={(id) => dismissRecommendationMutation.mutate(id)}
+              />
+              <ScheduleEmailHistory
+                isLoading={isEmailHistoryLoading}
+                history={emailHistoryData?.history || []}
+                onResend={(entry) => {
+                  setSendSubject(entry.subject || `${projectName} (${projectCode}) — Schedule update`);
+                  setSendMessage("Resending the latest project schedule for your review.");
+                  setSelectedRecipientEmails(new Set(
+                    entry.recipients
+                      .filter((r) => !r.success)
+                      .map((r) => r.email.trim().toLowerCase()),
+                  ));
+                  const failedNotInDirectory = entry.recipients
+                    .filter((r) => !r.success)
+                    .map((r) => r.email)
+                    .join(", ");
+                  setExtraRecipientsInput(failedNotInDirectory);
+                  setSendDialogOpen(true);
+                }}
               />
             </TabsContent>
 
@@ -2427,6 +2465,163 @@ function CriticalPathPanel({ tasks, onTaskClick }: { tasks: ScheduleTask[]; onTa
               </div>
             ))}
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+interface ScheduleEmailHistoryEntryProp {
+  id: string;
+  createdAt: string;
+  senderName: string;
+  senderEmail: string | null;
+  subject: string;
+  filename: string;
+  recipients: Array<{ email: string; name: string; success: boolean }>;
+  successCount: number;
+  failureCount: number;
+}
+
+function ScheduleEmailHistory({
+  isLoading,
+  history,
+  onResend,
+}: {
+  isLoading: boolean;
+  history: ScheduleEmailHistoryEntryProp[];
+  onResend: (entry: ScheduleEmailHistoryEntryProp) => void;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <Card className="mt-4" data-testid="card-schedule-email-history">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Mail className="w-4 h-4" />
+          Recent sends
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center text-sm text-muted-foreground" data-testid="text-email-history-loading">
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Loading send history...
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="text-email-history-empty">
+            No schedule emails have been sent for this project yet.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border" data-testid="list-email-history">
+            {history.map((entry) => {
+              const isOpen = expanded.has(entry.id);
+              const total = entry.recipients.length;
+              const hasFailures = entry.failureCount > 0;
+              const allFailed = entry.successCount === 0 && total > 0;
+              return (
+                <li key={entry.id} className="py-3" data-testid={`row-email-history-${entry.id}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium" data-testid={`text-email-history-date-${entry.id}`}>
+                          {format(parseISO(entry.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                        </span>
+                        {allFailed ? (
+                          <Badge variant="destructive" className="text-xs" data-testid={`badge-email-history-status-${entry.id}`}>
+                            <AlertCircle className="w-3 h-3 mr-1" />
+                            All failed
+                          </Badge>
+                        ) : hasFailures ? (
+                          <Badge variant="destructive" className="text-xs" data-testid={`badge-email-history-status-${entry.id}`}>
+                            <AlertTriangle className="w-3 h-3 mr-1" />
+                            {entry.failureCount} failed
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs" data-testid={`badge-email-history-status-${entry.id}`}>
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Sent
+                          </Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground" data-testid={`text-email-history-counts-${entry.id}`}>
+                          {entry.successCount} of {total} delivered
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground truncate" data-testid={`text-email-history-sender-${entry.id}`}>
+                        Sent by <span className="text-foreground">{entry.senderName}</span>
+                        {entry.subject ? <> · <span className="italic">{entry.subject}</span></> : null}
+                      </div>
+                      {!isOpen && total > 0 && (
+                        <div className="mt-1 text-xs text-muted-foreground truncate" data-testid={`text-email-history-summary-${entry.id}`}>
+                          To: {entry.recipients.slice(0, 3).map((r) => r.email).join(", ")}
+                          {total > 3 ? `, +${total - 3} more` : ""}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {hasFailures && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onResend(entry)}
+                          data-testid={`button-resend-failed-${entry.id}`}
+                        >
+                          <Send className="w-3 h-3 mr-1" />
+                          Resend failed
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggle(entry.id)}
+                        data-testid={`button-toggle-email-history-${entry.id}`}
+                      >
+                        {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                  {isOpen && (
+                    <div className="mt-2 pl-1" data-testid={`details-email-history-${entry.id}`}>
+                      <ul className="space-y-1">
+                        {entry.recipients.map((r, i) => (
+                          <li
+                            key={`${entry.id}-${r.email}-${i}`}
+                            className="flex items-center gap-2 text-xs"
+                            data-testid={`row-email-recipient-${entry.id}-${i}`}
+                          >
+                            {r.success ? (
+                              <CheckCircle2 className="w-3 h-3 text-green-600" />
+                            ) : (
+                              <AlertCircle className="w-3 h-3 text-destructive" />
+                            )}
+                            <span className="font-medium">{r.name || r.email}</span>
+                            {r.name && <span className="text-muted-foreground">&lt;{r.email}&gt;</span>}
+                            {!r.success && (
+                              <span className="text-destructive ml-1">failed</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                      {entry.filename && (
+                        <div className="mt-2 text-xs text-muted-foreground" data-testid={`text-email-history-filename-${entry.id}`}>
+                          Attachment: {entry.filename}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </CardContent>
     </Card>

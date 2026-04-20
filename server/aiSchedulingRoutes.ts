@@ -2,7 +2,7 @@ import { Router , NextFunction } from "express";
 import multer from "multer";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";
-import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media, crmContacts, activityLog } from "@shared/schema";
+import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media, crmContacts, activityLog, users } from "@shared/schema";
 import { eq, desc, and, sql, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
@@ -819,6 +819,121 @@ router.get("/ai-features/schedule/:projectId/email-recipients", requireAuth, asy
     });
 
     res.json({ recipients: deduped });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/ai-features/schedule/:projectId/email-history
+// Returns recent GANTT_EMAILED activity log entries for this project.
+router.get("/ai-features/schedule/:projectId/email-history", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const [project] = await db.select({ id: projects.id })
+      .from(projects)
+      .where(and(
+        eq(projects.id, req.params.projectId),
+        eq(projects.organizationId, organizationId),
+      ))
+      .limit(1);
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Filter by org + action, then narrow to entries that mention this project id.
+    // The details payload is a JSON string containing `"projectId":"<id>"`.
+    const projectIdFragment = `%"projectId":"${project.id}"%`;
+    const rows = await db.select({
+      id: activityLog.id,
+      createdAt: activityLog.createdAt,
+      details: activityLog.details,
+      userId: activityLog.userId,
+      userFirstName: users.firstName,
+      userLastName: users.lastName,
+      userEmail: users.email,
+    })
+      .from(activityLog)
+      .leftJoin(users, eq(users.id, activityLog.userId))
+      .where(and(
+        eq(activityLog.organizationId, organizationId),
+        eq(activityLog.action, "GANTT_EMAILED"),
+        sql`${activityLog.details} LIKE ${projectIdFragment}`,
+      ))
+      .orderBy(desc(activityLog.createdAt))
+      .limit(25);
+
+    const ganttEmailedRecipientSchema = z.object({
+      email: z.string().default(""),
+      name: z.string().optional().default(""),
+      success: z.boolean().optional().default(false),
+    });
+
+    const ganttEmailedDetailsSchema = z.object({
+      projectId: z.string(),
+      subject: z.string().optional().default(""),
+      filename: z.string().optional().default(""),
+      recipients: z.array(ganttEmailedRecipientSchema).optional().default([]),
+      successCount: z.number().int().nonnegative().optional(),
+      failureCount: z.number().int().nonnegative().optional(),
+    });
+
+    interface ScheduleEmailHistoryEntry {
+      id: string;
+      createdAt: Date;
+      senderName: string;
+      senderEmail: string | null;
+      subject: string;
+      filename: string;
+      recipients: Array<{ email: string; name: string; success: boolean }>;
+      successCount: number;
+      failureCount: number;
+    }
+
+    const history: ScheduleEmailHistoryEntry[] = [];
+    for (const row of rows) {
+      if (!row.details) continue;
+      let rawJson: unknown;
+      try {
+        rawJson = JSON.parse(row.details);
+      } catch {
+        continue;
+      }
+      const parsed = ganttEmailedDetailsSchema.safeParse(rawJson);
+      if (!parsed.success) continue;
+      // Defensive: skip rows that matched the LIKE but aren't actually for this project.
+      if (parsed.data.projectId !== project.id) continue;
+
+      const recipients = parsed.data.recipients.map((r) => ({
+        email: r.email,
+        name: r.name,
+        success: r.success,
+      }));
+      const successCount = parsed.data.successCount ?? recipients.filter((r) => r.success).length;
+      const failureCount = parsed.data.failureCount ?? recipients.filter((r) => !r.success).length;
+
+      const senderName = `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim()
+        || row.userEmail
+        || "Unknown sender";
+
+      history.push({
+        id: row.id,
+        createdAt: row.createdAt,
+        senderName,
+        senderEmail: row.userEmail ?? null,
+        subject: parsed.data.subject,
+        filename: parsed.data.filename,
+        recipients,
+        successCount,
+        failureCount,
+      });
+    }
+
+    res.json({ history });
   } catch (error) {
     next(error);
   }
