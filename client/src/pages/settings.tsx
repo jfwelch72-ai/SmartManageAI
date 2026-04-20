@@ -15,13 +15,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
 import { useTheme } from "@/hooks/use-theme";
+import { useTableDensity, TABLE_DENSITY_OPTIONS } from "@/hooks/use-table-density";
 import { format } from "date-fns";
 import {
   User, Shield, Bell, Palette, Building2, Link2, Database,
   Download, AlertTriangle, Clock, Monitor,
   Sun, Moon, Globe, ExternalLink, Key, Loader2,
   Activity, Settings as SettingsIcon, Users,
-  Lock, Plus, Trash2, Copy, Check, QrCode, Award
+  Lock, Plus, Trash2, Copy, Check, QrCode, Award, Rows3
 } from "lucide-react";
 
 import ProfileEditSection from "@/components/settings/ProfileEditSection";
@@ -329,6 +330,7 @@ function PreferencesSection() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { setTheme } = useTheme();
+  const { density: tableDensity, setDensity: setTableDensity } = useTableDensity();
 
   const { data: settings, isLoading } = useQuery<SettingsData>({
     queryKey: ["/api/user-settings"],
@@ -399,6 +401,59 @@ function PreferencesSection() {
                 {label}
               </Button>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Rows3 className="h-5 w-5" />
+            Table Density
+          </CardTitle>
+          <CardDescription>How tightly packed rows appear in tables across the app</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {TABLE_DENSITY_OPTIONS.map(({ value, label, description }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  setTableDensity(value);
+                  toast({ title: "Table density updated", description: label });
+                }}
+                className={`text-left rounded-md border p-3 transition-colors hover-elevate ${tableDensity === value ? "border-primary bg-primary/5" : "border-border"}`}
+                data-testid={`button-density-${value.toLowerCase()}`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-sm">{label}</p>
+                  {tableDensity === value && <Check className="h-4 w-4 text-primary" />}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{description}</p>
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 rounded-md border overflow-hidden">
+            <p className="text-xs text-muted-foreground px-3 py-2 bg-muted/40 border-b">Live preview</p>
+            <table className="w-full text-sm" data-testid="table-density-preview">
+              <thead className="bg-muted/20">
+                <tr className="border-b">
+                  {(["Name", "Status", "Updated"]).map((h) => (
+                    <th key={h} className={`text-left font-medium text-muted-foreground ${tableDensity === "COMPACT" ? "h-8 px-2" : tableDensity === "COZY" ? "h-10 px-3" : "h-12 px-4"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(["Acme Civil", "Westside Paving", "Hilltop Excavation"]).map((name, i) => (
+                  <tr key={name} className="border-b last:border-b-0">
+                    {([name, "Active", "Apr 2026"]).map((v, j) => (
+                      <td key={j} className={tableDensity === "COMPACT" ? "px-2 py-1" : tableDensity === "COZY" ? "px-3 py-2" : "p-4"}>{v}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>

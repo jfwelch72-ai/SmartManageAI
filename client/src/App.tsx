@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
+import { TableDensityProvider } from "@/hooks/use-table-density";
 import { DashboardCustomizationProvider, useDashboardCustomization, type FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
 import { RoutePermissions } from "@/lib/rbac";
 import { useFeatureFlags as useFeatureFlagsHook } from "@/hooks/use-feature-flags";
@@ -702,6 +703,7 @@ function App() {
             <GlobalVideoCallProvider>
               <TourProvider>
                 <DashboardCustomizationProvider>
+                  <TableDensityProvider>
                   <TooltipProvider>
                     <Toaster />
                     <ThemeInitializer />
@@ -711,6 +713,7 @@ function App() {
                     <GlobalCallModalWrapper />
                     <GlobalVideoCallOverlay />
                   </TooltipProvider>
+                  </TableDensityProvider>
                 </DashboardCustomizationProvider>
               </TourProvider>
             </GlobalVideoCallProvider>

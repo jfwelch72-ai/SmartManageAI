@@ -8612,11 +8612,15 @@ export const userSettings = pgTable("user_settings", {
   dateFormat: text("date_format").notNull().default("MM/DD/YYYY"),
   timeFormat: text("time_format").notNull().default("12h"),
   timezone: text("timezone"),
+  tableDensity: text("table_density").notNull().default("COZY"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   userIdx: index("user_settings_user_idx").on(table.userId),
 }));
+
+export const TABLE_DENSITY_VALUES = ["COMPACT", "COZY", "COMFORTABLE"] as const;
+export type TableDensity = (typeof TABLE_DENSITY_VALUES)[number];
 
 export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;

@@ -36,6 +36,7 @@ router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res, next
         dateFormat: "MM/DD/YYYY",
         timeFormat: "12h",
         timezone: req.user!.timezone || null,
+        tableDensity: "COZY",
       });
     }
     return res.json(settings);
@@ -53,6 +54,7 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
       dateFormat: z.enum(["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD"]).optional(),
       timeFormat: z.enum(["12h", "24h"]).optional(),
       timezone: z.string().nullable().optional(),
+      tableDensity: z.enum(["COMPACT", "COZY", "COMFORTABLE"]).optional(),
     });
 
     const parsed = schema.parse(req.body);

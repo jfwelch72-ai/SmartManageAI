@@ -52,7 +52,17 @@ import {
   CheckSquare,
   FileText,
   Settings as SettingsIcon,
+  Rows3,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useTableDensity, TABLE_DENSITY_OPTIONS } from "@/hooks/use-table-density";
 import { Link } from "wouter";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import { CrmTasksView } from "@/components/crm/CrmTasksView";
@@ -183,6 +193,37 @@ interface DupPair {
 // ============================================================
 // CRM Pipeline Reports Component
 // ============================================================
+
+function ContactsDensityMenu() {
+  const { density, setDensity } = useTableDensity();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="icon" title="Table density" data-testid="button-contacts-density">
+          <Rows3 className="w-4 h-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Table density</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {TABLE_DENSITY_OPTIONS.map(({ value, label, description }) => (
+          <DropdownMenuItem
+            key={value}
+            onClick={() => setDensity(value)}
+            data-testid={`menu-item-density-${value.toLowerCase()}`}
+            className="flex flex-col items-start gap-0.5"
+          >
+            <span className="text-sm font-medium flex items-center gap-2">
+              {label}
+              {density === value && <span className="text-xs text-primary">●</span>}
+            </span>
+            <span className="text-xs text-muted-foreground">{description}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function fmt(n: number) {
   return n >= 1000000
@@ -1114,15 +1155,18 @@ export default function CRMPage() {
                       </span>
                     )}
                   </CardTitle>
-                  <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search by name, email, or organization..."
-                      value={contactSearch}
-                      onChange={(e) => setContactSearch(e.target.value)}
-                      className="pl-9"
-                      data-testid="input-contacts-search"
-                    />
+                  <div className="flex items-center gap-2 flex-1 max-w-sm">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name, email, or organization..."
+                        value={contactSearch}
+                        onChange={(e) => setContactSearch(e.target.value)}
+                        className="pl-9"
+                        data-testid="input-contacts-search"
+                      />
+                    </div>
+                    <ContactsDensityMenu />
                   </div>
                 </div>
               </CardHeader>

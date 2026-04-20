@@ -40,6 +40,7 @@ import { ensureCrmEnhancementTables } from "./ensureCrmEnhancementTables";
 import { ensureCrmOrganisationCertColumns } from "./ensureCrmOrganisationCertColumns";
 import { ensureEmailAccountPushColumns } from "./ensureEmailAccountPushColumns";
 import { ensureSequenceTables } from "./ensureSequenceTables";
+import { ensureUserSettingsTableDensity } from "./ensureUserSettingsTableDensity";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -89,6 +90,7 @@ const migrations: MigrationStep[] = [
   { name: "crm_organisation_cert_columns", category: "ADD_COLUMN", fn: ensureCrmOrganisationCertColumns },
   { name: "email_account_push_columns", category: "ADD_COLUMN", fn: ensureEmailAccountPushColumns },
   { name: "crm_sequence_tables", category: "CREATE_TABLE", fn: ensureSequenceTables },
+  { name: "user_settings_table_density", category: "ADD_COLUMN", fn: ensureUserSettingsTableDensity },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
