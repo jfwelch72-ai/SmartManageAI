@@ -75,8 +75,11 @@ export function PageThumbnailStrip({
               isActive
                 ? "border-primary bg-primary/5 shadow-sm"
                 : "border-border bg-background",
-              isSuperseded && "opacity-60"
+              isSuperseded && "opacity-60",
+              "data-[pin-drop-active=true]:ring-2 data-[pin-drop-active=true]:ring-primary data-[pin-drop-active=true]:bg-primary/10 data-[pin-drop-active=true]:border-primary"
             )}
+            data-pin-drop-target=""
+            data-pin-drop-sheet={sheet.id}
             data-testid={`thumbnail-sheet-${sheet.id}`}
           >
             <div className="relative w-full aspect-[4/3] overflow-hidden rounded-t flex items-center justify-center bg-muted">

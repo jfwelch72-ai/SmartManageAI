@@ -543,6 +543,55 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     onError: () => toast({ title: "Error", description: "Failed to create issue", variant: "destructive" }),
   });
 
+  const moveIssueMutation = useMutation({
+    mutationFn: async ({ issueId, sheetId, position }: { issueId: string; sheetId?: string; position?: { x: number; y: number } }) => {
+      const body: Record<string, unknown> = {};
+      if (sheetId) body.sheetId = sheetId;
+      if (position) body.position = JSON.stringify(position);
+      return apiRequest("PATCH", `/api/takeoff/issues/${issueId}`, body);
+    },
+    onSuccess: (_data, vars) => {
+      if (issuesQueryKey) queryClient.invalidateQueries({ queryKey: issuesQueryKey });
+      queryClient.invalidateQueries({ queryKey: allSheetsIssuesQueryKey });
+      if (vars.sheetId) {
+        toast({ title: "Pin moved to another sheet" });
+      }
+    },
+    onError: (e: Error) => {
+      if (issuesQueryKey) queryClient.invalidateQueries({ queryKey: issuesQueryKey });
+      queryClient.invalidateQueries({ queryKey: allSheetsIssuesQueryKey });
+      toast({ title: "Could not move pin", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const issueDropTargetRef = useRef<HTMLElement | null>(null);
+  const clearIssueDropTarget = useCallback(() => {
+    if (issueDropTargetRef.current) {
+      issueDropTargetRef.current.removeAttribute("data-pin-drop-active");
+      issueDropTargetRef.current = null;
+    }
+  }, []);
+  const updateIssueDropTarget = useCallback((clientX: number, clientY: number): HTMLElement | null => {
+    const el = document.elementFromPoint(clientX, clientY);
+    const target = el && (el.closest('[data-pin-drop-target]') as HTMLElement | null);
+    if (target !== issueDropTargetRef.current) {
+      clearIssueDropTarget();
+      if (target) {
+        target.setAttribute("data-pin-drop-active", "true");
+        issueDropTargetRef.current = target;
+      }
+    }
+    return target;
+  }, [clearIssueDropTarget]);
+  const getEventClientPoint = (evt: MouseEvent | TouchEvent | PointerEvent): { x: number; y: number } | null => {
+    if ("clientX" in evt && typeof evt.clientX === "number") {
+      return { x: evt.clientX, y: evt.clientY };
+    }
+    const touch = (evt as TouchEvent).changedTouches?.[0] ?? (evt as TouchEvent).touches?.[0];
+    if (touch) return { x: touch.clientX, y: touch.clientY };
+    return null;
+  };
+
   const serverRotation = (currentSheet as any)?.rotation ?? 0;
   const sheetRotation = localRotation ?? serverRotation;
 
@@ -3526,6 +3575,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       key={issue.id}
                       x={x}
                       y={y}
+                      draggable={activeTool === "select"}
                       onClick={(e: any) => {
                         e.cancelBubble = true;
                         setSelectedIssueId(issue.id === selectedIssueId ? null : issue.id);
@@ -3534,7 +3584,38 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         e.cancelBubble = true;
                         setSelectedIssueId(issue.id === selectedIssueId ? null : issue.id);
                       }}
-                      style={{ cursor: "pointer" }}
+                      onDragStart={(e: any) => {
+                        e.cancelBubble = true;
+                      }}
+                      onDragMove={(e: any) => {
+                        e.cancelBubble = true;
+                        const pt = getEventClientPoint(e.evt);
+                        if (pt) updateIssueDropTarget(pt.x, pt.y);
+                      }}
+                      onDragEnd={(e: any) => {
+                        e.cancelBubble = true;
+                        const node = e.target;
+                        const pt = getEventClientPoint(e.evt);
+                        const target = pt ? updateIssueDropTarget(pt.x, pt.y) : null;
+                        clearIssueDropTarget();
+                        const dropSheetId = target?.getAttribute("data-pin-drop-sheet");
+                        if (dropSheetId && dropSheetId !== issue.sheetId) {
+                          node.position({ x, y });
+                          moveIssueMutation.mutate({ issueId: issue.id, sheetId: dropSheetId });
+                          return;
+                        }
+                        const newX = node.x();
+                        const newY = node.y();
+                        if (Math.abs(newX - x) < 0.5 && Math.abs(newY - y) < 0.5) {
+                          node.position({ x, y });
+                          return;
+                        }
+                        moveIssueMutation.mutate({
+                          issueId: issue.id,
+                          position: { x: newX, y: newY },
+                        });
+                      }}
+                      style={{ cursor: activeTool === "select" ? "grab" : "pointer" }}
                     >
                       <Circle
                         radius={radius}

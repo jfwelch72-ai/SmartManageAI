@@ -217,7 +217,7 @@ router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReques
     }
 
     const canResolve = canWrite(user.role);
-    const { status, severity, assigneeId, description, category } = req.body;
+    const { status, severity, assigneeId, description, category, sheetId, position } = req.body;
 
     if ((status === "RESOLVED" || status === "IN_REVIEW") && !canResolve) {
       res.status(403).json({ error: "Insufficient permissions to change status" });
@@ -230,6 +230,47 @@ router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReques
     if (assigneeId !== undefined) updates.assigneeId = assigneeId || null;
     if (description !== undefined) updates.description = sanitizeText(description);
     if (category !== undefined) updates.category = category;
+
+    if (sheetId !== undefined && sheetId !== existingIssue.sheetId) {
+      if (typeof sheetId !== "string" || !sheetId) {
+        res.status(400).json({ error: "Invalid sheetId" });
+        return;
+      }
+      const targetAccess = await verifyIssueSheetAccess(sheetId, user);
+      if (!targetAccess.allowed) {
+        res.status(403).json({ error: "Access denied to target sheet" });
+        return;
+      }
+      updates.sheetId = sheetId;
+    }
+
+    if (position !== undefined) {
+      let positionStr: string;
+      if (typeof position === "string") {
+        positionStr = position;
+      } else if (position && typeof position === "object") {
+        positionStr = JSON.stringify(position);
+      } else {
+        res.status(400).json({ error: "Invalid position" });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(positionStr);
+        if (
+          !parsed ||
+          typeof parsed.x !== "number" ||
+          typeof parsed.y !== "number" ||
+          !Number.isFinite(parsed.x) ||
+          !Number.isFinite(parsed.y)
+        ) {
+          throw new Error("Position must include numeric x and y");
+        }
+      } catch {
+        res.status(400).json({ error: "Invalid position" });
+        return;
+      }
+      updates.position = positionStr;
+    }
 
     const updateConditions = isSuperAdmin
       ? [eq(takeoffIssues.id, issueId)]
