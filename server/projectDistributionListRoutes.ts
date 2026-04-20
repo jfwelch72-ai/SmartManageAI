@@ -1,3 +1,11 @@
+// Canonical project email distribution-list endpoints.
+// Mounted under `/api`, exposing:
+//   - GET    /api/projects/:projectId/distribution-lists
+//   - POST   /api/projects/:projectId/distribution-lists
+//   - DELETE /api/projects/:projectId/distribution-lists/:listId
+// The legacy `/api/ai-features/schedule/:projectId/distribution-lists`
+// routes were retired; this is the single source of truth for
+// project-scoped distribution lists.
 import { Router } from "express";
 import { db } from "./db";
 import {
