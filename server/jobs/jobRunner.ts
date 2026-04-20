@@ -17,6 +17,7 @@ import { bids } from "@shared/schema";
 import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
+import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
@@ -31,6 +32,7 @@ let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
 let bidDueDateTask: ReturnType<typeof cron.schedule> | null = null;
 let imapSyncTask: ReturnType<typeof cron.schedule> | null = null;
 let providerSyncTask: ReturnType<typeof cron.schedule> | null = null;
+let emailPushRenewalTask: ReturnType<typeof cron.schedule> | null = null;
 let weeklyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let monthlyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let dbHealthCheckTask: ReturnType<typeof cron.schedule> | null = null;
@@ -128,14 +130,36 @@ export function startJobRunner() {
     }
   });
 
-  // Task #522: Gmail/Outlook 2-way incremental sync runs every 2 minutes
-  providerSyncTask = cron.schedule("*/2 * * * *", async () => {
+  // Task #522/#524: Gmail/Outlook 2-way incremental sync.
+  // With push notifications wired up (Task #524), pushes deliver mailbox
+  // changes near-instantly; this poll runs every 5 minutes as a safety net
+  // for missed events and accounts where push isn't configured.
+  providerSyncTask = cron.schedule("*/5 * * * *", async () => {
     try {
       await processProviderEmailSync();
     } catch (err) {
       logError("Provider email sync failed", { error: String(err) });
     }
   });
+
+  // Task #524: keep Gmail watches and Outlook subscriptions alive. Gmail
+  // watches expire after up to 7 days; Outlook subscriptions after ~70
+  // hours. Renewing every 15 minutes leaves comfortable headroom.
+  emailPushRenewalTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      await ensureAllEmailPushSubscriptions();
+    } catch (err) {
+      logError("Email push subscription renewal failed", { error: String(err) });
+    }
+  });
+
+  // Run once shortly after startup so newly deployed instances catch up
+  // without waiting for the first cron tick.
+  setTimeout(() => {
+    ensureAllEmailPushSubscriptions().catch((err) =>
+      logError("Initial email push subscription sweep failed", { error: String(err) }),
+    );
+  }, 30_000).unref?.();
 
   weeklyReportTask = cron.schedule("0 7 * * 1", async () => {
     try {
@@ -229,6 +253,10 @@ export function stopJobRunner() {
     providerSyncTask.stop();
     providerSyncTask = null;
   }
+  if (emailPushRenewalTask) {
+    emailPushRenewalTask.stop();
+    emailPushRenewalTask = null;
+  }
   if (weeklyReportTask) {
     weeklyReportTask.stop();
     weeklyReportTask = null;
@@ -264,7 +292,8 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   orphan_uploads:      { fn: () => processOrphanUploads(),             description: "Clean up orphaned file uploads",          schedule: "*/30 * * * *" },
   bid_due_dates:       { fn: () => processBidDueDateApproaching(),     description: "Notify on approaching bid due dates",     schedule: "0 * * * *" },
   imap_sync:           { fn: () => processImapEmailSync(),             description: "Sync IMAP email accounts",               schedule: "*/15 * * * *" },
-  provider_sync:       { fn: () => processProviderEmailSync(),         description: "Sync Gmail/Outlook accounts (2-way)",     schedule: "*/2 * * * *" },
+  provider_sync:       { fn: () => processProviderEmailSync(),         description: "Sync Gmail/Outlook accounts (2-way safety net)",     schedule: "*/5 * * * *" },
+  email_push_renewal:  { fn: () => ensureAllEmailPushSubscriptions(),  description: "Renew Gmail watch + Outlook subscriptions",          schedule: "*/15 * * * *" },
   weekly_report:       { fn: () => processPeriodicReports("WEEKLY"),   description: "Generate weekly reports",                 schedule: "0 7 * * 1" },
   monthly_report:      { fn: () => processPeriodicReports("MONTHLY"),  description: "Generate monthly reports",                schedule: "0 7 1 * *" },
   db_health_check:     { fn: () => runDbHealthCheck(),                 description: "Run database health check",              schedule: "0 */6 * * *" },

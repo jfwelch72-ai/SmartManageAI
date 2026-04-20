@@ -105,6 +105,7 @@ import socialRoutes from "./socialRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import procurementModuleRoutes from "./procurementModuleRoutes";
 import emailRoutes from "./emailRoutes";
+import emailWebhookRoutes from "./emailWebhookRoutes";
 import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
 import dashboardRoutes from "./dashboardRoutes";
@@ -342,6 +343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Email routes (consolidated)
   app.use("/api/email", emailRoutes);
+  app.use("/api/webhooks/email", emailWebhookRoutes);
   app.use("/api/kpis", kpiRoutes);
 
   app.use(libraryRoutes);

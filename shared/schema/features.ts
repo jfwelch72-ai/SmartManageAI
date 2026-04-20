@@ -4747,6 +4747,20 @@ export const emailAccounts = pgTable("email_accounts", {
   // OK | DEGRADED | ERROR | NEEDS_RECONNECT
   syncStatus: text("sync_status").notNull().default("OK"),
 
+  // Real-time push notification subscriptions (Task #524)
+  // Gmail: a watch on the user's mailbox publishes events to a Pub/Sub topic.
+  // The watch returns the historyId at registration time and an expiration
+  // (max 7 days) — we renew before expiry.
+  gmailWatchExpiration: timestamp("gmail_watch_expiration"),
+  gmailWatchHistoryId: text("gmail_watch_history_id"),
+  // Outlook: a Microsoft Graph subscription against the inbox folder posts
+  // notifications to our webhook. Subscriptions expire after ~70 hours and
+  // we renew before they lapse. clientState is a per-account secret that we
+  // verify on every incoming notification.
+  outlookSubscriptionId: text("outlook_subscription_id"),
+  outlookSubscriptionExpiration: timestamp("outlook_subscription_expiration"),
+  outlookSubscriptionClientState: text("outlook_subscription_client_state"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

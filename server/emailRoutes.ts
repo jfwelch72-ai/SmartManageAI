@@ -25,6 +25,7 @@ import {
 import { governedAiCall } from "./services/aiGovernance";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { testFullConnection, fetchImapMessages, sendSmtpEmail } from "./services/imapService";
+import { ensureGmailWatch, ensureOutlookSubscription } from "./emailPushNotifications";
 
 const router = Router();
 
@@ -240,6 +241,13 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
       }).catch((err) => {
         logError(`Initial Outlook sync failed for ${newAccount.emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
+      ensureOutlookSubscription(newAccount).catch((err) =>
+        logError(`Initial Outlook subscription registration failed for ${newAccount.emailAddress}`, {}, err instanceof Error ? err : new Error(String(err))),
+      );
+    } else if (newAccount.provider === "GMAIL" && newAccount.accessToken) {
+      ensureGmailWatch(newAccount).catch((err) =>
+        logError(`Initial Gmail watch registration failed for ${newAccount.emailAddress}`, {}, err instanceof Error ? err : new Error(String(err))),
+      );
     }
 
     return res.status(201).json(sanitizeAccountForResponse(newAccount));
@@ -428,6 +436,23 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
               .delete(emailAttachments)
               .where(inArray(emailAttachments.emailMessageId, batch));
           }
+        }
+
+        // 5a. Best-effort cleanup of provider push subscriptions so we
+        // stop getting webhooks for a mailbox we no longer manage.
+        try {
+          if (existing.provider === "GMAIL") {
+            const { stopGmailWatch } = await import("./emailPushNotifications");
+            await stopGmailWatch(existing);
+          } else if (existing.provider === "OUTLOOK") {
+            const { deleteOutlookSubscription } = await import("./emailPushNotifications");
+            await deleteOutlookSubscription(existing);
+          }
+        } catch (pushErr) {
+          logWarn("Failed to remove email push subscription during account delete", {
+            account: existing.emailAddress,
+            error: String(pushErr),
+          });
         }
 
         // 5. Delete all messages by account (catch-all, no need for thread-based delete)
@@ -822,6 +847,32 @@ router.get("/oauth/gmail/callback", async (req, res, next) => {
       });
     }
 
+    // Register Gmail push watch so changes arrive via Pub/Sub instead of
+    // waiting for the next polling tick (Task #524). No-op when push isn't
+    // configured. Scoped to (emailAddress, organizationId, userId) so that
+    // a shared mailbox connected by multiple users in different orgs maps
+    // to the right row.
+    try {
+      const [savedAccount] = await db
+        .select()
+        .from(emailAccounts)
+        .where(
+          and(
+            eq(emailAccounts.emailAddress, googleUser.email),
+            eq(emailAccounts.organizationId, userInfo.organizationId),
+            eq(emailAccounts.userId, userInfo.userId),
+          ),
+        )
+        .limit(1);
+      if (savedAccount) {
+        ensureGmailWatch(savedAccount).catch((err) =>
+          logError("Initial Gmail watch registration failed", { account: googleUser.email }, err instanceof Error ? err : new Error(String(err))),
+        );
+      }
+    } catch (err) {
+      logError("Failed to look up Gmail account for watch registration", { account: googleUser.email }, err instanceof Error ? err : new Error(String(err)));
+    }
+
     return res.redirect("/email-assistant?success=gmail_connected");
   } catch (error) {
     logError("Error in Gmail OAuth callback:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -1008,6 +1059,12 @@ router.get("/oauth/outlook/callback", async (req, res, next) => {
       }).catch((err) => {
         logError(`Initial Outlook OAuth sync failed for ${emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
+      // Register Microsoft Graph subscription so changes arrive via webhook
+      // instead of waiting for the next polling tick (Task #524). No-op when
+      // push isn't configured.
+      ensureOutlookSubscription(savedAccount).catch((err) =>
+        logError(`Initial Outlook subscription registration failed for ${emailAddress}`, {}, err instanceof Error ? err : new Error(String(err))),
+      );
     }
 
     return res.redirect("/email-assistant?success=outlook_connected");
@@ -1627,7 +1684,7 @@ function mergeOutlookPreferHeader(callerHeaders: HeadersInit | undefined): strin
   return callerPrefer ? `${callerPrefer}, ${immutable}` : immutable;
 }
 
-async function outlookApiFetch(url: string, account: typeof emailAccounts.$inferSelect, init?: RequestInit): Promise<Response> {
+export async function outlookApiFetch(url: string, account: typeof emailAccounts.$inferSelect, init?: RequestInit): Promise<Response> {
   let token = await getValidOutlookToken(account);
   const buildInit = (t: string): RequestInit => ({
     ...init,
@@ -1920,7 +1977,7 @@ function parseGmailMessage(msg: GmailMessage, accountEmail: string): {
   };
 }
 
-async function gmailApiFetch(url: string, account: typeof emailAccounts.$inferSelect, init?: RequestInit): Promise<Response> {
+export async function gmailApiFetch(url: string, account: typeof emailAccounts.$inferSelect, init?: RequestInit): Promise<Response> {
   let token = await getValidGmailToken(account);
   const buildInit = (t: string): RequestInit => ({
     ...init,
