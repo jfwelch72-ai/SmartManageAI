@@ -204,7 +204,7 @@
 import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
-import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, projects, changeOrders, projectDelays, crews, aiGanttRecommendations } from "@shared/schema";
+import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, scheduleBaselines, projects, changeOrders, projectDelays, crews, aiGanttRecommendations, users } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -253,6 +253,52 @@ router.post("/projects/:code/schedule/recalculate", requireAuth, requireRole("AD
   }
 });
 
+interface TaskBaselineSnapshot {
+  taskId: string;
+  baselineStartDate: string | null;
+  baselineEndDate: string | null;
+  durationDays: number | null;
+}
+
+async function applyBaselineToTasks(scheduleId: string, snapshots: TaskBaselineSnapshot[]) {
+  const snapMap = new Map(snapshots.map(s => [s.taskId, s]));
+  const allTasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, scheduleId));
+  for (const t of allTasks) {
+    const snap = snapMap.get(t.id);
+    await db.update(projectScheduleTasks)
+      .set({
+        baselineStartDate: snap?.baselineStartDate ?? null,
+        baselineEndDate: snap?.baselineEndDate ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectScheduleTasks.id, t.id));
+  }
+  let bStart: string | null = null;
+  let bEnd: string | null = null;
+  for (const s of snapshots) {
+    if (s.baselineStartDate && (!bStart || s.baselineStartDate < bStart)) bStart = s.baselineStartDate;
+    if (s.baselineEndDate && (!bEnd || s.baselineEndDate > bEnd)) bEnd = s.baselineEndDate;
+  }
+  return { scheduleStartDate: bStart, scheduleEndDate: bEnd };
+}
+
+async function snapshotCurrentTasks(scheduleId: string): Promise<{ snapshots: TaskBaselineSnapshot[]; scheduleStartDate: string | null; scheduleEndDate: string | null }> {
+  const tasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, scheduleId));
+  const snapshots: TaskBaselineSnapshot[] = tasks.map(t => ({
+    taskId: t.id,
+    baselineStartDate: t.plannedStartDate,
+    baselineEndDate: t.plannedEndDate,
+    durationDays: t.durationDays ?? null,
+  }));
+  let bStart: string | null = null;
+  let bEnd: string | null = null;
+  for (const s of snapshots) {
+    if (s.baselineStartDate && (!bStart || s.baselineStartDate < bStart)) bStart = s.baselineStartDate;
+    if (s.baselineEndDate && (!bEnd || s.baselineEndDate > bEnd)) bEnd = s.baselineEndDate;
+  }
+  return { snapshots, scheduleStartDate: bStart, scheduleEndDate: bEnd };
+}
+
 router.post("/projects/:code/schedule/lock-baseline", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const project = await getProjectByCode(req.params.code);
@@ -262,33 +308,36 @@ router.post("/projects/:code/schedule/lock-baseline", requireAuth, requireRole("
     const schedule = await getActiveSchedule(project.id);
     if (!schedule) return res.status(404).json({ error: "No active schedule" });
 
-    const tasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
 
-    for (const task of tasks) {
-      await db.update(projectScheduleTasks)
-        .set({
-          baselineStartDate: task.plannedStartDate,
-          baselineEndDate: task.plannedEndDate,
-          updatedAt: new Date(),
-        })
-        .where(eq(projectScheduleTasks.id, task.id));
-    }
+    const existing = await db.select().from(scheduleBaselines)
+      .where(and(eq(scheduleBaselines.scheduleId, schedule.id), eq(scheduleBaselines.isArchived, false)));
+    const defaultName = req.body?.name && typeof req.body.name === "string"
+      ? req.body.name.trim()
+      : `Baseline ${existing.length + 1}`;
 
-    let scheduleBaselineStart: string | null = null;
-    let scheduleBaselineEnd: string | null = null;
-    for (const task of tasks) {
-      const sd = task.plannedStartDate;
-      const ed = task.plannedEndDate;
-      if (sd && (!scheduleBaselineStart || sd < scheduleBaselineStart)) scheduleBaselineStart = sd;
-      if (ed && (!scheduleBaselineEnd || ed > scheduleBaselineEnd)) scheduleBaselineEnd = ed;
-    }
+    const { snapshots, scheduleStartDate, scheduleEndDate } = await snapshotCurrentTasks(schedule.id);
+
+    const [baseline] = await db.insert(scheduleBaselines).values({
+      scheduleId: schedule.id,
+      organizationId: orgId,
+      name: defaultName,
+      lockedByUserId: req.user!.id,
+      scheduleStartDate,
+      scheduleEndDate,
+      taskSnapshotsJson: JSON.stringify(snapshots),
+    }).returning();
+
+    await applyBaselineToTasks(schedule.id, snapshots);
 
     const [updatedSchedule] = await db.update(projectSchedules)
       .set({
         baselineLocked: true,
         baselineLockedAt: new Date(),
-        ...(scheduleBaselineStart ? { baselineStartDate: scheduleBaselineStart } : {}),
-        ...(scheduleBaselineEnd ? { baselineEndDate: scheduleBaselineEnd } : {}),
+        activeBaselineId: baseline.id,
+        ...(scheduleStartDate ? { baselineStartDate: scheduleStartDate } : {}),
+        ...(scheduleEndDate ? { baselineEndDate: scheduleEndDate } : {}),
         updatedAt: new Date(),
       })
       .where(eq(projectSchedules.id, schedule.id))
@@ -296,7 +345,247 @@ router.post("/projects/:code/schedule/lock-baseline", requireAuth, requireRole("
 
     const updatedTasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
 
-    res.json({ schedule: updatedSchedule, tasks: updatedTasks });
+    res.json({ schedule: updatedSchedule, tasks: updatedTasks, baseline });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/projects/:code/schedule/baselines", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const schedule = await getActiveSchedule(project.id);
+    if (!schedule) return res.json({ baselines: [], activeBaselineId: null });
+
+    const includeArchived = req.query.includeArchived === "true";
+    const rows = await db
+      .select({
+        id: scheduleBaselines.id,
+        scheduleId: scheduleBaselines.scheduleId,
+        name: scheduleBaselines.name,
+        lockedAt: scheduleBaselines.lockedAt,
+        lockedByUserId: scheduleBaselines.lockedByUserId,
+        isArchived: scheduleBaselines.isArchived,
+        scheduleStartDate: scheduleBaselines.scheduleStartDate,
+        scheduleEndDate: scheduleBaselines.scheduleEndDate,
+        notes: scheduleBaselines.notes,
+        createdAt: scheduleBaselines.createdAt,
+        lockedByFirstName: users.firstName,
+        lockedByLastName: users.lastName,
+        lockedByEmail: users.email,
+      })
+      .from(scheduleBaselines)
+      .leftJoin(users, eq(users.id, scheduleBaselines.lockedByUserId))
+      .where(eq(scheduleBaselines.scheduleId, schedule.id))
+      .orderBy(desc(scheduleBaselines.lockedAt));
+
+    const filtered = includeArchived ? rows : rows.filter(r => !r.isArchived);
+    res.json({ baselines: filtered, activeBaselineId: schedule.activeBaselineId });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const createBaselineSchema = z.object({
+  name: z.string().min(1).max(120),
+  notes: z.string().max(1000).optional(),
+  setActive: z.boolean().optional().default(true),
+});
+
+router.post("/projects/:code/schedule/baselines", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const parsed = createBaselineSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+
+    const schedule = await getActiveSchedule(project.id);
+    if (!schedule) return res.status(404).json({ error: "No active schedule" });
+
+    const { snapshots, scheduleStartDate, scheduleEndDate } = await snapshotCurrentTasks(schedule.id);
+
+    const [baseline] = await db.insert(scheduleBaselines).values({
+      scheduleId: schedule.id,
+      organizationId: orgId,
+      name: parsed.data.name,
+      notes: parsed.data.notes,
+      lockedByUserId: req.user!.id,
+      scheduleStartDate,
+      scheduleEndDate,
+      taskSnapshotsJson: JSON.stringify(snapshots),
+    }).returning();
+
+    if (parsed.data.setActive !== false) {
+      await applyBaselineToTasks(schedule.id, snapshots);
+      await db.update(projectSchedules)
+        .set({
+          baselineLocked: true,
+          baselineLockedAt: new Date(),
+          activeBaselineId: baseline.id,
+          ...(scheduleStartDate ? { baselineStartDate: scheduleStartDate } : {}),
+          ...(scheduleEndDate ? { baselineEndDate: scheduleEndDate } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(projectSchedules.id, schedule.id));
+    }
+
+    res.status(201).json({ baseline });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const updateBaselineSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  notes: z.string().max(1000).optional(),
+  isArchived: z.boolean().optional(),
+});
+
+router.patch("/projects/:code/schedule/baselines/:baselineId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const schedule = await getActiveSchedule(project.id);
+    if (!schedule) return res.status(404).json({ error: "No active schedule" });
+
+    const parsed = updateBaselineSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+
+    const [baseline] = await db.select().from(scheduleBaselines)
+      .where(and(eq(scheduleBaselines.id, req.params.baselineId), eq(scheduleBaselines.scheduleId, schedule.id)));
+    if (!baseline) return res.status(404).json({ error: "Baseline not found" });
+
+    const updates: Record<string, unknown> = {};
+    if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+    if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
+    if (parsed.data.isArchived !== undefined) updates.isArchived = parsed.data.isArchived;
+
+    const [updated] = await db.update(scheduleBaselines)
+      .set(updates)
+      .where(eq(scheduleBaselines.id, baseline.id))
+      .returning();
+
+    if (parsed.data.isArchived === true && schedule.activeBaselineId === baseline.id) {
+      await switchActiveBaseline(schedule.id, null);
+    }
+
+    res.json({ baseline: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/projects/:code/schedule/baselines/:baselineId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const schedule = await getActiveSchedule(project.id);
+    if (!schedule) return res.status(404).json({ error: "No active schedule" });
+
+    const [baseline] = await db.select().from(scheduleBaselines)
+      .where(and(eq(scheduleBaselines.id, req.params.baselineId), eq(scheduleBaselines.scheduleId, schedule.id)));
+    if (!baseline) return res.status(404).json({ error: "Baseline not found" });
+
+    await db.delete(scheduleBaselines).where(eq(scheduleBaselines.id, baseline.id));
+
+    if (schedule.activeBaselineId === baseline.id) {
+      await switchActiveBaseline(schedule.id, null);
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const setActiveBaselineSchema = z.object({
+  baselineId: z.string().nullable(),
+});
+
+async function switchActiveBaseline(scheduleId: string, baselineId: string | null) {
+  if (baselineId) {
+    const [b] = await db.select().from(scheduleBaselines)
+      .where(and(eq(scheduleBaselines.id, baselineId), eq(scheduleBaselines.scheduleId, scheduleId)));
+    if (!b) throw new Error("Baseline not found");
+    let snapshots: TaskBaselineSnapshot[] = [];
+    try {
+      snapshots = JSON.parse(b.taskSnapshotsJson || "[]");
+    } catch {
+      snapshots = [];
+    }
+    await applyBaselineToTasks(scheduleId, snapshots);
+    await db.update(projectSchedules)
+      .set({
+        baselineLocked: true,
+        activeBaselineId: b.id,
+        ...(b.scheduleStartDate ? { baselineStartDate: b.scheduleStartDate } : {}),
+        ...(b.scheduleEndDate ? { baselineEndDate: b.scheduleEndDate } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSchedules.id, scheduleId));
+    return b;
+  } else {
+    // Pick most recent non-archived baseline; if none, fully clear baseline state
+    const [next] = await db.select().from(scheduleBaselines)
+      .where(and(eq(scheduleBaselines.scheduleId, scheduleId), eq(scheduleBaselines.isArchived, false)))
+      .orderBy(desc(scheduleBaselines.lockedAt))
+      .limit(1);
+    if (next) {
+      let snapshots: TaskBaselineSnapshot[] = [];
+      try { snapshots = JSON.parse(next.taskSnapshotsJson || "[]"); } catch { snapshots = []; }
+      await applyBaselineToTasks(scheduleId, snapshots);
+      await db.update(projectSchedules)
+        .set({
+          baselineLocked: true,
+          activeBaselineId: next.id,
+          ...(next.scheduleStartDate ? { baselineStartDate: next.scheduleStartDate } : {}),
+          ...(next.scheduleEndDate ? { baselineEndDate: next.scheduleEndDate } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(projectSchedules.id, scheduleId));
+      return next;
+    } else {
+      await applyBaselineToTasks(scheduleId, []);
+      await db.update(projectSchedules)
+        .set({
+          baselineLocked: false,
+          activeBaselineId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectSchedules.id, scheduleId));
+      return null;
+    }
+  }
+}
+
+router.post("/projects/:code/schedule/active-baseline", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const parsed = setActiveBaselineSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+
+    const schedule = await getActiveSchedule(project.id);
+    if (!schedule) return res.status(404).json({ error: "No active schedule" });
+
+    const active = await switchActiveBaseline(schedule.id, parsed.data.baselineId);
+    const [updatedSchedule] = await db.select().from(projectSchedules).where(eq(projectSchedules.id, schedule.id));
+    const tasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
+    res.json({ schedule: updatedSchedule, tasks, activeBaseline: active });
   } catch (error) {
     next(error);
   }
@@ -314,6 +603,7 @@ router.post("/projects/:code/schedule/unlock-baseline", requireAuth, requireRole
     const [updatedSchedule] = await db.update(projectSchedules)
       .set({
         baselineLocked: false,
+        activeBaselineId: null,
         updatedAt: new Date(),
       })
       .where(eq(projectSchedules.id, schedule.id))

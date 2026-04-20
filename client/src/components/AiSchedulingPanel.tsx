@@ -43,6 +43,11 @@ import {
   Download,
   FileImage,
   FileText,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  Save,
+  History,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -50,6 +55,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
@@ -106,8 +112,30 @@ interface ProjectSchedule {
   createdAt: string;
   baselineLocked?: boolean;
   baselineLockedAt?: string;
+  activeBaselineId?: string | null;
   projectedCompletionDate?: string;
   spiValue?: string;
+}
+
+interface SavedBaseline {
+  id: string;
+  scheduleId: string;
+  name: string;
+  lockedAt: string;
+  lockedByUserId: string | null;
+  isArchived: boolean;
+  scheduleStartDate: string | null;
+  scheduleEndDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  lockedByFirstName?: string | null;
+  lockedByLastName?: string | null;
+  lockedByEmail?: string | null;
+}
+
+interface BaselinesResponse {
+  baselines: SavedBaseline[];
+  activeBaselineId: string | null;
 }
 
 interface ForecastData {
@@ -206,6 +234,10 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [showBaseline, setShowBaseline] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const ganttExportRef = useRef<HTMLDivElement>(null);
+  const [saveBaselineOpen, setSaveBaselineOpen] = useState(false);
+  const [newBaselineName, setNewBaselineName] = useState("");
+  const [newBaselineNotes, setNewBaselineNotes] = useState("");
+  const [manageBaselinesOpen, setManageBaselinesOpen] = useState(false);
 
   const { toast } = useToast();
 
@@ -286,6 +318,11 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     enabled: !!scheduleData?.schedule,
   });
 
+  const { data: baselinesData } = useQuery<BaselinesResponse>({
+    queryKey: ["/api/projects", projectCode, "schedule", "baselines"],
+    enabled: !!scheduleData?.schedule,
+  });
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", `/api/projects/${projectCode}/ai-schedule`, { startDate });
@@ -342,6 +379,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "forecast"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "baselines"] });
       toast({ title: "Baseline Locked", description: "Current schedule dates saved as baseline" });
     },
   });
@@ -353,7 +391,64 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "baselines"] });
       toast({ title: "Baseline Unlocked" });
+    },
+  });
+
+  const createBaselineMutation = useMutation({
+    mutationFn: async ({ name, notes }: { name: string; notes?: string }) => {
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/schedule/baselines`, { name, notes, setActive: true });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "forecast"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "baselines"] });
+      setSaveBaselineOpen(false);
+      setNewBaselineName("");
+      setNewBaselineNotes("");
+      toast({ title: "Baseline saved", description: "Current schedule dates saved as a new baseline" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Save failed", description: error.message || "Failed to save baseline", variant: "destructive" });
+    },
+  });
+
+  const setActiveBaselineMutation = useMutation({
+    mutationFn: async (baselineId: string | null) => {
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/schedule/active-baseline`, { baselineId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "forecast"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "baselines"] });
+      toast({ title: "Active baseline updated" });
+    },
+  });
+
+  const archiveBaselineMutation = useMutation({
+    mutationFn: async ({ id, isArchived }: { id: string; isArchived: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/projects/${projectCode}/schedule/baselines/${id}`, { isArchived });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "baselines"] });
+      toast({ title: "Baseline archived" });
+    },
+  });
+
+  const deleteBaselineMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/projects/${projectCode}/schedule/baselines/${id}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "baselines"] });
+      toast({ title: "Baseline deleted" });
     },
   });
 
@@ -595,6 +690,43 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
                   <Lock className="w-4 h-4 mr-2" />
                   Lock Baseline
                 </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const count = (baselinesData?.baselines.filter(b => !b.isArchived).length ?? 0) + 1;
+                  setNewBaselineName(`Baseline ${count}`);
+                  setSaveBaselineOpen(true);
+                }}
+                data-testid="button-save-baseline"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Save as Baseline
+              </Button>
+              {(baselinesData?.baselines.length ?? 0) > 0 && (
+                <>
+                  <Select
+                    value={baselinesData?.activeBaselineId ?? "__none__"}
+                    onValueChange={(v) => setActiveBaselineMutation.mutate(v === "__none__" ? null : v)}
+                  >
+                    <SelectTrigger className="w-[200px] h-9" data-testid="select-active-baseline">
+                      <SelectValue placeholder="Compare to baseline..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No baseline comparison</SelectItem>
+                      {baselinesData?.baselines.filter(b => !b.isArchived).map(b => (
+                        <SelectItem key={b.id} value={b.id} data-testid={`option-baseline-${b.id}`}>
+                          {b.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="sm" onClick={() => setManageBaselinesOpen(true)} data-testid="button-manage-baselines">
+                    <History className="w-4 h-4 mr-2" />
+                    Manage
+                  </Button>
+                </>
               )}
             </>
           )}
@@ -1088,6 +1220,139 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
               {addTaskMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
               Add Task
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={saveBaselineOpen} onOpenChange={setSaveBaselineOpen}>
+        <DialogContent data-testid="dialog-save-baseline">
+          <DialogHeader>
+            <DialogTitle>Save Current Schedule as Baseline</DialogTitle>
+            <DialogDescription>
+              Capture today's planned dates as a named baseline. You can compare against it later from the Gantt toolbar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label htmlFor="baseline-name">Baseline name</Label>
+              <Input
+                id="baseline-name"
+                value={newBaselineName}
+                onChange={(e) => setNewBaselineName(e.target.value)}
+                placeholder="e.g. Baseline 2 - After Change Order #4"
+                data-testid="input-baseline-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="baseline-notes">Notes (optional)</Label>
+              <Textarea
+                id="baseline-notes"
+                value={newBaselineNotes}
+                onChange={(e) => setNewBaselineNotes(e.target.value)}
+                placeholder="What changed since the last baseline?"
+                rows={3}
+                data-testid="input-baseline-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveBaselineOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => createBaselineMutation.mutate({ name: newBaselineName.trim(), notes: newBaselineNotes.trim() || undefined })}
+              disabled={createBaselineMutation.isPending || !newBaselineName.trim()}
+              data-testid="button-confirm-save-baseline"
+            >
+              {createBaselineMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Save Baseline
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manageBaselinesOpen} onOpenChange={setManageBaselinesOpen}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-manage-baselines">
+          <DialogHeader>
+            <DialogTitle>Saved Baselines</DialogTitle>
+            <DialogDescription>
+              Switch the active comparison baseline, archive old ones, or delete them permanently.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2 max-h-[60vh] overflow-y-auto">
+            {(baselinesData?.baselines.length ?? 0) === 0 && (
+              <p className="text-sm text-muted-foreground">No baselines saved yet.</p>
+            )}
+            {baselinesData?.baselines.map(b => {
+              const isActive = baselinesData.activeBaselineId === b.id;
+              const lockedByName = [b.lockedByFirstName, b.lockedByLastName].filter(Boolean).join(" ") || b.lockedByEmail || "Unknown";
+              return (
+                <div
+                  key={b.id}
+                  className={cn(
+                    "flex items-start justify-between gap-3 p-3 border rounded-md",
+                    isActive && "border-primary bg-primary/5",
+                    b.isArchived && "opacity-60"
+                  )}
+                  data-testid={`row-baseline-${b.id}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium" data-testid={`text-baseline-name-${b.id}`}>{b.name}</p>
+                      {isActive && <Badge variant="default" className="text-xs">Active</Badge>}
+                      {b.isArchived && <Badge variant="secondary" className="text-xs">Archived</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Locked {format(parseISO(b.lockedAt), "MMM d, yyyy h:mm a")} by {lockedByName}
+                    </p>
+                    {b.scheduleStartDate && b.scheduleEndDate && (
+                      <p className="text-xs text-muted-foreground">
+                        Range: {format(parseISO(b.scheduleStartDate), "MMM d, yyyy")} → {format(parseISO(b.scheduleEndDate), "MMM d, yyyy")}
+                      </p>
+                    )}
+                    {b.notes && <p className="text-xs mt-1">{b.notes}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!b.isArchived && !isActive && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setActiveBaselineMutation.mutate(b.id)}
+                        disabled={setActiveBaselineMutation.isPending}
+                        data-testid={`button-activate-baseline-${b.id}`}
+                      >
+                        Set Active
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => archiveBaselineMutation.mutate({ id: b.id, isArchived: !b.isArchived })}
+                      disabled={archiveBaselineMutation.isPending}
+                      data-testid={`button-archive-baseline-${b.id}`}
+                      title={b.isArchived ? "Unarchive" : "Archive"}
+                    >
+                      {b.isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        if (confirm(`Delete baseline "${b.name}"? This cannot be undone.`)) {
+                          deleteBaselineMutation.mutate(b.id);
+                        }
+                      }}
+                      disabled={deleteBaselineMutation.isPending}
+                      data-testid={`button-delete-baseline-${b.id}`}
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManageBaselinesOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

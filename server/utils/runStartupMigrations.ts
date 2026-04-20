@@ -43,6 +43,7 @@ import { ensureSequenceTables } from "./ensureSequenceTables";
 import { ensureUserSettingsTableDensity } from "./ensureUserSettingsTableDensity";
 import { ensureCrmCustomFieldTables } from "./ensureCrmCustomFieldTables";
 import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
+import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -95,6 +96,7 @@ const migrations: MigrationStep[] = [
   { name: "user_settings_table_density", category: "ADD_COLUMN", fn: ensureUserSettingsTableDensity },
   { name: "crm_custom_field_tables", category: "CREATE_TABLE", fn: ensureCrmCustomFieldTables },
   { name: "user_saved_views_table", category: "CREATE_TABLE", fn: ensureUserSavedViewsTable },
+  { name: "schedule_baselines_table", category: "CREATE_TABLE", fn: ensureScheduleBaselinesTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

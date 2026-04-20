@@ -3497,6 +3497,7 @@ export const projectSchedules = pgTable("project_schedules", {
   isActive: boolean("is_active").notNull().default(true),
   baselineLocked: boolean("baseline_locked").notNull().default(false),
   baselineLockedAt: timestamp("baseline_locked_at"),
+  activeBaselineId: varchar("active_baseline_id"),
   projectedCompletionDate: date("projected_completion_date"),
   spiValue: decimal("spi_value", { precision: 5, scale: 3 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -3510,6 +3511,28 @@ export const projectSchedules = pgTable("project_schedules", {
 export const insertProjectScheduleSchema = createInsertSchema(projectSchedules).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectSchedule = z.infer<typeof insertProjectScheduleSchema>;
 export type ProjectSchedule = typeof projectSchedules.$inferSelect;
+
+export const scheduleBaselines = pgTable("schedule_baselines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => projectSchedules.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  lockedAt: timestamp("locked_at").notNull().defaultNow(),
+  lockedByUserId: varchar("locked_by_user_id").references(() => users.id),
+  isArchived: boolean("is_archived").notNull().default(false),
+  scheduleStartDate: date("schedule_start_date"),
+  scheduleEndDate: date("schedule_end_date"),
+  taskSnapshotsJson: text("task_snapshots_json").notNull().default("[]"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  scheduleIdx: index("schedule_baselines_schedule_idx").on(table.scheduleId),
+  orgIdx: index("schedule_baselines_org_idx").on(table.organizationId),
+}));
+
+export const insertScheduleBaselineSchema = createInsertSchema(scheduleBaselines).omit({ id: true, createdAt: true, lockedAt: true });
+export type InsertScheduleBaseline = z.infer<typeof insertScheduleBaselineSchema>;
+export type ScheduleBaseline = typeof scheduleBaselines.$inferSelect;
 
 export const projectScheduleTasks = pgTable("project_schedule_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
