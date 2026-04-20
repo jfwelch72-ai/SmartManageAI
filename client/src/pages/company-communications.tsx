@@ -8,7 +8,7 @@ import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -390,7 +390,6 @@ export default function CompanyCommunicationsPage() {
               </p>
             ) : (
               notes.map((note) => {
-                const initials = `${note.authorFirstName[0]}${note.authorLastName[0]}`.toUpperCase();
                 const noteDate = new Date(note.createdAt);
                 const isEditing = editingNoteId === note.id;
                 const canEdit = canEditNote(note);
@@ -402,7 +401,7 @@ export default function CompanyCommunicationsPage() {
                     data-testid={`company-note-${note.id}`}
                   >
                     <Avatar className="w-10 h-10 shrink-0">
-                      <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                      <ColoredAvatarFallback className="text-xs" name={`${note.authorFirstName} ${note.authorLastName}`} />
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-2">

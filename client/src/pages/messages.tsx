@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, Users, X, Search, UserPlus } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -167,7 +167,7 @@ function NewMessagePanel({
                       data-testid={`button-select-user-${u.id}`}
                     >
                       <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback className="text-xs">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
+                        <ColoredAvatarFallback className="text-xs" name={`${u.firstName} ${u.lastName}`} />
                       </Avatar>
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{u.firstName} {u.lastName}</p>
@@ -193,7 +193,7 @@ function NewMessagePanel({
             <div className="flex -space-x-2 mb-3">
               {selectedUsers.slice(0, 5).map(u => (
                 <Avatar key={u.id} className="h-10 w-10 border-2 border-background">
-                  <AvatarFallback className="text-xs">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
+                  <ColoredAvatarFallback className="text-xs" name={`${u.firstName} ${u.lastName}`} />
                 </Avatar>
               ))}
               {selectedUsers.length > 5 && (
@@ -1184,7 +1184,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                                       data-testid={`button-add-user-${u.id}`}
                                     >
                                       <Avatar className="h-6 w-6 shrink-0">
-                                        <AvatarFallback className="text-[10px]">{getInitials(u.firstName, u.lastName)}</AvatarFallback>
+                                        <ColoredAvatarFallback className="text-[10px]" name={`${u.firstName} ${u.lastName}`} />
                                       </Avatar>
                                       <div className="min-w-0 flex-1">
                                         <p className="font-medium truncate">{u.firstName} {u.lastName}</p>
@@ -1210,9 +1210,10 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
                                     data-testid={`member-item-${p.userId}`}
                                   >
                                     <Avatar className="h-8 w-8 shrink-0">
-                                      <AvatarFallback className="text-xs">
-                                        {getInitials(p.user.firstName, p.user.lastName)}
-                                      </AvatarFallback>
+                                      <ColoredAvatarFallback
+                                        className="text-xs"
+                                        name={`${p.user.firstName} ${p.user.lastName}`}
+                                      />
                                     </Avatar>
                                     <div className="min-w-0 flex-1">
                                       <p className="text-sm font-medium truncate leading-tight">{p.user.firstName} {p.user.lastName}</p>

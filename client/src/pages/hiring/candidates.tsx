@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -291,7 +291,7 @@ export default function HiringCandidatesPage() {
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Link href={`/hiring/candidates/${c.id}`} className="flex items-center gap-2" data-testid={`link-candidate-${c.id}`}>
                           <Avatar className="w-8 h-8">
-                            <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
+                            <ColoredAvatarFallback className="text-xs" name={c.fullName} />
                           </Avatar>
                           <div>
                             <p className="font-medium text-sm">{c.fullName}</p>
@@ -327,7 +327,7 @@ export default function HiringCandidatesPage() {
                         {rev ? (
                           <div className="flex items-center gap-1.5" data-testid={`reviewer-${c.id}`}>
                             <Avatar className="w-6 h-6">
-                              <AvatarFallback className="text-xs bg-secondary text-secondary-foreground">{rev}</AvatarFallback>
+                              <ColoredAvatarFallback className="text-xs" name={rev}>{rev}</ColoredAvatarFallback>
                             </Avatar>
                           </div>
                         ) : (

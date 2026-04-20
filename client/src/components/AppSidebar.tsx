@@ -26,7 +26,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { 
   Building2, 
@@ -227,10 +227,6 @@ export function AppSidebar() {
 
   const isActive = (path: string) => location === path || location.startsWith(path + "/");
 
-  const initials = user.firstName && user.lastName
-    ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
-    : user.email?.substring(0, 2).toUpperCase() || "U";
-
   const handleLogout = async () => {
     await logout();
   };
@@ -385,7 +381,7 @@ export function AppSidebar() {
               <div className="flex items-center gap-2 px-2 py-2 group-data-[collapsible=icon]:justify-center">
                 <Avatar className="w-8 h-8">
                   {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={`${user.firstName} ${user.lastName}`} />}
-                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                  <ColoredAvatarFallback className="text-xs" name={`${user.firstName} ${user.lastName}`} />
                 </Avatar>
                 <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
                   <p className="text-sm font-medium truncate">{user.firstName} {user.lastName}</p>
@@ -545,7 +541,7 @@ export function AppSidebar() {
             <div className="flex items-center gap-2 px-2 py-2 group-data-[collapsible=icon]:justify-center">
               <Avatar className="w-8 h-8">
                 {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={`${user.firstName} ${user.lastName}`} />}
-                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                <ColoredAvatarFallback className="text-xs" name={`${user.firstName} ${user.lastName}`} />
               </Avatar>
               <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
                 <p className="text-sm font-medium truncate">{user.firstName} {user.lastName}</p>

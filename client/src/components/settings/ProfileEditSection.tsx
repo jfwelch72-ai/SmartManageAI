@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -133,7 +133,6 @@ export default function ProfileEditSection() {
 
   if (!user) return null;
 
-  const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase();
   const accessLevel = user.organizationId ? "Organization" : "Platform";
   const roleDisplay = user.role?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "Not specified";
 
@@ -150,9 +149,7 @@ export default function ProfileEditSection() {
             <div className="relative">
               <Avatar className="h-20 w-20 border-4 border-primary/20">
                 <AvatarImage src={user.avatarUrl || undefined} />
-                <AvatarFallback className="text-xl font-semibold bg-primary text-primary-foreground">
-                  {initials}
-                </AvatarFallback>
+                <ColoredAvatarFallback className="text-xl" name={`${user.firstName ?? ""} ${user.lastName ?? ""}`} email={user.email} />
               </Avatar>
               <input
                 ref={avatarInputRef}

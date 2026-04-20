@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -277,7 +277,7 @@ export default function CandidateDetailPage() {
           </Button>
           <div className="flex items-center gap-3">
             <Avatar className="w-10 h-10">
-              <AvatarFallback className="bg-primary/10 text-primary">{initials(candidate.fullName)}</AvatarFallback>
+              <ColoredAvatarFallback name={candidate.fullName} />
             </Avatar>
             <div>
               <h1 className="text-2xl font-bold" data-testid="heading-candidate-name">{candidate.fullName}</h1>

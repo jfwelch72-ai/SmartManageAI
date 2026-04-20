@@ -10,7 +10,7 @@ import { useDashboardCustomization, useFeaturePermission } from "@/hooks/use-das
 import { Plus, Sun, Moon, Sunset, ChevronDown, Sparkles, Brain, DollarSign, Mic, Star, Users, CheckCircle, TrendingUp, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -222,7 +222,7 @@ function PeerRatingDashboardCard() {
         <CardHeader>
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10">
-              <AvatarFallback className="bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
+              <ColoredAvatarFallback name={`${selectedCoworker.firstName ?? ""} ${selectedCoworker.lastName ?? ""}`} />
             </Avatar>
             <div>
               <CardTitle className="text-base" data-testid="text-ratee-name">Rate {selectedCoworker.firstName} {selectedCoworker.lastName}</CardTitle>
@@ -310,7 +310,7 @@ function PeerRatingDashboardCard() {
                     <div key={cw.id} className="flex items-center justify-between py-1.5" data-testid={`coworker-row-${cw.id}`}>
                       <div className="flex items-center gap-2">
                         <Avatar className="h-7 w-7">
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+                          <ColoredAvatarFallback className="text-xs" name={`${cw.firstName ?? ""} ${cw.lastName ?? ""}`} />
                         </Avatar>
                         <div>
                           <p className="text-sm font-medium">{cw.firstName} {cw.lastName}</p>
@@ -332,7 +332,7 @@ function PeerRatingDashboardCard() {
                         <div key={cw.id} className="flex items-center justify-between py-1 opacity-60" data-testid={`coworker-rated-${cw.id}`}>
                           <div className="flex items-center gap-2">
                             <Avatar className="h-7 w-7">
-                              <AvatarFallback className="bg-muted text-muted-foreground text-xs">{initials}</AvatarFallback>
+                              <ColoredAvatarFallback className="text-xs" name={`${cw.firstName ?? ""} ${cw.lastName ?? ""}`} />
                             </Avatar>
                             <span className="text-sm">{cw.firstName} {cw.lastName}</span>
                           </div>
@@ -438,9 +438,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3 sm:gap-4">
               <Avatar className="h-12 w-12 sm:h-16 sm:w-16 ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
                 {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={`${user.firstName} ${user.lastName}`} />}
-                <AvatarFallback className="text-base sm:text-lg bg-primary text-primary-foreground">
-                  {user?.firstName?.[0]}{user?.lastName?.[0]}
-                </AvatarFallback>
+                <ColoredAvatarFallback className="text-base sm:text-lg" name={`${user?.firstName ?? ""} ${user?.lastName ?? ""}`} />
               </Avatar>
               <div>
                 <div className="flex items-center gap-2">

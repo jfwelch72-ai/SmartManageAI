@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { Loader2, Edit2, Trash2, Smile, Check, FileQuestion, ArrowRightLeft, CheckSquare, ClipboardList } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -75,9 +75,10 @@ export function MessageBubble({
     >
       {showHeader ? (
         <Avatar className="h-7 w-7 shrink-0 mt-0.5">
-          <AvatarFallback className="text-[10px]">
-            {getInitials(message.sender.firstName, message.sender.lastName)}
-          </AvatarFallback>
+          <ColoredAvatarFallback
+            className="text-[10px]"
+            name={`${message.sender.firstName} ${message.sender.lastName}`}
+          />
         </Avatar>
       ) : (
         <div className="w-7 shrink-0" />

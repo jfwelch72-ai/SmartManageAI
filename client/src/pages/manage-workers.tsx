@@ -11,7 +11,7 @@ import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import {
   Select,
   SelectContent,
@@ -486,9 +486,10 @@ function TopPerformers({ data }: { data: KpiDashboardData["topPerformers"] }) {
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-sm font-bold text-muted-foreground w-5">{idx + 1}</span>
                   <Avatar className="h-8 w-8">
-                    <AvatarFallback className="text-xs">
-                      {getInitials(performer.firstName, performer.lastName)}
-                    </AvatarFallback>
+                    <ColoredAvatarFallback
+                      className="text-xs"
+                      name={`${performer.firstName} ${performer.lastName}`}
+                    />
                   </Avatar>
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{performer.firstName} {performer.lastName}</p>
@@ -723,7 +724,7 @@ function WorkersTab() {
                 <div className="flex items-start gap-3">
                   <Avatar className="h-10 w-10" data-testid={`avatar-worker-${worker.id}`}>
                     <AvatarImage src={worker.avatarUrl || undefined} alt={`${worker.firstName} ${worker.lastName}`} />
-                    <AvatarFallback>{getInitials(worker.firstName, worker.lastName)}</AvatarFallback>
+                    <ColoredAvatarFallback name={`${worker.firstName} ${worker.lastName}`} />
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -1119,7 +1120,7 @@ function PerformanceTab() {
                   <div key={r.id} className="border rounded-md p-3 hover-elevate cursor-pointer" onClick={() => setExpandedRating(expandedRating === r.id ? null : r.id)} data-testid={`rating-card-${r.id}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <Avatar className="h-8 w-8"><AvatarFallback className="text-xs">{(historyView === "received" ? r.evaluatorName : r.employeeName)?.[0]}</AvatarFallback></Avatar>
+                        <Avatar className="h-8 w-8"><ColoredAvatarFallback className="text-xs" name={historyView === "received" ? r.evaluatorName : r.employeeName} /></Avatar>
                         <div>
                           <p className="text-sm font-medium">{historyView === "received" ? r.evaluatorName : r.employeeName}</p>
                           <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}{r.period && ` - ${r.period}`}</p>
@@ -1264,7 +1265,7 @@ function PerformanceAnalyticsSection() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{e.firstName[0]}{e.lastName[0]}</AvatarFallback></Avatar>
+                          <Avatar className="h-7 w-7"><ColoredAvatarFallback className="text-xs" name={`${e.firstName} ${e.lastName}`} /></Avatar>
                           <span className="font-medium text-sm">{e.firstName} {e.lastName}</span>
                         </div>
                       </TableCell>

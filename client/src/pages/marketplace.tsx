@@ -36,7 +36,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import {
   Building2,
   Star,
@@ -437,10 +437,7 @@ function TeamMembersSection({ orgId }: { orgId: string }) {
               data-testid={`team-member-${m.user.id}`}
             >
               <Avatar className="w-7 h-7 shrink-0">
-                <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                  {m.user.firstName?.[0] || ""}
-                  {m.user.lastName?.[0] || ""}
-                </AvatarFallback>
+                <ColoredAvatarFallback className="text-xs" name={`${m.user.firstName ?? ""} ${m.user.lastName ?? ""}`} />
               </Avatar>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium line-clamp-1">

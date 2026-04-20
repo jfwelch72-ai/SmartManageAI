@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { MessageSquare, ChevronRight, AlertCircle, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -143,11 +143,14 @@ export function MessagesWidget({ config }: { config?: Record<string, unknown> })
                   data-testid={`message-preview-${conv.id}`}
                 >
                   <Avatar className="h-8 w-8">
-                    <AvatarFallback className="text-xs">
-                      {conv.isCompanyChannel
-                        ? "Co"
-                        : otherParticipants[0]?.user.firstName?.[0]}
-                    </AvatarFallback>
+                    <ColoredAvatarFallback
+                      className="text-xs"
+                      name={
+                        conv.isCompanyChannel
+                          ? "Company"
+                          : `${otherParticipants[0]?.user.firstName ?? ""} ${otherParticipants[0]?.user.lastName ?? ""}`
+                      }
+                    />
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">

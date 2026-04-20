@@ -4,6 +4,7 @@ import * as React from "react"
 import * as AvatarPrimitive from "@radix-ui/react-avatar"
 
 import { cn } from "@/lib/utils"
+import { colorForName, initialsFor } from "@/lib/avatar-color"
 
 const Avatar = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Root>,
@@ -48,4 +49,40 @@ const AvatarFallback = React.forwardRef<
 ))
 AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName
 
-export { Avatar, AvatarImage, AvatarFallback }
+interface ColoredAvatarFallbackProps
+  extends Omit<
+    React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>,
+    "children"
+  > {
+  name?: string | null
+  email?: string | null
+  children?: React.ReactNode
+}
+
+const ColoredAvatarFallback = React.forwardRef<
+  React.ElementRef<typeof AvatarPrimitive.Fallback>,
+  ColoredAvatarFallbackProps
+>(({ name, email, className, children, ...props }, ref) => {
+  const { bg, text } = colorForName(name, email)
+  const label =
+    children !== undefined && children !== null && children !== ""
+      ? children
+      : initialsFor(name, email)
+  return (
+    <AvatarPrimitive.Fallback
+      ref={ref}
+      className={cn(
+        "flex h-full w-full items-center justify-center rounded-full font-semibold leading-none",
+        bg,
+        text,
+        className,
+      )}
+      {...props}
+    >
+      {label}
+    </AvatarPrimitive.Fallback>
+  )
+})
+ColoredAvatarFallback.displayName = "ColoredAvatarFallback"
+
+export { Avatar, AvatarImage, AvatarFallback, ColoredAvatarFallback }

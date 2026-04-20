@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -133,7 +133,6 @@ export default function WorkerDetailPage() {
 
   const { user, skills, certifications, attendanceLogs, safetyIncidents, qualityIssues, performanceReviews, supervisorNotes, workerLogs, timeClockShifts, currentShift } = data;
 
-  const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase();
   const fullName = `${user.firstName} ${user.lastName}`;
   const roleDisplay = user.role?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "Worker";
 
@@ -236,9 +235,7 @@ export default function WorkerDetailPage() {
         <div className="flex flex-col sm:flex-row items-start gap-4 -mt-12 mb-4">
           <Avatar className="h-24 w-24 border-4 border-background" data-testid="avatar-worker">
             <AvatarImage src={user.avatarUrl || undefined} />
-            <AvatarFallback className="text-2xl font-semibold bg-primary text-primary-foreground">
-              {initials}
-            </AvatarFallback>
+            <ColoredAvatarFallback className="text-2xl" name={fullName} />
           </Avatar>
           <div className="pt-2 sm:pt-14">
             <h1 className="text-2xl font-bold" data-testid="text-worker-name">{fullName}</h1>

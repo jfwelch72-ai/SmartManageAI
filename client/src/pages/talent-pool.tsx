@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -80,9 +80,7 @@ function TalentCard({ data }: { data: TalentProfileCard }) {
         <div className="flex gap-3">
           <Avatar className="w-14 h-14 shrink-0">
             <AvatarImage src={user.avatarUrl} />
-            <AvatarFallback className="bg-primary/10 text-primary text-sm">
-              {initials(user.firstName, user.lastName)}
-            </AvatarFallback>
+            <ColoredAvatarFallback className="text-sm" name={`${user.firstName} ${user.lastName}`} />
           </Avatar>
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
@@ -444,9 +442,7 @@ function TalentProfileDetailPage({ profileId }: { profileId: string }) {
           <div className="flex gap-4 items-start">
             <Avatar className="w-20 h-20 shrink-0">
               <AvatarImage src={u.avatarUrl} />
-              <AvatarFallback className="bg-primary/10 text-primary text-xl">
-                {initials(u.firstName, u.lastName)}
-              </AvatarFallback>
+              <ColoredAvatarFallback className="text-xl" name={`${u.firstName} ${u.lastName}`} />
             </Avatar>
             <div className="flex-1">
               <div className="flex flex-wrap items-start justify-between gap-2">

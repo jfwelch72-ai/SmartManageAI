@@ -4,7 +4,7 @@ import {
   FileText, Users, Maximize2, Minimize2, Clock, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { CallNotesPanel } from "./CallNotesPanel";
 import { getInitials, type VideoCallData, type Conversation } from "./types";
 import { cn } from "@/lib/utils";
@@ -305,6 +305,8 @@ function CallContent({
   const activeParticipants = call.participants.filter(p => !p.leftAt);
   const otherParticipants = activeParticipants.filter(p => p.userId !== currentUserId);
   const isInitiator = call.initiatorId === currentUserId;
+  const localUser = conversation.participants.find(p => p.userId === currentUserId)?.user;
+  const localUserName = localUser ? `${localUser.firstName} ${localUser.lastName}` : "You";
 
   const localScreenTrack = tracks.find(
     t => t.participant?.identity === localParticipant.identity &&
@@ -395,7 +397,7 @@ function CallContent({
             ) : (isVideoOff && !isScreenSharing) || !localVideoTrack?.publication?.track ? (
               <div className="flex items-center justify-center h-full">
                 <Avatar className="h-20 w-20">
-                  <AvatarFallback className="text-2xl bg-gray-700 text-gray-300">You</AvatarFallback>
+                  <ColoredAvatarFallback className="text-2xl" name={localUserName}>You</ColoredAvatarFallback>
                 </Avatar>
               </div>
             ) : (
@@ -429,7 +431,7 @@ function CallContent({
                 >
                   {(isVideoOff || !localCameraTrack?.publication?.track) ? (
                     <Avatar className="h-12 w-12">
-                      <AvatarFallback className="text-lg bg-gray-700 text-gray-300">You</AvatarFallback>
+                      <ColoredAvatarFallback className="text-lg" name={localUserName}>You</ColoredAvatarFallback>
                     </Avatar>
                   ) : (
                     <VideoTrack
@@ -587,11 +589,10 @@ function RemoteParticipantTile({
         />
       ) : isCameraOff ? (
         <Avatar className="h-20 w-20">
-          <AvatarFallback className="text-2xl bg-gray-700 text-gray-300">
-            {matchedParticipant
-              ? getInitials(matchedParticipant.user.firstName, matchedParticipant.user.lastName)
-              : participant.identity.substring(0, 2).toUpperCase()}
-          </AvatarFallback>
+          <ColoredAvatarFallback
+            className="text-2xl"
+            name={matchedParticipant ? `${matchedParticipant.user.firstName} ${matchedParticipant.user.lastName}` : participant.identity}
+          />
         </Avatar>
       ) : (
         <div className="flex flex-col items-center gap-2">

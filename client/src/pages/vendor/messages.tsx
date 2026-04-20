@@ -18,8 +18,7 @@ import {
   Clock,
   Loader2,
 } from "lucide-react";
-import { getInitials } from "@/components/messaging/types";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 
 interface VendorConversation {
   id: string;
@@ -198,9 +197,7 @@ export default function VendorMessagesPage() {
                           <div className={`flex items-start gap-2 max-w-[75%] ${msg.senderId === user?.id ? "flex-row-reverse" : ""}`}>
                             {msg.senderId !== user?.id && (
                               <Avatar className="h-7 w-7 shrink-0">
-                                <AvatarFallback className="text-xs">
-                                  {getInitials(msg.senderName.split(" ")[0] || "", msg.senderName.split(" ")[1] || "")}
-                                </AvatarFallback>
+                                <ColoredAvatarFallback className="text-xs" name={msg.senderName} />
                               </Avatar>
                             )}
                             <div

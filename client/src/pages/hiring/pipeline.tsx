@@ -5,7 +5,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -169,7 +169,7 @@ export default function HiringPipelinePage() {
                       <CardContent className="p-3.5 pl-4 space-y-2 min-h-[44px]">
                         <div className="flex items-center gap-2.5">
                           <Avatar className="w-8 h-8 shrink-0">
-                            <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
+                            <ColoredAvatarFallback className="text-xs" name={c.fullName} />
                           </Avatar>
                           <div className="min-w-0 flex-1">
                             <Link href={`/hiring/candidates/${c.id}`} className="font-semibold text-sm hover:underline line-clamp-1 block" data-testid={`link-pipeline-candidate-${c.id}`}>

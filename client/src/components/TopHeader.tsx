@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -43,12 +43,6 @@ export default function TopHeader() {
 
   const userName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "User";
   const userRole = user.role;
-
-  const initials = userName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase();
 
   const { data: notificationsData = { count: 0 } } = useUnreadNotificationCount();
   const { data: notifications = [] } = useNotifications();
@@ -258,7 +252,7 @@ export default function TopHeader() {
               <Button variant="ghost" className="flex items-center gap-2" data-testid="button-user-menu">
                 <Avatar className="w-8 h-8">
                   {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={userName} />}
-                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                  <ColoredAvatarFallback className="text-xs" name={userName} />
                 </Avatar>
                 <div className="hidden md:block text-left">
                   <p className="text-sm font-medium">{userName}</p>

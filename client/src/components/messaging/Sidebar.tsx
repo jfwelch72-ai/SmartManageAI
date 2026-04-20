@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, FileText, X } from "lucide-react";
 import { SidebarSection } from "./SidebarSection";
-import { getInitials, type Channel, type Conversation, type ChannelRow } from "./types";
+import { type Channel, type Conversation, type ChannelRow } from "./types";
 import { cn } from "@/lib/utils";
 
 function EntityBadge({ conversation }: { conversation: Conversation }) {
@@ -486,9 +486,10 @@ export function Sidebar({
                   data-testid={`button-dm-${c.id}`}
                 >
                   <Avatar className="h-5 w-5 shrink-0">
-                    <AvatarFallback className="text-[9px]">
-                      {other ? getInitials(other.user.firstName, other.user.lastName) : "?"}
-                    </AvatarFallback>
+                    <ColoredAvatarFallback
+                      className="text-[9px]"
+                      name={other ? `${other.user.firstName} ${other.user.lastName}` : ""}
+                    />
                   </Avatar>
                   <span className="flex-1 truncate">
                     {other ? `${other.user.firstName} ${other.user.lastName}` : "Unknown"}

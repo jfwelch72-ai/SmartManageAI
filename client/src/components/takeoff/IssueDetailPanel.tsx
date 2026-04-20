@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { X, Trash2, Send, MessageSquare } from "lucide-react";
@@ -271,9 +271,7 @@ export function IssueDetailPanel({ issue, sheetId, currentUser, orgUsers, onClos
                   <div key={comment.id} className="flex gap-2 group" data-testid={`comment-item-${comment.id}`}>
                     <Avatar className="h-7 w-7 shrink-0">
                       <AvatarImage src={comment.authorAvatarUrl} />
-                      <AvatarFallback className="text-xs">
-                        {(comment.authorName || "?").charAt(0).toUpperCase()}
-                      </AvatarFallback>
+                      <ColoredAvatarFallback className="text-xs" name={comment.authorName} />
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">

@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Loader2, MessageSquare, ExternalLink } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { AttachmentRenderer } from "./AttachmentRenderer";
@@ -316,9 +316,10 @@ export function EntityDiscussion({ entityType, entityId }: EntityDiscussionProps
               return (
                 <div key={msg.id} className="flex gap-2" data-testid={`discussion-message-${msg.id}`}>
                   <Avatar className="h-6 w-6 shrink-0 mt-0.5">
-                    <AvatarFallback className="text-[9px]">
-                      {getInitials(msg.sender.firstName, msg.sender.lastName)}
-                    </AvatarFallback>
+                    <ColoredAvatarFallback
+                      className="text-[9px]"
+                      name={`${msg.sender.firstName} ${msg.sender.lastName}`}
+                    />
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
@@ -390,9 +391,10 @@ export function EntityDiscussion({ entityType, entityId }: EntityDiscussionProps
                 data-testid={`related-message-${msg.id}`}
               >
                 <Avatar className="h-5 w-5 shrink-0 mt-0.5">
-                  <AvatarFallback className="text-[8px]">
-                    {getInitials(msg.sender.firstName, msg.sender.lastName)}
-                  </AvatarFallback>
+                  <ColoredAvatarFallback
+                    className="text-[8px]"
+                    name={`${msg.sender.firstName} ${msg.sender.lastName}`}
+                  />
                 </Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">

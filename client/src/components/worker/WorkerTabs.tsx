@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -452,7 +452,6 @@ function RateThisWorkerSection({ userId, firstName, lastName, role }: { userId: 
 
   if (!isRateable) return null;
 
-  const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase();
   const allRated = Object.values(ratings).every((v) => v > 0);
 
   if (alreadyRated) {
@@ -479,7 +478,7 @@ function RateThisWorkerSection({ userId, firstName, lastName, role }: { userId: 
       <CardHeader>
         <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
-            <AvatarFallback className="bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
+            <ColoredAvatarFallback name={`${firstName ?? ""} ${lastName ?? ""}`} />
           </Avatar>
           <div>
             <CardTitle className="text-base" data-testid="text-rate-worker-name">Rate {firstName} {lastName}</CardTitle>

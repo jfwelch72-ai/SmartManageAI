@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -48,12 +48,6 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [location, setLocation] = useLocation();
-
-  const initials = userName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase();
 
   const { data: notificationsData = { count: 0 } } = useUnreadNotificationCount();
   const { data: notifications = [] } = useNotifications();
@@ -335,7 +329,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Avatar className="w-10 h-10">
                       {avatarUrl && <AvatarImage src={avatarUrl} alt={userName} />}
-                      <AvatarFallback>{initials}</AvatarFallback>
+                      <ColoredAvatarFallback name={userName} />
                     </Avatar>
                     <div>
                       <p className="font-medium">{userName}</p>
@@ -720,7 +714,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
               <Button variant="ghost" className="flex items-center gap-2" data-testid="button-user-menu">
                 <Avatar className="w-8 h-8">
                   {avatarUrl && <AvatarImage src={avatarUrl} alt={userName} />}
-                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                  <ColoredAvatarFallback className="text-xs" name={userName} />
                 </Avatar>
                 <div className="hidden md:block text-left">
                   <p className="text-sm font-medium">{userName}</p>

@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { CrmActivityTimeline } from "@/components/crm/CrmActivityTimeline";
 import { CrmCustomFieldsDisplay } from "@/components/crm/CrmCustomFieldsForm";
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
@@ -472,7 +472,7 @@ export default function CrmDealDetailPage() {
                   {opp.assignedFirstName ? (
                     <div className="flex items-center gap-2">
                       <Avatar className="h-8 w-8">
-                        <AvatarFallback className="text-xs bg-primary/10 text-primary">{ownerInitials}</AvatarFallback>
+                        <ColoredAvatarFallback className="text-xs" name={`${opp.assignedFirstName ?? ""} ${opp.assignedLastName ?? ""}`} />
                       </Avatar>
                       <div className="text-sm">
                         <p className="font-medium" data-testid="text-owner">{opp.assignedFirstName} {opp.assignedLastName}</p>

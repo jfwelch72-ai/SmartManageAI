@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { getInitials } from "@/components/messaging/types";
+import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import type { VideoCallData } from "@/components/messaging/types";
 
 interface GlobalIncomingCallModalProps {
@@ -73,9 +72,10 @@ export function GlobalIncomingCallModal({
           <div className="absolute inset-0 rounded-full animate-ping bg-green-500/20" />
           <div className="absolute -inset-2 rounded-full animate-pulse bg-green-500/10" />
           <Avatar className="h-20 w-20 relative z-10 ring-4 ring-green-500/30">
-            <AvatarFallback className="text-2xl bg-primary/10 text-primary">
-              {getInitials(call.initiator?.firstName ?? "Unknown", call.initiator?.lastName ?? "")}
-            </AvatarFallback>
+            <ColoredAvatarFallback
+              className="text-2xl"
+              name={`${call.initiator?.firstName ?? "Unknown"} ${call.initiator?.lastName ?? ""}`}
+            />
           </Avatar>
         </div>
 
