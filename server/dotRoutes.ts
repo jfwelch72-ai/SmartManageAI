@@ -2146,7 +2146,7 @@ router.get(
 
       // Verify project access
       const [project] = await db
-        .select({ id: projects.id, organizationId: projects.organizationId })
+        .select({ id: projects.id, organizationId: projects.gcOrganizationId })
         .from(projects)
         .where(eq(projects.id, projectId))
         .limit(1);
@@ -2438,7 +2438,7 @@ router.get(
       // Active projects for this org are the denominator + per-project streak set.
       const activeProjectsList = await db.select({ id: projects.id, name: projects.name })
         .from(projects)
-        .where(and(eq(projects.organizationId, orgId), eq(projects.status, "ACTIVE")));
+        .where(and(eq(projects.gcOrganizationId, orgId), eq(projects.status, "ACTIVE")));
       const activeCount = activeProjectsList.length;
 
       const thirty = new Date();
@@ -2730,7 +2730,7 @@ router.get(
 
     try {
       const projConds: SQL[] = [eq(projects.id, projectId)];
-      if (!ctx.isSuperAdmin) projConds.push(eq(projects.organizationId, ctx.orgId!));
+      if (!ctx.isSuperAdmin) projConds.push(eq(projects.gcOrganizationId, ctx.orgId!));
       const [project] = await db.select().from(projects).where(and(...projConds)).limit(1);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -2742,7 +2742,8 @@ router.get(
       const startDate = startDateRaw && dateRe.test(startDateRaw) ? startDateRaw : null;
       const endDate = endDateRaw && dateRe.test(endDateRaw) ? endDateRaw : null;
 
-      const orgId = project.organizationId;
+      const orgId = project.gcOrganizationId;
+      if (!orgId) return res.status(404).json({ error: "Project not found" });
       const [dbeFlag, haulFlag, idrFlag, baFlag, bondFlag] = await Promise.all([
         isFeatureEnabled(orgId, "DBE_TRACKING"),
         isFeatureEnabled(orgId, "HAUL_TICKETS"),
