@@ -496,6 +496,7 @@ export const NavItems: Record<string, NavItem> = {
   '/communications': { href: '/communications', label: 'Bulletins', testId: 'nav-bulletins', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessBulletins : hasContractorAccess(role) },
   '/executive-digest': { href: '/executive-digest', label: 'Executive Digest', testId: 'nav-executive-digest', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER" },
   '/crm': { href: '/crm', label: 'CRM', testId: 'nav-crm', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
+  '/sequences': { href: '/sequences', label: 'Sequences', testId: 'nav-sequences', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
   '/bids': { href: '/bids', label: 'Bids', testId: 'nav-bids', visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms) },
   '/bid-network': { href: '/bid-network', label: 'Bid Network', testId: 'nav-bid-network', visible: (role?: string, perms?: FeaturePerms) => canAccessBidNetworkAsGC(role, perms) },
   '/historical-costs': { href: '/historical-costs', label: 'Historical Costs', testId: 'nav-historical-costs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessHistoricalCosts : canAccessBids(role) || hasFinancialAccess(role) },
@@ -570,7 +571,7 @@ export interface WorkflowGroup {
 
 const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/executive-digest'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
@@ -588,7 +589,7 @@ const HUSTLER_WORKFLOW: WorkflowGroup[] = [
 
 const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/bids', '/marketplace'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety-training'] },
@@ -610,7 +611,7 @@ const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
 
 const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
-  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
