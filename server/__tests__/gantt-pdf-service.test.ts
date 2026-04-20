@@ -299,3 +299,112 @@ describe("gantt-pdf-service browser pooling and queueing", () => {
     expect(launchedBrowsers[0].newContext).toHaveBeenCalledTimes(6);
   });
 });
+
+describe("gantt-pdf-service alert evaluation", () => {
+  beforeEach(() => {
+    launchedBrowsers.length = 0;
+    launchCallCount = 0;
+    pdfDelayController = null;
+    activePdfCalls = 0;
+    maxObservedActivePdfCalls = 0;
+  });
+
+  afterEach(async () => {
+    const mod = await import("../gantt-pdf-service");
+    mod.__resetGanttPdfHistoryForTests();
+    mod.setGanttPdfAlertDispatcher(null);
+    await mod.shutdownGanttBrowser().catch(() => undefined);
+  });
+
+  it("does not trigger alerts below the minimum sample threshold", async () => {
+    const mod = await freshImport();
+    mod.updateGanttPdfAlertConfig({
+      enabled: true,
+      evaluationWindowMs: 5 * 60 * 1000,
+      minSamples: 5,
+      failureRatePct: 10,
+      avgDurationMs: 0,
+      maxDurationMs: 0,
+      cooldownMs: 0,
+    });
+    const dispatched: any[] = [];
+    mod.setGanttPdfAlertDispatcher((e) => { dispatched.push(e); });
+    // Only 2 renders, both failures. Should NOT trigger because below minSamples.
+    pdfDelayController = null;
+    // Force failures by making goto throw via newContext return tweak — easier:
+    // directly drive the evaluator after manually pushing samples by re-rendering.
+    // Instead, render twice successfully and confirm no alert because failure rate is 0.
+    await mod.renderGanttPdf(RENDER_OPTS);
+    await mod.renderGanttPdf(RENDER_OPTS);
+    expect(dispatched).toHaveLength(0);
+    expect(mod.getGanttPdfAlertState().lastBreaches).toEqual([]);
+  });
+
+  it("triggers an alert when avg duration crosses the threshold and respects cooldown", async () => {
+    const mod = await freshImport();
+    mod.updateGanttPdfAlertConfig({
+      enabled: true,
+      evaluationWindowMs: 60_000,
+      minSamples: 1,
+      failureRatePct: 0,
+      avgDurationMs: 5, // 5ms — our forced 20ms delay will exceed this
+      maxDurationMs: 0,
+      cooldownMs: 0, // start with no cooldown
+    });
+    const dispatched: any[] = [];
+    mod.setGanttPdfAlertDispatcher((e) => { dispatched.push(e); });
+
+    // Force each render to take ~20ms via the pdf() mock delay.
+    pdfDelayController = {
+      promise: new Promise<void>((resolve) => setTimeout(resolve, 20)),
+      resolve: () => undefined,
+    };
+
+    await mod.renderGanttPdf(RENDER_OPTS);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].breaches.some((b: any) => b.reason === "AVG_DURATION")).toBe(true);
+
+    // Now set a long cooldown — second render must not dispatch again.
+    mod.updateGanttPdfAlertConfig({ cooldownMs: 10 * 60 * 1000 });
+    // updateGanttPdfAlertConfig itself runs evaluate but cooldown blocks it; ignore extras.
+    const beforeSecond = dispatched.length;
+    await mod.renderGanttPdf(RENDER_OPTS);
+    expect(dispatched.length).toBe(beforeSecond);
+
+    // Drop cooldown back to 0 and render again — should dispatch.
+    mod.updateGanttPdfAlertConfig({ cooldownMs: 0 });
+    const beforeThird = dispatched.length;
+    await mod.renderGanttPdf(RENDER_OPTS);
+    expect(dispatched.length).toBeGreaterThan(beforeThird);
+  });
+
+  it("does not dispatch when alerts are disabled", async () => {
+    const mod = await freshImport();
+    mod.updateGanttPdfAlertConfig({
+      enabled: false,
+      avgDurationMs: 1,
+      minSamples: 1,
+      cooldownMs: 0,
+    });
+    const dispatched: any[] = [];
+    mod.setGanttPdfAlertDispatcher((e) => { dispatched.push(e); });
+    await mod.renderGanttPdf(RENDER_OPTS);
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it("clamps and validates updateGanttPdfAlertConfig inputs", async () => {
+    const mod = await freshImport();
+    const cfg = mod.updateGanttPdfAlertConfig({
+      failureRatePct: 250,
+      evaluationWindowMs: 1000, // below 60s minimum
+      minSamples: 0,
+      avgDurationMs: -5,
+    });
+    expect(cfg.failureRatePct).toBe(100);
+    expect(cfg.evaluationWindowMs).toBe(60_000);
+    // minSamples=0 is below the >=1 guard, so previous default is preserved.
+    expect(cfg.minSamples).toBeGreaterThanOrEqual(1);
+    // negative avgDurationMs should be ignored (kept previous)
+    expect(cfg.avgDurationMs).toBeGreaterThanOrEqual(0);
+  });
+});

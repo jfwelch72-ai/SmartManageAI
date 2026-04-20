@@ -205,11 +205,25 @@ import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, scheduleBaselines, projects, changeOrders, projectDelays, crews, aiGanttRecommendations, users } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { recalculateSchedule, computeScheduleImpact, detectCycle } from "./cpmEngine";
-import { renderGanttPdf, GanttPdfQueueFullError, getGanttPdfStats, recycleGanttBrowser, getGanttPdfHistory } from "./gantt-pdf-service";
+import {
+  renderGanttPdf,
+  GanttPdfQueueFullError,
+  getGanttPdfStats,
+  recycleGanttBrowser,
+  getGanttPdfHistory,
+  getGanttPdfAlertConfig,
+  getGanttPdfAlertState,
+  updateGanttPdfAlertConfig,
+  setGanttPdfAlertDispatcher,
+  evaluateGanttPdfAlerts,
+  type GanttPdfAlertEvent,
+} from "./gantt-pdf-service";
+import { notifications } from "@shared/schema";
+import { sendNotificationEmail } from "./email";
 
 const router = Router();
 
@@ -1218,6 +1232,174 @@ router.post("/admin/gantt-pdf/recycle", requireAuth, requireRole("SUPER_ADMIN"),
 router.get("/admin/gantt-pdf/history", requireAuth, requireRole("SUPER_ADMIN"), (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     res.json(getGanttPdfHistory());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Gantt PDF alerting
+// ---------------------------------------------------------------------------
+
+function ganttHealthUrl(): string {
+  const base = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : process.env.APP_URL || "";
+  return `${base}/admin/gantt-pdf`;
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.round(ms / 100) / 10;
+  return `${s}s`;
+}
+
+function formatWindowMs(ms: number): string {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m} min`;
+  const h = Math.round((m / 60) * 10) / 10;
+  return `${h}h`;
+}
+
+async function dispatchGanttPdfAlert(event: GanttPdfAlertEvent): Promise<void> {
+  const url = ganttHealthUrl();
+  const subjectReasons = event.breaches.map((b) => {
+    if (b.reason === "FAILURE_RATE") return `failure rate ${b.observed}%`;
+    if (b.reason === "AVG_DURATION") return `avg ${formatDurationMs(b.observed)}`;
+    return `max ${formatDurationMs(b.observed)}`;
+  }).join(", ");
+  const subject = `[SmartManageAI] Gantt PDF alert: ${subjectReasons}`;
+  const breachLines = event.breaches.map((b) => `• ${b.message}`).join("<br/>");
+  const message =
+    `Gantt PDF rendering crossed configured thresholds in the last ${formatWindowMs(event.window.rangeMs)}.<br/><br/>` +
+    `${breachLines}<br/><br/>` +
+    `Window summary: ${event.window.total} renders, ${event.window.failures} failures (${event.window.failureRatePct}%)` +
+    (event.window.avgDurationMs !== null ? `, avg ${formatDurationMs(event.window.avgDurationMs)}` : "") +
+    (event.window.maxDurationMs !== null ? `, max ${formatDurationMs(event.window.maxDurationMs)}` : "") +
+    `.`;
+
+  let recipients: { id: string; email: string | null }[] = [];
+  try {
+    recipients = await db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(and(
+        inArray(users.role, ["SUPER_ADMIN", "ADMIN"]),
+        eq(users.isActive, true),
+      ));
+  } catch (err) {
+    logError("Gantt PDF alert: failed to load admin recipients", err as Error);
+  }
+
+  const emailAddresses = Array.from(
+    new Set(
+      recipients
+        .map((r) => (r.email || "").trim().toLowerCase())
+        .filter((e) => e.length > 0),
+    ),
+  );
+
+  if (emailAddresses.length > 0) {
+    try {
+      await sendNotificationEmail(
+        emailAddresses.join(","),
+        subject,
+        message,
+        url,
+        "Open Gantt PDF health",
+      );
+    } catch (err) {
+      logError("Gantt PDF alert email failed", err as Error);
+    }
+  }
+
+  const userIds = recipients.map((r) => r.id);
+  if (userIds.length > 0) {
+    try {
+      const plainMessage = message.replace(/<br\/?>(?:\s*)/g, " ");
+      await db.insert(notifications).values(
+        userIds.map((userId) => ({
+          userId,
+          type: "GENERAL" as const,
+          title: `Gantt PDF alert: ${subjectReasons}`,
+          message: plainMessage.length > 500 ? `${plainMessage.slice(0, 497)}...` : plainMessage,
+          relatedEntityType: "gantt_pdf_health",
+        })),
+      );
+    } catch (err) {
+      logError("Gantt PDF alert in-app notification failed", err as Error);
+    }
+  }
+}
+
+setGanttPdfAlertDispatcher((event) => {
+  // Run async without blocking the render path.
+  dispatchGanttPdfAlert(event).catch((err) =>
+    logError("Gantt PDF alert dispatch unhandled rejection", err as Error),
+  );
+});
+
+const updateAlertConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  evaluationWindowMs: z.number().int().min(60_000).max(24 * 60 * 60 * 1000).optional(),
+  minSamples: z.number().int().min(1).max(1000).optional(),
+  failureRatePct: z.number().min(0).max(100).optional(),
+  avgDurationMs: z.number().int().min(0).max(10 * 60 * 1000).optional(),
+  maxDurationMs: z.number().int().min(0).max(30 * 60 * 1000).optional(),
+  cooldownMs: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional(),
+});
+
+/**
+ * @openapi
+ * /api/admin/gantt-pdf/alerts:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get Gantt PDF alert config and recent alert state
+ *     responses:
+ *       200: { description: Alert config and state }
+ *   put:
+ *     tags: [Admin]
+ *     summary: Update Gantt PDF alert thresholds and enabled flag
+ *     responses:
+ *       200: { description: Updated alert config }
+ * /api/admin/gantt-pdf/alerts/evaluate:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Force re-evaluation of Gantt PDF alerts now
+ *     description: Re-runs the threshold evaluation against current history. Dispatches an alert if thresholds are breached and the cooldown has elapsed. Requires SUPER_ADMIN.
+ *     responses:
+ *       200: { description: Evaluation result }
+ */
+router.get("/admin/gantt-pdf/alerts", requireAuth, requireRole("SUPER_ADMIN"), (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({
+      config: getGanttPdfAlertConfig(),
+      state: getGanttPdfAlertState(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/admin/gantt-pdf/alerts", requireAuth, requireRole("SUPER_ADMIN"), (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const parsed = updateAlertConfigSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid alert config", details: parsed.error.flatten() });
+    }
+    const config = updateGanttPdfAlertConfig(parsed.data);
+    // Re-evaluate immediately so admins see new state without waiting for the next render.
+    evaluateGanttPdfAlerts();
+    res.json({ config, state: getGanttPdfAlertState() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/admin/gantt-pdf/alerts/evaluate", requireAuth, requireRole("SUPER_ADMIN"), (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const event = evaluateGanttPdfAlerts();
+    res.json({ triggered: event !== null, event, state: getGanttPdfAlertState() });
   } catch (error) {
     next(error);
   }

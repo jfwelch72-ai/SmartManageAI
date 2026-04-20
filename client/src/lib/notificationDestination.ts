@@ -127,6 +127,10 @@ export function getNotificationDestination(notification: {
       return "/bids";
 
     case "GENERAL":
+      if (relatedEntityType === "gantt_pdf_health") {
+        return "/admin/gantt-pdf";
+      }
+      return null;
     default:
       return null;
   }

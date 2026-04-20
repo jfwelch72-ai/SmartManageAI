@@ -245,7 +245,13 @@ function pruneHistory(now: number): void {
 
 function recordRenderSample(sample: RenderSample): void {
   renderHistory.push(sample);
-  pruneHistory(Date.now());
+  const now = Date.now();
+  pruneHistory(now);
+  try {
+    evaluateGanttPdfAlerts(now);
+  } catch (err) {
+    logError("Gantt PDF alert evaluation failed", err as Error);
+  }
 }
 
 export interface GanttPdfHistoryBucket {
@@ -351,6 +357,239 @@ export function getGanttPdfHistory(): GanttPdfHistory {
 
 export function __resetGanttPdfHistoryForTests(): void {
   renderHistory.length = 0;
+  alertState.lastEvaluatedAt = null;
+  alertState.lastTriggeredAt = null;
+  alertState.lastBreaches = [];
+  alertState.recentAlerts = [];
+}
+
+// ---------------------------------------------------------------------------
+// Alerting
+// ---------------------------------------------------------------------------
+
+export type GanttPdfAlertReason =
+  | "FAILURE_RATE"
+  | "AVG_DURATION"
+  | "MAX_DURATION";
+
+export interface GanttPdfAlertConfig {
+  enabled: boolean;
+  evaluationWindowMs: number;
+  minSamples: number;
+  failureRatePct: number; // 0-100
+  avgDurationMs: number;
+  maxDurationMs: number;
+  cooldownMs: number;
+}
+
+export interface GanttPdfAlertWindowSnapshot {
+  rangeMs: number;
+  total: number;
+  failures: number;
+  failureRatePct: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
+}
+
+export interface GanttPdfAlertBreach {
+  reason: GanttPdfAlertReason;
+  threshold: number;
+  observed: number;
+  message: string;
+}
+
+export interface GanttPdfAlertEvent {
+  triggeredAt: number;
+  breaches: GanttPdfAlertBreach[];
+  window: GanttPdfAlertWindowSnapshot;
+  config: GanttPdfAlertConfig;
+}
+
+export interface GanttPdfAlertState {
+  lastEvaluatedAt: number | null;
+  lastTriggeredAt: number | null;
+  lastBreaches: GanttPdfAlertBreach[];
+  recentAlerts: GanttPdfAlertEvent[];
+}
+
+const ALERT_HISTORY_LIMIT = 20;
+
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const v = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(v)) return true;
+  if (["0", "false", "no", "off"].includes(v)) return false;
+  return fallback;
+}
+
+const alertConfig: GanttPdfAlertConfig = {
+  enabled: envBool("GANTT_PDF_ALERT_ENABLED", true),
+  evaluationWindowMs: envNumber("GANTT_PDF_ALERT_WINDOW_MS", 15 * 60 * 1000),
+  minSamples: Math.max(1, Math.round(envNumber("GANTT_PDF_ALERT_MIN_SAMPLES", 5))),
+  failureRatePct: Math.min(100, Math.max(0, envNumber("GANTT_PDF_ALERT_FAILURE_RATE_PCT", 25))),
+  avgDurationMs: envNumber("GANTT_PDF_ALERT_AVG_MS", 30_000),
+  maxDurationMs: envNumber("GANTT_PDF_ALERT_MAX_MS", 60_000),
+  cooldownMs: envNumber("GANTT_PDF_ALERT_COOLDOWN_MS", 30 * 60 * 1000),
+};
+
+const alertState: GanttPdfAlertState = {
+  lastEvaluatedAt: null,
+  lastTriggeredAt: null,
+  lastBreaches: [],
+  recentAlerts: [],
+};
+
+export type GanttPdfAlertDispatcher = (event: GanttPdfAlertEvent) => Promise<void> | void;
+let alertDispatcher: GanttPdfAlertDispatcher | null = null;
+
+export function setGanttPdfAlertDispatcher(dispatcher: GanttPdfAlertDispatcher | null): void {
+  alertDispatcher = dispatcher;
+}
+
+export function getGanttPdfAlertConfig(): GanttPdfAlertConfig {
+  return { ...alertConfig };
+}
+
+export function getGanttPdfAlertState(): GanttPdfAlertState {
+  return {
+    lastEvaluatedAt: alertState.lastEvaluatedAt,
+    lastTriggeredAt: alertState.lastTriggeredAt,
+    lastBreaches: alertState.lastBreaches.map((b) => ({ ...b })),
+    recentAlerts: alertState.recentAlerts.map((a) => ({
+      ...a,
+      breaches: a.breaches.map((b) => ({ ...b })),
+      window: { ...a.window },
+      config: { ...a.config },
+    })),
+  };
+}
+
+export function updateGanttPdfAlertConfig(
+  patch: Partial<GanttPdfAlertConfig>,
+): GanttPdfAlertConfig {
+  if (typeof patch.enabled === "boolean") alertConfig.enabled = patch.enabled;
+  if (typeof patch.evaluationWindowMs === "number" && Number.isFinite(patch.evaluationWindowMs) && patch.evaluationWindowMs > 0) {
+    alertConfig.evaluationWindowMs = Math.min(HISTORY_RETENTION_MS, Math.max(60_000, Math.round(patch.evaluationWindowMs)));
+  }
+  if (typeof patch.minSamples === "number" && Number.isFinite(patch.minSamples) && patch.minSamples >= 1) {
+    alertConfig.minSamples = Math.max(1, Math.round(patch.minSamples));
+  }
+  if (typeof patch.failureRatePct === "number" && Number.isFinite(patch.failureRatePct)) {
+    alertConfig.failureRatePct = Math.min(100, Math.max(0, patch.failureRatePct));
+  }
+  if (typeof patch.avgDurationMs === "number" && Number.isFinite(patch.avgDurationMs) && patch.avgDurationMs >= 0) {
+    alertConfig.avgDurationMs = Math.round(patch.avgDurationMs);
+  }
+  if (typeof patch.maxDurationMs === "number" && Number.isFinite(patch.maxDurationMs) && patch.maxDurationMs >= 0) {
+    alertConfig.maxDurationMs = Math.round(patch.maxDurationMs);
+  }
+  if (typeof patch.cooldownMs === "number" && Number.isFinite(patch.cooldownMs) && patch.cooldownMs >= 0) {
+    alertConfig.cooldownMs = Math.round(patch.cooldownMs);
+  }
+  return getGanttPdfAlertConfig();
+}
+
+function summarizeWindowForAlerts(now: number, rangeMs: number): GanttPdfAlertWindowSnapshot {
+  const start = now - rangeMs;
+  let total = 0;
+  let failures = 0;
+  let sum = 0;
+  let max = 0;
+  for (const s of renderHistory) {
+    if (s.startedAt < start) continue;
+    total++;
+    sum += s.durationMs;
+    if (s.durationMs > max) max = s.durationMs;
+    if (!s.success) failures++;
+  }
+  return {
+    rangeMs,
+    total,
+    failures,
+    failureRatePct: total > 0 ? Math.round((failures / total) * 1000) / 10 : 0,
+    avgDurationMs: total > 0 ? Math.round(sum / total) : null,
+    maxDurationMs: total > 0 ? max : null,
+  };
+}
+
+function computeBreaches(
+  snapshot: GanttPdfAlertWindowSnapshot,
+  config: GanttPdfAlertConfig,
+): GanttPdfAlertBreach[] {
+  const breaches: GanttPdfAlertBreach[] = [];
+  if (snapshot.total < config.minSamples) return breaches;
+  if (snapshot.failureRatePct >= config.failureRatePct && config.failureRatePct > 0) {
+    breaches.push({
+      reason: "FAILURE_RATE",
+      threshold: config.failureRatePct,
+      observed: snapshot.failureRatePct,
+      message: `Failure rate ${snapshot.failureRatePct}% (${snapshot.failures}/${snapshot.total}) is at or above threshold ${config.failureRatePct}%`,
+    });
+  }
+  if (snapshot.avgDurationMs !== null && config.avgDurationMs > 0 && snapshot.avgDurationMs >= config.avgDurationMs) {
+    breaches.push({
+      reason: "AVG_DURATION",
+      threshold: config.avgDurationMs,
+      observed: snapshot.avgDurationMs,
+      message: `Average render duration ${snapshot.avgDurationMs}ms is at or above threshold ${config.avgDurationMs}ms`,
+    });
+  }
+  if (snapshot.maxDurationMs !== null && config.maxDurationMs > 0 && snapshot.maxDurationMs >= config.maxDurationMs) {
+    breaches.push({
+      reason: "MAX_DURATION",
+      threshold: config.maxDurationMs,
+      observed: snapshot.maxDurationMs,
+      message: `Max render duration ${snapshot.maxDurationMs}ms is at or above threshold ${config.maxDurationMs}ms`,
+    });
+  }
+  return breaches;
+}
+
+export function evaluateGanttPdfAlerts(now: number = Date.now()): GanttPdfAlertEvent | null {
+  alertState.lastEvaluatedAt = now;
+  if (!alertConfig.enabled) {
+    alertState.lastBreaches = [];
+    return null;
+  }
+  const snapshot = summarizeWindowForAlerts(now, alertConfig.evaluationWindowMs);
+  const breaches = computeBreaches(snapshot, alertConfig);
+  alertState.lastBreaches = breaches;
+  if (breaches.length === 0) return null;
+  if (alertState.lastTriggeredAt !== null && now - alertState.lastTriggeredAt < alertConfig.cooldownMs) {
+    return null;
+  }
+  const event: GanttPdfAlertEvent = {
+    triggeredAt: now,
+    breaches,
+    window: snapshot,
+    config: { ...alertConfig },
+  };
+  alertState.lastTriggeredAt = now;
+  alertState.recentAlerts.unshift(event);
+  if (alertState.recentAlerts.length > ALERT_HISTORY_LIMIT) {
+    alertState.recentAlerts.length = ALERT_HISTORY_LIMIT;
+  }
+  if (alertDispatcher) {
+    try {
+      const result = alertDispatcher(event);
+      if (result && typeof (result as Promise<void>).then === "function") {
+        (result as Promise<void>).catch((err) => {
+          logError("Gantt PDF alert dispatcher failed", err as Error);
+        });
+      }
+    } catch (err) {
+      logError("Gantt PDF alert dispatcher threw", err as Error);
+    }
+  }
+  return event;
 }
 
 export async function renderGanttPdf(opts: GanttPdfOptions): Promise<Buffer> {
