@@ -301,6 +301,8 @@ function PinItem({
   const startRef = useRef<{ px: number; py: number; rect: DOMRect } | null>(null);
   const suppressClickRef = useRef(false);
   const dropTargetRef = useRef<Element | null>(null);
+  const autoScrollRafRef = useRef<number | null>(null);
+  const lastPointerRef = useRef<{ x: number; y: number; btn: HTMLElement } | null>(null);
 
   const clearDropTarget = () => {
     if (dropTargetRef.current) {
@@ -325,6 +327,97 @@ function PinItem({
     return target;
   };
 
+  const EDGE_PX = 60;
+  const MAX_SPEED_PX = 18;
+
+  const findScrollableAncestors = (el: Element | null): HTMLElement[] => {
+    const out: HTMLElement[] = [];
+    let cur: Element | null = el;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      if (cur instanceof HTMLElement) {
+        const cs = getComputedStyle(cur);
+        const scrollableX =
+          (cs.overflowX === "auto" || cs.overflowX === "scroll") && cur.scrollWidth > cur.clientWidth;
+        const scrollableY =
+          (cs.overflowY === "auto" || cs.overflowY === "scroll") && cur.scrollHeight > cur.clientHeight;
+        if (scrollableX || scrollableY) out.push(cur);
+      }
+      cur = cur.parentElement;
+    }
+    return out;
+  };
+
+  const autoScrollTick = () => {
+    autoScrollRafRef.current = null;
+    if (!draggingRef.current) return;
+    const ptr = lastPointerRef.current;
+    if (ptr) {
+      const btn = ptr.btn;
+      const prevDisplay = btn.style.display;
+      btn.style.display = "none";
+      const el = document.elementFromPoint(ptr.x, ptr.y);
+      btn.style.display = prevDisplay;
+      const ancestors = findScrollableAncestors(el);
+      let scrolled = false;
+      for (const sc of ancestors) {
+        const r = sc.getBoundingClientRect();
+        const cs = getComputedStyle(sc);
+        if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && sc.scrollWidth > sc.clientWidth) {
+          if (ptr.x < r.left + EDGE_PX && sc.scrollLeft > 0) {
+            const factor = Math.min(1, (r.left + EDGE_PX - ptr.x) / EDGE_PX);
+            const before = sc.scrollLeft;
+            sc.scrollLeft = Math.max(0, before - Math.max(2, Math.round(MAX_SPEED_PX * factor)));
+            if (sc.scrollLeft !== before) scrolled = true;
+          } else if (ptr.x > r.right - EDGE_PX && sc.scrollLeft + sc.clientWidth < sc.scrollWidth) {
+            const factor = Math.min(1, (ptr.x - (r.right - EDGE_PX)) / EDGE_PX);
+            const before = sc.scrollLeft;
+            sc.scrollLeft = before + Math.max(2, Math.round(MAX_SPEED_PX * factor));
+            if (sc.scrollLeft !== before) scrolled = true;
+          }
+        }
+        if ((cs.overflowY === "auto" || cs.overflowY === "scroll") && sc.scrollHeight > sc.clientHeight) {
+          if (ptr.y < r.top + EDGE_PX && sc.scrollTop > 0) {
+            const factor = Math.min(1, (r.top + EDGE_PX - ptr.y) / EDGE_PX);
+            const before = sc.scrollTop;
+            sc.scrollTop = Math.max(0, before - Math.max(2, Math.round(MAX_SPEED_PX * factor)));
+            if (sc.scrollTop !== before) scrolled = true;
+          } else if (ptr.y > r.bottom - EDGE_PX && sc.scrollTop + sc.clientHeight < sc.scrollHeight) {
+            const factor = Math.min(1, (ptr.y - (r.bottom - EDGE_PX)) / EDGE_PX);
+            const before = sc.scrollTop;
+            sc.scrollTop = before + Math.max(2, Math.round(MAX_SPEED_PX * factor));
+            if (sc.scrollTop !== before) scrolled = true;
+          }
+        }
+        if (scrolled) break;
+      }
+      if (scrolled) {
+        // After scrolling, the element under the pointer may have changed.
+        updateDropTarget(ptr.x, ptr.y, btn);
+      }
+    }
+    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+  };
+
+  const startAutoScroll = () => {
+    if (autoScrollRafRef.current == null) {
+      autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+    }
+  };
+
+  const stopAutoScroll = () => {
+    if (autoScrollRafRef.current != null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+    lastPointerRef.current = null;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
+    };
+  }, []);
+
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0) return;
     const parent = e.currentTarget.offsetParent as HTMLElement | null;
@@ -348,11 +441,14 @@ function PinItem({
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
     setDragPos({ x, y });
     updateDropTarget(e.clientX, e.clientY, e.currentTarget);
+    lastPointerRef.current = { x: e.clientX, y: e.clientY, btn: e.currentTarget };
+    startAutoScroll();
   };
 
   const finishDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
+    stopAutoScroll();
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
 
     const target = movedRef.current
