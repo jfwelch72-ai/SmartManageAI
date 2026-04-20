@@ -282,8 +282,11 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
   });
 
   const answerMutation = useMutation({
-    mutationFn: async ({ id, answer }: { id: string; answer: string }) =>
-      await apiRequest("POST", `/api/rfi/${id}/answer`, { answer }),
+    mutationFn: async ({ id, answer, recipientEmails }: { id: string; answer: string; recipientEmails?: string[] }) =>
+      await apiRequest("POST", `/api/rfi/${id}/answer`, {
+        answer,
+        ...(recipientEmails && recipientEmails.length > 0 ? { recipientEmails } : {}),
+      }),
     onSuccess: () => {
       invalidateAll();
       toast({ title: "RFI answered" });

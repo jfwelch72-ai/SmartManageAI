@@ -19,6 +19,7 @@ import type { ChangeOrder } from "@shared/schema";
 import { useCreateChangeOrder, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder } from "@/hooks/use-data";
 import { ChangeOrderFiles } from "@/components/ChangeOrderFiles";
 import { ChangeOrderDialog } from "@/components/ChangeOrderDialog";
+import { RecipientListField } from "@/components/email/RecipientListField";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import AiChangeOrderGenerator from "@/components/AiChangeOrderGenerator";
 import { hasManagementAccess } from "@/lib/rbac";
@@ -65,6 +66,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [pendingSubmitId, setPendingSubmitId] = useState<string | null>(null);
   const [clientResponseDueDate, setClientResponseDueDate] = useState("");
+  const [submitRecipientEmails, setSubmitRecipientEmails] = useState<string[]>([]);
   const [addedToSovIds, setAddedToSovIds] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
@@ -201,6 +203,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const openSubmitDialog = (id: string) => {
     setPendingSubmitId(id);
     setClientResponseDueDate("");
+    setSubmitRecipientEmails([]);
     setShowSubmitDialog(true);
   };
 
@@ -209,6 +212,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     try {
       await apiRequest("POST", `/api/change-orders/${pendingSubmitId}/submit`, {
         clientResponseDueDate: clientResponseDueDate || undefined,
+        recipientEmails: submitRecipientEmails.length > 0 ? submitRecipientEmails : undefined,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -788,7 +792,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       />
 
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
-        <DialogContent className="sm:max-w-sm" data-testid="dialog-submit-co">
+        <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto" data-testid="dialog-submit-co">
           <DialogHeader>
             <DialogTitle>Submit to Client</DialogTitle>
           </DialogHeader>
@@ -809,6 +813,15 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                 data-testid="input-client-response-due-date"
               />
             </div>
+            <RecipientListField
+              projectId={projectId}
+              emails={submitRecipientEmails}
+              onChange={setSubmitRecipientEmails}
+              label="Notify recipients (optional)"
+              helpText="Load a saved distribution list or add additional emails to notify when this change order is submitted."
+              testIdPrefix="co-submit-recipients"
+              allowOrgScope
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>Cancel</Button>

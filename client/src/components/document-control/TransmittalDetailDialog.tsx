@@ -26,6 +26,7 @@ import type {
   EditTransmittalForm,
 } from "@/hooks/useTransmittalMutations";
 import { DOCUMENT_TYPES } from "@/hooks/useTransmittalMutations";
+import { RecipientListField } from "@/components/email/RecipientListField";
 
 export function getTransmittalStatusBadge(status: string) {
   switch (status) {
@@ -441,7 +442,8 @@ export function TransmittalCreateDialog({
     documentType: "",
     revisionNumber: "",
     notes: "",
-    recipientSubcontractorIds: [] as string[]
+    recipientSubcontractorIds: [] as string[],
+    recipientEmails: [] as string[],
   });
 
   const resetForm = () => {
@@ -452,7 +454,8 @@ export function TransmittalCreateDialog({
       documentType: "",
       revisionNumber: "",
       notes: "",
-      recipientSubcontractorIds: []
+      recipientSubcontractorIds: [],
+      recipientEmails: [],
     });
   };
 
@@ -588,6 +591,18 @@ export function TransmittalCreateDialog({
               data-testid={`${p}input-create-notes`}
             />
           </div>
+
+          {(fixedProjectId || form.projectId) && (
+            <RecipientListField
+              projectId={fixedProjectId || form.projectId}
+              emails={form.recipientEmails}
+              onChange={(emails) => setForm({ ...form, recipientEmails: emails })}
+              label="Additional notify emails (optional)"
+              helpText="Load a saved distribution list or add additional emails to notify when this transmittal is sent."
+              testIdPrefix={`${p}tx-create-recipients`}
+              allowOrgScope
+            />
+          )}
         </div>
 
         <DialogFooter>

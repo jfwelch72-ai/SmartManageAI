@@ -48,6 +48,7 @@ export interface CreateTransmittalForm {
   revisionNumber: string;
   notes: string;
   recipientSubcontractorIds: string[];
+  recipientEmails?: string[];
 }
 
 export interface EditTransmittalForm {
@@ -102,6 +103,7 @@ export function useTransmittalMutations(options: UseTransmittalMutationsOptions 
       if (data.revisionNumber) body.revisionNumber = data.revisionNumber;
       if (data.notes) body.notes = data.notes;
       if (data.recipientSubcontractorIds.length > 0) body.recipientSubcontractorIds = data.recipientSubcontractorIds;
+      if (data.recipientEmails && data.recipientEmails.length > 0) body.recipientEmails = data.recipientEmails;
       return await apiRequest("POST", "/api/transmittals", body);
     },
     onSuccess: () => {

@@ -29,6 +29,7 @@ import { format } from "date-fns";
 import type { RFI, ActivityEntry, ChangeOrder, RFIEditForm } from "@/hooks/useRfiMutations";
 import { getStatusBadge, getPriorityBadge, DEFAULT_EDIT_FORM } from "@/hooks/useRfiMutations";
 import { EntityDiscussion } from "@/components/messaging/EntityDiscussion";
+import { RecipientListField } from "@/components/email/RecipientListField";
 
 const RFI_CATEGORIES = [
   { value: "DESIGN_CLARIFICATION", label: "Design Clarification" },
@@ -69,7 +70,7 @@ interface RfiDetailDialogProps {
     submitMutation: { mutate: (id: string) => void; isPending: boolean };
     reviewMutation: { mutate: (id: string) => void; isPending: boolean };
     forwardMutation: { mutate: (args: { id: string; forwardedToId: string }) => void; isPending: boolean };
-    answerMutation: { mutate: (args: { id: string; answer: string }) => void; isPending: boolean };
+    answerMutation: { mutate: (args: { id: string; answer: string; recipientEmails?: string[] }) => void; isPending: boolean };
     closeMutation: { mutate: (id: string) => void; isPending: boolean };
     reopenMutation: { mutate: (id: string) => void; isPending: boolean };
     deleteMutation: { mutate: (id: string) => void; isPending: boolean };
@@ -94,6 +95,7 @@ export default function RfiDetailDialog({
 }: RfiDetailDialogProps) {
   const [showAnswerInput, setShowAnswerInput] = useState(false);
   const [answerText, setAnswerText] = useState("");
+  const [answerRecipientEmails, setAnswerRecipientEmails] = useState<string[]>([]);
   const [commentText, setCommentText] = useState("");
   const [showLinkCODialog, setShowLinkCODialog] = useState(false);
   const [selectedCOId, setSelectedCOId] = useState("");
@@ -164,6 +166,7 @@ export default function RfiDetailDialog({
       setEditMode(false);
       setShowAnswerInput(false);
       setAnswerText("");
+      setAnswerRecipientEmails([]);
       setCommentText("");
       setShowForwardDialog(false);
       setForwardToUserId("");
@@ -545,12 +548,28 @@ export default function RfiDetailDialog({
                               rows={4}
                               data-testid={`${p}input-answer`}
                             />
+                            {rfi.projectId && (
+                              <RecipientListField
+                                projectId={rfi.projectId}
+                                emails={answerRecipientEmails}
+                                onChange={setAnswerRecipientEmails}
+                                label="Notify recipients (optional)"
+                                helpText="Load a saved distribution list or add additional emails to notify with this RFI response."
+                                testIdPrefix={`${p}rfi-answer-recipients`}
+                                allowOrgScope
+                              />
+                            )}
                             <div className="flex items-center gap-2 flex-wrap">
                               <Button
                                 onClick={() => {
-                                  mutations.answerMutation.mutate({ id: rfi.id, answer: answerText });
+                                  mutations.answerMutation.mutate({
+                                    id: rfi.id,
+                                    answer: answerText,
+                                    recipientEmails: answerRecipientEmails.length > 0 ? answerRecipientEmails : undefined,
+                                  });
                                   setShowAnswerInput(false);
                                   setAnswerText("");
+                                  setAnswerRecipientEmails([]);
                                 }}
                                 disabled={!answerText.trim() || mutations.answerMutation.isPending}
                                 data-testid={`${p}button-submit-answer`}
@@ -592,12 +611,28 @@ export default function RfiDetailDialog({
                               rows={4}
                               data-testid={`${p}input-answer-forwarded`}
                             />
+                            {rfi.projectId && (
+                              <RecipientListField
+                                projectId={rfi.projectId}
+                                emails={answerRecipientEmails}
+                                onChange={setAnswerRecipientEmails}
+                                label="Notify recipients (optional)"
+                                helpText="Load a saved distribution list or add additional emails to notify with this RFI response."
+                                testIdPrefix={`${p}rfi-answer-recipients-fwd`}
+                                allowOrgScope
+                              />
+                            )}
                             <div className="flex items-center gap-2 flex-wrap">
                               <Button
                                 onClick={() => {
-                                  mutations.answerMutation.mutate({ id: rfi.id, answer: answerText });
+                                  mutations.answerMutation.mutate({
+                                    id: rfi.id,
+                                    answer: answerText,
+                                    recipientEmails: answerRecipientEmails.length > 0 ? answerRecipientEmails : undefined,
+                                  });
                                   setShowAnswerInput(false);
                                   setAnswerText("");
+                                  setAnswerRecipientEmails([]);
                                 }}
                                 disabled={!answerText.trim() || mutations.answerMutation.isPending}
                                 data-testid={`${p}button-submit-answer-forwarded`}
