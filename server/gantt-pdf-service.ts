@@ -20,6 +20,49 @@ export class GanttPdfQueueFullError extends Error {
   }
 }
 
+type QueueFullListener = () => void;
+type BrowserDisconnectListener = (disconnectedAt: number) => void;
+const queueFullListeners: QueueFullListener[] = [];
+const browserDisconnectListeners: BrowserDisconnectListener[] = [];
+
+export function onGanttPdfQueueFull(listener: QueueFullListener): () => void {
+  queueFullListeners.push(listener);
+  return () => {
+    const idx = queueFullListeners.indexOf(listener);
+    if (idx !== -1) queueFullListeners.splice(idx, 1);
+  };
+}
+
+export function onGanttPdfBrowserDisconnected(
+  listener: BrowserDisconnectListener,
+): () => void {
+  browserDisconnectListeners.push(listener);
+  return () => {
+    const idx = browserDisconnectListeners.indexOf(listener);
+    if (idx !== -1) browserDisconnectListeners.splice(idx, 1);
+  };
+}
+
+function emitQueueFull(): void {
+  for (const fn of queueFullListeners.slice()) {
+    try {
+      fn();
+    } catch (err) {
+      logError("Gantt PDF queue-full listener threw", err as Error);
+    }
+  }
+}
+
+function emitBrowserDisconnected(at: number): void {
+  for (const fn of browserDisconnectListeners.slice()) {
+    try {
+      fn(at);
+    } catch (err) {
+      logError("Gantt PDF browser-disconnect listener threw", err as Error);
+    }
+  }
+}
+
 export interface GanttPdfOptions {
   projectCode: string;
   theme?: "light" | "dark";
@@ -76,6 +119,7 @@ async function launchBrowser(): Promise<CachedBrowser> {
     recycling: false,
   };
   browser.on("disconnected", () => {
+    emitBrowserDisconnected(Date.now());
     if (cachedBrowserResolved && cachedBrowserResolved.browser === browser) {
       cachedBrowserResolved = null;
     }
@@ -198,6 +242,7 @@ async function acquireSlot(): Promise<void> {
     return;
   }
   if (waiters.length >= MAX_QUEUE_LENGTH) {
+    emitQueueFull();
     throw new GanttPdfQueueFullError();
   }
   await new Promise<void>((resolve, reject) => {

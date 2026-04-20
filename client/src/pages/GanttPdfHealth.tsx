@@ -58,6 +58,14 @@ function formatDuration(ms: number | null): string {
   return `${s}s`;
 }
 
+interface GanttPdfRecipientConfig {
+  source: "env" | "super_admins";
+  recipients: string[];
+  rateLimitMs: number;
+  disconnectThresholdMs: number;
+  lastSent: { queueFull: number | null; browserDisconnected: number | null };
+}
+
 const HEALTH_KEY = ["/api/admin/gantt-pdf/health"] as const;
 const HISTORY_KEY = ["/api/admin/gantt-pdf/history"] as const;
 const ALERTS_KEY = ["/api/admin/gantt-pdf/alerts"] as const;
@@ -105,6 +113,7 @@ interface GanttPdfAlertState {
 interface GanttPdfAlertsResponse {
   config: GanttPdfAlertConfig;
   state: GanttPdfAlertState;
+  recipients: GanttPdfRecipientConfig;
 }
 
 function reasonLabel(reason: GanttPdfAlertBreach["reason"]): string {
@@ -157,6 +166,18 @@ function formatBucketLabel(ts: number, bucketMs: number): string {
   return `${h}:${m}`;
 }
 
+function formatRelative(ts: number | null): string {
+  if (!ts) return "Never";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  const m = Math.floor(diff / 60_000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 export default function GanttPdfHealth() {
   const { toast } = useToast();
   const [historyRange, setHistoryRange] = useState<"hour" | "day">("hour");
@@ -173,6 +194,7 @@ export default function GanttPdfHealth() {
     queryKey: ALERTS_KEY,
     refetchInterval: 15000,
   });
+  const alertConfig = alerts?.recipients;
 
   const [alertForm, setAlertForm] = useState<GanttPdfAlertConfig | null>(null);
   useEffect(() => {
@@ -658,6 +680,90 @@ export default function GanttPdfHealth() {
                   </ul>
                 </div>
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-alert-recipients">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-4 w-4" /> Alert recipients
+          </CardTitle>
+          <CardDescription>
+            Queue-full and browser-disconnect alerts are sent automatically when the
+            queue fills up or the cached browser stays disconnected for more than{" "}
+            {alertConfig ? formatDuration(alertConfig.disconnectThresholdMs) : "a short window"}.
+            Repeat alerts of the same kind are throttled to once per{" "}
+            {alertConfig ? formatDuration(alertConfig.rateLimitMs) : "30m"}.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {alertsLoading || !alertConfig ? (
+            <Skeleton className="h-20 w-full" />
+          ) : (
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-muted-foreground">Source:</span>
+                {alertConfig.source === "env" ? (
+                  <Badge variant="secondary" data-testid="badge-alert-source">
+                    GANTT_PDF_ALERT_EMAILS env var
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" data-testid="badge-alert-source">
+                    Active super admins
+                  </Badge>
+                )}
+                <span className="text-muted-foreground">·</span>
+                <span data-testid="text-alert-recipient-count">
+                  {alertConfig.recipients.length} recipient
+                  {alertConfig.recipients.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {alertConfig.recipients.length === 0 ? (
+                <Alert variant="destructive" data-testid="alert-no-recipients">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>No recipients configured</AlertTitle>
+                  <AlertDescription>
+                    Add at least one active super admin or set the{" "}
+                    <code>GANTT_PDF_ALERT_EMAILS</code> environment variable so
+                    alerts can be delivered.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <ul className="flex flex-wrap gap-2" data-testid="list-alert-recipients">
+                  {alertConfig.recipients.map((email) => (
+                    <li key={email}>
+                      <Badge
+                        variant="outline"
+                        className="font-normal"
+                        data-testid={`badge-recipient-${email}`}
+                      >
+                        {email}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t">
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Last queue-full alert</dt>
+                  <dd className="font-medium" data-testid="text-last-queue-full">
+                    {formatRelative(alertConfig.lastSent.queueFull)}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Last disconnect alert</dt>
+                  <dd className="font-medium" data-testid="text-last-disconnect">
+                    {formatRelative(alertConfig.lastSent.browserDisconnected)}
+                  </dd>
+                </div>
+              </dl>
+              <p className="text-xs text-muted-foreground">
+                To change recipients, update the active super admin list or set the{" "}
+                <code>GANTT_PDF_ALERT_EMAILS</code> environment variable
+                (comma-separated emails) and restart the server.
+              </p>
             </div>
           )}
         </CardContent>

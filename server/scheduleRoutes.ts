@@ -222,6 +222,7 @@ import {
   evaluateGanttPdfAlerts,
   type GanttPdfAlertEvent,
 } from "./gantt-pdf-service";
+import { getGanttPdfAlertConfig as getGanttPdfRecipientConfig } from "./gantt-pdf-alerts";
 import { notifications } from "@shared/schema";
 import { sendNotificationEmail } from "./email";
 
@@ -1370,11 +1371,13 @@ const updateAlertConfigSchema = z.object({
  *     responses:
  *       200: { description: Evaluation result }
  */
-router.get("/admin/gantt-pdf/alerts", requireAuth, requireRole("SUPER_ADMIN"), (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get("/admin/gantt-pdf/alerts", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const recipients = await getGanttPdfRecipientConfig();
     res.json({
       config: getGanttPdfAlertConfig(),
       state: getGanttPdfAlertState(),
+      recipients,
     });
   } catch (error) {
     next(error);

@@ -16,6 +16,15 @@ import { crmTaskReminderScheduler } from "./crmTaskReminderScheduler";
 import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
+import {
+  onGanttPdfQueueFull,
+  onGanttPdfBrowserDisconnected,
+} from "./gantt-pdf-service";
+import {
+  reportGanttPdfQueueFull,
+  reportGanttPdfBrowserDisconnected,
+  startGanttPdfHealthMonitor,
+} from "./gantt-pdf-alerts";
 import { backfillMissingFeatureFlags } from "./services/featureFlagService";
 import { runStartupMigrations } from "./utils/runStartupMigrations";
 import { seedBuiltInPresets } from "./dashboardRoutes";
@@ -256,6 +265,11 @@ app.use((req, res, next) => {
   // Initialize the internal domain event bus before listening to eliminate any
   // theoretical startup race where a request could arrive before listeners are wired.
   initializeEventBus();
+
+  // Wire Gantt PDF queue/browser events to the alerter and start its monitor.
+  onGanttPdfQueueFull(() => reportGanttPdfQueueFull());
+  onGanttPdfBrowserDisconnected((at) => reportGanttPdfBrowserDisconnected(at));
+  startGanttPdfHealthMonitor();
 
   // One-time idempotent backfill: any org row with NULL/empty feature_flags
   // gets the full all-enabled set. No-op once data is populated. Runs in all
