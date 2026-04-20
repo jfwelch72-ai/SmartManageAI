@@ -1449,15 +1449,46 @@ export default function CRMPage() {
                   ))}
                 </div>
               ) : filteredOrganizations.length === 0 ? (
-                <EmptyState
-                  icon={Building2}
-                  title="No organizations found"
-                  description={searchTerm || selectedType !== "all" || statusFilter !== "all"
-                    ? "Try adjusting your search or filters."
-                    : "Add your first organization to start building your CRM."}
-                  actionLabel={!(searchTerm || selectedType !== "all" || statusFilter !== "all") ? "Add Organization" : undefined}
-                  onAction={!(searchTerm || selectedType !== "all" || statusFilter !== "all") ? () => setCreateOrgOpen(true) : undefined}
-                />
+                <div>
+                  <EmptyState
+                    icon={Building2}
+                    title="No organizations found"
+                    description={searchTerm || selectedType !== "all" || statusFilter !== "all"
+                      ? "Try adjusting your search or filters."
+                      : "Add your first organization to start building your CRM."}
+                    actionLabel={!(searchTerm || selectedType !== "all" || statusFilter !== "all") ? "Add Organization" : undefined}
+                    onAction={!(searchTerm || selectedType !== "all" || statusFilter !== "all") ? () => setCreateOrgOpen(true) : undefined}
+                  />
+                  {!(searchTerm || selectedType !== "all" || statusFilter !== "all") && ["ADMIN", "HUSTLER", "MANAGER", "SUPER_ADMIN"].includes(user?.role ?? "") && (
+                    <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <span>Just exploring?</span>
+                      <Button
+                        variant="link"
+                        className="h-auto p-0 text-primary"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch("/api/dev/seed-crm", { method: "POST", credentials: "include" });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.message || data.error || "Seed failed");
+                            toast({ title: "Demo data loaded", description: `Added ${data.counts.organisations} orgs, ${data.counts.opportunities} deals, ${data.counts.contacts} contacts` });
+                            queryClient.invalidateQueries({ queryKey: ["/api/crm"] });
+                            queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
+                            queryClient.invalidateQueries({ queryKey: ["/api/crm/contacts"] });
+                            queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities"] });
+                            queryClient.invalidateQueries({ queryKey: ["/api/crm/pipeline/stats"] });
+                            queryClient.invalidateQueries({ queryKey: ["/api/crm/quotes"] });
+                            queryClient.invalidateQueries({ queryKey: ["/api/crm/tasks"] });
+                          } catch (e: any) {
+                            toast({ title: "Could not load demo data", description: e.message, variant: "destructive" });
+                          }
+                        }}
+                        data-testid="button-seed-crm-demo"
+                      >
+                        Load sample CRM data
+                      </Button>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredOrganizations.map((org) => {
