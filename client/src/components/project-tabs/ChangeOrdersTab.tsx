@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -244,6 +246,21 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     if (statusFilter === "ALL") return changeOrders;
     return changeOrders.filter(co => co.status === statusFilter);
   }, [changeOrders, statusFilter]);
+
+  const { getRowProps: getCoRowProps } = useTableKeyboardNav({
+    rowCount: filteredChangeOrders.length,
+    onActivate: (idx) => {
+      const co = filteredChangeOrders[idx];
+      if (co) {
+        setSelectedChangeOrder(co);
+        setShowViewDialog(true);
+      }
+    },
+  });
+  useRegisterShortcuts(
+    "project-change-orders",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
 
   const isResponseOverdue = (co: ChangeOrder) => {
     return co.status === "SUBMITTED" && co.clientResponseDueDate && isPast(new Date(co.clientResponseDueDate));
@@ -562,8 +579,13 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
             />
           ) : (
             <div className="space-y-3">
-              {filteredChangeOrders.map((co) => (
-                <Card key={co.id} data-testid={`change-order-${co.id}`} className={selectedIds.has(co.id) ? "ring-2 ring-primary" : ""}>
+              {filteredChangeOrders.map((co, idx) => (
+                <Card
+                  key={co.id}
+                  data-testid={`change-order-${co.id}`}
+                  className={`${selectedIds.has(co.id) ? "ring-2 ring-primary" : ""} data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background`}
+                  {...getCoRowProps(idx)}
+                >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
                       <div className="flex-1">

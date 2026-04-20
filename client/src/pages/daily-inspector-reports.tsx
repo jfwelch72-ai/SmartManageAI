@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +58,20 @@ export default function DailyInspectorReportsPage() {
     if (window.confirm(`Delete IDR for ${formatDate(r.reportDate)}?`)) delMut.mutate(r.id);
   };
 
+  const canEditRow = canManage || canApprove;
+  const { getRowProps: getIdrRowProps } = useTableKeyboardNav({
+    rowCount: data.length,
+    onActivate: (idx) => {
+      if (!canEditRow) return;
+      const r = data[idx];
+      if (r) setEditing(r);
+    },
+  });
+  useRegisterShortcuts(
+    "daily-inspector-reports",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
+
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -77,8 +93,13 @@ export default function DailyInspectorReportsPage() {
         <EmptyState icon={ClipboardList} title="No daily inspector reports" description="Create your first daily inspector report to log weather, crews, and work performed." testId="empty-idr" />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((r) => (
-            <Card key={r.id} data-testid={`card-idr-${r.id}`}>
+          {data.map((r, idx) => (
+            <Card
+              key={r.id}
+              data-testid={`card-idr-${r.id}`}
+              className="data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+              {...getIdrRowProps(idx)}
+            >
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">

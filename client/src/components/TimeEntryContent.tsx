@@ -1,4 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,6 +68,7 @@ export default function TimeEntryContent() {
 
   const [activeTab, setActiveTab] = useState("entries");
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [dateFilter, setDateFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [projectFilter, setProjectFilter] = useState("ALL");
@@ -193,6 +197,18 @@ export default function TimeEntryContent() {
     setEditNotes(entry.notes || "");
   };
 
+  const isEntriesTab = activeTab === "entries";
+  const { getRowProps: getEntryRowProps } = useTableKeyboardNav({
+    rowCount: isEntriesTab ? filteredTimeEntries.length : 0,
+    onActivate: (idx) => {
+      if (!isEntriesTab) return;
+      const entry = filteredTimeEntries[idx];
+      if (entry) openEditDialog(entry);
+    },
+  });
+  useGlobalSearchFocus(searchInputRef, isEntriesTab);
+  useRegisterShortcuts("time-entries", TABLE_NAV_SHORTCUTS, isEntriesTab);
+
   const handleUpdate = async () => {
     if (!editEntry) return;
     try { await updateEntry.mutateAsync({ id: editEntry.id, date: editDate, hoursRegular: editRegular, hoursOvertime: editOvertime, costCode: editCostCode, notes: editNotes }); toast({ title: "Success", description: "Time entry updated" }); setEditEntry(null); }
@@ -277,7 +293,7 @@ export default function TimeEntryContent() {
               <div className="flex flex-wrap items-center gap-3">
                 <div className="relative flex-1 min-w-[180px] max-w-[280px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input placeholder="Search project, cost code, notes..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} data-testid="input-search-time-entries" />
+                  <Input ref={searchInputRef} placeholder="Search project, cost code, notes..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} data-testid="input-search-time-entries" />
                 </div>
                 <Select value={dateFilter} onValueChange={setDateFilter}>
                   <SelectTrigger className="w-[150px]" data-testid="select-date-filter"><SelectValue placeholder="Date Range" /></SelectTrigger>
@@ -318,6 +334,7 @@ export default function TimeEntryContent() {
               setRejectEntryId={setRejectEntryId}
               openEditDialog={openEditDialog}
               setDeleteEntryId={setDeleteEntryId}
+              getRowProps={getEntryRowProps}
             />
           </Card>
         </TabsContent>

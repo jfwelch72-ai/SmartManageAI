@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +91,18 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
     if (filterPriority !== "all" && rfi.priority !== filterPriority) return false;
     return true;
   });
+
+  const { getRowProps: getRfiRowProps } = useTableKeyboardNav({
+    rowCount: filteredRFIs.length,
+    onActivate: (idx) => {
+      const rfi = filteredRFIs[idx];
+      if (rfi) openDetail(rfi);
+    },
+  });
+  useRegisterShortcuts(
+    "project-rfis",
+    TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
+  );
 
   return (
     <div className="space-y-6" data-testid="proj-section-rfis">
@@ -185,8 +199,14 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRFIs.map((rfi) => (
-                    <TableRow key={rfi.id} className="cursor-pointer" onClick={() => openDetail(rfi)} data-testid={`proj-row-rfi-${rfi.id}`}>
+                  {filteredRFIs.map((rfi, idx) => (
+                    <TableRow
+                      key={rfi.id}
+                      className="cursor-pointer data-[focused=true]:bg-muted data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset"
+                      onClick={() => openDetail(rfi)}
+                      data-testid={`proj-row-rfi-${rfi.id}`}
+                      {...getRfiRowProps(idx)}
+                    >
                       <TableCell className="font-medium" data-testid={`proj-text-rfi-number-${rfi.id}`}>{rfi.rfiNumber}</TableCell>
                       <TableCell className="max-w-[200px] truncate" data-testid={`proj-text-rfi-subject-${rfi.id}`}>{rfi.subject}</TableCell>
                       <TableCell data-testid={`proj-badge-rfi-priority-${rfi.id}`}>{getPriorityBadge(rfi.priority)}</TableCell>
@@ -212,8 +232,14 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
               </Table>
             </div>
             <div className="md:hidden space-y-3 p-3">
-              {filteredRFIs.map((rfi) => (
-                <div key={rfi.id} className="border rounded-md p-3 space-y-2 cursor-pointer" onClick={() => openDetail(rfi)} data-testid={`proj-row-rfi-mobile-${rfi.id}`}>
+              {filteredRFIs.map((rfi, idx) => (
+                <div
+                  key={rfi.id}
+                  className="border rounded-md p-3 space-y-2 cursor-pointer data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+                  onClick={() => openDetail(rfi)}
+                  data-testid={`proj-row-rfi-mobile-${rfi.id}`}
+                  {...getRfiRowProps(idx)}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium text-sm" data-testid={`proj-text-rfi-number-mobile-${rfi.id}`}>{rfi.rfiNumber}</span>
                     <span className="shrink-0" data-testid={`proj-badge-rfi-status-mobile-${rfi.id}`}>{getStatusBadge(rfi.status)}</span>

@@ -55,6 +55,7 @@ interface TimeEntryListContentProps {
   setRejectEntryId: (id: string) => void;
   openEditDialog: (entry: any) => void;
   setDeleteEntryId: (id: string) => void;
+  getRowProps?: (index: number) => Record<string, any>;
 }
 
 export function TimeEntryListContent({
@@ -73,6 +74,7 @@ export function TimeEntryListContent({
   setRejectEntryId,
   openEditDialog,
   setDeleteEntryId,
+  getRowProps,
 }: TimeEntryListContentProps) {
   if (entriesLoading) {
     return <CardContent><div className="text-center py-8 text-muted-foreground">Loading...</div></CardContent>;
@@ -106,7 +108,7 @@ export function TimeEntryListContent({
         </div>
       )}
 
-      {filteredTimeEntries.map((entry) => {
+      {filteredTimeEntries.map((entry, idx) => {
         const project = projects.find((p: any) => p.id === entry.projectId);
         const regular = parseFloat(entry.hoursRegular) || 0;
         const overtime = parseFloat(entry.hoursOvertime) || 0;
@@ -114,7 +116,12 @@ export function TimeEntryListContent({
         const isExpanded = expandedEntries.has(entry.id);
 
         return (
-          <Card key={entry.id} data-testid={`time-entry-row-${entry.id}`}>
+          <Card
+            key={entry.id}
+            data-testid={`time-entry-row-${entry.id}`}
+            className="data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
+            {...(getRowProps ? getRowProps(idx) : {})}
+          >
             <div className="p-4 space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="flex items-start gap-3 min-w-0 flex-1">

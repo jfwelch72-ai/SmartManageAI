@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,6 +108,18 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
     setSelectedSubmittal(submittal);
     setShowDetailDialog(true);
   };
+
+  const { getRowProps: getSubmittalRowProps } = useTableKeyboardNav({
+    rowCount: submittals.length,
+    onActivate: (idx) => {
+      const s = submittals[idx];
+      if (s) openDetailDialog(s);
+    },
+  });
+  useRegisterShortcuts(
+    "project-submittals",
+    TABLE_NAV_SHORTCUTS.filter((sc) => sc.keys !== "/"),
+  );
 
   const handleEdit = (detail: Submittal) => {
     setCreateForm({
@@ -257,8 +271,14 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {submittals.map(s => (
-                          <TableRow key={s.id} data-testid={`proj-sub-row-submittal-${s.id}`}>
+                        {submittals.map((s, idx) => (
+                          <TableRow
+                            key={s.id}
+                            className="cursor-pointer data-[focused=true]:bg-muted data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-inset"
+                            onClick={() => openDetailDialog(s)}
+                            data-testid={`proj-sub-row-submittal-${s.id}`}
+                            {...getSubmittalRowProps(idx)}
+                          >
                             <TableCell className="font-medium" data-testid={`proj-sub-text-submittal-number-${s.id}`}>{s.submittalNumber}</TableCell>
                             <TableCell data-testid={`proj-sub-text-submittal-subject-${s.id}`}>{s.subject}</TableCell>
                             <TableCell>{getTypeBadge(s.submittalType)}</TableCell>
@@ -287,12 +307,13 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
               </div>
 
               <div className="md:hidden space-y-3">
-                {submittals.map(s => (
+                {submittals.map((s, idx) => (
                   <div
                     key={s.id}
-                    className="border rounded-md p-3 space-y-2 cursor-pointer"
+                    className="border rounded-md p-3 space-y-2 cursor-pointer data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background"
                     onClick={() => openDetailDialog(s)}
                     data-testid={`proj-sub-row-submittal-mobile-${s.id}`}
+                    {...getSubmittalRowProps(idx)}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-sm" data-testid={`proj-sub-text-submittal-number-mobile-${s.id}`}>{s.submittalNumber}</span>
