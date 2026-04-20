@@ -1,0 +1,22 @@
+UI/UX Gaps
+Critical
+•	No global search. Cmd-K to jump to any contact/deal/company is universal in modern SaaS. Ours requires navigating to the right tab first.
+•	No keyboard shortcuts. Power users live on J/K to navigate rows, E to edit, / to search.
+•	Tab-heavy navigation. The /crm page has 7+ tabs. HubSpot/Pipedrive use a left sidebar with object types and contextual right-side panels — feels less cluttered.
+•	No inline editing in tables. Click a cell → edit → tab to next. We open dialogs for everything, which is 3x slower for bulk data work.
+•	Detail pages live inside Sheets. Sheets are great for quick peeks but feel cramped for a deal with 20 activities, 3 quotes, and 5 contacts. Pipedrive uses a full-page deal view.
+Important
+•	Kanban cards are information-light. Competitors show: avatar of owner, days-in-stage badge, last-activity dot (red/yellow/green), value, probability — at a glance. Ours shows name + value.
+•	No "stale deal" visual indicators. HubSpot grays out cards with no activity in N days. Critical for forcing follow-up.
+•	Activity timeline is chronological-only. No filter chips ("Emails only", "Calls only", "This week"). HubSpot's filtered timeline is the most-used screen in their product.
+•	Quote builder is functional but plain. GetAccept/PandaDoc-style quotes have rich blocks (video intro, image galleries, optional add-ons the buyer toggles). Ours is a line-item table.
+•	No drag-to-reorder line items in quotes.
+•	Empty states are good (we have those!) but no onboarding tours. First-time users get dropped into an empty CRM with no guidance.
+•	No dark-mode polish in charts. Recharts default colors look OK in light mode, harsh in dark.
+•	Mobile kanban — horizontal scroll on a 7-stage kanban on mobile is painful. Pipedrive collapses to a single-stage filter view.
+Polish-level
+•	No avatar colors / generated initials backgrounds for contacts (looks bare).
+•	No hover-cards on contact/org names showing a quick preview.
+•	No "recently viewed" list anywhere.
+•	Table density isn't user-configurable (compact / cozy / comfortable).
+•	No bulk CSV import wizard with column mapping (HubSpot's is the gold standard).
