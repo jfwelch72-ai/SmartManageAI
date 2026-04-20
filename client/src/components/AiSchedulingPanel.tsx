@@ -40,7 +40,16 @@ import {
   X,
   Eye,
   EyeOff,
+  Download,
+  FileImage,
+  FileText,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
@@ -195,8 +204,63 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [editDuration, setEditDuration] = useState(1);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [showBaseline, setShowBaseline] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const ganttExportRef = useRef<HTMLDivElement>(null);
 
   const { toast } = useToast();
+
+  const handleExportGantt = useCallback(async (kind: "png" | "pdf") => {
+    if (!ganttExportRef.current) return;
+    setIsExporting(true);
+    try {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      const html2canvasMod = await import("html2canvas");
+      const html2canvas = html2canvasMod.default;
+      const isDark = document.documentElement.classList.contains("dark");
+      const bgColor = isDark ? "#0a0a0a" : "#ffffff";
+      const target = ganttExportRef.current!;
+      const canvas = await html2canvas(target, {
+        backgroundColor: bgColor,
+        scale: 2,
+        useCORS: true,
+        windowWidth: target.scrollWidth,
+      });
+      const today = format(new Date(), "yyyy-MM-dd");
+      const safeCode = (projectCode || "project").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const baseName = `${safeCode}-schedule-${today}`;
+      if (kind === "png") {
+        const link = document.createElement("a");
+        link.download = `${baseName}.png`;
+        link.href = canvas.toDataURL("image/png");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const jsPdfMod = await import("jspdf");
+        const JsPDF = jsPdfMod.jsPDF;
+        const orientation = canvas.width >= canvas.height ? "landscape" : "portrait";
+        const pdf = new JsPDF({
+          orientation,
+          unit: "pt",
+          format: [canvas.width, canvas.height],
+        });
+        pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
+        pdf.save(`${baseName}.pdf`);
+      }
+      toast({ title: "Gantt exported", description: `${baseName}.${kind}` });
+    } catch (err) {
+      console.error("Gantt export failed", err);
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Unable to export Gantt chart",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [projectCode, toast]);
 
   interface ScheduleResponse {
     schedule: ProjectSchedule | null;
@@ -639,21 +703,25 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
             </TabsList>
 
             <TabsContent value="gantt">
-              <ScheduleVarianceKpi schedule={schedule} tasks={tasks} />
-              <GanttChart
-                tasks={sortedTasks}
-                wbsTasks={wbsTasks}
-                schedule={schedule}
-                taskMap={taskMap}
-                getBarPosition={getBarPosition}
-                getGanttRange={getGanttRange}
-                onTaskClick={handleTaskClick}
-                onEditDeps={openDepDialog}
-                collapsedGroups={collapsedGroups}
-                onToggleCollapse={toggleCollapse}
-                showBaseline={showBaseline}
-                onToggleShowBaseline={() => setShowBaseline(v => !v)}
-              />
+              <div ref={ganttExportRef} className="bg-background">
+                <ScheduleVarianceKpi schedule={schedule} tasks={tasks} />
+                <GanttChart
+                  tasks={sortedTasks}
+                  wbsTasks={wbsTasks}
+                  schedule={schedule}
+                  taskMap={taskMap}
+                  getBarPosition={getBarPosition}
+                  getGanttRange={getGanttRange}
+                  onTaskClick={handleTaskClick}
+                  onEditDeps={openDepDialog}
+                  collapsedGroups={collapsedGroups}
+                  onToggleCollapse={toggleCollapse}
+                  showBaseline={showBaseline}
+                  onToggleShowBaseline={() => setShowBaseline(v => !v)}
+                  isExporting={isExporting}
+                  onExport={handleExportGantt}
+                />
+              </div>
               <RecommendationsPanel
                 recommendations={recommendationsData?.recommendations || []}
                 onDismiss={(id) => dismissRecommendationMutation.mutate(id)}
@@ -1040,6 +1108,8 @@ function GanttChart({
   onToggleCollapse,
   showBaseline,
   onToggleShowBaseline,
+  isExporting,
+  onExport,
 }: {
   tasks: ScheduleTask[];
   wbsTasks: Array<{ task: ScheduleTask; depth: number; hasChildren: boolean }>;
@@ -1053,6 +1123,8 @@ function GanttChart({
   onToggleCollapse: (taskId: string) => void;
   showBaseline: boolean;
   onToggleShowBaseline: () => void;
+  isExporting?: boolean;
+  onExport?: (kind: "png" | "pdf") => void;
 }) {
   const hasAnyBaseline = !!schedule.baselineLocked || tasks.some(t => t.baselineStartDate && t.baselineEndDate);
   const baselineVisible = showBaseline && hasAnyBaseline;
@@ -1115,6 +1187,36 @@ function GanttChart({
             {baselineVisible && <span className="flex items-center gap-1"><span className="w-3 h-2 bg-destructive/80 rounded-sm inline-block" />Slip</span>}
             {baselineVisible && <span className="flex items-center gap-1"><span className="w-3 h-2 bg-emerald-500 rounded-sm inline-block" />Ahead</span>}
             <span className="flex items-center gap-1"><span className="w-3 h-1 bg-blue-200 dark:bg-blue-900 rounded-sm inline-block" />Float</span>
+            {onExport && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={isExporting}
+                    data-testid="button-export-gantt"
+                  >
+                    {isExporting ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onExport("pdf")} data-testid="button-export-gantt-pdf">
+                    <FileText className="w-4 h-4 mr-2" />
+                    Export as PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onExport("png")} data-testid="button-export-gantt-png">
+                    <FileImage className="w-4 h-4 mr-2" />
+                    Export as PNG
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </CardTitle>
       </CardHeader>
@@ -1128,7 +1230,7 @@ function GanttChart({
             </div>
           </div>
           <Separator className="hidden md:block" />
-          <ScrollArea className="h-[420px]">
+          <ScrollArea className={isExporting ? "h-auto" : "h-[420px]"}>
             <div className="relative" style={{ minHeight: wbsTasks.length * rowHeight + headerHeight }}>
               <svg className="absolute inset-0 w-full pointer-events-none" style={{ height: wbsTasks.length * rowHeight + headerHeight, zIndex: 5 }}>
                 {depLines.map((line, idx) => {
