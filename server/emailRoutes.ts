@@ -25,8 +25,98 @@ import {
 import { governedAiCall } from "./services/aiGovernance";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { testFullConnection, fetchImapMessages, sendSmtpEmail } from "./services/imapService";
-import { ensureGmailWatch, ensureOutlookSubscription } from "./emailPushNotifications";
+import {
+  ensureGmailWatch,
+  ensureOutlookSubscription,
+  isGmailPushConfigured,
+  isOutlookPushConfigured,
+} from "./emailPushNotifications";
 import { detectInboundReply } from "./services/sequenceService";
+
+type EmailPushStatus = "REALTIME" | "POLLING" | "UNAVAILABLE";
+
+interface EmailAccountPushInfo {
+  pushStatus: EmailPushStatus;
+  pushExpiresAt: string | null;
+  pushReason: string;
+}
+
+function describeAccountPush(account: EmailAccount): EmailAccountPushInfo {
+  if (account.provider === "GMAIL") {
+    if (!isGmailPushConfigured()) {
+      return {
+        pushStatus: "UNAVAILABLE",
+        pushExpiresAt: null,
+        pushReason:
+          "Gmail real-time push is not configured on this server (missing Pub/Sub topic or webhook secret). Mail will be fetched by the safety-net poller.",
+      };
+    }
+    if (account.syncStatus === "NEEDS_RECONNECT") {
+      return {
+        pushStatus: "POLLING",
+        pushExpiresAt: null,
+        pushReason:
+          "Reconnect this Gmail account to grant push permissions. Until then mail is fetched by the safety-net poller.",
+      };
+    }
+    const exp = account.gmailWatchExpiration ? new Date(account.gmailWatchExpiration) : null;
+    if (exp && exp.getTime() > Date.now()) {
+      return {
+        pushStatus: "REALTIME",
+        pushExpiresAt: exp.toISOString(),
+        pushReason:
+          "Gmail is pushing changes to SmartManageAI in real time. Mail appears within seconds of arrival.",
+      };
+    }
+    return {
+      pushStatus: "POLLING",
+      pushExpiresAt: null,
+      pushReason:
+        "No active Gmail watch subscription. Mail is fetched by the safety-net poller every few minutes. Click Reconnect push to try registering a watch now.",
+    };
+  }
+  if (account.provider === "OUTLOOK") {
+    if (!isOutlookPushConfigured()) {
+      return {
+        pushStatus: "UNAVAILABLE",
+        pushExpiresAt: null,
+        pushReason:
+          "Outlook real-time push is not configured on this server (missing webhook secret or HTTPS base URL). Mail will be fetched by the safety-net poller.",
+      };
+    }
+    if (account.syncStatus === "NEEDS_RECONNECT") {
+      return {
+        pushStatus: "POLLING",
+        pushExpiresAt: null,
+        pushReason:
+          "Reconnect this Outlook account to grant push permissions. Until then mail is fetched by the safety-net poller.",
+      };
+    }
+    const exp = account.outlookSubscriptionExpiration
+      ? new Date(account.outlookSubscriptionExpiration)
+      : null;
+    if (exp && exp.getTime() > Date.now()) {
+      return {
+        pushStatus: "REALTIME",
+        pushExpiresAt: exp.toISOString(),
+        pushReason:
+          "Microsoft Graph is pushing changes to SmartManageAI in real time. Mail appears within seconds of arrival.",
+      };
+    }
+    return {
+      pushStatus: "POLLING",
+      pushExpiresAt: null,
+      pushReason:
+        "No active Outlook subscription. Mail is fetched by the safety-net poller every few minutes. Click Reconnect push to try registering a subscription now.",
+    };
+  }
+  return {
+    pushStatus: "UNAVAILABLE",
+    pushExpiresAt: null,
+    pushReason:
+      "IMAP/SMTP accounts do not support real-time push. Mail is fetched by the background poller.",
+  };
+}
 
 const router = Router();
 
@@ -71,9 +161,11 @@ const updateEmailAccountSchema = z.object({
 });
 
 // Helper to sanitize account for response (remove sensitive fields)
-function sanitizeAccountForResponse(account: EmailAccount): Omit<EmailAccount, 'accessToken' | 'refreshToken' | 'imapPassword'> {
+function sanitizeAccountForResponse(
+  account: EmailAccount,
+): Omit<EmailAccount, 'accessToken' | 'refreshToken' | 'imapPassword'> & EmailAccountPushInfo {
   const { accessToken, refreshToken, imapPassword, ...safe } = account;
-  return safe;
+  return { ...safe, ...describeAccountPush(account) };
 }
 
 // GET /api/email/accounts - List linked accounts for current user
@@ -563,6 +655,117 @@ router.post("/accounts/:id/resync", requireAuth, requireInternalRole, async (req
       .where(eq(emailAccounts.id, existing.id));
 
     return res.json({ success: true, message: "Sync cursors cleared. Full resync will run on next sync cycle." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// POST /api/email/accounts/:id/reconnect-push - Re-register Gmail watch or
+// Outlook subscription on demand so the account regains real-time push.
+router.post("/accounts/:id/reconnect-push", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const orgId = req.user.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const [account] = await db
+      .select()
+      .from(emailAccounts)
+      .where(and(
+        eq(emailAccounts.id, req.params.id),
+        eq(emailAccounts.organizationId, orgId),
+        eq(emailAccounts.userId, req.user.id),
+      ))
+      .limit(1);
+    if (!account) return res.status(404).json({ error: "Email account not found" });
+
+    if (account.provider !== "GMAIL" && account.provider !== "OUTLOOK") {
+      return res.status(400).json({ error: "Real-time push is only available for Gmail and Outlook accounts." });
+    }
+    if (!account.isActive) {
+      return res.status(400).json({ error: "Activate the account before reconnecting push." });
+    }
+    if (account.syncStatus === "NEEDS_RECONNECT") {
+      return res.status(400).json({ error: "Reconnect the account via OAuth before re-enabling push." });
+    }
+    if (account.provider === "GMAIL" && !isGmailPushConfigured()) {
+      return res.status(400).json({ error: "Gmail real-time push is not configured on this server." });
+    }
+    if (account.provider === "OUTLOOK" && !isOutlookPushConfigured()) {
+      return res.status(400).json({ error: "Outlook real-time push is not configured on this server." });
+    }
+
+    // Force re-registration by clearing the current expiration so the ensure
+    // helper does not short-circuit on the freshness check. If the provider
+    // call fails we restore the prior expiration so a transient failure does
+    // not regress a previously-valid subscription to "Polling" in the UI.
+    const priorGmailExp = account.gmailWatchExpiration;
+    const priorOutlookExp = account.outlookSubscriptionExpiration;
+    if (account.provider === "GMAIL") {
+      await db
+        .update(emailAccounts)
+        .set({ gmailWatchExpiration: null, updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+      const [refreshed] = await db
+        .select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, account.id))
+        .limit(1);
+      await ensureGmailWatch(refreshed);
+    } else {
+      await db
+        .update(emailAccounts)
+        .set({ outlookSubscriptionExpiration: null, updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+      const [refreshed] = await db
+        .select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, account.id))
+        .limit(1);
+      await ensureOutlookSubscription(refreshed);
+    }
+
+    let [final] = await db
+      .select()
+      .from(emailAccounts)
+      .where(eq(emailAccounts.id, account.id))
+      .limit(1);
+
+    // Restore prior expiration if the ensure helper did not succeed and the
+    // previous expiration was still in the future. This avoids regressing
+    // the UI from REALTIME to POLLING on a transient provider failure.
+    if (account.provider === "GMAIL" && !final.gmailWatchExpiration && priorGmailExp && priorGmailExp.getTime() > Date.now()) {
+      await db
+        .update(emailAccounts)
+        .set({ gmailWatchExpiration: priorGmailExp, updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+      [final] = await db
+        .select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, account.id))
+        .limit(1);
+    } else if (account.provider === "OUTLOOK" && !final.outlookSubscriptionExpiration && priorOutlookExp && priorOutlookExp.getTime() > Date.now()) {
+      await db
+        .update(emailAccounts)
+        .set({ outlookSubscriptionExpiration: priorOutlookExp, updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+      [final] = await db
+        .select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, account.id))
+        .limit(1);
+    }
+
+    const sanitized = sanitizeAccountForResponse(final);
+    if (sanitized.pushStatus === "REALTIME") {
+      return res.json({ success: true, message: "Real-time push reconnected.", account: sanitized });
+    }
+    return res.status(502).json({
+      success: false,
+      error:
+        "Push subscription could not be registered. The provider rejected the request — check server logs for details.",
+      account: sanitized,
+    });
   } catch (error) {
     return next(error);
   }

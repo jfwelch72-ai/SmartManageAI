@@ -66,6 +66,9 @@ export interface EmailAccount {
   smtpSecure: boolean | null;
   imapUsername: string | null;
   syncStatus?: string | null;
+  pushStatus?: "REALTIME" | "POLLING" | "UNAVAILABLE" | null;
+  pushExpiresAt?: string | null;
+  pushReason?: string | null;
 }
 
 export const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; icon: ReactNode }> = {

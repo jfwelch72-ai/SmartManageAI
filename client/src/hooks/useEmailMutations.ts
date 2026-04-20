@@ -273,6 +273,31 @@ export function useResyncAccount() {
   });
 }
 
+export function useReconnectPush() {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/email/accounts/${id}/reconnect-push`);
+      return res.json();
+    },
+    onSuccess: (data: { message?: string }) => {
+      toast({
+        title: "Real-time push reconnected",
+        description: data.message || "This inbox is now wired for instant updates.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+    },
+    onError: (err) => {
+      toast({
+        title: "Could not reconnect push",
+        description: extractErrorMessage(err, "Push subscription could not be registered. The account will continue to use polling."),
+        variant: "destructive",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+    },
+  });
+}
+
 export function useUpdateAccount(callbacks: { onSuccess: () => void }) {
   const { toast } = useToast();
   return useMutation({

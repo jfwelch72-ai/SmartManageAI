@@ -15,7 +15,10 @@ import {
   Info,
   Pencil,
   Save,
+  Zap,
+  Clock,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { SiGmail } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +52,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount, useUpdateAccount, useResyncAccount } from "@/hooks/useEmailMutations";
+import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount, useUpdateAccount, useResyncAccount, useReconnectPush } from "@/hooks/useEmailMutations";
 import { RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EmailAccount } from "./shared";
@@ -227,6 +230,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
     onSuccess: () => setEditingAccount(null),
   });
   const resyncAccountMutation = useResyncAccount();
+  const reconnectPushMutation = useReconnectPush();
 
   const startEditAccount = (account: EmailAccount) => {
     setEditFormData({
@@ -592,13 +596,51 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                               </TooltipProvider>
                             )}
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {account.provider}
+                          <div className="text-xs text-muted-foreground flex items-center flex-wrap gap-1.5">
+                            <span>{account.provider}</span>
+                            {account.pushStatus && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge
+                                      variant="secondary"
+                                      className={
+                                        "gap-1 text-[10px] py-0 px-1.5 font-medium " +
+                                        (account.pushStatus === "REALTIME"
+                                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                          : account.pushStatus === "POLLING"
+                                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                                          : "bg-muted text-muted-foreground")
+                                      }
+                                      data-testid={`badge-push-status-${account.id}`}
+                                    >
+                                      {account.pushStatus === "REALTIME" ? (
+                                        <Zap className="w-3 h-3" />
+                                      ) : (
+                                        <Clock className="w-3 h-3" />
+                                      )}
+                                      {account.pushStatus === "REALTIME"
+                                        ? "Real-time"
+                                        : "Polling"}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs">
+                                    <p className="text-xs">{account.pushReason}</p>
+                                    {account.pushExpiresAt && (
+                                      <p className="text-xs mt-1 text-muted-foreground">
+                                        Subscription renews{" "}
+                                        {formatDistanceToNow(new Date(account.pushExpiresAt), { addSuffix: true })}.
+                                      </p>
+                                    )}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                             {account.lastSyncedAt && (
-                              <span> · Synced {formatDistanceToNow(new Date(account.lastSyncedAt))} ago</span>
+                              <span>· Synced {formatDistanceToNow(new Date(account.lastSyncedAt))} ago</span>
                             )}
                             {account.lastSyncError && !account.lastSyncedAt && (
-                              <span className="text-amber-600 dark:text-amber-400"> · Sync error</span>
+                              <span className="text-amber-600 dark:text-amber-400">· Sync error</span>
                             )}
                           </div>
                         </div>
@@ -637,6 +679,44 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                             </Tooltip>
                           </TooltipProvider>
                         )}
+                        {(account.provider === "GMAIL" || account.provider === "OUTLOOK") &&
+                          account.pushStatus !== "UNAVAILABLE" && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className={
+                                        "h-8 w-8 " +
+                                        (account.pushStatus === "POLLING"
+                                          ? "text-amber-600 dark:text-amber-400"
+                                          : "")
+                                      }
+                                      onClick={() => reconnectPushMutation.mutate(account.id)}
+                                      disabled={reconnectPushMutation.isPending}
+                                      data-testid={`button-reconnect-push-${account.id}`}
+                                    >
+                                      {reconnectPushMutation.isPending &&
+                                      reconnectPushMutation.variables === account.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Zap className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p className="text-xs">
+                                    {account.pushStatus === "REALTIME"
+                                      ? "Refresh real-time push subscription"
+                                      : "Reconnect real-time push"}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                         {(account.provider === "GMAIL" || account.provider === "OUTLOOK") && (
                           <Button
                             variant="ghost"
