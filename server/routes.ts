@@ -130,6 +130,7 @@ import approvalRoutes from "./approvalRoutes";
 import workflowRoutes from "./workflowRoutes";
 import documentRevisionRoutes from "./documentRevisionRoutes";
 import drawingSetRoutes from "./drawingSetRoutes";
+import planPinsRoutes from "./planPinsRoutes";
 import addendaRoutes from "./addendaRoutes";
 import devSeedEnterpriseRoutes from "./devSeedEnterprise";
 import featureFlagRoutes from "./featureFlagRoutes";
@@ -380,6 +381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/workflows", workflowRoutes);
   app.use("/api/documents", documentRevisionRoutes);
   app.use("/api/projects", drawingSetRoutes);
+  app.use("/api", planPinsRoutes);
   app.use("/api", addendaRoutes);
 
   app.use("/api/feature-flags", featureFlagRoutes);

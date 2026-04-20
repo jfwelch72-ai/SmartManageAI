@@ -1618,6 +1618,35 @@ export const insertPlanDocumentSchema = createInsertSchema(planDocuments).omit({
   uploadedAt: true,
 });
 
+// Plan Pins (Task #576) — pins for RFI / Punch / Submittal anchored to plan sheets
+export const planPinPinTypeEnum = pgEnum("plan_pin_pin_type", ["RFI", "PUNCH", "SUBMITTAL"]);
+
+export const planPins = pgTable("plan_pins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectCode: text("project_code").notNull(),
+  planDocumentId: varchar("plan_document_id").notNull().references(() => planDocuments.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number").notNull().default(1),
+  x: doublePrecision("x").notNull(),
+  y: doublePrecision("y").notNull(),
+  pinType: planPinPinTypeEnum("pin_type").notNull(),
+  refTable: text("ref_table").notNull(),
+  refId: varchar("ref_id").notNull(),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  docPageIdx: index("plan_pins_doc_page_idx").on(table.planDocumentId, table.pageNumber),
+  projectCodeIdx: index("plan_pins_project_code_idx").on(table.projectCode),
+  orgIdx: index("plan_pins_org_idx").on(table.organizationId),
+}));
+
+export const insertPlanPinSchema = createInsertSchema(planPins).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPlanPin = z.infer<typeof insertPlanPinSchema>;
+export type PlanPin = typeof planPins.$inferSelect;
+
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
   createdAt: true,

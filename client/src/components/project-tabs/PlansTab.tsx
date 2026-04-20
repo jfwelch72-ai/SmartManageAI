@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import PdfPreview from "@/components/PdfPreview";
+import { PlanPinLayer, PinPicker, PinFilterChips, PinCreateDialog, type PinFilter, type PinType, type PlanPin } from "@/components/PlanPinLayer";
+import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
@@ -128,6 +130,34 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [renameSheetValue, setRenameSheetValue] = useState("");
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(urlDocIdRef.current);
+  const [, navigate] = useLocation();
+  const [pinModeActive, setPinModeActive] = useState(false);
+  const [pinFilter, setPinFilter] = useState<PinFilter>({ type: "ALL", openOnly: false });
+  const [previewPageNumber, setPreviewPageNumber] = useState(1);
+  const [pendingPin, setPendingPin] = useState<{ x: number; y: number; pageNumber: number } | null>(null);
+  const [pickerPosition, setPickerPosition] = useState<{ left: number; top: number } | null>(null);
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinDialogType, setPinDialogType] = useState<PinType | null>(null);
+  const isMobilePin = typeof window !== "undefined" && window.innerWidth < 640;
+
+  const handlePinDrop = useCallback((info: { x: number; y: number; pageNumber: number }) => {
+    setPendingPin(info);
+    setPickerPosition({ left: info.x * 100, top: info.y * 100 });
+  }, []);
+
+  const handlePickerChoice = useCallback((type: PinType) => {
+    setPinDialogType(type);
+    setPickerPosition(null);
+    setPinDialogOpen(true);
+  }, []);
+
+  const handleOpenPinSource = useCallback((pin: PlanPin) => {
+    const tab = pin.refTable === "rfis" ? "rfis"
+      : pin.refTable === "punch_list_items" ? "punch-list"
+      : pin.refTable === "submittals" ? "submittals"
+      : null;
+    if (tab) navigate(`/projects/${projectCode}?tab=${tab}&id=${pin.refId}`);
+  }, [navigate, projectCode]);
   const sheetStorageKey = project?.id ? `takeoff-sheet-${project.id}` : null;
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(() => {
     if (!sheetStorageKey) return null;
@@ -1764,12 +1794,75 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                         <ExternalLink className="w-3.5 h-3.5" />
                       </Button>
                     </div>
+                    {isPdf && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/10 shrink-0 overflow-x-auto" data-testid="plan-pin-toolbar">
+                        <PinFilterChips
+                          filter={pinFilter}
+                          onChange={setPinFilter}
+                          pinModeActive={pinModeActive}
+                          onTogglePinMode={() => setPinModeActive((v) => !v)}
+                        />
+                      </div>
+                    )}
                     <div className="flex-1 min-h-0 overflow-hidden">
                       {isPdf ? (
-                        <PdfPreview
-                          url={`/api/projects/${projectCode}/documents/${doc.id}/stream`}
-                          onOpenFile={() => handleOpenFile(doc.id, doc.fileUrl)}
-                        />
+                        <>
+                          <PdfPreview
+                            url={`/api/projects/${projectCode}/documents/${doc.id}/stream`}
+                            onOpenFile={() => handleOpenFile(doc.id, doc.fileUrl)}
+                            pinMode={pinModeActive}
+                            onPinDrop={handlePinDrop}
+                            onPageChange={setPreviewPageNumber}
+                            overlay={({ pageNumber }) => (
+                              <>
+                                <PlanPinLayer
+                                  projectCode={projectCode}
+                                  projectId={project.id}
+                                  documentId={doc.id}
+                                  pageNumber={pageNumber}
+                                  filter={pinFilter}
+                                  onOpenSource={handleOpenPinSource}
+                                />
+                                {pickerPosition && pendingPin && pendingPin.pageNumber === pageNumber && !isMobilePin && (
+                                  <PinPicker
+                                    position={pickerPosition}
+                                    onPick={handlePickerChoice}
+                                    onCancel={() => { setPickerPosition(null); setPendingPin(null); }}
+                                  />
+                                )}
+                              </>
+                            )}
+                          />
+                          {/* Mobile bottom-sheet picker */}
+                          {pickerPosition && pendingPin && isMobilePin && (
+                            <div className="fixed inset-0 z-50 flex items-end" data-testid="pin-picker-mobile">
+                              <div
+                                className="absolute inset-0 bg-black/40"
+                                onClick={() => { setPickerPosition(null); setPendingPin(null); }}
+                              />
+                              <div className="relative w-full bg-background rounded-t-lg p-4 shadow-xl space-y-2">
+                                <div className="text-sm font-medium mb-2">Drop pin as…</div>
+                                <Button className="w-full justify-start min-h-[44px]" variant="outline" onClick={() => handlePickerChoice("RFI")} data-testid="pin-picker-mobile-rfi">RFI</Button>
+                                <Button className="w-full justify-start min-h-[44px]" variant="outline" onClick={() => handlePickerChoice("PUNCH")} data-testid="pin-picker-mobile-punch">Punch Item</Button>
+                                <Button className="w-full justify-start min-h-[44px]" variant="outline" onClick={() => handlePickerChoice("SUBMITTAL")} data-testid="pin-picker-mobile-submittal">Submittal</Button>
+                                <Button className="w-full min-h-[44px]" variant="ghost" onClick={() => { setPickerPosition(null); setPendingPin(null); }} data-testid="pin-picker-mobile-cancel">Cancel</Button>
+                              </div>
+                            </div>
+                          )}
+                          <PinCreateDialog
+                            open={pinDialogOpen}
+                            onOpenChange={(o) => {
+                              setPinDialogOpen(o);
+                              if (!o) { setPendingPin(null); setPinDialogType(null); }
+                            }}
+                            pinType={pinDialogType}
+                            projectCode={projectCode}
+                            projectId={project.id}
+                            documentId={doc.id}
+                            pageNumber={pendingPin?.pageNumber || previewPageNumber}
+                            position={pendingPin ? { x: pendingPin.x, y: pendingPin.y } : null}
+                          />
+                        </>
                       ) : previewUrlLoading ? (
                         <div className="flex items-center justify-center h-full" data-testid="preview-loading">
                           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />

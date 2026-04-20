@@ -19,11 +19,15 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 interface PdfPreviewProps {
   url: string;
   onOpenFile?: () => void;
+  pinMode?: boolean;
+  onPinDrop?: (info: { x: number; y: number; pageNumber: number }) => void;
+  onPageChange?: (pageNumber: number) => void;
+  overlay?: (info: { pageNumber: number; canvasWidth: number; canvasHeight: number }) => React.ReactNode;
 }
 
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
-export default function PdfPreview({ url, onOpenFile }: PdfPreviewProps) {
+export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay }: PdfPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -31,7 +35,12 @@ export default function PdfPreview({ url, onOpenFile }: PdfPreviewProps) {
   const [zoomIdx, setZoomIdx] = useState(2);
   const [loading, setLoading] = useState(true);
   const [rendering, setRendering] = useState(false);
+  const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onPageChange?.(pageNum);
+  }, [pageNum, onPageChange]);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const loadingTaskRef = useRef<pdfjsLib.PDFDocumentLoadingTask | null>(null);
 
@@ -100,6 +109,7 @@ export default function PdfPreview({ url, onOpenFile }: PdfPreviewProps) {
       const canvas = canvasRef.current;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      setCanvasSize({ w: viewport.width, h: viewport.height });
       const ctx = canvas.getContext("2d")!;
       const task = page.render({ canvasContext: ctx, viewport });
       renderTaskRef.current = task;
@@ -225,12 +235,31 @@ export default function PdfPreview({ url, onOpenFile }: PdfPreviewProps) {
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         )}
-        <canvas
-          ref={canvasRef}
-          className="shadow-md"
-          style={{ maxWidth: "100%" }}
-          data-testid="pdf-preview-canvas"
-        />
+        <div className="relative inline-block">
+          <canvas
+            ref={canvasRef}
+            className="shadow-md block"
+            style={{ maxWidth: "100%", cursor: pinMode ? "crosshair" : "default" }}
+            onClick={(e) => {
+              if (!pinMode || !onPinDrop || !canvasRef.current) return;
+              const rect = canvasRef.current.getBoundingClientRect();
+              const x = (e.clientX - rect.left) / rect.width;
+              const y = (e.clientY - rect.top) / rect.height;
+              if (x < 0 || x > 1 || y < 0 || y > 1) return;
+              onPinDrop({ x, y, pageNumber: pageNum });
+            }}
+            data-testid="pdf-preview-canvas"
+          />
+          {overlay && canvasSize.w > 0 && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ width: "100%", height: "100%" }}
+              data-testid="pdf-preview-overlay"
+            >
+              {overlay({ pageNumber: pageNum, canvasWidth: canvasSize.w, canvasHeight: canvasSize.h })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
