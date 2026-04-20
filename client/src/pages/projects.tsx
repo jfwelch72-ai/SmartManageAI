@@ -3,6 +3,11 @@ import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import ProjectsTable from "@/components/ProjectsTable";
+import ProjectsViewSwitcher, { type ProjectsViewType } from "@/components/ProjectsViewSwitcher";
+import ProjectsKanbanView from "@/components/ProjectsKanbanView";
+import ProjectsCalendarView from "@/components/ProjectsCalendarView";
+import ProjectsMapView from "@/components/ProjectsMapView";
+import SavedViewsDropdown, { type AppliedView } from "@/components/SavedViewsDropdown";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Input } from "@/components/ui/input";
@@ -76,6 +81,26 @@ export default function ProjectsPage() {
   const allowedStatuses = getAllowedProjectStatuses(user?.role);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [specialFilter, setSpecialFilter] = useState<string | null>(null);
+  const [viewType, setViewType] = useState<ProjectsViewType>(() => {
+    if (typeof window === "undefined") return "table";
+    const saved = window.localStorage.getItem("projects-view");
+    return saved === "kanban" || saved === "calendar" || saved === "map" || saved === "table"
+      ? (saved as ProjectsViewType)
+      : "table";
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("projects-view", viewType);
+    }
+  }, [viewType]);
+
+  const handleApplyView = (applied: AppliedView) => {
+    setViewType(applied.view);
+    setStatusFilter(applied.filters.status || "ALL");
+    setSearchTerm(applied.filters.search || "");
+    setSpecialFilter(applied.filters.special ?? null);
+  };
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
@@ -328,6 +353,17 @@ export default function ProjectsPage() {
       const budgetNum = Number(project.budget);
       matchesSpecialFilter =
         !project.budget || isNaN(budgetNum) || budgetNum <= 0;
+    } else if (specialFilter === "myProjects") {
+      const uid = user?.id;
+      matchesSpecialFilter = !!uid && (
+        project.estimatorId === uid ||
+        project.superintendentId === uid ||
+        project.projectManagerId === uid
+      );
+    } else if (specialFilter === "onHoldStale14") {
+      const updated = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
+      const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      matchesSpecialFilter = updated > 0 && updated < fourteenDaysAgo;
     }
 
     return (
@@ -396,7 +432,12 @@ export default function ProjectsPage() {
               </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <ProjectsViewSwitcher value={viewType} onChange={setViewType} />
+            <SavedViewsDropdown
+              current={{ view: viewType, filters: { status: statusFilter, search: searchTerm, special: specialFilter } }}
+              onApply={handleApplyView}
+            />
             <AIAnalysisButton showDropdown />
             {FeaturePermissions.CREATE_PROJECT(user?.role) && (
               <>
@@ -460,7 +501,7 @@ export default function ProjectsPage() {
           <div className="text-center py-12 text-muted-foreground">
             Loading projects...
           </div>
-        ) : filteredProjects.length === 0 ? (
+        ) : filteredProjects.length === 0 && viewType === "table" ? (
           <EmptyState
             icon={FolderKanban}
             title={searchTerm || statusFilter !== "ALL" ? "No projects match your filters" : "No projects yet"}
@@ -469,6 +510,21 @@ export default function ProjectsPage() {
               : "Create your first project to start tracking construction work."}
             actionLabel={!(searchTerm || statusFilter !== "ALL") && FeaturePermissions.CREATE_PROJECT(user?.role) ? "New Project" : undefined}
             onAction={!(searchTerm || statusFilter !== "ALL") && FeaturePermissions.CREATE_PROJECT(user?.role) ? () => setShowCreateDialog(true) : undefined}
+          />
+        ) : viewType === "kanban" ? (
+          <ProjectsKanbanView
+            projects={filteredProjects}
+            onCardClick={(project) => setLocation(`/projects/${project.code}`)}
+          />
+        ) : viewType === "calendar" ? (
+          <ProjectsCalendarView
+            projects={filteredProjects}
+            onProjectClick={(project) => setLocation(`/projects/${project.code}`)}
+          />
+        ) : viewType === "map" ? (
+          <ProjectsMapView
+            projects={filteredProjects}
+            onProjectClick={(project) => setLocation(`/projects/${project.code}`)}
           />
         ) : (
           <ProjectsTable

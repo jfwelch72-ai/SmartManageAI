@@ -8626,6 +8626,24 @@ export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ 
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
 export type UserSettings = typeof userSettings.$inferSelect;
 
+// Task #575: User Saved Views — per-user saved view + filter combinations
+export const userSavedViews = pgTable("user_saved_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  viewKey: text("view_key").notNull(),
+  name: text("name").notNull(),
+  view: text("view").notNull(),
+  filtersJson: text("filters_json").notNull().default("{}"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userViewKeyIdx: index("user_saved_views_user_view_key_idx").on(table.userId, table.viewKey),
+}));
+
+export const insertUserSavedViewSchema = createInsertSchema(userSavedViews).omit({ id: true, createdAt: true });
+export type InsertUserSavedView = z.infer<typeof insertUserSavedViewSchema>;
+export type UserSavedView = typeof userSavedViews.$inferSelect;
+
 export const activityLog = pgTable("activity_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

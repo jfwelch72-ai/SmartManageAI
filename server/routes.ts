@@ -210,6 +210,7 @@ import riskRoutes from "./riskRoutes";
 import userSettingsRoutes from "./userSettingsRoutes";
 import executiveDigestRoutes from "./executiveDigestRoutes";
 import emailCampaignRoutes from "./emailCampaignRoutes";
+import savedViewsRoutes from "./savedViewsRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -421,6 +422,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(executiveDigestRoutes);
 
   app.use(emailCampaignRoutes);
+
+  // Saved views (Task #575)
+  app.use(savedViewsRoutes);
 
   if (process.env.NODE_ENV === "development") {
     app.use("/api/dev", devSeedEnterpriseRoutes);
