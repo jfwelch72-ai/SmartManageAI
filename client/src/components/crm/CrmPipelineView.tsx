@@ -1,4 +1,7 @@
-import { useState, Fragment, useEffect } from "react";
+import { useState, Fragment, useEffect, useRef } from "react";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -248,6 +251,7 @@ export default function CrmPipelineView() {
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [search, setSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [assignedFilter, setAssignedFilter] = useState<string>("all");
   const [addOpen, setAddOpen] = useState(false);
@@ -527,6 +531,18 @@ export default function CrmPipelineView() {
   const stageTotal = (stage: PipelineStage) => oppsByStage(stage).reduce((sum, o) => sum + (parseFloat(o.dealValue ?? "0") || 0), 0);
   const sortedOpps = sortOpportunities(opportunities, sortField, sortDir);
 
+  const listModeActive = viewMode === "list";
+  const { getRowProps: getOppRowProps } = useTableKeyboardNav({
+    rowCount: listModeActive ? sortedOpps.length : 0,
+    onActivate: (idx) => {
+      const opp = sortedOpps[idx];
+      if (opp) openDetail(opp);
+    },
+    enabled: listModeActive,
+  });
+  useGlobalSearchFocus(searchInputRef, true);
+  useRegisterShortcuts("crm-pipeline-list", TABLE_NAV_SHORTCUTS, listModeActive);
+
   const OppFormFields = ({ formData, onUpdate, isEdit = false, customFields, setCustomFields }: {
     formData: typeof DEFAULT_FORM;
     onUpdate: (patch: Partial<typeof DEFAULT_FORM>) => void;
@@ -764,6 +780,7 @@ export default function CrmPipelineView() {
           <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               placeholder="Search opportunities..."
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -1027,14 +1044,15 @@ export default function CrmPipelineView() {
                     <SortableHeader label="Close Date" field="expectedCloseDate" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                   </div>
                 </div>
-                {sortedOpps.map(opp => {
+                {sortedOpps.map((opp, oppIdx) => {
                   const si = getStageInfo(opp.stage);
                   return (
                     <div
                       key={opp.id}
-                      className="hidden sm:grid grid-cols-12 gap-2 px-4 py-3 hover:bg-muted/30 cursor-pointer items-center"
+                      className="hidden sm:grid grid-cols-12 gap-2 px-4 py-3 hover:bg-muted/30 cursor-pointer items-center data-[focused=true]:bg-muted/60 data-[focused=true]:shadow-[inset_2px_0_0_0_hsl(var(--primary))]"
                       onClick={() => openDetail(opp)}
                       data-testid={`row-opp-${opp.id}`}
+                      {...getOppRowProps(oppIdx)}
                     >
                       <div className="col-span-4">
                         <p className="font-medium text-sm truncate">{opp.name}</p>

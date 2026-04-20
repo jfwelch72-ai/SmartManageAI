@@ -1,4 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import ProjectsTable from "@/components/ProjectsTable";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
@@ -69,6 +72,7 @@ export default function ProjectsPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const allowedStatuses = getAllowedProjectStatuses(user?.role);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [specialFilter, setSpecialFilter] = useState<string | null>(null);
@@ -295,6 +299,8 @@ export default function ProjectsPage() {
 
   const { data: projects = [], isLoading } = useProjects();
 
+  // Note: filteredProjects is computed below; we'll compute keyboard nav after it.
+
   // Fetch projects with pending change orders (only when needed)
   const { data: projectsWithPendingCOs = [] } = useQuery<string[]>({
     queryKey: ["/api/projects/with-pending-change-orders"],
@@ -328,6 +334,16 @@ export default function ProjectsPage() {
       matchesSearch && matchesStatus && isAllowedStatus && matchesSpecialFilter
     );
   });
+
+  const { getRowProps: getProjectRowProps } = useTableKeyboardNav({
+    rowCount: filteredProjects.length,
+    onActivate: (idx) => {
+      const project = filteredProjects[idx];
+      if (project) setLocation(`/projects/${project.code}`);
+    },
+  });
+  useGlobalSearchFocus(searchInputRef);
+  useRegisterShortcuts("projects-list", TABLE_NAV_SHORTCUTS);
 
   return (
     <div className="min-h-screen bg-background">
@@ -407,6 +423,7 @@ export default function ProjectsPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               placeholder="Search projects by name, code, or client..."
               className="pl-9"
               value={searchTerm}
@@ -459,6 +476,7 @@ export default function ProjectsPage() {
             onRowClick={(project) => setLocation(`/projects/${project.code}`)}
             canDelete={canDelete}
             onDelete={handleDeleteProject}
+            getRowProps={getProjectRowProps}
           />
         )}
       </main>

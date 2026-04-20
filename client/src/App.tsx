@@ -85,6 +85,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
 import { CommandPaletteProvider } from "@/components/CommandPalette";
+import { KeyboardShortcutsProvider } from "@/components/KeyboardShortcutsHelp";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import EmailVerificationBanner from "@/components/EmailVerificationBanner";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
@@ -556,6 +557,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider style={sidebarStyle}>
       <CommandPaletteProvider>
+        <KeyboardShortcutsProvider>
         <AppSidebar />
         <SidebarInset className="flex flex-col min-h-screen">
           <ImpersonationBanner />
@@ -567,6 +569,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
           </main>
         </SidebarInset>
         <PushNotificationBanner />
+        </KeyboardShortcutsProvider>
       </CommandPaletteProvider>
     </SidebarProvider>
   );

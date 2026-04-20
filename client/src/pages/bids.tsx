@@ -1,4 +1,7 @@
-import { useState, useMemo, lazy, Suspense } from "react";
+import { useState, useMemo, lazy, Suspense, useRef } from "react";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import BidCard from "@/components/BidCard";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
@@ -190,6 +193,7 @@ export default function BidsPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [dueDateFilter, setDueDateFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [estimatorFilter, setEstimatorFilter] = useState("ALL");
@@ -523,6 +527,18 @@ export default function BidsPage() {
     });
   }, [bids, searchTerm, dueDateFilter, statusFilter, estimatorFilter]);
 
+  const isBoardTab = bidsTab === "board";
+  const { getRowProps: getBidRowProps } = useTableKeyboardNav({
+    rowCount: isBoardTab ? filteredBids.length : 0,
+    onActivate: (idx) => {
+      if (!isBoardTab) return;
+      const bid = filteredBids[idx];
+      if (bid) setLocation(`/bids/${bid.code}`);
+    },
+  });
+  useGlobalSearchFocus(searchInputRef, isBoardTab);
+  useRegisterShortcuts("bids-list", TABLE_NAV_SHORTCUTS, isBoardTab);
+
   const handleConvertToProject = async (bidCode: string) => {
     const bid = bids.find((b) => b.code === bidCode);
     if (bid?.status === "AWARDED") {
@@ -821,6 +837,7 @@ export default function BidsPage() {
             <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
+                ref={searchInputRef}
                 placeholder="Search bids by name, code, or client..."
                 className="pl-9"
                 value={searchTerm}
@@ -966,7 +983,12 @@ export default function BidsPage() {
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {filteredBids.map((bid) => (
+            {filteredBids.map((bid, bidIdx) => (
+              <div
+                key={bid.id}
+                className="rounded-lg data-[focused=true]:ring-2 data-[focused=true]:ring-primary data-[focused=true]:ring-offset-2 data-[focused=true]:ring-offset-background transition-shadow"
+                {...getBidRowProps(bidIdx)}
+              >
               <BidCard
                 key={bid.id}
                 code={bid.code}
@@ -1010,6 +1032,7 @@ export default function BidsPage() {
                 }
                 estimateData={bid.estimateSummary}
               />
+              </div>
             ))}
           </div>
         )}

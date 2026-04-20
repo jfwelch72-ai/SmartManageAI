@@ -63,6 +63,7 @@ const TableRow = React.forwardRef<
       data-density={density.toLowerCase()}
       className={cn(
         "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+        "data-[focused=true]:bg-muted/60 data-[focused=true]:shadow-[inset_2px_0_0_0_hsl(var(--primary))]",
         className
       )}
       {...props}

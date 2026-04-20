@@ -20,9 +20,10 @@ interface ProjectsTableProps {
   onRowClick: (project: ProjectWithNames) => void;
   canDelete?: boolean;
   onDelete?: (code: string, name: string) => void;
+  getRowProps?: (index: number) => Record<string, unknown>;
 }
 
-export default function ProjectsTable({ projects, onRowClick, canDelete, onDelete }: ProjectsTableProps) {
+export default function ProjectsTable({ projects, onRowClick, canDelete, onDelete, getRowProps }: ProjectsTableProps) {
   const { data: healthOverview = [] } = useQuery<Array<{
     project_id: string;
     overall_score: number;
@@ -53,7 +54,7 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
             </TableRow>
           </TableHeader>
           <TableBody>
-            {projects.map((project) => {
+            {projects.map((project, idx) => {
               const health = healthMap.get(project.id);
               return (
               <TableRow
@@ -61,6 +62,7 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
                 className="cursor-pointer hover-elevate"
                 onClick={() => onRowClick(project)}
                 data-testid={`row-project-${project.code}`}
+                {...(getRowProps ? getRowProps(idx) : {})}
               >
                 <TableCell>
                   <Badge variant="outline" className="font-mono text-xs">

@@ -1,4 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
+import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
+import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from "recharts";
@@ -626,6 +629,7 @@ export default function CRMPage() {
 
   const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports" | "analytics">("orgs");
   const [contactSearch, setContactSearch] = useState("");
+  const contactSearchRef = useRef<HTMLInputElement>(null);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -827,6 +831,21 @@ export default function CRMPage() {
   const handleContactSort = (key: ContactSortKey) => {
     setContactSort((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   };
+
+  const contactsTabActive = crmTab === "contacts";
+  const { getRowProps: getContactRowProps } = useTableKeyboardNav({
+    rowCount: contactsTabActive ? sortedContacts.length : 0,
+    onActivate: (idx) => {
+      const contact = sortedContacts[idx];
+      if (contact) {
+        setSelectedContact(contact);
+        setViewContactOpen(true);
+      }
+    },
+    enabled: contactsTabActive,
+  });
+  useGlobalSearchFocus(contactSearchRef, contactsTabActive);
+  useRegisterShortcuts("crm-contacts", TABLE_NAV_SHORTCUTS, contactsTabActive);
 
   const isAdminOrManager = user?.role === "ADMIN" || user?.role === "MANAGER";
 
@@ -1159,6 +1178,7 @@ export default function CRMPage() {
                     <div className="relative flex-1">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
+                        ref={contactSearchRef}
                         placeholder="Search by name, email, or organization..."
                         value={contactSearch}
                         onChange={(e) => setContactSearch(e.target.value)}
@@ -1247,15 +1267,16 @@ export default function CRMPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {sortedContacts.map((contact) => (
+                        {sortedContacts.map((contact, contactIdx) => (
                           <tr
                             key={contact.id}
-                            className="cursor-pointer hover:bg-muted/40 transition-colors"
+                            className="cursor-pointer hover:bg-muted/40 transition-colors data-[focused=true]:bg-muted/60 data-[focused=true]:shadow-[inset_2px_0_0_0_hsl(var(--primary))]"
                             onClick={() => {
                               setSelectedContact(contact);
                               setViewContactOpen(true);
                             }}
                             data-testid={`row-contact-${contact.id}`}
+                            {...getContactRowProps(contactIdx)}
                           >
                             <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                               <Checkbox
