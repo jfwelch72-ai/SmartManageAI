@@ -237,6 +237,7 @@ const CFODashboardPage = lazy(() => import("@/pages/cfo-dashboard"));
 const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const MyDayPage = lazy(() => import("@/pages/my-day"));
+const PlanPinsHarnessPage = lazy(() => import("@/pages/test/plan-pins-harness"));
 
 function FeatureFlagGate({ flag, children }: { flag: FeatureFlagKey; children: React.ReactNode }) {
   const { isEnabled } = useFeatureFlagsHook();
@@ -533,6 +534,9 @@ function Router() {
       <Route path="/hustler/org/:orgId" component={() => <ProtectedRoute component={HustlerOrgDetail} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
       <Route path="/hustler" component={() => <ProtectedRoute component={HustlerDashboard} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
       
+      {import.meta.env.DEV && (
+        <Route path="/test/plan-pins-harness" component={PlanPinsHarnessPage} />
+      )}
       <Route component={NotFound} />
     </Switch>
   );
