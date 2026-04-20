@@ -47,6 +47,7 @@ import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
 import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
 import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistributionLists";
+import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -103,6 +104,7 @@ const migrations: MigrationStep[] = [
   { name: "plan_pins_table", category: "CREATE_TABLE", fn: ensurePlanPinsTable },
   { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
+  { name: "gantt_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensureGanttPdfRenderSamplesTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

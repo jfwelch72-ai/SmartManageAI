@@ -21,6 +21,7 @@ import { runStartupMigrations } from "./utils/runStartupMigrations";
 import { seedBuiltInPresets } from "./dashboardRoutes";
 import { persistErrorLog } from "./services/errorLogService";
 import { getIntegrationStatus } from "./services/integrationStatusService";
+import { initializeGanttPdfHistory } from "./gantt-pdf-service";
 
 process.on("uncaughtException", (err) => {
   logError("Uncaught exception", {}, err);
@@ -263,6 +264,12 @@ app.use((req, res, next) => {
   await runStartupMigrations();
   await seedBuiltInPresets();
   await backfillMissingFeatureFlags();
+
+  // Hydrate persisted Gantt PDF render history from the database so the
+  // admin chart survives restarts and deployments.
+  initializeGanttPdfHistory().catch((err) => {
+    logError("Failed to initialize Gantt PDF render history", {}, err instanceof Error ? err : new Error(String(err)));
+  });
 
   // DOT pay item libraries: seed AFTER startup migrations so the dot_* tables
   // are guaranteed to exist on cold start.

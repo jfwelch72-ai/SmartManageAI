@@ -1,5 +1,8 @@
 import type { Browser } from "playwright";
+import { lt, sql } from "drizzle-orm";
 import { logError, logInfo } from "./utils/logger";
+import { db } from "./db";
+import { ganttPdfRenderSamples } from "@shared/schema";
 
 const READY_TIMEOUT_MS = 30000;
 const NAV_TIMEOUT_MS = 30000;
@@ -226,7 +229,15 @@ interface RenderSample {
 
 const HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_HISTORY_SAMPLES = 2000;
+const DB_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 const renderHistory: RenderSample[] = [];
+
+// Persistence is opt-in: server/index.ts enables it via initializeGanttPdfHistory().
+// Tests that import the service without explicit init exercise pure in-memory behavior.
+let persistenceEnabled = false;
+let hydrated = false;
+let hydrationPromise: Promise<void> | null = null;
+let dbPruneTimer: NodeJS.Timeout | null = null;
 
 function pruneHistory(now: number): void {
   const cutoff = now - HISTORY_RETENTION_MS;
@@ -243,10 +254,88 @@ function pruneHistory(now: number): void {
   }
 }
 
+async function persistSample(sample: RenderSample): Promise<void> {
+  if (!persistenceEnabled) return;
+  try {
+    await db.insert(ganttPdfRenderSamples).values({
+      startedAt: new Date(sample.startedAt),
+      durationMs: sample.durationMs,
+      success: sample.success,
+    });
+  } catch (err) {
+    logError("Failed to persist Gantt PDF render sample", err as Error);
+  }
+}
+
+async function pruneDbHistory(): Promise<void> {
+  if (!persistenceEnabled) return;
+  try {
+    const cutoff = new Date(Date.now() - HISTORY_RETENTION_MS);
+    await db.delete(ganttPdfRenderSamples).where(lt(ganttPdfRenderSamples.startedAt, cutoff));
+  } catch (err) {
+    logError("Failed to prune Gantt PDF render history", err as Error);
+  }
+}
+
+async function hydrateFromDb(): Promise<void> {
+  if (!persistenceEnabled) return;
+  try {
+    const cutoff = new Date(Date.now() - HISTORY_RETENTION_MS);
+    const rows = await db
+      .select({
+        startedAt: ganttPdfRenderSamples.startedAt,
+        durationMs: ganttPdfRenderSamples.durationMs,
+        success: ganttPdfRenderSamples.success,
+      })
+      .from(ganttPdfRenderSamples)
+      .where(sql`${ganttPdfRenderSamples.startedAt} >= ${cutoff}`)
+      .orderBy(ganttPdfRenderSamples.startedAt);
+    // Replace any in-memory samples that were recorded before hydration ran.
+    // We dedupe by (startedAt, durationMs, success) so a sample recorded after
+    // boot but before hydration completes isn't double-counted.
+    const seen = new Set(
+      renderHistory.map((s) => `${s.startedAt}:${s.durationMs}:${s.success ? 1 : 0}`),
+    );
+    for (const row of rows) {
+      const startedAtMs = row.startedAt instanceof Date ? row.startedAt.getTime() : Number(row.startedAt);
+      const key = `${startedAtMs}:${row.durationMs}:${row.success ? 1 : 0}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      renderHistory.push({
+        startedAt: startedAtMs,
+        durationMs: row.durationMs,
+        success: row.success,
+      });
+    }
+    renderHistory.sort((a, b) => a.startedAt - b.startedAt);
+    pruneHistory(Date.now());
+  } catch (err) {
+    logError("Failed to hydrate Gantt PDF render history", err as Error);
+  }
+}
+
+export async function initializeGanttPdfHistory(): Promise<void> {
+  if (hydrated) return;
+  persistenceEnabled = true;
+  if (!hydrationPromise) {
+    hydrationPromise = hydrateFromDb().then(() => {
+      hydrated = true;
+    });
+  }
+  await hydrationPromise;
+  if (!dbPruneTimer) {
+    dbPruneTimer = setInterval(() => {
+      void pruneDbHistory();
+    }, DB_PRUNE_INTERVAL_MS);
+    if (typeof dbPruneTimer.unref === "function") dbPruneTimer.unref();
+  }
+}
+
 function recordRenderSample(sample: RenderSample): void {
   renderHistory.push(sample);
   const now = Date.now();
   pruneHistory(now);
+  void persistSample(sample);
   try {
     evaluateGanttPdfAlerts(now);
   } catch (err) {
@@ -361,6 +450,13 @@ export function __resetGanttPdfHistoryForTests(): void {
   alertState.lastTriggeredAt = null;
   alertState.lastBreaches = [];
   alertState.recentAlerts = [];
+  persistenceEnabled = false;
+  hydrated = false;
+  hydrationPromise = null;
+  if (dbPruneTimer) {
+    clearInterval(dbPruneTimer);
+    dbPruneTimer = null;
+  }
 }
 
 // ---------------------------------------------------------------------------

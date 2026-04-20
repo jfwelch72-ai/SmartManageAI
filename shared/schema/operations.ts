@@ -3286,3 +3286,17 @@ export const insertProjectReportSchema = createInsertSchema(projectReports).omit
 export type InsertProjectReport = z.infer<typeof insertProjectReportSchema>;
 export type ProjectReport = typeof projectReports.$inferSelect;
 
+export const ganttPdfRenderSamples = pgTable("gantt_pdf_render_samples", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  startedAt: timestamp("started_at").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  success: boolean("success").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  startedAtIdx: index("gantt_pdf_render_samples_started_at_idx").on(table.startedAt),
+}));
+
+export const insertGanttPdfRenderSampleSchema = createInsertSchema(ganttPdfRenderSamples).omit({ id: true, createdAt: true });
+export type InsertGanttPdfRenderSample = z.infer<typeof insertGanttPdfRenderSampleSchema>;
+export type GanttPdfRenderSample = typeof ganttPdfRenderSamples.$inferSelect;
+
