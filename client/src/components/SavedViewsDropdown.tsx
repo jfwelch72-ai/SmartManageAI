@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Bookmark, Plus, Trash2, ChevronDown, Users, Share2 } from "lucide-react";
+import { Bookmark, Plus, Trash2, ChevronDown, Users, Share2, Pencil, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -84,6 +84,8 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newName, setNewName] = useState("");
   const [shareWithTeam, setShareWithTeam] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<SavedView | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
   const currentUserId = user?.id;
@@ -140,6 +142,44 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
     },
   });
 
+  const renameMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const res = await apiRequest("PATCH", `/api/saved-views/${id}`, { name });
+      return res.json();
+    },
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      toast({ title: "View renamed", description: `Renamed to "${vars.name}".` });
+      setRenameTarget(null);
+      setRenameValue("");
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "Could not rename view";
+      toast({ title: "Rename failed", description: message, variant: "destructive" });
+    },
+  });
+
+  const updateFiltersMutation = useMutation({
+    mutationFn: async (sv: SavedView) => {
+      const res = await apiRequest("PATCH", `/api/saved-views/${sv.id}`, {
+        view: current.view,
+        filters: current.filters,
+      });
+      return res.json();
+    },
+    onSuccess: (_d, sv) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      toast({
+        title: "View updated",
+        description: `"${sv.name}" now uses the current filters.`,
+      });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "Could not update view";
+      toast({ title: "Update failed", description: message, variant: "destructive" });
+    },
+  });
+
   const toggleShareMutation = useMutation({
     mutationFn: async ({ id, isShared }: { id: string; isShared: boolean }) => {
       const res = await apiRequest("PATCH", `/api/saved-views/${id}`, { isShared });
@@ -185,6 +225,34 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
       </DropdownMenuItem>
       {canModify(sv) && (
         <>
+          <button
+            type="button"
+            className="p-1.5 text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setRenameTarget(sv);
+              setRenameValue(sv.name);
+            }}
+            title="Rename saved view"
+            data-testid={`rename-saved-view-${sv.id}`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            className="p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              updateFiltersMutation.mutate(sv);
+            }}
+            disabled={updateFiltersMutation.isPending}
+            title="Update with current filters"
+            data-testid={`update-saved-view-${sv.id}`}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             className="p-1.5 text-muted-foreground hover:text-foreground"
@@ -314,6 +382,61 @@ export default function SavedViewsDropdown({ current, onApply }: Props) {
               data-testid="button-confirm-save-view"
             >
               {createMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenameTarget(null);
+            setRenameValue("");
+          }
+        }}
+      >
+        <DialogContent data-testid="dialog-rename-view">
+          <DialogHeader>
+            <DialogTitle>Rename saved view</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="rename-saved-view-name">Name</Label>
+              <Input
+                id="rename-saved-view-name"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                data-testid="input-rename-saved-view"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRenameTarget(null);
+                setRenameValue("");
+              }}
+              data-testid="button-cancel-rename-view"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const name = renameValue.trim();
+                if (name && renameTarget && name !== renameTarget.name) {
+                  renameMutation.mutate({ id: renameTarget.id, name });
+                } else if (name === renameTarget?.name) {
+                  setRenameTarget(null);
+                  setRenameValue("");
+                }
+              }}
+              disabled={!renameValue.trim() || renameMutation.isPending}
+              data-testid="button-confirm-rename-view"
+            >
+              {renameMutation.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
