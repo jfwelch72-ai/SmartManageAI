@@ -16,6 +16,7 @@
  */
 
 import { Router, type Request, type Response } from "express";
+import crypto from "crypto";
 import { db } from "./db";
 import { emailAccounts } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
@@ -27,19 +28,85 @@ import {
 } from "./gmailPubsubAuth";
 import { logInfo, logWarn, logError } from "./utils/logger";
 
+type EmailAccountRow = typeof emailAccounts.$inferSelect;
+
 const router = Router();
+
+function getProvidedToken(req: Request): string {
+  return (
+    (req.query.token as string | undefined) ||
+    req.header("x-webhook-secret") ||
+    ""
+  );
+}
+
+function timingSafeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
 
 function hasValidSharedSecret(req: Request): boolean {
   const expected = getEmailWebhookSecret();
   if (!expected) return false;
-  const provided =
-    (req.query.token as string | undefined) ||
-    (req.header("x-webhook-secret") || "");
-  return provided === expected;
+  const provided = getProvidedToken(req);
+  if (!provided) return false;
+  return timingSafeEquals(provided, expected);
 }
 
-function isAuthorized(req: Request): boolean {
-  return hasValidSharedSecret(req);
+/**
+ * Authorize an Outlook webhook delivery (Task #548).
+ *
+ * Microsoft Graph doesn't sign mailbox-change notifications, so to harden
+ * against URL leaks we issue a per-subscription rotating token that lives
+ * only in the notificationUrl we registered with Graph. On every delivery
+ * we look that token up and confirm it belongs to a real subscription.
+ *
+ * Returns the matched account when authentication succeeded via a
+ * per-subscription token, or `{ ok: true, account: null }` when only the
+ * legacy global shared secret matched (kept for the local-testing
+ * fallback and for rows that haven't been re-subscribed since the
+ * migration). Logs every rejection so operators can spot misconfigs.
+ */
+async function authorizeOutlookRequest(
+  req: Request,
+): Promise<{ ok: boolean; account: EmailAccountRow | null }> {
+  const provided = getProvidedToken(req);
+  if (!provided) {
+    logWarn("Outlook webhook rejected: missing token", { ip: req.ip });
+    return { ok: false, account: null };
+  }
+
+  // Per-subscription token lookup. Match is exact on a high-entropy random
+  // value, so we don't need to enumerate accounts in code.
+  const [account] = await db
+    .select()
+    .from(emailAccounts)
+    .where(
+      and(
+        eq(emailAccounts.provider, "OUTLOOK"),
+        eq(emailAccounts.outlookSubscriptionWebhookToken, provided),
+      ),
+    )
+    .limit(1);
+  if (account) {
+    return { ok: true, account };
+  }
+
+  // Fall back to the global shared secret only when explicitly configured
+  // — this preserves the documented local-testing path and supports
+  // legacy subscriptions that pre-date per-subscription tokens.
+  if (hasValidSharedSecret(req)) {
+    return { ok: true, account: null };
+  }
+
+  logWarn("Outlook webhook rejected: token did not match any subscription", {
+    ip: req.ip,
+  });
+  return { ok: false, account: null };
 }
 
 /**
@@ -160,20 +227,25 @@ router.post("/gmail", async (req: Request, res: Response) => {
 //      resource, changeType, ... }] }. Respond 202 quickly and process
 //      asynchronously.
 router.post("/outlook", async (req: Request, res: Response) => {
-  // Subscription validation handshake. This must succeed before Graph will
-  // accept the subscription, and it does NOT require the token query because
-  // we don't have a stored secret yet — but we still require it so that an
-  // attacker can't spam our webhook acting as Graph.
+  // Authenticate every delivery via per-subscription token (preferred) or
+  // the global shared secret (fallback). Failures are logged inside the
+  // helper so operators can spot leaked URLs or misconfigurations.
+  const auth = await authorizeOutlookRequest(req);
+
+  // Subscription validation handshake. Graph POSTs ?validationToken=...
+  // immediately after we create a subscription and expects a 200 echo
+  // within 10s. The per-subscription token in the URL is what we just
+  // wrote to the row, so authorizeOutlookRequest already verified it.
   const validationToken = req.query.validationToken as string | undefined;
   if (validationToken) {
-    if (!isAuthorized(req)) {
+    if (!auth.ok) {
       return res.status(401).send("unauthorized");
     }
     res.set("Content-Type", "text/plain");
     return res.status(200).send(validationToken);
   }
 
-  if (!isAuthorized(req)) {
+  if (!auth.ok) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
@@ -203,6 +275,17 @@ router.post("/outlook", async (req: Request, res: Response) => {
 
       if (!account) {
         logWarn("Outlook notification for unknown subscription", { subId });
+        continue;
+      }
+      // When authenticated via a per-subscription token, the notification
+      // MUST belong to that same account. This stops a leaked URL for one
+      // mailbox from being used to trigger syncs on others.
+      if (auth.account && account.id !== auth.account.id) {
+        logWarn("Outlook notification subscription/token mismatch", {
+          subId,
+          tokenAccount: auth.account.emailAddress,
+          notificationAccount: account.emailAddress,
+        });
         continue;
       }
       if (account.outlookSubscriptionClientState !== clientState) {

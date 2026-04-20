@@ -4760,6 +4760,13 @@ export const emailAccounts = pgTable("email_accounts", {
   outlookSubscriptionId: text("outlook_subscription_id"),
   outlookSubscriptionExpiration: timestamp("outlook_subscription_expiration"),
   outlookSubscriptionClientState: text("outlook_subscription_client_state"),
+  // Per-subscription rotating webhook token embedded in the notificationUrl
+  // (Task #548). Hardens the Outlook webhook against URL leaks: even if a
+  // single subscription's URL is exfiltrated, only that one mailbox's
+  // notifications can be replayed, and the token rotates whenever the
+  // subscription is recreated. Falls back to the global EMAIL_WEBHOOK_SECRET
+  // for local-testing setups that haven't been migrated yet.
+  outlookSubscriptionWebhookToken: text("outlook_subscription_webhook_token"),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

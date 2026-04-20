@@ -58,9 +58,19 @@ export function isOutlookPushConfigured(): boolean {
   return /^https:\/\//i.test(baseUrl);
 }
 
-function buildOutlookNotificationUrl(): string {
+/**
+ * Build the notificationUrl Microsoft Graph will POST to. The `token` query
+ * parameter authenticates the delivery: ideally a per-subscription rotating
+ * token (Task #548) so that leaking one URL doesn't expose every mailbox.
+ * Falls back to the global EMAIL_WEBHOOK_SECRET when no per-subscription
+ * token has been generated yet (e.g. legacy rows pre-migration).
+ */
+function buildOutlookNotificationUrl(perSubscriptionToken?: string | null): string {
   const baseUrl = getCanonicalBaseUrl().replace(/\/+$/, "");
-  return `${baseUrl}/api/webhooks/email/outlook?token=${encodeURIComponent(getEmailWebhookSecret())}`;
+  const token = perSubscriptionToken && perSubscriptionToken.length > 0
+    ? perSubscriptionToken
+    : getEmailWebhookSecret();
+  return `${baseUrl}/api/webhooks/email/outlook?token=${encodeURIComponent(token)}`;
 }
 
 /**
@@ -218,6 +228,18 @@ export async function ensureOutlookSubscription(account: EmailAccountRow): Promi
 
   // Create a fresh subscription.
   const clientState = crypto.randomBytes(24).toString("hex");
+  // Per-subscription rotating webhook token (Task #548). Persist it BEFORE
+  // calling Graph so that the synchronous validation handshake — which
+  // Graph sends to the new notificationUrl with this token in the query
+  // string — can be authenticated against the database.
+  const webhookToken = crypto.randomBytes(24).toString("hex");
+  await db
+    .update(emailAccounts)
+    .set({
+      outlookSubscriptionWebhookToken: webhookToken,
+      updatedAt: new Date(),
+    })
+    .where(eq(emailAccounts.id, account.id));
   try {
     const resp = await outlookApiFetch(
       "https://graph.microsoft.com/v1.0/subscriptions",
@@ -227,7 +249,7 @@ export async function ensureOutlookSubscription(account: EmailAccountRow): Promi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           changeType: "created,updated,deleted",
-          notificationUrl: buildOutlookNotificationUrl(),
+          notificationUrl: buildOutlookNotificationUrl(webhookToken),
           resource: "/me/mailFolders('inbox')/messages",
           expirationDateTime: newExpiration.toISOString(),
           clientState,
@@ -290,6 +312,7 @@ export async function deleteOutlookSubscription(account: EmailAccountRow): Promi
       outlookSubscriptionId: null,
       outlookSubscriptionExpiration: null,
       outlookSubscriptionClientState: null,
+      outlookSubscriptionWebhookToken: null,
       updatedAt: new Date(),
     })
     .where(eq(emailAccounts.id, account.id));

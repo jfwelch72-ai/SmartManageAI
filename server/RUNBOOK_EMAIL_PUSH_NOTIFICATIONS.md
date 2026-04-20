@@ -184,7 +184,15 @@ Restart the application after updating these.
    `text/plain`.
 3. On success the `email_accounts` row is updated with
    `outlookSubscriptionId`, `outlookSubscriptionExpiration` (~70h out),
-   and a fresh random `outlookSubscriptionClientState`.
+   a fresh random `outlookSubscriptionClientState`, and a fresh random
+   `outlookSubscriptionWebhookToken` (per-subscription rotating token
+   embedded in the `notificationUrl?token=…`, Task #548). Each
+   notification is now authenticated against this per-subscription
+   token in addition to `clientState`, so leaking one subscription's
+   URL only exposes that single mailbox and the token rotates whenever
+   the subscription is recreated. The handler still accepts the global
+   `EMAIL_WEBHOOK_SECRET` as a fallback for legacy rows that haven't
+   been re-subscribed yet and for the local-testing handshake below.
 4. Send a test email. You should see
    `Outlook push-triggered sync completed` in the logs within seconds.
 
