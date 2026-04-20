@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign } from "lucide-react";
+import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -386,6 +386,18 @@ export default function PlatformAdminDashboard() {
                 Tools
               </CardTitle>
               <CardDescription>Support tools, security audit, subscriptions, and announcements</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/admin/gantt-pdf">
+          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-gantt-pdf">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Gantt PDF renderer
+              </CardTitle>
+              <CardDescription>Cached browser health, queue depth, and manual recycle</CardDescription>
             </CardHeader>
           </Card>
         </Link>

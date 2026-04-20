@@ -48,6 +48,7 @@ function maybeCloseRetired(cached: CachedBrowser): void {
 }
 
 let cachedBrowserPromise: Promise<CachedBrowser> | null = null;
+let cachedBrowserResolved: CachedBrowser | null = null;
 
 async function launchBrowser(): Promise<CachedBrowser> {
   const { chromium } = await import("playwright");
@@ -72,6 +73,9 @@ async function launchBrowser(): Promise<CachedBrowser> {
     recycling: false,
   };
   browser.on("disconnected", () => {
+    if (cachedBrowserResolved && cachedBrowserResolved.browser === browser) {
+      cachedBrowserResolved = null;
+    }
     if (cachedBrowserPromise) {
       cachedBrowserPromise
         .then((current) => {
@@ -105,6 +109,7 @@ async function leaseBrowserInner(): Promise<CachedBrowser> {
       // renders to finish so we never tear down an active context.
       current.recycling = true;
       cachedBrowserPromise = null;
+      cachedBrowserResolved = null;
       logInfo("Retiring cached Gantt browser", {
         ageMs: Date.now() - current.createdAt,
         pdfCount: current.pdfCount,
@@ -114,15 +119,18 @@ async function leaseBrowserInner(): Promise<CachedBrowser> {
       maybeCloseRetired(current);
     } catch {
       cachedBrowserPromise = null;
+      cachedBrowserResolved = null;
     }
   }
 
   const launching = launchBrowser();
   cachedBrowserPromise = launching.catch((err) => {
     cachedBrowserPromise = null;
+    cachedBrowserResolved = null;
     throw err;
   });
   const fresh = await launching;
+  cachedBrowserResolved = fresh;
   fresh.pdfCount++;
   fresh.inFlight++;
   return fresh;
@@ -170,9 +178,12 @@ async function getBrowser(): Promise<CachedBrowser> {
   const launching = launchBrowser();
   cachedBrowserPromise = launching.catch((err) => {
     cachedBrowserPromise = null;
+    cachedBrowserResolved = null;
     throw err;
   });
-  return launching;
+  const fresh = await launching;
+  cachedBrowserResolved = fresh;
+  return fresh;
 }
 
 let activeRenders = 0;
@@ -273,10 +284,95 @@ export async function renderGanttPdf(opts: GanttPdfOptions): Promise<Buffer> {
   }
 }
 
+export interface GanttPdfStats {
+  cachedBrowser: {
+    present: boolean;
+    connected: boolean;
+    recycling: boolean;
+    ageMs: number | null;
+    pdfCount: number;
+    inFlight: number;
+  };
+  limits: {
+    maxPdfsPerBrowser: number;
+    maxBrowserAgeMs: number;
+    maxConcurrentRenders: number;
+    maxQueueLength: number;
+    queueWaitTimeoutMs: number;
+  };
+  queue: {
+    activeRenders: number;
+    queuedRenders: number;
+  };
+}
+
+export function getGanttPdfStats(): GanttPdfStats {
+  let cachedSnapshot: GanttPdfStats["cachedBrowser"] = {
+    present: false,
+    connected: false,
+    recycling: false,
+    ageMs: null,
+    pdfCount: 0,
+    inFlight: 0,
+  };
+
+  if (cachedBrowserResolved) {
+    const current = cachedBrowserResolved;
+    cachedSnapshot = {
+      present: true,
+      connected: current.browser.isConnected(),
+      recycling: current.recycling,
+      ageMs: Date.now() - current.createdAt,
+      pdfCount: current.pdfCount,
+      inFlight: current.inFlight,
+    };
+  } else if (cachedBrowserPromise) {
+    cachedSnapshot = { ...cachedSnapshot, present: true };
+  }
+
+  return {
+    cachedBrowser: cachedSnapshot,
+    limits: {
+      maxPdfsPerBrowser: MAX_PDFS_PER_BROWSER,
+      maxBrowserAgeMs: MAX_BROWSER_AGE_MS,
+      maxConcurrentRenders: MAX_CONCURRENT_RENDERS,
+      maxQueueLength: MAX_QUEUE_LENGTH,
+      queueWaitTimeoutMs: QUEUE_WAIT_TIMEOUT_MS,
+    },
+    queue: {
+      activeRenders,
+      queuedRenders: waiters.length,
+    },
+  };
+}
+
+export async function recycleGanttBrowser(): Promise<{ recycled: boolean }> {
+  if (!cachedBrowserPromise) return { recycled: false };
+  try {
+    const current = await cachedBrowserPromise;
+    if (current.recycling) return { recycled: false };
+    current.recycling = true;
+    cachedBrowserPromise = null;
+    cachedBrowserResolved = null;
+    logInfo("Manually recycling cached Gantt browser", {
+      ageMs: Date.now() - current.createdAt,
+      pdfCount: current.pdfCount,
+      inFlight: current.inFlight,
+    });
+    maybeCloseRetired(current);
+    return { recycled: true };
+  } catch {
+    cachedBrowserPromise = null;
+    cachedBrowserResolved = null;
+    return { recycled: false };
+  }
+}
+
 export async function shutdownGanttBrowser(): Promise<void> {
   if (!cachedBrowserPromise) return;
   const promise = cachedBrowserPromise;
   cachedBrowserPromise = null;
+  cachedBrowserResolved = null;
   try {
     const current = await promise;
     await current.browser.close();

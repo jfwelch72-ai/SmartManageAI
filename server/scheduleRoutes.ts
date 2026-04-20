@@ -209,7 +209,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { recalculateSchedule, computeScheduleImpact, detectCycle } from "./cpmEngine";
-import { renderGanttPdf, GanttPdfQueueFullError } from "./gantt-pdf-service";
+import { renderGanttPdf, GanttPdfQueueFullError, getGanttPdfStats, recycleGanttBrowser } from "./gantt-pdf-service";
 
 const router = Router();
 
@@ -1166,6 +1166,40 @@ router.post("/projects/:code/schedule/export-pdf", requireAuth, async (req: Auth
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Length", String(pdf.length));
     res.send(pdf);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /api/admin/gantt-pdf/health:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get Gantt PDF renderer health and queue stats
+ *     description: Returns cached browser age, PDF render counts, queue depth, and limits. Requires SUPER_ADMIN.
+ *     responses:
+ *       200: { description: Renderer health snapshot }
+ * /api/admin/gantt-pdf/recycle:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Manually recycle the cached Gantt PDF browser
+ *     description: Marks the cached Chromium for retirement so the next render launches a fresh instance. Requires SUPER_ADMIN.
+ *     responses:
+ *       200: { description: Recycle requested }
+ */
+router.get("/admin/gantt-pdf/health", requireAuth, requireRole("SUPER_ADMIN"), (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json(getGanttPdfStats());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/admin/gantt-pdf/recycle", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const result = await recycleGanttBrowser();
+    res.json({ ...result, stats: getGanttPdfStats() });
   } catch (error) {
     next(error);
   }
