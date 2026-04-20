@@ -11,3 +11,4 @@ vite.config.ts.*
 audit/reports/*.json
 audit/reports/*.html
 audit/reports/*.md
+test-results/
