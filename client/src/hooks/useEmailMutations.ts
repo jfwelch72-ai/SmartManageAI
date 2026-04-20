@@ -256,6 +256,23 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
   });
 }
 
+export function useResyncAccount() {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/email/accounts/${id}/resync`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Resync queued", description: "Sync cursors cleared. A full re-pull will run on the next sync cycle." });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+    },
+    onError: (err) => {
+      toast({ title: "Resync failed", description: err instanceof Error ? err.message : "Could not queue resync", variant: "destructive" });
+    },
+  });
+}
+
 export function useUpdateAccount(callbacks: { onSuccess: () => void }) {
   const { toast } = useToast();
   return useMutation({

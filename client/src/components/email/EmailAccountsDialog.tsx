@@ -49,7 +49,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount, useUpdateAccount } from "@/hooks/useEmailMutations";
+import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount, useUpdateAccount, useResyncAccount } from "@/hooks/useEmailMutations";
+import { RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EmailAccount } from "./shared";
 
@@ -225,6 +226,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
   const updateAccountMutation = useUpdateAccount({
     onSuccess: () => setEditingAccount(null),
   });
+  const resyncAccountMutation = useResyncAccount();
 
   const startEditAccount = (account: EmailAccount) => {
     setEditFormData({
@@ -540,9 +542,32 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                   accounts.map((account) => (
                     <div
                       key={account.id}
-                      className="flex items-center justify-between p-3 border rounded-lg"
+                      className="flex flex-col gap-2 p-3 border rounded-lg"
                       data-testid={`account-item-${account.id}`}
                     >
+                    {account.syncStatus === "NEEDS_RECONNECT" && (account.provider === "GMAIL" || account.provider === "OUTLOOK") && (
+                      <div
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800"
+                        data-testid={`banner-reconnect-${account.id}`}
+                      >
+                        <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-100">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span>Reconnect required to enable 2-way sync (read/archive push-back).</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            window.location.href = `/api/email/oauth/${account.provider.toLowerCase()}/initiate`;
+                          }}
+                          data-testid={`button-reconnect-${account.id}`}
+                        >
+                          Reconnect
+                        </Button>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         {account.provider === "GMAIL" ? (
                           <SiGmail className="w-5 h-5 text-red-500" />
@@ -612,6 +637,23 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                             </Tooltip>
                           </TooltipProvider>
                         )}
+                        {(account.provider === "GMAIL" || account.provider === "OUTLOOK") && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => resyncAccountMutation.mutate(account.id)}
+                            disabled={resyncAccountMutation.isPending}
+                            title="Clear sync cursor and re-pull from scratch"
+                            data-testid={`button-resync-account-${account.id}`}
+                          >
+                            {resyncAccountMutation.isPending && resyncAccountMutation.variables === account.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -645,6 +687,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+                    </div>
                     </div>
                   ))
                 ) : (

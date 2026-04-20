@@ -4692,6 +4692,15 @@ export const emailAccounts = pgTable("email_accounts", {
   isActive: boolean("is_active").notNull().default(true),
   lastSyncedAt: timestamp("last_synced_at"),
   lastSyncError: text("last_sync_error"),
+
+  // Incremental sync cursors (Task #522)
+  gmailHistoryId: text("gmail_history_id"),
+  outlookDeltaInbox: text("outlook_delta_inbox"),
+  outlookDeltaSent: text("outlook_delta_sent"),
+  lastFullSyncAt: timestamp("last_full_sync_at"),
+  // OK | DEGRADED | ERROR | NEEDS_RECONNECT
+  syncStatus: text("sync_status").notNull().default("OK"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -4766,8 +4775,14 @@ export const emailMessages = pgTable("email_messages", {
   receivedAt: timestamp("received_at").notNull(),
   isRead: boolean("is_read").notNull().default(false),
   isIncoming: boolean("is_incoming").notNull().default(true),
+  isArchived: boolean("is_archived").notNull().default(false),
   hasAttachments: boolean("has_attachments").notNull().default(false),
-  
+  // 'INBOX' | 'SENT' | 'ARCHIVE' | 'OTHER' (Task #522 — informational)
+  folder: text("folder").notNull().default("INBOX"),
+  // Task #522 — pending state push-back to provider, processed async by job runner.
+  // Shape: { isRead?: boolean, isArchived?: boolean, attempts?: number }
+  pendingProviderPush: jsonb("pending_provider_push"),
+
   // AI Classification
   classification: emailClassificationEnum("classification"),
   aiMetadata: text("ai_metadata"), // JSON with extracted data
@@ -4782,6 +4797,11 @@ export const emailMessages = pgTable("email_messages", {
   externalIdIdx: index("email_messages_external_id_idx").on(table.externalId),
   receivedAtIdx: index("email_messages_received_at_idx").on(table.receivedAt),
   classificationIdx: index("email_messages_classification_idx").on(table.classification),
+  // Idempotency: provider message IDs are unique within an account (Task #522)
+  accountExternalIdUnique: uniqueIndex("email_messages_account_external_id_uidx").on(
+    table.emailAccountId,
+    table.externalId,
+  ),
 }));
 
 export const insertEmailMessageSchema = createInsertSchema(emailMessages).omit({ id: true, createdAt: true, updatedAt: true });

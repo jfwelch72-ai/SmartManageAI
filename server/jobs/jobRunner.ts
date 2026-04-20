@@ -16,7 +16,7 @@ import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
 import { bids } from "@shared/schema";
 import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
-import { syncImapAccount, syncOutlookAccount } from "../emailRoutes";
+import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { sendEmail } from "../services/emailService";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
@@ -30,6 +30,7 @@ let idleOpportunityTask: ReturnType<typeof cron.schedule> | null = null;
 let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
 let bidDueDateTask: ReturnType<typeof cron.schedule> | null = null;
 let imapSyncTask: ReturnType<typeof cron.schedule> | null = null;
+let providerSyncTask: ReturnType<typeof cron.schedule> | null = null;
 let weeklyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let monthlyReportTask: ReturnType<typeof cron.schedule> | null = null;
 let dbHealthCheckTask: ReturnType<typeof cron.schedule> | null = null;
@@ -127,6 +128,15 @@ export function startJobRunner() {
     }
   });
 
+  // Task #522: Gmail/Outlook 2-way incremental sync runs every 2 minutes
+  providerSyncTask = cron.schedule("*/2 * * * *", async () => {
+    try {
+      await processProviderEmailSync();
+    } catch (err) {
+      logError("Provider email sync failed", { error: String(err) });
+    }
+  });
+
   weeklyReportTask = cron.schedule("0 7 * * 1", async () => {
     try {
       await processPeriodicReports("WEEKLY");
@@ -215,6 +225,10 @@ export function stopJobRunner() {
     imapSyncTask.stop();
     imapSyncTask = null;
   }
+  if (providerSyncTask) {
+    providerSyncTask.stop();
+    providerSyncTask = null;
+  }
   if (weeklyReportTask) {
     weeklyReportTask.stop();
     weeklyReportTask = null;
@@ -250,6 +264,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   orphan_uploads:      { fn: () => processOrphanUploads(),             description: "Clean up orphaned file uploads",          schedule: "*/30 * * * *" },
   bid_due_dates:       { fn: () => processBidDueDateApproaching(),     description: "Notify on approaching bid due dates",     schedule: "0 * * * *" },
   imap_sync:           { fn: () => processImapEmailSync(),             description: "Sync IMAP email accounts",               schedule: "*/15 * * * *" },
+  provider_sync:       { fn: () => processProviderEmailSync(),         description: "Sync Gmail/Outlook accounts (2-way)",     schedule: "*/2 * * * *" },
   weekly_report:       { fn: () => processPeriodicReports("WEEKLY"),   description: "Generate weekly reports",                 schedule: "0 7 * * 1" },
   monthly_report:      { fn: () => processPeriodicReports("MONTHLY"),  description: "Generate monthly reports",                schedule: "0 7 1 * *" },
   db_health_check:     { fn: () => runDbHealthCheck(),                 description: "Run database health check",              schedule: "0 */6 * * *" },
@@ -1240,24 +1255,9 @@ async function processImapEmailSync() {
         )
       );
 
-    const outlookAccounts = await db
-      .select()
-      .from(emailAccounts)
-      .where(
-        and(
-          eq(emailAccounts.isActive, true),
-          eq(emailAccounts.provider, "OUTLOOK")
-        )
-      );
+    if (imapAccounts.length === 0) return;
 
-    if (imapAccounts.length === 0 && outlookAccounts.length === 0) return;
-
-    if (imapAccounts.length > 0) {
-      logInfo("Processing IMAP email sync", { count: imapAccounts.length });
-    }
-    if (outlookAccounts.length > 0) {
-      logInfo("Processing Outlook email sync", { count: outlookAccounts.length });
-    }
+    logInfo("Processing IMAP email sync", { count: imapAccounts.length });
 
     for (const account of imapAccounts) {
       try {
@@ -1282,33 +1282,94 @@ async function processImapEmailSync() {
         });
       }
     }
+  } finally {
+    imapSyncRunning = false;
+    imapSyncStartedAt = null;
+  }
+}
 
-    for (const account of outlookAccounts) {
+let providerSyncRunning = false;
+let providerSyncStartedAt: number | null = null;
+const PROVIDER_SYNC_STALE_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function processProviderEmailSync() {
+  if (providerSyncRunning) {
+    if (providerSyncStartedAt && Date.now() - providerSyncStartedAt > PROVIDER_SYNC_STALE_TIMEOUT_MS) {
+      logError("Provider sync lock appears stale, resetting", {
+        startedAt: new Date(providerSyncStartedAt).toISOString(),
+      });
+      providerSyncRunning = false;
+      providerSyncStartedAt = null;
+    } else {
+      logInfo("Provider sync already in progress, skipping");
+      return;
+    }
+  }
+  providerSyncRunning = true;
+  providerSyncStartedAt = Date.now();
+
+  try {
+    const accounts = await db
+      .select()
+      .from(emailAccounts)
+      .where(
+        and(
+          eq(emailAccounts.isActive, true),
+          inArray(emailAccounts.provider, ["GMAIL", "OUTLOOK"]),
+        )
+      );
+
+    if (accounts.length === 0) return;
+
+    for (const account of accounts) {
+      // Skip accounts that need user reconnection (e.g. scope upgrade)
+      if (account.syncStatus === "NEEDS_RECONNECT") continue;
       try {
-        const result = await syncOutlookAccount(account, account.userId);
+        // Drain any queued state push-backs (read/archive) before pulling new state
+        await drainAccountProviderPushes(account);
+
+        const result = account.provider === "GMAIL"
+          ? await syncGmailAccount(account, account.userId)
+          : await syncOutlookAccount(account, account.userId);
         if (result.messagesImported > 0) {
-          logInfo("Outlook sync completed", {
+          logInfo(`${account.provider} sync completed`, {
             account: account.emailAddress,
             messagesImported: result.messagesImported,
             threadsCreated: result.threadsCreated,
           });
         }
         if (result.errors.length > 0) {
-          logError("Outlook sync had errors", {
+          logError(`${account.provider} sync had errors`, {
             account: account.emailAddress,
             errors: result.errors.slice(0, 3),
           });
         }
       } catch (err) {
-        logError("Outlook sync failed for account", {
+        const message = err instanceof Error ? err.message : String(err);
+        logError(`${account.provider} sync failed for account`, {
           account: account.emailAddress,
-          error: String(err),
+          error: message,
         });
+        try {
+          // Persist failure state so it surfaces in the UI and the next run
+          // can decide whether to retry or wait for reconnect.
+          const isReconnect = /NEEDS_RECONNECT|invalid_grant|401|403/i.test(message);
+          await db
+            .update(emailAccounts)
+            .set({
+              syncStatus: isReconnect ? "NEEDS_RECONNECT" : "ERROR",
+              lastSyncError: message.slice(0, 500),
+              updatedAt: new Date(),
+            })
+            .where(eq(emailAccounts.id, account.id));
+        } catch (persistErr) {
+          logError("Failed to persist sync error state", { account: account.emailAddress }, persistErr instanceof Error ? persistErr : new Error(String(persistErr)));
+        }
       }
     }
   } finally {
-    imapSyncRunning = false;
-    imapSyncStartedAt = null;
+    providerSyncRunning = false;
+    providerSyncStartedAt = null;
   }
 }
 

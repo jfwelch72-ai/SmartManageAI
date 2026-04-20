@@ -64,6 +64,7 @@ export interface EmailAccount {
   smtpPort: number | null;
   smtpSecure: boolean | null;
   imapUsername: string | null;
+  syncStatus?: string | null;
 }
 
 export const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; icon: ReactNode }> = {

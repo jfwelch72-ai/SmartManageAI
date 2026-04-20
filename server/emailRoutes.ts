@@ -1,8 +1,8 @@
-import {logError, logWarn } from "./utils/logger";
+import {logError, logWarn, logInfo } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
-import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailTasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task } from "@shared/schema";
-import { eq, and, desc, gte, or, isNotNull, sql, inArray } from "drizzle-orm";
+import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailTasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task, crmContacts, crmOrganisations } from "@shared/schema";
+import { eq, and, desc, gte, or, isNotNull, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import type { UserRole } from "@shared/schema";
 import { logCreate, logUpdate, logDelete, logAudit } from "./auditLogger";
@@ -503,6 +503,45 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
   }
 });
 
+// POST /api/email/accounts/:id/resync - Clear sync cursors so the next run does
+// a full re-pull from the provider (Gmail historyId / Outlook deltaLinks).
+router.post("/accounts/:id/resync", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const orgId = req.user.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const [existing] = await db
+      .select()
+      .from(emailAccounts)
+      .where(and(
+        eq(emailAccounts.id, req.params.id),
+        eq(emailAccounts.organizationId, orgId),
+        eq(emailAccounts.userId, req.user.id),
+      ))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: "Email account not found" });
+
+    await db
+      .update(emailAccounts)
+      .set({
+        gmailHistoryId: null,
+        outlookDeltaInbox: null,
+        outlookDeltaSent: null,
+        lastSyncedAt: null,
+        lastFullSyncAt: null,
+        lastSyncError: null,
+        syncStatus: existing.syncStatus === "NEEDS_RECONNECT" ? existing.syncStatus : "OK",
+        updatedAt: new Date(),
+      })
+      .where(eq(emailAccounts.id, existing.id));
+
+    return res.json({ success: true, message: "Sync cursors cleared. Full resync will run on next sync cycle." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 // POST /api/email/accounts/:id/test - Test connection to an email account
 // Accepts optional body fields to override saved settings (for testing unsaved edits)
 router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
@@ -609,7 +648,9 @@ const OUTLOOK_CONFIG = {
   get clientId() { return process.env.MICROSOFT_CLIENT_ID || ""; },
   get clientSecret() { return process.env.MICROSOFT_CLIENT_SECRET || ""; },
   scopes: [
-    "https://graph.microsoft.com/Mail.Read",
+    // Mail.ReadWrite is required to update isRead and move messages (archive)
+    // as part of 2-way sync (Task #522). It implies Mail.Read.
+    "https://graph.microsoft.com/Mail.ReadWrite",
     "https://graph.microsoft.com/Mail.Send",
     "https://graph.microsoft.com/User.Read",
     "offline_access",
@@ -757,6 +798,8 @@ router.get("/oauth/gmail/callback", async (req, res, next) => {
           refreshToken: tokens.refresh_token || existing.refreshToken,
           expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
           isActive: true,
+          syncStatus: "OK",
+          lastSyncError: null,
           updatedAt: new Date(),
         })
         .where(eq(emailAccounts.id, existing.id));
@@ -924,6 +967,11 @@ router.get("/oauth/outlook/callback", async (req, res, next) => {
           refreshToken: tokens.refresh_token || existing.refreshToken,
           expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
           isActive: true,
+          // Reconnect succeeded — clear failure flags durably so the periodic
+          // sync job picks the account up again, even if the immediate async
+          // initial sync below fails transiently.
+          syncStatus: "OK",
+          lastSyncError: null,
           updatedAt: new Date(),
         })
         .where(eq(emailAccounts.id, existing.id));
@@ -942,6 +990,7 @@ router.get("/oauth/outlook/callback", async (req, res, next) => {
         expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
         oauthProviderId: msUser.id,
         isActive: true,
+        syncStatus: "OK",
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -1263,6 +1312,216 @@ router.get("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRe
   }
 });
 
+// PATCH /messages/:id — update read/archive state and push back to provider (Task #522)
+router.patch("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const orgId = req.user.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const bodySchema = z.object({
+      isRead: z.boolean().optional(),
+      isArchived: z.boolean().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+    }
+    const patch = parsed.data;
+    if (patch.isRead === undefined && patch.isArchived === undefined) {
+      return res.status(400).json({ error: "Provide isRead and/or isArchived" });
+    }
+
+    const [message] = await db
+      .select()
+      .from(emailMessages)
+      .where(and(eq(emailMessages.id, req.params.id), eq(emailMessages.organizationId, orgId)))
+      .limit(1);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    const [account] = await db
+      .select()
+      .from(emailAccounts)
+      .where(eq(emailAccounts.id, message.emailAccountId))
+      .limit(1);
+    if (!account) return res.status(404).json({ error: "Email account not found" });
+
+    // Apply optimistically to local state, then queue async push-back to provider
+    // (drained by the provider_sync job). This keeps the UI responsive even when
+    // the provider call is slow or transiently failing.
+    const updates: Partial<typeof emailMessages.$inferInsert> = { updatedAt: new Date() };
+    if (patch.isRead !== undefined) updates.isRead = patch.isRead;
+    if (patch.isArchived !== undefined) {
+      updates.isArchived = patch.isArchived;
+      // On unarchive, restore to INBOX (the message's stored folder is "ARCHIVE" by definition).
+      updates.folder = patch.isArchived ? "ARCHIVE" : "INBOX";
+    }
+    if (account.provider === "GMAIL" || account.provider === "OUTLOOK") {
+      const existing = (message.pendingProviderPush as Record<string, unknown> | null) || {};
+      updates.pendingProviderPush = { ...existing, ...patch, attempts: 0 };
+    }
+
+    await db.update(emailMessages).set(updates).where(eq(emailMessages.id, message.id));
+
+    // Recompute thread unread count
+    const [counts] = await db
+      .select({
+        unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+      })
+      .from(emailMessages)
+      .where(eq(emailMessages.threadId, message.threadId));
+    await db
+      .update(emailThreads)
+      .set({ unreadCount: counts?.unread ?? 0, updatedAt: new Date() })
+      .where(eq(emailThreads.id, message.threadId));
+
+    // Best-effort immediate push (don't block on failure — the job will retry).
+    if (account.provider === "GMAIL" || account.provider === "OUTLOOK") {
+      drainMessageProviderPush(account, message.id).catch((err) => {
+        logError("Background email push attempt failed (will retry via job)", {}, err instanceof Error ? err : new Error(String(err)));
+      });
+    }
+
+    return res.json({ success: true, queued: account.provider === "GMAIL" || account.provider === "OUTLOOK" });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+const MAX_PUSH_ATTEMPTS = 5;
+
+export async function drainMessageProviderPush(
+  account: typeof emailAccounts.$inferSelect,
+  messageId: string,
+): Promise<void> {
+  const [msg] = await db
+    .select()
+    .from(emailMessages)
+    .where(eq(emailMessages.id, messageId))
+    .limit(1);
+  if (!msg || !msg.pendingProviderPush) return;
+  const pending = msg.pendingProviderPush as { isRead?: boolean; isArchived?: boolean; attempts?: number };
+  const patch = { isRead: pending.isRead, isArchived: pending.isArchived };
+  try {
+    if (account.provider === "GMAIL") {
+      await pushGmailMessageState(account, msg.externalId, patch);
+    } else if (account.provider === "OUTLOOK") {
+      await pushOutlookMessageState(account, msg.externalId, patch);
+    }
+    await db
+      .update(emailMessages)
+      .set({ pendingProviderPush: null, updatedAt: new Date() })
+      .where(eq(emailMessages.id, msg.id));
+  } catch (err) {
+    const attempts = (pending.attempts ?? 0) + 1;
+    if (attempts >= MAX_PUSH_ATTEMPTS) {
+      // Give up; clear pending push and record the failure on the account.
+      await db
+        .update(emailMessages)
+        .set({ pendingProviderPush: null, updatedAt: new Date() })
+        .where(eq(emailMessages.id, msg.id));
+      await db
+        .update(emailAccounts)
+        .set({
+          lastSyncError: `Push-back gave up for message ${msg.externalId}: ${String(err).substring(0, 200)}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailAccounts.id, account.id));
+    } else {
+      await db
+        .update(emailMessages)
+        .set({ pendingProviderPush: { ...pending, attempts }, updatedAt: new Date() })
+        .where(eq(emailMessages.id, msg.id));
+    }
+    throw err;
+  }
+}
+
+export async function drainAccountProviderPushes(
+  account: typeof emailAccounts.$inferSelect,
+): Promise<void> {
+  const pending = await db
+    .select({ id: emailMessages.id })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.emailAccountId, account.id),
+        isNotNull(emailMessages.pendingProviderPush),
+      )
+    )
+    .limit(50);
+  for (const row of pending) {
+    try {
+      await drainMessageProviderPush(account, row.id);
+    } catch {
+      // already logged & counted; continue with next message
+    }
+  }
+}
+
+async function pushGmailMessageState(
+  account: typeof emailAccounts.$inferSelect,
+  externalId: string,
+  patch: { isRead?: boolean; isArchived?: boolean },
+): Promise<void> {
+  const addLabelIds: string[] = [];
+  const removeLabelIds: string[] = [];
+  if (patch.isRead === true) removeLabelIds.push("UNREAD");
+  if (patch.isRead === false) addLabelIds.push("UNREAD");
+  if (patch.isArchived === true) removeLabelIds.push("INBOX");
+  if (patch.isArchived === false) addLabelIds.push("INBOX");
+  if (addLabelIds.length === 0 && removeLabelIds.length === 0) return;
+
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}/modify`;
+  const resp = await gmailApiFetch(url, account, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ addLabelIds, removeLabelIds }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Gmail modify failed: ${resp.status} ${text}`);
+  }
+}
+
+async function pushOutlookMessageState(
+  account: typeof emailAccounts.$inferSelect,
+  externalId: string,
+  patch: { isRead?: boolean; isArchived?: boolean },
+): Promise<void> {
+  if (patch.isRead !== undefined) {
+    const resp = await outlookApiFetch(
+      `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(externalId)}`,
+      account,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isRead: patch.isRead }),
+      },
+    );
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Outlook PATCH failed: ${resp.status} ${text}`);
+    }
+  }
+  if (patch.isArchived !== undefined) {
+    const dest = patch.isArchived ? "archive" : "inbox";
+    const resp = await outlookApiFetch(
+      `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(externalId)}/move`,
+      account,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destinationId: dest }),
+      },
+    );
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Outlook move failed: ${resp.status} ${text}`);
+    }
+  }
+}
+
 async function refreshGmailAccessToken(account: typeof emailAccounts.$inferSelect): Promise<string> {
   if (!account.refreshToken) {
     throw new Error("No refresh token available for account " + account.emailAddress);
@@ -1351,13 +1610,38 @@ async function getValidOutlookToken(account: typeof emailAccounts.$inferSelect):
   return refreshOutlookAccessToken(account);
 }
 
-async function outlookApiFetch(url: string, account: typeof emailAccounts.$inferSelect): Promise<Response> {
+function mergeOutlookPreferHeader(callerHeaders: HeadersInit | undefined): string {
+  // Always request immutable message IDs so that move-to-archive does not
+  // change the externalId we have on file. The caller's Prefer header
+  // (e.g. odata.track-changes for delta calls) is preserved.
+  const callerPrefer = (() => {
+    if (!callerHeaders) return "";
+    if (callerHeaders instanceof Headers) return callerHeaders.get("Prefer") || "";
+    if (Array.isArray(callerHeaders)) {
+      const found = callerHeaders.find(([k]) => k.toLowerCase() === "prefer");
+      return found?.[1] || "";
+    }
+    return (callerHeaders as Record<string, string>).Prefer || (callerHeaders as Record<string, string>).prefer || "";
+  })();
+  const immutable = 'IdType="ImmutableId"';
+  return callerPrefer ? `${callerPrefer}, ${immutable}` : immutable;
+}
+
+async function outlookApiFetch(url: string, account: typeof emailAccounts.$inferSelect, init?: RequestInit): Promise<Response> {
   let token = await getValidOutlookToken(account);
-  let response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const buildInit = (t: string): RequestInit => ({
+    ...init,
+    headers: {
+      ...(init?.headers || {}),
+      Authorization: `Bearer ${t}`,
+      Prefer: mergeOutlookPreferHeader(init?.headers),
+    },
+  });
+  let response = await fetch(url, buildInit(token));
 
   if (response.status === 401) {
     token = await refreshOutlookAccessToken(account);
-    response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    response = await fetch(url, buildInit(token));
   }
 
   return response;
@@ -1636,29 +1920,476 @@ function parseGmailMessage(msg: GmailMessage, accountEmail: string): {
   };
 }
 
-async function gmailApiFetch(url: string, account: typeof emailAccounts.$inferSelect): Promise<Response> {
+async function gmailApiFetch(url: string, account: typeof emailAccounts.$inferSelect, init?: RequestInit): Promise<Response> {
   let token = await getValidGmailToken(account);
-  let response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const buildInit = (t: string): RequestInit => ({
+    ...init,
+    headers: {
+      ...(init?.headers || {}),
+      Authorization: `Bearer ${t}`,
+    },
+  });
+  let response = await fetch(url, buildInit(token));
 
   if (response.status === 401) {
     token = await refreshGmailAccessToken(account);
-    response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    response = await fetch(url, buildInit(token));
   }
 
   return response;
 }
 
-async function syncGmailAccount(
+function gmailFolderFromLabels(labelIds?: string[]): string {
+  if (!labelIds || labelIds.length === 0) return "OTHER";
+  if (labelIds.includes("TRASH") || labelIds.includes("SPAM")) return "ARCHIVE";
+  if (labelIds.includes("SENT")) return "SENT";
+  if (labelIds.includes("INBOX")) return "INBOX";
+  return "ARCHIVE";
+}
+
+async function fetchGmailCurrentHistoryId(account: typeof emailAccounts.$inferSelect): Promise<string | null> {
+  try {
+    const profileResp = await gmailApiFetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+      account
+    );
+    if (!profileResp.ok) return null;
+    const profile = await profileResp.json() as { historyId?: string };
+    return profile.historyId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Recipient-based CRM auto-link. Returns the crm_organisations.id whose
+ * primary contact email matches one of the addresses passed in. This handles
+ * the outbound case where `fromAddress` is the rep's own mailbox so the
+ * AI/sender-based matcher cannot link the thread to the prospect.
+ */
+async function findCrmOrgByEmailAddresses(
+  organizationId: string,
+  addresses: string[],
+): Promise<string | null> {
+  const ownerDomain = OWN_DOMAINS_PLACEHOLDER; // see below
+  const cleaned = Array.from(new Set(
+    addresses
+      .map((a) => (a || "").trim().toLowerCase())
+      .filter((a) => a && a.includes("@") && !ownerDomain.has(a.split("@")[1] || "")),
+  ));
+  if (cleaned.length === 0) return null;
+  const [contact] = await db
+    .select({ orgId: crmContacts.organisationId })
+    .from(crmContacts)
+    .innerJoin(crmOrganisations, eq(crmOrganisations.id, crmContacts.organisationId))
+    .where(and(
+      eq(crmContacts.organizationId, organizationId),
+      inArray(sql`lower(${crmContacts.email})`, cleaned),
+    ))
+    .limit(1);
+  return contact?.orgId ?? null;
+}
+// Empty set keeps the helper from filtering anything by domain; the caller is
+// expected to drop its own mailbox address before invoking. Using a Set here
+// preserves the option to populate it from org settings in the future.
+const OWN_DOMAINS_PLACEHOLDER: Set<string> = new Set();
+
+function parseAddressList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.flatMap((v) => extractEmails(String(v)));
+    return extractEmails(String(parsed));
+  } catch {
+    return extractEmails(value);
+  }
+}
+function extractEmails(s: string): string[] {
+  const re = /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi;
+  return s.match(re) || [];
+}
+
+async function autoLinkThreadByRecipients(
+  threadId: string,
+  organizationId: string,
+  ownAddress: string,
+  fromAddress: string | null,
+  toAddresses: string | null,
+  ccAddresses: string | null,
+): Promise<void> {
+  try {
+    const own = (ownAddress || "").toLowerCase();
+    const candidates = [
+      ...(fromAddress ? extractEmails(fromAddress) : []),
+      ...parseAddressList(toAddresses),
+      ...parseAddressList(ccAddresses),
+    ].map((a) => a.toLowerCase()).filter((a) => a !== own);
+    if (candidates.length === 0) return;
+    const orgId = await findCrmOrgByEmailAddresses(organizationId, candidates);
+    if (!orgId) return;
+    // Only set vendorId if not already linked, so manual links are preserved.
+    await db
+      .update(emailThreads)
+      .set({ vendorId: orgId, updatedAt: new Date() })
+      .where(and(eq(emailThreads.id, threadId), isNull(emailThreads.vendorId)));
+  } catch (err) {
+    logError("Recipient auto-link failed", { threadId }, err instanceof Error ? err : new Error(String(err)));
+  }
+}
+
+async function persistGmailMessage(
+  account: typeof emailAccounts.$inferSelect,
+  msgId: string,
+  threadMap: Map<string, string>,
+  result: { messagesImported: number; threadsCreated: number; errors: string[] },
+  messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[],
+): Promise<void> {
+  const msgResponse = await gmailApiFetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
+    account,
+  );
+  if (msgResponse.status === 404) return; // message gone
+  if (!msgResponse.ok) {
+    result.errors.push(`Failed to fetch message ${msgId}: ${msgResponse.status}`);
+    return;
+  }
+  const gmailMsg = await msgResponse.json() as GmailMessage;
+  const parsed = parseGmailMessage(gmailMsg, account.emailAddress);
+  const folder = gmailFolderFromLabels(gmailMsg.labelIds);
+
+  // Idempotent skip if already imported
+  const [existingMsg] = await db
+    .select({ id: emailMessages.id })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.emailAccountId, account.id),
+        eq(emailMessages.externalId, parsed.externalId),
+      )
+    )
+    .limit(1);
+  if (existingMsg) {
+    // Update mutable fields in case state changed
+    await db
+      .update(emailMessages)
+      .set({
+        isRead: parsed.isRead,
+        isArchived: folder === "ARCHIVE",
+        folder,
+        updatedAt: new Date(),
+      })
+      .where(eq(emailMessages.id, existingMsg.id));
+    return;
+  }
+
+  let dbThreadId = threadMap.get(parsed.threadId);
+  if (!dbThreadId) {
+    const [existingThread] = await db
+      .select({ id: emailThreads.id })
+      .from(emailThreads)
+      .where(
+        and(
+          eq(emailThreads.emailAccountId, account.id),
+          eq(emailThreads.externalThreadId, parsed.threadId),
+        )
+      )
+      .limit(1);
+    if (existingThread) {
+      dbThreadId = existingThread.id;
+    } else {
+      const newThreadId = crypto.randomUUID();
+      await db.insert(emailThreads).values({
+        id: newThreadId,
+        organizationId: account.organizationId,
+        emailAccountId: account.id,
+        subject: parsed.subject,
+        externalThreadId: parsed.threadId,
+        status: "OPEN",
+        messageCount: 0,
+        unreadCount: 0,
+        lastMessageAt: parsed.receivedAt,
+      });
+      dbThreadId = newThreadId;
+      result.threadsCreated++;
+    }
+    threadMap.set(parsed.threadId, dbThreadId);
+  }
+
+  const newMessageId = crypto.randomUUID();
+  await db.insert(emailMessages).values({
+    id: newMessageId,
+    organizationId: account.organizationId,
+    emailAccountId: account.id,
+    threadId: dbThreadId,
+    externalId: parsed.externalId,
+    fromAddress: parsed.fromAddress,
+    fromName: parsed.fromName || null,
+    toAddresses: parsed.toAddresses,
+    ccAddresses: parsed.ccAddresses,
+    subject: parsed.subject,
+    bodyText: parsed.bodyText || null,
+    bodyHtml: parsed.bodyHtml || null,
+    snippet: parsed.snippet || null,
+    receivedAt: parsed.receivedAt,
+    isRead: parsed.isRead,
+    isIncoming: parsed.isIncoming,
+    isArchived: folder === "ARCHIVE",
+    folder,
+    hasAttachments: parsed.hasAttachments,
+  });
+  result.messagesImported++;
+
+  // Outbound auto-link by recipient (sent-folder messages whose `from` is the rep)
+  if (!parsed.isIncoming) {
+    await autoLinkThreadByRecipients(
+      dbThreadId,
+      account.organizationId,
+      account.emailAddress,
+      parsed.fromAddress,
+      parsed.toAddresses,
+      parsed.ccAddresses,
+    );
+  }
+
+  const [msgCounts] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+      maxReceivedAt: sql<Date>`max(${emailMessages.receivedAt})`,
+    })
+    .from(emailMessages)
+    .where(eq(emailMessages.threadId, dbThreadId));
+
+  await db
+    .update(emailThreads)
+    .set({
+      messageCount: msgCounts?.total ?? 1,
+      unreadCount: msgCounts?.unread ?? 1,
+      lastMessageAt: msgCounts?.maxReceivedAt ?? parsed.receivedAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(emailThreads.id, dbThreadId));
+
+  messagesToClassify.push({
+    messageId: newMessageId,
+    threadId: dbThreadId,
+    subject: parsed.subject,
+    bodyText: parsed.bodyText,
+    fromAddress: parsed.fromAddress,
+  });
+}
+
+interface GmailHistoryEntry {
+  id: string;
+  messages?: { id: string; threadId: string }[];
+  messagesAdded?: { message: { id: string; threadId: string; labelIds?: string[] } }[];
+  messagesDeleted?: { message: { id: string; threadId: string } }[];
+  labelsAdded?: { message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }[];
+  labelsRemoved?: { message: { id: string; threadId: string; labelIds?: string[] }; labelIds: string[] }[];
+}
+
+async function syncGmailIncremental(
+  account: typeof emailAccounts.$inferSelect,
+  startHistoryId: string,
+): Promise<{ result: { messagesImported: number; threadsCreated: number; errors: string[] }; messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[]; newHistoryId: string | null; needsFullResync: boolean }> {
+  const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
+  const messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[] = [];
+  const threadMap = new Map<string, string>();
+  let pageToken: string | undefined;
+  let lastHistoryId: string | null = null;
+  const seenAdded = new Set<string>();
+  const stateChanges = new Map<string, { isRead?: boolean; isArchived?: boolean; folder?: string }>();
+  const deleted = new Set<string>();
+
+  const MAX_HISTORY_PAGES = 200;
+  let hitPageCap = false;
+  for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
+    const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/history");
+    url.searchParams.set("startHistoryId", startHistoryId);
+    url.searchParams.append("historyTypes", "messageAdded");
+    url.searchParams.append("historyTypes", "labelAdded");
+    url.searchParams.append("historyTypes", "labelRemoved");
+    url.searchParams.append("historyTypes", "messageDeleted");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const resp = await gmailApiFetch(url.toString(), account);
+    if (resp.status === 404 || resp.status === 410) {
+      // History too old — caller must do full re-sync
+      return { result, messagesToClassify, newHistoryId: null, needsFullResync: true };
+    }
+    if (!resp.ok) {
+      result.errors.push(`Gmail history fetch failed: ${resp.status}`);
+      return { result, messagesToClassify, newHistoryId: lastHistoryId, needsFullResync: false };
+    }
+    const data = await resp.json() as { history?: GmailHistoryEntry[]; nextPageToken?: string; historyId?: string };
+    if (data.historyId) lastHistoryId = data.historyId;
+
+    for (const h of data.history || []) {
+      for (const ma of h.messagesAdded || []) {
+        seenAdded.add(ma.message.id);
+      }
+      for (const md of h.messagesDeleted || []) {
+        deleted.add(md.message.id);
+      }
+      for (const la of h.labelsAdded || []) {
+        const cur = stateChanges.get(la.message.id) || {};
+        if (la.labelIds.includes("UNREAD")) cur.isRead = false;
+        if (la.labelIds.some(l => l === "TRASH" || l === "SPAM")) cur.isArchived = true;
+        // INBOX added back == unarchive on Gmail
+        if (la.labelIds.includes("INBOX")) {
+          cur.isArchived = false;
+          cur.folder = "INBOX";
+        }
+        // Recompute folder from current full label set if available
+        if (la.message.labelIds) cur.folder = gmailFolderFromLabels(la.message.labelIds);
+        stateChanges.set(la.message.id, cur);
+      }
+      for (const lr of h.labelsRemoved || []) {
+        const cur = stateChanges.get(lr.message.id) || {};
+        if (lr.labelIds.includes("UNREAD")) cur.isRead = true;
+        if (lr.labelIds.includes("INBOX")) {
+          // Gmail "archive" = remove INBOX label
+          cur.isArchived = true;
+          cur.folder = "ARCHIVE";
+        }
+        if (lr.message.labelIds) cur.folder = gmailFolderFromLabels(lr.message.labelIds);
+        stateChanges.set(lr.message.id, cur);
+      }
+    }
+    if (!data.nextPageToken) break;
+    pageToken = data.nextPageToken;
+    if (page === MAX_HISTORY_PAGES - 1 && data.nextPageToken) {
+      hitPageCap = true;
+    }
+  }
+
+  if (hitPageCap) {
+    // Do NOT advance the cursor — leaving it at startHistoryId so we resume
+    // from the same point on the next sync run instead of silently dropping
+    // unread history pages.
+    result.errors.push(
+      `Gmail history pagination cap reached (${MAX_HISTORY_PAGES} pages); cursor not advanced`,
+    );
+    lastHistoryId = null;
+  }
+
+  for (const msgId of seenAdded) {
+    if (deleted.has(msgId)) continue;
+    try {
+      await persistGmailMessage(account, msgId, threadMap, result, messagesToClassify);
+    } catch (err) {
+      result.errors.push(`Error processing added Gmail message ${msgId}: ${String(err)}`);
+    }
+  }
+
+  for (const [msgId, change] of stateChanges) {
+    if (seenAdded.has(msgId) || deleted.has(msgId)) continue;
+    const update: Partial<typeof emailMessages.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() };
+    if (typeof change.isRead === "boolean") update.isRead = change.isRead;
+    if (typeof change.isArchived === "boolean") update.isArchived = change.isArchived;
+    if (change.folder) update.folder = change.folder;
+    if (Object.keys(update).length > 1) {
+      await db
+        .update(emailMessages)
+        .set(update)
+        .where(
+          and(
+            eq(emailMessages.emailAccountId, account.id),
+            eq(emailMessages.externalId, msgId),
+          )
+        );
+    }
+  }
+
+  for (const msgId of deleted) {
+    await db
+      .update(emailMessages)
+      .set({ isArchived: true, folder: "ARCHIVE", updatedAt: new Date() })
+      .where(
+        and(
+          eq(emailMessages.emailAccountId, account.id),
+          eq(emailMessages.externalId, msgId),
+        )
+      );
+  }
+
+  // Recompute thread unread counts that may have changed
+  if (stateChanges.size > 0 || deleted.size > 0) {
+    const affectedExternalIds = Array.from(new Set([...stateChanges.keys(), ...deleted]));
+    if (affectedExternalIds.length > 0) {
+      const affectedThreads = await db
+        .select({ threadId: emailMessages.threadId })
+        .from(emailMessages)
+        .where(
+          and(
+            eq(emailMessages.emailAccountId, account.id),
+            inArray(emailMessages.externalId, affectedExternalIds),
+          )
+        );
+      const threadIds = Array.from(new Set(affectedThreads.map(t => t.threadId)));
+      for (const tid of threadIds) {
+        const [counts] = await db
+          .select({
+            total: sql<number>`count(*)::int`,
+            unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+          })
+          .from(emailMessages)
+          .where(eq(emailMessages.threadId, tid));
+        await db
+          .update(emailThreads)
+          .set({ messageCount: counts?.total ?? 0, unreadCount: counts?.unread ?? 0, updatedAt: new Date() })
+          .where(eq(emailThreads.id, tid));
+      }
+    }
+  }
+
+  return { result, messagesToClassify, newHistoryId: lastHistoryId, needsFullResync: false };
+}
+
+export async function syncGmailAccount(
   account: typeof emailAccounts.$inferSelect,
   userId: string,
 ): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
+  // Incremental path using historyId cursor (Task #522)
+  if (account.gmailHistoryId) {
+    try {
+      const incr = await syncGmailIncremental(account, account.gmailHistoryId);
+      if (!incr.needsFullResync) {
+        await runEmailAiClassification(account, userId, incr.messagesToClassify, incr.result);
+        await db
+          .update(emailAccounts)
+          .set({
+            lastSyncedAt: new Date(),
+            lastSyncError: incr.result.errors[0]?.substring(0, 500) ?? null,
+            gmailHistoryId: incr.newHistoryId ?? account.gmailHistoryId,
+            syncStatus: incr.result.errors.length > 0 ? "DEGRADED" : "OK",
+            updatedAt: new Date(),
+          })
+          .where(eq(emailAccounts.id, account.id));
+        return incr.result;
+      }
+      // else fall through to full resync
+      logInfo(`Gmail history expired for ${account.emailAddress}, doing full resync`);
+    } catch (err) {
+      logError(`Gmail incremental sync failed for ${account.emailAddress}, falling back to full sync`, {}, err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  // Full sync path (initial or after history-expiry)
   const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
   const MAX_PAGES = 5;
   const PAGE_SIZE = 50;
 
-  const query = account.lastSyncedAt
-    ? `after:${Math.floor(account.lastSyncedAt.getTime() / 1000)}`
-    : "newer_than:7d";
+  // Bounded 30-day backfill across both inbox and sent on initial/full sync (Task #522).
+  // When the historyId cursor is null (first connect, manual resync, or expired
+  // history) we always do the 30-day backfill regardless of `lastSyncedAt` so
+  // the user sees their recent thread history. The narrower
+  // "since last sync" window is only used when we still have a cursor and are
+  // doing a routine catch-up after a transient incremental failure.
+  const isInitialOrResync = !account.gmailHistoryId;
+  const query = isInitialOrResync || !account.lastSyncedAt
+    ? "(in:inbox OR in:sent) newer_than:30d"
+    : `(in:inbox OR in:sent) after:${Math.floor(account.lastSyncedAt.getTime() / 1000)}`;
 
   const allMessageRefs: { id: string; threadId: string }[] = [];
   let pageToken: string | undefined;
@@ -1690,7 +2421,25 @@ async function syncGmailAccount(
     pageToken = listData.nextPageToken;
   }
 
+  // Always advance the historyId cursor so subsequent syncs use incremental mode,
+  // even when there were zero new messages in the listing.
+  const recordSyncCheckpoint = async () => {
+    const newHistoryId = await fetchGmailCurrentHistoryId(account);
+    await db
+      .update(emailAccounts)
+      .set({
+        lastSyncedAt: new Date(),
+        lastFullSyncAt: new Date(),
+        gmailHistoryId: newHistoryId ?? account.gmailHistoryId,
+        syncStatus: "OK",
+        lastSyncError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(emailAccounts.id, account.id));
+  };
+
   if (allMessageRefs.length === 0) {
+    await recordSyncCheckpoint();
     return result;
   }
 
@@ -1708,6 +2457,7 @@ async function syncGmailAccount(
 
   const newMessageRefs = allMessageRefs.filter(m => !existingIds.has(m.id));
   if (newMessageRefs.length === 0) {
+    await recordSyncCheckpoint();
     return result;
   }
 
@@ -1765,6 +2515,7 @@ async function syncGmailAccount(
       }
 
       const newMessageId = crypto.randomUUID();
+      const folder = gmailFolderFromLabels(gmailMsg.labelIds);
       await db.insert(emailMessages).values({
         id: newMessageId,
         organizationId: account.organizationId,
@@ -1782,9 +2533,23 @@ async function syncGmailAccount(
         receivedAt: parsed.receivedAt,
         isRead: parsed.isRead,
         isIncoming: parsed.isIncoming,
+        isArchived: folder === "ARCHIVE",
+        folder,
         hasAttachments: parsed.hasAttachments,
       });
       result.messagesImported++;
+
+      // Outbound recipient-based CRM auto-link for backfilled sent mail
+      if (!parsed.isIncoming) {
+        await autoLinkThreadByRecipients(
+          dbThreadId,
+          account.organizationId,
+          account.emailAddress,
+          parsed.fromAddress,
+          parsed.toAddresses,
+          parsed.ccAddresses,
+        );
+      }
 
       const [msgCounts] = await db
         .select({
@@ -1817,6 +2582,19 @@ async function syncGmailAccount(
     }
   }
 
+  await runEmailAiClassification(account, userId, messagesToClassify, result);
+
+  await recordSyncCheckpoint();
+
+  return result;
+}
+
+async function runEmailAiClassification(
+  account: typeof emailAccounts.$inferSelect,
+  userId: string,
+  messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[],
+  _result: { messagesImported: number; threadsCreated: number; errors: string[] },
+): Promise<void> {
   for (const msg of messagesToClassify) {
     try {
       const analysis = await analyzeEmail(msg.subject, msg.bodyText, msg.fromAddress, account.organizationId);
@@ -1865,15 +2643,6 @@ async function syncGmailAccount(
       logError(`AI classification failed for message ${msg.messageId}:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
-
-  if (result.errors.length === 0 || result.messagesImported > 0) {
-    await db
-      .update(emailAccounts)
-      .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-      .where(eq(emailAccounts.id, account.id));
-  }
-
-  return result;
 }
 
 interface OutlookMessage {
@@ -1947,237 +2716,355 @@ function parseOutlookMessage(msg: OutlookMessage, accountEmail: string): {
   };
 }
 
-export async function syncOutlookAccount(
+interface OutlookDeltaEntity extends Partial<OutlookMessage> {
+  id: string;
+  "@removed"?: { reason?: string };
+}
+
+async function persistOutlookMessage(
   account: typeof emailAccounts.$inferSelect,
-  userId: string,
-): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
-  const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
-  const MAX_PAGES = 5;
-  const PAGE_SIZE = 50;
+  outlookMsg: OutlookMessage,
+  folder: "INBOX" | "SENT",
+  threadMap: Map<string, string>,
+  result: { messagesImported: number; threadsCreated: number; errors: string[] },
+  messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[],
+): Promise<void> {
+  const parsed = parseOutlookMessage(outlookMsg, account.emailAddress);
 
-  let filterDate: string;
-  if (account.lastSyncedAt) {
-    filterDate = account.lastSyncedAt.toISOString();
-  } else {
-    filterDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  }
-
-  const allMessages: OutlookMessage[] = [];
-  let nextLink: string | undefined;
-
-  for (let page = 0; page < MAX_PAGES; page++) {
-    let url: string;
-    if (nextLink) {
-      url = nextLink;
-    } else {
-      const graphUrl = new URL("https://graph.microsoft.com/v1.0/me/messages");
-      graphUrl.searchParams.set("$top", String(PAGE_SIZE));
-      graphUrl.searchParams.set("$orderby", "receivedDateTime desc");
-      graphUrl.searchParams.set("$select", "id,conversationId,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,internetMessageId");
-      graphUrl.searchParams.set("$filter", `receivedDateTime ge ${filterDate}`);
-      url = graphUrl.toString();
-    }
-
-    const listResponse = await outlookApiFetch(url, account);
-
-    if (!listResponse.ok) {
-      const errText = await listResponse.text();
-      logError("Outlook list messages failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
-      throw new Error(`Outlook Graph API error: ${listResponse.status}`);
-    }
-
-    const listData = await listResponse.json() as {
-      value?: OutlookMessage[];
-      "@odata.nextLink"?: string;
-    };
-
-    if (listData.value) {
-      allMessages.push(...listData.value);
-    }
-
-    if (!listData["@odata.nextLink"]) break;
-    nextLink = listData["@odata.nextLink"];
-  }
-
-  if (allMessages.length === 0) {
-    await db
-      .update(emailAccounts)
-      .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
-      .where(eq(emailAccounts.id, account.id));
-    return result;
-  }
-
-  const candidateIds = allMessages.map(m => m.id);
-  const existingMessages = await db
-    .select({ externalId: emailMessages.externalId })
+  // Idempotent upsert by externalId
+  const [existingMsg] = await db
+    .select({ id: emailMessages.id })
     .from(emailMessages)
     .where(
       and(
         eq(emailMessages.emailAccountId, account.id),
-        inArray(emailMessages.externalId, candidateIds)
+        eq(emailMessages.externalId, parsed.externalId),
       )
-    );
-  const existingIds = new Set(existingMessages.map(m => m.externalId));
+    )
+    .limit(1);
 
-  const newMessages = allMessages.filter(m => !existingIds.has(m.id));
-  if (newMessages.length === 0) {
+  if (existingMsg) {
     await db
-      .update(emailAccounts)
-      .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
-      .where(eq(emailAccounts.id, account.id));
-    return result;
+      .update(emailMessages)
+      .set({
+        isRead: parsed.isRead,
+        isArchived: false,
+        folder,
+        updatedAt: new Date(),
+      })
+      .where(eq(emailMessages.id, existingMsg.id));
+    return;
   }
 
-  const threadMap = new Map<string, string>();
-  const messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[] = [];
-
-  for (const outlookMsg of newMessages) {
-    try {
-      const parsed = parseOutlookMessage(outlookMsg, account.emailAddress);
-
-      let dbThreadId = threadMap.get(parsed.threadId);
-
-      if (!dbThreadId) {
-        const [existingThread] = await db
-          .select({ id: emailThreads.id })
-          .from(emailThreads)
-          .where(
-            and(
-              eq(emailThreads.emailAccountId, account.id),
-              eq(emailThreads.externalThreadId, parsed.threadId)
-            )
-          )
-          .limit(1);
-
-        if (existingThread) {
-          dbThreadId = existingThread.id;
-        } else {
-          const newThreadId = crypto.randomUUID();
-          await db.insert(emailThreads).values({
-            id: newThreadId,
-            organizationId: account.organizationId,
-            emailAccountId: account.id,
-            subject: parsed.subject,
-            externalThreadId: parsed.threadId,
-            status: "OPEN",
-            messageCount: 0,
-            unreadCount: 0,
-            lastMessageAt: parsed.receivedAt,
-          });
-          dbThreadId = newThreadId;
-          result.threadsCreated++;
-        }
-        threadMap.set(parsed.threadId, dbThreadId);
-      }
-
-      const newMessageId = crypto.randomUUID();
-      await db.insert(emailMessages).values({
-        id: newMessageId,
+  let dbThreadId = threadMap.get(parsed.threadId);
+  if (!dbThreadId) {
+    const [existingThread] = await db
+      .select({ id: emailThreads.id })
+      .from(emailThreads)
+      .where(
+        and(
+          eq(emailThreads.emailAccountId, account.id),
+          eq(emailThreads.externalThreadId, parsed.threadId),
+        )
+      )
+      .limit(1);
+    if (existingThread) {
+      dbThreadId = existingThread.id;
+    } else {
+      const newThreadId = crypto.randomUUID();
+      await db.insert(emailThreads).values({
+        id: newThreadId,
         organizationId: account.organizationId,
         emailAccountId: account.id,
-        threadId: dbThreadId,
-        externalId: parsed.externalId,
-        fromAddress: parsed.fromAddress,
-        fromName: parsed.fromName || null,
-        toAddresses: parsed.toAddresses,
-        ccAddresses: parsed.ccAddresses,
         subject: parsed.subject,
-        bodyText: parsed.bodyText || null,
-        bodyHtml: parsed.bodyHtml || null,
-        snippet: parsed.snippet || null,
-        receivedAt: parsed.receivedAt,
-        isRead: parsed.isRead,
-        isIncoming: parsed.isIncoming,
-        hasAttachments: parsed.hasAttachments,
+        externalThreadId: parsed.threadId,
+        status: "OPEN",
+        messageCount: 0,
+        unreadCount: 0,
+        lastMessageAt: parsed.receivedAt,
       });
-      result.messagesImported++;
+      dbThreadId = newThreadId;
+      result.threadsCreated++;
+    }
+    threadMap.set(parsed.threadId, dbThreadId);
+  }
 
-      const [msgCounts] = await db
+  const newMessageId = crypto.randomUUID();
+  await db.insert(emailMessages).values({
+    id: newMessageId,
+    organizationId: account.organizationId,
+    emailAccountId: account.id,
+    threadId: dbThreadId,
+    externalId: parsed.externalId,
+    fromAddress: parsed.fromAddress,
+    fromName: parsed.fromName || null,
+    toAddresses: parsed.toAddresses,
+    ccAddresses: parsed.ccAddresses,
+    subject: parsed.subject,
+    bodyText: parsed.bodyText || null,
+    bodyHtml: parsed.bodyHtml || null,
+    snippet: parsed.snippet || null,
+    receivedAt: parsed.receivedAt,
+    isRead: parsed.isRead,
+    isIncoming: parsed.isIncoming,
+    isArchived: false,
+    folder,
+    hasAttachments: parsed.hasAttachments,
+  });
+  result.messagesImported++;
+
+  // Outbound auto-link by recipient (sent-folder messages)
+  if (folder === "SENT" || !parsed.isIncoming) {
+    await autoLinkThreadByRecipients(
+      dbThreadId,
+      account.organizationId,
+      account.emailAddress,
+      parsed.fromAddress,
+      parsed.toAddresses,
+      parsed.ccAddresses,
+    );
+  }
+
+  const [msgCounts] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+      maxReceivedAt: sql<Date>`max(${emailMessages.receivedAt})`,
+    })
+    .from(emailMessages)
+    .where(eq(emailMessages.threadId, dbThreadId));
+
+  await db
+    .update(emailThreads)
+    .set({
+      messageCount: msgCounts?.total ?? 1,
+      unreadCount: msgCounts?.unread ?? 1,
+      lastMessageAt: msgCounts?.maxReceivedAt ?? parsed.receivedAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(emailThreads.id, dbThreadId));
+
+  messagesToClassify.push({
+    messageId: newMessageId,
+    threadId: dbThreadId,
+    subject: parsed.subject,
+    bodyText: parsed.bodyText,
+    fromAddress: parsed.fromAddress,
+  });
+}
+
+const OUTLOOK_DELTA_SELECT =
+  "id,conversationId,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,internetMessageId";
+
+async function syncOutlookFolderDelta(
+  account: typeof emailAccounts.$inferSelect,
+  folderName: "inbox" | "sentitems",
+  storedDelta: string | null,
+  threadMap: Map<string, string>,
+  result: { messagesImported: number; threadsCreated: number; errors: string[] },
+  messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[],
+): Promise<{ deltaLink: string | null; needsFullResync: boolean; degraded?: boolean }> {
+  let url: string;
+  if (storedDelta) {
+    url = storedDelta;
+  } else {
+    const u = new URL(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderName}/messages/delta`);
+    u.searchParams.set("$select", OUTLOOK_DELTA_SELECT);
+    u.searchParams.set("$top", "50");
+    url = u.toString();
+  }
+  const folderTag: "INBOX" | "SENT" = folderName === "inbox" ? "INBOX" : "SENT";
+
+  let pageCount = 0;
+  let deltaLink: string | null = null;
+  let lastNextLink: string | null = null;
+  // Safety cap to bound a single sync run. When hit we persist the
+  // @odata.nextLink as the cursor (Graph delta nextLinks are valid resume
+  // tokens) so the next run picks up exactly where we left off — never
+  // restarts from the folder root, which would cause an infinite replay loop.
+  const MAX_PAGES = 50;
+
+  while (url && pageCount < MAX_PAGES) {
+    pageCount++;
+    const resp = await outlookApiFetch(url, account, {
+      headers: { Prefer: 'odata.track-changes, odata.maxpagesize=50' },
+    });
+    if ((resp.status === 410 || resp.status === 404) && storedDelta) {
+      // delta token expired; signal full resync
+      return { deltaLink: null, needsFullResync: true };
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      // Auth/scope failure — caller should mark account NEEDS_RECONNECT
+      throw new Error(`Outlook delta auth failed: ${resp.status}`);
+    }
+    if (!resp.ok) {
+      result.errors.push(`Outlook delta (${folderName}) failed: ${resp.status}`);
+      return { deltaLink, needsFullResync: false };
+    }
+    const data = await resp.json() as {
+      value?: OutlookDeltaEntity[];
+      "@odata.nextLink"?: string;
+      "@odata.deltaLink"?: string;
+    };
+
+    const affectedThreadIds = new Set<string>();
+    for (const entity of data.value || []) {
+      try {
+        if (entity["@removed"]) {
+          const affected = await db
+            .update(emailMessages)
+            .set({ isArchived: true, folder: "ARCHIVE", updatedAt: new Date() })
+            .where(
+              and(
+                eq(emailMessages.emailAccountId, account.id),
+                eq(emailMessages.externalId, entity.id),
+              )
+            )
+            .returning({ threadId: emailMessages.threadId });
+          for (const a of affected) affectedThreadIds.add(a.threadId);
+          continue;
+        }
+
+        // If the entity has full message fields, persist as a new/updated message
+        if (entity.from || entity.subject !== undefined || entity.body) {
+          await persistOutlookMessage(
+            account,
+            entity as OutlookMessage,
+            folderTag,
+            threadMap,
+            result,
+            messagesToClassify,
+          );
+        } else if (typeof entity.isRead === "boolean") {
+          // Property-only change (e.g. isRead toggled remotely)
+          const affected = await db
+            .update(emailMessages)
+            .set({ isRead: entity.isRead, updatedAt: new Date() })
+            .where(
+              and(
+                eq(emailMessages.emailAccountId, account.id),
+                eq(emailMessages.externalId, entity.id),
+              )
+            )
+            .returning({ threadId: emailMessages.threadId });
+          for (const a of affected) affectedThreadIds.add(a.threadId);
+        }
+      } catch (err) {
+        result.errors.push(`Error processing Outlook delta entity ${entity.id}: ${String(err)}`);
+      }
+    }
+
+    // Recompute thread message/unread counters for any threads whose state
+    // changed via property-only or @removed updates (persistOutlookMessage
+    // already handles its own counters).
+    for (const threadId of affectedThreadIds) {
+      const [counts] = await db
         .select({
           total: sql<number>`count(*)::int`,
           unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
           maxReceivedAt: sql<Date>`max(${emailMessages.receivedAt})`,
         })
         .from(emailMessages)
-        .where(eq(emailMessages.threadId, dbThreadId));
-
+        .where(eq(emailMessages.threadId, threadId));
       await db
         .update(emailThreads)
         .set({
-          messageCount: msgCounts?.total ?? 1,
-          unreadCount: msgCounts?.unread ?? 1,
-          lastMessageAt: msgCounts?.maxReceivedAt ?? parsed.receivedAt,
+          messageCount: counts?.total ?? 0,
+          unreadCount: counts?.unread ?? 0,
+          ...(counts?.maxReceivedAt ? { lastMessageAt: counts.maxReceivedAt } : {}),
           updatedAt: new Date(),
         })
-        .where(eq(emailThreads.id, dbThreadId));
-
-      messagesToClassify.push({
-        messageId: newMessageId,
-        threadId: dbThreadId,
-        subject: parsed.subject,
-        bodyText: parsed.bodyText,
-        fromAddress: parsed.fromAddress,
-      });
-    } catch (err) {
-      result.errors.push(`Error processing Outlook message ${outlookMsg.id}: ${String(err)}`);
+        .where(eq(emailThreads.id, threadId));
     }
+
+    if (data["@odata.deltaLink"]) {
+      deltaLink = data["@odata.deltaLink"];
+      lastNextLink = null;
+      break;
+    }
+    if (!data["@odata.nextLink"]) break;
+    lastNextLink = data["@odata.nextLink"];
+    url = data["@odata.nextLink"];
   }
 
-  for (const msg of messagesToClassify) {
-    try {
-      const analysis = await analyzeEmail(msg.subject, msg.bodyText, msg.fromAddress, account.organizationId);
+  // If we exhausted the page cap without reaching @odata.deltaLink, persist
+  // the last @odata.nextLink as the cursor so the next sync run resumes
+  // exactly where this one stopped (Graph delta nextLinks are valid resume
+  // tokens). This prevents the infinite "restart from folder root" loop that
+  // would otherwise occur on very large mailboxes.
+  if (!deltaLink && lastNextLink) {
+    return { deltaLink: lastNextLink, needsFullResync: false, degraded: true };
+  }
 
-      await db
-        .update(emailMessages)
-        .set({
-          classification: analysis.classification,
-          aiMetadata: JSON.stringify(analysis),
-          aiAnalyzedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(emailMessages.id, msg.messageId));
+  return { deltaLink: deltaLink ?? storedDelta ?? null, needsFullResync: false };
+}
 
-      await db
-        .update(emailThreads)
-        .set({
-          primaryClassification: analysis.classification,
-          aiSummary: analysis.summary,
-          aiMetadata: JSON.stringify(analysis.extractedEntities),
-          updatedAt: new Date(),
-        })
-        .where(eq(emailThreads.id, msg.threadId));
+export async function syncOutlookAccount(
+  account: typeof emailAccounts.$inferSelect,
+  userId: string,
+): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
+  const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
+  const threadMap = new Map<string, string>();
+  const messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[] = [];
 
-      const matchedEntities = await matchEmailToEntities(analysis, account.organizationId);
-      if (matchedEntities.projectId || matchedEntities.bidId || matchedEntities.vendorId) {
-        await db
-          .update(emailThreads)
-          .set({
-            projectId: matchedEntities.projectId || undefined,
-            bidId: matchedEntities.bidId || undefined,
-            vendorId: matchedEntities.vendorId || undefined,
-          })
-          .where(eq(emailThreads.id, msg.threadId));
-      }
+  let inboxDelta = account.outlookDeltaInbox;
+  let sentDelta = account.outlookDeltaSent;
+  let needsReconnect = false;
+  let degraded = false;
+  let isFirstSync = !inboxDelta && !sentDelta;
 
-      await createTaskFromEmail(
-        analysis,
-        msg.messageId,
-        msg.threadId,
-        account.organizationId,
-        userId,
-        matchedEntities,
+  try {
+    const inboxResult = await syncOutlookFolderDelta(account, "inbox", inboxDelta, threadMap, result, messagesToClassify);
+    if (inboxResult.needsFullResync) {
+      // discard cursor and retry once
+      const retry = await syncOutlookFolderDelta(account, "inbox", null, threadMap, result, messagesToClassify);
+      inboxDelta = retry.deltaLink;
+      if (retry.degraded) degraded = true;
+    } else {
+      inboxDelta = inboxResult.deltaLink;
+      if (inboxResult.degraded) degraded = true;
+    }
+
+    const sentResult = await syncOutlookFolderDelta(account, "sentitems", sentDelta, threadMap, result, messagesToClassify);
+    if (sentResult.needsFullResync) {
+      const retry = await syncOutlookFolderDelta(account, "sentitems", null, threadMap, result, messagesToClassify);
+      sentDelta = retry.deltaLink;
+      if (retry.degraded) degraded = true;
+    } else {
+      sentDelta = sentResult.deltaLink;
+      if (sentResult.degraded) degraded = true;
+    }
+
+    if (degraded) {
+      result.errors.push(
+        "Outlook delta sync hit page cap; cursor saved at intermediate position and will resume next cycle.",
       );
-    } catch (err) {
-      logError(`AI classification failed for Outlook message ${msg.messageId}:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
+  } catch (err) {
+    const msg = String(err);
+    if (/\b401|403\b/.test(msg)) needsReconnect = true;
+    result.errors.push(`Outlook sync error: ${msg}`);
+    logError(`Outlook delta sync failed for ${account.emailAddress}`, {}, err instanceof Error ? err : new Error(msg));
   }
 
-  if (result.errors.length === 0 || result.messagesImported > 0) {
-    await db
-      .update(emailAccounts)
-      .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
-      .where(eq(emailAccounts.id, account.id));
-  }
+  await runEmailAiClassification(account, userId, messagesToClassify, result);
+
+  await db
+    .update(emailAccounts)
+    .set({
+      lastSyncedAt: new Date(),
+      lastFullSyncAt: isFirstSync ? new Date() : (account.lastFullSyncAt ?? new Date()),
+      outlookDeltaInbox: inboxDelta ?? account.outlookDeltaInbox,
+      outlookDeltaSent: sentDelta ?? account.outlookDeltaSent,
+      lastSyncError: result.errors[0]?.substring(0, 500) ?? null,
+      syncStatus: needsReconnect
+        ? "NEEDS_RECONNECT"
+        : result.errors.length > 0
+          ? "DEGRADED"
+          : "OK",
+      updatedAt: new Date(),
+    })
+    .where(eq(emailAccounts.id, account.id));
 
   return result;
 }
@@ -2825,8 +3712,20 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
       receivedAt: new Date(),
       isRead: true,
       isIncoming: false,
+      isArchived: false,
+      folder: "SENT",
       hasAttachments: false,
     });
+
+    // Outbound auto-link by recipient
+    await autoLinkThreadByRecipients(
+      targetThreadId,
+      orgId,
+      account.emailAddress,
+      account.emailAddress,
+      JSON.stringify([data.to]),
+      data.cc ? JSON.stringify([data.cc]) : null,
+    );
 
     const [msgCounts] = await db
       .select({
