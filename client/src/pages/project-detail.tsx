@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
@@ -19,8 +19,6 @@ import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertTriangle,
@@ -62,11 +60,11 @@ import {
   ShieldOff,
   MapPin,
   Loader2,
-  Search,
-  Pin,
-  Star,
   ScanLine,
   StickyNote,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -184,16 +182,30 @@ interface MaterialBudgetSummary {
   alertsTriggered: number;
 }
 
-type TabGroup = "General" | "Field Operations" | "Documents & Communication" | "Resources & Workforce" | "Financial" | "Asset Management" | "AI";
+type NavGroupId =
+  | "overview"
+  | "plan-schedule"
+  | "scope-cost"
+  | "field"
+  | "people-time"
+  | "communication"
+  | "closeout"
+  | "sharing";
 
-const TAB_GROUP_ORDER: TabGroup[] = [
-  "General",
-  "Field Operations",
-  "Documents & Communication",
-  "Resources & Workforce",
-  "Financial",
-  "Asset Management",
-  "AI",
+interface NavGroupDef {
+  id: NavGroupId;
+  label: string;
+}
+
+const NAV_GROUPS: NavGroupDef[] = [
+  { id: "overview", label: "Overview" },
+  { id: "plan-schedule", label: "Plan & Schedule" },
+  { id: "scope-cost", label: "Scope & Cost" },
+  { id: "field", label: "Field" },
+  { id: "people-time", label: "People & Time" },
+  { id: "communication", label: "Communication" },
+  { id: "closeout", label: "Closeout" },
+  { id: "sharing", label: "Sharing" },
 ];
 
 interface TabConfig {
@@ -202,11 +214,11 @@ interface TabConfig {
   icon: LucideIcon;
   badge?: number;
   visible: boolean;
-  group: TabGroup;
+  group: NavGroupId;
 }
 
-interface TabGroupEntry {
-  group: TabGroup;
+interface NavGroupEntry {
+  group: NavGroupDef;
   tabs: TabConfig[];
 }
 
@@ -219,209 +231,21 @@ function buildTabConfigs(
   const isProjectComplete = projectStatus === "COMPLETE" || projectStatus === "CLOSED";
   const showAssetMgmt = isProjectComplete || hasManagementAccess(userRole);
   return [
-    {
-      value: "overview",
-      label: "Overview",
-      icon: LayoutDashboard,
-      visible: true,
-      group: "General",
-    },
-    {
-      value: "job-info",
-      label: "Job Info",
-      icon: Info,
-      visible: true,
-      group: "General",
-    },
-    {
-      value: "scope",
-      label: "Scope & Progress",
-      icon: ListChecks,
-      visible: true,
-      group: "General",
-    },
-    {
-      value: "schedule",
-      label: "Schedule",
-      icon: CalendarIcon,
-      visible: true,
-      group: "General",
-    },
-    {
-      value: "daily-notes",
-      label: "Daily Notes",
-      icon: NotebookPen,
-      visible: true,
-      group: "Field Operations",
-    },
-    {
-      value: "delays",
-      label: "Delays",
-      icon: CloudRain,
-      visible: true,
-      group: "Field Operations",
-    },
-    {
-      value: "inspections",
-      label: "Inspections",
-      icon: CalendarCheck,
-      visible: true,
-      group: "Field Operations",
-    },
-    {
-      value: "punch-list",
-      label: "Punch List",
-      icon: ClipboardList,
-      visible: hasManagementAccess(userRole),
-      group: "Field Operations",
-    },
-    {
-      value: "asset-handover",
-      label: "Handover",
-      icon: ClipboardCheck,
-      visible: showAssetMgmt,
-      group: "Asset Management",
-    },
-    {
-      value: "warranty",
-      label: "Warranty",
-      icon: ShieldCheck,
-      visible: showAssetMgmt,
-      group: "Asset Management",
-    },
-    {
-      value: "maintenance-logs",
-      label: "Maintenance",
-      icon: Wrench,
-      visible: showAssetMgmt,
-      group: "Asset Management",
-    },
-    {
-      value: "field-takeoff",
-      label: "Field Takeoff",
-      icon: ClipboardCheck,
-      visible: true,
-      group: "Field Operations",
-    },
-    {
-      value: "locations",
-      label: "Locations",
-      icon: MapPin,
-      visible: hasManagementAccess(userRole),
-      group: "Field Operations",
-    },
-    {
-      value: "risks",
-      label: "Risks",
-      icon: AlertTriangle,
-      visible: hasManagementAccess(userRole),
-      group: "Field Operations",
-    },
-    {
-      value: "safety-training",
-      label: "Safety Training",
-      icon: ShieldCheck,
-      visible: hasManagementAccess(userRole),
-      group: "Field Operations",
-    },
-    {
-      value: "mobilization",
-      label: "Mobilization",
-      icon: HardHat,
-      visible: hasManagementAccess(userRole),
-      group: "Field Operations",
-    },
-    {
-      value: "progress-reports",
-      label: "Reports",
-      icon: FileText,
-      visible: hasManagementAccess(userRole),
-      group: "Documents & Communication",
-    },
-    {
-      value: "email-communications",
-      label: "Email",
-      icon: Mail,
-      visible: hasManagementAccess(userRole),
-      group: "Documents & Communication",
-    },
-    {
-      value: "rfis",
-      label: "RFIs",
-      icon: HelpCircle,
-      visible: hasManagementAccess(userRole),
-      group: "Documents & Communication",
-    },
-    {
-      value: "submittals",
-      label: "Submittals",
-      icon: FileCheck,
-      visible: hasManagementAccess(userRole),
-      group: "Documents & Communication",
-    },
-    {
-      value: "transmittals",
-      label: "Transmittals",
-      icon: Send,
-      visible: hasManagementAccess(userRole),
-      group: "Documents & Communication",
-    },
-    {
-      value: "contracts",
-      label: "Contracts",
-      icon: FileText,
-      visible: ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole || ""),
-      group: "Documents & Communication",
-    },
-    {
-      value: "plans",
-      label: "Plans & Takeoff",
-      icon: Ruler,
-      visible: true,
-      group: "Documents & Communication",
-    },
-    {
-      value: "media",
-      label: "Photos & Videos",
-      icon: Camera,
-      visible: true,
-      group: "Documents & Communication",
-    },
-    {
-      value: "project-vault",
-      label: "Project Vault",
-      icon: Archive,
-      visible: hasManagementAccess(userRole),
-      group: "Documents & Communication",
-    },
-    {
-      value: "time",
-      label: "Time & T&M",
-      icon: Clock,
-      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
-      group: "Resources & Workforce",
-    },
-    {
-      value: "labor",
-      label: "Labor",
-      icon: HardHat,
-      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
-      group: "Resources & Workforce",
-    },
-    {
-      value: "equipment",
-      label: "Equipment",
-      icon: Truck,
-      visible: FeaturePermissions.VIEW_EQUIPMENT(userRole),
-      group: "Resources & Workforce",
-    },
-    {
-      value: "subcontractors",
-      label: "Subcontractors",
-      icon: Users,
-      visible: FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(userRole),
-      group: "Resources & Workforce",
-    },
+    { value: "overview", label: "Overview", icon: LayoutDashboard, visible: true, group: "overview" },
+    { value: "job-info", label: "Job Info", icon: Info, visible: true, group: "overview" },
+    { value: "risks", label: "Risks", icon: AlertTriangle, visible: hasManagementAccess(userRole), group: "overview" },
+
+    { value: "schedule", label: "Schedule", icon: CalendarIcon, visible: true, group: "plan-schedule" },
+    { value: "delays", label: "Delays", icon: CloudRain, visible: true, group: "plan-schedule" },
+    { value: "mobilization", label: "Mobilization", icon: HardHat, visible: hasManagementAccess(userRole), group: "plan-schedule" },
+    { value: "locations", label: "Locations", icon: MapPin, visible: hasManagementAccess(userRole), group: "plan-schedule" },
+    { value: "plans", label: "Plans & Takeoff", icon: Ruler, visible: true, group: "plan-schedule" },
+    { value: "field-takeoff", label: "Field Takeoff", icon: ClipboardCheck, visible: true, group: "plan-schedule" },
+
+    { value: "scope", label: "Scope & Progress", icon: ListChecks, visible: true, group: "scope-cost" },
+    { value: "materials", label: "Materials", icon: Package, visible: true, group: "scope-cost" },
+    { value: "estimate", label: "Estimate", icon: Calculator, visible: FeaturePermissions.VIEW_ESTIMATES_TAB(userRole), group: "scope-cost" },
+    { value: "procurement", label: "Procurement", icon: ShoppingCart, visible: FeaturePermissions.VIEW_PROCUREMENT_TAB(userRole), group: "scope-cost" },
     {
       value: "project-financials",
       label: "Financials",
@@ -432,22 +256,23 @@ function buildTabConfigs(
         FeaturePermissions.VIEW_CHANGE_ORDERS_TAB(userRole) ||
         canAccessSOV ||
         FeaturePermissions.VIEW_RECEIPTS_TAB(userRole),
-      group: "Financial",
+      group: "scope-cost",
     },
-    {
-      value: "estimate",
-      label: "Estimate",
-      icon: Calculator,
-      visible: FeaturePermissions.VIEW_ESTIMATES_TAB(userRole),
-      group: "Financial",
-    },
-    {
-      value: "payroll",
-      label: "Payroll",
-      icon: Banknote,
-      visible: hasManagementAccess(userRole),
-      group: "Financial",
-    },
+    { value: "contracts", label: "Contracts", icon: FileText, visible: ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole || ""), group: "scope-cost" },
+
+    { value: "daily-notes", label: "Daily Notes", icon: NotebookPen, visible: true, group: "field" },
+    { value: "project-notes", label: "Project Notes", icon: StickyNote, visible: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole || ""), group: "field" },
+    { value: "inspections", label: "Inspections", icon: CalendarCheck, visible: true, group: "field" },
+    { value: "punch-list", label: "Punch List", icon: ClipboardList, visible: hasManagementAccess(userRole), group: "field" },
+    { value: "safety-training", label: "Safety Training", icon: ShieldCheck, visible: hasManagementAccess(userRole), group: "field" },
+    { value: "permits", label: "Permits", icon: FileCheck, visible: ["ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"].includes(userRole || ""), group: "field" },
+    { value: "media", label: "Photos & Videos", icon: Camera, visible: true, group: "field" },
+    { value: "lidar-scans", label: "LiDAR Scans", icon: ScanLine, visible: ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "HUSTLER"].includes(userRole || ""), group: "field" },
+
+    { value: "time", label: "Time & T&M", icon: Clock, visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole), group: "people-time" },
+    { value: "labor", label: "Labor", icon: HardHat, visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole), group: "people-time" },
+    { value: "subcontractors", label: "Subcontractors", icon: Users, visible: FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(userRole), group: "people-time" },
+    { value: "payroll", label: "Payroll", icon: Banknote, visible: hasManagementAccess(userRole), group: "people-time" },
     {
       value: "certified-payroll-history",
       label: "Certified Payroll History",
@@ -456,91 +281,180 @@ function buildTabConfigs(
       // that 403s for the viewer. Fall back to management access until the
       // permission flag has loaded.
       visible: canManagePayrollFlag ?? hasManagementAccess(userRole),
-      group: "Financial",
+      group: "people-time",
     },
-    {
-      value: "procurement",
-      label: "Procurement",
-      icon: ShoppingCart,
-      visible: FeaturePermissions.VIEW_PROCUREMENT_TAB(userRole),
-      group: "Financial",
-    },
-    {
-      value: "materials",
-      label: "Materials",
-      icon: Package,
-      visible: true,
-      group: "Financial",
-    },
-    {
-      value: "project-notes",
-      label: "Project Notes",
-      icon: StickyNote,
-      visible: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole || ""),
-      group: "Documents & Communication",
-    },
-    {
-      value: "portal-access",
-      label: "Portal Access",
-      icon: ExternalLink,
-      visible: hasManagementAccess(userRole),
-      group: "Documents & Communication",
-    },
-    {
-      value: "jobsite-ai",
-      label: "AI Jobsite",
-      icon: Bot,
-      visible: hasManagementAccess(userRole),
-      group: "AI",
-    },
-    {
-      value: "lidar-scans",
-      label: "LiDAR Scans",
-      icon: ScanLine,
-      visible: ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "HUSTLER"].includes(userRole || ""),
-      group: "Field Operations",
-    },
-    {
-      value: "permits",
-      label: "Permits",
-      icon: FileCheck,
-      visible: ["ADMIN", "MANAGER", "SUPERINTENDENT", "HUSTLER"].includes(userRole || ""),
-      group: "Field Operations",
-    },
+    { value: "equipment", label: "Equipment", icon: Truck, visible: FeaturePermissions.VIEW_EQUIPMENT(userRole), group: "people-time" },
+
+    { value: "email-communications", label: "Email", icon: Mail, visible: hasManagementAccess(userRole), group: "communication" },
+    { value: "jobsite-ai", label: "AI Jobsite", icon: Bot, visible: hasManagementAccess(userRole), group: "communication" },
+    { value: "rfis", label: "RFIs", icon: HelpCircle, visible: hasManagementAccess(userRole), group: "communication" },
+    { value: "transmittals", label: "Transmittals", icon: Send, visible: hasManagementAccess(userRole), group: "communication" },
+    { value: "submittals", label: "Submittals", icon: FileCheck, visible: hasManagementAccess(userRole), group: "communication" },
+
+    { value: "asset-handover", label: "Handover", icon: ClipboardCheck, visible: showAssetMgmt, group: "closeout" },
+    { value: "warranty", label: "Warranty", icon: ShieldCheck, visible: showAssetMgmt, group: "closeout" },
+    { value: "maintenance-logs", label: "Maintenance", icon: Wrench, visible: showAssetMgmt, group: "closeout" },
+    { value: "progress-reports", label: "Reports", icon: FileText, visible: hasManagementAccess(userRole), group: "closeout" },
+
+    { value: "project-vault", label: "Project Vault", icon: Archive, visible: hasManagementAccess(userRole), group: "sharing" },
+    { value: "portal-access", label: "Portal Access", icon: ExternalLink, visible: hasManagementAccess(userRole), group: "sharing" },
+    { value: "client-portal", label: "Client Portal", icon: Building2, visible: hasManagementAccess(userRole), group: "sharing" },
+    { value: "subcontractor-portal", label: "Subcontractor Portal", icon: Users, visible: hasManagementAccess(userRole), group: "sharing" },
   ];
 }
 
-const ROLE_DEFAULT_TABS: Record<string, string[]> = {
-  SUPER_ADMIN: ["overview", "project-financials", "schedule", "risks"],
-  ADMIN: ["overview", "project-financials", "schedule", "procurement"],
-  MANAGER: ["overview", "project-financials", "schedule", "daily-notes"],
-  SUPERINTENDENT: ["overview", "daily-notes", "inspections", "time", "field-takeoff"],
-  ESTIMATOR: ["overview", "estimate", "plans", "project-financials"],
-  FIELD_WORKER: ["overview", "daily-notes", "time"],
-};
+function buildNavSections(tabs: TabConfig[]): NavGroupEntry[] {
+  const sections: NavGroupEntry[] = [];
+  for (const group of NAV_GROUPS) {
+    const items = tabs.filter((t) => t.group === group.id);
+    if (items.length > 0) sections.push({ group, tabs: items });
+  }
+  return sections;
+}
 
-function getPinnedTabs(userId: string): string[] {
+const NAV_COLLAPSED_KEY = "project-hub-nav-collapsed";
+const NAV_GROUPS_KEY = "project-hub-nav-groups";
+
+function loadCollapsedRail(): boolean {
   try {
-    const stored = localStorage.getItem(`pinned-tabs-${userId}`);
-    return stored ? JSON.parse(stored) : [];
+    return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
   } catch {
-    return [];
+    return false;
   }
 }
 
-function setPinnedTabs(userId: string, tabs: string[]) {
-  localStorage.setItem(`pinned-tabs-${userId}`, JSON.stringify(tabs));
+function loadGroupCollapseState(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(NAV_GROUPS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
 }
 
-function groupTabs(tabs: TabConfig[]): TabGroupEntry[] {
-  const grouped: TabGroupEntry[] = [];
-  for (const groupName of TAB_GROUP_ORDER) {
-    const groupTabs = tabs.filter((t) => t.group === groupName);
-    if (groupTabs.length > 0) {
-      grouped.push({ group: groupName, tabs: groupTabs });
-    }
-  }
-  return grouped;
+interface ProjectHubNavRailProps {
+  sections: NavGroupEntry[];
+  activeTab: string;
+  onSelect: (value: string) => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  collapsedGroups: Record<string, boolean>;
+  onToggleGroup: (groupId: NavGroupId) => void;
+}
+
+function ProjectHubNavRail({
+  sections,
+  activeTab,
+  onSelect,
+  collapsed,
+  onToggleCollapsed,
+  collapsedGroups,
+  onToggleGroup,
+}: ProjectHubNavRailProps) {
+  return (
+    <nav
+      className={`hidden md:flex flex-col shrink-0 border-r border-border bg-card/50 sticky top-4 self-start max-h-[calc(100vh-2rem)] overflow-y-auto rounded-md transition-[width] duration-200 ${
+        collapsed ? "w-[56px]" : "w-[220px]"
+      }`}
+      data-testid="project-hub-nav-rail"
+      aria-label="Project sections"
+    >
+      <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} px-2 py-2 border-b border-border`}>
+        {!collapsed && (
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1">
+            Sections
+          </span>
+        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onToggleCollapsed}
+              data-testid="button-toggle-nav-rail"
+              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            >
+              {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{collapsed ? "Expand" : "Collapse"}</TooltipContent>
+        </Tooltip>
+      </div>
+
+      <div className="flex flex-col py-1">
+        {sections.map((section) => {
+          const isCollapsedGroup = !collapsed && (collapsedGroups[section.group.id] ?? false);
+          return (
+            <div key={section.group.id} className="py-0.5">
+              {!collapsed && (
+                <button
+                  type="button"
+                  onClick={() => onToggleGroup(section.group.id)}
+                  className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid={`nav-group-header-${section.group.id}`}
+                  aria-expanded={!isCollapsedGroup}
+                >
+                  <span>{section.group.label}</span>
+                  <ChevronDown className={`h-3 w-3 transition-transform ${isCollapsedGroup ? "-rotate-90" : ""}`} />
+                </button>
+              )}
+              {collapsed && (
+                <div
+                  className="mx-2 my-1 border-t border-border/60"
+                  data-testid={`nav-group-divider-${section.group.id}`}
+                  aria-hidden
+                />
+              )}
+              {(!isCollapsedGroup) && (
+                <div className="flex flex-col">
+                  {section.tabs.map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.value;
+                    const button = (
+                      <button
+                        key={tab.value}
+                        type="button"
+                        onClick={() => onSelect(tab.value)}
+                        className={`group relative flex items-center gap-2 ${collapsed ? "justify-center px-0" : "px-3"} py-1.5 mx-1 rounded-md text-sm transition-colors ${
+                          isActive
+                            ? "bg-primary/10 text-foreground font-medium"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                        data-testid={`nav-item-${tab.value}`}
+                        aria-current={isActive ? "page" : undefined}
+                      >
+                        {isActive && (
+                          <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary" aria-hidden />
+                        )}
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && <span className="truncate">{tab.label}</span>}
+                        {!collapsed && tab.badge !== undefined && (
+                          <Badge variant="secondary" className="ml-auto h-4 px-1 text-[10px]">
+                            {tab.badge}
+                          </Badge>
+                        )}
+                      </button>
+                    );
+                    if (collapsed) {
+                      return (
+                        <Tooltip key={tab.value}>
+                          <TooltipTrigger asChild>{button}</TooltipTrigger>
+                          <TooltipContent side="right">{tab.label}</TooltipContent>
+                        </Tooltip>
+                      );
+                    }
+                    return button;
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </nav>
+  );
 }
 
 export default function ProjectDetailPage() {
@@ -548,32 +462,33 @@ export default function ProjectDetailPage() {
   const searchParams = new URLSearchParams(window.location.search);
   const urlTab = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState(urlTab || "overview");
-  const [activeCategory, setActiveCategory] = useState<TabGroup>("General");
   const [financialSubTab, setFinancialSubTab] = useState("live-financials");
+  const [portalSubTab, setPortalSubTab] = useState("client-portal");
   const [, params] = useRoute("/projects/:code");
   const { user } = useAuth();
   const { toast } = useToast();
   const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
   const canAccessFinancialsPerms = useFeaturePermission("canViewFinancials");
   const canManagePayrollPerm = useFeaturePermission("canManagePayroll");
-  const [pinnedTabValues, setPinnedTabValuesState] = useState<string[]>(() => {
-    const stored = getPinnedTabs(user?.id || "default");
-    if (stored.length > 0) return stored;
-    return ROLE_DEFAULT_TABS[user?.role || ""] || [];
-  });
-  const [tabSearchOpen, setTabSearchOpen] = useState(false);
-  const [tabSearchQuery, setTabSearchQuery] = useState("");
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const togglePinnedTab = useCallback((tabValue: string) => {
-    setPinnedTabValuesState(prev => {
-      const next = prev.includes(tabValue)
-        ? prev.filter(v => v !== tabValue)
-        : [...prev, tabValue];
-      setPinnedTabs(user?.id || "default", next);
+  const [navCollapsed, setNavCollapsed] = useState<boolean>(() => loadCollapsedRail());
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => loadGroupCollapseState());
+
+  const toggleNavCollapsed = useCallback(() => {
+    setNavCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(NAV_COLLAPSED_KEY, next ? "1" : "0"); } catch {}
       return next;
     });
-  }, [user?.id]);
+  }, []);
+
+  const toggleNavGroup = useCallback((groupId: NavGroupId) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [groupId]: !(prev[groupId] ?? false) };
+      try { localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   const fromCFO = searchParams.get("from") === "cfo";
   const backPath = fromCFO ? "/cfo" : "/projects";
@@ -642,16 +557,20 @@ export default function ProjectDetailPage() {
     canAccessFinancialsPerms === true;
   const tabConfigs = buildTabConfigs(user?.role, canAccessSOV, project?.status, canManagePayrollPerm === true);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
-  const groupedTabs = groupTabs(visibleTabs);
+  const navSections = useMemo(() => buildNavSections(visibleTabs), [visibleTabs]);
 
   useEffect(() => {
     const currentParams = new URLSearchParams(window.location.search);
-    const urlTab = currentParams.get("tab");
-    if (urlTab && visibleTabs.length > 0) {
-      const matched = visibleTabs.find(t => t.value === urlTab);
+    const urlTabValue = currentParams.get("tab");
+    if (urlTabValue && visibleTabs.length > 0) {
+      const matched = visibleTabs.find((t) => t.value === urlTabValue);
       if (matched) {
-        setActiveTab(urlTab);
-        if (matched.group) setActiveCategory(matched.group);
+        if (urlTabValue === "client-portal" || urlTabValue === "subcontractor-portal") {
+          setActiveTab("portal-access");
+          setPortalSubTab(urlTabValue);
+        } else {
+          setActiveTab(urlTabValue);
+        }
       }
     }
   }, [visibleTabs]);
@@ -668,32 +587,36 @@ export default function ProjectDetailPage() {
     "revenue-wip": "revenue-wip",
   };
 
-  const findCategoryForTab = (tabValue: string): TabGroup | undefined => {
-    const matchedTab = visibleTabs.find((t) => t.value === tabValue);
-    return matchedTab?.group;
-  };
+  const syncTabToUrl = useCallback((tabValue: string) => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.set("tab", tabValue);
+      window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+    } catch {}
+  }, []);
+
+  const portalSubTabValues = new Set(["client-portal", "subcontractor-portal"]);
 
   const handleSetActiveTab = (tab: string) => {
     if (tab in financialSubTabMap) {
       setActiveTab("project-financials");
       setFinancialSubTab(financialSubTabMap[tab]);
-      setActiveCategory("Financial");
+      syncTabToUrl("project-financials");
+    } else if (portalSubTabValues.has(tab)) {
+      setActiveTab("portal-access");
+      setPortalSubTab(tab);
+      syncTabToUrl(tab);
     } else {
-      const category = findCategoryForTab(tab);
-      if (category) {
+      const matched = visibleTabs.find((t) => t.value === tab);
+      if (matched) {
         setActiveTab(tab);
-        setActiveCategory(category);
+        syncTabToUrl(tab);
       }
     }
   };
 
-  const handleCategoryClick = (category: TabGroup) => {
-    setActiveCategory(category);
-    const categoryGroup = groupedTabs.find((g) => g.group === category);
-    if (categoryGroup && categoryGroup.tabs.length > 0) {
-      setActiveTab(categoryGroup.tabs[0].value);
-    }
-  };
+  const effectiveActiveTab = activeTab === "portal-access" ? portalSubTab : activeTab;
+  const activeNavTab = visibleTabs.find((t) => t.value === effectiveActiveTab);
 
   const { data: closeoutReadiness } = useQuery<{
     openPunchListItems: number;
@@ -907,183 +830,47 @@ export default function ProjectDetailPage() {
           onValueChange={handleSetActiveTab}
           className="space-y-6"
         >
-          <div className="lg:hidden">
-            <Select value={activeTab} onValueChange={handleSetActiveTab}>
-              <SelectTrigger className="w-full" data-testid="select-tab-mobile">
-                <SelectValue placeholder="Select tab" />
-              </SelectTrigger>
-              <SelectContent>
-                {groupedTabs.map((entry) => (
-                  <SelectGroup key={entry.group}>
-                    <SelectLabel data-testid={`select-group-${entry.group}`}>{entry.group}</SelectLabel>
-                    {entry.tabs.map((tab) => (
-                      <SelectItem key={tab.value} value={tab.value}>
-                        {tab.label} {tab.badge ? `(${tab.badge})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="flex flex-col md:flex-row gap-4">
+            <ProjectHubNavRail
+              sections={navSections}
+              activeTab={effectiveActiveTab}
+              onSelect={handleSetActiveTab}
+              collapsed={navCollapsed}
+              onToggleCollapsed={toggleNavCollapsed}
+              collapsedGroups={collapsedGroups}
+              onToggleGroup={toggleNavGroup}
+            />
 
-          <div className="hidden lg:flex flex-col gap-0 w-full">
-            {pinnedTabValues.length > 0 && (
-              <div className="flex items-center gap-1 px-2 py-1.5 bg-primary/5 border border-border rounded-t-md" data-testid="pinned-tabs-row">
-                <Star className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mr-1">Pinned</span>
-                {pinnedTabValues.map(pv => {
-                  const tab = visibleTabs.find(t => t.value === pv);
-                  if (!tab) return null;
-                  const IconComp = tab.icon;
-                  return (
-                    <button
-                      key={pv}
-                      type="button"
-                      onClick={() => {
-                        handleSetActiveTab(pv);
-                      }}
-                      className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-sm transition-all select-none ${
-                        activeTab === pv
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "bg-background text-foreground hover:bg-muted shadow-sm border border-border/50"
-                      }`}
-                      data-testid={`pinned-tab-${pv}`}
-                    >
-                      <IconComp className="h-3.5 w-3.5" />
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className={`flex items-center gap-1 bg-muted p-1 border-b border-border ${pinnedTabValues.length > 0 ? "rounded-none" : "rounded-t-md"}`} data-testid="category-tabs-row">
-              {groupedTabs.map((entry) => (
-                <button
-                  key={entry.group}
-                  type="button"
-                  onClick={() => handleCategoryClick(entry.group)}
-                  className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded-sm transition-all select-none ${
-                    activeCategory === entry.group
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                  }`}
-                  data-testid={`category-tab-${entry.group}`}
-                >
-                  {entry.group}
-                </button>
-              ))}
-              <div className="ml-auto">
-                <Popover open={tabSearchOpen} onOpenChange={(open) => {
-                  setTabSearchOpen(open);
-                  if (open) setTimeout(() => searchInputRef.current?.focus(), 100);
-                  else setTabSearchQuery("");
-                }}>
-                  <PopoverTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" data-testid="button-tab-search">
-                      <Search className="h-3.5 w-3.5" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-72 p-2" align="end" data-testid="tab-search-popover">
-                    <Input
-                      ref={searchInputRef}
-                      placeholder="Search tabs..."
-                      value={tabSearchQuery}
-                      onChange={(e) => setTabSearchQuery(e.target.value)}
-                      className="h-8 text-sm mb-2"
-                      data-testid="input-tab-search"
-                    />
-                    <ScrollArea className="max-h-64">
-                      <div className="space-y-0.5">
-                        {visibleTabs
-                          .filter(t => t.label.toLowerCase().includes(tabSearchQuery.toLowerCase()) || t.group.toLowerCase().includes(tabSearchQuery.toLowerCase()))
-                          .map(tab => {
-                            const IconComp = tab.icon;
-                            const isPinned = pinnedTabValues.includes(tab.value);
-                            return (
-                              <div key={tab.value} className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    handleSetActiveTab(tab.value);
-                                    setTabSearchOpen(false);
-                                    setTabSearchQuery("");
-                                  }}
-                                  className={`flex-1 flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm hover:bg-muted transition-colors text-left ${
-                                    activeTab === tab.value ? "bg-muted font-medium" : ""
-                                  }`}
-                                  data-testid={`search-result-${tab.value}`}
-                                >
-                                  <IconComp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  <span>{tab.label}</span>
-                                  <span className="text-[10px] text-muted-foreground ml-auto">{tab.group}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => togglePinnedTab(tab.value)}
-                                  className={`p-1 rounded-sm hover:bg-muted transition-colors ${isPinned ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
-                                  data-testid={`pin-tab-${tab.value}`}
-                                  title={isPinned ? "Unpin tab" : "Pin tab"}
-                                >
-                                  <Star className={`h-3 w-3 ${isPinned ? "fill-amber-500" : ""}`} />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        {visibleTabs.filter(t => t.label.toLowerCase().includes(tabSearchQuery.toLowerCase()) || t.group.toLowerCase().includes(tabSearchQuery.toLowerCase())).length === 0 && (
-                          <p className="text-xs text-muted-foreground text-center py-3">No tabs found</p>
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </PopoverContent>
-                </Popover>
-              </div>
+            <div className="md:hidden">
+              <Select value={effectiveActiveTab} onValueChange={handleSetActiveTab}>
+                <SelectTrigger className="w-full" data-testid="select-tab-mobile">
+                  <SelectValue placeholder="Select section">
+                    {activeNavTab ? (
+                      <span className="flex items-center gap-2">
+                        <activeNavTab.icon className="h-4 w-4" />
+                        {activeNavTab.label}
+                      </span>
+                    ) : (
+                      "Select section"
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {navSections.map((section) => (
+                    <SelectGroup key={section.group.id}>
+                      <SelectLabel data-testid={`select-group-${section.group.id}`}>{section.group.label}</SelectLabel>
+                      {section.tabs.map((tab) => (
+                        <SelectItem key={tab.value} value={tab.value} data-testid={`select-tab-${tab.value}`}>
+                          {tab.label} {tab.badge ? `(${tab.badge})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            {groupedTabs
-              .filter((entry) => entry.group === activeCategory)
-              .map((entry) => (
-                <TabsList
-                  key={entry.group}
-                  className="flex flex-wrap gap-1 h-auto w-full justify-start rounded-t-none rounded-b-md bg-muted/50 p-1"
-                  data-testid={`tab-group-${entry.group}`}
-                >
-                  {entry.tabs.map((tab) => {
-                    const IconComp = tab.icon;
-                    const isPinned = pinnedTabValues.includes(tab.value);
-                    return (
-                      <TabsTrigger
-                        key={tab.value}
-                        value={tab.value}
-                        className="group relative"
-                        data-testid={`tab-${tab.value}`}
-                      >
-                        <IconComp className="h-4 w-4 mr-1" />
-                        {tab.label}
-                        {tab.badge !== undefined && (
-                          <Badge className="ml-2" variant="secondary">
-                            {tab.badge}
-                          </Badge>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            togglePinnedTab(tab.value);
-                          }}
-                          className={`ml-1 opacity-0 group-hover:opacity-100 transition-opacity ${isPinned ? "opacity-100 text-amber-500" : "text-muted-foreground/50"}`}
-                          data-testid={`pin-inline-${tab.value}`}
-                          title={isPinned ? "Unpin" : "Pin to top"}
-                        >
-                          <Star className={`h-3 w-3 ${isPinned ? "fill-amber-500" : ""}`} />
-                        </button>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-              ))}
-          </div>
+            <div className="flex-1 min-w-0 space-y-6">
 
           <TabsContent value="overview" className="space-y-6">
             <OverviewTab
@@ -1287,7 +1074,14 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="portal-access">
-            <Tabs defaultValue="client-portal" className="space-y-4">
+            <Tabs
+              value={portalSubTab}
+              onValueChange={(v) => {
+                setPortalSubTab(v);
+                syncTabToUrl(v);
+              }}
+              className="space-y-4"
+            >
               <TabsList>
                 <TabsTrigger
                   value="client-portal"
@@ -1415,6 +1209,8 @@ export default function ProjectDetailPage() {
               userRole={user?.role ?? "VIEWER"}
             />
           </TabsContent>
+            </div>
+          </div>
         </Tabs>
       </main>
 
