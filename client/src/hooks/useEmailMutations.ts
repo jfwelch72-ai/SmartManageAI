@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { EmailAccount } from "@/components/email/shared";
+import type { EmailAccount, EmailMessage, EmailThread } from "@/components/email/shared";
 
 function extractErrorMessage(error: any, fallback: string): string {
   const msg = error?.message || "";
@@ -305,6 +305,156 @@ export function useUpdateTask() {
     },
     onError: () => {
       toast({ title: "Failed to update task", variant: "destructive" });
+    },
+  });
+}
+
+interface UpdateMessageVars {
+  messageId: string;
+  isRead?: boolean;
+  isArchived?: boolean;
+}
+
+export function useUpdateMessageState(threadId?: string) {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ messageId, isRead, isArchived }: UpdateMessageVars) => {
+      const body: Record<string, boolean> = {};
+      if (isRead !== undefined) body.isRead = isRead;
+      if (isArchived !== undefined) body.isArchived = isArchived;
+      const res = await apiRequest("PATCH", `/api/email/messages/${messageId}`, body);
+      return res.json();
+    },
+    onMutate: async ({ messageId, isRead, isArchived }: UpdateMessageVars) => {
+      const detailKey = threadId ? ["/api/email/threads", threadId] : null;
+      if (detailKey) await queryClient.cancelQueries({ queryKey: detailKey });
+      await queryClient.cancelQueries({ queryKey: ["/api/email/threads"] });
+
+      const previousDetail = detailKey ? queryClient.getQueryData(detailKey) : undefined;
+      const previousLists = queryClient.getQueriesData<EmailThread[]>({ queryKey: ["/api/email/threads"] });
+
+      let updatedThreadId = threadId;
+      let newUnread: number | null = null;
+
+      if (detailKey) {
+        queryClient.setQueryData(detailKey, (old: any) => {
+          if (!old || !Array.isArray(old.messages)) return old;
+          const messages = old.messages.map((m: EmailMessage) => {
+            if (m.id !== messageId) return m;
+            return {
+              ...m,
+              ...(isRead !== undefined ? { isRead } : {}),
+              ...(isArchived !== undefined ? { isArchived } : {}),
+            };
+          });
+          newUnread = messages.filter((m: EmailMessage) => !m.isRead).length;
+          updatedThreadId = old.thread?.id ?? threadId;
+          return {
+            ...old,
+            messages,
+            thread: old.thread ? { ...old.thread, unreadCount: newUnread } : old.thread,
+          };
+        });
+      }
+
+      if (updatedThreadId && newUnread !== null) {
+        previousLists.forEach(([key, list]) => {
+          if (!Array.isArray(list)) return;
+          queryClient.setQueryData<EmailThread[]>(key, list.map((t) =>
+            t.id === updatedThreadId ? { ...t, unreadCount: newUnread as number } : t
+          ));
+        });
+      }
+
+      return { previousDetail, previousLists, detailKey };
+    },
+    onError: (error: any, _vars, context) => {
+      if (context?.detailKey && context.previousDetail !== undefined) {
+        queryClient.setQueryData(context.detailKey, context.previousDetail);
+      }
+      context?.previousLists?.forEach(([key, list]) => {
+        queryClient.setQueryData(key, list);
+      });
+      toast({
+        title: "Update failed",
+        description: extractErrorMessage(error, "Could not update message"),
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
+    },
+  });
+}
+
+interface UpdateThreadVars {
+  threadId: string;
+  isRead?: boolean;
+  isArchived?: boolean;
+}
+
+export function useUpdateThreadState() {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ threadId, isRead, isArchived }: UpdateThreadVars) => {
+      const detailRes = await apiRequest("GET", `/api/email/threads/${threadId}`);
+      const detail = await detailRes.json();
+      const messages: EmailMessage[] = detail.messages || [];
+      const targets = messages.filter((m) => {
+        if (isRead !== undefined && m.isRead !== isRead) return true;
+        if (isArchived !== undefined && (m.isArchived ?? false) !== isArchived) return true;
+        return false;
+      });
+      await Promise.all(
+        targets.map((m) => {
+          const body: Record<string, boolean> = {};
+          if (isRead !== undefined) body.isRead = isRead;
+          if (isArchived !== undefined) body.isArchived = isArchived;
+          return apiRequest("PATCH", `/api/email/messages/${m.id}`, body);
+        }),
+      );
+      return { threadId, updated: targets.length };
+    },
+    onMutate: async ({ threadId, isRead, isArchived }: UpdateThreadVars) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/email/threads"] });
+      const previousLists = queryClient.getQueriesData<EmailThread[]>({ queryKey: ["/api/email/threads"] });
+      previousLists.forEach(([key, list]) => {
+        if (!Array.isArray(list)) return;
+        queryClient.setQueryData<EmailThread[]>(
+          key,
+          list.map((t) => {
+            if (t.id !== threadId) return t;
+            const next = { ...t };
+            if (isRead === true) next.unreadCount = 0;
+            if (isArchived !== undefined) next.status = isArchived ? "ARCHIVED" : "OPEN";
+            return next;
+          }),
+        );
+      });
+      return { previousLists };
+    },
+    onError: (error: any, _vars, context) => {
+      context?.previousLists?.forEach(([key, list]) => {
+        queryClient.setQueryData(key, list);
+      });
+      toast({
+        title: "Update failed",
+        description: extractErrorMessage(error, "Could not update thread"),
+        variant: "destructive",
+      });
+    },
+    onSuccess: (_data, vars) => {
+      const action = vars.isArchived === true
+        ? "Thread archived"
+        : vars.isArchived === false
+        ? "Thread restored"
+        : vars.isRead === true
+        ? "Thread marked read"
+        : "Thread marked unread";
+      toast({ title: action });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
     },
   });
 }

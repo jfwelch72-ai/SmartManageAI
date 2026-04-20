@@ -12,6 +12,10 @@ import {
   Paperclip,
   ExternalLink,
   Clock,
+  Archive,
+  ArchiveRestore,
+  Mail,
+  MailOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -26,6 +30,7 @@ import {
   useAnalyzeMessage,
   useSuggestReply,
   useUpdateTask,
+  useUpdateMessageState,
 } from "@/hooks/useEmailMutations";
 
 interface ThreadDetailViewProps {
@@ -35,6 +40,7 @@ interface ThreadDetailViewProps {
 
 export function EmailThreadDetail({ thread, onClose }: ThreadDetailViewProps) {
   const summarizeMutation = useSummarizeThread(thread.id);
+  const updateStateMutation = useUpdateMessageState(thread.id);
 
   const { data: threadData, isLoading } = useQuery<{
     thread: EmailThread;
@@ -46,6 +52,24 @@ export function EmailThreadDetail({ thread, onClose }: ThreadDetailViewProps) {
 
   const messages = threadData?.messages || [];
   const tasks = threadData?.tasks || [];
+
+  const unreadMessages = messages.filter((m) => !m.isRead);
+  const allArchived = messages.length > 0 && messages.every((m) => m.isArchived);
+
+  const markThreadRead = () => {
+    unreadMessages.forEach((m) => {
+      updateStateMutation.mutate({ messageId: m.id, isRead: true });
+    });
+  };
+
+  const archiveThread = () => {
+    const targetArchived = !allArchived;
+    messages.forEach((m) => {
+      if ((m.isArchived ?? false) !== targetArchived) {
+        updateStateMutation.mutate({ messageId: m.id, isArchived: targetArchived });
+      }
+    });
+  };
 
   return (
     <div className="flex-1 flex flex-col">
@@ -78,6 +102,35 @@ export function EmailThreadDetail({ thread, onClose }: ThreadDetailViewProps) {
               <Sparkles className="w-4 h-4 mr-2" />
             )}
             Summarize
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={markThreadRead}
+            disabled={unreadMessages.length === 0 || updateStateMutation.isPending}
+            data-testid="button-mark-thread-read"
+          >
+            <MailOpen className="w-4 h-4 mr-2" />
+            Mark all read
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={archiveThread}
+            disabled={messages.length === 0 || updateStateMutation.isPending}
+            data-testid="button-archive-thread"
+          >
+            {allArchived ? (
+              <>
+                <ArchiveRestore className="w-4 h-4 mr-2" />
+                Unarchive
+              </>
+            ) : (
+              <>
+                <Archive className="w-4 h-4 mr-2" />
+                Archive
+              </>
+            )}
           </Button>
           {thread.projectId && (
             <Button variant="outline" size="sm" asChild>
@@ -140,9 +193,13 @@ function MessageCard({ message }: { message: EmailMessage }) {
   const [showReplySuggestions, setShowReplySuggestions] = useState(false);
   const analyzeMutation = useAnalyzeMessage();
   const suggestReplyMutation = useSuggestReply(message.id);
+  const updateStateMutation = useUpdateMessageState(message.threadId);
 
   return (
-    <Card data-testid={`message-card-${message.id}`}>
+    <Card
+      data-testid={`message-card-${message.id}`}
+      className={!message.isRead ? "border-primary/50" : undefined}
+    >
       <CardHeader className="pb-2">
         <div className="flex flex-col sm:flex-row items-start justify-between gap-2">
           <div className="flex items-center gap-3">
@@ -150,7 +207,7 @@ function MessageCard({ message }: { message: EmailMessage }) {
               <User className="w-5 h-5 text-muted-foreground" />
             </div>
             <div>
-              <div className="font-medium">
+              <div className={`font-medium ${!message.isRead ? "font-semibold" : ""}`}>
                 {message.fromName || message.fromAddress}
               </div>
               <div className="text-xs text-muted-foreground">
@@ -159,6 +216,17 @@ function MessageCard({ message }: { message: EmailMessage }) {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {!message.isRead && (
+              <Badge variant="default" className="text-xs" data-testid={`badge-unread-${message.id}`}>
+                Unread
+              </Badge>
+            )}
+            {message.isArchived && (
+              <Badge variant="outline" className="gap-1 text-xs" data-testid={`badge-archived-${message.id}`}>
+                <Archive className="w-3 h-3" />
+                Archived
+              </Badge>
+            )}
             <ClassificationBadge classification={message.classification} />
             {message.hasAttachments && (
               <Badge variant="outline" className="gap-1">
@@ -205,6 +273,44 @@ function MessageCard({ message }: { message: EmailMessage }) {
               <Send className="w-4 h-4 mr-2" />
             )}
             Suggest Reply
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => updateStateMutation.mutate({ messageId: message.id, isRead: !message.isRead })}
+            disabled={updateStateMutation.isPending}
+            data-testid={`button-toggle-read-${message.id}`}
+          >
+            {message.isRead ? (
+              <>
+                <Mail className="w-4 h-4 mr-2" />
+                Mark unread
+              </>
+            ) : (
+              <>
+                <MailOpen className="w-4 h-4 mr-2" />
+                Mark read
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => updateStateMutation.mutate({ messageId: message.id, isArchived: !message.isArchived })}
+            disabled={updateStateMutation.isPending}
+            data-testid={`button-archive-message-${message.id}`}
+          >
+            {message.isArchived ? (
+              <>
+                <ArchiveRestore className="w-4 h-4 mr-2" />
+                Unarchive
+              </>
+            ) : (
+              <>
+                <Archive className="w-4 h-4 mr-2" />
+                Archive
+              </>
+            )}
           </Button>
         </div>
 

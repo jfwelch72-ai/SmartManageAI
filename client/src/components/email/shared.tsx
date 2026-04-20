@@ -34,6 +34,7 @@ export interface EmailMessage {
   snippet: string | null;
   receivedAt: string;
   isRead: boolean;
+  isArchived?: boolean;
   classification: string | null;
   hasAttachments: boolean;
 }
