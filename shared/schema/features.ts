@@ -9453,7 +9453,7 @@ export type CrmSequenceEmailEvent = typeof crmSequenceEmailEvents.$inferSelect;
 export const projectEmailDistributionLists = pgTable("project_email_distribution_lists", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   contactEmails: text("contact_emails").array().notNull().default(sql`ARRAY[]::text[]`),
   extraEmails: text("extra_emails").array().notNull().default(sql`ARRAY[]::text[]`),
@@ -9464,6 +9464,9 @@ export const projectEmailDistributionLists = pgTable("project_email_distribution
   orgIdx: index("project_email_lists_org_idx").on(table.organizationId),
   projectIdx: index("project_email_lists_project_idx").on(table.projectId),
   uniqueProjectName: uniqueIndex("project_email_lists_project_name_uniq").on(table.projectId, table.name),
+  uniqueOrgName: uniqueIndex("project_email_lists_org_name_uniq")
+    .on(table.organizationId, table.name)
+    .where(sql`${table.projectId} IS NULL`),
 }));
 export const insertProjectEmailDistributionListSchema = createInsertSchema(projectEmailDistributionLists).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectEmailDistributionList = z.infer<typeof insertProjectEmailDistributionListSchema>;

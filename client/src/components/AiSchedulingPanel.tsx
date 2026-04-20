@@ -251,6 +251,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [isSending, setIsSending] = useState(false);
   const [saveListDialogOpen, setSaveListDialogOpen] = useState(false);
   const [saveListName, setSaveListName] = useState("");
+  const [saveListOrgScope, setSaveListOrgScope] = useState(false);
 
   const { toast } = useToast();
 
@@ -445,6 +446,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     name: string;
     contactEmails: string[];
     extraEmails: string[];
+    projectId: string | null;
     updatedAt: string;
   }
 
@@ -487,7 +489,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   }, [distributionLists, recipientData, toast]);
 
   const saveDistributionListMutation = useMutation({
-    mutationFn: async (vars: { name: string; contactEmails: string[]; extraEmails: string[] }) => {
+    mutationFn: async (vars: { name: string; contactEmails: string[]; extraEmails: string[]; scope: "PROJECT" | "ORGANIZATION" }) => {
       const res = await apiRequest(
         "POST",
         `/api/ai-features/schedule/${projectId}/distribution-lists`,
@@ -497,12 +499,16 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     },
     onSuccess: (data: { list: DistributionList }) => {
       queryClient.invalidateQueries({ queryKey: distributionListsQueryKey });
+      const isOrg = data.list.projectId === null;
       toast({
-        title: "Distribution list saved",
-        description: `"${data.list.name}" can be reused for future sends.`,
+        title: isOrg ? "Organization list saved" : "Distribution list saved",
+        description: isOrg
+          ? `"${data.list.name}" is now available across every project.`
+          : `"${data.list.name}" can be reused for future sends.`,
       });
       setSaveListDialogOpen(false);
       setSaveListName("");
+      setSaveListOrgScope(false);
     },
     onError: (err: Error) => {
       toast({
@@ -575,8 +581,13 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
       });
       return;
     }
-    saveDistributionListMutation.mutate({ name, contactEmails, extraEmails });
-  }, [extraRecipientsInput, recipientData, saveDistributionListMutation, saveListName, selectedRecipientEmails, toast]);
+    saveDistributionListMutation.mutate({
+      name,
+      contactEmails,
+      extraEmails,
+      scope: saveListOrgScope ? "ORGANIZATION" : "PROJECT",
+    });
+  }, [extraRecipientsInput, recipientData, saveDistributionListMutation, saveListName, saveListOrgScope, selectedRecipientEmails, toast]);
 
   const openSendDialog = useCallback(() => {
     setSendSubject(`${projectName} (${projectCode}) — Schedule update`);
@@ -1583,6 +1594,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
                 <div className="space-y-1 rounded border p-2">
                   {distributionLists.map((list) => {
                     const total = list.contactEmails.length + list.extraEmails.length;
+                    const isOrg = list.projectId === null;
                     return (
                       <div
                         key={list.id}
@@ -1597,8 +1609,13 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
                           title={isRecipientsLoading ? "Loading project contacts…" : undefined}
                           data-testid={`button-load-list-${list.id}`}
                         >
-                          <div className="text-sm font-medium truncate" data-testid={`text-list-name-${list.id}`}>
-                            {list.name}
+                          <div className="text-sm font-medium truncate flex items-center gap-2" data-testid={`text-list-name-${list.id}`}>
+                            <span className="truncate">{list.name}</span>
+                            {isOrg && (
+                              <Badge variant="secondary" className="text-[10px] shrink-0" data-testid={`badge-list-scope-${list.id}`}>
+                                Organization
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground truncate">
                             {total} recipient{total === 1 ? "" : "s"}
@@ -1699,6 +1716,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
               variant="outline"
               onClick={() => {
                 setSaveListName("");
+                setSaveListOrgScope(false);
                 setSaveListDialogOpen(true);
               }}
               disabled={isSending}
@@ -1741,19 +1759,34 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
               Save the currently selected contacts and additional emails as a reusable list for this project.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="distribution-list-name">List name</Label>
-            <Input
-              id="distribution-list-name"
-              placeholder="e.g. Weekly progress meeting"
-              value={saveListName}
-              onChange={(e) => setSaveListName(e.target.value)}
-              data-testid="input-distribution-list-name"
-              autoFocus
-            />
-            <p className="text-xs text-muted-foreground">
-              Saving with an existing name will overwrite that list.
-            </p>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="distribution-list-name">List name</Label>
+              <Input
+                id="distribution-list-name"
+                placeholder="e.g. Weekly progress meeting"
+                value={saveListName}
+                onChange={(e) => setSaveListName(e.target.value)}
+                data-testid="input-distribution-list-name"
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">
+                Saving with an existing name will overwrite that list.
+              </p>
+            </div>
+            <label className="flex items-start gap-2 p-2 rounded border cursor-pointer hover-elevate" data-testid="row-distribution-list-scope">
+              <Checkbox
+                checked={saveListOrgScope}
+                onCheckedChange={(v) => setSaveListOrgScope(v === true)}
+                data-testid="checkbox-distribution-list-org-scope"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">Share with the whole organization</div>
+                <div className="text-xs text-muted-foreground">
+                  Available in the Send Gantt dialog on every project, not just this one.
+                </div>
+              </div>
+            </label>
           </div>
           <DialogFooter>
             <Button

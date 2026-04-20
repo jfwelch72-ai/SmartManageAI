@@ -3,7 +3,7 @@ import multer from "multer";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";
 import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media, crmContacts, activityLog, users, projectEmailDistributionLists } from "@shared/schema";
-import { eq, desc, and, sql, isNotNull, inArray } from "drizzle-orm";
+import { eq, desc, and, or, sql, isNull, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logError, logWarn } from "./utils/logger";
@@ -748,7 +748,27 @@ const distributionListPayloadSchema = z.object({
   name: z.string().trim().min(1).max(120),
   contactEmails: z.array(z.string().email()).max(100).default([]),
   extraEmails: z.array(z.string().email()).max(100).default([]),
+  scope: z.enum(["PROJECT", "ORGANIZATION"]).default("PROJECT"),
 });
+
+const orgDistributionListPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  contactEmails: z.array(z.string().email()).max(100).default([]),
+  extraEmails: z.array(z.string().email()).max(100).default([]),
+});
+
+function normalizeEmails(arr: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of arr) {
+    const e = raw.trim();
+    const key = e.toLowerCase();
+    if (!e || seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
 
 async function assertProjectAccess(projectId: string, organizationId: string) {
   const [project] = await db.select()
@@ -774,7 +794,10 @@ router.get("/ai-features/schedule/:projectId/distribution-lists", requireAuth, a
       .from(projectEmailDistributionLists)
       .where(and(
         eq(projectEmailDistributionLists.organizationId, organizationId),
-        eq(projectEmailDistributionLists.projectId, req.params.projectId),
+        or(
+          eq(projectEmailDistributionLists.projectId, req.params.projectId),
+          isNull(projectEmailDistributionLists.projectId),
+        ),
       ))
       .orderBy(desc(projectEmailDistributionLists.updatedAt));
 
@@ -804,39 +827,34 @@ router.post(
       const project = await assertProjectAccess(req.params.projectId, organizationId);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
-      const normalize = (arr: string[]) => {
-        const seen = new Set<string>();
-        const out: string[] = [];
-        for (const raw of arr) {
-          const e = raw.trim();
-          const key = e.toLowerCase();
-          if (!e || seen.has(key)) continue;
-          seen.add(key);
-          out.push(e);
-        }
-        return out;
-      };
-
-      const contactEmails = normalize(parsed.data.contactEmails);
-      const extraEmails = normalize(parsed.data.extraEmails);
+      const contactEmails = normalizeEmails(parsed.data.contactEmails);
+      const extraEmails = normalizeEmails(parsed.data.extraEmails);
 
       if (contactEmails.length === 0 && extraEmails.length === 0) {
         return res.status(400).json({ error: "List must include at least one email" });
       }
 
       const name = parsed.data.name.trim();
+      const isOrgScope = parsed.data.scope === "ORGANIZATION";
+
+      if (isOrgScope && req.user?.role !== "ADMIN" && req.user?.role !== "MANAGER") {
+        return res.status(403).json({ error: "Only admins and managers can create organization-wide lists" });
+      }
 
       const [saved] = await db.insert(projectEmailDistributionLists)
         .values({
           organizationId,
-          projectId: req.params.projectId,
+          projectId: isOrgScope ? null : req.params.projectId,
           name,
           contactEmails,
           extraEmails,
           createdById: userId,
         })
         .onConflictDoUpdate({
-          target: [projectEmailDistributionLists.projectId, projectEmailDistributionLists.name],
+          target: isOrgScope
+            ? [projectEmailDistributionLists.organizationId, projectEmailDistributionLists.name]
+            : [projectEmailDistributionLists.projectId, projectEmailDistributionLists.name],
+          targetWhere: isOrgScope ? sql`${projectEmailDistributionLists.projectId} IS NULL` : undefined,
           set: {
             contactEmails,
             extraEmails,
@@ -865,11 +883,140 @@ router.delete(
       const project = await assertProjectAccess(req.params.projectId, organizationId);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
+      const [existing] = await db.select({
+        id: projectEmailDistributionLists.id,
+        projectId: projectEmailDistributionLists.projectId,
+      })
+        .from(projectEmailDistributionLists)
+        .where(and(
+          eq(projectEmailDistributionLists.id, req.params.listId),
+          eq(projectEmailDistributionLists.organizationId, organizationId),
+        ))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Distribution list not found" });
+      }
+
+      const isOrgScope = existing.projectId === null;
+      if (isOrgScope && req.user?.role !== "ADMIN" && req.user?.role !== "MANAGER") {
+        return res.status(403).json({ error: "Only admins and managers can delete organization-wide lists" });
+      }
+      if (!isOrgScope && existing.projectId !== req.params.projectId) {
+        return res.status(404).json({ error: "Distribution list not found" });
+      }
+
       const result = await db.delete(projectEmailDistributionLists)
         .where(and(
           eq(projectEmailDistributionLists.id, req.params.listId),
           eq(projectEmailDistributionLists.organizationId, organizationId),
-          eq(projectEmailDistributionLists.projectId, req.params.projectId),
+        ))
+        .returning({ id: projectEmailDistributionLists.id });
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Distribution list not found" });
+      }
+
+      res.json({ success: true, id: result[0].id });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ============================================
+// ORGANIZATION-WIDE DISTRIBUTION LISTS
+// Managed from the Company Settings page; usable across any project's
+// Send Gantt dialog.
+// ============================================
+
+// GET /api/distribution-lists  — list all org-level distribution lists
+router.get("/distribution-lists", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+    const lists = await db.select()
+      .from(projectEmailDistributionLists)
+      .where(and(
+        eq(projectEmailDistributionLists.organizationId, organizationId),
+        isNull(projectEmailDistributionLists.projectId),
+      ))
+      .orderBy(desc(projectEmailDistributionLists.updatedAt));
+
+    res.json({ lists });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/distribution-lists  — upsert an org-level distribution list
+router.post(
+  "/distribution-lists",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const organizationId = req.user?.organizationId;
+      if (!userId || !organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = orgDistributionListPayloadSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+      }
+
+      const contactEmails = normalizeEmails(parsed.data.contactEmails);
+      const extraEmails = normalizeEmails(parsed.data.extraEmails);
+
+      if (contactEmails.length === 0 && extraEmails.length === 0) {
+        return res.status(400).json({ error: "List must include at least one email" });
+      }
+
+      const name = parsed.data.name.trim();
+
+      const [saved] = await db.insert(projectEmailDistributionLists)
+        .values({
+          organizationId,
+          projectId: null,
+          name,
+          contactEmails,
+          extraEmails,
+          createdById: userId,
+        })
+        .onConflictDoUpdate({
+          target: [projectEmailDistributionLists.organizationId, projectEmailDistributionLists.name],
+          targetWhere: sql`${projectEmailDistributionLists.projectId} IS NULL`,
+          set: {
+            contactEmails,
+            extraEmails,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      res.json({ list: saved });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// DELETE /api/distribution-lists/:listId  — delete an org-level list
+router.delete(
+  "/distribution-lists/:listId",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const result = await db.delete(projectEmailDistributionLists)
+        .where(and(
+          eq(projectEmailDistributionLists.id, req.params.listId),
+          eq(projectEmailDistributionLists.organizationId, organizationId),
+          isNull(projectEmailDistributionLists.projectId),
         ))
         .returning({ id: projectEmailDistributionLists.id });
 

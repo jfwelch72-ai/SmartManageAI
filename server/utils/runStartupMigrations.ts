@@ -45,6 +45,7 @@ import { ensureCrmCustomFieldTables } from "./ensureCrmCustomFieldTables";
 import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
 import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
+import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistributionLists";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -99,6 +100,7 @@ const migrations: MigrationStep[] = [
   { name: "user_saved_views_table", category: "CREATE_TABLE", fn: ensureUserSavedViewsTable },
   { name: "schedule_baselines_table", category: "CREATE_TABLE", fn: ensureScheduleBaselinesTable },
   { name: "plan_pins_table", category: "CREATE_TABLE", fn: ensurePlanPinsTable },
+  { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

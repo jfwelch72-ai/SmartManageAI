@@ -4,11 +4,12 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm, GitBranch } from "lucide-react";
+import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm, GitBranch, Mail } from "lucide-react";
 import { CompanyTradeConfigTab } from "@/components/settings/CompanyTradeConfigTab";
 import { CompanyProfileTab } from "@/components/settings/CompanyProfileTab";
 import { CompanyNotificationsTab } from "@/components/settings/CompanyNotificationsTab";
 import { CompanyUserInviteTab } from "@/components/settings/CompanyUserInviteTab";
+import { OrgDistributionListsTab } from "@/components/settings/OrgDistributionListsTab";
 import type { LucideIcon } from "lucide-react";
 
 const CostCodesPage = lazy(() => import("@/pages/cost-codes"));
@@ -91,6 +92,7 @@ const TAB_GROUPS: TabGroup[] = [
       { value: "report-locks", label: "Report Locks", icon: Lock },
       { value: "scope-settings", label: "Scope Settings", icon: Layers },
       { value: "workflows", label: "Workflow Builder", icon: GitBranch },
+      { value: "distribution-lists", label: "Distribution Lists", icon: Mail },
     ],
   },
   {
@@ -120,6 +122,7 @@ const VALID_TABS = [
   "trade", "branding", "insurance", "compliance", "payroll", "hustler",
   "cost-codes", "users", "integrations", "website", "overhead-costs", "production-rates",
   "report-locks", "scope-settings", "workflows", "ai-settings", "ai-governance", "leave-types",
+  "distribution-lists",
 ];
 
 function getParentForTab(tab: string): string {
@@ -187,6 +190,8 @@ export default function CompanySettings() {
   const canViewAIGovernance = isOrgAdmin;
   const canViewLeaveTypes = isOrgAdmin || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
 
+  const canViewDistributionLists = isOrgAdmin || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
+
   const tabPermissions: Record<string, boolean> = {
     trade: canViewCoreTabs, branding: canViewCoreTabs, insurance: canViewCoreTabs,
     compliance: canViewCoreTabs, payroll: canViewCoreTabs, hustler: canViewCoreTabs,
@@ -196,6 +201,7 @@ export default function CompanySettings() {
     workflows: canViewWorkflows,
     "ai-settings": canViewAISettings, "ai-governance": canViewAIGovernance,
     "leave-types": canViewLeaveTypes,
+    "distribution-lists": canViewDistributionLists,
   };
 
   const allowedTabs = VALID_TABS.filter(t => tabPermissions[t]);
@@ -209,7 +215,7 @@ export default function CompanySettings() {
       if (visibleSubs.length === 0) return null;
       return { ...group, subTabs: visibleSubs };
     }).filter((g): g is TabGroup => g !== null);
-  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates, canViewReportLocks, canViewScopeSettings, canViewAISettings, canViewAIGovernance, canViewLeaveTypes]);
+  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates, canViewReportLocks, canViewScopeSettings, canViewAISettings, canViewAIGovernance, canViewLeaveTypes, canViewDistributionLists]);
 
   const activeParent = getParentForTab(activeTab);
 
@@ -460,6 +466,12 @@ export default function CompanySettings() {
             <Suspense fallback={<TabLoader />}>
               <LeaveTypesSettings />
             </Suspense>
+          </TabsContent>
+        )}
+
+        {canViewDistributionLists && (
+          <TabsContent value="distribution-lists" className="mt-6">
+            <OrgDistributionListsTab />
           </TabsContent>
         )}
       </Tabs>
