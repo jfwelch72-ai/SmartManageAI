@@ -94,6 +94,7 @@ const VoiceDictation = lazy(() => import("@/components/VoiceDictation"));
 import NotFound from "@/pages/not-found";
 const LandingPage = lazy(() => import("@/pages/landing"));
 import LoginPage from "@/pages/login";
+import SchedulePrintPage from "@/pages/SchedulePrintPage";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
@@ -353,6 +354,7 @@ function Router() {
       }}</Route>
       <Route path="/portal" component={UnifiedPortal} />
       <Route path="/rfq-response/:token" component={RfqResponsePage} />
+      <Route path="/print/projects/:code/schedule" component={() => <ProtectedRoute component={SchedulePrintPage} skipOnboardingCheck />} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       
       {/* Routes accessible to all authenticated users */}
@@ -586,7 +588,7 @@ function AppContent() {
   const [location] = useLocation();
   const { user, isLoading } = useAuth();
   
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/');
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/');
 
   const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/hustler/accept-invite'].some(
     route => location === route || (route !== '/' && location.startsWith(route))
@@ -614,7 +616,7 @@ function AuthGatedWidget() {
   const { user } = useAuth();
   const [messagingOpen, setMessagingOpen] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/');
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/');
 
   React.useEffect(() => {
     const handleMessaging = (e: Event) => {

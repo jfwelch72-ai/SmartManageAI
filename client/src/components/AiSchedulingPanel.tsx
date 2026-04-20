@@ -252,6 +252,18 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
 
   const { toast } = useToast();
 
+  interface ScheduleResponse {
+    schedule: ProjectSchedule | null;
+    tasks: ScheduleTask[];
+  }
+
+  const { data: scheduleData, isLoading, refetch } = useQuery<ScheduleResponse>({
+    queryKey: ["/api/projects", projectCode, "schedule"],
+  });
+
+  const SERVER_RENDER_TASK_THRESHOLD = 100;
+  const SERVER_RENDER_DAY_THRESHOLD = 365;
+
   const renderGanttPdf = useCallback(async (): Promise<{ blob: Blob; filename: string } | null> => {
     if (!ganttExportRef.current) return null;
     await new Promise<void>((resolve) => {
@@ -284,10 +296,67 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     return { blob, filename };
   }, [projectCode]);
 
+  const exportGanttServerSide = useCallback(async (): Promise<boolean> => {
+    const isDark = document.documentElement.classList.contains("dark");
+    const today = format(new Date(), "yyyy-MM-dd");
+    const safeCode = (projectCode || "project").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const baseName = `${safeCode}-schedule-${today}`;
+    try {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${projectCode}/schedule/export-pdf`,
+        { theme: isDark ? "dark" : "light", showBaseline: true },
+      );
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.download = `${baseName}.pdf`;
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast({ title: "Gantt exported", description: `${baseName}.pdf (server rendered)` });
+      return true;
+    } catch (err) {
+      console.warn("Server-side Gantt export failed, falling back to client renderer", err);
+      return false;
+    }
+  }, [projectCode, toast]);
+
   const handleExportGantt = useCallback(async (kind: "png" | "pdf") => {
     if (!ganttExportRef.current) return;
     setIsExporting(true);
     try {
+      const taskCount = scheduleData?.tasks.length || 0;
+      let durationDays = 0;
+      const tasks = scheduleData?.tasks || [];
+      if (tasks.length > 0) {
+        const dates = tasks
+          .flatMap((t) => [t.plannedStartDate, t.plannedEndDate])
+          .filter(Boolean) as string[];
+        if (dates.length > 0) {
+          const min = Math.min(...dates.map((d) => new Date(d).getTime()));
+          const max = Math.max(...dates.map((d) => new Date(d).getTime()));
+          durationDays = Math.max(1, Math.round((max - min) / 86_400_000));
+        }
+      }
+      const shouldUseServer =
+        kind === "pdf" &&
+        (taskCount > SERVER_RENDER_TASK_THRESHOLD || durationDays > SERVER_RENDER_DAY_THRESHOLD);
+
+      if (shouldUseServer) {
+        const ok = await exportGanttServerSide();
+        if (ok) {
+          return;
+        }
+        toast({
+          title: "Falling back to in-browser export",
+          description: "Server renderer unavailable; large schedules may be clipped.",
+          variant: "destructive",
+        });
+      }
+
       if (kind === "pdf") {
         const result = await renderGanttPdf();
         if (!result) return;
@@ -335,7 +404,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     } finally {
       setIsExporting(false);
     }
-  }, [projectCode, renderGanttPdf, toast]);
+  }, [projectCode, renderGanttPdf, exportGanttServerSide, scheduleData, toast]);
 
   interface ScheduleEmailRecipient {
     id: string;
@@ -478,15 +547,6 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
       setIsSending(false);
     }
   }, [extraRecipientsInput, projectId, recipientData, renderGanttPdf, selectedRecipientEmails, sendMessage, sendSubject, toast]);
-
-  interface ScheduleResponse {
-    schedule: ProjectSchedule | null;
-    tasks: ScheduleTask[];
-  }
-
-  const { data: scheduleData, isLoading, refetch } = useQuery<ScheduleResponse>({
-    queryKey: ["/api/projects", projectCode, "schedule"],
-  });
 
   const { data: forecastData } = useQuery<ForecastData>({
     queryKey: ["/api/projects", projectCode, "schedule", "forecast"],

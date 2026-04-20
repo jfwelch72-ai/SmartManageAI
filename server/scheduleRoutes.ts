@@ -209,6 +209,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { recalculateSchedule, computeScheduleImpact, detectCycle } from "./cpmEngine";
+import { renderGanttPdf } from "./gantt-pdf-service";
 
 const router = Router();
 
@@ -1101,6 +1102,63 @@ router.post("/projects/:code/schedule/create", requireAuth, requireRole("ADMIN",
     }).returning();
 
     res.status(201).json({ schedule: newSchedule, tasks: [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/projects/:code/schedule/export-pdf", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { code } = req.params;
+    const project = await getProjectByCode(code);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    if (!checkAccess(req, project)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const schedule = await getActiveSchedule(project.id);
+    if (!schedule) {
+      return res.status(404).json({ error: "No active schedule" });
+    }
+
+    const themeRaw = (req.body?.theme || req.query?.theme || "light").toString().toLowerCase();
+    const theme: "light" | "dark" = themeRaw === "dark" ? "dark" : "light";
+    const showBaseline = req.body?.showBaseline !== false && req.query?.showBaseline !== "false";
+
+    const authToken: string | undefined = (req as any).cookies?.["auth_token"];
+    if (!authToken) {
+      return res.status(401).json({ error: "Missing auth cookie" });
+    }
+
+    const port = process.env.PORT || "5000";
+    const origin = `http://127.0.0.1:${port}`;
+
+    let pdf: Buffer;
+    try {
+      pdf = await renderGanttPdf({
+        projectCode: code,
+        theme,
+        showBaseline,
+        authCookie: { name: "auth_token", value: authToken },
+        origin,
+      });
+    } catch (err) {
+      logError("Server-side Gantt PDF render failed", err as Error);
+      return res.status(503).json({
+        error: "Server-side Gantt rendering is unavailable",
+        message: (err as Error).message,
+      });
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const safeCode = code.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `${safeCode}-schedule-${today}.pdf`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", String(pdf.length));
+    res.send(pdf);
   } catch (error) {
     next(error);
   }
