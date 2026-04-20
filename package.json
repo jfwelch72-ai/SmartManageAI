@@ -21,7 +21,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:isolation": "vitest run server/__tests__/org-isolation/"
+    "test:isolation": "vitest run server/__tests__/org-isolation/",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.17.3",
@@ -162,6 +165,7 @@
     "@replit/vite-plugin-cartographer": "^0.4.2",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.3",
     "@types/connect-pg-simple": "^7.0.3",
