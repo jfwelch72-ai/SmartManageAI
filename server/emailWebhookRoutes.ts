@@ -21,17 +21,57 @@ import { emailAccounts } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
 import { syncGmailAccount, syncOutlookAccount } from "./emailRoutes";
 import { getEmailWebhookSecret } from "./emailPushNotifications";
+import {
+  isGmailPubsubJwtVerificationEnabled,
+  verifyGmailPubsubJwt,
+} from "./gmailPubsubAuth";
 import { logInfo, logWarn, logError } from "./utils/logger";
 
 const router = Router();
 
-function isAuthorized(req: Request): boolean {
+function hasValidSharedSecret(req: Request): boolean {
   const expected = getEmailWebhookSecret();
   if (!expected) return false;
   const provided =
     (req.query.token as string | undefined) ||
     (req.header("x-webhook-secret") || "");
   return provided === expected;
+}
+
+function isAuthorized(req: Request): boolean {
+  return hasValidSharedSecret(req);
+}
+
+/**
+ * Authorize a Gmail Pub/Sub push delivery. When GMAIL_PUBSUB_AUDIENCE is
+ * configured we require a valid OIDC bearer JWT signed by Google — that
+ * proves the request really came from Pub/Sub and not from someone who
+ * exfiltrated the webhook URL with its shared secret. When the audience
+ * env var is unset we fall back to the shared-secret-only flow, which is
+ * the documented local-testing path.
+ */
+async function isGmailPushAuthorized(req: Request): Promise<boolean> {
+  if (isGmailPubsubJwtVerificationEnabled()) {
+    const result = await verifyGmailPubsubJwt(req.header("authorization"));
+    if (!result.ok) {
+      logWarn("Gmail Pub/Sub JWT verification failed", {
+        reason: result.reason,
+        ip: req.ip,
+      });
+      return false;
+    }
+    // Require the shared secret too when present, as defence in depth — but
+    // the shared secret is optional once JWT verification is enabled.
+    const expected = getEmailWebhookSecret();
+    if (expected && !hasValidSharedSecret(req)) {
+      logWarn("Gmail webhook rejected: JWT ok but shared secret missing/invalid", {
+        ip: req.ip,
+      });
+      return false;
+    }
+    return true;
+  }
+  return hasValidSharedSecret(req);
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +84,7 @@ function isAuthorized(req: Request): boolean {
 // The base64 message data decodes to JSON:
 //   { emailAddress: "user@gmail.com", historyId: 1234567890 }
 router.post("/gmail", async (req: Request, res: Response) => {
-  if (!isAuthorized(req)) {
+  if (!(await isGmailPushAuthorized(req))) {
     return res.status(401).json({ error: "unauthorized" });
   }
 

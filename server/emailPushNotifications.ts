@@ -8,10 +8,17 @@
  * cadence as a safety net for missed pushes and unsubscribed accounts.
  *
  * Configuration (env vars):
- *   GMAIL_PUBSUB_TOPIC      e.g. projects/your-project/topics/gmail-watch
- *   EMAIL_WEBHOOK_SECRET    shared secret added to Pub/Sub push URL and
- *                           Outlook subscription notificationUrl
- *   APP_BASE_URL            public https origin used to build webhook URLs
+ *   GMAIL_PUBSUB_TOPIC           e.g. projects/your-project/topics/gmail-watch
+ *   EMAIL_WEBHOOK_SECRET         shared secret added to Pub/Sub push URL and
+ *                                Outlook subscription notificationUrl
+ *   APP_BASE_URL                 public https origin used to build webhook URLs
+ *   GMAIL_PUBSUB_AUDIENCE        OIDC audience configured on the Pub/Sub push
+ *                                subscription. When set, the Gmail webhook
+ *                                additionally verifies Google's signed JWT in
+ *                                the Authorization header (see
+ *                                ./gmailPubsubAuth.ts).
+ *   GMAIL_PUBSUB_SERVICE_ACCOUNT optional service-account email the JWT must
+ *                                be issued by (defence in depth).
  *
  * If Gmail Pub/Sub or the public webhook URL is not configured, the ensure
  * helpers no-op and the system gracefully falls back to polling alone.
