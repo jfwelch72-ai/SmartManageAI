@@ -249,6 +249,8 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [sendSubject, setSendSubject] = useState("");
   const [sendMessage, setSendMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [saveListDialogOpen, setSaveListDialogOpen] = useState(false);
+  const [saveListName, setSaveListName] = useState("");
 
   const { toast } = useToast();
 
@@ -435,6 +437,145 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     queryKey: ["/api/ai-features/schedule", projectId, "email-history"],
     enabled: !!projectId,
   });
+
+
+  interface DistributionList {
+    id: string;
+    name: string;
+    contactEmails: string[];
+    extraEmails: string[];
+    updatedAt: string;
+  }
+
+  const distributionListsQueryKey = ["/api/ai-features/schedule", projectId, "distribution-lists"] as const;
+  const { data: distributionListsData } = useQuery<{ lists: DistributionList[] }>({
+    queryKey: distributionListsQueryKey,
+    enabled: sendDialogOpen && !!projectId,
+  });
+  const distributionLists = distributionListsData?.lists || [];
+
+  const loadDistributionList = useCallback((listId: string) => {
+    const list = distributionLists.find(l => l.id === listId);
+    if (!list) return;
+    const directory = recipientData?.recipients || [];
+    const directoryByEmail = new Map(directory.map(r => [r.email.trim().toLowerCase(), r] as const));
+    const next = new Set<string>();
+    const stillExtra: string[] = [];
+    for (const email of list.contactEmails) {
+      const key = email.trim().toLowerCase();
+      if (directoryByEmail.has(key)) {
+        next.add(key);
+      } else {
+        stillExtra.push(email);
+      }
+    }
+    setSelectedRecipientEmails(next);
+    const combinedExtras = [...stillExtra, ...list.extraEmails];
+    const seen = new Set<string>();
+    const dedupedExtras = combinedExtras.filter(e => {
+      const k = e.trim().toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    setExtraRecipientsInput(dedupedExtras.join(", "));
+    toast({
+      title: "List loaded",
+      description: `Loaded "${list.name}" — adjust recipients before sending.`,
+    });
+  }, [distributionLists, recipientData, toast]);
+
+  const saveDistributionListMutation = useMutation({
+    mutationFn: async (vars: { name: string; contactEmails: string[]; extraEmails: string[] }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/ai-features/schedule/${projectId}/distribution-lists`,
+        vars,
+      );
+      return res.json();
+    },
+    onSuccess: (data: { list: DistributionList }) => {
+      queryClient.invalidateQueries({ queryKey: distributionListsQueryKey });
+      toast({
+        title: "Distribution list saved",
+        description: `"${data.list.name}" can be reused for future sends.`,
+      });
+      setSaveListDialogOpen(false);
+      setSaveListName("");
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to save list",
+        description: err.message || "Unable to save distribution list",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteDistributionListMutation = useMutation({
+    mutationFn: async (listId: string) => {
+      const res = await apiRequest(
+        "DELETE",
+        `/api/ai-features/schedule/${projectId}/distribution-lists/${listId}`,
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: distributionListsQueryKey });
+      toast({ title: "Distribution list deleted" });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to delete list",
+        description: err.message || "Unable to delete distribution list",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveDistributionList = useCallback(() => {
+    const name = saveListName.trim();
+    if (!name) {
+      toast({ title: "Name required", description: "Give the list a name before saving.", variant: "destructive" });
+      return;
+    }
+    const directory = recipientData?.recipients || [];
+    const directoryByEmail = new Map(directory.map(r => [r.email.trim().toLowerCase(), r] as const));
+    const contactEmails: string[] = [];
+    for (const key of Array.from(selectedRecipientEmails)) {
+      const r = directoryByEmail.get(key);
+      if (r) contactEmails.push(r.email);
+    }
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const extraEmails: string[] = [];
+    const invalid: string[] = [];
+    for (const raw of extraRecipientsInput.split(/[\s,;]+/)) {
+      const e = raw.trim();
+      if (!e) continue;
+      if (!emailRe.test(e)) {
+        invalid.push(e);
+        continue;
+      }
+      extraEmails.push(e);
+    }
+    if (invalid.length > 0) {
+      toast({
+        title: "Invalid email address",
+        description: `Could not parse: ${invalid.join(", ")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (contactEmails.length === 0 && extraEmails.length === 0) {
+      toast({
+        title: "List is empty",
+        description: "Pick at least one contact or enter an email before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveDistributionListMutation.mutate({ name, contactEmails, extraEmails });
+  }, [extraRecipientsInput, recipientData, saveDistributionListMutation, saveListName, selectedRecipientEmails, toast]);
 
   const openSendDialog = useCallback(() => {
     setSendSubject(`${projectName} (${projectCode}) — Schedule update`);
@@ -1435,6 +1576,51 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {distributionLists.length > 0 && (
+              <div>
+                <Label className="mb-2 block">Saved distribution lists</Label>
+                <div className="space-y-1 rounded border p-2">
+                  {distributionLists.map((list) => {
+                    const total = list.contactEmails.length + list.extraEmails.length;
+                    return (
+                      <div
+                        key={list.id}
+                        className="flex items-center justify-between gap-2 p-1.5 rounded hover-elevate"
+                        data-testid={`row-distribution-list-${list.id}`}
+                      >
+                        <button
+                          type="button"
+                          className="flex-1 min-w-0 text-left disabled:opacity-50"
+                          onClick={() => loadDistributionList(list.id)}
+                          disabled={isRecipientsLoading}
+                          title={isRecipientsLoading ? "Loading project contacts…" : undefined}
+                          data-testid={`button-load-list-${list.id}`}
+                        >
+                          <div className="text-sm font-medium truncate" data-testid={`text-list-name-${list.id}`}>
+                            {list.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {total} recipient{total === 1 ? "" : "s"}
+                          </div>
+                        </button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0"
+                          onClick={() => deleteDistributionListMutation.mutate(list.id)}
+                          disabled={deleteDistributionListMutation.isPending}
+                          data-testid={`button-delete-list-${list.id}`}
+                          aria-label={`Delete ${list.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div>
               <Label className="mb-2 block">Project contacts</Label>
               <ScrollArea className="max-h-48 rounded border">
@@ -1506,26 +1692,88 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
               />
             </div>
           </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSaveListName("");
+                setSaveListDialogOpen(true);
+              }}
+              disabled={isSending}
+              data-testid="button-save-distribution-list"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              Save as list
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setSendDialogOpen(false)}
+                disabled={isSending}
+                data-testid="button-cancel-send-gantt"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSendGanttEmail}
+                disabled={isSending}
+                data-testid="button-confirm-send-gantt"
+              >
+                {isSending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4 mr-2" />
+                )}
+                Send Gantt PDF
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={saveListDialogOpen} onOpenChange={(open) => { if (!saveDistributionListMutation.isPending) setSaveListDialogOpen(open); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Save distribution list</DialogTitle>
+            <DialogDescription>
+              Save the currently selected contacts and additional emails as a reusable list for this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="distribution-list-name">List name</Label>
+            <Input
+              id="distribution-list-name"
+              placeholder="e.g. Weekly progress meeting"
+              value={saveListName}
+              onChange={(e) => setSaveListName(e.target.value)}
+              data-testid="input-distribution-list-name"
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              Saving with an existing name will overwrite that list.
+            </p>
+          </div>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setSendDialogOpen(false)}
-              disabled={isSending}
-              data-testid="button-cancel-send-gantt"
+              onClick={() => setSaveListDialogOpen(false)}
+              disabled={saveDistributionListMutation.isPending}
+              data-testid="button-cancel-save-list"
             >
               Cancel
             </Button>
             <Button
-              onClick={handleSendGanttEmail}
-              disabled={isSending}
-              data-testid="button-confirm-send-gantt"
+              onClick={handleSaveDistributionList}
+              disabled={saveDistributionListMutation.isPending}
+              data-testid="button-confirm-save-list"
             >
-              {isSending ? (
+              {saveDistributionListMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
-                <Send className="w-4 h-4 mr-2" />
+                <Save className="w-4 h-4 mr-2" />
               )}
-              Send Gantt PDF
+              Save list
             </Button>
           </DialogFooter>
         </DialogContent>

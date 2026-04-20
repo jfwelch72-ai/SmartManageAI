@@ -2,7 +2,7 @@ import { Router , NextFunction } from "express";
 import multer from "multer";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";
-import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media, crmContacts, activityLog, users } from "@shared/schema";
+import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media, crmContacts, activityLog, users, projectEmailDistributionLists } from "@shared/schema";
 import { eq, desc, and, sql, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
@@ -738,6 +738,152 @@ router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireR
     next(error);
   }
 });
+
+// ============================================
+// PROJECT EMAIL DISTRIBUTION LISTS
+// Reusable named recipient lists for the "Send Gantt to..." dialog.
+// ============================================
+
+const distributionListPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  contactEmails: z.array(z.string().email()).max(100).default([]),
+  extraEmails: z.array(z.string().email()).max(100).default([]),
+});
+
+async function assertProjectAccess(projectId: string, organizationId: string) {
+  const [project] = await db.select()
+    .from(projects)
+    .where(and(
+      eq(projects.id, projectId),
+      eq(projects.organizationId, organizationId),
+    ))
+    .limit(1);
+  return project || null;
+}
+
+// GET /api/ai-features/schedule/:projectId/distribution-lists
+router.get("/ai-features/schedule/:projectId/distribution-lists", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+    const project = await assertProjectAccess(req.params.projectId, organizationId);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const lists = await db.select()
+      .from(projectEmailDistributionLists)
+      .where(and(
+        eq(projectEmailDistributionLists.organizationId, organizationId),
+        eq(projectEmailDistributionLists.projectId, req.params.projectId),
+      ))
+      .orderBy(desc(projectEmailDistributionLists.updatedAt));
+
+    res.json({ lists });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/ai-features/schedule/:projectId/distribution-lists
+// Upsert by (project_id, name) so re-saving an existing list overwrites it.
+router.post(
+  "/ai-features/schedule/:projectId/distribution-lists",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const organizationId = req.user?.organizationId;
+      if (!userId || !organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = distributionListPayloadSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+      }
+
+      const project = await assertProjectAccess(req.params.projectId, organizationId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const normalize = (arr: string[]) => {
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const raw of arr) {
+          const e = raw.trim();
+          const key = e.toLowerCase();
+          if (!e || seen.has(key)) continue;
+          seen.add(key);
+          out.push(e);
+        }
+        return out;
+      };
+
+      const contactEmails = normalize(parsed.data.contactEmails);
+      const extraEmails = normalize(parsed.data.extraEmails);
+
+      if (contactEmails.length === 0 && extraEmails.length === 0) {
+        return res.status(400).json({ error: "List must include at least one email" });
+      }
+
+      const name = parsed.data.name.trim();
+
+      const [saved] = await db.insert(projectEmailDistributionLists)
+        .values({
+          organizationId,
+          projectId: req.params.projectId,
+          name,
+          contactEmails,
+          extraEmails,
+          createdById: userId,
+        })
+        .onConflictDoUpdate({
+          target: [projectEmailDistributionLists.projectId, projectEmailDistributionLists.name],
+          set: {
+            contactEmails,
+            extraEmails,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      res.json({ list: saved });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// DELETE /api/ai-features/schedule/:projectId/distribution-lists/:listId
+router.delete(
+  "/ai-features/schedule/:projectId/distribution-lists/:listId",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const project = await assertProjectAccess(req.params.projectId, organizationId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const result = await db.delete(projectEmailDistributionLists)
+        .where(and(
+          eq(projectEmailDistributionLists.id, req.params.listId),
+          eq(projectEmailDistributionLists.organizationId, organizationId),
+          eq(projectEmailDistributionLists.projectId, req.params.projectId),
+        ))
+        .returning({ id: projectEmailDistributionLists.id });
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Distribution list not found" });
+      }
+
+      res.json({ success: true, id: result[0].id });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 
 // ============================================
 // EMAIL GANTT EXPORT TO PROJECT CONTACTS
