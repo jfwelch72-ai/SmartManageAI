@@ -460,7 +460,12 @@ import { logUpdate, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { emailVerificationTokens } from "@shared/schema";
 import { sendEmail, getEmailVerificationHtml, getEmailVerificationText } from "./email";
-import { sendEmail as sendEmailViaService } from "./services/emailService";
+import {
+  sendEmail as sendEmailViaService,
+  getTestEmailOutbox,
+  clearTestEmailOutbox,
+  isEmailTransportNoop,
+} from "./services/emailService";
 import { buildQuietHoursDigestPreview, type QuietHoursDigestFormat } from "./utils/jobMetricAlerts";
 import { insertNotification } from "./services/notificationService";
 import { setAllFeatureFlags } from "./services/featureFlagService";
@@ -1129,6 +1134,29 @@ const upload = multer({
     } catch (error) {
       next(error);
     }
+  });
+
+  // DEV ONLY (Task #781): expose the in-memory test email outbox so
+  // end-to-end browser tests can assert what the noop transport captured
+  // during a "Send me a sample" flow. Gated by both `requireDevSeed`
+  // (NODE_ENV=development) AND `isEmailTransportNoop()`
+  // (EMAIL_TRANSPORT=noop) so production deploys can never observe
+  // outbound mail through this surface.
+  router.get("/api/dev/email-outbox", requireDevSeed, (_req, res) => {
+    if (!isEmailTransportNoop()) {
+      res.status(409).json({ error: "EMAIL_TRANSPORT is not 'noop'" });
+      return;
+    }
+    res.json({ outbox: getTestEmailOutbox() });
+  });
+
+  router.delete("/api/dev/email-outbox", requireDevSeed, (_req, res) => {
+    if (!isEmailTransportNoop()) {
+      res.status(409).json({ error: "EMAIL_TRANSPORT is not 'noop'" });
+      return;
+    }
+    clearTestEmailOutbox();
+    res.status(204).end();
   });
 
   router.post("/api/auth/change-password", requireAuth, async (req: AuthRequest, res, next) => {
