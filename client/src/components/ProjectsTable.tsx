@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import StatusBadge from "./StatusBadge";
 import HealthScoreBadge from "./HealthScoreBadge";
 import type { ProjectWithNames } from "@/hooks/use-data";
@@ -21,9 +22,24 @@ interface ProjectsTableProps {
   canDelete?: boolean;
   onDelete?: (code: string, name: string) => void;
   getRowProps?: (index: number) => Record<string, unknown>;
+  // Task #736: selection support for bulk actions (e.g. reassign owner role).
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (projectId: string, checked: boolean) => void;
+  onToggleSelectAll?: (checked: boolean) => void;
 }
 
-export default function ProjectsTable({ projects, onRowClick, canDelete, onDelete, getRowProps }: ProjectsTableProps) {
+export default function ProjectsTable({
+  projects,
+  onRowClick,
+  canDelete,
+  onDelete,
+  getRowProps,
+  selectable,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+}: ProjectsTableProps) {
   const { data: healthOverview = [] } = useQuery<Array<{
     project_id: string;
     overall_score: number;
@@ -43,6 +59,29 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
         <Table>
           <TableHeader>
             <TableRow>
+              {selectable && (
+                <TableHead className="w-10">
+                  {(() => {
+                    const total = projects.length;
+                    const selectedCount = projects.filter((p) => selectedIds?.has(p.id)).length;
+                    const allSelected = total > 0 && selectedCount === total;
+                    const someSelected = selectedCount > 0 && !allSelected;
+                    const checkedValue: boolean | "indeterminate" = allSelected
+                      ? true
+                      : someSelected
+                        ? "indeterminate"
+                        : false;
+                    return (
+                      <Checkbox
+                        checked={checkedValue}
+                        onCheckedChange={(checked) => onToggleSelectAll?.(!!checked)}
+                        aria-label="Select all projects"
+                        data-testid="checkbox-select-all-projects"
+                      />
+                    );
+                  })()}
+                </TableHead>
+              )}
               <TableHead className="font-semibold">Code</TableHead>
               <TableHead className="font-semibold">Project Name</TableHead>
               <TableHead className="font-semibold">Client</TableHead>
@@ -64,6 +103,16 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
                 data-testid={`row-project-${project.code}`}
                 {...(getRowProps ? getRowProps(idx) : {})}
               >
+                {selectable && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={!!selectedIds?.has(project.id)}
+                      onCheckedChange={(checked) => onToggleSelect?.(project.id, !!checked)}
+                      aria-label={`Select project ${project.name}`}
+                      data-testid={`checkbox-select-project-${project.code}`}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>
                   <Badge variant="outline" className="font-mono text-xs">
                     {project.code}

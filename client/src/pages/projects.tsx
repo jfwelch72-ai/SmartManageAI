@@ -63,7 +63,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, X, Trash2, FolderKanban } from "lucide-react";
+import { Search, Plus, X, Trash2, FolderKanban, Users as UsersIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -72,7 +72,8 @@ import {
   useCreateProject,
   useDeleteProject,
 } from "@/hooks/use-data";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   FeaturePermissions,
   getAllowedProjectStatuses,
@@ -339,6 +340,84 @@ export default function ProjectsPage() {
 
   const { data: projects = [], isLoading } = useProjects();
 
+  // Task #736: bulk "Reassign owner" action for admins/managers on the projects
+  // table. Mirrors the contacts bulk-reassign pattern — prompts for which
+  // owner-role slot (PM / superintendent / estimator / safety officer) to
+  // update and which user to assign, then calls the new bulk endpoint.
+  const canBulkReassignProjectOwner =
+    user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR";
+  type ProjectRoleField =
+    | "projectManagerId"
+    | "superintendentId"
+    | "estimatorId"
+    | "safetyOfficerId";
+  const PROJECT_ROLE_OPTIONS: { value: ProjectRoleField; label: string }[] = [
+    { value: "projectManagerId", label: "Project Manager" },
+    { value: "superintendentId", label: "Superintendent" },
+    { value: "estimatorId", label: "Estimator" },
+    { value: "safetyOfficerId", label: "Safety Officer" },
+  ];
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
+  const [bulkRoleField, setBulkRoleField] = useState<ProjectRoleField>("projectManagerId");
+
+  interface OrgUserOption {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  }
+  const { data: orgUsersForBulk = [] } = useQuery<OrgUserOption[]>({
+    queryKey: ["/api/users"],
+    enabled: canBulkReassignProjectOwner,
+  });
+  const bulkOwnerLabelById = new Map<string, string>(
+    orgUsersForBulk.map((u) => {
+      const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+      return [u.id, name || u.email || u.id] as const;
+    }),
+  );
+
+  const bulkReassignProjectOwnerMutation = useMutation({
+    mutationFn: async ({
+      projectIds,
+      roleField,
+      userId,
+    }: {
+      projectIds: string[];
+      roleField: ProjectRoleField;
+      userId: string | null;
+    }) => {
+      const res = await apiRequest("POST", "/api/projects/bulk-reassign-owner", {
+        projectIds,
+        roleField,
+        userId,
+      });
+      return res.json() as Promise<{ updated: number; roleField: ProjectRoleField; userId: string | null }>;
+    },
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setSelectedProjectIds(new Set());
+      const roleLabel =
+        PROJECT_ROLE_OPTIONS.find((r) => r.value === vars.roleField)?.label ?? "owner";
+      const ownerLabel = vars.userId
+        ? (bulkOwnerLabelById.get(vars.userId) ?? "selected user")
+        : "Unassigned";
+      const n = data?.updated ?? 0;
+      toast({
+        title: `Reassigned ${n} project${n === 1 ? "" : "s"}`,
+        description: `${roleLabel} → ${ownerLabel}`,
+      });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "";
+      toast({
+        title: "Failed to reassign owner",
+        description: message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Note: filteredProjects is computed below; we'll compute keyboard nav after it.
 
   // Fetch projects with pending change orders (only when needed)
@@ -545,13 +624,130 @@ export default function ProjectsPage() {
             onProjectClick={(project) => setLocation(`/projects/${project.code}`)}
           />
         ) : (
-          <ProjectsTable
-            projects={filteredProjects}
-            onRowClick={(project) => setLocation(`/projects/${project.code}`)}
-            canDelete={canDelete}
-            onDelete={handleDeleteProject}
-            getRowProps={getProjectRowProps}
-          />
+          <div className="space-y-3">
+            {canBulkReassignProjectOwner && selectedProjectIds.size > 0 && (
+              <div
+                className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-4 py-3"
+                data-testid="bulk-project-actions"
+              >
+                <UsersIcon className="w-4 h-4 text-muted-foreground" />
+                <Badge variant="default" className="text-xs">
+                  {selectedProjectIds.size} selected
+                </Badge>
+                <span className="text-sm text-muted-foreground ml-1">Reassign</span>
+                <Select
+                  value={bulkRoleField}
+                  onValueChange={(v) => setBulkRoleField(v as ProjectRoleField)}
+                  disabled={bulkReassignProjectOwnerMutation.isPending}
+                >
+                  <SelectTrigger
+                    className="h-8 w-[180px]"
+                    data-testid="select-bulk-project-role"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROJECT_ROLE_OPTIONS.map((opt) => (
+                      <SelectItem
+                        key={opt.value}
+                        value={opt.value}
+                        data-testid={`option-bulk-project-role-${opt.value}`}
+                      >
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">to</span>
+                <Select
+                  value=""
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    const ids = Array.from(selectedProjectIds);
+                    const userId = value === "__unassigned__" ? null : value;
+                    bulkReassignProjectOwnerMutation.mutate({
+                      projectIds: ids,
+                      roleField: bulkRoleField,
+                      userId,
+                    });
+                  }}
+                  disabled={bulkReassignProjectOwnerMutation.isPending}
+                >
+                  <SelectTrigger
+                    className="h-8 w-[220px]"
+                    data-testid="select-bulk-project-user"
+                  >
+                    <SelectValue
+                      placeholder={
+                        bulkReassignProjectOwnerMutation.isPending
+                          ? "Reassigning..."
+                          : "Select user..."
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      value="__unassigned__"
+                      data-testid="option-bulk-project-user-unassigned"
+                    >
+                      Unassigned
+                    </SelectItem>
+                    {user?.id && orgUsersForBulk.some((u) => u.id === user.id) && (
+                      <SelectItem
+                        value={user.id}
+                        data-testid="option-bulk-project-user-mine"
+                      >
+                        Me ({bulkOwnerLabelById.get(user.id) ?? "current user"})
+                      </SelectItem>
+                    )}
+                    {orgUsersForBulk
+                      .filter((u) => u.id !== user?.id)
+                      .map((u) => (
+                        <SelectItem
+                          key={u.id}
+                          value={u.id}
+                          data-testid={`option-bulk-project-user-${u.id}`}
+                        >
+                          {bulkOwnerLabelById.get(u.id) ?? u.id}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedProjectIds(new Set())}
+                  data-testid="button-clear-project-selection"
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+            <ProjectsTable
+              projects={filteredProjects}
+              onRowClick={(project) => setLocation(`/projects/${project.code}`)}
+              canDelete={canDelete}
+              onDelete={handleDeleteProject}
+              getRowProps={getProjectRowProps}
+              selectable={canBulkReassignProjectOwner}
+              selectedIds={selectedProjectIds}
+              onToggleSelect={(id, checked) =>
+                setSelectedProjectIds((prev) => {
+                  const next = new Set(prev);
+                  if (checked) next.add(id);
+                  else next.delete(id);
+                  return next;
+                })
+              }
+              onToggleSelectAll={(checked) => {
+                if (checked) {
+                  setSelectedProjectIds(new Set(filteredProjects.map((p) => p.id)));
+                } else {
+                  setSelectedProjectIds(new Set());
+                }
+              }}
+            />
+          </div>
         )}
       </main>
 

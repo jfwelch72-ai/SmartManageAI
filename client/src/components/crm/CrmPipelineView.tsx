@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -277,6 +278,8 @@ export default function CrmPipelineView() {
   const [lostForm, setLostForm] = useState({ lostCategory: "PRICE", lostReason: "" });
   const [sortField, setSortField] = useState<SortField>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Task #736: selected rows for bulk "Reassign owner" action on the list view.
+  const [selectedOppIds, setSelectedOppIds] = useState<Set<string>>(new Set());
 
   const canEdit = ["ADMIN", "MANAGER", "ESTIMATOR"].includes(user?.role ?? "");
   const [, navigate] = useLocation();
@@ -480,6 +483,31 @@ export default function CrmPipelineView() {
       toast({ title: "Win probability re-scored" });
     },
     onError: () => toast({ title: "Failed to re-score", variant: "destructive" }),
+  });
+
+  // Task #736: bulk "Reassign owner" — one POST replaces up to 500 PATCH
+  // calls and triggers a single summary notification to the new owner.
+  const bulkReassignOwnerMutation = useMutation({
+    mutationFn: async ({ opportunityIds, assignedToId }: { opportunityIds: string[]; assignedToId: string | null }) => {
+      const res = await apiRequest("POST", "/api/crm/opportunities/bulk-reassign", { opportunityIds, assignedToId });
+      return res.json() as Promise<{ updated: number; assignedToId: string | null }>;
+    },
+    onSuccess: (data, vars) => {
+      invalidateAll();
+      setSelectedOppIds(new Set());
+      const ownerLabel = vars.assignedToId
+        ? (() => {
+            const u = orgUsers.find((u) => u.id === vars.assignedToId);
+            return u ? `${u.firstName} ${u.lastName}`.trim() || "selected owner" : "selected owner";
+          })()
+        : "Unassigned";
+      const n = data?.updated ?? 0;
+      toast({ title: `Reassigned ${n} opportunit${n === 1 ? "y" : "ies"} to ${ownerLabel}` });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "";
+      toast({ title: "Failed to reassign owner", description: message, variant: "destructive" });
+    },
   });
 
   const openDetail = (opp: Opportunity) => {
@@ -1009,6 +1037,62 @@ export default function CrmPipelineView() {
       {/* List View */}
       {viewMode === "list" && (
         <Card>
+          {/* Task #736: bulk actions surface above the list when rows selected */}
+          {canEdit && selectedOppIds.size > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3"
+              data-testid="bulk-opportunity-actions"
+            >
+              <Badge variant="default" className="text-xs">{selectedOppIds.size} selected</Badge>
+              <Select
+                value=""
+                onValueChange={(value) => {
+                  if (!value) return;
+                  const ids = Array.from(selectedOppIds);
+                  const assignedToId = value === "__unassigned__" ? null : value;
+                  bulkReassignOwnerMutation.mutate({ opportunityIds: ids, assignedToId });
+                }}
+                disabled={bulkReassignOwnerMutation.isPending}
+              >
+                <SelectTrigger
+                  className="h-8 w-[220px]"
+                  data-testid="select-bulk-reassign-opp-owner"
+                >
+                  <SelectValue placeholder={bulkReassignOwnerMutation.isPending ? "Reassigning..." : "Reassign owner..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__unassigned__" data-testid="option-reassign-opp-unassigned">Unassigned</SelectItem>
+                  {user?.id && orgUsers.some((u) => u.id === user.id) && (
+                    <SelectItem value={user.id} data-testid="option-reassign-opp-mine">
+                      Me ({(() => {
+                        const me = orgUsers.find((u) => u.id === user.id);
+                        return me ? `${me.firstName} ${me.lastName}`.trim() : "current user";
+                      })()})
+                    </SelectItem>
+                  )}
+                  {orgUsers
+                    .filter((u) => u.id !== user?.id)
+                    .map((u) => (
+                      <SelectItem
+                        key={u.id}
+                        value={u.id}
+                        data-testid={`option-reassign-opp-${u.id}`}
+                      >
+                        {`${u.firstName} ${u.lastName}`.trim() || u.id}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedOppIds(new Set())}
+                data-testid="button-clear-opp-selection"
+              >
+                Clear
+              </Button>
+            </div>
+          )}
           <CardContent className="p-0">
             {isLoading ? (
               <div className="p-4 space-y-3">
@@ -1027,7 +1111,33 @@ export default function CrmPipelineView() {
               </div>
             ) : (
               <div className="divide-y">
-                <div className="hidden sm:grid grid-cols-12 gap-2 px-4 py-2">
+                <div className={`hidden sm:grid ${canEdit ? "grid-cols-[32px_repeat(12,minmax(0,1fr))]" : "grid-cols-12"} gap-2 px-4 py-2 items-center`}>
+                  {canEdit && (() => {
+                    const visibleSelected = sortedOpps.filter((o) => selectedOppIds.has(o.id)).length;
+                    const allSelected = sortedOpps.length > 0 && visibleSelected === sortedOpps.length;
+                    const someSelected = visibleSelected > 0 && !allSelected;
+                    const checkedValue: boolean | "indeterminate" = allSelected
+                      ? true
+                      : someSelected
+                        ? "indeterminate"
+                        : false;
+                    return (
+                      <div className="flex items-center justify-center">
+                        <Checkbox
+                          checked={checkedValue}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedOppIds(new Set(sortedOpps.map((o) => o.id)));
+                            } else {
+                              setSelectedOppIds(new Set());
+                            }
+                          }}
+                          aria-label="Select all opportunities"
+                          data-testid="checkbox-select-all-opportunities"
+                        />
+                      </div>
+                    );
+                  })()}
                   <div className="col-span-4">
                     <SortableHeader label="Opportunity" field="name" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                   </div>
@@ -1049,11 +1159,31 @@ export default function CrmPipelineView() {
                   return (
                     <div
                       key={opp.id}
-                      className="hidden sm:grid grid-cols-12 gap-2 px-4 py-3 hover:bg-muted/30 cursor-pointer items-center data-[focused=true]:bg-muted/60 data-[focused=true]:shadow-[inset_2px_0_0_0_hsl(var(--primary))]"
+                      className={`hidden sm:grid ${canEdit ? "grid-cols-[32px_repeat(12,minmax(0,1fr))]" : "grid-cols-12"} gap-2 px-4 py-3 hover:bg-muted/30 cursor-pointer items-center data-[focused=true]:bg-muted/60 data-[focused=true]:shadow-[inset_2px_0_0_0_hsl(var(--primary))]`}
                       onClick={() => openDetail(opp)}
                       data-testid={`row-opp-${opp.id}`}
                       {...getOppRowProps(oppIdx)}
                     >
+                      {canEdit && (
+                        <div
+                          className="flex items-center justify-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={selectedOppIds.has(opp.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedOppIds((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(opp.id);
+                                else next.delete(opp.id);
+                                return next;
+                              });
+                            }}
+                            aria-label={`Select ${opp.name}`}
+                            data-testid={`checkbox-select-opp-${opp.id}`}
+                          />
+                        </div>
+                      )}
                       <div className="col-span-4">
                         <p className="font-medium text-sm truncate">{opp.name}</p>
                         {opp.crmOrgName && <p className="text-xs text-muted-foreground truncate">{opp.crmOrgName}</p>}
