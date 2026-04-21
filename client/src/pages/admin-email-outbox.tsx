@@ -1,12 +1,16 @@
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Inbox, Loader2, Trash2, Mail } from "lucide-react";
+import { Inbox, Loader2, Trash2, Mail, FilterX } from "lucide-react";
 import { format } from "date-fns";
 import NotFound from "@/pages/not-found";
 
@@ -38,6 +42,43 @@ export default function AdminEmailOutboxPage() {
     refetchInterval: 5000,
     retry: false,
   });
+
+  const [recipientFilter, setRecipientFilter] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">("all");
+
+  const messages = data?.messages ?? [];
+
+  const filteredMessages = useMemo(() => {
+    const recipient = recipientFilter.trim().toLowerCase();
+    const subject = subjectFilter.trim().toLowerCase();
+    return messages.filter((msg) => {
+      if (sourceFilter !== "all" && msg.source !== sourceFilter) return false;
+      if (subject && !(msg.subject ?? "").toLowerCase().includes(subject)) return false;
+      if (recipient) {
+        const haystack = [
+          ...(msg.to ?? []),
+          ...(msg.cc ?? []),
+          ...(msg.bcc ?? []),
+        ]
+          .join(",")
+          .toLowerCase();
+        if (!haystack.includes(recipient)) return false;
+      }
+      return true;
+    });
+  }, [messages, recipientFilter, subjectFilter, sourceFilter]);
+
+  const filtersActive =
+    recipientFilter.trim() !== "" ||
+    subjectFilter.trim() !== "" ||
+    sourceFilter !== "all";
+
+  const clearFilters = () => {
+    setRecipientFilter("");
+    setSubjectFilter("");
+    setSourceFilter("all");
+  };
 
   const clearMutation = useMutation({
     mutationFn: async () => {
@@ -71,8 +112,6 @@ export default function AdminEmailOutboxPage() {
     return <NotFound />;
   }
 
-  const messages = data?.messages ?? [];
-
   return (
     <div className="container mx-auto p-6 space-y-6 max-w-6xl">
       <div className="flex items-start justify-between gap-4">
@@ -101,8 +140,67 @@ export default function AdminEmailOutboxPage() {
         </Button>
       </div>
 
+      <Card data-testid="card-filters">
+        <CardContent className="py-4 grid gap-3 md:grid-cols-[1fr_1fr_180px_auto] md:items-end">
+          <div className="space-y-1.5">
+            <Label htmlFor="filter-recipient" className="text-xs">Recipient</Label>
+            <Input
+              id="filter-recipient"
+              placeholder="email or domain…"
+              value={recipientFilter}
+              onChange={(e) => setRecipientFilter(e.target.value)}
+              data-testid="input-filter-recipient"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="filter-subject" className="text-xs">Subject contains</Label>
+            <Input
+              id="filter-subject"
+              placeholder="search subject…"
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              data-testid="input-filter-subject"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="filter-source" className="text-xs">Source</Label>
+            <Select
+              value={sourceFilter}
+              onValueChange={(v) => setSourceFilter(v as "all" | "resend" | "smtp")}
+            >
+              <SelectTrigger id="filter-source" data-testid="select-filter-source">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" data-testid="option-source-all">All sources</SelectItem>
+                <SelectItem value="resend" data-testid="option-source-resend">Resend</SelectItem>
+                <SelectItem value="smtp" data-testid="option-source-smtp">SMTP</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            variant="ghost"
+            onClick={clearFilters}
+            disabled={!filtersActive}
+            data-testid="button-clear-filters"
+          >
+            <FilterX className="h-4 w-4 mr-2" />
+            Reset
+          </Button>
+        </CardContent>
+      </Card>
+
       <div className="text-sm text-muted-foreground" data-testid="text-message-count">
-        {messages.length} captured {messages.length === 1 ? "message" : "messages"}
+        {filtersActive ? (
+          <>
+            Showing {filteredMessages.length} of {messages.length}{" "}
+            {messages.length === 1 ? "message" : "messages"}
+          </>
+        ) : (
+          <>
+            {messages.length} captured {messages.length === 1 ? "message" : "messages"}
+          </>
+        )}
       </div>
 
       {messages.length === 0 ? (
@@ -112,13 +210,28 @@ export default function AdminEmailOutboxPage() {
             <div>No captured emails yet. Trigger a flow such as password reset to populate the outbox.</div>
           </CardContent>
         </Card>
+      ) : filteredMessages.length === 0 ? (
+        <Card data-testid="card-empty-filtered">
+          <CardContent className="py-12 flex flex-col items-center justify-center text-center text-muted-foreground gap-3">
+            <FilterX className="h-10 w-10" />
+            <div>No messages match the current filters.</div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearFilters}
+              data-testid="button-clear-filters-empty"
+            >
+              Clear filters
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-4">
-          {messages
+          {filteredMessages
             .slice()
             .reverse()
             .map((msg, idx) => {
-              const realIndex = messages.length - 1 - idx;
+              const realIndex = messages.indexOf(msg);
               return (
                 <Card key={`${msg.capturedAt}-${realIndex}`} data-testid={`card-email-${realIndex}`}>
                   <CardHeader className="pb-3">
