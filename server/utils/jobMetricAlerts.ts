@@ -1146,7 +1146,18 @@ async function fetchDigestEventsSince(since: Date): Promise<DigestEventRow[]> {
 export async function fetchAlertEventsBetween(
   from: Date,
   to: Date,
+  filters: { job?: string | null; counter?: string | null } = {},
 ): Promise<DigestEventRow[]> {
+  const conditions = [
+    gte(jobMetricAlertEvents.triggeredAt, from),
+    lte(jobMetricAlertEvents.triggeredAt, to),
+  ];
+  if (filters.job) {
+    conditions.push(eq(jobMetricAlertEvents.job, filters.job));
+  }
+  if (filters.counter) {
+    conditions.push(eq(jobMetricAlertEvents.counter, filters.counter));
+  }
   return db
     .select({
       job: jobMetricAlertEvents.job,
@@ -1157,12 +1168,7 @@ export async function fetchAlertEventsBetween(
       emailed: jobMetricAlertEvents.emailed,
     })
     .from(jobMetricAlertEvents)
-    .where(
-      and(
-        gte(jobMetricAlertEvents.triggeredAt, from),
-        lte(jobMetricAlertEvents.triggeredAt, to),
-      ),
-    )
+    .where(and(...conditions))
     .orderBy(jobMetricAlertEvents.triggeredAt);
 }
 

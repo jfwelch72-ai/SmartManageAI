@@ -955,6 +955,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         from: z.string().datetime({ offset: true }).optional(),
         to: z.string().datetime({ offset: true }).optional(),
         range: z.enum(["24h", "7d"]).optional(),
+        job: z.string().trim().min(1).max(200).optional(),
+        counter: z.string().trim().min(1).max(200).optional(),
       });
       const parsed = schema.parse(req.query);
       const now = Date.now();
@@ -990,11 +992,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const mod = await import("./utils/jobMetricAlerts");
-      const events = await mod.fetchAlertEventsBetween(from, to);
+      const events = await mod.fetchAlertEventsBetween(from, to, {
+        job: parsed.job,
+        counter: parsed.counter,
+      });
       const csv = mod.buildDigestCsv(events);
       const fmt = (d: Date) =>
         d.toISOString().replace(/[:.]/g, "-").replace(/T/, "_").slice(0, 19);
-      const filename = `quiet-hours-digest_${fmt(from)}_to_${fmt(to)}.csv`;
+      const slugify = (v: string) =>
+        v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+      const filterSuffix = [
+        parsed.job ? `job-${slugify(parsed.job)}` : null,
+        parsed.counter ? `counter-${slugify(parsed.counter)}` : null,
+      ]
+        .filter(Boolean)
+        .join("_");
+      const baseName = `quiet-hours-digest_${fmt(from)}_to_${fmt(to)}`;
+      const filename = filterSuffix
+        ? `${baseName}_${filterSuffix}.csv`
+        : `${baseName}.csv`;
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(csv);

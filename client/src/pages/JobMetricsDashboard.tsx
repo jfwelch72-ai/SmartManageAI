@@ -1185,7 +1185,7 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function ExportEventsPanel() {
+function ExportEventsPanel({ alertsData }: { alertsData: AlertsResponse | undefined }) {
   const { toast } = useToast();
   const now = useMemo(() => new Date(), []);
   const [range, setRange] = useState<ExportRange>("24h");
@@ -1193,10 +1193,34 @@ function ExportEventsPanel() {
     toLocalInput(new Date(now.getTime() - 24 * HOUR_MS)),
   );
   const [customTo, setCustomTo] = useState<string>(() => toLocalInput(now));
+  const [jobFilter, setJobFilter] = useState<string>("");
+  const [counterFilter, setCounterFilter] = useState<string>("");
   const [isDownloading, setIsDownloading] = useState(false);
+
+  const { jobOptions, counterOptions } = useMemo(() => {
+    const jobs = new Set<string>();
+    const counters = new Set<string>();
+    for (const r of alertsData?.rules ?? []) {
+      if (r.job && r.job !== "*") jobs.add(r.job);
+      if (r.counter) counters.add(r.counter);
+    }
+    for (const e of alertsData?.events ?? []) {
+      if (e.job) jobs.add(e.job);
+      if (e.counter) counters.add(e.counter);
+    }
+    return {
+      jobOptions: Array.from(jobs).sort(),
+      counterOptions: Array.from(counters).sort(),
+    };
+  }, [alertsData]);
 
   const handleDownload = async () => {
     let url = "/api/admin/metrics/jobs/alerts/events.csv";
+    const extraParams = new URLSearchParams();
+    const trimmedJob = jobFilter.trim();
+    const trimmedCounter = counterFilter.trim();
+    if (trimmedJob) extraParams.set("job", trimmedJob);
+    if (trimmedCounter) extraParams.set("counter", trimmedCounter);
     if (range === "custom") {
       const from = new Date(customFrom);
       const to = new Date(customTo);
@@ -1220,9 +1244,11 @@ function ExportEventsPanel() {
         from: from.toISOString(),
         to: to.toISOString(),
       });
+      for (const [k, v] of extraParams) params.set(k, v);
       url = `${url}?${params.toString()}`;
     } else {
       const params = new URLSearchParams({ range });
+      for (const [k, v] of extraParams) params.set(k, v);
       url = `${url}?${params.toString()}`;
     }
 
@@ -1305,6 +1331,43 @@ function ExportEventsPanel() {
             <Download className="h-4 w-4 mr-1" />
             {isDownloading ? "Preparing…" : "Download CSV"}
           </Button>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
+          <div className="space-y-1">
+            <Label htmlFor="export-job-filter" className="text-xs">Job (optional)</Label>
+            <Input
+              id="export-job-filter"
+              list="export-job-filter-options"
+              placeholder="e.g. crm_birthday_digest"
+              value={jobFilter}
+              onChange={(e) => setJobFilter(e.target.value)}
+              data-testid="input-export-job-filter"
+            />
+            <datalist id="export-job-filter-options">
+              {jobOptions.map((j) => (
+                <option key={j} value={j} />
+              ))}
+            </datalist>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="export-counter-filter" className="text-xs">Counter (optional)</Label>
+            <Input
+              id="export-counter-filter"
+              list="export-counter-filter-options"
+              placeholder="e.g. errors"
+              value={counterFilter}
+              onChange={(e) => setCounterFilter(e.target.value)}
+              data-testid="input-export-counter-filter"
+            />
+            <datalist id="export-counter-filter-options">
+              {counterOptions.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <p className="text-xs text-muted-foreground sm:col-span-2">
+            Leave blank to export every alert in the window. Suggestions come from active alert rules and recent events.
+          </p>
         </div>
         {range === "custom" && (
           <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
@@ -1456,7 +1519,7 @@ export default function JobMetricsDashboard() {
 
       <AlertsPanel data={alertsData} />
 
-      <ExportEventsPanel />
+      <ExportEventsPanel alertsData={alertsData} />
 
       <DigestsPanel data={digestsData} />
     </div>
