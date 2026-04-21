@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import express, { type Request, type Response } from "express";
 import request from "supertest";
+import { jobMetricSamples } from "@shared/schema";
 
 type Row = { job: string; recordedAt: Date; counters: Record<string, number> };
 
@@ -39,13 +40,54 @@ const defaultInsert = (): InsertChain => ({
   },
 });
 
+// We intercept drizzle's `eq / gte / lt / and` (see vi.mock below) and
+// turn them into tagged predicate objects so the `select(...).where(...)`
+// chain in this mock can apply *real* filtering against `selectRows`.
+// Without this the mock would happily return whatever's in `selectRows`
+// regardless of the where clause, masking regressions where production
+// queries forget to filter by job or by the recordedAt cutoff.
+type Predicate =
+  | { __pred: "eq"; col: unknown; val: unknown }
+  | { __pred: "gte"; col: unknown; val: unknown }
+  | { __pred: "lt"; col: unknown; val: unknown }
+  | { __pred: "and"; preds: Predicate[] }
+  | null
+  | undefined;
+
+function columnField(col: unknown): keyof Row | null {
+  if (col === jobMetricSamples.job) return "job";
+  if (col === jobMetricSamples.recordedAt) return "recordedAt";
+  return null;
+}
+
+function matchesPredicate(pred: Predicate, row: Row): boolean {
+  if (!pred) return true;
+  if (pred.__pred === "and") {
+    return pred.preds.every((p) => matchesPredicate(p, row));
+  }
+  const field = columnField(pred.col);
+  if (!field) return true;
+  const rowVal = row[field] as unknown;
+  if (pred.__pred === "eq") return rowVal === pred.val;
+  const a = rowVal as Date;
+  const b = pred.val as Date;
+  if (pred.__pred === "gte") return a.getTime() >= b.getTime();
+  if (pred.__pred === "lt") return a.getTime() < b.getTime();
+  return true;
+}
+
 const dbMock: DbMock = {
   insert: () => defaultInsert(),
   select: () => {
+    let predicate: Predicate = null;
     const chain: Record<string, unknown> = {};
     chain.from = () => chain;
-    chain.where = () => chain;
-    chain.orderBy = () => Promise.resolve(selectRows);
+    chain.where = (pred: Predicate) => {
+      predicate = pred;
+      return chain;
+    };
+    chain.orderBy = () =>
+      Promise.resolve(selectRows.filter((r) => matchesPredicate(predicate, r)));
     return chain;
   },
   delete: () => {
@@ -83,6 +125,17 @@ const dbMock: DbMock = {
     };
   },
 };
+
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
+  return {
+    ...actual,
+    eq: (col: unknown, val: unknown) => ({ __pred: "eq", col, val }),
+    gte: (col: unknown, val: unknown) => ({ __pred: "gte", col, val }),
+    lt: (col: unknown, val: unknown) => ({ __pred: "lt", col, val }),
+    and: (...preds: unknown[]) => ({ __pred: "and", preds }),
+  };
+});
 
 vi.mock("../db", () => ({ db: dbMock, pool: {} }));
 vi.mock("../utils/logger", () => ({
@@ -358,6 +411,49 @@ describe("jobMetrics range-aware reads (Task #719/#726)", () => {
     ];
     const result = await mod.getAllJobMetricsForRange("30d");
     expect(result).toEqual([]);
+  });
+
+  it("getJobMetricsForRange filters by job AND cutoff via the where(...) predicate (Task #727)", async () => {
+    // Seed a mix of: rows for OTHER jobs, rows for the target job that
+    // are OUTSIDE the cutoff, and rows for the target job INSIDE the
+    // cutoff. The mock now interprets the drizzle predicates passed to
+    // .where(...) so it can apply a real filter — meaning if the
+    // production query ever forgets `eq(job, ...)` or `gte(recordedAt,
+    // cutoff)` this test will fail loudly.
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    selectRows = [
+      // Different job — must be excluded by the eq(job) filter.
+      { job: "outbox", recordedAt: new Date(now - 60_000), counters: { digestsSent: 999 } },
+      // Target job but outside the 7d window — must be excluded by gte(recordedAt, cutoff).
+      { job: "crm_birthday_digest", recordedAt: new Date(now - sevenDaysMs - 60_000), counters: { digestsSent: 50 } },
+      // Target job, inside window — should appear.
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 6 * 24 * 60 * 60 * 1000), counters: { digestsSent: 4 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 60_000), counters: { digestsSent: 3 } },
+    ];
+
+    const result = await mod.getJobMetricsForRange("crm_birthday_digest", "7d");
+    expect(result.samples).toHaveLength(2);
+    expect(result.totals).toEqual({ digestsSent: 7 });
+    expect(result.latest?.counters.digestsSent).toBe(3);
+  });
+
+  it("getAllJobMetricsForRange filters out rows outside the cutoff via where(...) (Task #727)", async () => {
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    selectRows = [
+      // Outside the cutoff — must not show up in totals.
+      { job: "outbox", recordedAt: new Date(now - sevenDaysMs - 60_000), counters: { processed: 999 } },
+      { job: "outbox", recordedAt: new Date(now - 60_000), counters: { processed: 2 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 60_000), counters: { digestsSent: 1 } },
+    ];
+
+    const result = await mod.getAllJobMetricsForRange("7d");
+    expect(result.map((j) => j.job)).toEqual(["crm_birthday_digest", "outbox"]);
+
+    const outbox = result.find((j) => j.job === "outbox")!;
+    expect(outbox.samples).toHaveLength(1);
+    expect(outbox.totals).toEqual({ processed: 2 });
   });
 
   it("getAllJobMetricsForRange falls back to [] when the DB throws", async () => {
