@@ -9,6 +9,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import express, { type Request, type Response } from "express";
+import request from "supertest";
 
 type Row = { job: string; recordedAt: Date; counters: Record<string, number> };
 
@@ -251,5 +253,201 @@ describe("jobMetrics persistence (Task #705)", () => {
 
     const pruned = await mod.pruneJobMetricsDb();
     expect(pruned).toBe(0);
+  });
+});
+
+/**
+ * Task #719 / #726: range-aware reads (`getJobMetricsForRange` and
+ * `getAllJobMetricsForRange`) must hit the persisted samples table for
+ * the 7d and 30d windows. The 24h path stays in-memory and is already
+ * covered above; here we lock down the DB-backed paths by seeding the
+ * mocked `selectRows` with what a filtered query would return and then
+ * asserting the totals/latest aggregates and per-job grouping.
+ */
+describe("jobMetrics range-aware reads (Task #719/#726)", () => {
+  it("getJobMetricsForRange('7d') returns samples from the DB with totals/latest", async () => {
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    selectRows = [
+      { job: "crm_birthday_digest", recordedAt: new Date(now - sevenDaysMs + 60_000), counters: { digestsSent: 3, skippedDedupe: 1 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 24 * 60 * 60 * 1000), counters: { digestsSent: 5, skippedDedupe: 0 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 60_000), counters: { digestsSent: 2, skippedDedupe: 4 } },
+    ];
+
+    const result = await mod.getJobMetricsForRange("crm_birthday_digest", "7d");
+    expect(result.job).toBe("crm_birthday_digest");
+    expect(result.windowMs).toBe(sevenDaysMs);
+    expect(result.samples).toHaveLength(3);
+    expect(result.totals).toEqual({ digestsSent: 10, skippedDedupe: 5 });
+    expect(result.latest?.counters).toEqual({ digestsSent: 2, skippedDedupe: 4 });
+    expect(result.latest?.timestamp).toBe(now - 60_000);
+  });
+
+  it("getJobMetricsForRange('30d') returns samples from the DB with totals/latest", async () => {
+    const now = Date.now();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    selectRows = [
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 20 * 24 * 60 * 60 * 1000), counters: { digestsSent: 11 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 5 * 24 * 60 * 60 * 1000), counters: { digestsSent: 4 } },
+    ];
+
+    const result = await mod.getJobMetricsForRange("crm_birthday_digest", "30d");
+    expect(result.windowMs).toBe(thirtyDaysMs);
+    expect(result.samples).toHaveLength(2);
+    expect(result.totals).toEqual({ digestsSent: 15 });
+    expect(result.latest?.counters.digestsSent).toBe(4);
+  });
+
+  it("getJobMetricsForRange falls back to an empty summary when the DB throws", async () => {
+    const original = dbMock.select;
+    dbMock.select = () => {
+      const chain: Record<string, unknown> = {};
+      chain.from = () => chain;
+      chain.where = () => chain;
+      chain.orderBy = () => Promise.reject(new Error("simulated DB outage"));
+      return chain;
+    };
+    try {
+      const result = await mod.getJobMetricsForRange("crm_birthday_digest", "7d");
+      expect(result.samples).toEqual([]);
+      expect(result.totals).toEqual({});
+      expect(result.latest).toBeNull();
+    } finally {
+      dbMock.select = original;
+    }
+  });
+
+  it("getJobMetricsForRange('7d') returns no samples when persistence is disabled", async () => {
+    mod.setJobMetricsPersistenceEnabled(false);
+    selectRows = [
+      { job: "crm_birthday_digest", recordedAt: new Date(Date.now() - 60_000), counters: { digestsSent: 9 } },
+    ];
+    const result = await mod.getJobMetricsForRange("crm_birthday_digest", "7d");
+    expect(result.samples).toEqual([]);
+    expect(result.totals).toEqual({});
+    expect(result.latest).toBeNull();
+  });
+
+  it("getAllJobMetricsForRange('7d') groups DB rows by job, sorted by name", async () => {
+    const now = Date.now();
+    selectRows = [
+      { job: "outbox", recordedAt: new Date(now - 5 * 60_000), counters: { processed: 7 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 4 * 60_000), counters: { digestsSent: 1 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 3 * 60_000), counters: { digestsSent: 2 } },
+      { job: "outbox", recordedAt: new Date(now - 2 * 60_000), counters: { processed: 3 } },
+    ];
+
+    const result = await mod.getAllJobMetricsForRange("7d");
+    expect(result.map((j) => j.job)).toEqual(["crm_birthday_digest", "outbox"]);
+
+    const digest = result.find((j) => j.job === "crm_birthday_digest")!;
+    expect(digest.samples).toHaveLength(2);
+    expect(digest.totals).toEqual({ digestsSent: 3 });
+    expect(digest.latest?.counters.digestsSent).toBe(2);
+
+    const outbox = result.find((j) => j.job === "outbox")!;
+    expect(outbox.samples).toHaveLength(2);
+    expect(outbox.totals).toEqual({ processed: 10 });
+    expect(outbox.latest?.counters.processed).toBe(3);
+  });
+
+  it("getAllJobMetricsForRange returns [] when persistence is disabled", async () => {
+    mod.setJobMetricsPersistenceEnabled(false);
+    selectRows = [
+      { job: "outbox", recordedAt: new Date(Date.now() - 60_000), counters: { processed: 1 } },
+    ];
+    const result = await mod.getAllJobMetricsForRange("30d");
+    expect(result).toEqual([]);
+  });
+
+  it("getAllJobMetricsForRange falls back to [] when the DB throws", async () => {
+    const original = dbMock.select;
+    dbMock.select = () => {
+      const chain: Record<string, unknown> = {};
+      chain.from = () => chain;
+      chain.where = () => chain;
+      chain.orderBy = () => Promise.reject(new Error("simulated DB outage"));
+      return chain;
+    };
+    try {
+      const result = await mod.getAllJobMetricsForRange("7d");
+      expect(result).toEqual([]);
+    } finally {
+      dbMock.select = original;
+    }
+  });
+});
+
+/**
+ * Task #726: route-level smoke check for `GET /api/admin/metrics/jobs`.
+ *
+ * We mount the same handler shape used in `server/routes.ts` onto a tiny
+ * Express app so we can assert that `?range=7d` flows through
+ * `parseMetricsRange` into `getAllJobMetricsForRange` and that the
+ * response payload includes the persisted samples (served via the
+ * mocked `db.select` chain) plus the echoed `range` field. Auth is not
+ * exercised here — those guards are tested elsewhere — keeping this
+ * focused on the range plumbing introduced in Task #719.
+ */
+describe("GET /api/admin/metrics/jobs?range=7d (Task #726)", () => {
+  it("returns persisted samples grouped by job and echoes the range", async () => {
+    const now = Date.now();
+    selectRows = [
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 3 * 24 * 60 * 60 * 1000), counters: { digestsSent: 4 } },
+      { job: "crm_birthday_digest", recordedAt: new Date(now - 60_000), counters: { digestsSent: 6 } },
+      { job: "outbox", recordedAt: new Date(now - 30_000), counters: { processed: 2 } },
+    ];
+
+    const app = express();
+    app.get("/api/admin/metrics/jobs", async (req: Request, res: Response) => {
+      const { getAllJobMetricsForRange, parseMetricsRange } = await import("../utils/jobMetrics");
+      const range = parseMetricsRange(req.query.range);
+      res.json({ jobs: await getAllJobMetricsForRange(range), range });
+    });
+
+    const res = await request(app).get("/api/admin/metrics/jobs?range=7d");
+    expect(res.status).toBe(200);
+    expect(res.body.range).toBe("7d");
+    expect(Array.isArray(res.body.jobs)).toBe(true);
+    expect(res.body.jobs.map((j: { job: string }) => j.job)).toEqual([
+      "crm_birthday_digest",
+      "outbox",
+    ]);
+
+    const digest = res.body.jobs.find((j: { job: string }) => j.job === "crm_birthday_digest");
+    expect(digest.windowMs).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(digest.samples).toHaveLength(2);
+    expect(digest.totals).toEqual({ digestsSent: 10 });
+    expect(digest.latest.counters.digestsSent).toBe(6);
+
+    const outbox = res.body.jobs.find((j: { job: string }) => j.job === "outbox");
+    expect(outbox.totals).toEqual({ processed: 2 });
+  });
+
+  it("defaults to the 24h in-memory window when the range query is missing or invalid", async () => {
+    // Seed in-memory samples; DB selectRows must NOT be consulted for 24h.
+    mod.recordJobMetrics("crm_birthday_digest", { digestsSent: 8 });
+    selectRows = [
+      { job: "should_not_appear", recordedAt: new Date(), counters: { x: 1 } },
+    ];
+
+    const app = express();
+    app.get("/api/admin/metrics/jobs", async (req: Request, res: Response) => {
+      const { getAllJobMetricsForRange, parseMetricsRange } = await import("../utils/jobMetrics");
+      const range = parseMetricsRange(req.query.range);
+      res.json({ jobs: await getAllJobMetricsForRange(range), range });
+    });
+
+    for (const url of ["/api/admin/metrics/jobs", "/api/admin/metrics/jobs?range=bogus"]) {
+      const res = await request(app).get(url);
+      expect(res.status).toBe(200);
+      expect(res.body.range).toBe("24h");
+      expect(res.body.jobs.map((j: { job: string }) => j.job)).toEqual([
+        "crm_birthday_digest",
+      ]);
+      const digest = res.body.jobs[0];
+      expect(digest.windowMs).toBe(24 * 60 * 60 * 1000);
+      expect(digest.totals).toEqual({ digestsSent: 8 });
+    }
   });
 });
