@@ -1196,22 +1196,66 @@ export default function NotificationPrefsSection() {
                             </Label>
                           </RadioGroup>
 
-                          <div className="flex items-center justify-between pt-3 border-t border-border" data-testid="row-job-metric-alert-quiet-hours-digest-csv">
-                            <div className="space-y-0.5 pr-4">
-                              <Label htmlFor="switch-job-metric-alert-quiet-hours-digest-csv" className="text-sm font-medium">
-                                Attach CSV of every alert
-                              </Label>
-                              <p className="text-xs text-muted-foreground">
-                                Include a CSV attachment with every alert that fired in the window (job, counter, kind, triggered at, message). Useful for offline analysis when more than 100 alerts fire.
+                          <div className="pt-3 border-t border-border" data-testid="row-job-metric-alert-quiet-hours-digest-csv">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-0.5 pr-4">
+                                <Label htmlFor="switch-job-metric-alert-quiet-hours-digest-csv" className="text-sm font-medium">
+                                  Attach CSV of every alert
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  Include a CSV attachment with every alert that fired in the window (job, counter, kind, triggered at, message). Useful for offline analysis when more than 100 alerts fire.
+                                </p>
+                              </div>
+                              <Switch
+                                id="switch-job-metric-alert-quiet-hours-digest-csv"
+                                checked={quietDigestCsvEnabled}
+                                onCheckedChange={handleQuietDigestCsvToggle}
+                                disabled={updateQuietDigestCsvMutation.isPending}
+                                data-testid="switch-job-metric-alert-quiet-hours-digest-csv"
+                              />
+                            </div>
+                            <div className="mt-3" data-testid="preview-job-metric-alert-quiet-hours-digest-csv">
+                              <p className="text-xs font-semibold text-muted-foreground mb-1.5">Sample columns</p>
+                              <div className="overflow-x-auto rounded-md border border-border bg-muted/30">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-muted/60 text-muted-foreground">
+                                    <tr>
+                                      <th className="text-left font-medium px-2 py-1.5" data-testid="header-csv-sample-job">job</th>
+                                      <th className="text-left font-medium px-2 py-1.5" data-testid="header-csv-sample-counter">counter</th>
+                                      <th className="text-left font-medium px-2 py-1.5" data-testid="header-csv-sample-kind">kind</th>
+                                      <th className="text-left font-medium px-2 py-1.5" data-testid="header-csv-sample-triggeredAt">triggeredAt</th>
+                                      <th className="text-left font-medium px-2 py-1.5" data-testid="header-csv-sample-message">message</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="font-mono">
+                                    <tr className="border-t border-border" data-testid="row-csv-sample-0">
+                                      <td className="px-2 py-1.5 align-top">JOB-104</td>
+                                      <td className="px-2 py-1.5 align-top">labor_hours</td>
+                                      <td className="px-2 py-1.5 align-top">OVER_BUDGET</td>
+                                      <td className="px-2 py-1.5 align-top whitespace-nowrap">2026-04-21T02:14:00Z</td>
+                                      <td className="px-2 py-1.5 align-top">Labor hours 112% of budget</td>
+                                    </tr>
+                                    <tr className="border-t border-border" data-testid="row-csv-sample-1">
+                                      <td className="px-2 py-1.5 align-top">JOB-217</td>
+                                      <td className="px-2 py-1.5 align-top">material_cost</td>
+                                      <td className="px-2 py-1.5 align-top">FORECAST_OVERRUN</td>
+                                      <td className="px-2 py-1.5 align-top whitespace-nowrap">2026-04-21T03:02:11Z</td>
+                                      <td className="px-2 py-1.5 align-top">Forecast exceeds budget by $4,820</td>
+                                    </tr>
+                                    <tr className="border-t border-border" data-testid="row-csv-sample-2">
+                                      <td className="px-2 py-1.5 align-top">JOB-309</td>
+                                      <td className="px-2 py-1.5 align-top">schedule_variance</td>
+                                      <td className="px-2 py-1.5 align-top">SCHEDULE_SLIP</td>
+                                      <td className="px-2 py-1.5 align-top whitespace-nowrap">2026-04-21T05:47:33Z</td>
+                                      <td className="px-2 py-1.5 align-top">Critical path slipped 3 days</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                                Example only. The actual CSV contains every alert that fired in the quiet-hours window.
                               </p>
                             </div>
-                            <Switch
-                              id="switch-job-metric-alert-quiet-hours-digest-csv"
-                              checked={quietDigestCsvEnabled}
-                              onCheckedChange={handleQuietDigestCsvToggle}
-                              disabled={updateQuietDigestCsvMutation.isPending}
-                              data-testid="switch-job-metric-alert-quiet-hours-digest-csv"
-                            />
                           </div>
                         </div>
                       )}
