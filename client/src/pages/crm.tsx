@@ -676,6 +676,7 @@ export default function CRMPage() {
   }, [contactOwnerFilterStorageKey]);
   const contactSearchRef = useRef<HTMLInputElement>(null);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [selectedOrgIds, setSelectedOrgIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setSelectedContactIds(new Set());
@@ -686,6 +687,10 @@ export default function CRMPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [specialtyFilters, setSpecialtyFilters] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedOrgIds(new Set());
+  }, [crmTab, searchTerm, selectedType, statusFilter, stateFilter, specialtyFilters]);
   const [showFilters, setShowFilters] = useState(false);
 
   const [dupOpen, setDupOpen] = useState(false);
@@ -874,7 +879,7 @@ export default function CRMPage() {
   }
   const { data: orgUsersForOwner = [] } = useQuery<OrgUserOption[]>({
     queryKey: ["/api/users"],
-    enabled: crmTab === "contacts",
+    enabled: crmTab === "contacts" || crmTab === "orgs",
   });
   const ownerLabelById = useMemo(() => {
     const map = new Map<string, string>();
@@ -900,6 +905,27 @@ export default function CRMPage() {
       setSelectedContactIds(new Set());
       const ownerLabel = vars.ownerId ? (ownerLabelById.get(vars.ownerId) ?? "selected owner") : "Unassigned";
       toast({ title: `Reassigned ${vars.contactIds.length} contact${vars.contactIds.length === 1 ? "" : "s"} to ${ownerLabel}` });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "";
+      toast({ title: "Failed to reassign owner", description: message, variant: "destructive" });
+    },
+  });
+
+  // Task #737: orgs tab bulk "Reassign owner" action. Uses the same bulk
+  // endpoint for single rows too so we only need one mutation.
+  const reassignOrgOwnerMutation = useMutation({
+    mutationFn: async ({ organisationIds, ownerId }: { organisationIds: string[]; ownerId: string | null }) => {
+      const res = await apiRequest("POST", "/api/crm/organisations/bulk-reassign-owner", { organisationIds, ownerId });
+      return res.json() as Promise<{ updated: number; ownerId: string | null }>;
+    },
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
+      const clearBulkSelection = vars.organisationIds.length > 1;
+      if (clearBulkSelection) setSelectedOrgIds(new Set());
+      const ownerLabel = vars.ownerId ? (ownerLabelById.get(vars.ownerId) ?? "selected owner") : "Unassigned";
+      const n = data?.updated ?? vars.organisationIds.length;
+      toast({ title: `Reassigned ${n} organization${n === 1 ? "" : "s"} to ${ownerLabel}` });
     },
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : "";
@@ -1713,7 +1739,57 @@ export default function CRMPage() {
           <Card>
             <CardHeader className="pb-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <CardTitle>Organizations</CardTitle>
+                <CardTitle className="flex items-center gap-2 flex-wrap">
+                  <span>Organizations</span>
+                  {selectedOrgIds.size > 0 && (
+                    <span className="ml-2 flex items-center gap-2 flex-wrap" data-testid="bulk-org-actions">
+                      <Badge variant="default" className="text-xs">{selectedOrgIds.size} selected</Badge>
+                      <Select
+                        value=""
+                        onValueChange={(value) => {
+                          if (!value) return;
+                          const ids = Array.from(selectedOrgIds);
+                          const ownerId = value === "__unassigned__" ? null : value;
+                          reassignOrgOwnerMutation.mutate({ organisationIds: ids, ownerId });
+                        }}
+                        disabled={reassignOrgOwnerMutation.isPending}
+                      >
+                        <SelectTrigger
+                          className="h-8 w-[220px]"
+                          data-testid="select-bulk-reassign-org-owner"
+                        >
+                          <SelectValue placeholder={reassignOrgOwnerMutation.isPending ? "Reassigning..." : "Reassign owner..."} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__unassigned__" data-testid="option-reassign-org-unassigned">Unassigned</SelectItem>
+                          {user?.id && (
+                            <SelectItem value={user.id} data-testid="option-reassign-org-mine">
+                              Me ({ownerLabelById.get(user.id) ?? "current user"})
+                            </SelectItem>
+                          )}
+                          {orgUsersForOwner
+                            .filter((u) => u.id !== user?.id)
+                            .map((u) => {
+                              const label = ownerLabelById.get(u.id) ?? u.id;
+                              return (
+                                <SelectItem key={u.id} value={u.id} data-testid={`option-reassign-org-${u.id}`}>
+                                  {label}
+                                </SelectItem>
+                              );
+                            })}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setSelectedOrgIds(new Set())}
+                        data-testid="button-clear-org-selection"
+                      >
+                        Clear
+                      </Button>
+                    </span>
+                  )}
+                </CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1974,6 +2050,8 @@ export default function CRMPage() {
                                   ? org.companyRepresented || null
                                   : null;
 
+                    const orgOwnerId = (org as { ownerId?: string | null }).ownerId ?? null;
+                    const orgOwnerLabel = orgOwnerId ? (ownerLabelById.get(orgOwnerId) ?? orgOwnerId) : null;
                     return (
                       <Card
                         key={org.id}
@@ -1982,8 +2060,23 @@ export default function CRMPage() {
                         data-testid={`card-org-${org.id}`}
                       >
                         <CardContent className="p-4 flex flex-col flex-1">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-2">
+                          <div className="flex items-start justify-between mb-3 gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+                                <Checkbox
+                                  checked={selectedOrgIds.has(org.id)}
+                                  onCheckedChange={(checked) => {
+                                    setSelectedOrgIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (checked) next.add(org.id);
+                                      else next.delete(org.id);
+                                      return next;
+                                    });
+                                  }}
+                                  aria-label={`Select ${org.name}`}
+                                  data-testid={`checkbox-select-org-${org.id}`}
+                                />
+                              </span>
                               <span
                                 className={`inline-block w-2.5 h-2.5 rounded-full ${statusColor}`}
                               />
@@ -2029,6 +2122,54 @@ export default function CRMPage() {
                                 </span>
                               </div>
                             )}
+                            <div
+                              className="flex items-center gap-1.5 text-muted-foreground"
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`cell-org-owner-${org.id}`}
+                            >
+                              <Users className="w-3.5 h-3.5 shrink-0" />
+                              {orgOwnerLabel ? (
+                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary shrink-0">
+                                  {ownerInitials(orgOwnerLabel)}
+                                </span>
+                              ) : null}
+                              <Select
+                                value={orgOwnerId ?? "__unassigned__"}
+                                onValueChange={(value) => {
+                                  const newOwnerId = value === "__unassigned__" ? null : value;
+                                  if (newOwnerId === orgOwnerId) return;
+                                  reassignOrgOwnerMutation.mutate({ organisationIds: [org.id], ownerId: newOwnerId });
+                                }}
+                                disabled={reassignOrgOwnerMutation.isPending}
+                              >
+                                <SelectTrigger
+                                  className="h-7 text-xs border-0 bg-transparent px-1 hover:bg-accent focus:ring-1 w-auto min-w-[120px] max-w-[180px]"
+                                  data-testid={`select-org-owner-${org.id}`}
+                                >
+                                  <SelectValue placeholder="Unassigned" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__unassigned__" data-testid={`option-org-owner-unassigned-${org.id}`}>
+                                    Unassigned
+                                  </SelectItem>
+                                  {user?.id && (
+                                    <SelectItem value={user.id} data-testid={`option-org-owner-mine-${org.id}`}>
+                                      Me ({ownerLabelById.get(user.id) ?? "current user"})
+                                    </SelectItem>
+                                  )}
+                                  {orgUsersForOwner
+                                    .filter((u) => u.id !== user?.id)
+                                    .map((u) => {
+                                      const label = ownerLabelById.get(u.id) ?? u.id;
+                                      return (
+                                        <SelectItem key={u.id} value={u.id} data-testid={`option-org-owner-${org.id}-${u.id}`}>
+                                          {label}
+                                        </SelectItem>
+                                      );
+                                    })}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
                           <div className="flex items-center mt-auto pt-3 border-t">
                             <span className="text-xs text-muted-foreground">
