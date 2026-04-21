@@ -13,6 +13,18 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   ComposedChart,
   Bar,
@@ -800,13 +812,58 @@ function AlertRecipientsCard({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editEmail, setEditEmail] = useState("");
 
+  const [filterKind, setFilterKind] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterSinceMs, setFilterSinceMs] = useState<string>("all");
+  const [clearCutoffMs, setClearCutoffMs] = useState<string>("604800000");
+
+  const deliveriesQueryParams = (() => {
+    const params = new URLSearchParams();
+    params.set("limit", "100");
+    if (filterKind !== "all") params.set("kind", filterKind);
+    if (filterStatus !== "all") params.set("success", filterStatus);
+    if (filterSinceMs !== "all") params.set("sinceMs", filterSinceMs);
+    return params.toString();
+  })();
+  const deliveriesUrl = `/api/admin/gantt-pdf/alert-deliveries?${deliveriesQueryParams}`;
   const { data: deliveriesData, isLoading: deliveriesLoading } = useQuery<{
     deliveries: GanttPdfAlertDeliveryRow[];
+    retentionMs?: number;
   }>({
-    queryKey: DELIVERIES_KEY,
+    queryKey: [...DELIVERIES_KEY, filterKind, filterStatus, filterSinceMs],
+    queryFn: async () => {
+      const res = await apiRequest("GET", deliveriesUrl);
+      return res.json();
+    },
     refetchInterval: 30000,
   });
   const deliveries = deliveriesData?.deliveries ?? [];
+  const retentionMs = deliveriesData?.retentionMs ?? null;
+
+  const clearMutation = useMutation({
+    mutationFn: async (olderThanMs: number | null) => {
+      const url =
+        olderThanMs && olderThanMs > 0
+          ? `/api/admin/gantt-pdf/alert-deliveries?olderThanMs=${olderThanMs}`
+          : `/api/admin/gantt-pdf/alert-deliveries`;
+      const res = await apiRequest("DELETE", url);
+      return res.json() as Promise<{ ok: boolean; removed: number }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: DELIVERIES_KEY });
+      toast({
+        title: "Cleared delivery records",
+        description: `Removed ${result.removed} record${result.removed === 1 ? "" : "s"}.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to clear delivery records",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: RECIPIENTS_KEY });
@@ -1127,9 +1184,151 @@ function AlertRecipientsCard({
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="font-medium">Recent alert deliveries</div>
                 <span className="text-xs text-muted-foreground">
-                  Last {deliveries.length} of up to 20 dispatched alerts.
+                  Showing {deliveries.length} record{deliveries.length === 1 ? "" : "s"}
+                  {retentionMs
+                    ? ` · auto-pruned after ${Math.round(retentionMs / (24 * 60 * 60 * 1000))}d`
+                    : ""}
                 </span>
               </div>
+
+              <div className="flex items-end gap-2 flex-wrap">
+                <div className="space-y-1">
+                  <Label htmlFor="filter-delivery-kind" className="text-xs">
+                    Kind
+                  </Label>
+                  <Select value={filterKind} onValueChange={setFilterKind}>
+                    <SelectTrigger
+                      id="filter-delivery-kind"
+                      className="h-8 w-[180px]"
+                      data-testid="select-filter-delivery-kind"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" data-testid="option-filter-kind-all">All kinds</SelectItem>
+                      <SelectItem value="queue_full">Queue full</SelectItem>
+                      <SelectItem value="browser_disconnected">Browser disconnected</SelectItem>
+                      <SelectItem value="queue_drained">Queue drained</SelectItem>
+                      <SelectItem value="browser_reconnected">Browser reconnected</SelectItem>
+                      <SelectItem value="test_alert">Test alert</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="filter-delivery-status" className="text-xs">
+                    Status
+                  </Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger
+                      id="filter-delivery-status"
+                      className="h-8 w-[140px]"
+                      data-testid="select-filter-delivery-status"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="true" data-testid="option-filter-status-success">Delivered</SelectItem>
+                      <SelectItem value="false" data-testid="option-filter-status-failed">Failed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="filter-delivery-since" className="text-xs">
+                    Time range
+                  </Label>
+                  <Select value={filterSinceMs} onValueChange={setFilterSinceMs}>
+                    <SelectTrigger
+                      id="filter-delivery-since"
+                      className="h-8 w-[160px]"
+                      data-testid="select-filter-delivery-since"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All time</SelectItem>
+                      <SelectItem value="3600000">Last hour</SelectItem>
+                      <SelectItem value="86400000" data-testid="option-filter-since-24h">Last 24 hours</SelectItem>
+                      <SelectItem value="604800000">Last 7 days</SelectItem>
+                      <SelectItem value="2592000000">Last 30 days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(filterKind !== "all" || filterStatus !== "all" || filterSinceMs !== "all") && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setFilterKind("all");
+                      setFilterStatus("all");
+                      setFilterSinceMs("all");
+                    }}
+                    data-testid="button-reset-delivery-filters"
+                  >
+                    Reset
+                  </Button>
+                )}
+                <div className="ml-auto flex items-end gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="clear-delivery-cutoff" className="text-xs">
+                      Clear records older than
+                    </Label>
+                    <Select value={clearCutoffMs} onValueChange={setClearCutoffMs}>
+                      <SelectTrigger
+                        id="clear-delivery-cutoff"
+                        className="h-8 w-[160px]"
+                        data-testid="select-clear-cutoff"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="86400000">1 day</SelectItem>
+                        <SelectItem value="604800000">7 days</SelectItem>
+                        <SelectItem value="2592000000">30 days</SelectItem>
+                        <SelectItem value="7776000000">90 days</SelectItem>
+                        <SelectItem value="0" data-testid="option-clear-cutoff-all">All records</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={clearMutation.isPending}
+                        data-testid="button-clear-deliveries"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" /> Clear
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Clear delivery records?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {clearCutoffMs === "0"
+                            ? "This will permanently remove every alert delivery record."
+                            : `This will permanently remove every alert delivery record older than the selected cutoff.`}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel data-testid="button-cancel-clear-deliveries">
+                          Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            const ms = Number(clearCutoffMs);
+                            clearMutation.mutate(Number.isFinite(ms) && ms > 0 ? ms : null);
+                          }}
+                          data-testid="button-confirm-clear-deliveries"
+                        >
+                          Clear records
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </div>
+
               {deliveriesLoading ? (
                 <Skeleton className="h-24 w-full" />
               ) : deliveries.length === 0 ? (
@@ -1137,7 +1336,9 @@ function AlertRecipientsCard({
                   className="text-xs text-muted-foreground"
                   data-testid="text-no-deliveries"
                 >
-                  No alerts have been dispatched yet.
+                  {filterKind !== "all" || filterStatus !== "all" || filterSinceMs !== "all"
+                    ? "No alert deliveries match the current filters."
+                    : "No alerts have been dispatched yet."}
                 </div>
               ) : (
                 <ul

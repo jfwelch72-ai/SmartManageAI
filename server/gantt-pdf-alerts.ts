@@ -6,7 +6,7 @@ import {
   type GanttPdfAlertRecipient,
   type GanttPdfAlertDelivery,
 } from "@shared/schema";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { sendEmail } from "./email";
 import { insertNotifications } from "./services/notificationService";
 import { logError, logInfo } from "./utils/logger";
@@ -16,6 +16,8 @@ const ALERT_RATE_LIMIT_MS = 30 * 60 * 1000;
 const DISCONNECT_ALERT_THRESHOLD_MS = 2 * 60 * 1000;
 const QUEUE_DEPTH_ALERT_RATIO = 1;
 const MONITOR_INTERVAL_MS = 30 * 1000;
+const DELIVERIES_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const DELIVERIES_PRUNE_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 type AlertKind =
   | "queue_full"
@@ -34,6 +36,7 @@ interface AlertState {
   browserDisconnectAlertStartedAt: number | null;
   monitorTimer: NodeJS.Timeout | null;
   lastTestSentAt: number | null;
+  lastPruneAt: number | null;
 }
 
 const state: AlertState = {
@@ -46,6 +49,7 @@ const state: AlertState = {
   browserDisconnectAlertStartedAt: null,
   monitorTimer: null,
   lastTestSentAt: null,
+  lastPruneAt: null,
 };
 
 function parseEnvRecipients(): string[] {
@@ -222,14 +226,42 @@ export async function listGanttPdfAlertRecipients(): Promise<GanttPdfAlertRecipi
   return listDbRecipients();
 }
 
+export interface ListGanttPdfAlertDeliveryFilters {
+  limit?: number;
+  kinds?: string[];
+  emailSuccess?: boolean;
+  sinceMs?: number;
+}
+
 export async function listGanttPdfAlertDeliveries(
-  limit: number = 20,
+  filtersOrLimit: ListGanttPdfAlertDeliveryFilters | number = 20,
 ): Promise<GanttPdfAlertDelivery[]> {
-  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+  const filters: ListGanttPdfAlertDeliveryFilters =
+    typeof filtersOrLimit === "number" ? { limit: filtersOrLimit } : filtersOrLimit;
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(filters.limit ?? 20)));
   try {
+    const conditions: SQL[] = [];
+    if (filters.kinds && filters.kinds.length > 0) {
+      conditions.push(inArray(ganttPdfAlertDeliveries.kind, filters.kinds));
+    }
+    if (typeof filters.emailSuccess === "boolean") {
+      conditions.push(eq(ganttPdfAlertDeliveries.emailSuccess, filters.emailSuccess));
+    }
+    if (typeof filters.sinceMs === "number" && filters.sinceMs > 0) {
+      conditions.push(
+        gte(ganttPdfAlertDeliveries.createdAt, new Date(Date.now() - filters.sinceMs)),
+      );
+    }
+    const whereClause =
+      conditions.length === 0
+        ? undefined
+        : conditions.length === 1
+          ? conditions[0]
+          : and(...conditions);
     return await db
       .select()
       .from(ganttPdfAlertDeliveries)
+      .where(whereClause)
       .orderBy(desc(ganttPdfAlertDeliveries.createdAt))
       .limit(safeLimit);
   } catch (err) {
@@ -241,6 +273,39 @@ export async function listGanttPdfAlertDeliveries(
     return [];
   }
 }
+
+export async function clearGanttPdfAlertDeliveries(options?: {
+  olderThanMs?: number;
+}): Promise<number> {
+  try {
+    const olderThanMs = options?.olderThanMs;
+    if (typeof olderThanMs === "number" && olderThanMs > 0) {
+      const cutoff = new Date(Date.now() - olderThanMs);
+      const rows = await db
+        .delete(ganttPdfAlertDeliveries)
+        .where(lt(ganttPdfAlertDeliveries.createdAt, cutoff))
+        .returning({ id: ganttPdfAlertDeliveries.id });
+      return rows.length;
+    }
+    const rows = await db
+      .delete(ganttPdfAlertDeliveries)
+      .returning({ id: ganttPdfAlertDeliveries.id });
+    return rows.length;
+  } catch (err) {
+    logError(
+      "Failed to clear Gantt PDF alert deliveries",
+      { olderThanMs: options?.olderThanMs ?? null },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    return 0;
+  }
+}
+
+export async function pruneOldGanttPdfAlertDeliveries(): Promise<number> {
+  return clearGanttPdfAlertDeliveries({ olderThanMs: DELIVERIES_RETENTION_MS });
+}
+
+export const GANTT_PDF_ALERT_DELIVERIES_RETENTION_MS = DELIVERIES_RETENTION_MS;
 
 export async function addGanttPdfAlertRecipient(input: {
   email: string;
@@ -605,6 +670,31 @@ async function runMonitorTick(): Promise<void> {
     const stats = getGanttPdfStats();
     const now = Date.now();
 
+    // Periodically prune very old delivery rows so the audit log doesn't grow
+    // unbounded. Runs at most once per DELIVERIES_PRUNE_INTERVAL_MS.
+    if (
+      state.lastPruneAt === null ||
+      now - state.lastPruneAt >= DELIVERIES_PRUNE_INTERVAL_MS
+    ) {
+      state.lastPruneAt = now;
+      void pruneOldGanttPdfAlertDeliveries()
+        .then((removed) => {
+          if (removed > 0) {
+            logInfo("Pruned old Gantt PDF alert deliveries", {
+              removed,
+              retentionMs: DELIVERIES_RETENTION_MS,
+            });
+          }
+        })
+        .catch((err) => {
+          logError(
+            "Failed to prune old Gantt PDF alert deliveries",
+            {},
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        });
+    }
+
     // Queue depth: alert when queue is at capacity and has at least one waiter.
     const queueFullThreshold = Math.floor(
       stats.limits.maxQueueLength * QUEUE_DEPTH_ALERT_RATIO,
@@ -731,4 +821,5 @@ export function __resetGanttPdfAlertStateForTests(): void {
   state.browserDisconnectAlertActive = false;
   state.browserDisconnectAlertStartedAt = null;
   state.lastTestSentAt = null;
+  state.lastPruneAt = null;
 }

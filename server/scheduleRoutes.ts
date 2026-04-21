@@ -226,6 +226,8 @@ import {
   getGanttPdfAlertConfig as getGanttPdfRecipientConfig,
   listGanttPdfAlertRecipients,
   listGanttPdfAlertDeliveries,
+  clearGanttPdfAlertDeliveries,
+  GANTT_PDF_ALERT_DELIVERIES_RETENTION_MS,
   addGanttPdfAlertRecipient,
   updateGanttPdfAlertRecipient,
   deleteGanttPdfAlertRecipient,
@@ -1525,6 +1527,31 @@ router.delete("/admin/gantt-pdf/alert-recipients/:id", requireAuth, requireRole(
   }
 });
 
+const ALLOWED_DELIVERY_KINDS = new Set([
+  "queue_full",
+  "browser_disconnected",
+  "queue_drained",
+  "browser_reconnected",
+  "test_alert",
+]);
+
+function parseDeliveryKindsParam(raw: unknown): string[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const values = Array.isArray(raw) ? raw : String(raw).split(",");
+  const cleaned = values
+    .map((v) => String(v).trim())
+    .filter((v) => v.length > 0 && ALLOWED_DELIVERY_KINDS.has(v));
+  return cleaned.length > 0 ? Array.from(new Set(cleaned)) : undefined;
+}
+
+function parseDeliverySuccessParam(raw: unknown): boolean | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const v = String(raw).toLowerCase();
+  if (v === "true" || v === "success" || v === "delivered" || v === "1") return true;
+  if (v === "false" || v === "failed" || v === "failure" || v === "0") return false;
+  return undefined;
+}
+
 router.get(
   "/admin/gantt-pdf/alert-deliveries",
   requireAuth,
@@ -1533,8 +1560,47 @@ router.get(
     try {
       const limitRaw = Number(req.query.limit);
       const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 20;
-      const deliveries = await listGanttPdfAlertDeliveries(limit);
-      res.json({ deliveries });
+      const kinds = parseDeliveryKindsParam(req.query.kind);
+      const emailSuccess = parseDeliverySuccessParam(req.query.success);
+      const sinceMsRaw = Number(req.query.sinceMs);
+      const sinceMs =
+        Number.isFinite(sinceMsRaw) && sinceMsRaw > 0 ? sinceMsRaw : undefined;
+      const deliveries = await listGanttPdfAlertDeliveries({
+        limit,
+        kinds,
+        emailSuccess,
+        sinceMs,
+      });
+      res.json({
+        deliveries,
+        retentionMs: GANTT_PDF_ALERT_DELIVERIES_RETENTION_MS,
+        filters: {
+          kinds: kinds ?? null,
+          emailSuccess: emailSuccess ?? null,
+          sinceMs: sinceMs ?? null,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  "/admin/gantt-pdf/alert-deliveries",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const olderThanMsRaw = Number(req.query.olderThanMs);
+      const olderThanMs =
+        Number.isFinite(olderThanMsRaw) && olderThanMsRaw > 0
+          ? olderThanMsRaw
+          : undefined;
+      const removed = await clearGanttPdfAlertDeliveries(
+        olderThanMs ? { olderThanMs } : undefined,
+      );
+      res.json({ ok: true, removed, olderThanMs: olderThanMs ?? null });
     } catch (error) {
       next(error);
     }
