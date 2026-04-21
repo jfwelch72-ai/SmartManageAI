@@ -128,5 +128,20 @@ test.describe("Quiet-hours digest 'Send me a sample' (Task #781)", () => {
     expect(email.subject.length).toBeGreaterThan("[Preview] ".length);
     expect(email.from).toBeTruthy();
     expect(email.html ?? email.text ?? "").not.toBe("");
+
+    // Task #786 — Verify the rendered HTML body carries the structural
+    // hooks we rely on for dark-mode + mobile rendering. The digest
+    // builder always wraps content in a role="article" container,
+    // emits a <style> block containing our prefers-color-scheme rules,
+    // exposes the alert collection as an aria-labelled list, and ships
+    // a CTA button with the .qh-button class.
+    const html = email.html ?? "";
+    expect(html).toMatch(/role="article"/);
+    expect(html).toMatch(/aria-roledescription="email"/);
+    expect(html).toMatch(/<style>[\s\S]*\.qh-root[\s\S]*<\/style>/);
+    expect(html).toMatch(/prefers-color-scheme:\s*dark/);
+    expect(html).toMatch(/max-width:\s*600px/);
+    expect(html).toMatch(/<ul[^>]*class="qh-card"[^>]*role="list"/);
+    expect(html).toMatch(/class="qh-button"/);
   });
 });

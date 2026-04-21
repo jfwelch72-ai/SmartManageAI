@@ -1369,6 +1369,77 @@ export async function buildAlertEventsCsvResponse(opts: {
   };
 }
 
+/**
+ * Task #786 — Inline <style> block for the digest email body. Provides
+ * dark-mode + mobile responsive overrides for clients that respect
+ * `<style>` blocks (Apple Mail, iOS Gmail, Outlook.com, etc.). Inline
+ * styles on each element ensure the light-mode default still renders
+ * for clients that strip <style> (e.g. Gmail web in some configs).
+ */
+const DIGEST_EMAIL_STYLE_BLOCK = `
+<style>
+  .qh-root { font-family: Arial, Helvetica, sans-serif; max-width: 640px; margin: 0 auto; padding: 16px; color: #333333; background-color: #ffffff; }
+  .qh-title { color: #333333; margin: 0 0 8px; font-size: 20px; line-height: 1.3; }
+  .qh-intro { color: #666666; line-height: 1.5; margin: 0 0 12px; word-wrap: break-word; overflow-wrap: anywhere; }
+  .qh-card { list-style: none; padding: 8px 16px; margin: 16px 0; background: #fafafa; border: 1px solid #eeeeee; border-radius: 6px; color: #333333; }
+  .qh-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; color: #333333; word-break: break-word; overflow-wrap: anywhere; }
+  .qh-item-last { border-bottom: none; }
+  .qh-muted { color: #666666; }
+  .qh-subtle { color: #888888; }
+  .qh-soft { color: #555555; }
+  .qh-heading { color: #333333; font-size: 14px; margin: 18px 0 4px; }
+  .qh-accent { color: #0070f3; }
+  .qh-tag { text-transform: uppercase; font-size: 11px; color: #666666; letter-spacing: 0.04em; }
+  .qh-button { background-color: #0070f3; color: #ffffff !important; padding: 12px 22px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600; font-size: 14px; }
+  .qh-divider { border: none; border-top: 1px solid #eeeeee; margin-top: 30px; }
+  .qh-footer { color: #999999; font-size: 12px; line-height: 1.5; }
+  .qh-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; overflow-wrap: anywhere; }
+
+  @media only screen and (max-width: 600px) {
+    .qh-root { padding: 12px !important; }
+    .qh-title { font-size: 18px !important; }
+    .qh-card { padding: 8px 12px !important; margin: 12px 0 !important; }
+    .qh-button { display: block !important; text-align: center !important; padding: 14px 20px !important; }
+    .qh-heading { font-size: 15px !important; }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .qh-root { background-color: #1a1a1a !important; color: #e6e6e6 !important; }
+    .qh-title { color: #f5f5f5 !important; }
+    .qh-intro { color: #c8c8c8 !important; }
+    .qh-card { background-color: #242424 !important; border-color: #333333 !important; color: #e6e6e6 !important; }
+    .qh-item { color: #e6e6e6 !important; border-bottom-color: #2e2e2e !important; }
+    .qh-muted { color: #b8b8b8 !important; }
+    .qh-subtle { color: #9a9a9a !important; }
+    .qh-soft { color: #c8c8c8 !important; }
+    .qh-heading { color: #f5f5f5 !important; }
+    .qh-accent { color: #60a5fa !important; }
+    .qh-tag { color: #b8b8b8 !important; }
+    .qh-divider { border-top-color: #333333 !important; }
+    .qh-footer { color: #b8b8b8 !important; }
+    .qh-button { background-color: #2563eb !important; color: #ffffff !important; }
+  }
+
+  /* Outlook.com / Outlook web dark mode */
+  [data-ogsc] .qh-root, [data-ogsb] .qh-root { background-color: #1a1a1a !important; color: #e6e6e6 !important; }
+  [data-ogsc] .qh-title, [data-ogsc] .qh-heading { color: #f5f5f5 !important; }
+  [data-ogsc] .qh-intro, [data-ogsc] .qh-soft, [data-ogsc] .qh-muted { color: #c8c8c8 !important; }
+  [data-ogsb] .qh-card { background-color: #242424 !important; border-color: #333333 !important; }
+  [data-ogsc] .qh-item { color: #e6e6e6 !important; }
+  [data-ogsc] .qh-tag, [data-ogsc] .qh-subtle, [data-ogsc] .qh-footer { color: #b8b8b8 !important; }
+  [data-ogsc] .qh-accent { color: #60a5fa !important; }
+</style>
+`.trim();
+
+function wrapDigestHtml(titleLabel: string, innerHtml: string): string {
+  // role="article" + aria-label give screen readers a stable hook and
+  // make the digest body easy to assert against in e2e tests.
+  return `${DIGEST_EMAIL_STYLE_BLOCK}
+<div class="qh-root" role="article" aria-roledescription="email" aria-label="${escapeHtmlSafe(titleLabel)}" style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#333333;background-color:#ffffff;">
+${innerHtml}
+</div>`;
+}
+
 function formatDigestSubject(count: number): string {
   return count === 1
     ? `Quiet-hours digest: 1 alert fired while you were silenced`
@@ -1393,16 +1464,16 @@ export function buildDigestEmailBody(
     `While you were inside your quiet-hours window (${range}), the following ` +
     `${events.length} job-metric alert${events.length === 1 ? "" : "s"} fired`;
   const introHtml = `While you were inside your quiet-hours window
-        (<code>${escapeHtmlSafe(range)}</code>), the following
+        (<code class="qh-code" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;overflow-wrap:anywhere;">${escapeHtmlSafe(range)}</code>), the following
         <strong>${events.length}</strong> job-metric alert${events.length === 1 ? "" : "s"} fired`;
   const footerHtml = `
       <p style="margin-top:20px;">
-        <a href="${dashboardUrl}" style="background-color:#0070f3;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;display:inline-block;">
+        <a href="${dashboardUrl}" class="qh-button" style="background-color:#0070f3;color:#ffffff;padding:12px 22px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:600;font-size:14px;">
           Open the job metrics dashboard
         </a>
       </p>
-      <hr style="margin-top:30px;border:none;border-top:1px solid #eee;">
-      <p style="color:#999;font-size:12px;">
+      <hr class="qh-divider" style="margin-top:30px;border:none;border-top:1px solid #eeeeee;">
+      <p class="qh-footer" style="color:#999999;font-size:12px;line-height:1.5;">
         You can change the digest detail level or disable it from your Notification Preferences page.
       </p>
   `;
@@ -1430,30 +1501,31 @@ export function buildDigestEmailBody(
         : "") +
       `Review the dashboard: ${dashboardUrl}`;
     const topJobsHtml = topJobs.length
-      ? `<ul style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eee;border-radius:6px;">
+      ? `<ul class="qh-card" role="list" aria-label="Top jobs by alert count" style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eeeeee;border-radius:6px;color:#333333;">
           ${topJobs
             .map(
-              ([j, c]) => `<li style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333;">
+              ([j, c], idx) => `<li class="qh-item${idx === topJobs.length - 1 ? " qh-item-last" : ""}" style="padding:6px 0;${idx === topJobs.length - 1 ? "" : "border-bottom:1px solid #f0f0f0;"}color:#333333;word-break:break-word;overflow-wrap:anywhere;">
             <strong>${escapeHtmlSafe(j)}</strong>
-            <span style="color:#666;"> — ${c} alert${c === 1 ? "" : "s"}</span>
+            <span class="qh-muted" style="color:#666666;"> — ${c} alert${c === 1 ? "" : "s"}</span>
           </li>`,
             )
             .join("")}
         </ul>`
       : "";
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
-        <h2 style="color:#333;margin-bottom:8px;">Quiet-hours digest (summary)</h2>
-        <p style="color:#666;line-height:1.5;margin-top:0;">${introHtml}.</p>
-        <ul style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eee;border-radius:6px;color:#333;">
-          <li style="padding:6px 0;border-bottom:1px solid #f0f0f0;"><strong>${events.length}</strong> alert${events.length === 1 ? "" : "s"} total</li>
-          <li style="padding:6px 0;border-bottom:1px solid #f0f0f0;"><strong>${spikes}</strong> spike${spikes === 1 ? "" : "s"}, <strong>${stalls}</strong> stall${stalls === 1 ? "" : "s"}</li>
-          <li style="padding:6px 0;"><strong>${byJob.size}</strong> job${byJob.size === 1 ? "" : "s"}, <strong>${counterCount}</strong> job/counter pair${counterCount === 1 ? "" : "s"}</li>
+    const html = wrapDigestHtml(
+      "Quiet-hours digest (summary)",
+      `
+        <h2 class="qh-title" style="color:#333333;margin:0 0 8px;font-size:20px;line-height:1.3;">Quiet-hours digest (summary)</h2>
+        <p class="qh-intro" style="color:#666666;line-height:1.5;margin:0 0 12px;word-wrap:break-word;overflow-wrap:anywhere;">${introHtml}.</p>
+        <ul class="qh-card" role="list" aria-label="Digest totals" style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eeeeee;border-radius:6px;color:#333333;">
+          <li class="qh-item" style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333333;"><strong>${events.length}</strong> alert${events.length === 1 ? "" : "s"} total</li>
+          <li class="qh-item" style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333333;"><strong>${spikes}</strong> spike${spikes === 1 ? "" : "s"}, <strong>${stalls}</strong> stall${stalls === 1 ? "" : "s"}</li>
+          <li class="qh-item qh-item-last" style="padding:6px 0;color:#333333;"><strong>${byJob.size}</strong> job${byJob.size === 1 ? "" : "s"}, <strong>${counterCount}</strong> job/counter pair${counterCount === 1 ? "" : "s"}</li>
         </ul>
-        ${topJobs.length ? `<h3 style="color:#333;font-size:14px;margin-bottom:4px;">Top jobs</h3>${topJobsHtml}` : ""}
+        ${topJobs.length ? `<h3 class="qh-heading" style="color:#333333;font-size:14px;margin:18px 0 4px;">Top jobs</h3>${topJobsHtml}` : ""}
         ${footerHtml}
-      </div>
-    `;
+      `,
+    );
     return { text, html };
   }
 
@@ -1486,36 +1558,38 @@ export function buildDigestEmailBody(
       .map((job) => {
         const list = groups.get(job) ?? [];
         const items = list
-          .map((e) => {
+          .map((e, idx) => {
             const ts = escapeHtmlSafe(e.triggeredAt.toISOString());
             const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
             const kindLabel = e.kind === "stall" ? "stall" : "spike";
-            return `<li style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333;">
-              <strong style="color:#0070f3;">[${ts}]</strong>
-              <span style="text-transform:uppercase;font-size:11px;color:#666;">${kindLabel}</span>${counter}<br/>
-              <span style="color:#555;">${escapeHtmlSafe(e.message)}</span>
+            const isLast = idx === list.length - 1;
+            return `<li class="qh-item${isLast ? " qh-item-last" : ""}" style="padding:6px 0;${isLast ? "" : "border-bottom:1px solid #f0f0f0;"}color:#333333;word-break:break-word;overflow-wrap:anywhere;">
+              <strong class="qh-accent qh-code" style="color:#0070f3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;overflow-wrap:anywhere;">[${ts}]</strong>
+              <span class="qh-tag" style="text-transform:uppercase;font-size:11px;color:#666666;letter-spacing:0.04em;">${kindLabel}</span>${counter}<br/>
+              <span class="qh-soft" style="color:#555555;">${escapeHtmlSafe(e.message)}</span>
             </li>`;
           })
           .join("");
         return `
-          <h3 style="color:#333;font-size:14px;margin:18px 0 4px;">
+          <h3 class="qh-heading" style="color:#333333;font-size:14px;margin:18px 0 4px;word-break:break-word;overflow-wrap:anywhere;">
             ${escapeHtmlSafe(job)}
-            <span style="color:#888;font-weight:normal;font-size:12px;">— ${list.length} alert${list.length === 1 ? "" : "s"}</span>
+            <span class="qh-subtle" style="color:#888888;font-weight:normal;font-size:12px;">— ${list.length} alert${list.length === 1 ? "" : "s"}</span>
           </h3>
-          <ul style="list-style:none;padding:8px 16px;margin:0 0 8px;background:#fafafa;border:1px solid #eee;border-radius:6px;">
+          <ul class="qh-card" role="list" aria-label="Alerts for ${escapeHtmlSafe(job)}" style="list-style:none;padding:8px 16px;margin:0 0 8px;background:#fafafa;border:1px solid #eeeeee;border-radius:6px;">
             ${items}
           </ul>
         `;
       })
       .join("");
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
-        <h2 style="color:#333;margin-bottom:8px;">Quiet-hours digest (grouped by job)</h2>
-        <p style="color:#666;line-height:1.5;margin-top:0;">${introHtml}, grouped by job.</p>
+    const html = wrapDigestHtml(
+      "Quiet-hours digest (grouped by job)",
+      `
+        <h2 class="qh-title" style="color:#333333;margin:0 0 8px;font-size:20px;line-height:1.3;">Quiet-hours digest (grouped by job)</h2>
+        <p class="qh-intro" style="color:#666666;line-height:1.5;margin:0 0 12px;word-wrap:break-word;overflow-wrap:anywhere;">${introHtml}, grouped by job.</p>
         ${htmlGroups}
         ${footerHtml}
-      </div>
-    `;
+      `,
+    );
     return { text, html };
   }
 
@@ -1532,28 +1606,30 @@ export function buildDigestEmailBody(
     `Review the dashboard: ${dashboardUrl}`;
 
   const items = events
-    .map((e) => {
+    .map((e, idx) => {
       const ts = escapeHtmlSafe(e.triggeredAt.toISOString());
       const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
       const kindLabel = e.kind === "stall" ? "stall" : "spike";
-      return `<li style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333;">
-        <strong style="color:#0070f3;">[${ts}]</strong>
-        <span style="text-transform:uppercase;font-size:11px;color:#666;">${kindLabel}</span>
+      const isLast = idx === events.length - 1;
+      return `<li class="qh-item${isLast ? " qh-item-last" : ""}" style="padding:6px 0;${isLast ? "" : "border-bottom:1px solid #f0f0f0;"}color:#333333;word-break:break-word;overflow-wrap:anywhere;">
+        <strong class="qh-accent qh-code" style="color:#0070f3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;overflow-wrap:anywhere;">[${ts}]</strong>
+        <span class="qh-tag" style="text-transform:uppercase;font-size:11px;color:#666666;letter-spacing:0.04em;">${kindLabel}</span>
         <strong>${escapeHtmlSafe(e.job)}${counter}</strong><br/>
-        <span style="color:#555;">${escapeHtmlSafe(e.message)}</span>
+        <span class="qh-soft" style="color:#555555;">${escapeHtmlSafe(e.message)}</span>
       </li>`;
     })
     .join("");
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
-      <h2 style="color:#333;margin-bottom:8px;">Quiet-hours digest</h2>
-      <p style="color:#666;line-height:1.5;margin-top:0;">${introHtml}.</p>
-      <ul style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eee;border-radius:6px;">
+  const html = wrapDigestHtml(
+    "Quiet-hours digest",
+    `
+      <h2 class="qh-title" style="color:#333333;margin:0 0 8px;font-size:20px;line-height:1.3;">Quiet-hours digest</h2>
+      <p class="qh-intro" style="color:#666666;line-height:1.5;margin:0 0 12px;word-wrap:break-word;overflow-wrap:anywhere;">${introHtml}.</p>
+      <ul class="qh-card" role="list" aria-label="Quiet-hours digest alerts" style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eeeeee;border-radius:6px;">
         ${items}
       </ul>
       ${footerHtml}
-    </div>
-  `;
+    `,
+  );
   return { text, html };
 }
 

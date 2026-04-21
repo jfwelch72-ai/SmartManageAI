@@ -1633,7 +1633,7 @@ export default function NotificationPrefsSection() {
             </DialogDescription>
           </DialogHeader>
           <div
-            className="overflow-auto rounded-md border bg-white p-4"
+            className="overflow-auto rounded-md border bg-background p-0"
             data-testid="container-quiet-hours-digest-preview-html"
             dangerouslySetInnerHTML={{ __html: previewHtml ?? "" }}
           />
