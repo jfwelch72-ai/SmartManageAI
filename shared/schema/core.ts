@@ -377,6 +377,12 @@ export const users = pgTable("users", {
   jobMetricAlertQuietHoursDigestFormat: jobMetricAlertQuietHoursDigestFormatEnum(
     "job_metric_alert_quiet_hours_digest_format",
   ).notNull().default("full"),
+  // Task #764: opt-in CSV attachment for the quiet-hours digest. When
+  // true, `sendJobMetricAlertQuietHoursDigests` attaches a CSV
+  // (job, counter, kind, triggeredAt, message) listing every event
+  // matched in the window, ignoring the in-email 100-event cap so
+  // large windows are still complete.
+  jobMetricAlertQuietHoursDigestCsvEnabled: boolean("job_metric_alert_quiet_hours_digest_csv_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

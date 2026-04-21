@@ -987,6 +987,8 @@ const upload = multer({
         jobMetricAlertQuietHoursDigestFormat: z
           .enum(["summary", "full", "grouped"])
           .optional(),
+        // Task #764: opt-in CSV attachment for the quiet-hours digest.
+        jobMetricAlertQuietHoursDigestCsvEnabled: z.boolean().optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -997,7 +999,8 @@ const upload = multer({
         jobMetricAlertQuietHoursEnabled, jobMetricAlertQuietHoursStart,
         jobMetricAlertQuietHoursEnd, jobMetricAlertQuietHoursTimezone,
         jobMetricAlertQuietHoursWeekdays, jobMetricAlertQuietHoursDigestEnabled,
-        jobMetricAlertQuietHoursDigestFormat } = parsed.data;
+        jobMetricAlertQuietHoursDigestFormat,
+        jobMetricAlertQuietHoursDigestCsvEnabled } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1019,6 +1022,7 @@ const upload = multer({
       if (jobMetricAlertQuietHoursWeekdays !== undefined) updateData.jobMetricAlertQuietHoursWeekdays = jobMetricAlertQuietHoursWeekdays;
       if (jobMetricAlertQuietHoursDigestEnabled !== undefined) updateData.jobMetricAlertQuietHoursDigestEnabled = jobMetricAlertQuietHoursDigestEnabled;
       if (jobMetricAlertQuietHoursDigestFormat !== undefined) updateData.jobMetricAlertQuietHoursDigestFormat = jobMetricAlertQuietHoursDigestFormat;
+      if (jobMetricAlertQuietHoursDigestCsvEnabled !== undefined) updateData.jobMetricAlertQuietHoursDigestCsvEnabled = jobMetricAlertQuietHoursDigestCsvEnabled;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }

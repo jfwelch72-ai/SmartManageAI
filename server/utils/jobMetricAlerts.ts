@@ -351,6 +351,10 @@ interface QuietHoursDigestRecipient extends SuperAdminRecipient {
   lastDigestAt: Date | null;
   // Task #761 — recipient's preferred detail level for the digest body.
   digestFormat: QuietHoursDigestFormat;
+  // Task #764 — when true, attach a CSV of every matched event so the
+  // recipient can audit large windows offline (the in-email body is
+  // still capped at DIGEST_MAX_EVENTS rows).
+  digestCsvEnabled: boolean;
 }
 
 async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> {
@@ -368,6 +372,7 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       digestEnabled: users.jobMetricAlertQuietHoursDigestEnabled,
       lastDigestAt: users.jobMetricAlertQuietHoursLastDigestAt,
       digestFormat: users.jobMetricAlertQuietHoursDigestFormat,
+      digestCsvEnabled: users.jobMetricAlertQuietHoursDigestCsvEnabled,
     })
     .from(users)
     .where(eq(users.role, "SUPER_ADMIN"));
@@ -385,6 +390,7 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       digestEnabled: r.digestEnabled ?? true,
       lastDigestAt: r.lastDigestAt ? new Date(r.lastDigestAt) : null,
       digestFormat: (r.digestFormat as QuietHoursDigestFormat | null) ?? "full",
+      digestCsvEnabled: r.digestCsvEnabled ?? false,
     }));
 }
 
@@ -1320,6 +1326,45 @@ export function buildDigestEmailBody(
   return { text, html };
 }
 
+/**
+ * Task #764 — Render a CSV row, escaping any field that contains a
+ * quote, comma, newline, or carriage return per RFC 4180.
+ */
+function csvEscape(value: string | null | undefined): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+/**
+ * Task #764 — Build the digest CSV body. Columns mirror the task spec:
+ * job, counter, kind, triggeredAt (ISO-8601), message. The CSV is not
+ * truncated by the in-email DIGEST_MAX_EVENTS cap.
+ */
+export function buildDigestCsv(events: DigestEventRow[]): string {
+  const header = "job,counter,kind,triggeredAt,message";
+  const lines = events.map((e) =>
+    [
+      csvEscape(e.job),
+      csvEscape(e.counter ?? ""),
+      csvEscape(e.kind),
+      csvEscape(e.triggeredAt.toISOString()),
+      csvEscape(e.message),
+    ].join(","),
+  );
+  // Use CRLF per RFC 4180 so the file opens cleanly in spreadsheet apps
+  // on Windows as well as macOS/Linux.
+  return [header, ...lines].join("\r\n") + "\r\n";
+}
+
+function buildDigestCsvFilename(windowStart: Date, windowEnd: Date): string {
+  const fmt = (d: Date): string =>
+    d.toISOString().replace(/[:.]/g, "-").replace(/T/, "_").slice(0, 19);
+  return `quiet-hours-digest_${fmt(windowStart)}_to_${fmt(windowEnd)}.csv`;
+}
+
 function escapeHtmlSafe(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -1434,7 +1479,11 @@ export async function sendJobMetricAlertQuietHoursDigests(
           r.lastDigestAt ? r.lastDigestAt.getTime() : 0,
         );
 
-    const matched: DigestEventRow[] = [];
+    // Task #764: when the recipient opted into CSV, collect every
+    // matched event (no in-loop cap) so the attachment is complete for
+    // large windows. The in-email body is still trimmed to
+    // DIGEST_MAX_EVENTS rows below to keep messages readable.
+    const matchedAll: DigestEventRow[] = [];
     let firstTs: number | null = null;
     let lastTs: number | null = null;
     for (const e of allEvents) {
@@ -1446,13 +1495,17 @@ export async function sendJobMetricAlertQuietHoursDigests(
       // so admins can preview a digest even if they aren't currently
       // configured for quiet hours.
       if (!opts.forceSend && !isInJobMetricAlertQuietWindow(r, e.triggeredAt)) continue;
-      matched.push(e);
+      matchedAll.push(e);
       if (firstTs === null || ts < firstTs) firstTs = ts;
       if (lastTs === null || ts > lastTs) lastTs = ts;
-      if (matched.length >= DIGEST_MAX_EVENTS) break;
+      if (!r.digestCsvEnabled && matchedAll.length >= DIGEST_MAX_EVENTS) break;
     }
+    const matched =
+      r.digestCsvEnabled && matchedAll.length > DIGEST_MAX_EVENTS
+        ? matchedAll.slice(0, DIGEST_MAX_EVENTS)
+        : matchedAll;
 
-    if (matched.length === 0) {
+    if (matchedAll.length === 0) {
       summary.digestsSkippedNoEvents++;
       // Still bump the high-water mark so future ticks don't re-scan
       // the same empty window forever. Persisting on a quiet-but-empty
@@ -1473,13 +1526,27 @@ export async function sendJobMetricAlertQuietHoursDigests(
       continue;
     }
 
-    const subject = formatDigestSubject(matched.length);
+    const subject = formatDigestSubject(matchedAll.length);
     const windowStart = new Date(firstTs ?? lowerBoundMs);
     const windowEnd = new Date(lastTs ?? now);
     const { text, html } = buildDigestEmailBody(matched, windowStart, windowEnd, r.digestFormat);
 
+    // Task #764: build a CSV attachment of every matched event when
+    // the recipient opted in. Uses the full `matchedAll` list (no
+    // 100-event cap) so large windows are still complete.
+    const attachments =
+      r.digestCsvEnabled && matchedAll.length > 0
+        ? [
+            {
+              filename: buildDigestCsvFilename(windowStart, windowEnd),
+              content: Buffer.from(buildDigestCsv(matchedAll), "utf8"),
+              contentType: "text/csv",
+            },
+          ]
+        : undefined;
+
     try {
-      const ok = await sendFn({ to: r.email, subject, text, html });
+      const ok = await sendFn({ to: r.email, subject, text, html, attachments });
       if (ok) {
         summary.digestsSent++;
         if (!opts.skipPersist) {
@@ -1602,6 +1669,8 @@ export async function sendTestQuietHoursDigestToUser(
       quietHoursWeekdays: users.jobMetricAlertQuietHoursWeekdays,
       digestEnabled: users.jobMetricAlertQuietHoursDigestEnabled,
       lastDigestAt: users.jobMetricAlertQuietHoursLastDigestAt,
+      digestFormat: users.jobMetricAlertQuietHoursDigestFormat,
+      digestCsvEnabled: users.jobMetricAlertQuietHoursDigestCsvEnabled,
     })
     .from(users)
     .where(eq(users.id, userId));
@@ -1627,6 +1696,8 @@ export async function sendTestQuietHoursDigestToUser(
     quietHoursWeekdays: r.quietHoursWeekdays ?? null,
     digestEnabled: r.digestEnabled ?? true,
     lastDigestAt: r.lastDigestAt ? new Date(r.lastDigestAt) : null,
+    digestFormat: (r.digestFormat as QuietHoursDigestFormat | null) ?? "full",
+    digestCsvEnabled: r.digestCsvEnabled ?? false,
   };
   return sendJobMetricAlertQuietHoursDigests({
     recipientsSource: async () => [recipient],

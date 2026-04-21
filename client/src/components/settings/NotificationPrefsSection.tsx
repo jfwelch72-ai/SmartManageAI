@@ -554,6 +554,45 @@ export default function NotificationPrefsSection() {
     updateQuietDigestFormatMutation.mutate(format);
   }
 
+  // Task #764: opt-in CSV attachment for the quiet-hours digest. Defaults
+  // to false on the server so the email body stays the only payload until
+  // a Super Admin explicitly turns this on for offline analysis.
+  const [quietDigestCsvEnabled, setQuietDigestCsvEnabled] = useState(false);
+  useEffect(() => {
+    if (!authUser) return;
+    setQuietDigestCsvEnabled(Boolean(authUser.jobMetricAlertQuietHoursDigestCsvEnabled ?? false));
+  }, [authUser]);
+
+  const updateQuietDigestCsvMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        jobMetricAlertQuietHoursDigestCsvEnabled: enabled,
+      });
+    },
+    onSuccess: (_data, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: enabled ? "CSV attachment enabled" : "CSV attachment disabled",
+        description: enabled
+          ? "Future quiet-hours digests will include a CSV of every alert that fired in the window."
+          : "Future quiet-hours digests will no longer include the CSV attachment.",
+      });
+    },
+    onError: (error: Error) => {
+      setQuietDigestCsvEnabled(Boolean(authUser?.jobMetricAlertQuietHoursDigestCsvEnabled ?? false));
+      toast({
+        title: "Failed to update CSV attachment preference",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleQuietDigestCsvToggle(enabled: boolean) {
+    setQuietDigestCsvEnabled(enabled);
+    updateQuietDigestCsvMutation.mutate(enabled);
+  }
+
   function handleSaveQuietHours() {
     updateQuietHoursMutation.mutate({
       jobMetricAlertQuietHoursEnabled: quietEnabled,
@@ -1156,6 +1195,24 @@ export default function NotificationPrefsSection() {
                               </span>
                             </Label>
                           </RadioGroup>
+
+                          <div className="flex items-center justify-between pt-3 border-t border-border" data-testid="row-job-metric-alert-quiet-hours-digest-csv">
+                            <div className="space-y-0.5 pr-4">
+                              <Label htmlFor="switch-job-metric-alert-quiet-hours-digest-csv" className="text-sm font-medium">
+                                Attach CSV of every alert
+                              </Label>
+                              <p className="text-xs text-muted-foreground">
+                                Include a CSV attachment with every alert that fired in the window (job, counter, kind, triggered at, message). Useful for offline analysis when more than 100 alerts fire.
+                              </p>
+                            </div>
+                            <Switch
+                              id="switch-job-metric-alert-quiet-hours-digest-csv"
+                              checked={quietDigestCsvEnabled}
+                              onCheckedChange={handleQuietDigestCsvToggle}
+                              disabled={updateQuietDigestCsvMutation.isPending}
+                              data-testid="switch-job-metric-alert-quiet-hours-digest-csv"
+                            />
+                          </div>
                         </div>
                       )}
                     </div>

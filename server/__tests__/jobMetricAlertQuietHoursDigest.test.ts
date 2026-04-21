@@ -28,6 +28,7 @@ interface FakeRecipient {
   quietHoursWeekdays: number[] | null;
   lastDigestAt: Date | null;
   digestFormat: "summary" | "full" | "grouped";
+  digestCsvEnabled?: boolean;
 }
 
 interface FakeEvent {
@@ -80,7 +81,15 @@ vi.mock("../services/notificationDelivery", () => ({
   deliverNotification: vi.fn(async () => undefined),
 }));
 
-const sendEmailMock = vi.fn(async (_opts: { to: string | string[]; subject: string; text?: string; html?: string }) => true);
+const sendEmailMock = vi.fn(
+  async (_opts: {
+    to: string | string[];
+    subject: string;
+    text?: string;
+    html?: string;
+    attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>;
+  }) => true,
+);
 vi.mock("../services/emailService", () => ({
   sendEmail: sendEmailMock,
 }));
@@ -263,6 +272,84 @@ describe("sendJobMetricAlertQuietHoursDigests (Task #754)", () => {
     // The high-water mark should still advance to avoid re-scanning.
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0].lastDigestAt?.getTime()).toBe(now);
+  });
+
+  it("attaches a CSV of every matched event when digestCsvEnabled is true (no 100-event cap)", async () => {
+    // Task #764 — opted-in recipients should receive a CSV attachment
+    // listing every alert from the window, even when the count exceeds
+    // the in-email DIGEST_MAX_EVENTS cap (100).
+    const now = Date.UTC(2026, 0, 15, 9, 0, 0);
+    alerts.setJobMetricAlertsClockForTests(() => now);
+
+    // 150 events, all inside the 22:00–07:00 quiet window (02:00 UTC).
+    const insideTs = Date.UTC(2026, 0, 15, 2, 0, 0);
+    const events = Array.from({ length: 150 }, (_, i) =>
+      makeEvent(new Date(insideTs + i * 1000), {
+        id: `evt-${i}`,
+        message: `errors spiked, sample row ${i}`,
+      }),
+    );
+
+    const recipient = makeRecipient({ digestCsvEnabled: true });
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const call = sendEmailMock.mock.calls[0][0];
+    // Subject should report the full count, not the truncated body length.
+    expect(call.subject).toContain("150");
+    // Attachment must include every row plus the header line.
+    expect(call.attachments).toBeDefined();
+    expect(call.attachments).toHaveLength(1);
+    const att = call.attachments![0];
+    expect(att.filename).toMatch(/\.csv$/);
+    expect(att.contentType).toBe("text/csv");
+    const csv = att.content.toString("utf8");
+    const lines = csv.trim().split(/\r?\n/);
+    expect(lines[0]).toBe("job,counter,kind,triggeredAt,message");
+    expect(lines).toHaveLength(151); // header + 150 rows
+    expect(lines[1]).toContain("test_job");
+    expect(lines[1]).toContain("errors");
+    expect(lines[1]).toContain("spike");
+    expect(lines[150]).toContain("sample row 149");
+  });
+
+  it("escapes CSV fields containing commas, quotes, and newlines", async () => {
+    const csv = alerts.buildDigestCsv([
+      {
+        job: "ingest,worker",
+        counter: 'errors"raw',
+        kind: "spike",
+        message: "line one\nline two",
+        triggeredAt: new Date(Date.UTC(2026, 0, 15, 2, 0, 0)),
+        emailed: false,
+      },
+    ]);
+    const lines = csv.trim().split(/\r\n/);
+    expect(lines[0]).toBe("job,counter,kind,triggeredAt,message");
+    expect(lines[1]).toContain('"ingest,worker"');
+    expect(lines[1]).toContain('"errors""raw"');
+    expect(lines[1]).toContain('"line one\nline two"');
+  });
+
+  it("does not attach a CSV when digestCsvEnabled is false", async () => {
+    const now = Date.UTC(2026, 0, 15, 9, 0, 0);
+    alerts.setJobMetricAlertsClockForTests(() => now);
+
+    const recipient = makeRecipient(); // digestCsvEnabled defaults undefined → false
+    const eventInside = new Date(Date.UTC(2026, 0, 15, 2, 0, 0));
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => [makeEvent(eventInside)] as never,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const call = sendEmailMock.mock.calls[0][0];
+    expect(call.attachments).toBeUndefined();
   });
 
   it("does not re-send events older than lastDigestAt", async () => {
