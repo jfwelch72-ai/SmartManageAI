@@ -2,9 +2,20 @@ import { db } from "./db";
 import {
   crmCsvImportJobs,
   crmContacts, crmOrganisations, crmOpportunities,
+  users,
 } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { logError, logInfo } from "./utils/logger";
+import { insertNotification } from "./services/notificationService";
+import { sendEmail } from "./services/emailService";
+
+const EMAIL_THRESHOLD_MS = 30_000;
+
+const ENTITY_LABELS: Record<string, string> = {
+  CONTACT: "contacts",
+  ORGANISATION: "organisations",
+  OPPORTUNITY: "opportunities",
+};
 
 const POLL_INTERVAL_MS = 5_000;
 const PROGRESS_FLUSH_EVERY = 50; // rows
@@ -62,7 +73,7 @@ async function processOneJob(): Promise<boolean> {
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, organization_id, entity_type, mapping, payload, processed_rows, inserted_rows, updated_rows, skipped_rows, error_rows, errors, inserted_ids
+    RETURNING id, organization_id, entity_type, mapping, payload, processed_rows, inserted_rows, updated_rows, skipped_rows, error_rows, errors, inserted_ids, created_by_id, created_at, started_at
   `);
 
   const row = (claimed as any).rows?.[0];
@@ -71,6 +82,8 @@ async function processOneJob(): Promise<boolean> {
   const jobId: string = row.id;
   const orgId: string = row.organization_id;
   const entityType: string = row.entity_type;
+  const createdById: string | null = row.created_by_id ?? null;
+  const startedAt: Date = row.started_at ? new Date(row.started_at) : new Date();
   const mapping: Record<string, string> = row.mapping || {};
   const payloadRows: Record<string, any>[] = Array.isArray(row.payload) ? row.payload : [];
 
@@ -195,8 +208,13 @@ async function processOneJob(): Promise<boolean> {
 
     await flushProgress(jobId, progress, true);
     logInfo(`[crm-csv-import] job ${jobId} completed: ${progress.inserted} inserted, ${progress.updated} updated, ${progress.skipped} skipped, ${progress.errored} errored`);
+    await notifyJobFinished({
+      jobId, orgId, entityType, createdById, startedAt,
+      status: "COMPLETED", progress,
+    });
   } catch (err) {
     logError(`[crm-csv-import] job ${jobId} failed`, {}, err instanceof Error ? err : new Error(String(err)));
+    const failureMessage = err instanceof Error ? err.message : String(err);
     try {
       await db.update(crmCsvImportJobs).set({
         status: "FAILED",
@@ -206,13 +224,95 @@ async function processOneJob(): Promise<boolean> {
         updatedRows: progress.updated,
         skippedRows: progress.skipped,
         errorRows: progress.errored,
-        errors: [...progress.errors.slice(0, 99), { row: progress.processed, error: err instanceof Error ? err.message : String(err) }],
+        errors: [...progress.errors.slice(0, 99), { row: progress.processed, error: failureMessage }],
         insertedIds: progress.insertedIds,
       } as any).where(eq(crmCsvImportJobs.id, jobId));
     } catch {}
+    await notifyJobFinished({
+      jobId, orgId, entityType, createdById, startedAt,
+      status: "FAILED", progress, failureMessage,
+    });
   }
 
   return true;
+}
+
+async function notifyJobFinished(args: {
+  jobId: string;
+  orgId: string;
+  entityType: string;
+  createdById: string | null;
+  startedAt: Date;
+  status: "COMPLETED" | "FAILED";
+  progress: JobProgress;
+  failureMessage?: string;
+}): Promise<void> {
+  const { jobId, orgId, entityType, createdById, startedAt, status, progress, failureMessage } = args;
+  if (!createdById) return;
+
+  const entityLabel = ENTITY_LABELS[entityType] ?? "rows";
+  const totalsLine =
+    `${progress.inserted} inserted · ${progress.updated} updated · ${progress.skipped} skipped · ${progress.errored} errored ` +
+    `(out of ${progress.processed} ${entityLabel})`;
+
+  const title = status === "COMPLETED"
+    ? `CSV import finished: ${entityLabel}`
+    : `CSV import failed: ${entityLabel}`;
+  const message = status === "COMPLETED"
+    ? `Your ${entityLabel} CSV import is done. ${totalsLine}.`
+    : `Your ${entityLabel} CSV import failed${failureMessage ? `: ${failureMessage}` : ""}. ${totalsLine}.`;
+
+  try {
+    await insertNotification({
+      userId: createdById,
+      organizationId: orgId,
+      type: "GENERAL",
+      title,
+      message,
+      relatedEntityId: jobId,
+      relatedEntityType: "crm_csv_import_job",
+    } as any);
+  } catch (err) {
+    logError(`[crm-csv-import] failed to insert in-app notification for job ${jobId}`, {}, err instanceof Error ? err : new Error(String(err)));
+  }
+
+  const elapsedMs = Date.now() - startedAt.getTime();
+  if (elapsedMs < EMAIL_THRESHOLD_MS) return;
+
+  try {
+    const [user] = await db.select({ email: users.email, firstName: users.firstName })
+      .from(users)
+      .where(eq(users.id, createdById))
+      .limit(1);
+    if (!user?.email) return;
+
+    const greeting = user.firstName ? `Hi ${user.firstName},` : "Hi,";
+    const elapsedSec = Math.round(elapsedMs / 1000);
+    const html =
+      `<p>${greeting}</p>` +
+      `<p>${status === "COMPLETED"
+        ? `Your CSV import for ${entityLabel} just finished.`
+        : `Your CSV import for ${entityLabel} failed${failureMessage ? `: ${failureMessage}` : ""}.`}</p>` +
+      `<ul>` +
+      `<li><strong>Inserted:</strong> ${progress.inserted}</li>` +
+      `<li><strong>Updated:</strong> ${progress.updated}</li>` +
+      `<li><strong>Skipped:</strong> ${progress.skipped}</li>` +
+      `<li><strong>Errored:</strong> ${progress.errored}</li>` +
+      `<li><strong>Total processed:</strong> ${progress.processed}</li>` +
+      `<li><strong>Duration:</strong> ${elapsedSec}s</li>` +
+      `</ul>`;
+    const text =
+      `${greeting}\n\n` +
+      (status === "COMPLETED"
+        ? `Your CSV import for ${entityLabel} just finished.\n\n`
+        : `Your CSV import for ${entityLabel} failed${failureMessage ? `: ${failureMessage}` : ""}.\n\n`) +
+      `Inserted: ${progress.inserted}\nUpdated: ${progress.updated}\nSkipped: ${progress.skipped}\n` +
+      `Errored: ${progress.errored}\nTotal processed: ${progress.processed}\nDuration: ${elapsedSec}s\n`;
+
+    await sendEmail({ to: user.email, subject: title, html, text });
+  } catch (err) {
+    logError(`[crm-csv-import] failed to send completion email for job ${jobId}`, {}, err instanceof Error ? err : new Error(String(err)));
+  }
 }
 
 async function drain(): Promise<void> {
