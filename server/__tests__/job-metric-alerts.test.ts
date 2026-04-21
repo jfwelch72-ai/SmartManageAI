@@ -181,17 +181,25 @@ const dbMock = {
       const computeRows = () => {
         // listRecentJobMetricAlertEvents projects {event, ackFirst, ackLast,
         // ackEmail, snoozeFirst, snoozeLast, snoozeEmail} and joins users
-        // twice. Wrap event rows to match that shape when joins are used.
+        // twice. Wrap event rows to match that shape when joins are used,
+        // resolving each join's user attribution from `state.superAdmins`
+        // (which stands in for the users table in these tests).
         if (isEventsTable && joinCount > 0) {
-          return baseRows.map((r) => ({
-            event: r,
-            ackFirst: null,
-            ackLast: null,
-            ackEmail: null,
-            snoozeFirst: null,
-            snoozeLast: null,
-            snoozeEmail: null,
-          }));
+          const findUser = (id: string | null) =>
+            id ? state.superAdmins.find((u) => u.id === id) ?? null : null;
+          return (baseRows as EventRow[]).map((r) => {
+            const ackUser = findUser(r.acknowledgedById);
+            const snoozeUser = findUser(r.snoozedById);
+            return {
+              event: r,
+              ackFirst: ackUser?.firstName ?? null,
+              ackLast: ackUser?.lastName ?? null,
+              ackEmail: ackUser?.email ?? null,
+              snoozeFirst: snoozeUser?.firstName ?? null,
+              snoozeLast: snoozeUser?.lastName ?? null,
+              snoozeEmail: snoozeUser?.email ?? null,
+            };
+          });
         }
         return baseRows;
       };
@@ -510,6 +518,55 @@ describe("jobMetricAlerts (Task #718)", () => {
     expect(events).toHaveLength(2);
     expect(activeByJob).toEqual({ open_job: 1 });
     expect(activeByJob.ack_job).toBeUndefined();
+  });
+
+  it("populates acknowledgedByName/snoozedByName from joined users rows (Task #759)", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+
+    // Give the seeded super-admins real names/emails so the join can
+    // produce a display name. admin-1 acknowledges; admin-2 snoozes.
+    state.superAdmins[0] = {
+      ...state.superAdmins[0],
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+    };
+    state.superAdmins[1] = {
+      ...state.superAdmins[1],
+      firstName: "Grace",
+      lastName: "Hopper",
+      email: "grace@example.com",
+    };
+
+    state.events.push({
+      id: "evt-named",
+      job: "named_job",
+      counter: "c",
+      kind: "spike",
+      ruleId: null,
+      message: "named",
+      observedValue: "10.0000",
+      baselineValue: "1.0000",
+      triggeredAt: new Date(now - 10 * 60 * 1000),
+      notifiedUserCount: 1,
+      acknowledgedAt: new Date(now - 5 * 60 * 1000),
+      acknowledgedById: "admin-1",
+      snoozedUntil: new Date(now + 2 * HOUR),
+      snoozedById: "admin-2",
+      emailed: false,
+      emailedRecipientCount: 0,
+      emailAttempted: false,
+      emailError: null,
+    });
+
+    const { events } = await alerts.listRecentJobMetricAlertEvents();
+
+    expect(events).toHaveLength(1);
+    expect(events[0].acknowledgedById).toBe("admin-1");
+    expect(events[0].acknowledgedByName).toBe("Ada Lovelace");
+    expect(events[0].snoozedById).toBe("admin-2");
+    expect(events[0].snoozedByName).toBe("Grace Hopper");
   });
 
   it("persists emailed=true and recipient count when email escalation threshold is met (Task #739)", async () => {
