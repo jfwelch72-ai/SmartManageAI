@@ -2,6 +2,7 @@ import {logError, logWarn } from "../utils/logger";
 import { ImapFlow } from "imapflow";
 import * as nodemailer from "nodemailer";
 import type { EmailAccount } from "@shared/schema";
+import { captureOutboundEmail, isEmailTransportNoop } from "./emailTransport";
 
 export interface ImapTestResult {
   success: boolean;
@@ -248,6 +249,23 @@ export async function sendSmtpEmail(
     references?: string;
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  if (isEmailTransportNoop()) {
+    const fromAddr = account.displayName
+      ? `"${account.displayName}" <${account.emailAddress}>`
+      : account.emailAddress;
+    captureOutboundEmail({
+      to: options.to.split(',').map((s) => s.trim()).filter(Boolean),
+      cc: options.cc ? options.cc.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+      bcc: options.bcc ? options.bcc.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+      from: fromAddr,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+      source: 'smtp',
+    });
+    return { success: true, messageId: `noop-${Date.now()}` };
+  }
+
   if (!account.smtpHost) {
     return { success: false, error: "SMTP not configured for this account. Please add SMTP settings." };
   }
