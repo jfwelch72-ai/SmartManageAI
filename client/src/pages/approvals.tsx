@@ -151,9 +151,6 @@ export default function ApprovalsPage() {
                         <p className="font-medium" data-testid={`text-approval-type-${approval.id}`}>
                           {ENTITY_TYPE_LABELS[approval.entityType] || approval.entityType}
                         </p>
-                        <Badge variant="outline" data-testid={`badge-approval-entity-${approval.id}`}>
-                          {approval.entityId}
-                        </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground" data-testid={`text-approval-date-${approval.id}`}>
                         Submitted {new Date(approval.createdAt).toLocaleDateString()}
