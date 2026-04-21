@@ -1,9 +1,44 @@
-import { logError } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const DEFAULT_FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || 'SmartManageAI <onboarding@resend.dev>';
+
+/**
+ * Task #777 — env-gated no-op transport for tests.
+ *
+ * When EMAIL_TRANSPORT === 'noop' the `sendEmail` helper short-circuits
+ * before talking to Resend: the message is appended to an in-memory
+ * outbox and the call resolves true. This lets end-to-end tests that
+ * exercise "send a sample email" paths (e.g. the quiet-hours digest
+ * preview) verify the send branch without delivering real mail or
+ * burning Resend quota. Production code paths are unchanged unless the
+ * env flag is set explicitly.
+ */
+export interface CapturedEmail {
+  to: string[];
+  from: string;
+  subject: string;
+  html?: string;
+  text?: string;
+  replyTo?: string;
+  capturedAt: Date;
+}
+
+const testOutbox: CapturedEmail[] = [];
+
+export function isEmailTransportNoop(): boolean {
+  return process.env.EMAIL_TRANSPORT === 'noop';
+}
+
+export function getTestEmailOutbox(): CapturedEmail[] {
+  return testOutbox.slice();
+}
+
+export function clearTestEmailOutbox(): void {
+  testOutbox.length = 0;
+}
 
 interface EmailAttachment {
   filename: string;
@@ -49,6 +84,24 @@ export async function sendEmail(options: EmailOptions & { headers?: Record<strin
     recipients = options.to;
   }
   const recipientCount = recipients.length;
+
+  if (isEmailTransportNoop()) {
+    const captured: CapturedEmail = {
+      to: recipients,
+      from: options.from || DEFAULT_FROM_EMAIL,
+      subject: options.subject,
+      html: options.html,
+      text: options.text,
+      replyTo: options.replyTo,
+      capturedAt: new Date(),
+    };
+    testOutbox.push(captured);
+    logInfo(
+      `[email:noop] captured outbound email (${recipientCount} recipient(s)): ${options.subject}`,
+      { transport: 'noop', recipientCount },
+    );
+    return true;
+  }
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
