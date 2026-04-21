@@ -1,17 +1,25 @@
 /**
- * Lightweight in-process job metrics surface.
+ * Lightweight job metrics surface.
  *
  * Background jobs call `recordJobMetrics(jobName, counters)` at the end of
- * each tick. We keep a rolling 24h window of samples per job in memory so
- * a Super Admin can hit an admin endpoint to spot regressions (e.g. a DST
- * bug spiking `skippedDedupe`, or an empty-contact week causing
+ * each tick. We keep a rolling 24h window of samples per job so a Super
+ * Admin can hit an admin endpoint to spot regressions (e.g. a DST bug
+ * spiking `skippedDedupe`, or an empty-contact week causing
  * `skippedNoBirthdays` to dominate) without needing to grep raw logs.
  *
- * This is intentionally process-local. Metrics reset on restart and are
- * not aggregated across workers — sufficient for the single-process
- * scheduler we run today and good enough for the "log query / dev page"
- * acceptance criterion in task #700.
+ * Task #705: samples are now ALSO persisted to the `job_metric_samples`
+ * table so the window survives server restarts/deploys. The in-process
+ * Map remains the read path (sync API, no DB round-trip per request) and
+ * is hydrated from the table at startup via `loadJobMetricsFromDb()`.
+ * DB writes are fire-and-forget so a transient DB hiccup never breaks a
+ * job tick — the in-memory record always succeeds, and the row will be
+ * missing on next restart only if the insert genuinely failed.
  */
+
+import { db } from "../db";
+import { jobMetricSamples } from "@shared/schema";
+import { gte, lt } from "drizzle-orm";
+import { logError } from "./logger";
 
 export type JobCounters = Record<string, number>;
 
@@ -24,6 +32,7 @@ const RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_SAMPLES_PER_JOB = 2000;
 
 const samplesByJob = new Map<string, JobMetricSample[]>();
+let persistenceEnabled = true;
 
 function prune(job: string, now: number): JobMetricSample[] {
   const list = samplesByJob.get(job);
@@ -38,9 +47,24 @@ function prune(job: string, now: number): JobMetricSample[] {
   return list;
 }
 
+async function persistSample(job: string, sample: JobMetricSample): Promise<void> {
+  if (!persistenceEnabled) return;
+  try {
+    await db.insert(jobMetricSamples).values({
+      job,
+      recordedAt: new Date(sample.timestamp),
+      counters: sample.counters,
+    });
+  } catch (err) {
+    logError("Failed to persist job metric sample", { job, error: String(err) });
+  }
+}
+
 /**
  * Record a sample of counter values for a job tick. The sample is
- * stamped with the current time and pruned to the rolling 24h window.
+ * stamped with the current time, kept in the rolling 24h in-memory
+ * window, and asynchronously persisted to `job_metric_samples` so the
+ * trend survives restarts.
  */
 export function recordJobMetrics(job: string, counters: JobCounters): JobMetricSample {
   const now = Date.now();
@@ -52,6 +76,8 @@ export function recordJobMetrics(job: string, counters: JobCounters): JobMetricS
   list.push(sample);
   samplesByJob.set(job, list);
   prune(job, now);
+  // Fire-and-forget — DB outages must never break a job tick.
+  void persistSample(job, sample);
   return sample;
 }
 
@@ -94,8 +120,73 @@ export function getAllJobMetrics(): Array<ReturnType<typeof getJobMetrics>> {
 }
 
 /**
- * Test helper — drop all in-memory samples.
+ * Hydrate the in-memory window from the persisted samples table. Called
+ * once at startup so a fresh process immediately has access to the
+ * trailing 24h of data instead of starting empty.
+ */
+export async function loadJobMetricsFromDb(): Promise<number> {
+  if (!persistenceEnabled) return 0;
+  const cutoff = new Date(Date.now() - RETENTION_MS);
+  try {
+    const rows = await db
+      .select({
+        job: jobMetricSamples.job,
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(gte(jobMetricSamples.recordedAt, cutoff))
+      .orderBy(jobMetricSamples.recordedAt);
+
+    samplesByJob.clear();
+    for (const row of rows) {
+      const list = samplesByJob.get(row.job) ?? [];
+      list.push({
+        timestamp: new Date(row.recordedAt).getTime(),
+        counters: (row.counters as JobCounters) ?? {},
+      });
+      samplesByJob.set(row.job, list);
+    }
+    // Cap each job to MAX_SAMPLES_PER_JOB just in case the DB has more.
+    const now = Date.now();
+    for (const job of samplesByJob.keys()) prune(job, now);
+    return rows.length;
+  } catch (err) {
+    logError("Failed to hydrate job metrics from DB", { error: String(err) });
+    return 0;
+  }
+}
+
+/**
+ * Delete persisted samples older than the retention window. Called
+ * periodically by the job runner to keep the table bounded.
+ */
+export async function pruneJobMetricsDb(): Promise<number> {
+  if (!persistenceEnabled) return 0;
+  const cutoff = new Date(Date.now() - RETENTION_MS);
+  try {
+    const deleted = await db
+      .delete(jobMetricSamples)
+      .where(lt(jobMetricSamples.recordedAt, cutoff))
+      .returning({ id: jobMetricSamples.id });
+    return deleted.length;
+  } catch (err) {
+    logError("Failed to prune persisted job metrics", { error: String(err) });
+    return 0;
+  }
+}
+
+/**
+ * Test helper — drop all in-memory samples (does not touch the DB).
  */
 export function resetJobMetrics(): void {
   samplesByJob.clear();
+}
+
+/**
+ * Test helper — disable DB persistence so unit tests don't hit the DB.
+ * Kept module-private semantics by default; tests opt-in explicitly.
+ */
+export function setJobMetricsPersistenceEnabled(enabled: boolean): void {
+  persistenceEnabled = enabled;
 }

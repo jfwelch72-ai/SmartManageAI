@@ -1272,6 +1272,21 @@ export const filePermissions = pgTable("file_permissions", {
   grantedAt: timestamp("granted_at").notNull().defaultNow(),
 });
 
+// Job Metric Samples table — Task #705
+// Persists the rolling job metrics window so trend data survives server
+// restarts/deploys. Each row is a single tick's counter snapshot for one
+// background job. The in-process metrics module hydrates from these rows
+// at startup and prunes anything older than the retention window.
+export const jobMetricSamples = pgTable("job_metric_samples", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  job: text("job").notNull(),
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+  counters: jsonb("counters").notNull(),
+}, (table) => ({
+  jobRecordedAtIdx: index("job_metric_samples_job_recorded_at_idx").on(table.job, table.recordedAt),
+  recordedAtIdx: index("job_metric_samples_recorded_at_idx").on(table.recordedAt),
+}));
+
 // Audit Log table
 export const auditLog = pgTable("audit_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

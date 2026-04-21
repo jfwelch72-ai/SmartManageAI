@@ -4,7 +4,7 @@ import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
-import { recordJobMetrics } from "../utils/jobMetrics";
+import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../utils/jobMetrics";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, type InsertNotification } from "@shared/schema";
@@ -49,9 +49,30 @@ let crmSlaBreachTask: ReturnType<typeof cron.schedule> | null = null;
 let crmIdleAutomationTask: ReturnType<typeof cron.schedule> | null = null;
 let crmBirthdayDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let crmBirthdayDailyTask: ReturnType<typeof cron.schedule> | null = null;
+let jobMetricsPruneTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
+
+  // Task #705: hydrate the in-memory job metrics window from the
+  // persisted samples table so trend data survives restarts/deploys.
+  // Fire-and-forget — the rest of the runner must not block on it.
+  loadJobMetricsFromDb()
+    .then((count) => {
+      if (count > 0) logInfo("Hydrated job metrics from DB", { samples: count });
+    })
+    .catch((err) => logError("Job metrics hydration failed", { error: String(err) }));
+
+  // Task #705: trim stale rows hourly so the persistence table stays
+  // bounded by the retention window (24h) regardless of job volume.
+  jobMetricsPruneTask = cron.schedule("0 * * * *", async () => {
+    try {
+      const deleted = await pruneJobMetricsDb();
+      if (deleted > 0) logInfo("Pruned old job metric samples", { deleted });
+    } catch (err) {
+      logError("Job metric DB prune failed", { error: String(err) });
+    }
+  });
 
   outboxTask = cron.schedule("*/2 * * * *", async () => {
     try {
@@ -393,6 +414,10 @@ export function stopJobRunner() {
   if (crmBirthdayDailyTask) {
     crmBirthdayDailyTask.stop();
     crmBirthdayDailyTask = null;
+  }
+  if (jobMetricsPruneTask) {
+    jobMetricsPruneTask.stop();
+    jobMetricsPruneTask = null;
   }
   logInfo("Background job runner stopped");
 }

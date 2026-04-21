@@ -11,15 +11,20 @@ import {
   getJobMetrics,
   getAllJobMetrics,
   resetJobMetrics,
+  setJobMetricsPersistenceEnabled,
 } from "../utils/jobMetrics";
 
 beforeEach(() => {
+  // Tests in this file exercise the in-memory surface only; disable DB
+  // persistence so they don't depend on the `job_metric_samples` table.
+  setJobMetricsPersistenceEnabled(false);
   resetJobMetrics();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   resetJobMetrics();
+  setJobMetricsPersistenceEnabled(true);
 });
 
 describe("jobMetrics", () => {
