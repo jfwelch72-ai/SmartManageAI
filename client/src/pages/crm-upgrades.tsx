@@ -13,8 +13,120 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Loader2, Plus, Trash2, Copy, ExternalLink, AlertTriangle, Upload, BarChart3, Zap, Calendar, FileText, Clock, ChevronDown, ChevronRight, Download, RotateCcw } from "lucide-react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 const STAGES = ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION", "WON", "LOST"];
+
+const EXCEL_MIME_TYPES = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/vnd.oasis.opendocument.spreadsheet",
+]);
+
+const SPREADSHEET_ACCEPT = ".csv,.xlsx,.xls,.ods,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.oasis.opendocument.spreadsheet";
+
+function isExcelFile(f: File) {
+  const name = f.name.toLowerCase();
+  return (
+    name.endsWith(".xlsx") ||
+    name.endsWith(".xls") ||
+    name.endsWith(".ods") ||
+    EXCEL_MIME_TYPES.has(f.type)
+  );
+}
+
+function normalizeCellValue(v: any): any {
+  if (v === undefined || v === null) return "";
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return "";
+    const hasTime = v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0 || v.getUTCSeconds() !== 0 || v.getUTCMilliseconds() !== 0;
+    return hasTime ? v.toISOString() : v.toISOString().slice(0, 10);
+  }
+  if (typeof v === "number" || typeof v === "boolean") return v;
+  return String(v);
+}
+
+function parseSheet(wb: XLSX.WorkBook, sheetName: string): { headers: string[]; rows: Record<string, any>[] } {
+  const sheet = wb.Sheets[sheetName];
+  if (!sheet) throw new Error(`Sheet "${sheetName}" not found in workbook`);
+  const aoa = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: null, raw: true, blankrows: false });
+  if (!aoa || aoa.length === 0) throw new Error("Sheet is empty");
+  const rawHeaders = (aoa[0] || []).map((h) => (h == null ? "" : String(h).trim()));
+  const headers: string[] = [];
+  const seen = new Map<string, number>();
+  for (let i = 0; i < rawHeaders.length; i++) {
+    let h = rawHeaders[i] || `Column ${i + 1}`;
+    if (seen.has(h)) {
+      const n = (seen.get(h) || 1) + 1;
+      seen.set(h, n);
+      h = `${h} (${n})`;
+    } else {
+      seen.set(h, 1);
+    }
+    headers.push(h);
+  }
+  if (headers.length === 0) throw new Error("Sheet is missing a header row");
+  const rows: Record<string, any>[] = [];
+  for (let r = 1; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    const obj: Record<string, any> = {};
+    let any = false;
+    for (let c = 0; c < headers.length; c++) {
+      const v = normalizeCellValue(row[c]);
+      if (v !== "" && v !== null && v !== undefined) any = true;
+      obj[headers[c]] = v;
+    }
+    if (any) rows.push(obj);
+  }
+  if (rows.length === 0) throw new Error("Need header + at least 1 row");
+  return { headers, rows };
+}
+
+async function parseExcelFile(f: File): Promise<{ wb: XLSX.WorkBook; sheets: string[] }> {
+  const buf = await f.arrayBuffer();
+  let wb: XLSX.WorkBook;
+  try {
+    wb = XLSX.read(buf, { type: "array", cellDates: true });
+  } catch (e: any) {
+    const msg = String(e?.message || e || "").toLowerCase();
+    if (msg.includes("password") || msg.includes("encrypt")) {
+      throw new Error("This file is password-protected. Please remove the password and try again.");
+    }
+    throw e;
+  }
+  const sheets = wb.SheetNames || [];
+  if (sheets.length === 0) throw new Error("Workbook has no sheets");
+  return { wb, sheets };
+}
+
+function parseCsvFile(f: File): Promise<{ headers: string[]; rows: Record<string, any>[] }> {
+  return new Promise((resolve, reject) => {
+    Papa.parse<Record<string, any>>(f, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim(),
+      complete: (results) => {
+        if (results.errors && results.errors.length > 0) {
+          const first = results.errors[0];
+          reject(new Error(`CSV parse error on row ${first.row ?? "?"}: ${first.message}`));
+          return;
+        }
+        const hdrs = (results.meta.fields || []).map((h) => h.trim());
+        if (hdrs.length === 0) {
+          reject(new Error("CSV is missing a header row"));
+          return;
+        }
+        const rows = (results.data || []).filter((r) => r && Object.keys(r).length > 0);
+        if (rows.length === 0) {
+          reject(new Error("Need header + at least 1 row"));
+          return;
+        }
+        resolve({ headers: hdrs, rows });
+      },
+      error: (err) => reject(err),
+    });
+  });
+}
 
 export default function CrmUpgradesPage() {
   return (
@@ -391,109 +503,6 @@ function ImportPanel() {
   const workbookRef = useRef<XLSX.WorkBook | null>(null);
   const fields = fieldsByEntity?.[entity] ?? [];
 
-  const parseCsvFile = (f: File) => new Promise<{ headers: string[]; rows: Record<string, any>[] }>((resolve, reject) => {
-    Papa.parse<Record<string, any>>(f, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.trim(),
-      complete: (results) => {
-        if (results.errors && results.errors.length > 0) {
-          const first = results.errors[0];
-          reject(new Error(`CSV parse error on row ${first.row ?? "?"}: ${first.message}`));
-          return;
-        }
-        const hdrs = (results.meta.fields || []).map((h) => h.trim());
-        if (hdrs.length === 0) {
-          reject(new Error("CSV is missing a header row"));
-          return;
-        }
-        const rows = (results.data || []).filter((r) => r && Object.keys(r).length > 0);
-        if (rows.length === 0) {
-          reject(new Error("Need header + at least 1 row"));
-          return;
-        }
-        resolve({ headers: hdrs, rows });
-      },
-      error: (err) => reject(err),
-    });
-  });
-
-  const normalizeCellValue = (v: any): any => {
-    if (v === undefined || v === null) return "";
-    if (v instanceof Date) {
-      if (isNaN(v.getTime())) return "";
-      const hasTime = v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0 || v.getUTCSeconds() !== 0 || v.getUTCMilliseconds() !== 0;
-      return hasTime ? v.toISOString() : v.toISOString().slice(0, 10);
-    }
-    if (typeof v === "number" || typeof v === "boolean") return v;
-    return String(v);
-  };
-
-  const parseSheet = (wb: XLSX.WorkBook, sheetName: string): { headers: string[]; rows: Record<string, any>[] } => {
-    const sheet = wb.Sheets[sheetName];
-    if (!sheet) throw new Error(`Sheet "${sheetName}" not found in workbook`);
-    // raw: true keeps native types — numbers stay numeric, formula cells return
-    // their cached calculated value (the `v` field) instead of formula text, and
-    // date cells come through as Date objects (because we read with cellDates).
-    const aoa = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: null, raw: true, blankrows: false });
-    if (!aoa || aoa.length === 0) throw new Error("Sheet is empty");
-    const rawHeaders = (aoa[0] || []).map((h) => (h == null ? "" : String(h).trim()));
-    const headers: string[] = [];
-    const seen = new Map<string, number>();
-    for (let i = 0; i < rawHeaders.length; i++) {
-      let h = rawHeaders[i] || `Column ${i + 1}`;
-      if (seen.has(h)) {
-        const n = (seen.get(h) || 1) + 1;
-        seen.set(h, n);
-        h = `${h} (${n})`;
-      } else {
-        seen.set(h, 1);
-      }
-      headers.push(h);
-    }
-    if (headers.length === 0) throw new Error("Sheet is missing a header row");
-    const rows: Record<string, any>[] = [];
-    for (let r = 1; r < aoa.length; r++) {
-      const row = aoa[r] || [];
-      const obj: Record<string, any> = {};
-      let any = false;
-      for (let c = 0; c < headers.length; c++) {
-        const v = normalizeCellValue(row[c]);
-        if (v !== "" && v !== null && v !== undefined) any = true;
-        obj[headers[c]] = v;
-      }
-      if (any) rows.push(obj);
-    }
-    if (rows.length === 0) throw new Error("Need header + at least 1 row");
-    return { headers, rows };
-  };
-
-  const parseExcelFile = async (f: File): Promise<{ wb: XLSX.WorkBook; sheets: string[] }> => {
-    const buf = await f.arrayBuffer();
-    let wb: XLSX.WorkBook;
-    try {
-      // cellDates: parse date-formatted cells as JS Date objects (instead of
-      // Excel serial numbers). Combined with sheet_to_json's raw:true, formula
-      // cells surface their cached calculated value rather than the formula text.
-      wb = XLSX.read(buf, { type: "array", cellDates: true });
-    } catch (e: any) {
-      const msg = String(e?.message || e || "").toLowerCase();
-      if (msg.includes("password") || msg.includes("encrypt")) {
-        throw new Error("This file is password-protected. Please remove the password and try again.");
-      }
-      throw e;
-    }
-    const sheets = wb.SheetNames || [];
-    if (sheets.length === 0) throw new Error("Workbook has no sheets");
-    return { wb, sheets };
-  };
-
-  const EXCEL_MIME_TYPES = new Set([
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
-    "application/vnd.oasis.opendocument.spreadsheet",
-  ]);
-
   const formatPreviewValue = (v: any): string => {
     if (v === null || v === undefined || v === "") return "";
     if (typeof v === "number") {
@@ -512,16 +521,6 @@ function ImportPanel() {
       if (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?Z)?$/.test(v)) return "date";
     }
     return null;
-  };
-
-  const isExcelFile = (f: File) => {
-    const name = f.name.toLowerCase();
-    return (
-      name.endsWith(".xlsx") ||
-      name.endsWith(".xls") ||
-      name.endsWith(".ods") ||
-      EXCEL_MIME_TYPES.has(f.type)
-    );
   };
 
   const resetParsed = () => {
@@ -1062,6 +1061,7 @@ function RecentImportRow({ job, onRevert, chainInfo, retryIndex, totalRetries }:
   const { toast } = useToast();
   const [showErrors, setShowErrors] = useState(false);
   const retryFileRef = useRef<HTMLInputElement | null>(null);
+  const [sheetPicker, setSheetPicker] = useState<{ wb: XLSX.WorkBook; sheets: string[]; selected: string } | null>(null);
   const total = Number(job.totalRows ?? 0);
   const processed = Number(job.processedRows ?? 0);
   const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
@@ -1096,23 +1096,33 @@ function RecentImportRow({ job, onRevert, chainInfo, retryIndex, totalRetries }:
 
   const handleRetryFile = async (file: File) => {
     try {
-      const text = await file.text();
-      const parsed = Papa.parse<Record<string, any>>(text, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.trim(),
-      });
-      if (parsed.errors && parsed.errors.length > 0) {
-        const first = parsed.errors[0];
-        throw new Error(`CSV parse error on row ${first.row ?? "?"}: ${first.message}`);
+      if (isExcelFile(file)) {
+        const { wb, sheets } = await parseExcelFile(file);
+        if (sheets.length > 1) {
+          setSheetPicker({ wb, sheets, selected: sheets[0] });
+          return;
+        }
+        const { rows } = parseSheet(wb, sheets[0]);
+        retry.mutate(rows);
+      } else {
+        const { rows } = await parseCsvFile(file);
+        retry.mutate(rows);
       }
-      const rows = (parsed.data || []).filter((r) => r && Object.keys(r).length > 0);
-      if (rows.length === 0) throw new Error("Need header + at least 1 row");
-      retry.mutate(rows);
     } catch (err: any) {
       toast({ title: "Could not read file", description: err?.message || String(err), variant: "destructive" });
     } finally {
       if (retryFileRef.current) retryFileRef.current.value = "";
+    }
+  };
+
+  const handleConfirmSheet = () => {
+    if (!sheetPicker) return;
+    try {
+      const { rows } = parseSheet(sheetPicker.wb, sheetPicker.selected);
+      retry.mutate(rows);
+      setSheetPicker(null);
+    } catch (err: any) {
+      toast({ title: "Could not read sheet", description: err?.message || String(err), variant: "destructive" });
     }
   };
 
@@ -1211,7 +1221,7 @@ function RecentImportRow({ job, onRevert, chainInfo, retryIndex, totalRetries }:
                 <input
                   ref={retryFileRef}
                   type="file"
-                  accept=".csv,text/csv"
+                  accept={SPREADSHEET_ACCEPT}
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
@@ -1281,6 +1291,33 @@ function RecentImportRow({ job, onRevert, chainInfo, retryIndex, totalRetries }:
           )}
         </div>
       )}
+      <Dialog open={!!sheetPicker} onOpenChange={(open) => { if (!open) setSheetPicker(null); }}>
+        <DialogContent data-testid={`dialog-retry-sheet-${job.id}`}>
+          <DialogHeader>
+            <DialogTitle>Pick a sheet</DialogTitle>
+            <DialogDescription>This workbook has multiple sheets. Choose which one contains your corrected rows.</DialogDescription>
+          </DialogHeader>
+          {sheetPicker && (
+            <Select
+              value={sheetPicker.selected}
+              onValueChange={(v) => setSheetPicker({ ...sheetPicker, selected: v })}
+            >
+              <SelectTrigger data-testid={`select-retry-sheet-${job.id}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sheetPicker.sheets.map((s) => (
+                  <SelectItem key={s} value={s} data-testid={`option-retry-sheet-${job.id}-${s}`}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSheetPicker(null)} data-testid={`button-retry-sheet-cancel-${job.id}`}>Cancel</Button>
+            <Button onClick={handleConfirmSheet} data-testid={`button-retry-sheet-confirm-${job.id}`}>Use this sheet</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
