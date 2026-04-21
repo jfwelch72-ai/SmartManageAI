@@ -302,6 +302,69 @@ function ReportsPanel() {
   );
 }
 
+const TARGET_FIELDS: Record<string, { value: string; label: string }[]> = {
+  CONTACT: [
+    { value: "fullName", label: "Full name" },
+    { value: "firstName", label: "First name" },
+    { value: "lastName", label: "Last name" },
+    { value: "email", label: "Email" },
+    { value: "phone", label: "Phone" },
+    { value: "title", label: "Title / Job title" },
+    { value: "company", label: "Company / Organisation" },
+  ],
+  ORGANISATION: [
+    { value: "name", label: "Name" },
+    { value: "type", label: "Type" },
+    { value: "website", label: "Website" },
+    { value: "phone", label: "Phone" },
+    { value: "address", label: "Address" },
+  ],
+  OPPORTUNITY: [
+    { value: "name", label: "Name" },
+    { value: "stage", label: "Stage" },
+    { value: "dealValue", label: "Deal value" },
+    { value: "source", label: "Source" },
+  ],
+};
+
+const SKIP_VALUE = "__skip__";
+
+function guessTargetField(header: string, entity: string): string {
+  const h = header.toLowerCase().replace(/[\s_\-]+/g, "");
+  const targets = TARGET_FIELDS[entity] || [];
+  const targetValues = new Set(targets.map((t) => t.value));
+  const aliases: Record<string, string[]> = {
+    fullName: ["fullname", "name", "contactname", "contact"],
+    firstName: ["firstname", "first", "fname", "givenname"],
+    lastName: ["lastname", "last", "lname", "surname", "familyname"],
+    email: ["email", "emailaddress", "mail", "e-mail", "emailid"],
+    phone: ["phone", "phonenumber", "mobile", "cell", "cellphone", "tel", "telephone", "contactnumber"],
+    title: ["title", "jobtitle", "position", "role"],
+    company: ["company", "companyname", "organisation", "organization", "organisationname", "organizationname", "employer", "business"],
+    name: ["name", "companyname", "organisationname", "organizationname", "dealname", "opportunityname"],
+    type: ["type", "category", "kind"],
+    website: ["website", "url", "site", "web"],
+    address: ["address", "streetaddress", "street", "location"],
+    stage: ["stage", "status", "pipelinestage"],
+    dealValue: ["dealvalue", "value", "amount", "price", "dealamount"],
+    source: ["source", "leadsource", "channel"],
+  };
+  for (const target of targets) {
+    if (target.value.toLowerCase() === h) return target.value;
+  }
+  for (const target of targets) {
+    const list = aliases[target.value] || [];
+    if (list.includes(h)) return target.value;
+  }
+  for (const target of targets) {
+    const list = aliases[target.value] || [];
+    if (list.some((a) => h.includes(a) || a.includes(h))) {
+      if (targetValues.has(target.value)) return target.value;
+    }
+  }
+  return SKIP_VALUE;
+}
+
 function ImportPanel() {
   const { toast } = useToast();
   const { data: jobs = [] } = useQuery<any[]>({
@@ -315,6 +378,18 @@ function ImportPanel() {
   const [entity, setEntity] = useState<string>("CONTACT");
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [parsedData, setParsedData] = useState<{ headers: string[]; rows: Record<string, any>[] } | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+
+  const headers = parsedData?.headers ?? [];
+  const showMapping = headers.length > 0;
+
+  const effectiveMapping: Record<string, string> = {};
+  for (const h of headers) {
+    const override = mappingOverrides[`${entity}:${h}`];
+    effectiveMapping[h] = override ?? guessTargetField(h, entity);
+  }
 
   const parseCsvFile = (f: File) => new Promise<{ headers: string[]; rows: Record<string, any>[] }>((resolve, reject) => {
     Papa.parse<Record<string, any>>(f, {
@@ -327,8 +402,8 @@ function ImportPanel() {
           reject(new Error(`CSV parse error on row ${first.row ?? "?"}: ${first.message}`));
           return;
         }
-        const headers = (results.meta.fields || []).map((h) => h.trim());
-        if (headers.length === 0) {
+        const hdrs = (results.meta.fields || []).map((h) => h.trim());
+        if (hdrs.length === 0) {
           reject(new Error("CSV is missing a header row"));
           return;
         }
@@ -337,23 +412,42 @@ function ImportPanel() {
           reject(new Error("Need header + at least 1 row"));
           return;
         }
-        resolve({ headers, rows });
+        resolve({ headers: hdrs, rows });
       },
       error: (err) => reject(err),
     });
   });
 
+  const handleFileChange = async (f: File | null) => {
+    setFile(f);
+    setParsedData(null);
+    setParseError(null);
+    setMappingOverrides({});
+    if (!f) return;
+    try {
+      const result = await parseCsvFile(f);
+      setParsedData(result);
+    } catch (e: any) {
+      setParseError(e?.message || "Failed to parse CSV");
+    }
+  };
+
   const submit = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("Please choose a CSV file");
-      const { headers, rows } = await parseCsvFile(file);
+      if (!parsedData || parsedData.rows.length === 0) throw new Error("Need header + at least 1 row");
       const mapping: Record<string, string> = {};
-      headers.forEach((h) => { mapping[h] = h; });
-      return apiRequest("POST", "/api/crm/csv-imports", { entityType: entity, mapping, rows, filename: file.name });
+      for (const [csvCol, target] of Object.entries(effectiveMapping)) {
+        if (target && target !== SKIP_VALUE) mapping[csvCol] = target;
+      }
+      return apiRequest("POST", "/api/crm/csv-imports", { entityType: entity, mapping, rows: parsedData.rows, filename: file.name });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/csv-imports"] });
       setFile(null);
+      setParsedData(null);
+      setParseError(null);
+      setMappingOverrides({});
       if (fileInputRef.current) fileInputRef.current.value = "";
       toast({ title: "Import queued", description: "We'll process the rows in the background — progress will update below." });
     },
@@ -376,9 +470,9 @@ function ImportPanel() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Upload a CSV file (with header row). Column names should match field names (e.g. fullName, email, phone). Quoted fields, embedded commas, and CRLF line endings are supported. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Upload a CSV file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
-        <Select value={entity} onValueChange={setEntity}>
+        <Select value={entity} onValueChange={(v) => { setEntity(v); setMappingOverrides({}); }}>
           <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="CONTACT">Contacts</SelectItem>
@@ -392,7 +486,7 @@ function ImportPanel() {
             type="file"
             accept=".csv,text/csv"
             className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
             data-testid="input-csv-file"
           />
           <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-choose-file">
@@ -402,7 +496,43 @@ function ImportPanel() {
             {file ? file.name : "No file selected"}
           </span>
         </div>
-        <Button onClick={() => submit.mutate()} disabled={!file || submit.isPending} data-testid="button-import">
+        {parseError && (
+          <div className="text-sm text-destructive" data-testid="text-parse-error">{parseError}</div>
+        )}
+        {showMapping && parsedData && (
+          <div className="border rounded p-3 space-y-2" data-testid="mapping-panel">
+            <div className="flex items-center justify-between">
+              <h4 className="font-medium text-sm">Map columns ({parsedData.rows.length} row{parsedData.rows.length === 1 ? "" : "s"})</h4>
+              <p className="text-xs text-muted-foreground">Pick the field each CSV column should populate. Unmapped columns are ignored.</p>
+            </div>
+            <div className="space-y-2">
+              {headers.map((h) => {
+                const value = effectiveMapping[h] || SKIP_VALUE;
+                const sample = parsedData.rows[0]?.[h] ?? "";
+                return (
+                  <div key={h} className="grid grid-cols-12 gap-2 items-center" data-testid={`row-mapping-${h}`}>
+                    <div className="col-span-5">
+                      <div className="text-sm font-medium truncate" title={h}>{h}</div>
+                      {sample && <div className="text-xs text-muted-foreground truncate" title={String(sample)}>e.g. {String(sample)}</div>}
+                    </div>
+                    <div className="col-span-7">
+                      <Select value={value} onValueChange={(v) => setMappingOverrides((prev) => ({ ...prev, [`${entity}:${h}`]: v }))}>
+                        <SelectTrigger data-testid={`select-mapping-${h}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SKIP_VALUE}>— Skip this column —</SelectItem>
+                          {(TARGET_FIELDS[entity] || []).map((t) => (
+                            <SelectItem key={t.value} value={t.value}>{t.label} ({t.value})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <Button onClick={() => submit.mutate()} disabled={!file || !parsedData || submit.isPending} data-testid="button-import">
           {submit.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}Import
         </Button>
         <div className="pt-3 border-t">
