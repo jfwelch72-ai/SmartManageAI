@@ -34,6 +34,7 @@ interface Step {
   subject?: string;
   body?: string;
   instructions?: string;
+  sendTimeOptimized?: boolean;
 }
 interface Sequence {
   id: string;
@@ -168,6 +169,8 @@ export default function SequenceDetailPage() {
                 <StepEditor
                   key={step.id}
                   step={step}
+                  windowStartHour={seq.optimizedSendWindowStartHour}
+                  windowEndHour={seq.optimizedSendWindowEndHour}
                   onSave={(patch) => updateStepMut.mutate({ stepId: step.id, patch })}
                   onDelete={() => deleteStepMut.mutate(step.id)}
                 />
@@ -416,14 +419,20 @@ function AddStepButton({ onAdd, nextOrder }: { onAdd: (s: Partial<Step>) => void
   );
 }
 
-function StepEditor({ step, onSave, onDelete }: { step: Step; onSave: (p: Partial<Step>) => void; onDelete: () => void }) {
+function formatHour(h: number) {
+  return `${((h + 11) % 12) + 1} ${h < 12 ? "AM" : "PM"}`;
+}
+
+function StepEditor({ step, windowStartHour, windowEndHour, onSave, onDelete }: { step: Step; windowStartHour: number; windowEndHour: number; onSave: (p: Partial<Step>) => void; onDelete: () => void }) {
   const [delay, setDelay] = useState(step.delayDays);
   const [hour, setHour] = useState(step.sendHourLocal);
   const [subject, setSubject] = useState(step.subject || "");
   const [body, setBody] = useState(step.body || "");
   const [instructions, setInstructions] = useState(step.instructions || "");
   const isEmail = step.stepType.includes("EMAIL");
+  const isAutomatedEmail = step.stepType === "AUTOMATED_EMAIL";
   const Icon = STEP_TYPES.find((t) => t.v === step.stepType)?.icon || ListChecks;
+  const sendTimeOptimized = !!step.sendTimeOptimized;
 
   return (
     <div className="border rounded p-3 space-y-2" data-testid={`step-editor-${step.id}`}>
@@ -431,6 +440,11 @@ function StepEditor({ step, onSave, onDelete }: { step: Step; onSave: (p: Partia
         <Icon className="h-4 w-4" />
         <Badge variant="outline">{step.stepType.replace("_", " ")}</Badge>
         <span className="text-sm text-muted-foreground">Step #{step.stepOrder}</span>
+        {isAutomatedEmail && sendTimeOptimized && (
+          <Badge variant="secondary" data-testid={`badge-best-time-${step.id}`}>
+            Best-time window {formatHour(windowStartHour)}–{formatHour(windowEndHour)}
+          </Badge>
+        )}
         <div className="flex-1" />
         <Button size="sm" variant="ghost" onClick={onDelete} data-testid={`button-delete-step-${step.id}`}>
           <Trash2 className="h-4 w-4" />
@@ -443,9 +457,27 @@ function StepEditor({ step, onSave, onDelete }: { step: Step; onSave: (p: Partia
         </div>
         <div>
           <Label>Send hour (local)</Label>
-          <Input type="number" min={0} max={23} value={hour} onChange={(e) => setHour(Number(e.target.value))} onBlur={() => hour !== step.sendHourLocal && onSave({ sendHourLocal: hour })} data-testid={`input-hour-${step.id}`} />
+          <Input type="number" min={0} max={23} value={hour} onChange={(e) => setHour(Number(e.target.value))} onBlur={() => hour !== step.sendHourLocal && onSave({ sendHourLocal: hour })} data-testid={`input-hour-${step.id}`} disabled={isAutomatedEmail && sendTimeOptimized} />
         </div>
       </div>
+      {isAutomatedEmail && (
+        <div className="flex items-start justify-between gap-3 rounded border bg-muted/40 p-2">
+          <div className="space-y-0.5">
+            <Label htmlFor={`switch-best-time-${step.id}`} className="text-sm">Use best-time send window</Label>
+            <p className="text-xs text-muted-foreground">
+              {sendTimeOptimized
+                ? `Sends will be deferred into ${formatHour(windowStartHour)}–${formatHour(windowEndHour)} (recipient local time), overriding the send hour above.`
+                : `Send at the configured hour above. Turn on to defer into the sequence window (${formatHour(windowStartHour)}–${formatHour(windowEndHour)}).`}
+            </p>
+          </div>
+          <Switch
+            id={`switch-best-time-${step.id}`}
+            checked={sendTimeOptimized}
+            onCheckedChange={(v) => onSave({ sendTimeOptimized: v })}
+            data-testid={`switch-send-time-optimized-${step.id}`}
+          />
+        </div>
+      )}
       <div>
         <Label>Subject {isEmail ? "" : "/ task title"}</Label>
         <Input value={subject} onChange={(e) => setSubject(e.target.value)} onBlur={() => subject !== (step.subject || "") && onSave({ subject })} data-testid={`input-subject-${step.id}`} />
