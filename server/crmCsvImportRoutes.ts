@@ -14,6 +14,38 @@ const router = Router();
 const READ_ROLES = ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"] as const;
 const EDIT_ROLES = ["ADMIN", "HUSTLER", "MANAGER"] as const;
 
+// Valid target fields per entity, kept in sync with crmCsvImportWorker.ts.
+// Each entry: { value: schema field key the worker reads, label: human-friendly,
+// required?: at least one of the required fields must be mapped to import a row }.
+export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", Array<{ value: string; label: string; required?: boolean }>> = {
+  CONTACT: [
+    { value: "fullName", label: "Full name", required: true },
+    { value: "firstName", label: "First name", required: true },
+    { value: "lastName", label: "Last name" },
+    { value: "email", label: "Email" },
+    { value: "phone", label: "Phone" },
+    { value: "title", label: "Title / role" },
+    { value: "company", label: "Company / organisation" },
+  ],
+  ORGANISATION: [
+    { value: "name", label: "Name", required: true },
+    { value: "type", label: "Type (CONTRACTOR, SUBCONTRACTOR, …)" },
+    { value: "website", label: "Website" },
+    { value: "phone", label: "Phone" },
+    { value: "address", label: "Address" },
+  ],
+  OPPORTUNITY: [
+    { value: "name", label: "Name", required: true },
+    { value: "stage", label: "Stage" },
+    { value: "dealValue", label: "Deal value" },
+    { value: "source", label: "Source" },
+  ],
+};
+
+router.get("/api/crm/csv-imports/fields", requireAuth, requireRole(...READ_ROLES), (_req, res) => {
+  res.json(CSV_IMPORT_FIELDS);
+});
+
 const importBody = z.object({
   entityType: z.enum(["CONTACT", "ORGANISATION", "OPPORTUNITY"]),
   filename: z.string().optional(),

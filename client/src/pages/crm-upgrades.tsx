@@ -303,65 +303,36 @@ function ReportsPanel() {
   );
 }
 
-const TARGET_FIELDS: Record<string, { value: string; label: string }[]> = {
-  CONTACT: [
-    { value: "fullName", label: "Full name" },
-    { value: "firstName", label: "First name" },
-    { value: "lastName", label: "Last name" },
-    { value: "email", label: "Email" },
-    { value: "phone", label: "Phone" },
-    { value: "title", label: "Title / Job title" },
-    { value: "company", label: "Company / Organisation" },
-  ],
-  ORGANISATION: [
-    { value: "name", label: "Name" },
-    { value: "type", label: "Type" },
-    { value: "website", label: "Website" },
-    { value: "phone", label: "Phone" },
-    { value: "address", label: "Address" },
-  ],
-  OPPORTUNITY: [
-    { value: "name", label: "Name" },
-    { value: "stage", label: "Stage" },
-    { value: "dealValue", label: "Deal value" },
-    { value: "source", label: "Source" },
-  ],
-};
-
+type FieldDef = { value: string; label: string; required?: boolean };
+type FieldsByEntity = Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", FieldDef[]>;
 const SKIP_VALUE = "__skip__";
 
-function guessTargetField(header: string, entity: string): string {
-  const h = header.toLowerCase().replace(/[\s_\-]+/g, "");
-  const targets = TARGET_FIELDS[entity] || [];
-  const targetValues = new Set(targets.map((t) => t.value));
+function autoMatchField(header: string, fields: FieldDef[]): string {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const h = norm(header);
+  if (!h) return SKIP_VALUE;
   const aliases: Record<string, string[]> = {
     fullName: ["fullname", "name", "contactname", "contact"],
     firstName: ["firstname", "first", "fname", "givenname"],
     lastName: ["lastname", "last", "lname", "surname", "familyname"],
-    email: ["email", "emailaddress", "mail", "e-mail", "emailid"],
-    phone: ["phone", "phonenumber", "mobile", "cell", "cellphone", "tel", "telephone", "contactnumber"],
-    title: ["title", "jobtitle", "position", "role"],
-    company: ["company", "companyname", "organisation", "organization", "organisationname", "organizationname", "employer", "business"],
-    name: ["name", "companyname", "organisationname", "organizationname", "dealname", "opportunityname"],
+    email: ["email", "emailaddress", "mail", "eaddress", "emailid"],
+    phone: ["phone", "phonenumber", "mobile", "tel", "telephone", "cell", "cellphone", "contactnumber"],
+    title: ["title", "jobtitle", "role", "position"],
+    company: ["company", "companyname", "organisation", "organization", "org", "account", "organisationname", "organizationname", "employer", "business"],
+    name: ["name", "companyname", "organisation", "organization", "dealname", "opportunityname", "organisationname", "organizationname"],
     type: ["type", "category", "kind"],
     website: ["website", "url", "site", "web"],
-    address: ["address", "streetaddress", "street", "location"],
+    address: ["address", "street", "location", "streetaddress"],
     stage: ["stage", "status", "pipelinestage"],
-    dealValue: ["dealvalue", "value", "amount", "price", "dealamount"],
+    dealValue: ["dealvalue", "value", "amount", "price", "revenue", "dealamount"],
     source: ["source", "leadsource", "channel"],
   };
-  for (const target of targets) {
-    if (target.value.toLowerCase() === h) return target.value;
+  for (const f of fields) {
+    const candidates = aliases[f.value] ?? [f.value.toLowerCase()];
+    if (candidates.includes(h)) return f.value;
   }
-  for (const target of targets) {
-    const list = aliases[target.value] || [];
-    if (list.includes(h)) return target.value;
-  }
-  for (const target of targets) {
-    const list = aliases[target.value] || [];
-    if (list.some((a) => h.includes(a) || a.includes(h))) {
-      if (targetValues.has(target.value)) return target.value;
-    }
+  for (const f of fields) {
+    if (h.includes(f.value.toLowerCase())) return f.value;
   }
   return SKIP_VALUE;
 }
@@ -376,27 +347,21 @@ function ImportPanel() {
       return hasActive ? 2000 : false;
     },
   });
-  const [entity, setEntity] = useState<string>("CONTACT");
+  const { data: fieldsByEntity } = useQuery<FieldsByEntity>({ queryKey: ["/api/crm/csv-imports/fields"] });
+  const [entity, setEntity] = useState<"CONTACT" | "ORGANISATION" | "OPPORTUNITY">("CONTACT");
   const [file, setFile] = useState<File | null>(null);
-  const [parsedData, setParsedData] = useState<{ headers: string[]; rows: Record<string, any>[] } | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [parsedRows, setParsedRows] = useState<Record<string, any>[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
   const [isParsing, setIsParsing] = useState(false);
-  const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+  const [parseError, setParseError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const parseTokenRef = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const workbookRef = useRef<XLSX.WorkBook | null>(null);
-
-  const headers = parsedData?.headers ?? [];
-  const showMapping = headers.length > 0;
-
-  const effectiveMapping: Record<string, string> = {};
-  for (const h of headers) {
-    const override = mappingOverrides[`${entity}:${h}`];
-    effectiveMapping[h] = override ?? guessTargetField(h, entity);
-  }
+  const fields = fieldsByEntity?.[entity] ?? [];
 
   const parseCsvFile = (f: File) => new Promise<{ headers: string[]; rows: Record<string, any>[] }>((resolve, reject) => {
     Papa.parse<Record<string, any>>(f, {
@@ -494,15 +459,28 @@ function ImportPanel() {
     );
   };
 
-  const handleFileChange = async (f: File | null) => {
-    const token = ++parseTokenRef.current;
-    setFile(f);
-    setParsedData(null);
+  const resetParsed = () => {
+    setHeaders([]);
+    setParsedRows([]);
+    setMapping({});
     setParseError(null);
-    setMappingOverrides({});
     setSheetNames([]);
     setSelectedSheet(null);
     workbookRef.current = null;
+  };
+
+  const applyParsed = (hs: string[], rows: Record<string, any>[]) => {
+    setHeaders(hs);
+    setParsedRows(rows);
+    const initial: Record<string, string> = {};
+    hs.forEach((h) => { initial[h] = autoMatchField(h, fields); });
+    setMapping(initial);
+  };
+
+  const handleFileChange = async (f: File | null) => {
+    const token = ++parseTokenRef.current;
+    setFile(f);
+    resetParsed();
     if (!f) {
       setIsParsing(false);
       return;
@@ -516,17 +494,17 @@ function ImportPanel() {
         setSheetNames(sheets);
         const first = sheets[0];
         setSelectedSheet(first);
-        const result = parseSheet(wb, first);
+        const { headers: hs, rows } = parseSheet(wb, first);
         if (parseTokenRef.current !== token) return;
-        setParsedData(result);
+        applyParsed(hs, rows);
       } else {
-        const result = await parseCsvFile(f);
+        const { headers: hs, rows } = await parseCsvFile(f);
         if (parseTokenRef.current !== token) return;
-        setParsedData(result);
+        applyParsed(hs, rows);
       }
-    } catch (e: any) {
+    } catch (err: any) {
       if (parseTokenRef.current !== token) return;
-      setParseError(e?.message || "Failed to parse file");
+      setParseError(err?.message ?? String(err));
     } finally {
       if (parseTokenRef.current === token) setIsParsing(false);
     }
@@ -536,12 +514,13 @@ function ImportPanel() {
     if (!workbookRef.current) return;
     setSelectedSheet(name);
     setParseError(null);
-    setMappingOverrides({});
-    setParsedData(null);
+    setHeaders([]);
+    setParsedRows([]);
+    setMapping({});
     setIsParsing(true);
     try {
-      const result = parseSheet(workbookRef.current, name);
-      setParsedData(result);
+      const { headers: hs, rows } = parseSheet(workbookRef.current, name);
+      applyParsed(hs, rows);
     } catch (e: any) {
       setParseError(e?.message || "Failed to parse sheet");
     } finally {
@@ -549,25 +528,46 @@ function ImportPanel() {
     }
   };
 
+  const handleEntityChange = (next: string) => {
+    const e = next as "CONTACT" | "ORGANISATION" | "OPPORTUNITY";
+    setEntity(e);
+    if (headers.length > 0) {
+      const nextFields = fieldsByEntity?.[e] ?? [];
+      const remapped: Record<string, string> = {};
+      headers.forEach((h) => { remapped[h] = autoMatchField(h, nextFields); });
+      setMapping(remapped);
+    }
+  };
+
+  const requiredFieldValues = fields.filter((f) => f.required).map((f) => f.value);
+  const mappedTargets = Object.values(mapping).filter((v) => v && v !== SKIP_VALUE);
+  const hasRequired = requiredFieldValues.length === 0
+    ? mappedTargets.length > 0
+    : requiredFieldValues.some((rv) => mappedTargets.includes(rv));
+
+  const duplicates = mappedTargets.filter((v, i, arr) => arr.indexOf(v) !== i);
+
   const submit = useMutation({
     mutationFn: async () => {
-      if (!file) throw new Error("Please choose a CSV or Excel file");
-      if (!parsedData || parsedData.rows.length === 0) throw new Error("Need header + at least 1 row");
-      const mapping: Record<string, string> = {};
-      for (const [csvCol, target] of Object.entries(effectiveMapping)) {
-        if (target && target !== SKIP_VALUE) mapping[csvCol] = target;
+      if (!file) throw new Error("Please choose a CSV file");
+      if (parsedRows.length === 0) throw new Error("No rows to import");
+      if (!hasRequired) {
+        const labels = fields.filter((f) => f.required).map((f) => f.label).join(" or ");
+        throw new Error(`Map at least one column to ${labels || "a target field"}`);
       }
-      return apiRequest("POST", "/api/crm/csv-imports", { entityType: entity, mapping, rows: parsedData.rows, filename: file.name });
+      if (duplicates.length > 0) {
+        throw new Error("Each target field can only be mapped from one column");
+      }
+      const cleanMapping: Record<string, string> = {};
+      Object.entries(mapping).forEach(([csvCol, target]) => {
+        if (target && target !== SKIP_VALUE) cleanMapping[csvCol] = target;
+      });
+      return apiRequest("POST", "/api/crm/csv-imports", { entityType: entity, mapping: cleanMapping, rows: parsedRows, filename: file.name });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/csv-imports"] });
       setFile(null);
-      setParsedData(null);
-      setParseError(null);
-      setMappingOverrides({});
-      setSheetNames([]);
-      setSelectedSheet(null);
-      workbookRef.current = null;
+      resetParsed();
       if (fileInputRef.current) fileInputRef.current.value = "";
       toast({ title: "Import queued", description: "We'll process the rows in the background — progress will update below." });
     },
@@ -590,9 +590,9 @@ function ImportPanel() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>CSV / Excel Import</CardTitle><CardDescription>Drag and drop or choose a CSV or spreadsheet (.xlsx, .xls, .ods) file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported for CSV. Multi-sheet workbooks let you pick which sheet to import. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>CSV / Excel Import</CardTitle><CardDescription>Drag and drop or choose a CSV or spreadsheet (.xlsx, .xls, .ods) file (with header row), then match each column to a target field. Unmapped columns are skipped. Multi-sheet workbooks let you pick which sheet to import. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
-        <Select value={entity} onValueChange={(v) => { setEntity(v); setMappingOverrides({}); }}>
+        <Select value={entity} onValueChange={handleEntityChange}>
           <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="CONTACT">Contacts</SelectItem>
@@ -616,11 +616,7 @@ function ImportPanel() {
             const isXlsx = isExcelFile(dropped);
             if (!isCsv && !isXlsx) {
               setFile(null);
-              setParsedData(null);
-              setMappingOverrides({});
-              setSheetNames([]);
-              setSelectedSheet(null);
-              workbookRef.current = null;
+              resetParsed();
               if (fileInputRef.current) fileInputRef.current.value = "";
               setParseError("Please drop a .csv, .xlsx, .xls, or .ods file");
               return;
@@ -644,12 +640,12 @@ function ImportPanel() {
           </Button>
           <div className="text-sm text-muted-foreground mt-2 flex items-center justify-center gap-2 flex-wrap">
             <span data-testid="text-csv-filename">{file ? file.name : "No file selected"}</span>
-            {parsedData && (
+            {parsedRows.length > 0 && (
               <span data-testid="text-csv-rowcount">
-                · {parsedData.rows.length.toLocaleString()} rows detected
+                · {parsedRows.length.toLocaleString()} rows detected
               </span>
             )}
-            {isParsing && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isParsing && <Loader2 className="h-4 w-4 animate-spin" data-testid="icon-csv-parsing" />}
           </div>
         </div>
         {sheetNames.length > 0 && (
@@ -673,56 +669,67 @@ function ImportPanel() {
             {parseError}
           </div>
         )}
-        {parsedData && (
+        {parsedRows.length > 0 && (
           <div className="border rounded overflow-x-auto" data-testid="table-csv-preview">
             <table className="w-full text-sm">
               <thead className="bg-muted">
                 <tr>
-                  {parsedData.headers.map((h) => (
+                  {headers.map((h) => (
                     <th key={h} className="text-left px-2 py-1 font-medium whitespace-nowrap" data-testid={`th-preview-${h}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {parsedData.rows.slice(0, 5).map((r, i) => (
+                {parsedRows.slice(0, 5).map((r, i) => (
                   <tr key={i} className="border-t" data-testid={`row-preview-${i}`}>
-                    {parsedData.headers.map((h) => (
+                    {headers.map((h) => (
                       <td key={h} className="px-2 py-1 whitespace-nowrap">{r[h] != null ? String(r[h]) : ""}</td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-            {parsedData.rows.length > 5 && (
+            {parsedRows.length > 5 && (
               <div className="text-xs text-muted-foreground px-2 py-1 border-t">
-                Showing first 5 of {parsedData.rows.length.toLocaleString()} rows
+                Showing first 5 of {parsedRows.length.toLocaleString()} rows
               </div>
             )}
           </div>
         )}
-        {showMapping && parsedData && (
-          <div className="border rounded p-3 space-y-2" data-testid="mapping-panel">
+
+        {headers.length > 0 && (
+          <div className="border rounded p-3 space-y-2" data-testid="section-column-mapping">
             <div className="flex items-center justify-between">
-              <h4 className="font-medium text-sm">Map columns ({parsedData.rows.length} row{parsedData.rows.length === 1 ? "" : "s"})</h4>
-              <p className="text-xs text-muted-foreground">Pick the field each CSV column should populate. Unmapped columns are ignored.</p>
+              <h4 className="font-medium text-sm">Match columns to fields</h4>
+              <span className="text-xs text-muted-foreground" data-testid="text-row-count">
+                {parsedRows.length} row{parsedRows.length === 1 ? "" : "s"} detected
+              </span>
             </div>
             <div className="space-y-2">
               {headers.map((h) => {
-                const value = effectiveMapping[h] || SKIP_VALUE;
-                const sample = parsedData.rows[0]?.[h] ?? "";
+                const sample = parsedRows.find((r) => r?.[h] !== undefined && r?.[h] !== "")?.[h];
                 return (
                   <div key={h} className="grid grid-cols-12 gap-2 items-center" data-testid={`row-mapping-${h}`}>
-                    <div className="col-span-5">
+                    <div className="col-span-5 min-w-0">
                       <div className="text-sm font-medium truncate" title={h}>{h}</div>
-                      {sample && <div className="text-xs text-muted-foreground truncate" title={String(sample)}>e.g. {String(sample)}</div>}
+                      {sample !== undefined && (
+                        <div className="text-xs text-muted-foreground truncate" title={String(sample)} data-testid={`text-sample-${h}`}>
+                          e.g. {String(sample)}
+                        </div>
+                      )}
                     </div>
                     <div className="col-span-7">
-                      <Select value={value} onValueChange={(v) => setMappingOverrides((prev) => ({ ...prev, [`${entity}:${h}`]: v }))}>
+                      <Select
+                        value={mapping[h] ?? SKIP_VALUE}
+                        onValueChange={(v) => setMapping((prev) => ({ ...prev, [h]: v }))}
+                      >
                         <SelectTrigger data-testid={`select-mapping-${h}`}><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value={SKIP_VALUE}>— Skip this column —</SelectItem>
-                          {(TARGET_FIELDS[entity] || []).map((t) => (
-                            <SelectItem key={t.value} value={t.value}>{t.label} ({t.value})</SelectItem>
+                          {fields.map((f) => (
+                            <SelectItem key={f.value} value={f.value}>
+                              {f.label}{f.required ? " *" : ""}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -731,17 +738,26 @@ function ImportPanel() {
                 );
               })}
             </div>
+            {duplicates.length > 0 && (
+              <p className="text-xs text-destructive" data-testid="text-mapping-duplicates">
+                Each target field can only be mapped from one column.
+              </p>
+            )}
+            {!hasRequired && (
+              <p className="text-xs text-destructive" data-testid="text-mapping-missing-required">
+                Map at least one column to {fields.filter((f) => f.required).map((f) => f.label).join(" or ") || "a target field"}.
+              </p>
+            )}
           </div>
         )}
-        {showMapping && parsedData && (() => {
-          const targets = TARGET_FIELDS[entity] || [];
+        {headers.length > 0 && parsedRows.length > 0 && (() => {
           const usedTargetValues = new Set(
-            Object.values(effectiveMapping).filter((t) => t && t !== SKIP_VALUE)
+            Object.values(mapping).filter((t) => t && t !== SKIP_VALUE)
           );
-          const previewColumns = targets.filter((t) => usedTargetValues.has(t.value));
-          const previewRows = parsedData.rows.slice(0, 5).map((row) => {
+          const previewColumns = fields.filter((t) => usedTargetValues.has(t.value));
+          const previewRows = parsedRows.slice(0, 5).map((row) => {
             const out: Record<string, string> = {};
-            for (const [csvCol, target] of Object.entries(effectiveMapping)) {
+            for (const [csvCol, target] of Object.entries(mapping)) {
               if (!target || target === SKIP_VALUE) continue;
               const v = row[csvCol];
               if (v === undefined || v === null || v === "") continue;
@@ -794,7 +810,7 @@ function ImportPanel() {
             </div>
           );
         })()}
-        <Button onClick={() => submit.mutate()} disabled={!file || !parsedData || isParsing || !!parseError || submit.isPending} data-testid="button-import">
+        <Button onClick={() => submit.mutate()} disabled={!file || submit.isPending || isParsing || !!parseError || headers.length === 0 || !hasRequired || duplicates.length > 0} data-testid="button-import">
           {submit.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}Import
         </Button>
         <div className="pt-3 border-t">
