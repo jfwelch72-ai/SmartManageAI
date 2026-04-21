@@ -41,10 +41,58 @@ interface EventRow {
   emailError: string | null;
 }
 
+interface SuperAdminRow {
+  id: string;
+  email: string;
+  isActive: boolean;
+  firstName: string | null;
+  lastName: string | null;
+  receivesJobMetricAlertEmails: boolean;
+  // These keys match the aliases that `loadSuperAdmins` selects out of
+  // the `users` table — not the raw column names — so the mock rows can
+  // be consumed by the production code without translation.
+  quietHoursEnabled: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  quietHoursTimezone: string | null;
+  quietHoursWeekdays: number[] | null;
+}
+
+function defaultSuperAdmins(): SuperAdminRow[] {
+  return [
+    {
+      id: "admin-1",
+      email: "admin-1@example.com",
+      isActive: true,
+      firstName: null,
+      lastName: null,
+      receivesJobMetricAlertEmails: true,
+      quietHoursEnabled: false,
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      quietHoursTimezone: null,
+      quietHoursWeekdays: null,
+    },
+    {
+      id: "admin-2",
+      email: "admin-2@example.com",
+      isActive: true,
+      firstName: null,
+      lastName: null,
+      receivesJobMetricAlertEmails: true,
+      quietHoursEnabled: false,
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      quietHoursTimezone: null,
+      quietHoursWeekdays: null,
+    },
+  ];
+}
+
 const state = {
   rules: [] as RuleRow[],
   events: [] as EventRow[],
-  superAdminIds: ["admin-1", "admin-2"],
+  superAdmins: defaultSuperAdmins(),
   insertedNotifications: [] as Array<Record<string, unknown>>,
   selectMode: "rules" as "rules" | "events" | "users",
   rulesEnabledFilter: false,
@@ -127,26 +175,7 @@ const dbMock = {
           .sort((a, b) => b.triggeredAt.getTime() - a.triggeredAt.getTime());
         isEventsTable = true;
       } else if (tableName === "users") {
-        baseRows = state.superAdminIds.map((id) => ({
-          id,
-          email: `${id}@example.com`,
-          isActive: true,
-          receivesJobMetricAlertEmails: true,
-          firstName: null,
-          lastName: null,
-          // Task #740 — alert engine filters opted-in recipients via this
-          // flag. Default to true here so the email-escalation tests can
-          // see SendGrid being invoked.
-          receivesJobMetricAlertEmails: true,
-          // Task #748 — quiet-hours fields read by the alert engine when
-          // deciding whether to skip emailing an admin during their
-          // configured quiet window.
-          jobMetricAlertQuietHoursEnabled: false,
-          jobMetricAlertQuietHoursStart: null,
-          jobMetricAlertQuietHoursEnd: null,
-          jobMetricAlertQuietHoursTimezone: null,
-          jobMetricAlertQuietHoursWeekdays: null,
-        }));
+        baseRows = state.superAdmins.map((a) => ({ ...a }));
       }
       let joinCount = 0;
       const computeRows = () => {
@@ -226,7 +255,7 @@ beforeEach(async () => {
   state.rules = [];
   state.events = [];
   state.insertedNotifications = [];
-  state.superAdminIds = ["admin-1", "admin-2"];
+  state.superAdmins = defaultSuperAdmins();
   alerts = await import("../utils/jobMetricAlerts");
   alerts.setJobMetricAlertsClockForTests(() => Date.now());
 });
@@ -615,6 +644,232 @@ describe("jobMetricAlerts (Task #718)", () => {
     expect(state.events[0].emailed).toBe(false);
     expect(state.events[0].emailAttempted).toBe(true);
     expect(state.events[0].emailError).toMatch(/SendGrid/i);
+  });
+
+  it("skips email for admins in quiet hours but still sends in-app notifications and emails admins outside the window (Task #755)", async () => {
+    // Pin "now" to a UTC time that falls inside admin-quiet's window
+    // (22:00 → 07:00 UTC) but outside admin-loud's (09:00 → 17:00 UTC).
+    const now = new Date("2026-04-21T03:00:00Z").getTime();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    sendEmailMock.mockClear();
+    sendEmailMock.mockResolvedValueOnce(true);
+
+    state.superAdmins = [
+      {
+        id: "admin-quiet",
+        email: "quiet@example.com",
+        isActive: true,
+        firstName: null,
+        lastName: null,
+        receivesJobMetricAlertEmails: true,
+        quietHoursEnabled: true,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+        quietHoursTimezone: "UTC",
+        quietHoursWeekdays: null,
+      },
+      {
+        id: "admin-loud",
+        email: "loud@example.com",
+        isActive: true,
+        firstName: null,
+        lastName: null,
+        receivesJobMetricAlertEmails: true,
+        quietHoursEnabled: true,
+        quietHoursStart: "09:00",
+        quietHoursEnd: "17:00",
+        quietHoursTimezone: "UTC",
+        quietHoursWeekdays: null,
+      },
+    ];
+
+    state.rules = [
+      {
+        id: "r-quiet-email",
+        job: "pageable_job",
+        counter: "c",
+        kind: "spike",
+        threshold: "3",
+        minAbsolute: 5,
+        dedupeMinutes: 60,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as RuleRow & { emailWhenAbove: string },
+    ];
+    (state.rules[0] as unknown as { emailWhenAbove: string }).emailWhenAbove = "5";
+
+    const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+    for (let i = 1; i <= 23; i++) {
+      samples.push({ timestamp: now - i * HOUR - 1000, counters: { c: 1 } });
+    }
+    samples.push({ timestamp: now - 60_000, counters: { c: 50 } });
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: source([{ job: "pageable_job", samples }]),
+    });
+
+    expect(result.alertsFired).toHaveLength(1);
+    // Both admins still get the in-app notification — quiet hours only
+    // gate the email channel.
+    expect(result.notifiedAdmins).toBe(2);
+    expect(state.insertedNotifications).toHaveLength(2);
+    expect(
+      new Set(state.insertedNotifications.map((n) => n.userId)),
+    ).toEqual(new Set(["admin-quiet", "admin-loud"]));
+
+    // One email send, addressed only to the admin outside quiet hours.
+    expect(result.emailsSent).toBe(1);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const emailArgs = sendEmailMock.mock.calls[0][0] as { to: string[] };
+    expect(emailArgs.to).toEqual(["loud@example.com"]);
+
+    expect(state.events).toHaveLength(1);
+    expect(state.events[0].emailed).toBe(true);
+    expect(state.events[0].emailedRecipientCount).toBe(1);
+  });
+
+  it("does not email when every admin is in quiet hours, but in-app notifications still fire (Task #755)", async () => {
+    const now = new Date("2026-04-21T03:00:00Z").getTime();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    sendEmailMock.mockClear();
+
+    state.superAdmins = [
+      {
+        id: "admin-a",
+        email: "a@example.com",
+        isActive: true,
+        firstName: null,
+        lastName: null,
+        receivesJobMetricAlertEmails: true,
+        quietHoursEnabled: true,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+        quietHoursTimezone: "UTC",
+        quietHoursWeekdays: null,
+      },
+      {
+        id: "admin-b",
+        email: "b@example.com",
+        isActive: true,
+        firstName: null,
+        lastName: null,
+        receivesJobMetricAlertEmails: true,
+        quietHoursEnabled: true,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+        quietHoursTimezone: "UTC",
+        quietHoursWeekdays: null,
+      },
+    ];
+
+    state.rules = [
+      {
+        id: "r-all-quiet",
+        job: "pageable_job",
+        counter: "c",
+        kind: "spike",
+        threshold: "3",
+        minAbsolute: 5,
+        dedupeMinutes: 60,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as RuleRow & { emailWhenAbove: string },
+    ];
+    (state.rules[0] as unknown as { emailWhenAbove: string }).emailWhenAbove = "5";
+
+    const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+    for (let i = 1; i <= 23; i++) {
+      samples.push({ timestamp: now - i * HOUR - 1000, counters: { c: 1 } });
+    }
+    samples.push({ timestamp: now - 60_000, counters: { c: 50 } });
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: source([{ job: "pageable_job", samples }]),
+    });
+
+    expect(result.alertsFired).toHaveLength(1);
+    expect(result.notifiedAdmins).toBe(2);
+    expect(state.insertedNotifications).toHaveLength(2);
+    expect(result.emailsSent).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(state.events).toHaveLength(1);
+    expect(state.events[0].emailed).toBe(false);
+    expect(state.events[0].emailedRecipientCount).toBe(0);
+  });
+
+  it("still emails admins who opt in even when another admin opts out (Task #755)", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    sendEmailMock.mockClear();
+    sendEmailMock.mockResolvedValueOnce(true);
+
+    state.superAdmins = [
+      {
+        id: "admin-opted-out",
+        email: "out@example.com",
+        isActive: true,
+        firstName: null,
+        lastName: null,
+        receivesJobMetricAlertEmails: false,
+        quietHoursEnabled: false,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        quietHoursTimezone: null,
+        quietHoursWeekdays: null,
+      },
+      {
+        id: "admin-opted-in",
+        email: "in@example.com",
+        isActive: true,
+        firstName: null,
+        lastName: null,
+        receivesJobMetricAlertEmails: true,
+        quietHoursEnabled: false,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        quietHoursTimezone: null,
+        quietHoursWeekdays: null,
+      },
+    ];
+
+    state.rules = [
+      {
+        id: "r-mixed-optout",
+        job: "pageable_job",
+        counter: "c",
+        kind: "spike",
+        threshold: "3",
+        minAbsolute: 5,
+        dedupeMinutes: 60,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as RuleRow & { emailWhenAbove: string },
+    ];
+    (state.rules[0] as unknown as { emailWhenAbove: string }).emailWhenAbove = "5";
+
+    const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+    for (let i = 1; i <= 23; i++) {
+      samples.push({ timestamp: now - i * HOUR - 1000, counters: { c: 1 } });
+    }
+    samples.push({ timestamp: now - 60_000, counters: { c: 50 } });
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: source([{ job: "pageable_job", samples }]),
+    });
+
+    // Both admins still get the in-app notification.
+    expect(result.notifiedAdmins).toBe(2);
+    expect(state.insertedNotifications).toHaveLength(2);
+
+    // Only the opted-in admin is emailed.
+    expect(result.emailsSent).toBe(1);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const emailArgs = sendEmailMock.mock.calls[0][0] as { to: string[] };
+    expect(emailArgs.to).toEqual(["in@example.com"]);
+    expect(state.events[0].emailedRecipientCount).toBe(1);
   });
 
   // Task #748 — quiet-hours helper unit tests (no DB).
