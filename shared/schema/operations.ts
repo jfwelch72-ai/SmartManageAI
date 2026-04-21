@@ -1369,6 +1369,27 @@ export const jobMetricAlertEvents = pgTable("job_metric_alert_events", {
   snoozedUntilIdx: index("job_metric_alert_events_snoozed_until_idx").on(table.snoozedUntil),
 }));
 
+// Job Metric Alert Quiet-Hours Digest Sends — Task #760
+// Records each digest email sent to a Super Admin so the admin
+// dashboard can show recent sends per recipient (sent-at, alert
+// count, time range covered) and link back to the underlying
+// alert events for verification. `isTest` distinguishes admin-
+// triggered test sends from the regular cron-driven digests.
+export const jobMetricAlertQuietHoursDigestSends = pgTable("job_metric_alert_quiet_hours_digest_sends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  recipientEmail: text("recipient_email").notNull(),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  alertCount: integer("alert_count").notNull().default(0),
+  windowStart: timestamp("window_start"),
+  windowEnd: timestamp("window_end"),
+  subject: text("subject").notNull(),
+  isTest: boolean("is_test").notNull().default(false),
+}, (table) => ({
+  userSentIdx: index("job_metric_alert_quiet_hours_digest_sends_user_sent_idx").on(table.userId, table.sentAt),
+  sentIdx: index("job_metric_alert_quiet_hours_digest_sends_sent_idx").on(table.sentAt),
+}));
+
 export const insertJobMetricAlertRuleSchema = createInsertSchema(jobMetricAlertRules).omit({
   id: true,
   createdAt: true,
@@ -1377,6 +1398,7 @@ export const insertJobMetricAlertRuleSchema = createInsertSchema(jobMetricAlertR
 export type InsertJobMetricAlertRule = z.infer<typeof insertJobMetricAlertRuleSchema>;
 export type JobMetricAlertRule = typeof jobMetricAlertRules.$inferSelect;
 export type JobMetricAlertEvent = typeof jobMetricAlertEvents.$inferSelect;
+export type JobMetricAlertQuietHoursDigestSend = typeof jobMetricAlertQuietHoursDigestSends.$inferSelect;
 
 // Audit Log table
 export const auditLog = pgTable("audit_log", {

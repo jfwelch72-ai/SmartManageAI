@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail, MailWarning } from "lucide-react";
+import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail, MailWarning, MoonStar, Send } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +57,7 @@ const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
 ];
 
 const ALERTS_KEY = ["/api/admin/metrics/jobs/alerts"] as const;
+const DIGESTS_KEY = ["/api/admin/metrics/jobs/alerts/digests"] as const;
 const REFRESH_INTERVAL_MS = 60_000;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -923,6 +924,257 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
   );
 }
 
+interface DigestSend {
+  id: string;
+  userId: string;
+  recipientName: string | null;
+  recipientEmail: string;
+  sentAt: number;
+  alertCount: number;
+  windowStart: number | null;
+  windowEnd: number | null;
+  subject: string;
+  isTest: boolean;
+}
+
+interface DigestsResponse {
+  sends: DigestSend[];
+}
+
+function formatTimestamp(ts: number | null): string {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleString();
+}
+
+interface DigestEventRow {
+  id: string;
+  job: string;
+  counter: string | null;
+  kind: string;
+  message: string;
+  triggeredAt: number;
+  observedValue: string | null;
+  baselineValue: string | null;
+}
+
+interface DigestEventsResponse {
+  digestId: string;
+  events: DigestEventRow[];
+}
+
+function DigestEventsList({ sendId }: { sendId: string }) {
+  const { data, isLoading, isError } = useQuery<DigestEventsResponse>({
+    queryKey: ["/api/admin/metrics/jobs/alerts/digests", sendId, "events"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/metrics/jobs/alerts/digests/${sendId}/events`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`Failed to load events: ${res.status}`);
+      return res.json();
+    },
+  });
+  if (isLoading) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid={`text-digest-events-loading-${sendId}`}>
+        Loading underlying alert events…
+      </p>
+    );
+  }
+  if (isError) {
+    return (
+      <p className="text-xs text-destructive" data-testid={`text-digest-events-error-${sendId}`}>
+        Could not load alert events for this digest.
+      </p>
+    );
+  }
+  const events = data?.events ?? [];
+  if (events.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid={`text-digest-no-events-${sendId}`}>
+        No matching `job_metric_alert_events` rows fall inside this digest's window.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-1 text-xs" data-testid={`list-digest-events-${sendId}`}>
+      {events.slice(0, 50).map((e) => (
+        <li key={e.id} data-testid={`text-digest-event-${sendId}-${e.id}`}>
+          <span className="font-mono">{e.job}</span>
+          {e.counter ? ` · ${e.counter}` : ""} · {e.kind} ·{" "}
+          {new Date(e.triggeredAt).toLocaleString()} — {e.message}
+          <span className="ml-2 text-muted-foreground font-mono">#{e.id.slice(0, 8)}</span>
+        </li>
+      ))}
+      {events.length > 50 && (
+        <li className="text-muted-foreground">…and {events.length - 50} more.</li>
+      )}
+    </ul>
+  );
+}
+
+function DigestsPanel({
+  data,
+}: {
+  data: DigestsResponse | undefined;
+}) {
+  const { toast } = useToast();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/metrics/jobs/alerts/digests/test");
+      return res.json();
+    },
+    onSuccess: (summary: { digestsSent: number; digestsSkippedNoEvents: number; digestsSkippedDisabled: number }) => {
+      if (summary.digestsSent > 0) {
+        toast({
+          title: "Test digest sent",
+          description: `Delivered ${summary.digestsSent} email to your address.`,
+        });
+      } else if (summary.digestsSkippedNoEvents > 0) {
+        toast({
+          title: "Nothing to digest",
+          description: "No alerts have fired in the last 24h, so no test email was sent.",
+        });
+      } else {
+        toast({
+          title: "Test digest skipped",
+          description:
+            "Make sure you have job-metric alert emails enabled in your notification preferences.",
+          variant: "destructive",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: DIGESTS_KEY });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Test digest failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const sends = data?.sends ?? [];
+
+  return (
+    <Card data-testid="card-quiet-hours-digests">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MoonStar className="h-4 w-4" /> Quiet-hours digests
+            </CardTitle>
+            <CardDescription>
+              Recent digest emails summarizing alerts that fired while a Super Admin was inside
+              their quiet-hours window. Use the test button to verify delivery without affecting the
+              regular cadence.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => testMutation.mutate()}
+            disabled={testMutation.isPending}
+            data-testid="button-send-test-digest"
+          >
+            <Send className="h-4 w-4 mr-1" /> Send test digest
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {sends.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="text-no-digests">
+            No quiet-hours digests have been sent yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Recipient</TableHead>
+                  <TableHead>Sent</TableHead>
+                  <TableHead className="text-right">Alerts</TableHead>
+                  <TableHead>Window covered</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sends.map((s) => {
+                  const isExpanded = expandedId === s.id;
+                  return (
+                    <DigestRowGroup key={s.id}>
+                      <TableRow data-testid={`row-digest-${s.id}`}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium" data-testid={`text-digest-recipient-${s.id}`}>
+                              {s.recipientName ?? s.recipientEmail}
+                            </span>
+                            {s.recipientName && (
+                              <span className="text-xs text-muted-foreground font-mono">
+                                {s.recipientEmail}
+                              </span>
+                            )}
+                          </div>
+                          {s.isTest && (
+                            <Badge variant="secondary" className="mt-1" data-testid={`badge-digest-test-${s.id}`}>
+                              test
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell data-testid={`text-digest-sent-${s.id}`}>
+                          <div className="flex flex-col">
+                            <span>{formatRelative(s.sentAt)}</span>
+                            <span className="text-xs text-muted-foreground">{formatTimestamp(s.sentAt)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right" data-testid={`text-digest-count-${s.id}`}>
+                          {s.alertCount}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground" data-testid={`text-digest-window-${s.id}`}>
+                          {s.windowStart || s.windowEnd ? (
+                            <>
+                              {formatTimestamp(s.windowStart)} → {formatTimestamp(s.windowEnd)}
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7"
+                            onClick={() => setExpandedId(isExpanded ? null : s.id)}
+                            data-testid={`button-digest-events-${s.id}`}
+                          >
+                            {isExpanded ? "Hide events" : "View events"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow data-testid={`row-digest-events-row-${s.id}`}>
+                          <TableCell colSpan={5} className="bg-muted/30">
+                            <DigestEventsList sendId={s.id} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </DigestRowGroup>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Helper: groups paired <TableRow> children for a digest row + its
+// expanded events row without breaking <tbody> hierarchy. React
+// Fragments work as <tbody> children but eslint complains about the
+// missing key when using shorthand syntax.
+function DigestRowGroup({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+
 export default function JobMetricsDashboard() {
   const [range, setRange] = useState<RangeKey>("24h");
 
@@ -934,6 +1186,11 @@ export default function JobMetricsDashboard() {
 
   const { data: alertsData } = useQuery<AlertsResponse>({
     queryKey: ALERTS_KEY,
+    refetchInterval: REFRESH_INTERVAL_MS,
+  });
+
+  const { data: digestsData } = useQuery<DigestsResponse>({
+    queryKey: DIGESTS_KEY,
     refetchInterval: REFRESH_INTERVAL_MS,
   });
 
@@ -1035,6 +1292,8 @@ export default function JobMetricsDashboard() {
       )}
 
       <AlertsPanel data={alertsData} />
+
+      <DigestsPanel data={digestsData} />
     </div>
   );
 }

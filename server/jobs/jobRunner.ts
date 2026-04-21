@@ -101,7 +101,7 @@ export function startJobRunner() {
   // window or with no events to summarize.
   jobMetricQuietDigestTask = cron.schedule("*/15 * * * *", async () => {
     try {
-      const result = await sendJobMetricAlertQuietHoursDigests();
+      const result = await sendJobMetricAlertQuietHoursDigests({ recordSends: true });
       if (result.digestsSent > 0) {
         logInfo("Job metric quiet-hours digest sent", {
           digestsSent: result.digestsSent,
@@ -498,7 +498,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   job_metric_alerts:   { fn: async () => { await evaluateJobMetricAlerts(); }, description: "Evaluate job metric counters for spikes vs baseline and stalled jobs", schedule: "*/15 * * * *" },
   // Task #754: send the quiet-hours digest to Super Admins who have
   // exited their quiet window so they can catch up on overnight alerts.
-  job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests(); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
+  job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests({ recordSends: true }); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
 };
 
 async function processOutbox() {

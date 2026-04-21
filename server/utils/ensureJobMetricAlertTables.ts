@@ -110,4 +110,38 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
     `);
     console.log("[migration] job_metric_alert_events.emailed_recipient_count — column added");
   }
+
+  // Task #760 — ledger of quiet-hours digest emails so the dashboard can
+  // show recent sends per Super Admin and link back to the underlying
+  // alert events covered by each digest window.
+  const digestSendsExists = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'job_metric_alert_quiet_hours_digest_sends'
+    ) AS exists
+  `);
+  if (!(digestSendsExists.rows[0] as { exists: boolean }).exists) {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "job_metric_alert_quiet_hours_digest_sends" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" varchar NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "recipient_email" text NOT NULL,
+        "sent_at" timestamp NOT NULL DEFAULT now(),
+        "alert_count" integer NOT NULL DEFAULT 0,
+        "window_start" timestamp,
+        "window_end" timestamp,
+        "subject" text NOT NULL,
+        "is_test" boolean NOT NULL DEFAULT false
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "job_metric_alert_quiet_hours_digest_sends_user_sent_idx"
+      ON "job_metric_alert_quiet_hours_digest_sends" ("user_id", "sent_at")
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "job_metric_alert_quiet_hours_digest_sends_sent_idx"
+      ON "job_metric_alert_quiet_hours_digest_sends" ("sent_at")
+    `);
+    console.log("[migration] job_metric_alert_quiet_hours_digest_sends — table created");
+  }
 }

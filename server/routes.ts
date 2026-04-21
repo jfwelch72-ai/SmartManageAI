@@ -921,6 +921,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Task #760 — Quiet-hours digest visibility
+  app.get("/api/admin/metrics/jobs/alerts/digests", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const sends = await mod.listRecentQuietHoursDigestSends(50);
+      res.json({ sends });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.get("/api/admin/metrics/jobs/alerts/digests/:id/events", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const result = await mod.listEventsForQuietHoursDigestSend(req.params.id);
+      if (!result) {
+        res.status(404).json({ error: "Digest send not found" });
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.post("/api/admin/metrics/jobs/alerts/digests/test", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const summary = await mod.sendTestQuietHoursDigestToUser(req.user!.id);
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({
+        userId: req.user!.id,
+        action: "EXECUTE",
+        entityType: "job_metric_alert_quiet_hours_digest",
+        entityId: req.user!.id,
+        newValue: `Test digest: sent=${summary.digestsSent}, noEvents=${summary.digestsSkippedNoEvents}, disabled=${summary.digestsSkippedDisabled}`,
+      }, req);
+      res.json(summary);
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
   app.post("/api/admin/metrics/jobs/alerts/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const mod = await import("./utils/jobMetricAlerts");
