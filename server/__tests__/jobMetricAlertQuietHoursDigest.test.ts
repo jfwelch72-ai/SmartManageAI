@@ -27,6 +27,7 @@ interface FakeRecipient {
   quietHoursTimezone: string | null;
   quietHoursWeekdays: number[] | null;
   lastDigestAt: Date | null;
+  digestFormat: "summary" | "full" | "grouped";
 }
 
 interface FakeEvent {
@@ -114,6 +115,7 @@ function makeRecipient(overrides: Partial<FakeRecipient> = {}): FakeRecipient {
     quietHoursTimezone: "UTC",
     quietHoursWeekdays: null,
     lastDigestAt: null,
+    digestFormat: "full",
     ...overrides,
   };
 }
@@ -283,5 +285,259 @@ describe("sendJobMetricAlertQuietHoursDigests (Task #754)", () => {
     expect(summary.digestsSent).toBe(0);
     expect(summary.digestsSkippedNoEvents).toBe(1);
     expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Task #766 — Direct unit tests for `buildDigestEmailBody` covering
+ * each of the three digest detail levels introduced by Task #761:
+ *   • "summary" — totals + top jobs only
+ *   • "grouped" — events grouped by job, ordered by group size
+ *   • "full"    — chronological per-event flat list (legacy default)
+ *
+ * These tests assert the *content* of the rendered text bodies so
+ * future edits to the formatting helpers cannot silently regress
+ * totals, ordering, or grouping.
+ */
+describe("buildDigestEmailBody (Task #766 — digest detail levels)", () => {
+  const windowStart = new Date(Date.UTC(2026, 0, 15, 2, 0, 0));
+  const windowEnd = new Date(Date.UTC(2026, 0, 15, 6, 30, 0));
+
+  // A deterministic mixed event set:
+  //   • job-a: 3 events (2 spike, 1 stall)
+  //   • job-b: 2 events (1 spike, 1 stall)
+  //   • job-c: 1 event  (1 spike)
+  // Total: 6 events, 4 spikes, 2 stalls, 3 unique jobs,
+  // 5 unique job/counter pairs (job-a/errors appears twice).
+  function buildMixedEvents() {
+    return [
+      makeEvent(new Date(Date.UTC(2026, 0, 15, 2, 5, 0)), {
+        id: "a1", job: "job-a", counter: "errors", kind: "spike",
+        message: "errors spiked 12x baseline",
+      }),
+      makeEvent(new Date(Date.UTC(2026, 0, 15, 2, 30, 0)), {
+        id: "b1", job: "job-b", counter: "latency_ms", kind: "stall",
+        message: "latency_ms stalled at 0",
+      }),
+      makeEvent(new Date(Date.UTC(2026, 0, 15, 3, 0, 0)), {
+        id: "a2", job: "job-a", counter: "errors", kind: "spike",
+        message: "errors spiked 9x baseline",
+      }),
+      makeEvent(new Date(Date.UTC(2026, 0, 15, 4, 0, 0)), {
+        id: "c1", job: "job-c", counter: "queue_depth", kind: "spike",
+        message: "queue_depth spiked 7x baseline",
+      }),
+      makeEvent(new Date(Date.UTC(2026, 0, 15, 5, 0, 0)), {
+        id: "a3", job: "job-a", counter: "warnings", kind: "stall",
+        message: "warnings stalled at 0",
+      }),
+      makeEvent(new Date(Date.UTC(2026, 0, 15, 6, 0, 0)), {
+        id: "b2", job: "job-b", counter: "errors", kind: "spike",
+        message: "errors spiked 4x baseline",
+      }),
+    ];
+  }
+
+  it("'summary' format renders totals (alerts, spikes, stalls, unique jobs/pairs) and the top-jobs list", () => {
+    const events = buildMixedEvents();
+    const { text } = alerts.buildDigestEmailBody(
+      events as never,
+      windowStart,
+      windowEnd,
+      "summary",
+    );
+
+    // Totals block
+    expect(text).toContain("6 alerts");
+    expect(text).toContain("4 spikes, 2 stalls");
+    // 3 unique jobs, 5 unique job/counter pairs
+    expect(text).toMatch(/3 jobs.*5 job\/counter pairs/);
+
+    // Top-jobs section, ordered by event count (job-a=3, job-b=2, job-c=1).
+    expect(text).toContain("Top jobs:");
+    const topSection = text.slice(text.indexOf("Top jobs:"));
+    const jobAIdx = topSection.indexOf("job-a");
+    const jobBIdx = topSection.indexOf("job-b");
+    const jobCIdx = topSection.indexOf("job-c");
+    expect(jobAIdx).toBeGreaterThan(-1);
+    expect(jobBIdx).toBeGreaterThan(jobAIdx);
+    expect(jobCIdx).toBeGreaterThan(jobBIdx);
+    expect(topSection).toContain("job-a — 3");
+    expect(topSection).toContain("job-b — 2");
+    expect(topSection).toContain("job-c — 1");
+
+    // Summary should NOT include the per-event chronological list
+    // — that's a "full"-format concern.
+    expect(text).not.toContain("errors spiked 12x baseline");
+    expect(text).not.toContain("queue_depth spiked 7x baseline");
+  });
+
+  it("'grouped' format groups events by job and orders groups by size (largest first)", () => {
+    const events = buildMixedEvents();
+    const { text } = alerts.buildDigestEmailBody(
+      events as never,
+      windowStart,
+      windowEnd,
+      "grouped",
+    );
+
+    expect(text).toContain("grouped by job");
+
+    // Group headers exist with their counts.
+    expect(text).toContain("job-a (3 alerts):");
+    expect(text).toContain("job-b (2 alerts):");
+    expect(text).toContain("job-c (1 alert):");
+
+    // Groups must appear in descending size order.
+    const aIdx = text.indexOf("job-a (3 alerts):");
+    const bIdx = text.indexOf("job-b (2 alerts):");
+    const cIdx = text.indexOf("job-c (1 alert):");
+    expect(aIdx).toBeGreaterThan(-1);
+    expect(bIdx).toBeGreaterThan(aIdx);
+    expect(cIdx).toBeGreaterThan(bIdx);
+
+    // Each event message should appear under its group, with kind label.
+    expect(text).toContain("(spike)");
+    expect(text).toContain("(stall)");
+    expect(text).toContain("errors spiked 12x baseline");
+    expect(text).toContain("queue_depth spiked 7x baseline");
+
+    // Within job-a, event ordering should be chronological:
+    // a1 (02:05) → a2 (03:00) → a3 (05:00).
+    const groupA = text.slice(aIdx, bIdx);
+    const a1 = groupA.indexOf("12x baseline");
+    const a2 = groupA.indexOf("9x baseline");
+    const a3 = groupA.indexOf("warnings stalled");
+    expect(a1).toBeGreaterThan(-1);
+    expect(a2).toBeGreaterThan(a1);
+    expect(a3).toBeGreaterThan(a2);
+  });
+
+  it("'full' format renders a chronological per-event flat list (legacy default)", () => {
+    const events = buildMixedEvents();
+    const { text } = alerts.buildDigestEmailBody(
+      events as never,
+      windowStart,
+      windowEnd,
+      "full",
+    );
+
+    // Every event should appear with its job inline (no grouping headers).
+    expect(text).not.toContain("(3 alerts):");
+    expect(text).not.toContain("Top jobs:");
+
+    for (const e of events) {
+      expect(text).toContain(e.job);
+      expect(text).toContain(e.message);
+      expect(text).toContain(e.triggeredAt.toISOString());
+    }
+
+    // Events appear in chronological order matching `events`.
+    let cursor = -1;
+    for (const e of events) {
+      const idx = text.indexOf(e.message);
+      expect(idx).toBeGreaterThan(cursor);
+      cursor = idx;
+    }
+  });
+
+  it("defaults to 'full' format when none is supplied", () => {
+    const events = buildMixedEvents();
+    const withDefault = alerts.buildDigestEmailBody(
+      events as never,
+      windowStart,
+      windowEnd,
+    );
+    const withFull = alerts.buildDigestEmailBody(
+      events as never,
+      windowStart,
+      windowEnd,
+      "full",
+    );
+    expect(withDefault.text).toBe(withFull.text);
+  });
+});
+
+/**
+ * Task #766 — End-to-end coverage that the recipient's `digestFormat`
+ * preference is propagated all the way through
+ * `sendJobMetricAlertQuietHoursDigests` to the rendered email body.
+ */
+describe("sendJobMetricAlertQuietHoursDigests honors digestFormat (Task #766)", () => {
+  function setup() {
+    const now = Date.UTC(2026, 0, 15, 9, 0, 0);
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    const evt1 = new Date(Date.UTC(2026, 0, 15, 2, 0, 0));
+    const evt2 = new Date(Date.UTC(2026, 0, 15, 3, 0, 0));
+    const evt3 = new Date(Date.UTC(2026, 0, 15, 4, 0, 0));
+    const events = [
+      makeEvent(evt1, { id: "x1", job: "job-a", message: "errors spiked 10x baseline" }),
+      makeEvent(evt2, { id: "x2", job: "job-a", message: "errors spiked 8x baseline" }),
+      makeEvent(evt3, { id: "x3", job: "job-b", message: "errors spiked 5x baseline" }),
+    ];
+    return { events };
+  }
+
+  it("renders a 'summary' body for recipients who chose the summary format", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({ digestFormat: "summary" });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const body = sendEmailMock.mock.calls[0][0].text ?? "";
+    // Summary fingerprints
+    expect(body).toContain("Totals:");
+    expect(body).toContain("3 alerts");
+    expect(body).toContain("Top jobs:");
+    // Should NOT render the per-event chronological list.
+    expect(body).not.toContain("errors spiked 10x baseline");
+  });
+
+  it("renders a 'grouped' body for recipients who chose the grouped format", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({ digestFormat: "grouped" });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const body = sendEmailMock.mock.calls[0][0].text ?? "";
+    expect(body).toContain("grouped by job");
+    expect(body).toContain("job-a (2 alerts):");
+    expect(body).toContain("job-b (1 alert):");
+    // job-a (size 2) must come before job-b (size 1).
+    expect(body.indexOf("job-a (2 alerts):"))
+      .toBeLessThan(body.indexOf("job-b (1 alert):"));
+  });
+
+  it("renders the 'full' chronological body for recipients who chose the full format", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({ digestFormat: "full" });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const body = sendEmailMock.mock.calls[0][0].text ?? "";
+    expect(body).not.toContain("Totals:");
+    expect(body).not.toContain("grouped by job");
+    expect(body).toContain("errors spiked 10x baseline");
+    expect(body).toContain("errors spiked 8x baseline");
+    expect(body).toContain("errors spiked 5x baseline");
+    // Chronological ordering preserved.
+    const i1 = body.indexOf("errors spiked 10x baseline");
+    const i2 = body.indexOf("errors spiked 8x baseline");
+    const i3 = body.indexOf("errors spiked 5x baseline");
+    expect(i2).toBeGreaterThan(i1);
+    expect(i3).toBeGreaterThan(i2);
   });
 });
