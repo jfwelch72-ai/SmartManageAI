@@ -272,6 +272,8 @@ export async function getCustomFieldsMapBatch(orgId: string, entityType: EntityT
  * Pass `customFields` as a key->value map. Unknown keys are ignored.
  * Keys explicitly set to null/undefined will clear the value.
  */
+export type UpsertCustomFieldKeyError = { key: string; error: string };
+
 export async function upsertCustomFieldValues(opts: {
   orgId: string;
   entityType: EntityType;
@@ -279,7 +281,7 @@ export async function upsertCustomFieldValues(opts: {
   customFields: Record<string, unknown> | undefined | null;
   enforceRequired?: boolean;
   executor?: typeof db;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true } | { ok: false; error: string; errors: UpsertCustomFieldKeyError[] }> {
   const { orgId, entityType, entityId, customFields, enforceRequired = true } = opts;
   const ex = opts.executor ?? db;
   const defs = await getDefinitionsForEntity(orgId, entityType, ex);
@@ -300,6 +302,8 @@ export async function upsertCustomFieldValues(opts: {
     if (!exists.length) incoming[def.key] = def.defaultValue;
   }
 
+  const errors: UpsertCustomFieldKeyError[] = [];
+
   // Required check on active fields, only if enforced
   if (enforceRequired) {
     for (const def of defs) {
@@ -310,38 +314,58 @@ export async function upsertCustomFieldValues(opts: {
         const existing = await ex.select().from(crmCustomFieldValues)
           .where(and(eq(crmCustomFieldValues.definitionId, def.id), eq(crmCustomFieldValues.entityId, entityId)))
           .limit(1);
-        if (!existing.length) return { ok: false, error: `${def.label} is required` };
+        if (!existing.length) errors.push({ key: def.key, error: `${def.label} is required` });
       }
     }
   }
 
-  const ops: Array<Promise<unknown>> = [];
+  // Validate everything first so we can report all per-key failures at once
+  // and avoid partial writes when any key fails.
+  type PendingOp =
+    | { kind: "delete"; def: CrmCustomFieldDefinition }
+    | { kind: "upsert"; def: CrmCustomFieldDefinition; jsonValue: JsonValue };
+  const pendingOps: PendingOp[] = [];
   for (const [key, raw] of Object.entries(incoming)) {
     const def = byKey.get(key);
     if (!def) continue;
     if (raw === undefined) continue;
     if (raw === null || raw === "") {
-      ops.push(ex.delete(crmCustomFieldValues).where(and(
-        eq(crmCustomFieldValues.definitionId, def.id),
-        eq(crmCustomFieldValues.entityId, entityId),
-      )));
+      pendingOps.push({ kind: "delete", def });
       continue;
     }
     const validated = validateValueAgainstDefinition(def, raw);
-    if (!validated.ok) return { ok: false, error: validated.error };
-    const jsonValue: JsonValue = toJsonValue(validated.value);
-    ops.push(ex.insert(crmCustomFieldValues)
-      .values({
-        organizationId: orgId,
-        definitionId: def.id,
-        entityType,
-        entityId,
-        value: jsonValue,
-      })
-      .onConflictDoUpdate({
-        target: [crmCustomFieldValues.definitionId, crmCustomFieldValues.entityId],
-        set: { value: jsonValue, updatedAt: new Date() },
-      }));
+    if (!validated.ok) {
+      errors.push({ key, error: validated.error });
+      continue;
+    }
+    pendingOps.push({ kind: "upsert", def, jsonValue: toJsonValue(validated.value) });
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, error: errors.map(e => e.error).join("; "), errors };
+  }
+
+  const ops: Array<Promise<unknown>> = [];
+  for (const op of pendingOps) {
+    if (op.kind === "delete") {
+      ops.push(ex.delete(crmCustomFieldValues).where(and(
+        eq(crmCustomFieldValues.definitionId, op.def.id),
+        eq(crmCustomFieldValues.entityId, entityId),
+      )));
+    } else {
+      ops.push(ex.insert(crmCustomFieldValues)
+        .values({
+          organizationId: orgId,
+          definitionId: op.def.id,
+          entityType,
+          entityId,
+          value: op.jsonValue,
+        })
+        .onConflictDoUpdate({
+          target: [crmCustomFieldValues.definitionId, crmCustomFieldValues.entityId],
+          set: { value: op.jsonValue, updatedAt: new Date() },
+        }));
+    }
   }
   await Promise.all(ops);
   return { ok: true };

@@ -97,47 +97,68 @@ function pickDateStr(row: Record<string, any>, mapping: Record<string, string>, 
   return undefined;
 }
 
+type CoerceResult =
+  | { kind: "empty" }
+  | { kind: "ok"; value: unknown }
+  | { kind: "error"; error: string };
+
 // Convert a raw cell value into a shape that `upsertCustomFieldValues` accepts
-// for the given custom field definition. Returns undefined when the cell is
-// empty (so we don't accidentally clear an existing value during re-imports).
-function coerceCustomFieldRaw(def: CrmCustomFieldDefinition, raw: any): unknown {
-  if (raw === undefined || raw === null) return undefined;
-  if (typeof raw === "string" && raw.trim() === "") return undefined;
+// for the given custom field definition. Returns "empty" when the cell is
+// blank (so we don't accidentally clear an existing value during re-imports),
+// "error" when the cell is non-empty but couldn't be parsed for the typed
+// field (so the worker can surface a per-row error with column + value), and
+// "ok" with the coerced value otherwise.
+function coerceCustomFieldRaw(def: CrmCustomFieldDefinition, raw: any): CoerceResult {
+  if (raw === undefined || raw === null) return { kind: "empty" };
+  if (typeof raw === "string" && raw.trim() === "") return { kind: "empty" };
   switch (def.fieldType) {
     case "NUMBER":
     case "CURRENCY": {
-      if (typeof raw === "number") return Number.isFinite(raw) ? raw : undefined;
+      if (typeof raw === "number") {
+        return Number.isFinite(raw)
+          ? { kind: "ok", value: raw }
+          : { kind: "error", error: `${def.label} must be a number` };
+      }
       const cleaned = String(raw).replace(/[$,\s]/g, "").trim();
-      if (cleaned === "") return undefined;
+      if (cleaned === "") return { kind: "empty" };
       const n = Number(cleaned);
-      return Number.isFinite(n) ? n : undefined;
+      return Number.isFinite(n)
+        ? { kind: "ok", value: n }
+        : { kind: "error", error: `${def.label} must be a number` };
     }
     case "DATE": {
       if (raw instanceof Date) {
-        return isNaN(raw.getTime()) ? undefined : raw.toISOString().slice(0, 10);
+        return isNaN(raw.getTime())
+          ? { kind: "error", error: `${def.label} is not a valid date` }
+          : { kind: "ok", value: raw.toISOString().slice(0, 10) };
       }
       const s = typeof raw === "string" ? raw.trim() : String(raw);
       const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
-      if (iso) return iso[1];
+      if (iso) return { kind: "ok", value: iso[1] };
       const d = new Date(s);
-      return isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
+      return isNaN(d.getTime())
+        ? { kind: "error", error: `${def.label} is not a valid date` }
+        : { kind: "ok", value: d.toISOString().slice(0, 10) };
     }
     case "CHECKBOX": {
-      if (typeof raw === "boolean") return raw;
-      if (typeof raw === "number") return raw !== 0;
+      if (typeof raw === "boolean") return { kind: "ok", value: raw };
+      if (typeof raw === "number") return { kind: "ok", value: raw !== 0 };
       const s = String(raw).trim().toLowerCase();
-      if (["true", "1", "yes", "y", "checked"].includes(s)) return true;
-      if (["false", "0", "no", "n", "unchecked"].includes(s)) return false;
-      return undefined;
+      if (["true", "1", "yes", "y", "checked"].includes(s)) return { kind: "ok", value: true };
+      if (["false", "0", "no", "n", "unchecked"].includes(s)) return { kind: "ok", value: false };
+      return { kind: "error", error: `${def.label} must be yes/no (got "${s}")` };
     }
     case "MULTI_SELECT": {
-      if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter(Boolean);
+      if (Array.isArray(raw)) {
+        const arr = raw.map((v) => String(v).trim()).filter(Boolean);
+        return arr.length > 0 ? { kind: "ok", value: arr } : { kind: "empty" };
+      }
       const parts = String(raw).split(/[,;|]/).map((s) => s.trim()).filter(Boolean);
-      return parts.length > 0 ? parts : undefined;
+      return parts.length > 0 ? { kind: "ok", value: parts } : { kind: "empty" };
     }
     default: {
       const s = typeof raw === "string" ? raw.trim() : String(raw);
-      return s === "" ? undefined : s;
+      return s === "" ? { kind: "empty" } : { kind: "ok", value: s };
     }
   }
 }
@@ -285,10 +306,25 @@ async function processOneJob(): Promise<boolean> {
   async function applyCustomFieldValues(rowIdx: number, row: Record<string, any>, eType: string, entityId: string): Promise<void> {
     if (customFieldColumnMappings.length === 0) return;
     const customFields: Record<string, unknown> = {};
+    // Track which spreadsheet column (and original raw value) each custom-field
+    // key came from, so per-key validation errors from `upsertCustomFieldValues`
+    // can be surfaced with the offending column header + value.
+    const keyContext = new Map<string, { csvCol: string; raw: any }>();
     for (const { csvCol, def } of customFieldColumnMappings) {
-      const coerced = coerceCustomFieldRaw(def, row[csvCol]);
-      if (coerced === undefined) continue;
-      customFields[def.key] = coerced;
+      const raw = row[csvCol];
+      const coerced = coerceCustomFieldRaw(def, raw);
+      if (coerced.kind === "empty") continue;
+      if (coerced.kind === "error") {
+        recordError(rowIdx, row, {
+          row: rowIdx + 1,
+          error: coerced.error,
+          column: csvCol,
+          value: shortenValue(raw),
+        });
+        continue;
+      }
+      customFields[def.key] = coerced.value;
+      keyContext.set(def.key, { csvCol, raw });
     }
     if (Object.keys(customFields).length === 0) return;
     const result = await upsertCustomFieldValues({
@@ -299,7 +335,19 @@ async function processOneJob(): Promise<boolean> {
       enforceRequired: false,
     });
     if (!result.ok) {
-      recordError(rowIdx, row, { row: rowIdx + 1, error: `Custom field: ${result.error}` });
+      if (result.errors && result.errors.length > 0) {
+        for (const e of result.errors) {
+          const ctx = keyContext.get(e.key);
+          recordError(rowIdx, row, {
+            row: rowIdx + 1,
+            error: e.error,
+            column: ctx?.csvCol,
+            value: ctx ? shortenValue(ctx.raw) : undefined,
+          });
+        }
+      } else {
+        recordError(rowIdx, row, { row: rowIdx + 1, error: `Custom field: ${result.error}` });
+      }
     }
   }
 
