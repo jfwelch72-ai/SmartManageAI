@@ -726,14 +726,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Task #700: expose the in-process job metrics surface so admins can
   // spot delivery regressions in the birthday digest (and any other job
   // that publishes counters via recordJobMetrics) without grepping logs.
-  app.get("/api/admin/metrics/jobs", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
-    const { getAllJobMetrics } = await import("./utils/jobMetrics");
-    res.json({ jobs: getAllJobMetrics() });
+  app.get("/api/admin/metrics/jobs", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+    const { getAllJobMetricsForRange, parseMetricsRange } = await import("./utils/jobMetrics");
+    const range = parseMetricsRange(req.query.range);
+    res.json({ jobs: await getAllJobMetricsForRange(range), range });
   });
 
   app.get("/api/admin/metrics/jobs/:jobName", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
-    const { getJobMetrics } = await import("./utils/jobMetrics");
-    res.json(getJobMetrics(req.params.jobName));
+    const { getJobMetricsForRange, parseMetricsRange } = await import("./utils/jobMetrics");
+    const range = parseMetricsRange(req.query.range);
+    const metrics = await getJobMetricsForRange(req.params.jobName, range);
+    res.json({ ...metrics, range });
   });
 
   // Task #713: let a Super Admin clear stored job metric history so a

@@ -1,10 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ArrowLeft, RefreshCw, XCircle, Activity } from "lucide-react";
 import {
   LineChart,
@@ -30,12 +31,56 @@ interface JobMetricsResponse {
 
 interface JobsListResponse {
   jobs: JobMetricsResponse[];
+  range: RangeKey;
 }
 
-const ALL_JOBS_KEY = ["/api/admin/metrics/jobs"] as const;
+type RangeKey = "24h" | "7d" | "30d";
+
+const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7d" },
+  { value: "30d", label: "30d" },
+];
+
 const REFRESH_INTERVAL_MS = 60_000;
-const BUCKET_COUNT = 24;
-const BUCKET_MS = 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+interface RangeConfig {
+  bucketCount: number;
+  bucketMs: number;
+  formatLabel: (ts: number) => string;
+  tooltipLabel: (label: string) => string;
+  xAxisInterval: number;
+  emptyMessage: string;
+}
+
+const RANGE_CONFIG: Record<RangeKey, RangeConfig> = {
+  "24h": {
+    bucketCount: 24,
+    bucketMs: HOUR_MS,
+    formatLabel: (ts) => `${new Date(ts).getHours().toString().padStart(2, "0")}:00`,
+    tooltipLabel: (label) => `Hour ${label}`,
+    xAxisInterval: 3,
+    emptyMessage: "No samples in the last 24h.",
+  },
+  "7d": {
+    bucketCount: 7,
+    bucketMs: DAY_MS,
+    formatLabel: (ts) => new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    tooltipLabel: (label) => `Day ${label}`,
+    xAxisInterval: 0,
+    emptyMessage: "No samples in the last 7 days.",
+  },
+  "30d": {
+    bucketCount: 30,
+    bucketMs: DAY_MS,
+    formatLabel: (ts) => new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    tooltipLabel: (label) => `Day ${label}`,
+    xAxisInterval: 4,
+    emptyMessage: "No samples in the last 30 days.",
+  },
+};
 
 const COUNTER_PALETTE = [
   "hsl(var(--chart-1))",
@@ -47,6 +92,8 @@ const COUNTER_PALETTE = [
 
 function formatDuration(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  if (days > 0) return `${days}d`;
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   if (h > 0) return `${h}h${m ? ` ${m}m` : ""}`;
@@ -66,16 +113,24 @@ function formatRelative(ts: number | null): string {
   return `${d}d ago`;
 }
 
-function bucketSamples(samples: JobMetricSample[], counters: string[]) {
+function rangeStart(range: RangeKey, now: number): number {
+  // Use a rolling cutoff that matches the backend's `now - rangeMs` query
+  // so the bucket totals on the chart line up with the per-counter totals
+  // returned by the API (no calendar-day alignment skew).
+  const cfg = RANGE_CONFIG[range];
+  return now - cfg.bucketCount * cfg.bucketMs;
+}
+
+function bucketSamples(samples: JobMetricSample[], counters: string[], range: RangeKey) {
+  const cfg = RANGE_CONFIG[range];
   const now = Date.now();
-  const windowMs = BUCKET_COUNT * BUCKET_MS;
-  const start = now - windowMs;
+  const start = rangeStart(range, now);
   const buckets: Array<Record<string, number | string>> = [];
-  for (let i = 0; i < BUCKET_COUNT; i++) {
-    const bucketStart = start + i * BUCKET_MS;
+  for (let i = 0; i < cfg.bucketCount; i++) {
+    const bucketStart = start + i * cfg.bucketMs;
     const row: Record<string, number | string> = {
       ts: bucketStart,
-      label: new Date(bucketStart).getHours().toString().padStart(2, "0") + ":00",
+      label: cfg.formatLabel(bucketStart),
     };
     for (const c of counters) row[c] = 0;
     buckets.push(row);
@@ -83,8 +138,8 @@ function bucketSamples(samples: JobMetricSample[], counters: string[]) {
   for (const s of samples) {
     if (s.timestamp < start) continue;
     const idx = Math.min(
-      BUCKET_COUNT - 1,
-      Math.floor((s.timestamp - start) / BUCKET_MS),
+      cfg.bucketCount - 1,
+      Math.max(0, Math.floor((s.timestamp - start) / cfg.bucketMs)),
     );
     for (const c of counters) {
       const v = s.counters[c];
@@ -103,10 +158,11 @@ function counterKeys(job: JobMetricsResponse): string[] {
   return Array.from(set).sort();
 }
 
-function JobCard({ job }: { job: JobMetricsResponse }) {
+function JobCard({ job, range }: { job: JobMetricsResponse; range: RangeKey }) {
   const counters = useMemo(() => counterKeys(job), [job]);
-  const chartData = useMemo(() => bucketSamples(job.samples, counters), [job, counters]);
+  const chartData = useMemo(() => bucketSamples(job.samples, counters, range), [job, counters, range]);
   const sampleCount = job.samples.length;
+  const cfg = RANGE_CONFIG[range];
 
   return (
     <Card data-testid={`card-job-${job.job}`}>
@@ -172,7 +228,7 @@ function JobCard({ job }: { job: JobMetricsResponse }) {
                 className="h-32 flex items-center justify-center text-sm text-muted-foreground border rounded-md"
                 data-testid={`text-no-samples-${job.job}`}
               >
-                No samples in the last 24h.
+                {cfg.emptyMessage}
               </div>
             ) : (
               <div className="h-32 w-full" data-testid={`chart-${job.job}`}>
@@ -181,7 +237,7 @@ function JobCard({ job }: { job: JobMetricsResponse }) {
                     <XAxis
                       dataKey="label"
                       tick={{ fontSize: 10 }}
-                      interval={3}
+                      interval={cfg.xAxisInterval}
                       stroke="currentColor"
                       className="text-muted-foreground"
                     />
@@ -194,7 +250,7 @@ function JobCard({ job }: { job: JobMetricsResponse }) {
                     />
                     <Tooltip
                       contentStyle={{ fontSize: 12 }}
-                      labelFormatter={(label) => `Hour ${label}`}
+                      labelFormatter={(label) => cfg.tooltipLabel(String(label))}
                     />
                     {counters.map((c, idx) => (
                       <Line
@@ -220,13 +276,22 @@ function JobCard({ job }: { job: JobMetricsResponse }) {
 }
 
 export default function JobMetricsDashboard() {
+  const [range, setRange] = useState<RangeKey>("24h");
+
   const { data, isLoading, isError, refetch, isFetching, dataUpdatedAt } =
     useQuery<JobsListResponse>({
-      queryKey: ALL_JOBS_KEY,
+      queryKey: ["/api/admin/metrics/jobs", { range }],
       refetchInterval: REFRESH_INTERVAL_MS,
     });
 
   const jobs = (data?.jobs ?? []).slice().sort((a, b) => a.job.localeCompare(b.job));
+
+  const rangeDescription =
+    range === "24h"
+      ? "Rolling 24h trend (hourly buckets)"
+      : range === "7d"
+      ? "Last 7 days (daily buckets)"
+      : "Last 30 days (daily buckets)";
 
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
@@ -242,7 +307,7 @@ export default function JobMetricsDashboard() {
               Job metrics dashboard
             </h1>
             <p className="text-sm text-muted-foreground">
-              Rolling 24h trend of counters published by background jobs via{" "}
+              {rangeDescription} of counters published by background jobs via{" "}
               <code>recordJobMetrics</code>. Auto-refreshes every minute.
               {dataUpdatedAt > 0 && (
                 <>
@@ -252,16 +317,39 @@ export default function JobMetricsDashboard() {
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-          data-testid="button-refresh"
-        >
-          <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={range}
+            onValueChange={(v) => {
+              if (v === "24h" || v === "7d" || v === "30d") setRange(v);
+            }}
+            size="sm"
+            variant="outline"
+            data-testid="toggle-range"
+          >
+            {RANGE_OPTIONS.map((opt) => (
+              <ToggleGroupItem
+                key={opt.value}
+                value={opt.value}
+                aria-label={`Show ${opt.label} window`}
+                data-testid={`toggle-range-${opt.value}`}
+              >
+                {opt.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            data-testid="button-refresh"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {isError && (
@@ -287,7 +375,7 @@ export default function JobMetricsDashboard() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2" data-testid="grid-jobs">
           {jobs.map((job) => (
-            <JobCard key={job.job} job={job} />
+            <JobCard key={job.job} job={job} range={range} />
           ))}
         </div>
       )}

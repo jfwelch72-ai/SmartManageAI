@@ -18,7 +18,7 @@
 
 import { db } from "../db";
 import { jobMetricSamples } from "@shared/schema";
-import { eq, gte, lt } from "drizzle-orm";
+import { and, eq, gte, lt } from "drizzle-orm";
 import { logError } from "./logger";
 
 export type JobCounters = Record<string, number>;
@@ -29,7 +29,20 @@ export interface JobMetricSample {
 }
 
 const RETENTION_MS = 24 * 60 * 60 * 1000;
+const PERSISTED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_SAMPLES_PER_JOB = 2000;
+
+export type MetricsRangeKey = "24h" | "7d" | "30d";
+export const METRICS_RANGES: Record<MetricsRangeKey, number> = {
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
+
+export function parseMetricsRange(value: unknown): MetricsRangeKey {
+  if (value === "7d" || value === "30d") return value;
+  return "24h";
+}
 
 const samplesByJob = new Map<string, JobMetricSample[]>();
 let persistenceEnabled = true;
@@ -119,6 +132,91 @@ export function getAllJobMetrics(): Array<ReturnType<typeof getJobMetrics>> {
   return Array.from(samplesByJob.keys()).sort().map(getJobMetrics);
 }
 
+function summarize(job: string, windowMs: number, samples: JobMetricSample[]) {
+  const totals: JobCounters = {};
+  for (const s of samples) {
+    for (const [k, v] of Object.entries(s.counters)) {
+      totals[k] = (totals[k] ?? 0) + v;
+    }
+  }
+  return {
+    job,
+    windowMs,
+    samples,
+    totals,
+    latest: samples.length ? samples[samples.length - 1] : null,
+  };
+}
+
+/**
+ * Range-aware variant. For 24h we use the in-memory rolling window
+ * (fast, no DB round-trip). For 7d / 30d we query the persisted
+ * `job_metric_samples` table directly so admins can spot slow
+ * regressions that span days or weeks.
+ */
+export async function getJobMetricsForRange(job: string, range: MetricsRangeKey) {
+  const windowMs = METRICS_RANGES[range];
+  if (range === "24h") {
+    const mem = getJobMetrics(job);
+    return { ...mem, windowMs };
+  }
+  if (!persistenceEnabled) return summarize(job, windowMs, []);
+  const cutoff = new Date(Date.now() - windowMs);
+  try {
+    const rows = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(and(eq(jobMetricSamples.job, job), gte(jobMetricSamples.recordedAt, cutoff)))
+      .orderBy(jobMetricSamples.recordedAt);
+    const samples: JobMetricSample[] = rows.map((r) => ({
+      timestamp: new Date(r.recordedAt).getTime(),
+      counters: (r.counters as JobCounters) ?? {},
+    }));
+    return summarize(job, windowMs, samples);
+  } catch (err) {
+    logError("Failed to load job metrics for range", { job, range, error: String(err) });
+    return summarize(job, windowMs, []);
+  }
+}
+
+export async function getAllJobMetricsForRange(range: MetricsRangeKey) {
+  const windowMs = METRICS_RANGES[range];
+  if (range === "24h") {
+    return getAllJobMetrics().map((j) => ({ ...j, windowMs }));
+  }
+  if (!persistenceEnabled) return [];
+  const cutoff = new Date(Date.now() - windowMs);
+  try {
+    const rows = await db
+      .select({
+        job: jobMetricSamples.job,
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(gte(jobMetricSamples.recordedAt, cutoff))
+      .orderBy(jobMetricSamples.recordedAt);
+    const byJob = new Map<string, JobMetricSample[]>();
+    for (const row of rows) {
+      const list = byJob.get(row.job) ?? [];
+      list.push({
+        timestamp: new Date(row.recordedAt).getTime(),
+        counters: (row.counters as JobCounters) ?? {},
+      });
+      byJob.set(row.job, list);
+    }
+    return Array.from(byJob.keys())
+      .sort()
+      .map((job) => summarize(job, windowMs, byJob.get(job)!));
+  } catch (err) {
+    logError("Failed to load all job metrics for range", { range, error: String(err) });
+    return [];
+  }
+}
+
 /**
  * Hydrate the in-memory window from the persisted samples table. Called
  * once at startup so a fresh process immediately has access to the
@@ -163,7 +261,7 @@ export async function loadJobMetricsFromDb(): Promise<number> {
  */
 export async function pruneJobMetricsDb(): Promise<number> {
   if (!persistenceEnabled) return 0;
-  const cutoff = new Date(Date.now() - RETENTION_MS);
+  const cutoff = new Date(Date.now() - PERSISTED_RETENTION_MS);
   try {
     const deleted = await db
       .delete(jobMetricSamples)

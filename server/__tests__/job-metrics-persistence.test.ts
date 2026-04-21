@@ -162,10 +162,11 @@ describe("jobMetrics persistence (Task #705)", () => {
   it("pruneJobMetricsDb deletes stale persisted samples", async () => {
     const now = Date.now();
     selectRows = [
-      { job: "j", recordedAt: new Date(now - 26 * 60 * 60 * 1000), counters: { n: 1 } },
+      // Older than the 30d persisted retention window — should be pruned.
+      { job: "j", recordedAt: new Date(now - 31 * 24 * 60 * 60 * 1000), counters: { n: 1 } },
       { job: "j", recordedAt: new Date(now - 60_000), counters: { n: 2 } },
     ];
-    lastDeleteCutoff = new Date(now - 24 * 60 * 60 * 1000);
+    lastDeleteCutoff = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
     const deleted = await mod.pruneJobMetricsDb();
     expect(deleted).toBe(1);
