@@ -140,13 +140,29 @@ async function executeAction(action: ActionConfig, automationId: string, ctx: Au
     case "CREATE_TASK": {
       const due = action.config.dueInDays ? new Date(Date.now() + Number(action.config.dueInDays) * 24 * 60 * 60 * 1000) : new Date(Date.now() + 24 * 60 * 60 * 1000);
       const opportunityId = ctx.entityType === "OPPORTUNITY" ? ctx.entityId : null;
-      const contactId = ctx.entityType === "CONTACT" ? ctx.entityId : null;
+      let contactId = ctx.entityType === "CONTACT" ? ctx.entityId : null;
+      // Task #702: when no explicit assignee is configured, route the
+      // auto-created task to the contact owner so the relationship handoff
+      // is preserved.
+      let assignedToId: string | null = action.config.assignedToId ?? null;
+      if (!assignedToId) {
+        if (!contactId && opportunityId) {
+          const [opp] = await db.select({ contactId: crmOpportunities.contactId })
+            .from(crmOpportunities).where(eq(crmOpportunities.id, opportunityId)).limit(1);
+          if (opp?.contactId) contactId = opp.contactId;
+        }
+        if (contactId) {
+          const [c] = await db.select({ ownerId: crmContacts.ownerId })
+            .from(crmContacts).where(eq(crmContacts.id, contactId)).limit(1);
+          if (c?.ownerId) assignedToId = c.ownerId;
+        }
+      }
       await db.insert(crmTasks).values({
         organizationId: ctx.orgId,
         title: action.config.title || "CRM automation task",
         description: action.config.description || `Created by automation`,
         dueDate: due,
-        assignedToId: action.config.assignedToId ?? null,
+        assignedToId,
         opportunityId,
         contactId,
       } as any);
@@ -154,8 +170,7 @@ async function executeAction(action: ActionConfig, automationId: string, ctx: Au
     }
     case "ENROLL_SEQUENCE": {
       const sequenceId = action.config.sequenceId;
-      const senderId = action.config.senderId;
-      if (!sequenceId || !senderId) return;
+      if (!sequenceId) return;
       let contactId = ctx.entityType === "CONTACT" ? ctx.entityId : null;
       let opportunityId = ctx.entityType === "OPPORTUNITY" ? ctx.entityId : null;
       if (opportunityId && !contactId) {
@@ -163,6 +178,14 @@ async function executeAction(action: ActionConfig, automationId: string, ctx: Au
         if (opp?.contactId) contactId = opp.contactId;
       }
       if (!contactId) return;
+      // Task #702: prefer the contact owner as the cadence sender so
+      // sequence ownership follows the relationship handoff. Fall back to
+      // the explicitly configured senderId if the contact has no owner.
+      let senderId: string | undefined = action.config.senderId;
+      const [c] = await db.select({ ownerId: crmContacts.ownerId })
+        .from(crmContacts).where(eq(crmContacts.id, contactId)).limit(1);
+      if (c?.ownerId) senderId = c.ownerId;
+      if (!senderId) return;
       try {
         await db.insert(crmSequenceEnrollments).values({
           organizationId: ctx.orgId,

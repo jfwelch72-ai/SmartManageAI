@@ -650,6 +650,18 @@ export async function processDueExecutions(now: Date = new Date()): Promise<{ pr
         // Manual step → create CRM task
         const taskTitle = renderMergeTokens(step.subject || `${step.stepType} task`, await buildMergeContext(enrollment.contactId, enrollment.senderId, enrollment.opportunityId));
         const taskDesc = step.instructions || step.body || "";
+        // Task #702: Route the auto-created task to the contact owner so the
+        // relationship handoff is preserved. Fall back to the cadence sender
+        // when the contact has no explicit owner.
+        let taskOwnerId: string = enrollment.senderId;
+        if (enrollment.contactId) {
+          const [c] = await db
+            .select({ ownerId: crmContacts.ownerId })
+            .from(crmContacts)
+            .where(eq(crmContacts.id, enrollment.contactId))
+            .limit(1);
+          if (c?.ownerId) taskOwnerId = c.ownerId;
+        }
         const [task] = await db.insert(crmTasks).values({
           organizationId: enrollment.organizationId,
           title: taskTitle,
@@ -657,14 +669,14 @@ export async function processDueExecutions(now: Date = new Date()): Promise<{ pr
           dueDate: exec.scheduledAt,
           status: "PENDING",
           priority: "NORMAL",
-          assignedToId: enrollment.senderId,
+          assignedToId: taskOwnerId,
           opportunityId: enrollment.opportunityId,
           contactId: enrollment.contactId,
           createdById: enrollment.senderId,
         }).returning();
         await db.update(crmSequenceStepExecutions).set({ status: "SENT", sentAt: new Date(), taskId: task.id }).where(eq(crmSequenceStepExecutions.id, exec.id));
         await insertNotification({
-          userId: enrollment.senderId,
+          userId: taskOwnerId,
           organizationId: enrollment.organizationId,
           type: "REMINDER",
           title: `Sequence step due: ${taskTitle}`,

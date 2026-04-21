@@ -1130,6 +1130,7 @@ async function processIdleOpportunities() {
       name: crmOpportunities.name,
       organizationId: crmOpportunities.organizationId,
       assignedToId: crmOpportunities.assignedToId,
+      contactId: crmOpportunities.contactId,
       stage: crmOpportunities.stage,
       updatedAt: crmOpportunities.updatedAt,
     })
@@ -1165,12 +1166,30 @@ async function processIdleOpportunities() {
     return;
   }
 
+  // Task #702: when an opportunity has no explicit assignee, fall back to
+  // the contact owner so the relationship handoff still gets the nudge.
+  const ownerlessContactIds = Array.from(new Set(
+    idleOpps.filter(o => !o.assignedToId && o.contactId).map(o => o.contactId as string)
+  ));
+  const contactOwnerMap = new Map<string, string>();
+  if (ownerlessContactIds.length > 0) {
+    const ownerRows = await db
+      .select({ id: crmContacts.id, ownerId: crmContacts.ownerId })
+      .from(crmContacts)
+      .where(inArray(crmContacts.id, ownerlessContactIds));
+    for (const r of ownerRows) {
+      if (r.ownerId) contactOwnerMap.set(r.id, r.ownerId);
+    }
+  }
+
   const assigneeMap = new Map<string, { userId: string; orgId: string; names: string[] }>();
   for (const opp of idleOpps) {
-    if (!opp.assignedToId) continue;
-    const key = opp.assignedToId;
+    const recipient = opp.assignedToId
+      ?? (opp.contactId ? contactOwnerMap.get(opp.contactId) ?? null : null);
+    if (!recipient) continue;
+    const key = recipient;
     if (!assigneeMap.has(key)) {
-      assigneeMap.set(key, { userId: opp.assignedToId, orgId: opp.organizationId, names: [] });
+      assigneeMap.set(key, { userId: recipient, orgId: opp.organizationId, names: [] });
     }
     assigneeMap.get(key)!.names.push(opp.name);
   }

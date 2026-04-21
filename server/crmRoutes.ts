@@ -2220,7 +2220,18 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
         createdById: req.user!.id,
       });
 
-      const assigneeId = updated.assignedToId;
+      // Task #702: prefer the deal assignee, but fall back to the contact
+      // owner so the relationship handoff still receives the notification
+      // when no one has been explicitly assigned to the opportunity.
+      let assigneeId = updated.assignedToId;
+      if (!assigneeId && updated.contactId) {
+        const [c] = await db
+          .select({ ownerId: crmContacts.ownerId })
+          .from(crmContacts)
+          .where(eq(crmContacts.id, updated.contactId))
+          .limit(1);
+        if (c?.ownerId) assigneeId = c.ownerId;
+      }
       if (assigneeId) {
         const [orgSetting] = await db
           .select({ notifyInApp: organizationNetworkSettings.notifyInApp })
