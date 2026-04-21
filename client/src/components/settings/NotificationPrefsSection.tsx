@@ -508,6 +508,52 @@ export default function NotificationPrefsSection() {
     updateQuietDigestMutation.mutate(enabled);
   }
 
+  // Task #761: per-recipient detail level for the quiet-hours digest body.
+  // Defaults to "full" on the server so existing recipients keep the same
+  // layout until they explicitly pick a different level.
+  type QuietHoursDigestFormat = "summary" | "full" | "grouped";
+  const [quietDigestFormat, setQuietDigestFormat] = useState<QuietHoursDigestFormat>("full");
+  useEffect(() => {
+    if (!authUser) return;
+    const raw = (authUser.jobMetricAlertQuietHoursDigestFormat ?? "full") as QuietHoursDigestFormat;
+    setQuietDigestFormat(raw === "summary" || raw === "grouped" ? raw : "full");
+  }, [authUser]);
+
+  const updateQuietDigestFormatMutation = useMutation({
+    mutationFn: async (format: QuietHoursDigestFormat) => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        jobMetricAlertQuietHoursDigestFormat: format,
+      });
+    },
+    onSuccess: (_data, format) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      const label =
+        format === "summary"
+          ? "Counts only"
+          : format === "grouped"
+            ? "Per-job grouped"
+            : "Full per-event list";
+      toast({
+        title: "Digest detail updated",
+        description: `Quiet-hours digest will now use: ${label}.`,
+      });
+    },
+    onError: (error: Error) => {
+      const fallback = (authUser?.jobMetricAlertQuietHoursDigestFormat ?? "full") as QuietHoursDigestFormat;
+      setQuietDigestFormat(fallback === "summary" || fallback === "grouped" ? fallback : "full");
+      toast({
+        title: "Failed to update digest detail level",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleQuietDigestFormatChange(format: QuietHoursDigestFormat) {
+    setQuietDigestFormat(format);
+    updateQuietDigestFormatMutation.mutate(format);
+  }
+
   function handleSaveQuietHours() {
     updateQuietHoursMutation.mutate({
       jobMetricAlertQuietHoursEnabled: quietEnabled,
@@ -1050,6 +1096,66 @@ export default function NotificationPrefsSection() {
                             disabled={updateQuietDigestMutation.isPending}
                             data-testid="switch-job-metric-alert-quiet-hours-digest"
                           />
+                        </div>
+                      )}
+
+                      {quietEnabled && quietDigestEnabled && (
+                        <div className="border-t border-border pt-3 space-y-2" data-testid="row-job-metric-alert-quiet-hours-digest-format">
+                          <div>
+                            <p className="text-sm font-medium">Digest detail level</p>
+                            <p className="text-xs text-muted-foreground">
+                              Pick how much detail the catch-up email should include.
+                            </p>
+                          </div>
+                          <RadioGroup
+                            value={quietDigestFormat}
+                            onValueChange={(v) => handleQuietDigestFormatChange(v as QuietHoursDigestFormat)}
+                            className="grid gap-2"
+                            data-testid="radio-job-metric-alert-quiet-hours-digest-format"
+                          >
+                            <Label className="flex items-start gap-2 cursor-pointer" htmlFor="quiet-digest-format-summary">
+                              <RadioGroupItem
+                                id="quiet-digest-format-summary"
+                                value="summary"
+                                disabled={updateQuietDigestFormatMutation.isPending}
+                                data-testid="radio-job-metric-alert-quiet-hours-digest-format-summary"
+                              />
+                              <span className="text-sm font-normal">
+                                <span className="font-medium">Counts only</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  Totals and the top jobs — no per-event list.
+                                </span>
+                              </span>
+                            </Label>
+                            <Label className="flex items-start gap-2 cursor-pointer" htmlFor="quiet-digest-format-full">
+                              <RadioGroupItem
+                                id="quiet-digest-format-full"
+                                value="full"
+                                disabled={updateQuietDigestFormatMutation.isPending}
+                                data-testid="radio-job-metric-alert-quiet-hours-digest-format-full"
+                              />
+                              <span className="text-sm font-normal">
+                                <span className="font-medium">Full per-event list</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  One line per alert, in chronological order. (Default)
+                                </span>
+                              </span>
+                            </Label>
+                            <Label className="flex items-start gap-2 cursor-pointer" htmlFor="quiet-digest-format-grouped">
+                              <RadioGroupItem
+                                id="quiet-digest-format-grouped"
+                                value="grouped"
+                                disabled={updateQuietDigestFormatMutation.isPending}
+                                data-testid="radio-job-metric-alert-quiet-hours-digest-format-grouped"
+                              />
+                              <span className="text-sm font-normal">
+                                <span className="font-medium">Per-job grouped</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  Per-event list, grouped by job for easier scanning.
+                                </span>
+                              </span>
+                            </Label>
+                          </RadioGroup>
                         </div>
                       )}
                     </div>

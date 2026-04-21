@@ -25,6 +25,15 @@ export const birthdayReminderCadenceEnum = pgEnum("birthday_reminder_cadence", [
   "WEEKLY",
 ]);
 
+// Task #761 — Detail level for the once-per-window quiet-hours digest.
+//   "summary" : counts only — total alerts and unique jobs/counters.
+//   "full"    : per-event list (the original digest layout).
+//   "grouped" : full per-event list grouped by job for easier scanning.
+export const jobMetricAlertQuietHoursDigestFormatEnum = pgEnum(
+  "job_metric_alert_quiet_hours_digest_format",
+  ["summary", "full", "grouped"],
+);
+
 export const notificationTypeEnum = pgEnum("notification_type", [
   "BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE",
   "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED",

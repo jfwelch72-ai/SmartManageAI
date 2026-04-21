@@ -204,6 +204,7 @@ export async function authMiddleware(
       jobMetricAlertQuietHoursWeekdays: user.jobMetricAlertQuietHoursWeekdays,
       jobMetricAlertQuietHoursDigestEnabled: user.jobMetricAlertQuietHoursDigestEnabled,
       jobMetricAlertQuietHoursLastDigestAt: user.jobMetricAlertQuietHoursLastDigestAt,
+      jobMetricAlertQuietHoursDigestFormat: user.jobMetricAlertQuietHoursDigestFormat,
       effectiveRole,
       isHustlerOwner,
     };

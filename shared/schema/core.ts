@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
+import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -370,6 +370,13 @@ export const users = pgTable("users", {
   // each quiet window is summarized at most once after it ends.
   jobMetricAlertQuietHoursDigestEnabled: boolean("job_metric_alert_quiet_hours_digest_enabled").notNull().default(true),
   jobMetricAlertQuietHoursLastDigestAt: timestamp("job_metric_alert_quiet_hours_last_digest_at"),
+  // Task #761: per-recipient detail level for the quiet-hours digest
+  // email — "summary" (counts only), "full" (per-event list), or
+  // "grouped" (events grouped by job). Defaults to "full" so existing
+  // recipients see the same digest layout until they pick a new one.
+  jobMetricAlertQuietHoursDigestFormat: jobMetricAlertQuietHoursDigestFormatEnum(
+    "job_metric_alert_quiet_hours_digest_format",
+  ).notNull().default("full"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

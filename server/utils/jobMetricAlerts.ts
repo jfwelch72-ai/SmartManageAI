@@ -343,9 +343,13 @@ async function loadSuperAdmins(): Promise<SuperAdminRecipient[]> {
     }));
 }
 
+export type QuietHoursDigestFormat = "summary" | "full" | "grouped";
+
 interface QuietHoursDigestRecipient extends SuperAdminRecipient {
   digestEnabled: boolean;
   lastDigestAt: Date | null;
+  // Task #761 — recipient's preferred detail level for the digest body.
+  digestFormat: QuietHoursDigestFormat;
 }
 
 async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> {
@@ -362,6 +366,7 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       quietHoursWeekdays: users.jobMetricAlertQuietHoursWeekdays,
       digestEnabled: users.jobMetricAlertQuietHoursDigestEnabled,
       lastDigestAt: users.jobMetricAlertQuietHoursLastDigestAt,
+      digestFormat: users.jobMetricAlertQuietHoursDigestFormat,
     })
     .from(users)
     .where(eq(users.role, "SUPER_ADMIN"));
@@ -378,6 +383,7 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       quietHoursWeekdays: r.quietHoursWeekdays ?? null,
       digestEnabled: r.digestEnabled ?? true,
       lastDigestAt: r.lastDigestAt ? new Date(r.lastDigestAt) : null,
+      digestFormat: (r.digestFormat as QuietHoursDigestFormat | null) ?? "full",
     }));
 }
 
@@ -1131,10 +1137,11 @@ function formatDigestSubject(count: number): string {
     : `Quiet-hours digest: ${count} alerts fired while you were silenced`;
 }
 
-function buildDigestEmailBody(
+export function buildDigestEmailBody(
   events: DigestEventRow[],
   windowStart: Date,
   windowEnd: Date,
+  format: QuietHoursDigestFormat = "full",
 ): { text: string; html: string } {
   const baseUrl = (
     process.env.APP_URL ||
@@ -1144,7 +1151,137 @@ function buildDigestEmailBody(
   ).replace(/\/$/, "");
   const dashboardUrl = `${baseUrl}/admin/job-metrics`;
   const range = `${windowStart.toISOString()} → ${windowEnd.toISOString()}`;
+  const intro =
+    `While you were inside your quiet-hours window (${range}), the following ` +
+    `${events.length} job-metric alert${events.length === 1 ? "" : "s"} fired`;
+  const introHtml = `While you were inside your quiet-hours window
+        (<code>${escapeHtmlSafe(range)}</code>), the following
+        <strong>${events.length}</strong> job-metric alert${events.length === 1 ? "" : "s"} fired`;
+  const footerHtml = `
+      <p style="margin-top:20px;">
+        <a href="${dashboardUrl}" style="background-color:#0070f3;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;display:inline-block;">
+          Open the job metrics dashboard
+        </a>
+      </p>
+      <hr style="margin-top:30px;border:none;border-top:1px solid #eee;">
+      <p style="color:#999;font-size:12px;">
+        You can change the digest detail level or disable it from your Notification Preferences page.
+      </p>
+  `;
 
+  if (format === "summary") {
+    // Counts only — total alerts, spike vs stall, and the top jobs.
+    const spikes = events.filter((e) => e.kind === "spike").length;
+    const stalls = events.filter((e) => e.kind === "stall").length;
+    const byJob = new Map<string, number>();
+    for (const e of events) byJob.set(e.job, (byJob.get(e.job) ?? 0) + 1);
+    const topJobs = Array.from(byJob.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    const counterCount = new Set(
+      events.map((e) => `${e.job}::${e.counter ?? ""}`),
+    ).size;
+    const text =
+      `${intro}.\n\n` +
+      `Totals:\n` +
+      `  • ${events.length} alert${events.length === 1 ? "" : "s"}\n` +
+      `  • ${spikes} spike${spikes === 1 ? "" : "s"}, ${stalls} stall${stalls === 1 ? "" : "s"}\n` +
+      `  • ${byJob.size} job${byJob.size === 1 ? "" : "s"}, ${counterCount} job/counter pair${counterCount === 1 ? "" : "s"}\n\n` +
+      (topJobs.length
+        ? `Top jobs:\n${topJobs.map(([j, c]) => `  • ${j} — ${c}`).join("\n")}\n\n`
+        : "") +
+      `Review the dashboard: ${dashboardUrl}`;
+    const topJobsHtml = topJobs.length
+      ? `<ul style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eee;border-radius:6px;">
+          ${topJobs
+            .map(
+              ([j, c]) => `<li style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333;">
+            <strong>${escapeHtmlSafe(j)}</strong>
+            <span style="color:#666;"> — ${c} alert${c === 1 ? "" : "s"}</span>
+          </li>`,
+            )
+            .join("")}
+        </ul>`
+      : "";
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
+        <h2 style="color:#333;margin-bottom:8px;">Quiet-hours digest (summary)</h2>
+        <p style="color:#666;line-height:1.5;margin-top:0;">${introHtml}.</p>
+        <ul style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eee;border-radius:6px;color:#333;">
+          <li style="padding:6px 0;border-bottom:1px solid #f0f0f0;"><strong>${events.length}</strong> alert${events.length === 1 ? "" : "s"} total</li>
+          <li style="padding:6px 0;border-bottom:1px solid #f0f0f0;"><strong>${spikes}</strong> spike${spikes === 1 ? "" : "s"}, <strong>${stalls}</strong> stall${stalls === 1 ? "" : "s"}</li>
+          <li style="padding:6px 0;"><strong>${byJob.size}</strong> job${byJob.size === 1 ? "" : "s"}, <strong>${counterCount}</strong> job/counter pair${counterCount === 1 ? "" : "s"}</li>
+        </ul>
+        ${topJobs.length ? `<h3 style="color:#333;font-size:14px;margin-bottom:4px;">Top jobs</h3>${topJobsHtml}` : ""}
+        ${footerHtml}
+      </div>
+    `;
+    return { text, html };
+  }
+
+  if (format === "grouped") {
+    // Group events by job, preserving chronological order within each group.
+    const groups = new Map<string, DigestEventRow[]>();
+    for (const e of events) {
+      const arr = groups.get(e.job) ?? [];
+      arr.push(e);
+      groups.set(e.job, arr);
+    }
+    const orderedJobs = Array.from(groups.keys()).sort(
+      (a, b) => (groups.get(b)?.length ?? 0) - (groups.get(a)?.length ?? 0),
+    );
+    const textGroups = orderedJobs.map((job) => {
+      const list = groups.get(job) ?? [];
+      const lines = list.map((e) => {
+        const ts = e.triggeredAt.toISOString();
+        const counter = e.counter ? ` · ${e.counter}` : "";
+        const kindLabel = e.kind === "stall" ? "stall" : "spike";
+        return `    • [${ts}] (${kindLabel})${counter} — ${e.message}`;
+      });
+      return `${job} (${list.length} alert${list.length === 1 ? "" : "s"}):\n${lines.join("\n")}`;
+    });
+    const text =
+      `${intro}, grouped by job:\n\n` +
+      `${textGroups.join("\n\n")}\n\n` +
+      `Review the dashboard: ${dashboardUrl}`;
+    const htmlGroups = orderedJobs
+      .map((job) => {
+        const list = groups.get(job) ?? [];
+        const items = list
+          .map((e) => {
+            const ts = escapeHtmlSafe(e.triggeredAt.toISOString());
+            const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
+            const kindLabel = e.kind === "stall" ? "stall" : "spike";
+            return `<li style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333;">
+              <strong style="color:#0070f3;">[${ts}]</strong>
+              <span style="text-transform:uppercase;font-size:11px;color:#666;">${kindLabel}</span>${counter}<br/>
+              <span style="color:#555;">${escapeHtmlSafe(e.message)}</span>
+            </li>`;
+          })
+          .join("");
+        return `
+          <h3 style="color:#333;font-size:14px;margin:18px 0 4px;">
+            ${escapeHtmlSafe(job)}
+            <span style="color:#888;font-weight:normal;font-size:12px;">— ${list.length} alert${list.length === 1 ? "" : "s"}</span>
+          </h3>
+          <ul style="list-style:none;padding:8px 16px;margin:0 0 8px;background:#fafafa;border:1px solid #eee;border-radius:6px;">
+            ${items}
+          </ul>
+        `;
+      })
+      .join("");
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
+        <h2 style="color:#333;margin-bottom:8px;">Quiet-hours digest (grouped by job)</h2>
+        <p style="color:#666;line-height:1.5;margin-top:0;">${introHtml}, grouped by job.</p>
+        ${htmlGroups}
+        ${footerHtml}
+      </div>
+    `;
+    return { text, html };
+  }
+
+  // Default — "full" — original per-event flat list.
   const lines = events.map((e) => {
     const ts = e.triggeredAt.toISOString();
     const counter = e.counter ? ` · ${e.counter}` : "";
@@ -1152,8 +1289,7 @@ function buildDigestEmailBody(
     return `• [${ts}] (${kindLabel}) ${e.job}${counter} — ${e.message}`;
   });
   const text =
-    `While you were inside your quiet-hours window (${range}), the following ` +
-    `${events.length} job-metric alert${events.length === 1 ? "" : "s"} fired:\n\n` +
+    `${intro}:\n\n` +
     `${lines.join("\n")}\n\n` +
     `Review the dashboard: ${dashboardUrl}`;
 
@@ -1173,23 +1309,11 @@ function buildDigestEmailBody(
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
       <h2 style="color:#333;margin-bottom:8px;">Quiet-hours digest</h2>
-      <p style="color:#666;line-height:1.5;margin-top:0;">
-        While you were inside your quiet-hours window
-        (<code>${escapeHtmlSafe(range)}</code>), the following
-        <strong>${events.length}</strong> job-metric alert${events.length === 1 ? "" : "s"} fired.
-      </p>
+      <p style="color:#666;line-height:1.5;margin-top:0;">${introHtml}.</p>
       <ul style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eee;border-radius:6px;">
         ${items}
       </ul>
-      <p style="margin-top:20px;">
-        <a href="${dashboardUrl}" style="background-color:#0070f3;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;display:inline-block;">
-          Open the job metrics dashboard
-        </a>
-      </p>
-      <hr style="margin-top:30px;border:none;border-top:1px solid #eee;">
-      <p style="color:#999;font-size:12px;">
-        You can disable this digest from your Notification Preferences page.
-      </p>
+      ${footerHtml}
     </div>
   `;
   return { text, html };
@@ -1331,7 +1455,7 @@ export async function sendJobMetricAlertQuietHoursDigests(
     const subject = formatDigestSubject(matched.length);
     const windowStart = new Date(firstTs ?? lowerBoundMs);
     const windowEnd = new Date(lastTs ?? now);
-    const { text, html } = buildDigestEmailBody(matched, windowStart, windowEnd);
+    const { text, html } = buildDigestEmailBody(matched, windowStart, windowEnd, r.digestFormat);
 
     try {
       const ok = await sendFn({ to: r.email, subject, text, html });
