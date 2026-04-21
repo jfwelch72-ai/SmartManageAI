@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -384,6 +385,9 @@ function ImportPanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const parseTokenRef = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const workbookRef = useRef<XLSX.WorkBook | null>(null);
 
   const headers = parsedData?.headers ?? [];
   const showMapping = headers.length > 0;
@@ -421,32 +425,113 @@ function ImportPanel() {
     });
   });
 
+  const parseSheet = (wb: XLSX.WorkBook, sheetName: string): { headers: string[]; rows: Record<string, any>[] } => {
+    const sheet = wb.Sheets[sheetName];
+    if (!sheet) throw new Error(`Sheet "${sheetName}" not found in workbook`);
+    const aoa = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: "", raw: false, blankrows: false });
+    if (!aoa || aoa.length === 0) throw new Error("Sheet is empty");
+    const rawHeaders = (aoa[0] || []).map((h) => (h == null ? "" : String(h).trim()));
+    const headers: string[] = [];
+    const seen = new Map<string, number>();
+    for (let i = 0; i < rawHeaders.length; i++) {
+      let h = rawHeaders[i] || `Column ${i + 1}`;
+      if (seen.has(h)) {
+        const n = (seen.get(h) || 1) + 1;
+        seen.set(h, n);
+        h = `${h} (${n})`;
+      } else {
+        seen.set(h, 1);
+      }
+      headers.push(h);
+    }
+    if (headers.length === 0) throw new Error("Sheet is missing a header row");
+    const rows: Record<string, any>[] = [];
+    for (let r = 1; r < aoa.length; r++) {
+      const row = aoa[r] || [];
+      const obj: Record<string, any> = {};
+      let any = false;
+      for (let c = 0; c < headers.length; c++) {
+        const v = row[c];
+        if (v !== undefined && v !== null && String(v) !== "") any = true;
+        obj[headers[c]] = v == null ? "" : String(v);
+      }
+      if (any) rows.push(obj);
+    }
+    if (rows.length === 0) throw new Error("Need header + at least 1 row");
+    return { headers, rows };
+  };
+
+  const parseExcelFile = async (f: File): Promise<{ wb: XLSX.WorkBook; sheets: string[] }> => {
+    const buf = await f.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const sheets = wb.SheetNames || [];
+    if (sheets.length === 0) throw new Error("Workbook has no sheets");
+    return { wb, sheets };
+  };
+
+  const isExcelFile = (f: File) => {
+    const name = f.name.toLowerCase();
+    return name.endsWith(".xlsx") || f.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  };
+
   const handleFileChange = async (f: File | null) => {
     const token = ++parseTokenRef.current;
     setFile(f);
     setParsedData(null);
     setParseError(null);
     setMappingOverrides({});
+    setSheetNames([]);
+    setSelectedSheet(null);
+    workbookRef.current = null;
     if (!f) {
       setIsParsing(false);
       return;
     }
     setIsParsing(true);
     try {
-      const result = await parseCsvFile(f);
-      if (parseTokenRef.current !== token) return;
-      setParsedData(result);
+      if (isExcelFile(f)) {
+        const { wb, sheets } = await parseExcelFile(f);
+        if (parseTokenRef.current !== token) return;
+        workbookRef.current = wb;
+        setSheetNames(sheets);
+        const first = sheets[0];
+        setSelectedSheet(first);
+        const result = parseSheet(wb, first);
+        if (parseTokenRef.current !== token) return;
+        setParsedData(result);
+      } else {
+        const result = await parseCsvFile(f);
+        if (parseTokenRef.current !== token) return;
+        setParsedData(result);
+      }
     } catch (e: any) {
       if (parseTokenRef.current !== token) return;
-      setParseError(e?.message || "Failed to parse CSV");
+      setParseError(e?.message || "Failed to parse file");
     } finally {
       if (parseTokenRef.current === token) setIsParsing(false);
     }
   };
 
+  const handleSheetChange = (name: string) => {
+    if (!workbookRef.current) return;
+    setSelectedSheet(name);
+    setParseError(null);
+    setMappingOverrides({});
+    setParsedData(null);
+    setIsParsing(true);
+    try {
+      const result = parseSheet(workbookRef.current, name);
+      setParsedData(result);
+    } catch (e: any) {
+      setParseError(e?.message || "Failed to parse sheet");
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
   const submit = useMutation({
     mutationFn: async () => {
-      if (!file) throw new Error("Please choose a CSV file");
+      if (!file) throw new Error("Please choose a CSV or Excel file");
       if (!parsedData || parsedData.rows.length === 0) throw new Error("Need header + at least 1 row");
       const mapping: Record<string, string> = {};
       for (const [csvCol, target] of Object.entries(effectiveMapping)) {
@@ -460,6 +545,9 @@ function ImportPanel() {
       setParsedData(null);
       setParseError(null);
       setMappingOverrides({});
+      setSheetNames([]);
+      setSelectedSheet(null);
+      workbookRef.current = null;
       if (fileInputRef.current) fileInputRef.current.value = "";
       toast({ title: "Import queued", description: "We'll process the rows in the background — progress will update below." });
     },
@@ -482,7 +570,7 @@ function ImportPanel() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Drag and drop or choose a CSV file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>CSV / Excel Import</CardTitle><CardDescription>Drag and drop or choose a CSV or Excel (.xlsx) file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported for CSV. Multi-sheet workbooks let you pick which sheet to import. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
         <Select value={entity} onValueChange={(v) => { setEntity(v); setMappingOverrides({}); }}>
           <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
@@ -503,13 +591,18 @@ function ImportPanel() {
             setIsDragOver(false);
             const dropped = e.dataTransfer.files?.[0];
             if (!dropped) return;
-            const isCsv = dropped.type === "text/csv" || dropped.name.toLowerCase().endsWith(".csv");
-            if (!isCsv) {
+            const name = dropped.name.toLowerCase();
+            const isCsv = dropped.type === "text/csv" || name.endsWith(".csv");
+            const isXlsx = isExcelFile(dropped);
+            if (!isCsv && !isXlsx) {
               setFile(null);
               setParsedData(null);
               setMappingOverrides({});
+              setSheetNames([]);
+              setSelectedSheet(null);
+              workbookRef.current = null;
               if (fileInputRef.current) fileInputRef.current.value = "";
-              setParseError("Please drop a .csv file");
+              setParseError("Please drop a .csv or .xlsx file");
               return;
             }
             handleFileChange(dropped);
@@ -519,13 +612,13 @@ function ImportPanel() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="hidden"
             onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
             data-testid="input-csv-file"
           />
           <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
-          <div className="text-sm mb-2">Drag and drop a .csv file here, or</div>
+          <div className="text-sm mb-2">Drag and drop a .csv or .xlsx file here, or</div>
           <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-choose-file">
             <Upload className="h-4 w-4 mr-1" />Choose file
           </Button>
@@ -539,6 +632,22 @@ function ImportPanel() {
             {isParsing && <Loader2 className="h-4 w-4 animate-spin" />}
           </div>
         </div>
+        {sheetNames.length > 0 && (
+          <div className="flex items-center gap-2" data-testid="sheet-picker">
+            <Label className="text-sm">Sheet</Label>
+            <Select value={selectedSheet ?? undefined} onValueChange={handleSheetChange}>
+              <SelectTrigger className="w-64" data-testid="select-sheet"><SelectValue placeholder="Choose a sheet" /></SelectTrigger>
+              <SelectContent>
+                {sheetNames.map((s) => (
+                  <SelectItem key={s} value={s} data-testid={`option-sheet-${s}`}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {sheetNames.length > 1 && (
+              <span className="text-xs text-muted-foreground">{sheetNames.length} sheets in this workbook</span>
+            )}
+          </div>
+        )}
         {parseError && (
           <div className="text-sm text-destructive border border-destructive/50 rounded p-2" data-testid="text-csv-parse-error">
             {parseError}
