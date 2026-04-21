@@ -11,12 +11,20 @@ const DISCONNECT_ALERT_THRESHOLD_MS = 2 * 60 * 1000;
 const QUEUE_DEPTH_ALERT_RATIO = 1;
 const MONITOR_INTERVAL_MS = 30 * 1000;
 
-type AlertKind = "queue_full" | "browser_disconnected";
+type AlertKind =
+  | "queue_full"
+  | "browser_disconnected"
+  | "queue_drained"
+  | "browser_reconnected";
 
 interface AlertState {
   lastSentAt: Map<AlertKind, number>;
   disconnectedSince: number | null;
   notifiedDisconnectAt: number | null;
+  queueAlertActive: boolean;
+  queueAlertStartedAt: number | null;
+  browserDisconnectAlertActive: boolean;
+  browserDisconnectAlertStartedAt: number | null;
   monitorTimer: NodeJS.Timeout | null;
 }
 
@@ -24,6 +32,10 @@ const state: AlertState = {
   lastSentAt: new Map(),
   disconnectedSince: null,
   notifiedDisconnectAt: null,
+  queueAlertActive: false,
+  queueAlertStartedAt: null,
+  browserDisconnectAlertActive: false,
+  browserDisconnectAlertStartedAt: null,
   monitorTimer: null,
 };
 
@@ -68,7 +80,12 @@ export async function getGanttPdfAlertConfig(): Promise<{
   recipients: string[];
   rateLimitMs: number;
   disconnectThresholdMs: number;
-  lastSent: { queueFull: number | null; browserDisconnected: number | null };
+  lastSent: {
+    queueFull: number | null;
+    browserDisconnected: number | null;
+    queueDrained: number | null;
+    browserReconnected: number | null;
+  };
 }> {
   const envEmails = parseEnvRecipients();
   let recipients: string[];
@@ -89,6 +106,8 @@ export async function getGanttPdfAlertConfig(): Promise<{
     lastSent: {
       queueFull: state.lastSentAt.get("queue_full") ?? null,
       browserDisconnected: state.lastSentAt.get("browser_disconnected") ?? null,
+      queueDrained: state.lastSentAt.get("queue_drained") ?? null,
+      browserReconnected: state.lastSentAt.get("browser_reconnected") ?? null,
     },
   };
 }
@@ -216,10 +235,73 @@ function buildDisconnectEmail(disconnectedForMs: number): {
   return { subject, text, html };
 }
 
+function buildQueueDrainedEmail(
+  stats: ReturnType<typeof getGanttPdfStats>,
+  durationMs: number,
+): { subject: string; text: string; html: string } {
+  const { queue, limits } = stats;
+  const minutes = Math.max(1, Math.round(durationMs / 60000));
+  const subject = "Gantt PDF render queue has drained";
+  const text =
+    `The Gantt PDF render queue has returned to a healthy depth.\n\n` +
+    `Active renders: ${queue.activeRenders} / ${limits.maxConcurrentRenders}\n` +
+    `Queued renders: ${queue.queuedRenders} / ${limits.maxQueueLength}\n\n` +
+    `The previous queue-full incident lasted about ${minutes} minute${
+      minutes === 1 ? "" : "s"
+    }. New PDF requests should once again be accepted normally.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px;">
+      <h2 style="color:#15803d;">Gantt PDF render queue has drained</h2>
+      <p>The Gantt PDF render queue has returned to a healthy depth.</p>
+      <ul>
+        <li><strong>Active renders:</strong> ${queue.activeRenders} / ${limits.maxConcurrentRenders}</li>
+        <li><strong>Queued renders:</strong> ${queue.queuedRenders} / ${limits.maxQueueLength}</li>
+      </ul>
+      <p>The previous queue-full incident lasted about
+        <strong>${minutes} minute${minutes === 1 ? "" : "s"}</strong>.
+        New PDF requests should once again be accepted normally.</p>
+      <p style="color:#6b7280;font-size:12px;">Further alerts of this type will be suppressed for ${Math.round(
+        ALERT_RATE_LIMIT_MS / 60000,
+      )} minutes to avoid flapping notifications.</p>
+    </div>`;
+  return { subject, text, html };
+}
+
+function buildBrowserReconnectedEmail(durationMs: number): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const minutes = Math.max(1, Math.round(durationMs / 60000));
+  const subject = "Gantt PDF browser has reconnected";
+  const text =
+    `A fresh cached Chromium for Gantt PDF rendering is back online and healthy.\n\n` +
+    `The previous browser-disconnected incident lasted about ${minutes} minute${
+      minutes === 1 ? "" : "s"
+    }. PDF exports should now succeed again.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px;">
+      <h2 style="color:#15803d;">Gantt PDF browser has reconnected</h2>
+      <p>A fresh cached Chromium for Gantt PDF rendering is back online and
+        healthy.</p>
+      <p>The previous browser-disconnected incident lasted about
+        <strong>${minutes} minute${minutes === 1 ? "" : "s"}</strong>.
+        PDF exports should now succeed again.</p>
+      <p style="color:#6b7280;font-size:12px;">Further alerts of this type will be suppressed for ${Math.round(
+        ALERT_RATE_LIMIT_MS / 60000,
+      )} minutes to avoid flapping notifications.</p>
+    </div>`;
+  return { subject, text, html };
+}
+
 export function reportGanttPdfQueueFull(): void {
   const now = Date.now();
   if (!shouldSend("queue_full", now)) return;
   markSent("queue_full", now);
+  if (!state.queueAlertActive) {
+    state.queueAlertActive = true;
+    state.queueAlertStartedAt = now;
+  }
   const stats = getGanttPdfStats();
   const { subject, text, html } = buildQueueFullEmail(stats);
   logInfo("Sending Gantt PDF queue-full alert", {
@@ -245,21 +327,43 @@ export function clearGanttPdfBrowserDisconnect(): void {
 async function runMonitorTick(): Promise<void> {
   try {
     const stats = getGanttPdfStats();
+    const now = Date.now();
 
     // Queue depth: alert when queue is at capacity and has at least one waiter.
-    if (
+    const queueFullThreshold = Math.floor(
+      stats.limits.maxQueueLength * QUEUE_DEPTH_ALERT_RATIO,
+    );
+    const queueIsFull =
       stats.limits.maxQueueLength > 0 &&
-      stats.queue.queuedRenders >=
-        Math.floor(stats.limits.maxQueueLength * QUEUE_DEPTH_ALERT_RATIO)
-    ) {
+      stats.queue.queuedRenders >= queueFullThreshold;
+    if (queueIsFull) {
       reportGanttPdfQueueFull();
+    } else if (state.queueAlertActive) {
+      // Recovery: queue has dropped below capacity since the last queue-full
+      // alert. Treat "healthy" as queue empty AND not all worker slots in use,
+      // so we don't ping the all-clear at the moment we just barely dipped
+      // below capacity (helps mitigate flapping).
+      const queueIsHealthy =
+        stats.queue.queuedRenders === 0 &&
+        stats.queue.activeRenders < stats.limits.maxConcurrentRenders;
+      if (queueIsHealthy && shouldSend("queue_drained", now)) {
+        markSent("queue_drained", now);
+        const startedAt = state.queueAlertStartedAt ?? now;
+        const durationMs = Math.max(0, now - startedAt);
+        state.queueAlertActive = false;
+        state.queueAlertStartedAt = null;
+        const { subject, text, html } = buildQueueDrainedEmail(stats, durationMs);
+        logInfo("Sending Gantt PDF queue-drained recovery alert", {
+          durationMs,
+        });
+        await dispatchAlert("queue_drained", subject, text, html);
+      }
     }
 
     // Browser disconnect: only alert if a browser was previously cached and is
     // now disconnected (not just absent because no PDFs have been rendered yet).
     const cb = stats.cachedBrowser;
     if (cb.present && !cb.connected && !cb.recycling) {
-      const now = Date.now();
       if (state.disconnectedSince === null) {
         state.disconnectedSince = now;
       }
@@ -274,6 +378,10 @@ async function runMonitorTick(): Promise<void> {
       ) {
         markSent("browser_disconnected", now);
         state.notifiedDisconnectAt = now;
+        if (!state.browserDisconnectAlertActive) {
+          state.browserDisconnectAlertActive = true;
+          state.browserDisconnectAlertStartedAt = state.disconnectedSince;
+        }
         const { subject, text, html } = buildDisconnectEmail(downFor);
         logInfo("Sending Gantt PDF browser-disconnected alert", {
           downForMs: downFor,
@@ -284,6 +392,27 @@ async function runMonitorTick(): Promise<void> {
       // Cleared (browser absent, reconnected, or recycling on purpose).
       if (state.disconnectedSince !== null) {
         clearGanttPdfBrowserDisconnect();
+      }
+      // Recovery: only fire if we previously notified about a disconnect and a
+      // healthy cached browser is back online (present + connected + not
+      // mid-recycle). A merely-absent browser does not count as "recovered".
+      if (
+        state.browserDisconnectAlertActive &&
+        cb.present &&
+        cb.connected &&
+        !cb.recycling &&
+        shouldSend("browser_reconnected", now)
+      ) {
+        markSent("browser_reconnected", now);
+        const startedAt = state.browserDisconnectAlertStartedAt ?? now;
+        const durationMs = Math.max(0, now - startedAt);
+        state.browserDisconnectAlertActive = false;
+        state.browserDisconnectAlertStartedAt = null;
+        const { subject, text, html } = buildBrowserReconnectedEmail(durationMs);
+        logInfo("Sending Gantt PDF browser-reconnected recovery alert", {
+          durationMs,
+        });
+        await dispatchAlert("browser_reconnected", subject, text, html);
       }
     }
   } catch (err) {
@@ -321,4 +450,8 @@ export function __resetGanttPdfAlertStateForTests(): void {
   state.lastSentAt.clear();
   state.disconnectedSince = null;
   state.notifiedDisconnectAt = null;
+  state.queueAlertActive = false;
+  state.queueAlertStartedAt = null;
+  state.browserDisconnectAlertActive = false;
+  state.browserDisconnectAlertStartedAt = null;
 }
