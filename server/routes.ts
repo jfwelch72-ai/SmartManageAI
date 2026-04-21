@@ -846,6 +846,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Task #729 — acknowledge / snooze noisy alert events
+  app.post("/api/admin/metrics/jobs/alerts/events/:id/acknowledge", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const updated = await mod.acknowledgeJobMetricAlertEvent(req.params.id, req.user!.id);
+      if (!updated) {
+        res.status(404).json({ error: "Alert event not found" });
+        return;
+      }
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "job_metric_alert_event",
+        entityId: updated.id,
+        newValue: `Acknowledged alert ${updated.job}/${updated.counter ?? "_"}/${updated.kind}`,
+      }, req);
+      res.json(updated);
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.post("/api/admin/metrics/jobs/alerts/events/:id/snooze", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const schema = z.object({ hours: z.number().positive().max(7 * 24) });
+      const { hours } = schema.parse(req.body);
+      const mod = await import("./utils/jobMetricAlerts");
+      const updated = await mod.snoozeJobMetricAlertEvent(req.params.id, req.user!.id, hours);
+      if (!updated) {
+        res.status(404).json({ error: "Alert event not found" });
+        return;
+      }
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "job_metric_alert_event",
+        entityId: updated.id,
+        newValue: `Snoozed ${updated.job}/${updated.counter ?? "_"}/${updated.kind} for ${hours}h until ${updated.snoozedUntil ? new Date(updated.snoozedUntil).toISOString() : "n/a"}`,
+      }, req);
+      res.json(updated);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid snooze request", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  });
+
   app.post("/api/admin/metrics/jobs/alerts/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const mod = await import("./utils/jobMetricAlerts");

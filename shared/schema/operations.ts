@@ -1345,9 +1345,15 @@ export const jobMetricAlertEvents = pgTable("job_metric_alert_events", {
   baselineValue: decimal("baseline_value", { precision: 18, scale: 4 }),
   triggeredAt: timestamp("triggered_at").notNull().defaultNow(),
   notifiedUserCount: integer("notified_user_count").notNull().default(0),
+  // Task #729 — acknowledge and snooze
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedById: varchar("acknowledged_by_id"),
+  snoozedUntil: timestamp("snoozed_until"),
+  snoozedById: varchar("snoozed_by_id"),
 }, (table) => ({
   jobTriggeredIdx: index("job_metric_alert_events_job_triggered_idx").on(table.job, table.triggeredAt),
   triggeredIdx: index("job_metric_alert_events_triggered_idx").on(table.triggeredAt),
+  snoozedUntilIdx: index("job_metric_alert_events_snoozed_until_idx").on(table.snoozedUntil),
 }));
 
 export const insertJobMetricAlertRuleSchema = createInsertSchema(jobMetricAlertRules).omit({

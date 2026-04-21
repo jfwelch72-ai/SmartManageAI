@@ -12,7 +12,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle } from "lucide-react";
+import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -310,7 +316,18 @@ interface AlertEvent {
   baselineValue: number | null;
   triggeredAt: number;
   notifiedUserCount: number;
+  acknowledgedAt: number | null;
+  acknowledgedById: string | null;
+  snoozedUntil: number | null;
+  snoozedById: string | null;
 }
+
+const SNOOZE_OPTIONS: Array<{ hours: number; label: string }> = [
+  { hours: 1, label: "1 hour" },
+  { hours: 4, label: "4 hours" },
+  { hours: 8, label: "8 hours" },
+  { hours: 24, label: "24 hours" },
+];
 
 interface AlertsResponse {
   rules: AlertRule[];
@@ -379,6 +396,34 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
     },
   });
 
+  const acknowledgeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/metrics/jobs/alerts/events/${id}/acknowledge`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Alert acknowledged" });
+      queryClient.invalidateQueries({ queryKey: ALERTS_KEY });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not acknowledge", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const snoozeMutation = useMutation({
+    mutationFn: async ({ id, hours }: { id: string; hours: number }) => {
+      const res = await apiRequest("POST", `/api/admin/metrics/jobs/alerts/events/${id}/snooze`, { hours });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      toast({ title: `Snoozed for ${vars.hours}h` });
+      queryClient.invalidateQueries({ queryKey: ALERTS_KEY });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not snooze", description: err.message, variant: "destructive" });
+    },
+  });
+
   const toggleMutation = useMutation({
     mutationFn: async (rule: AlertRule) => {
       const res = await apiRequest("POST", "/api/admin/metrics/jobs/alerts/rules", {
@@ -398,8 +443,12 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
     },
   });
 
+  const now = Date.now();
   const recentActive = (data?.events ?? []).filter(
-    (e) => Date.now() - e.triggeredAt < 60 * 60 * 1000,
+    (e) =>
+      now - e.triggeredAt < 60 * 60 * 1000 &&
+      e.acknowledgedAt === null &&
+      (e.snoozedUntil === null || e.snoozedUntil <= now),
   );
 
   return (
@@ -411,11 +460,53 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
             {recentActive.length} active job metric alert{recentActive.length === 1 ? "" : "s"}
           </AlertTitle>
           <AlertDescription>
-            <ul className="mt-2 space-y-1 text-sm">
+            <ul className="mt-2 space-y-2 text-sm">
               {recentActive.slice(0, 5).map((a) => (
-                <li key={a.id} data-testid={`text-active-alert-${a.id}`}>
-                  <span className="font-mono">{a.job}</span>
-                  {a.counter ? ` · ${a.counter}` : ""} · {a.kind} · {formatRelative(a.triggeredAt)} — {a.message}
+                <li
+                  key={a.id}
+                  data-testid={`text-active-alert-${a.id}`}
+                  className="flex items-start justify-between gap-3 flex-wrap"
+                >
+                  <span className="flex-1 min-w-[12rem]">
+                    <span className="font-mono">{a.job}</span>
+                    {a.counter ? ` · ${a.counter}` : ""} · {a.kind} · {formatRelative(a.triggeredAt)} — {a.message}
+                  </span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7"
+                      onClick={() => acknowledgeMutation.mutate(a.id)}
+                      disabled={acknowledgeMutation.isPending}
+                      data-testid={`button-acknowledge-${a.id}`}
+                    >
+                      <Check className="h-3 w-3 mr-1" /> Acknowledge
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7"
+                          disabled={snoozeMutation.isPending}
+                          data-testid={`button-snooze-${a.id}`}
+                        >
+                          <BellOff className="h-3 w-3 mr-1" /> Snooze
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {SNOOZE_OPTIONS.map((opt) => (
+                          <DropdownMenuItem
+                            key={opt.hours}
+                            onSelect={() => snoozeMutation.mutate({ id: a.id, hours: opt.hours })}
+                            data-testid={`option-snooze-${a.id}-${opt.hours}h`}
+                          >
+                            {opt.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </span>
                 </li>
               ))}
               {recentActive.length > 5 && <li>…and {recentActive.length - 5} more.</li>}
@@ -618,12 +709,26 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
             <div className="border-t pt-4">
               <p className="text-sm font-medium mb-2">Recent alerts (last 24h)</p>
               <ul className="space-y-1 text-xs text-muted-foreground" data-testid="list-recent-events">
-                {data.events.slice(0, 10).map((e) => (
-                  <li key={e.id} data-testid={`text-event-${e.id}`}>
-                    <span className="font-mono">{e.job}</span>
-                    {e.counter ? ` · ${e.counter}` : ""} · {e.kind} · {formatRelative(e.triggeredAt)} · notified {e.notifiedUserCount} admin{e.notifiedUserCount === 1 ? "" : "s"} — {e.message}
-                  </li>
-                ))}
+                {data.events.slice(0, 10).map((e) => {
+                  const snoozeActive = e.snoozedUntil !== null && e.snoozedUntil > Date.now();
+                  return (
+                    <li key={e.id} data-testid={`text-event-${e.id}`}>
+                      <span className="font-mono">{e.job}</span>
+                      {e.counter ? ` · ${e.counter}` : ""} · {e.kind} · {formatRelative(e.triggeredAt)} · notified {e.notifiedUserCount} admin{e.notifiedUserCount === 1 ? "" : "s"}
+                      {e.acknowledgedAt && (
+                        <Badge variant="secondary" className="ml-1" data-testid={`badge-ack-${e.id}`}>
+                          acknowledged
+                        </Badge>
+                      )}
+                      {snoozeActive && (
+                        <Badge variant="outline" className="ml-1" data-testid={`badge-snooze-${e.id}`}>
+                          snoozed until {new Date(e.snoozedUntil!).toLocaleTimeString()}
+                        </Badge>
+                      )}
+                      {" — "}{e.message}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

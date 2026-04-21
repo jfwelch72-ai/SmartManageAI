@@ -21,7 +21,7 @@
  */
 
 import { db } from "../db";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gt, gte } from "drizzle-orm";
 import {
   jobMetricAlertEvents,
   jobMetricAlertRules,
@@ -213,6 +213,35 @@ export interface EvaluateResult {
   notifiedAdmins: number;
 }
 
+/**
+ * Returns the latest active `snoozedUntil` timestamp for each
+ * job/counter/kind key. An admin-issued snooze suppresses re-firing for
+ * that key until the timestamp passes, on top of the regular dedupe
+ * window.
+ */
+async function fetchActiveSnoozeLookup(now: number): Promise<Map<string, number>> {
+  const cutoff = new Date(now);
+  const rows = await db
+    .select({
+      job: jobMetricAlertEvents.job,
+      counter: jobMetricAlertEvents.counter,
+      kind: jobMetricAlertEvents.kind,
+      snoozedUntil: jobMetricAlertEvents.snoozedUntil,
+    })
+    .from(jobMetricAlertEvents)
+    .where(gt(jobMetricAlertEvents.snoozedUntil, cutoff));
+
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.snoozedUntil) continue;
+    const key = `${r.job}::${r.counter ?? ""}::${r.kind}`;
+    const ts = new Date(r.snoozedUntil).getTime();
+    const prev = map.get(key) ?? 0;
+    if (ts > prev) map.set(key, ts);
+  }
+  return map;
+}
+
 async function fetchRecentEventLookup(now: number): Promise<Map<string, number>> {
   // Pull the most recent event per job+counter+kind in the last 24h —
   // 24h is the longest dedupe window we expect in practice (default
@@ -283,6 +312,11 @@ export async function evaluateJobMetricAlerts(
     return new Map<string, number>();
   });
 
+  const activeSnoozes = await fetchActiveSnoozeLookup(now).catch((err) => {
+    logError("Job metric alerts: failed to load active snoozes", { error: String(err) });
+    return new Map<string, number>();
+  });
+
   const fired: JobMetricAlert[] = [];
   const eventRows: Array<typeof jobMetricAlertEvents.$inferInsert> = [];
 
@@ -306,6 +340,11 @@ export async function evaluateJobMetricAlerts(
       if (lastHour < rule.threshold * baseline) continue;
 
       const dedupeKey = `${j.job}::${counter}::spike`;
+      const snoozedUntil = activeSnoozes.get(dedupeKey);
+      if (snoozedUntil && snoozedUntil > now) {
+        result.alertsSuppressed++;
+        continue;
+      }
       const lastFired = recentEvents.get(dedupeKey);
       if (lastFired && now - lastFired < rule.dedupeMinutes * 60 * 1000) {
         result.alertsSuppressed++;
@@ -343,8 +382,11 @@ export async function evaluateJobMetricAlerts(
       const stallMs = stallRule.threshold * HOUR_MS;
       if (idleMs >= stallMs) {
         const dedupeKey = `${j.job}::::stall`;
+        const snoozedUntil = activeSnoozes.get(dedupeKey);
         const lastFired = recentEvents.get(dedupeKey);
-        if (lastFired && now - lastFired < stallRule.dedupeMinutes * 60 * 1000) {
+        if (snoozedUntil && snoozedUntil > now) {
+          result.alertsSuppressed++;
+        } else if (lastFired && now - lastFired < stallRule.dedupeMinutes * 60 * 1000) {
           result.alertsSuppressed++;
         } else {
           const idleHours = idleMs / HOUR_MS;
@@ -433,32 +475,46 @@ export function getLastEvaluationAt(): number | null {
  * recent N events overall, plus a quick lookup of "currently active"
  * alerts (those triggered within the last hour) keyed by job.
  */
+export interface JobMetricAlertEventView {
+  id: string;
+  job: string;
+  counter: string | null;
+  kind: AlertKind;
+  message: string;
+  observedValue: number | null;
+  baselineValue: number | null;
+  triggeredAt: number;
+  notifiedUserCount: number;
+  acknowledgedAt: number | null;
+  acknowledgedById: string | null;
+  snoozedUntil: number | null;
+  snoozedById: string | null;
+}
+
 export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
-  events: Array<{
-    id: string;
-    job: string;
-    counter: string | null;
-    kind: AlertKind;
-    message: string;
-    observedValue: number | null;
-    baselineValue: number | null;
-    triggeredAt: number;
-    notifiedUserCount: number;
-  }>;
+  events: JobMetricAlertEventView[];
   activeByJob: Record<string, number>;
 }> {
-  const cutoff = new Date(nowFn() - 24 * HOUR_MS);
+  const now = nowFn();
+  const cutoff = new Date(now - 24 * HOUR_MS);
   const rows = await db
     .select()
     .from(jobMetricAlertEvents)
     .where(gte(jobMetricAlertEvents.triggeredAt, cutoff))
     .orderBy(desc(jobMetricAlertEvents.triggeredAt));
 
-  const activeCutoff = nowFn() - HOUR_MS;
+  const activeCutoff = now - HOUR_MS;
   const activeByJob: Record<string, number> = {};
   const events = rows.slice(0, limit).map((r) => {
     const ts = new Date(r.triggeredAt).getTime();
-    if (ts >= activeCutoff) activeByJob[r.job] = (activeByJob[r.job] ?? 0) + 1;
+    const ackTs = r.acknowledgedAt ? new Date(r.acknowledgedAt).getTime() : null;
+    const snoozeTs = r.snoozedUntil ? new Date(r.snoozedUntil).getTime() : null;
+    // Acknowledged or actively snoozed events are no longer "active"
+    // for the banner — they were handled.
+    const isHandled = ackTs !== null || (snoozeTs !== null && snoozeTs > now);
+    if (ts >= activeCutoff && !isHandled) {
+      activeByJob[r.job] = (activeByJob[r.job] ?? 0) + 1;
+    }
     return {
       id: r.id,
       job: r.job,
@@ -469,9 +525,89 @@ export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
       baselineValue: r.baselineValue !== null ? toNumber(r.baselineValue as unknown as string, 0) : null,
       triggeredAt: ts,
       notifiedUserCount: r.notifiedUserCount,
+      acknowledgedAt: ackTs,
+      acknowledgedById: r.acknowledgedById ?? null,
+      snoozedUntil: snoozeTs,
+      snoozedById: r.snoozedById ?? null,
     };
   });
   return { events, activeByJob };
+}
+
+/**
+ * Mark an alert event as acknowledged. Hides it from the active banner
+ * while preserving the row in the 24h history. Returns the updated row
+ * (or null if not found).
+ */
+export async function acknowledgeJobMetricAlertEvent(
+  id: string,
+  userId: string,
+): Promise<JobMetricAlertEventView | null> {
+  const now = new Date(nowFn());
+  const [updated] = await db
+    .update(jobMetricAlertEvents)
+    .set({ acknowledgedAt: now, acknowledgedById: userId })
+    .where(eq(jobMetricAlertEvents.id, id))
+    .returning();
+  if (!updated) return null;
+  return {
+    id: updated.id,
+    job: updated.job,
+    counter: updated.counter,
+    kind: (updated.kind === "stall" ? "stall" : "spike") as AlertKind,
+    message: updated.message,
+    observedValue: updated.observedValue !== null ? toNumber(updated.observedValue as unknown as string, 0) : null,
+    baselineValue: updated.baselineValue !== null ? toNumber(updated.baselineValue as unknown as string, 0) : null,
+    triggeredAt: new Date(updated.triggeredAt).getTime(),
+    notifiedUserCount: updated.notifiedUserCount,
+    acknowledgedAt: updated.acknowledgedAt ? new Date(updated.acknowledgedAt).getTime() : null,
+    acknowledgedById: updated.acknowledgedById ?? null,
+    snoozedUntil: updated.snoozedUntil ? new Date(updated.snoozedUntil).getTime() : null,
+    snoozedById: updated.snoozedById ?? null,
+  };
+}
+
+/**
+ * Snooze an alert (and by extension, future re-notifications for the
+ * same job/counter/kind) for `hours` hours. Also marks the event as
+ * acknowledged so it disappears from the active banner.
+ */
+export async function snoozeJobMetricAlertEvent(
+  id: string,
+  userId: string,
+  hours: number,
+): Promise<JobMetricAlertEventView | null> {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw new Error("Snooze duration must be a positive number of hours");
+  }
+  const now = nowFn();
+  const snoozedUntil = new Date(now + hours * HOUR_MS);
+  const [updated] = await db
+    .update(jobMetricAlertEvents)
+    .set({
+      snoozedUntil,
+      snoozedById: userId,
+      acknowledgedAt: new Date(now),
+      acknowledgedById: userId,
+    })
+    .where(eq(jobMetricAlertEvents.id, id))
+    .returning();
+  if (!updated) return null;
+  return {
+    id: updated.id,
+    job: updated.job,
+    counter: updated.counter,
+    kind: (updated.kind === "stall" ? "stall" : "spike") as AlertKind,
+    message: updated.message,
+    observedValue: updated.observedValue !== null ? toNumber(updated.observedValue as unknown as string, 0) : null,
+    baselineValue: updated.baselineValue !== null ? toNumber(updated.baselineValue as unknown as string, 0) : null,
+    triggeredAt: new Date(updated.triggeredAt).getTime(),
+    notifiedUserCount: updated.notifiedUserCount,
+    acknowledgedAt: updated.acknowledgedAt ? new Date(updated.acknowledgedAt).getTime() : null,
+    acknowledgedById: updated.acknowledgedById ?? null,
+    snoozedUntil: updated.snoozedUntil ? new Date(updated.snoozedUntil).getTime() : null,
+    snoozedById: updated.snoozedById ?? null,
+  };
 }
 
 export async function listJobMetricAlertRules(): Promise<JobMetricAlertRule[]> {
