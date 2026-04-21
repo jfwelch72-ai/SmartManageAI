@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Inbox, Loader2, Trash2, Mail, FilterX } from "lucide-react";
+import { Inbox, Loader2, Trash2, Mail, FilterX, Search } from "lucide-react";
 import { format } from "date-fns";
 import NotFound from "@/pages/not-found";
 
@@ -46,12 +46,14 @@ export default function AdminEmailOutboxPage() {
   const [recipientFilter, setRecipientFilter] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const messages = data?.messages ?? [];
 
   const filteredMessages = useMemo(() => {
     const recipient = recipientFilter.trim().toLowerCase();
     const subject = subjectFilter.trim().toLowerCase();
+    const search = searchQuery.trim().toLowerCase();
     return messages.filter((msg) => {
       if (sourceFilter !== "all" && msg.source !== sourceFilter) return false;
       if (subject && !(msg.subject ?? "").toLowerCase().includes(subject)) return false;
@@ -65,19 +67,35 @@ export default function AdminEmailOutboxPage() {
           .toLowerCase();
         if (!haystack.includes(recipient)) return false;
       }
+      if (search) {
+        const searchHaystack = [
+          msg.subject ?? "",
+          msg.from ?? "",
+          ...(msg.to ?? []),
+          ...(msg.cc ?? []),
+          ...(msg.bcc ?? []),
+          msg.replyTo ?? "",
+          msg.text ?? "",
+        ]
+          .join("\n")
+          .toLowerCase();
+        if (!searchHaystack.includes(search)) return false;
+      }
       return true;
     });
-  }, [messages, recipientFilter, subjectFilter, sourceFilter]);
+  }, [messages, recipientFilter, subjectFilter, sourceFilter, searchQuery]);
 
   const filtersActive =
     recipientFilter.trim() !== "" ||
     subjectFilter.trim() !== "" ||
-    sourceFilter !== "all";
+    sourceFilter !== "all" ||
+    searchQuery.trim() !== "";
 
   const clearFilters = () => {
     setRecipientFilter("");
     setSubjectFilter("");
     setSourceFilter("all");
+    setSearchQuery("");
   };
 
   const clearMutation = useMutation({
@@ -141,7 +159,22 @@ export default function AdminEmailOutboxPage() {
       </div>
 
       <Card data-testid="card-filters">
-        <CardContent className="py-4 grid gap-3 md:grid-cols-[1fr_1fr_180px_auto] md:items-end">
+        <CardContent className="py-4 space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="filter-search" className="text-xs">Search</Label>
+            <div className="relative">
+              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                id="filter-search"
+                placeholder="Search subject, from, recipients, and body…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+                data-testid="input-filter-search"
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_180px_auto] md:items-end">
           <div className="space-y-1.5">
             <Label htmlFor="filter-recipient" className="text-xs">Recipient</Label>
             <Input
@@ -187,6 +220,7 @@ export default function AdminEmailOutboxPage() {
             <FilterX className="h-4 w-4 mr-2" />
             Reset
           </Button>
+          </div>
         </CardContent>
       </Card>
 
