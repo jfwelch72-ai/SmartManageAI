@@ -106,7 +106,7 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function composeEmailContent(notification: NotificationRecord): {
+export function composeEmailContent(notification: NotificationRecord): {
   subject: string;
   body: string;
   actionUrl?: string;
