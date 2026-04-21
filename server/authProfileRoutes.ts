@@ -449,7 +449,7 @@ import {
   ssoConfigurations, userSessions, activityLog
 } from "@shared/schema";
 import {
-  requireAuth, hashPassword, verifyPassword, generateToken,
+  requireAuth, hashPassword, verifyPassword, generateToken, invalidateAuthCache,
   setAuthCookie, clearAuthCookie, type AuthRequest
 } from "./auth";
 import { authLimiter, sensitiveLimiter } from "./rateLimiter";
@@ -777,9 +777,14 @@ const upload = multer({
         return;
       }
 
-      // Find or create dev sandbox organization (for non-SUPER_ADMIN roles)
+      // Find or create dev sandbox organization. SUPER_ADMIN can opt in to
+      // being linked to the sandbox via `linkOrg: true` so they can exercise
+      // org-scoped UIs (e.g. /settings/* — Task #762 quiet-hours digest test
+      // for the Notification Preferences page) that would otherwise redirect
+      // an org-less SUPER_ADMIN to /onboarding.
+      const linkOrg = req.body?.linkOrg === true;
       let devOrg = null;
-      if (role !== "SUPER_ADMIN") {
+      if (role !== "SUPER_ADMIN" || linkOrg) {
         [devOrg] = await db
           .select()
           .from(organizations)
@@ -822,9 +827,14 @@ const upload = multer({
           role: role as any,
           isActive: true,
           passwordHash,
-          organizationId: role === "SUPER_ADMIN" ? null : devOrg?.id,
+          organizationId: role === "SUPER_ADMIN" && !linkOrg ? null : devOrg?.id,
         }).returning();
         logInfo(`[DEV] Created test user: ${testEmail} (${role})`);
+      } else if (role === "SUPER_ADMIN" && linkOrg && !testUser.organizationId && devOrg) {
+        // Existing dev SUPER_ADMIN was created without an org; backfill so
+        // /settings (and other org-scoped UIs) don't redirect to /onboarding.
+        await db.update(users).set({ organizationId: devOrg.id }).where(eq(users.id, testUser.id));
+        testUser.organizationId = devOrg.id;
       }
 
       const token = generateToken(testUser.id, testUser.tokenVersion);
@@ -1012,6 +1022,12 @@ const upload = multer({
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }
+
+      // Bust the requireAuth user cache so the very next /api/auth/me reflects
+      // the change (Task #762: the e2e quiet-hours digest test patches the
+      // user then immediately reloads the page; without this an 8s-stale
+      // cached user would be served).
+      invalidateAuthCache(userId);
 
       await logUpdate(userId, "users", userId, req.user, updateData, req as any);
 
