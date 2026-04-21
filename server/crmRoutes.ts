@@ -1806,6 +1806,34 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
       newValue: JSON.stringify({ firstName: updated.firstName, lastName: updated.lastName }),
     });
 
+    // Task #709: notify the new owner (in-app + email) when the contact owner
+    // actually changes to a different active user. Skip self-assignment, no-op
+    // updates, and clears (ownerId -> null).
+    if (
+      ownerProvided &&
+      rawOwnerId &&
+      rawOwnerId !== existing.ownerId &&
+      rawOwnerId !== req.user!.id
+    ) {
+      const reassignerName = [req.user!.firstName, req.user!.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || req.user!.email || "A teammate";
+      const contactName = [updated.firstName, updated.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "a contact";
+      insertNotification({
+        userId: rawOwnerId,
+        organizationId: orgId ?? undefined,
+        type: "CRM_CONTACT_REASSIGNED",
+        title: "A CRM contact was assigned to you",
+        message: `${reassignerName} assigned ${contactName} to you.`,
+        relatedEntityId: updated.id,
+        relatedEntityType: "CRM_CONTACT",
+      }).catch(() => undefined);
+    }
+
     const customFields = orgId ? await getCustomFieldsMap(orgId, "CONTACT", updated.id) : {};
     res.json({ ...updated, customFields });
   } catch (error) {
@@ -1848,6 +1876,14 @@ router.post(
 
       const scopeConditions: SQL[] = [inArray(crmContacts.id, contactIds)];
       if (shouldFilter && orgId) scopeConditions.push(eq(crmContacts.organizationId, orgId));
+      // Task #709: only touch rows whose owner is actually changing so the
+      // notification count reflects real reassignments (not no-op updates on
+      // contacts the target user already owns).
+      scopeConditions.push(
+        newOwnerId === null
+          ? sql`${crmContacts.ownerId} IS NOT NULL`
+          : sql`${crmContacts.ownerId} IS DISTINCT FROM ${newOwnerId}`,
+      );
 
       const updated = await db
         .update(crmContacts)
@@ -1866,6 +1902,27 @@ router.post(
             newValue: JSON.stringify({ ownerId: newOwnerId }),
           })),
         );
+
+        // Task #709: send a single heads-up notification (in-app + email) to
+        // the new owner summarizing how many contacts were just assigned and
+        // who reassigned them. Skip self-reassignments and clears.
+        if (newOwnerId && newOwnerId !== req.user!.id) {
+          const reassignerName = [req.user!.firstName, req.user!.lastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || req.user!.email || "A teammate";
+          const count = updated.length;
+          const noun = count === 1 ? "contact" : "contacts";
+          insertNotification({
+            userId: newOwnerId,
+            organizationId: orgId ?? undefined,
+            type: "CRM_CONTACT_REASSIGNED",
+            title: `${count} CRM ${noun} assigned to you`,
+            message: `${reassignerName} reassigned ${count} ${noun} to you. Review them in the CRM.`,
+            relatedEntityId: updated[0]?.id ?? null,
+            relatedEntityType: "CRM_CONTACT",
+          }).catch(() => undefined);
+        }
       }
 
       res.json({ updated: updated.length, ownerId: newOwnerId });

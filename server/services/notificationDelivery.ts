@@ -404,6 +404,7 @@ function composeEmailContent(notification: NotificationRecord): {
       INSPECTOR_REPORT: () => `${baseUrl}/daily-inspector-reports`,
       MATERIAL_CERT: () => `${baseUrl}/material-certifications`,
       SURETY_BOND: () => `${baseUrl}/surety-bonds`,
+      CRM_CONTACT: () => `${baseUrl}/crm?tab=contacts&ownerFilter=me`,
       bid: (id) => `${baseUrl}/bids/${id}`,
       project: (id) => `${baseUrl}/projects/${id}`,
       inspection: (id) => `${baseUrl}/inspections/${id}`,

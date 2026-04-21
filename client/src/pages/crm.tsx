@@ -783,12 +783,20 @@ export default function CRMPage() {
         })
         .catch(() => undefined);
     }
-    if (tabParam || newParam || orgId || contactId) {
+    // Task #709: deep-link from the "contact reassigned" notification lands on
+    // the contacts table pre-filtered to the recipient's contacts.
+    const ownerFilterParam = params.get("ownerFilter");
+    if (ownerFilterParam) {
+      setCrmTab("contacts");
+      setContactOwnerFilter(ownerFilterParam);
+    }
+    if (tabParam || newParam || orgId || contactId || ownerFilterParam) {
       const url = new URL(window.location.href);
       url.searchParams.delete("new");
       url.searchParams.delete("organisationId");
       url.searchParams.delete("organizationId");
       url.searchParams.delete("contactId");
+      url.searchParams.delete("ownerFilter");
       window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""));
     }
   }, []);

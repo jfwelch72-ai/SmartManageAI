@@ -96,6 +96,9 @@ export function getNotificationDestination(notification: {
     case "CRM_IDLE_OPPORTUNITY":
       return "/crm";
 
+    case "CRM_CONTACT_REASSIGNED":
+      return "/crm?tab=contacts&ownerFilter=me";
+
     case "TASK_MENTIONED":
       if (relatedEntityId) {
         return `/projects?taskId=${relatedEntityId}`;
