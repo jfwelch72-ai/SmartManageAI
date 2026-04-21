@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { inferTimezoneFromUSState } from "@shared/timezones";
 import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
@@ -636,7 +636,44 @@ export default function CRMPage() {
   const [contactSearch, setContactSearch] = useState("");
   // Task #701: filter contacts table by owner. "all" = no filter, "me" = current
   // user, "__unassigned__" = no owner, otherwise a specific user id.
-  const [contactOwnerFilter, setContactOwnerFilter] = useState<string>("all");
+  // Task #708: persist the selection across visits (per user, via localStorage).
+  const contactOwnerFilterStorageKey = user?.id
+    ? `crm:contactOwnerFilter:${user.id}`
+    : "crm:contactOwnerFilter";
+  const [contactOwnerFilter, setContactOwnerFilterState] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem(contactOwnerFilterStorageKey);
+      if (stored) return stored;
+    } catch {}
+    return "all";
+  });
+  const setContactOwnerFilter = useCallback((value: string) => {
+    setContactOwnerFilterState(value);
+    try {
+      localStorage.setItem(contactOwnerFilterStorageKey, value);
+    } catch {}
+  }, [contactOwnerFilterStorageKey]);
+  // When the auth user becomes available (or changes), pick up that user's
+  // saved selection so the filter sticks across visits even if it was stored
+  // before the user id was known. If we have a value stored under the
+  // anonymous key but nothing yet under the user-scoped key, migrate it so
+  // selections made before auth resolved are not lost.
+  useEffect(() => {
+    try {
+      let stored = localStorage.getItem(contactOwnerFilterStorageKey);
+      if (!stored && contactOwnerFilterStorageKey !== "crm:contactOwnerFilter") {
+        const anon = localStorage.getItem("crm:contactOwnerFilter");
+        if (anon) {
+          localStorage.setItem(contactOwnerFilterStorageKey, anon);
+          stored = anon;
+        }
+      }
+      if (stored && stored !== contactOwnerFilter) {
+        setContactOwnerFilterState(stored);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactOwnerFilterStorageKey]);
   const contactSearchRef = useRef<HTMLInputElement>(null);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
 
