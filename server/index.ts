@@ -13,6 +13,7 @@ import { setCsrfToken, validateCsrf } from "./csrf";
 import { initializeAIScheduler } from "./ai/scheduler";
 import { aiNotesScheduler } from "./aiNotesScheduler";
 import { crmTaskReminderScheduler } from "./crmTaskReminderScheduler";
+import { startCrmCsvImportWorker } from "./crmCsvImportWorker";
 import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
@@ -367,6 +368,12 @@ app.use((req, res, next) => {
         crmTaskReminderScheduler.start();
       } catch (error) {
         logError('Failed to start CRM Task Reminder Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
+      }
+
+      try {
+        startCrmCsvImportWorker();
+      } catch (error) {
+        logError('Failed to start CRM CSV Import worker:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
       logInfo(`Background schedulers ENABLED (${isProduction ? 'production' : 'ENABLE_SCHEDULERS=true'})`);

@@ -48,6 +48,7 @@ import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
 import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistributionLists";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
+import { ensureCrmCsvImportPayloadColumn } from "./ensureCrmCsvImportPayloadColumn";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -105,6 +106,7 @@ const migrations: MigrationStep[] = [
   { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
   { name: "gantt_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensureGanttPdfRenderSamplesTable },
+  { name: "crm_csv_import_payload_column", category: "ADD_COLUMN", fn: ensureCrmCsvImportPayloadColumn },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

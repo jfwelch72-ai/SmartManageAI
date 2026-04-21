@@ -193,7 +193,10 @@ export const crmCsvImportJobs = pgTable("crm_csv_import_jobs", {
   errorRows: integer("error_rows").notNull().default(0),
   // mapping: { csvColumn: "schemaField" }
   mapping: jsonb("mapping").notNull().default({}),
+  // payload: array of raw csv rows queued for processing (cleared once processed)
+  payload: jsonb("payload").notNull().default([]),
   errors: jsonb("errors").notNull().default([]),
+  startedAt: timestamp("started_at"),
   insertedIds: text("inserted_ids").array().notNull().default(sql`ARRAY[]::text[]`),
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),

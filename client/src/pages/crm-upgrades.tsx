@@ -304,7 +304,14 @@ function ReportsPanel() {
 
 function ImportPanel() {
   const { toast } = useToast();
-  const { data: jobs = [] } = useQuery<any[]>({ queryKey: ["/api/crm/csv-imports"] });
+  const { data: jobs = [] } = useQuery<any[]>({
+    queryKey: ["/api/crm/csv-imports"],
+    refetchInterval: (query) => {
+      const data = (query.state.data as any[]) || [];
+      const hasActive = data.some((j) => j?.status === "PENDING" || j?.status === "PROCESSING");
+      return hasActive ? 2000 : false;
+    },
+  });
   const [csvText, setCsvText] = useState("");
   const [entity, setEntity] = useState<string>("CONTACT");
 
@@ -324,17 +331,31 @@ function ImportPanel() {
       headers.forEach((h) => { mapping[h] = h; });
       return apiRequest("POST", "/api/crm/csv-imports", { entityType: entity, mapping, rows, filename: "paste.csv" });
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/crm/csv-imports"] }); setCsvText(""); toast({ title: "Import complete" }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/csv-imports"] });
+      setCsvText("");
+      toast({ title: "Import queued", description: "We'll process the rows in the background — progress will update below." });
+    },
     onError: (e: any) => toast({ title: "Import failed", description: e.message, variant: "destructive" }),
   });
   const revert = useMutation({
     mutationFn: async (id: string) => apiRequest("POST", `/api/crm/csv-imports/${id}/revert`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/csv-imports"] }),
+    onError: async (e: any) => {
+      let description = e?.message || "Revert failed";
+      try {
+        if (e?.response && typeof e.response.json === "function") {
+          const body = await e.response.json();
+          if (body?.error) description = body.error;
+        }
+      } catch {}
+      toast({ title: "Cannot revert", description, variant: "destructive" });
+    },
   });
 
   return (
     <Card>
-      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Paste CSV (with header row). Column names should match field names (e.g. fullName, email, phone).</CardDescription></CardHeader>
+      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Paste CSV (with header row). Column names should match field names (e.g. fullName, email, phone). Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
         <Select value={entity} onValueChange={setEntity}>
           <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
@@ -348,16 +369,34 @@ function ImportPanel() {
         <Button onClick={() => submit.mutate()} disabled={!csvText || submit.isPending} data-testid="button-import"><Upload className="h-4 w-4 mr-1" />Import</Button>
         <div className="pt-3 border-t">
           <h4 className="font-medium mb-2">Recent imports</h4>
-          {(jobs as any[]).map((j) => (
-            <div key={j.id} className="flex items-center justify-between border rounded p-2 mb-2" data-testid={`row-job-${j.id}`}>
-              <div className="text-sm">
-                {j.entityType} · {j.status} · {j.insertedRows ?? 0} inserted, {j.updatedRows ?? 0} updated, {j.skippedRows ?? 0} skipped, {j.errorRows ?? 0} errors
+          {(jobs as any[]).map((j) => {
+            const total = Number(j.totalRows ?? 0);
+            const processed = Number(j.processedRows ?? 0);
+            const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+            const isActive = j.status === "PENDING" || j.status === "PROCESSING";
+            return (
+              <div key={j.id} className="border rounded p-2 mb-2" data-testid={`row-job-${j.id}`}>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm">
+                    <span data-testid={`text-job-status-${j.id}`}>{j.entityType} · {j.status}</span>
+                    {" · "}
+                    <span data-testid={`text-job-counts-${j.id}`}>{j.insertedRows ?? 0} inserted, {j.updatedRows ?? 0} updated, {j.skippedRows ?? 0} skipped, {j.errorRows ?? 0} errors</span>
+                  </div>
+                  {j.status === "COMPLETED" && (
+                    <Button size="sm" variant="outline" onClick={() => revert.mutate(j.id)} data-testid={`button-revert-${j.id}`}>Revert</Button>
+                  )}
+                </div>
+                {isActive && total > 0 && (
+                  <div className="mt-2">
+                    <div className="h-1.5 w-full bg-muted rounded overflow-hidden">
+                      <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} data-testid={`progress-bar-${j.id}`} />
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1" data-testid={`text-job-progress-${j.id}`}>{processed} / {total} rows ({pct}%)</div>
+                  </div>
+                )}
               </div>
-              {j.status === "COMPLETED" && (
-                <Button size="sm" variant="outline" onClick={() => revert.mutate(j.id)} data-testid={`button-revert-${j.id}`}>Revert</Button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
