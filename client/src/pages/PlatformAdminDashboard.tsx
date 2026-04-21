@@ -413,6 +413,18 @@ export default function PlatformAdminDashboard() {
             </CardHeader>
           </Card>
         </Link>
+
+        <Link href="/admin/jobs/metrics">
+          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-jobs-metrics">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Job metrics dashboard
+              </CardTitle>
+              <CardDescription>Rolling 24h trend charts for every tracked background job</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
       </main>
     </div>
