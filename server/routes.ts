@@ -897,6 +897,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Task #734 — clear an active snooze early
+  app.post("/api/admin/metrics/jobs/alerts/events/:id/unsnooze", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const updated = await mod.unsnoozeJobMetricAlertEvent(req.params.id);
+      if (!updated) {
+        res.status(404).json({ error: "Alert event not found" });
+        return;
+      }
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "job_metric_alert_event",
+        entityId: updated.id,
+        newValue: `Cleared snooze on ${updated.job}/${updated.counter ?? "_"}/${updated.kind}`,
+      }, req);
+      res.json(updated);
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
   app.post("/api/admin/metrics/jobs/alerts/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const mod = await import("./utils/jobMetricAlerts");

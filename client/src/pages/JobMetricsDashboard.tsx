@@ -318,8 +318,10 @@ interface AlertEvent {
   notifiedUserCount: number;
   acknowledgedAt: number | null;
   acknowledgedById: string | null;
+  acknowledgedByName: string | null;
   snoozedUntil: number | null;
   snoozedById: string | null;
+  snoozedByName: string | null;
 }
 
 const SNOOZE_OPTIONS: Array<{ hours: number; label: string }> = [
@@ -421,6 +423,20 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
     },
     onError: (err: Error) => {
       toast({ title: "Could not snooze", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const unsnoozeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/metrics/jobs/alerts/events/${id}/unsnooze`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Snooze cleared" });
+      queryClient.invalidateQueries({ queryKey: ALERTS_KEY });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not clear snooze", description: err.message, variant: "destructive" });
     },
   });
 
@@ -711,21 +727,47 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
               <ul className="space-y-1 text-xs text-muted-foreground" data-testid="list-recent-events">
                 {data.events.slice(0, 10).map((e) => {
                   const snoozeActive = e.snoozedUntil !== null && e.snoozedUntil > Date.now();
+                  const ackName = e.acknowledgedByName ?? (e.acknowledgedById ? "unknown admin" : null);
+                  const snoozeName = e.snoozedByName ?? (e.snoozedById ? "unknown admin" : null);
                   return (
-                    <li key={e.id} data-testid={`text-event-${e.id}`}>
-                      <span className="font-mono">{e.job}</span>
-                      {e.counter ? ` · ${e.counter}` : ""} · {e.kind} · {formatRelative(e.triggeredAt)} · notified {e.notifiedUserCount} admin{e.notifiedUserCount === 1 ? "" : "s"}
-                      {e.acknowledgedAt && (
-                        <Badge variant="secondary" className="ml-1" data-testid={`badge-ack-${e.id}`}>
-                          acknowledged
-                        </Badge>
-                      )}
+                    <li key={e.id} data-testid={`text-event-${e.id}`} className="flex items-start gap-2 flex-wrap">
+                      <span className="flex-1 min-w-[12rem]">
+                        <span className="font-mono">{e.job}</span>
+                        {e.counter ? ` · ${e.counter}` : ""} · {e.kind} · {formatRelative(e.triggeredAt)} · notified {e.notifiedUserCount} admin{e.notifiedUserCount === 1 ? "" : "s"}
+                        {e.acknowledgedAt && (
+                          <Badge
+                            variant="secondary"
+                            className="ml-1"
+                            data-testid={`badge-ack-${e.id}`}
+                            title={ackName ? `Acknowledged by ${ackName} at ${new Date(e.acknowledgedAt).toLocaleString()}` : undefined}
+                          >
+                            acknowledged{ackName ? ` by ${ackName}` : ""} · {formatRelative(e.acknowledgedAt)}
+                          </Badge>
+                        )}
+                        {snoozeActive && (
+                          <Badge
+                            variant="outline"
+                            className="ml-1"
+                            data-testid={`badge-snooze-${e.id}`}
+                            title={snoozeName ? `Snoozed by ${snoozeName} until ${new Date(e.snoozedUntil!).toLocaleString()}` : undefined}
+                          >
+                            snoozed{snoozeName ? ` by ${snoozeName}` : ""} until {new Date(e.snoozedUntil!).toLocaleTimeString()}
+                          </Badge>
+                        )}
+                        {" — "}{e.message}
+                      </span>
                       {snoozeActive && (
-                        <Badge variant="outline" className="ml-1" data-testid={`badge-snooze-${e.id}`}>
-                          snoozed until {new Date(e.snoozedUntil!).toLocaleTimeString()}
-                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs"
+                          onClick={() => unsnoozeMutation.mutate(e.id)}
+                          disabled={unsnoozeMutation.isPending}
+                          data-testid={`button-unsnooze-${e.id}`}
+                        >
+                          Unsnooze
+                        </Button>
                       )}
-                      {" — "}{e.message}
                     </li>
                   );
                 })}

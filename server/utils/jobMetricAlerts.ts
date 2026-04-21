@@ -22,15 +22,27 @@
 
 import { db } from "../db";
 import { and, desc, eq, gt, gte } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   jobMetricAlertEvents,
   jobMetricAlertRules,
   users,
   type JobMetricAlertRule,
 } from "@shared/schema";
+
 import { getAllJobMetrics, type JobCounters } from "./jobMetrics";
 import { logError, logInfo } from "./logger";
 import { insertNotifications } from "../services/notificationService";
+
+function buildDisplayName(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+  email: string | null | undefined,
+): string | null {
+  const full = `${firstName ?? ""} ${lastName ?? ""}`.trim();
+  if (full) return full;
+  return email ?? null;
+}
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -487,8 +499,10 @@ export interface JobMetricAlertEventView {
   notifiedUserCount: number;
   acknowledgedAt: number | null;
   acknowledgedById: string | null;
+  acknowledgedByName: string | null;
   snoozedUntil: number | null;
   snoozedById: string | null;
+  snoozedByName: string | null;
 }
 
 export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
@@ -497,15 +511,27 @@ export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
 }> {
   const now = nowFn();
   const cutoff = new Date(now - 24 * HOUR_MS);
+  const ackUser = alias(users, "ack_user");
+  const snoozeUser = alias(users, "snooze_user");
   const rows = await db
-    .select()
+    .select({
+      event: jobMetricAlertEvents,
+      ackFirst: ackUser.firstName,
+      ackLast: ackUser.lastName,
+      ackEmail: ackUser.email,
+      snoozeFirst: snoozeUser.firstName,
+      snoozeLast: snoozeUser.lastName,
+      snoozeEmail: snoozeUser.email,
+    })
     .from(jobMetricAlertEvents)
+    .leftJoin(ackUser, eq(ackUser.id, jobMetricAlertEvents.acknowledgedById))
+    .leftJoin(snoozeUser, eq(snoozeUser.id, jobMetricAlertEvents.snoozedById))
     .where(gte(jobMetricAlertEvents.triggeredAt, cutoff))
     .orderBy(desc(jobMetricAlertEvents.triggeredAt));
 
   const activeCutoff = now - HOUR_MS;
   const activeByJob: Record<string, number> = {};
-  const events = rows.slice(0, limit).map((r) => {
+  const events = rows.slice(0, limit).map(({ event: r, ackFirst, ackLast, ackEmail, snoozeFirst, snoozeLast, snoozeEmail }) => {
     const ts = new Date(r.triggeredAt).getTime();
     const ackTs = r.acknowledgedAt ? new Date(r.acknowledgedAt).getTime() : null;
     const snoozeTs = r.snoozedUntil ? new Date(r.snoozedUntil).getTime() : null;
@@ -527,8 +553,10 @@ export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
       notifiedUserCount: r.notifiedUserCount,
       acknowledgedAt: ackTs,
       acknowledgedById: r.acknowledgedById ?? null,
+      acknowledgedByName: r.acknowledgedById ? buildDisplayName(ackFirst, ackLast, ackEmail) : null,
       snoozedUntil: snoozeTs,
       snoozedById: r.snoozedById ?? null,
+      snoozedByName: r.snoozedById ? buildDisplayName(snoozeFirst, snoozeLast, snoozeEmail) : null,
     };
   });
   return { events, activeByJob };
@@ -539,17 +567,21 @@ export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
  * while preserving the row in the 24h history. Returns the updated row
  * (or null if not found).
  */
-export async function acknowledgeJobMetricAlertEvent(
-  id: string,
-  userId: string,
-): Promise<JobMetricAlertEventView | null> {
-  const now = new Date(nowFn());
-  const [updated] = await db
-    .update(jobMetricAlertEvents)
-    .set({ acknowledgedAt: now, acknowledgedById: userId })
-    .where(eq(jobMetricAlertEvents.id, id))
-    .returning();
-  if (!updated) return null;
+async function lookupUserName(userId: string | null | undefined): Promise<string | null> {
+  if (!userId) return null;
+  const [row] = await db
+    .select({ firstName: users.firstName, lastName: users.lastName, email: users.email })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!row) return null;
+  return buildDisplayName(row.firstName, row.lastName, row.email);
+}
+
+async function hydrateEventRow(updated: typeof jobMetricAlertEvents.$inferSelect): Promise<JobMetricAlertEventView> {
+  const [acknowledgedByName, snoozedByName] = await Promise.all([
+    lookupUserName(updated.acknowledgedById),
+    lookupUserName(updated.snoozedById),
+  ]);
   return {
     id: updated.id,
     job: updated.job,
@@ -562,9 +594,25 @@ export async function acknowledgeJobMetricAlertEvent(
     notifiedUserCount: updated.notifiedUserCount,
     acknowledgedAt: updated.acknowledgedAt ? new Date(updated.acknowledgedAt).getTime() : null,
     acknowledgedById: updated.acknowledgedById ?? null,
+    acknowledgedByName,
     snoozedUntil: updated.snoozedUntil ? new Date(updated.snoozedUntil).getTime() : null,
     snoozedById: updated.snoozedById ?? null,
+    snoozedByName,
   };
+}
+
+export async function acknowledgeJobMetricAlertEvent(
+  id: string,
+  userId: string,
+): Promise<JobMetricAlertEventView | null> {
+  const now = new Date(nowFn());
+  const [updated] = await db
+    .update(jobMetricAlertEvents)
+    .set({ acknowledgedAt: now, acknowledgedById: userId })
+    .where(eq(jobMetricAlertEvents.id, id))
+    .returning();
+  if (!updated) return null;
+  return hydrateEventRow(updated);
 }
 
 /**
@@ -593,21 +641,26 @@ export async function snoozeJobMetricAlertEvent(
     .where(eq(jobMetricAlertEvents.id, id))
     .returning();
   if (!updated) return null;
-  return {
-    id: updated.id,
-    job: updated.job,
-    counter: updated.counter,
-    kind: (updated.kind === "stall" ? "stall" : "spike") as AlertKind,
-    message: updated.message,
-    observedValue: updated.observedValue !== null ? toNumber(updated.observedValue as unknown as string, 0) : null,
-    baselineValue: updated.baselineValue !== null ? toNumber(updated.baselineValue as unknown as string, 0) : null,
-    triggeredAt: new Date(updated.triggeredAt).getTime(),
-    notifiedUserCount: updated.notifiedUserCount,
-    acknowledgedAt: updated.acknowledgedAt ? new Date(updated.acknowledgedAt).getTime() : null,
-    acknowledgedById: updated.acknowledgedById ?? null,
-    snoozedUntil: updated.snoozedUntil ? new Date(updated.snoozedUntil).getTime() : null,
-    snoozedById: updated.snoozedById ?? null,
-  };
+  return hydrateEventRow(updated);
+}
+
+/**
+ * Clear an active snooze early so the alert can re-fire if its
+ * underlying condition still holds. The acknowledgement record is
+ * preserved so the dashboard still shows who handled it originally.
+ */
+export async function unsnoozeJobMetricAlertEvent(
+  id: string,
+): Promise<JobMetricAlertEventView | null> {
+  // Only clear `snoozedUntil` — keep `snoozedById` so the dashboard
+  // and audit trail still show who originally snoozed the alert.
+  const [updated] = await db
+    .update(jobMetricAlertEvents)
+    .set({ snoozedUntil: null })
+    .where(eq(jobMetricAlertEvents.id, id))
+    .returning();
+  if (!updated) return null;
+  return hydrateEventRow(updated);
 }
 
 export async function listJobMetricAlertRules(): Promise<JobMetricAlertRule[]> {
