@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, RotateCcw, Activity, Clock, FileText, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Bell, BellOff, Save, Plus, Trash2, Check, X, Pencil } from "lucide-react";
+import { ArrowLeft, RefreshCw, RotateCcw, Activity, Clock, FileText, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Bell, BellOff, Save, Plus, Trash2, Check, X, Pencil, Send } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
@@ -72,7 +72,13 @@ interface GanttPdfRecipientConfig {
   envRecipients: string[];
   rateLimitMs: number;
   disconnectThresholdMs: number;
-  lastSent: { queueFull: number | null; browserDisconnected: number | null };
+  lastSent: {
+    queueFull: number | null;
+    browserDisconnected: number | null;
+    queueDrained?: number | null;
+    browserReconnected?: number | null;
+    test?: number | null;
+  };
 }
 
 interface GanttPdfAlertRecipientRow {
@@ -802,6 +808,28 @@ function AlertRecipientsCard({
     },
   });
 
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/gantt-pdf/alert-recipients/test");
+      return res.json() as Promise<{
+        ok: boolean;
+        recipientCount: number;
+        recipients: string[];
+        sentAt: number;
+      }>;
+    },
+    onSuccess: (result) => {
+      invalidateAll();
+      toast({
+        title: "Test alert sent",
+        description: `Delivered to ${result.recipientCount} recipient${result.recipientCount === 1 ? "" : "s"}.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to send test alert", description: err.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("DELETE", `/api/admin/gantt-pdf/alert-recipients/${id}`);
@@ -832,9 +860,23 @@ function AlertRecipientsCard({
   return (
     <Card data-testid="card-alert-recipients">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bell className="h-4 w-4" /> Alert recipients
-        </CardTitle>
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-4 w-4" /> Alert recipients
+            </CardTitle>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => testMutation.mutate()}
+            disabled={testMutation.isPending || !cfg || cfg.recipients.length === 0}
+            data-testid="button-send-test-alert"
+          >
+            <Send className={`h-4 w-4 mr-1 ${testMutation.isPending ? "animate-pulse" : ""}`} />
+            Send test alert
+          </Button>
+        </div>
         <CardDescription>
           Queue-full and browser-disconnect alerts go to these emails. If no
           recipients are configured here, the system falls back to the{" "}
@@ -1054,6 +1096,12 @@ function AlertRecipientsCard({
                 <dt className="text-muted-foreground">Last disconnect alert</dt>
                 <dd className="font-medium" data-testid="text-last-disconnect">
                   {formatRelative(cfg.lastSent.browserDisconnected)}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Last test alert</dt>
+                <dd className="font-medium" data-testid="text-last-test-alert">
+                  {formatRelative(cfg.lastSent.test ?? null)}
                 </dd>
               </div>
             </dl>

@@ -228,6 +228,7 @@ import {
   addGanttPdfAlertRecipient,
   updateGanttPdfAlertRecipient,
   deleteGanttPdfAlertRecipient,
+  sendGanttPdfTestAlert,
 } from "./gantt-pdf-alerts";
 import { notifications } from "@shared/schema";
 import { sendNotificationEmail } from "./email";
@@ -1486,6 +1487,28 @@ router.patch("/admin/gantt-pdf/alert-recipients/:id", requireAuth, requireRole("
       }
       throw err;
     }
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/admin/gantt-pdf/alert-recipients/test", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const triggeredBy = req.user?.email || req.user?.id || null;
+    const result = await sendGanttPdfTestAlert({ triggeredBy });
+    if (result.recipientCount === 0) {
+      return res.status(409).json({
+        error: "No recipients are currently configured. Add a recipient, set GANTT_PDF_ALERT_EMAILS, or ensure an active super admin exists.",
+        recipientCount: 0,
+        sentAt: result.sentAt,
+      });
+    }
+    res.json({
+      ok: true,
+      recipientCount: result.recipientCount,
+      recipients: result.recipients,
+      sentAt: result.sentAt,
+    });
   } catch (error) {
     next(error);
   }

@@ -15,7 +15,8 @@ type AlertKind =
   | "queue_full"
   | "browser_disconnected"
   | "queue_drained"
-  | "browser_reconnected";
+  | "browser_reconnected"
+  | "test_alert";
 
 interface AlertState {
   lastSentAt: Map<AlertKind, number>;
@@ -26,6 +27,7 @@ interface AlertState {
   browserDisconnectAlertActive: boolean;
   browserDisconnectAlertStartedAt: number | null;
   monitorTimer: NodeJS.Timeout | null;
+  lastTestSentAt: number | null;
 }
 
 const state: AlertState = {
@@ -37,6 +39,7 @@ const state: AlertState = {
   browserDisconnectAlertActive: false,
   browserDisconnectAlertStartedAt: null,
   monitorTimer: null,
+  lastTestSentAt: null,
 };
 
 function parseEnvRecipients(): string[] {
@@ -155,6 +158,7 @@ export async function getGanttPdfAlertConfig(): Promise<{
     browserDisconnected: number | null;
     queueDrained: number | null;
     browserReconnected: number | null;
+    test: number | null;
   };
 }> {
   const envEmails = parseEnvRecipients();
@@ -199,6 +203,7 @@ export async function getGanttPdfAlertConfig(): Promise<{
       browserDisconnected: state.lastSentAt.get("browser_disconnected") ?? null,
       queueDrained: state.lastSentAt.get("queue_drained") ?? null,
       browserReconnected: state.lastSentAt.get("browser_reconnected") ?? null,
+      test: state.lastTestSentAt,
     },
   };
 }
@@ -440,6 +445,61 @@ function buildBrowserReconnectedEmail(durationMs: number): {
   return { subject, text, html };
 }
 
+function buildTestAlertEmail(triggeredBy: string | null): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const subject = "[TEST] Gantt PDF alert recipients verification";
+  const who = triggeredBy ? ` by ${triggeredBy}` : "";
+  const text =
+    `This is a TEST alert from the Gantt PDF health admin page${who}.\n\n` +
+    `If you received this email and/or in-app notification, you are correctly ` +
+    `configured to receive real Gantt PDF outage alerts (queue-full, browser-disconnected, etc.).\n\n` +
+    `No action is required. Real alert cooldowns were not affected by this test.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px;">
+      <h2 style="color:#2563eb;">[TEST] Gantt PDF alert recipients verification</h2>
+      <p>This is a <strong>TEST</strong> alert from the Gantt PDF health admin page${who ? ` (triggered${who})` : ""}.</p>
+      <p>If you received this email and/or in-app notification, you are correctly
+        configured to receive real Gantt PDF outage alerts (queue-full,
+        browser-disconnected, etc.).</p>
+      <p style="color:#6b7280;font-size:12px;">No action is required. Real alert
+        cooldowns were not affected by this test.</p>
+    </div>`;
+  return { subject, text, html };
+}
+
+export async function sendGanttPdfTestAlert(options?: {
+  triggeredBy?: string | null;
+}): Promise<{
+  recipientCount: number;
+  recipients: string[];
+  sentAt: number;
+}> {
+  const recipients = await getRecipients();
+  const now = Date.now();
+  if (recipients.length === 0) {
+    logInfo("Gantt PDF test alert skipped: no recipients configured", {});
+    return { recipientCount: 0, recipients: [], sentAt: now };
+  }
+  const { subject, text, html } = buildTestAlertEmail(options?.triggeredBy ?? null);
+  logInfo("Sending Gantt PDF test alert", {
+    recipientCount: recipients.length,
+    triggeredBy: options?.triggeredBy ?? null,
+  });
+  // Bypass per-kind throttle: dispatchAlert does not consult lastSentAt, and
+  // we deliberately do not call markSent() so real alert cooldowns are not
+  // reset by this verification.
+  await dispatchAlert("test_alert", subject, text, html);
+  state.lastTestSentAt = now;
+  return {
+    recipientCount: recipients.length,
+    recipients: recipients.map((r) => r.email),
+    sentAt: now,
+  };
+}
+
 export function reportGanttPdfQueueFull(): void {
   const now = Date.now();
   if (!shouldSend("queue_full", now)) return;
@@ -600,4 +660,5 @@ export function __resetGanttPdfAlertStateForTests(): void {
   state.queueAlertStartedAt = null;
   state.browserDisconnectAlertActive = false;
   state.browserDisconnectAlertStartedAt = null;
+  state.lastTestSentAt = null;
 }
