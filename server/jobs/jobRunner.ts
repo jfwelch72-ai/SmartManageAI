@@ -46,6 +46,7 @@ let projectGeocodeTask: ReturnType<typeof cron.schedule> | null = null;
 let crmSlaBreachTask: ReturnType<typeof cron.schedule> | null = null;
 let crmIdleAutomationTask: ReturnType<typeof cron.schedule> | null = null;
 let crmBirthdayDigestTask: ReturnType<typeof cron.schedule> | null = null;
+let crmBirthdayDailyTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -273,7 +274,19 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, and project geocoding schedulers)");
+  // Task #693: daily morning email reminder routed to each contact's owner
+  // (createdById) so account managers see today's birthdays without having to
+  // open the CRM. Per-user opt-in/opt-out is handled by the existing
+  // notificationTypePrefs (email channel for REMINDER notifications).
+  crmBirthdayDailyTask = cron.schedule("0 7 * * *", async () => {
+    try {
+      await processCrmContactBirthdayDailyDigest();
+    } catch (err) {
+      logError("CRM contact birthday daily digest failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, and daily CRM birthday email schedulers)");
 }
 
 export function stopJobRunner() {
@@ -373,6 +386,10 @@ export function stopJobRunner() {
     crmBirthdayDigestTask.stop();
     crmBirthdayDigestTask = null;
   }
+  if (crmBirthdayDailyTask) {
+    crmBirthdayDailyTask.stop();
+    crmBirthdayDailyTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -401,6 +418,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   crm_sla_breaches:    { fn: () => processCrmSlaBreaches(),            description: "Flag CRM stage SLA breaches across all orgs",         schedule: "*/5 * * * *" },
   crm_idle_automations:{ fn: () => processCrmIdleAutomations(),        description: "Tick CRM automation engine for IDLE_DAYS triggers",   schedule: "*/10 * * * *" },
   crm_birthday_digest: { fn: () => processCrmContactBirthdayDigest(),  description: "Send weekly CRM contact birthday digest per org",     schedule: "0 8 * * 1" },
+  crm_birthday_daily:  { fn: () => processCrmContactBirthdayDailyDigest(), description: "Daily morning email reminder of today's CRM contact birthdays to contact owners", schedule: "0 7 * * *" },
 };
 
 async function processOutbox() {
@@ -2138,5 +2156,203 @@ async function processCrmContactBirthdayDigest() {
 
   if (totalDigests > 0) {
     logInfo("CRM contact birthday digest sent", { notifications: totalDigests });
+  }
+}
+
+// Task #693: daily morning email reminder routed to each contact's owner so
+// account managers see today's birthdays even when they aren't in the app.
+// Recipients are the contact's createdById ("owner"); contacts with no owner
+// fall back to the org's admins/managers/estimators. Per-user opt-in/opt-out
+// is honoured automatically by deliverNotification, which only sends email
+// when the user has the email channel enabled for REMINDER notifications in
+// notificationTypePrefs / notificationChannelPrefs.
+async function processCrmContactBirthdayDailyDigest() {
+  const orgsResult = await db.execute(
+    sql`SELECT DISTINCT organization_id AS id FROM crm_contacts WHERE birthday IS NOT NULL AND is_active = true`,
+  );
+  const orgs = (orgsResult.rows || []) as Array<{ id: string }>;
+  if (orgs.length === 0) return;
+
+  const today = new Date();
+  const todayY = today.getFullYear();
+  const todayM = today.getMonth() + 1;
+  const todayD = today.getDate();
+  // Include the next 2 days as a gentle heads-up so owners can prepare
+  // (e.g. send a card). Today still appears prominently in the digest.
+  const horizonDays = 2;
+
+  let totalDigests = 0;
+
+  for (const org of orgs) {
+    try {
+      const contacts = await db
+        .select({
+          id: crmContacts.id,
+          firstName: crmContacts.firstName,
+          lastName: crmContacts.lastName,
+          birthday: crmContacts.birthday,
+          createdById: crmContacts.createdById,
+          orgName: crmOrganisations.name,
+        })
+        .from(crmContacts)
+        .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmContacts.organisationId))
+        .where(and(
+          eq(crmContacts.organizationId, org.id),
+          isNotNull(crmContacts.birthday),
+          eq(crmContacts.isActive, true),
+        ));
+
+      type Item = { name: string; orgName: string | null; daysUntil: number; monthDay: string; ownerId: string | null };
+      const matching: Item[] = [];
+      for (const c of contacts) {
+        const bd = c.birthday ? String(c.birthday) : null;
+        const m = bd ? /^(\d{4})-(\d{2})-(\d{2})/.exec(bd) : null;
+        if (!m) continue;
+        const month = parseInt(m[2], 10);
+        const day = parseInt(m[3], 10);
+        if (!month || !day) continue;
+        const todayDate = new Date(todayY, todayM - 1, todayD);
+        let next = new Date(todayY, month - 1, day);
+        if (next < todayDate) next = new Date(todayY + 1, month - 1, day);
+        const diffDays = Math.round((next.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays < 0 || diffDays > horizonDays) continue;
+        matching.push({
+          name: `${c.firstName} ${c.lastName}`.trim(),
+          orgName: c.orgName ?? null,
+          daysUntil: diffDays,
+          monthDay: `${month}/${day}`,
+          ownerId: c.createdById ?? null,
+        });
+      }
+
+      if (matching.length === 0) continue;
+
+      // Group items by owner. Items with no owner go to the org-wide bucket
+      // (admins / managers / estimators) so they aren't dropped silently.
+      const byOwner = new Map<string, Item[]>();
+      const orphanItems: Item[] = [];
+      for (const item of matching) {
+        if (item.ownerId) {
+          const arr = byOwner.get(item.ownerId) ?? [];
+          arr.push(item);
+          byOwner.set(item.ownerId, arr);
+        } else {
+          orphanItems.push(item);
+        }
+      }
+
+      // Drop owner buckets whose items don't include a birthday today; the
+      // daily digest is meant to surface today's birthdays specifically, and
+      // owners with only +1/+2-day reminders shouldn't be emailed every
+      // morning leading up to the date.
+      for (const [ownerId, items] of Array.from(byOwner.entries())) {
+        if (!items.some((i) => i.daysUntil === 0)) {
+          byOwner.delete(ownerId);
+        }
+      }
+      const orphanHasToday = orphanItems.some((i) => i.daysUntil === 0);
+      if (byOwner.size === 0 && !orphanHasToday) continue;
+
+      // Validate owner ids still belong to the org and are active users.
+      let validOwnerIds = new Set<string>();
+      const ownerIds = Array.from(byOwner.keys());
+      if (ownerIds.length > 0) {
+        const ownerRows = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(
+            inArray(users.id, ownerIds),
+            eq(users.organizationId, org.id),
+            eq(users.isActive, true),
+          ));
+        validOwnerIds = new Set(ownerRows.map((r) => r.id));
+      }
+
+      // Drop items whose owner is no longer valid back into the orphan
+      // bucket. (We've already filtered out owner buckets that lacked a
+      // birthday today above, so any items moved here will include today.)
+      let revalidatedOrphanHasToday = orphanHasToday;
+      for (const ownerId of ownerIds) {
+        if (!validOwnerIds.has(ownerId)) {
+          const items = byOwner.get(ownerId) ?? [];
+          orphanItems.push(...items);
+          if (items.some((i) => i.daysUntil === 0)) revalidatedOrphanHasToday = true;
+          byOwner.delete(ownerId);
+        }
+      }
+
+      let fallbackRecipientIds: string[] = [];
+      if (orphanItems.length > 0 && revalidatedOrphanHasToday) {
+        const fallbackRows = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(
+            eq(users.organizationId, org.id),
+            eq(users.isActive, true),
+            inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]),
+          ));
+        fallbackRecipientIds = fallbackRows.map((r) => r.id);
+      }
+
+      const buildDigest = (items: Item[]): { title: string; message: string } => {
+        items.sort((a, b) => a.daysUntil - b.daysUntil || a.name.localeCompare(b.name));
+        const todayCount = items.filter((i) => i.daysUntil === 0).length;
+        const lines = items.map((u) => {
+          const when = u.daysUntil === 0
+            ? "today"
+            : `in ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"} (${u.monthDay})`;
+          return `${u.name}${u.orgName ? ` — ${u.orgName}` : ""}: ${when}`;
+        });
+        const header = todayCount > 0
+          ? `Contact birthdays today${horizonDays > 0 ? " (and next few days)" : ""}:`
+          : "Upcoming contact birthdays:";
+        const message = `${header}\n${lines.join("\n")}`;
+        const title = todayCount === 1
+          ? "1 contact birthday today"
+          : todayCount > 1
+            ? `${todayCount} contact birthdays today`
+            : `${items.length} upcoming contact birthday${items.length === 1 ? "" : "s"}`;
+        return { title, message };
+      };
+
+      const notifs: InsertNotification[] = [];
+
+      for (const [ownerId, items] of byOwner.entries()) {
+        // Only include orphans in fallback digest, not in per-owner digests.
+        const { title, message } = buildDigest(items);
+        notifs.push({
+          userId: ownerId,
+          organizationId: org.id,
+          type: "REMINDER" as const,
+          title,
+          message,
+          relatedEntityType: "CRM_CONTACT_BIRTHDAY",
+        });
+      }
+
+      if (orphanItems.length > 0 && fallbackRecipientIds.length > 0) {
+        const { title, message } = buildDigest(orphanItems);
+        for (const userId of fallbackRecipientIds) {
+          notifs.push({
+            userId,
+            organizationId: org.id,
+            type: "REMINDER" as const,
+            title,
+            message,
+            relatedEntityType: "CRM_CONTACT_BIRTHDAY",
+          });
+        }
+      }
+
+      if (notifs.length === 0) continue;
+      await insertNotifications(notifs);
+      totalDigests += notifs.length;
+    } catch (err) {
+      logError("CRM contact birthday daily digest org iteration failed", { orgId: org.id, error: String(err) });
+    }
+  }
+
+  if (totalDigests > 0) {
+    logInfo("CRM contact birthday daily digest sent", { notifications: totalDigests });
   }
 }
