@@ -94,6 +94,35 @@ const HEALTH_KEY = ["/api/admin/gantt-pdf/health"] as const;
 const HISTORY_KEY = ["/api/admin/gantt-pdf/history"] as const;
 const ALERTS_KEY = ["/api/admin/gantt-pdf/alerts"] as const;
 const RECIPIENTS_KEY = ["/api/admin/gantt-pdf/alert-recipients"] as const;
+const DELIVERIES_KEY = ["/api/admin/gantt-pdf/alert-deliveries"] as const;
+
+interface GanttPdfAlertDeliveryRow {
+  id: string;
+  kind: string;
+  recipients: string[];
+  recipientCount: number;
+  emailSuccess: boolean;
+  errorMessage: string | null;
+  triggeredBy: string | null;
+  createdAt: string;
+}
+
+function alertKindLabel(kind: string): string {
+  switch (kind) {
+    case "queue_full":
+      return "Queue full";
+    case "browser_disconnected":
+      return "Browser disconnected";
+    case "queue_drained":
+      return "Queue drained";
+    case "browser_reconnected":
+      return "Browser reconnected";
+    case "test_alert":
+      return "Test alert";
+    default:
+      return kind;
+  }
+}
 
 interface GanttPdfAlertConfig {
   enabled: boolean;
@@ -771,9 +800,18 @@ function AlertRecipientsCard({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editEmail, setEditEmail] = useState("");
 
+  const { data: deliveriesData, isLoading: deliveriesLoading } = useQuery<{
+    deliveries: GanttPdfAlertDeliveryRow[];
+  }>({
+    queryKey: DELIVERIES_KEY,
+    refetchInterval: 30000,
+  });
+  const deliveries = deliveriesData?.deliveries ?? [];
+
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: RECIPIENTS_KEY });
     queryClient.invalidateQueries({ queryKey: ALERTS_KEY });
+    queryClient.invalidateQueries({ queryKey: DELIVERIES_KEY });
   };
 
   const addMutation = useMutation({
@@ -1084,6 +1122,91 @@ function AlertRecipientsCard({
                 </ul>
               </div>
             )}
+
+            <div className="space-y-2 pt-2 border-t">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="font-medium">Recent alert deliveries</div>
+                <span className="text-xs text-muted-foreground">
+                  Last {deliveries.length} of up to 20 dispatched alerts.
+                </span>
+              </div>
+              {deliveriesLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : deliveries.length === 0 ? (
+                <div
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-no-deliveries"
+                >
+                  No alerts have been dispatched yet.
+                </div>
+              ) : (
+                <ul
+                  className="divide-y border rounded"
+                  data-testid="list-alert-deliveries"
+                >
+                  {deliveries.map((d) => {
+                    const ts = new Date(d.createdAt).getTime();
+                    return (
+                      <li
+                        key={d.id}
+                        className="flex items-center gap-2 px-2 py-2 flex-wrap text-xs sm:text-sm"
+                        data-testid={`row-delivery-${d.id}`}
+                      >
+                        <Badge
+                          variant={d.kind === "test_alert" ? "secondary" : "outline"}
+                          className="font-normal"
+                          data-testid={`badge-delivery-kind-${d.id}`}
+                        >
+                          {alertKindLabel(d.kind)}
+                        </Badge>
+                        {d.emailSuccess ? (
+                          <Badge
+                            variant="outline"
+                            className="font-normal text-green-700 border-green-300 dark:text-green-400 dark:border-green-700"
+                            data-testid={`badge-delivery-status-${d.id}`}
+                          >
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            Delivered
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="destructive"
+                            className="font-normal"
+                            data-testid={`badge-delivery-status-${d.id}`}
+                          >
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Failed
+                          </Badge>
+                        )}
+                        <span
+                          className="text-muted-foreground"
+                          data-testid={`text-delivery-recipients-${d.id}`}
+                          title={d.recipients.join(", ")}
+                        >
+                          {d.recipientCount} recipient{d.recipientCount === 1 ? "" : "s"}
+                        </span>
+                        {d.errorMessage && (
+                          <span
+                            className="text-destructive truncate max-w-[200px]"
+                            title={d.errorMessage}
+                            data-testid={`text-delivery-error-${d.id}`}
+                          >
+                            {d.errorMessage}
+                          </span>
+                        )}
+                        <span
+                          className="text-muted-foreground ml-auto"
+                          title={new Date(d.createdAt).toLocaleString()}
+                          data-testid={`text-delivery-time-${d.id}`}
+                        >
+                          {formatRelative(ts)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
 
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t">
               <div className="flex justify-between">

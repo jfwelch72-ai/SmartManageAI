@@ -1,6 +1,12 @@
 import { db } from "./db";
-import { users, ganttPdfAlertRecipients, type GanttPdfAlertRecipient } from "@shared/schema";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import {
+  users,
+  ganttPdfAlertRecipients,
+  ganttPdfAlertDeliveries,
+  type GanttPdfAlertRecipient,
+  type GanttPdfAlertDelivery,
+} from "@shared/schema";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { sendEmail } from "./email";
 import { insertNotifications } from "./services/notificationService";
 import { logError, logInfo } from "./utils/logger";
@@ -216,6 +222,26 @@ export async function listGanttPdfAlertRecipients(): Promise<GanttPdfAlertRecipi
   return listDbRecipients();
 }
 
+export async function listGanttPdfAlertDeliveries(
+  limit: number = 20,
+): Promise<GanttPdfAlertDelivery[]> {
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+  try {
+    return await db
+      .select()
+      .from(ganttPdfAlertDeliveries)
+      .orderBy(desc(ganttPdfAlertDeliveries.createdAt))
+      .limit(safeLimit);
+  } catch (err) {
+    logError(
+      "Failed to load Gantt PDF alert deliveries",
+      { limit: safeLimit },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    return [];
+  }
+}
+
 export async function addGanttPdfAlertRecipient(input: {
   email: string;
   notifyInApp?: boolean;
@@ -271,19 +297,49 @@ function markSent(kind: AlertKind, now: number): void {
   state.lastSentAt.set(kind, now);
 }
 
+async function recordDelivery(
+  kind: AlertKind,
+  emailTargets: string[],
+  emailSuccess: boolean,
+  errorMessage: string | null,
+  triggeredBy: string | null,
+): Promise<void> {
+  try {
+    await db.insert(ganttPdfAlertDeliveries).values({
+      kind,
+      recipients: emailTargets,
+      recipientCount: emailTargets.length,
+      emailSuccess,
+      errorMessage,
+      triggeredBy,
+    });
+  } catch (err) {
+    logError(
+      "Failed to persist Gantt PDF alert delivery record",
+      { kind, recipientCount: emailTargets.length },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  }
+}
+
 async function dispatchAlert(
   kind: AlertKind,
   subject: string,
   text: string,
   html: string,
+  opts?: { triggeredBy?: string | null },
 ): Promise<void> {
+  const triggeredBy = opts?.triggeredBy ?? null;
   const recipients = await getRecipients();
   if (recipients.length === 0) {
     logInfo("Gantt PDF alert skipped: no recipients configured", { kind });
+    await recordDelivery(kind, [], false, "No recipients configured", triggeredBy);
     return;
   }
 
   const emailTargets = recipients.map((r) => r.email);
+  let emailSuccess = false;
+  let errorMessage: string | null = null;
   try {
     const ok = await sendEmail({
       to: emailTargets,
@@ -291,16 +347,21 @@ async function dispatchAlert(
       text,
       html,
     });
+    emailSuccess = ok;
     if (!ok) {
+      errorMessage = "Email transport returned false";
       logError("Gantt PDF alert email returned false", { kind, recipientCount: emailTargets.length });
     }
   } catch (err) {
+    errorMessage = err instanceof Error ? err.message : String(err);
     logError(
       "Failed to send Gantt PDF alert email",
       { kind },
       err instanceof Error ? err : new Error(String(err)),
     );
   }
+
+  await recordDelivery(kind, emailTargets, emailSuccess, errorMessage, triggeredBy);
 
   const userIds = recipients
     .filter((r) => r.notifyInApp && !!r.userId)
@@ -481,6 +542,13 @@ export async function sendGanttPdfTestAlert(options?: {
   const now = Date.now();
   if (recipients.length === 0) {
     logInfo("Gantt PDF test alert skipped: no recipients configured", {});
+    await recordDelivery(
+      "test_alert",
+      [],
+      false,
+      "No recipients configured",
+      options?.triggeredBy ?? null,
+    );
     return { recipientCount: 0, recipients: [], sentAt: now };
   }
   const { subject, text, html } = buildTestAlertEmail(options?.triggeredBy ?? null);
@@ -491,7 +559,9 @@ export async function sendGanttPdfTestAlert(options?: {
   // Bypass per-kind throttle: dispatchAlert does not consult lastSentAt, and
   // we deliberately do not call markSent() so real alert cooldowns are not
   // reset by this verification.
-  await dispatchAlert("test_alert", subject, text, html);
+  await dispatchAlert("test_alert", subject, text, html, {
+    triggeredBy: options?.triggeredBy ?? null,
+  });
   state.lastTestSentAt = now;
   return {
     recipientCount: recipients.length,

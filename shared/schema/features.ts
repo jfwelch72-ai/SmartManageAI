@@ -9489,3 +9489,24 @@ export const ganttPdfAlertRecipients = pgTable("gantt_pdf_alert_recipients", {
 export const insertGanttPdfAlertRecipientSchema = createInsertSchema(ganttPdfAlertRecipients).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertGanttPdfAlertRecipient = z.infer<typeof insertGanttPdfAlertRecipientSchema>;
 export type GanttPdfAlertRecipient = typeof ganttPdfAlertRecipients.$inferSelect;
+
+// ============================================
+// GANTT PDF ALERT DELIVERIES
+// Audit trail of every dispatched Gantt PDF alert (test or real). Lets admins
+// verify deliverability over time without digging through server logs.
+// ============================================
+export const ganttPdfAlertDeliveries = pgTable("gantt_pdf_alert_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  kind: text("kind").notNull(),
+  recipients: text("recipients").array().notNull(),
+  recipientCount: integer("recipient_count").notNull(),
+  emailSuccess: boolean("email_success").notNull(),
+  errorMessage: text("error_message"),
+  triggeredBy: text("triggered_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  createdAtIdx: index("gantt_pdf_alert_deliveries_created_at_idx").on(t.createdAt),
+}));
+export const insertGanttPdfAlertDeliverySchema = createInsertSchema(ganttPdfAlertDeliveries).omit({ id: true, createdAt: true });
+export type InsertGanttPdfAlertDelivery = z.infer<typeof insertGanttPdfAlertDeliverySchema>;
+export type GanttPdfAlertDelivery = typeof ganttPdfAlertDeliveries.$inferSelect;

@@ -225,6 +225,7 @@ import {
 import {
   getGanttPdfAlertConfig as getGanttPdfRecipientConfig,
   listGanttPdfAlertRecipients,
+  listGanttPdfAlertDeliveries,
   addGanttPdfAlertRecipient,
   updateGanttPdfAlertRecipient,
   deleteGanttPdfAlertRecipient,
@@ -1523,5 +1524,21 @@ router.delete("/admin/gantt-pdf/alert-recipients/:id", requireAuth, requireRole(
     next(error);
   }
 });
+
+router.get(
+  "/admin/gantt-pdf/alert-deliveries",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const limitRaw = Number(req.query.limit);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 20;
+      const deliveries = await listGanttPdfAlertDeliveries(limit);
+      res.json({ deliveries });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;
