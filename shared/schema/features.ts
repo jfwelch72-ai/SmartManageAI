@@ -9471,3 +9471,21 @@ export const projectEmailDistributionLists = pgTable("project_email_distribution
 export const insertProjectEmailDistributionListSchema = createInsertSchema(projectEmailDistributionLists).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectEmailDistributionList = z.infer<typeof insertProjectEmailDistributionListSchema>;
 export type ProjectEmailDistributionList = typeof projectEmailDistributionLists.$inferSelect;
+
+// ============================================
+// GANTT PDF ALERT RECIPIENTS
+// Operator-managed list of email recipients for Gantt PDF queue/disconnect
+// outage alerts. When at least one row exists here, it overrides both the
+// GANTT_PDF_ALERT_EMAILS env var fallback and the active-super-admin fallback.
+// ============================================
+export const ganttPdfAlertRecipients = pgTable("gantt_pdf_alert_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  notifyInApp: boolean("notify_in_app").notNull().default(true),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertGanttPdfAlertRecipientSchema = createInsertSchema(ganttPdfAlertRecipients).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertGanttPdfAlertRecipient = z.infer<typeof insertGanttPdfAlertRecipientSchema>;
+export type GanttPdfAlertRecipient = typeof ganttPdfAlertRecipients.$inferSelect;

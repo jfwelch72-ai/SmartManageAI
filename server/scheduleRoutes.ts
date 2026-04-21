@@ -222,7 +222,13 @@ import {
   evaluateGanttPdfAlerts,
   type GanttPdfAlertEvent,
 } from "./gantt-pdf-service";
-import { getGanttPdfAlertConfig as getGanttPdfRecipientConfig } from "./gantt-pdf-alerts";
+import {
+  getGanttPdfAlertConfig as getGanttPdfRecipientConfig,
+  listGanttPdfAlertRecipients,
+  addGanttPdfAlertRecipient,
+  updateGanttPdfAlertRecipient,
+  deleteGanttPdfAlertRecipient,
+} from "./gantt-pdf-alerts";
 import { notifications } from "@shared/schema";
 import { sendNotificationEmail } from "./email";
 
@@ -1403,6 +1409,93 @@ router.post("/admin/gantt-pdf/alerts/evaluate", requireAuth, requireRole("SUPER_
   try {
     const event = evaluateGanttPdfAlerts();
     res.json({ triggered: event !== null, event, state: getGanttPdfAlertState() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ----- Gantt PDF alert recipient CRUD -----
+const recipientEmailSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(254)
+  .email("Must be a valid email address");
+
+const createRecipientSchema = z.object({
+  email: recipientEmailSchema,
+  notifyInApp: z.boolean().optional(),
+});
+
+const updateRecipientSchema = z
+  .object({
+    email: recipientEmailSchema.optional(),
+    notifyInApp: z.boolean().optional(),
+  })
+  .refine((v) => v.email !== undefined || v.notifyInApp !== undefined, {
+    message: "At least one of email or notifyInApp is required",
+  });
+
+router.get("/admin/gantt-pdf/alert-recipients", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const [rows, config] = await Promise.all([
+      listGanttPdfAlertRecipients(),
+      getGanttPdfRecipientConfig(),
+    ]);
+    res.json({ recipients: rows, config });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/admin/gantt-pdf/alert-recipients", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const parsed = createRecipientSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid recipient", details: parsed.error.flatten() });
+    }
+    try {
+      const row = await addGanttPdfAlertRecipient(parsed.data);
+      res.status(201).json({ recipient: row });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/duplicate key|unique/i.test(msg)) {
+        return res.status(409).json({ error: "A recipient with that email already exists" });
+      }
+      throw err;
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/admin/gantt-pdf/alert-recipients/:id", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const parsed = updateRecipientSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid update", details: parsed.error.flatten() });
+    }
+    try {
+      const row = await updateGanttPdfAlertRecipient(req.params.id, parsed.data);
+      if (!row) return res.status(404).json({ error: "Recipient not found" });
+      res.json({ recipient: row });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/duplicate key|unique/i.test(msg)) {
+        return res.status(409).json({ error: "A recipient with that email already exists" });
+      }
+      throw err;
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/admin/gantt-pdf/alert-recipients/:id", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const removed = await deleteGanttPdfAlertRecipient(req.params.id);
+    if (!removed) return res.status(404).json({ error: "Recipient not found" });
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }

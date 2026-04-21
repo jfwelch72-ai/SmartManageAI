@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { users } from "@shared/schema";
-import { and, eq } from "drizzle-orm";
+import { users, ganttPdfAlertRecipients, type GanttPdfAlertRecipient } from "@shared/schema";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { sendEmail } from "./email";
 import { insertNotifications } from "./services/notificationService";
 import { logError, logInfo } from "./utils/logger";
@@ -50,12 +50,71 @@ function parseEnvRecipients(): string[] {
 interface Recipient {
   email: string;
   userId: string | null;
+  notifyInApp: boolean;
+}
+
+async function listDbRecipients(): Promise<GanttPdfAlertRecipient[]> {
+  try {
+    return await db
+      .select()
+      .from(ganttPdfAlertRecipients)
+      .orderBy(asc(ganttPdfAlertRecipients.email));
+  } catch (err) {
+    logError(
+      "Failed to load Gantt PDF alert recipients from database",
+      {},
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    return [];
+  }
+}
+
+async function resolveUserIdsForEmails(emails: string[]): Promise<Map<string, string>> {
+  const lower = emails.map((e) => e.toLowerCase()).filter((e) => e.length > 0);
+  if (lower.length === 0) return new Map();
+  try {
+    const rows = await db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(and(inArray(sql`lower(${users.email})`, lower), eq(users.isActive, true)));
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      if (r.email) map.set(r.email.toLowerCase(), r.id);
+    }
+    return map;
+  } catch (err) {
+    logError(
+      "Failed to resolve userIds for Gantt PDF alert recipients",
+      { emailCount: lower.length },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    return new Map();
+  }
 }
 
 async function getRecipients(): Promise<Recipient[]> {
+  const dbRows = await listDbRecipients();
+  if (dbRows.length > 0) {
+    const missingUserEmails = dbRows
+      .filter((r) => !r.userId)
+      .map((r) => r.email);
+    const lookup = missingUserEmails.length
+      ? await resolveUserIdsForEmails(missingUserEmails)
+      : new Map<string, string>();
+    return dbRows.map((r) => ({
+      email: r.email,
+      userId: r.userId ?? lookup.get(r.email.toLowerCase()) ?? null,
+      notifyInApp: r.notifyInApp,
+    }));
+  }
   const envEmails = parseEnvRecipients();
   if (envEmails.length > 0) {
-    return envEmails.map((email) => ({ email, userId: null }));
+    const lookup = await resolveUserIdsForEmails(envEmails);
+    return envEmails.map((email) => ({
+      email,
+      userId: lookup.get(email.toLowerCase()) ?? null,
+      notifyInApp: true,
+    }));
   }
   try {
     const admins = await db
@@ -64,7 +123,7 @@ async function getRecipients(): Promise<Recipient[]> {
       .where(and(eq(users.role, "SUPER_ADMIN"), eq(users.isActive, true)));
     return admins
       .filter((a) => !!a.email)
-      .map((a) => ({ email: a.email, userId: a.id }));
+      .map((a) => ({ email: a.email, userId: a.id, notifyInApp: true }));
   } catch (err) {
     logError(
       "Failed to load SUPER_ADMIN users for Gantt PDF alerts",
@@ -75,9 +134,20 @@ async function getRecipients(): Promise<Recipient[]> {
   }
 }
 
+export type GanttPdfAlertRecipientSource = "database" | "env" | "super_admins";
+
+export interface GanttPdfAlertRecipientView {
+  id: string | null;
+  email: string;
+  notifyInApp: boolean;
+  userId: string | null;
+}
+
 export async function getGanttPdfAlertConfig(): Promise<{
-  source: "env" | "super_admins";
+  source: GanttPdfAlertRecipientSource;
   recipients: string[];
+  recipientDetails: GanttPdfAlertRecipientView[];
+  envRecipients: string[];
   rateLimitMs: number;
   disconnectThresholdMs: number;
   lastSent: {
@@ -88,19 +158,40 @@ export async function getGanttPdfAlertConfig(): Promise<{
   };
 }> {
   const envEmails = parseEnvRecipients();
-  let recipients: string[];
-  let source: "env" | "super_admins";
-  if (envEmails.length > 0) {
-    recipients = envEmails;
+  const dbRows = await listDbRecipients();
+  let source: GanttPdfAlertRecipientSource;
+  let recipientDetails: GanttPdfAlertRecipientView[];
+  if (dbRows.length > 0) {
+    source = "database";
+    recipientDetails = dbRows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      notifyInApp: r.notifyInApp,
+      userId: r.userId,
+    }));
+  } else if (envEmails.length > 0) {
     source = "env";
+    recipientDetails = envEmails.map((email) => ({
+      id: null,
+      email,
+      notifyInApp: true,
+      userId: null,
+    }));
   } else {
-    const list = await getRecipients();
-    recipients = list.map((r) => r.email);
     source = "super_admins";
+    const list = await getRecipients();
+    recipientDetails = list.map((r) => ({
+      id: null,
+      email: r.email,
+      notifyInApp: r.notifyInApp,
+      userId: r.userId,
+    }));
   }
   return {
     source,
-    recipients,
+    recipients: recipientDetails.map((r) => r.email),
+    recipientDetails,
+    envRecipients: envEmails,
     rateLimitMs: ALERT_RATE_LIMIT_MS,
     disconnectThresholdMs: DISCONNECT_ALERT_THRESHOLD_MS,
     lastSent: {
@@ -110,6 +201,59 @@ export async function getGanttPdfAlertConfig(): Promise<{
       browserReconnected: state.lastSentAt.get("browser_reconnected") ?? null,
     },
   };
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export async function listGanttPdfAlertRecipients(): Promise<GanttPdfAlertRecipient[]> {
+  return listDbRecipients();
+}
+
+export async function addGanttPdfAlertRecipient(input: {
+  email: string;
+  notifyInApp?: boolean;
+}): Promise<GanttPdfAlertRecipient> {
+  const email = normalizeEmail(input.email);
+  const lookup = await resolveUserIdsForEmails([email]);
+  const [row] = await db
+    .insert(ganttPdfAlertRecipients)
+    .values({
+      email,
+      notifyInApp: input.notifyInApp ?? true,
+      userId: lookup.get(email) ?? null,
+    })
+    .returning();
+  return row;
+}
+
+export async function updateGanttPdfAlertRecipient(
+  id: string,
+  patch: { email?: string; notifyInApp?: boolean },
+): Promise<GanttPdfAlertRecipient | null> {
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (typeof patch.notifyInApp === "boolean") updates.notifyInApp = patch.notifyInApp;
+  if (typeof patch.email === "string" && patch.email.trim().length > 0) {
+    const email = normalizeEmail(patch.email);
+    updates.email = email;
+    const lookup = await resolveUserIdsForEmails([email]);
+    updates.userId = lookup.get(email) ?? null;
+  }
+  const [row] = await db
+    .update(ganttPdfAlertRecipients)
+    .set(updates)
+    .where(eq(ganttPdfAlertRecipients.id, id))
+    .returning();
+  return row ?? null;
+}
+
+export async function deleteGanttPdfAlertRecipient(id: string): Promise<boolean> {
+  const rows = await db
+    .delete(ganttPdfAlertRecipients)
+    .where(eq(ganttPdfAlertRecipients.id, id))
+    .returning({ id: ganttPdfAlertRecipients.id });
+  return rows.length > 0;
 }
 
 function shouldSend(kind: AlertKind, now: number): boolean {
@@ -153,7 +297,9 @@ async function dispatchAlert(
     );
   }
 
-  const userIds = recipients.map((r) => r.userId).filter((id): id is string => !!id);
+  const userIds = recipients
+    .filter((r) => r.notifyInApp && !!r.userId)
+    .map((r) => r.userId as string);
   if (userIds.length > 0) {
     try {
       await insertNotifications(
