@@ -921,6 +921,11 @@ export default function CRMPage() {
     },
     onSuccess: (data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
+      // Also refresh the per-org detail cache so the open detail drawer
+      // immediately shows the new owner without needing to be reopened.
+      for (const id of vars.organisationIds) {
+        queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${id}`] });
+      }
       const clearBulkSelection = vars.organisationIds.length > 1;
       if (clearBulkSelection) setSelectedOrgIds(new Set());
       const ownerLabel = vars.ownerId ? (ownerLabelById.get(vars.ownerId) ?? "selected owner") : "Unassigned";
@@ -2243,7 +2248,12 @@ export default function CRMPage() {
         mutations={{
           ...mutations,
           deleteOrgMutation: deleteOrgMutationWrapped,
+          reassignOrgOwnerMutation,
         }}
+        currentUserId={user?.id}
+        orgUsers={orgUsersForOwner}
+        ownerLabelById={ownerLabelById}
+        ownerInitials={ownerInitials}
       />
 
       <CrmContactDialogs

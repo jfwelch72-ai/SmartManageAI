@@ -236,6 +236,13 @@ const STANDARD_PRICING_ITEMS: { category: string; items: StandardPricingItem[] }
   },
 ];
 
+interface OrgUserOption {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+}
+
 interface CrmOrgDetailProps {
   detailOrgOpen: boolean;
   setDetailOrgOpen: (open: boolean) => void;
@@ -248,6 +255,10 @@ interface CrmOrgDetailProps {
   setSelectedContact: (contact: CrmContact) => void;
   setViewContactOpen: (open: boolean) => void;
   mutations: any;
+  currentUserId?: string;
+  orgUsers?: OrgUserOption[];
+  ownerLabelById?: Map<string, string>;
+  ownerInitials?: (label: string) => string;
 }
 
 export function CrmOrgDetail({
@@ -262,6 +273,10 @@ export function CrmOrgDetail({
   setSelectedContact,
   setViewContactOpen,
   mutations,
+  currentUserId,
+  orgUsers = [],
+  ownerLabelById,
+  ownerInitials,
 }: CrmOrgDetailProps) {
   const {
     deleteOrgMutation, deleteContactMutation, createNoteMutation, deleteNoteMutation,
@@ -269,7 +284,29 @@ export function CrmOrgDetail({
     createRentalMutation, updateRentalMutation, deleteRentalMutation,
     inviteVendorMutation, updateEnrollmentMutation, suspendEnrollmentMutation,
     reactivateEnrollmentMutation, approvePricingMutation, rejectPricingMutation,
+    reassignOrgOwnerMutation,
   } = mutations;
+
+  const ownerLabelLookup = useMemo(() => {
+    if (ownerLabelById) return ownerLabelById;
+    const map = new Map<string, string>();
+    for (const u of orgUsers) {
+      const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+      map.set(u.id, name || u.email || u.id);
+    }
+    return map;
+  }, [ownerLabelById, orgUsers]);
+
+  const initialsOf = ownerInitials ?? ((label: string): string => {
+    const parts = label.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  });
+
+  // Prefer the freshly-fetched detail (which is invalidated after reassignment)
+  // over the parent's snapshot so the owner picker reflects the latest server
+  // state immediately, instead of snapping back to the stale selectedOrg value.
 
   const [newNote, setNewNote] = useState({
     noteType: "GENERAL" as NoteType,
@@ -341,6 +378,12 @@ export function CrmOrgDetail({
     queryKey: [`/api/crm/organisations/${selectedOrg?.id}`],
     enabled: !!selectedOrg?.id && detailOrgOpen,
   });
+
+  const orgOwnerId =
+    (orgDetail as { ownerId?: string | null } | undefined)?.ownerId ??
+    (selectedOrg as { ownerId?: string | null } | null)?.ownerId ??
+    null;
+  const orgOwnerLabel = orgOwnerId ? (ownerLabelLookup.get(orgOwnerId) ?? orgOwnerId) : null;
 
   const { data: orgNotes = [], isLoading: notesLoading } = useQuery<OrgNote[]>({
     queryKey: [`/api/crm/organisations/${selectedOrg?.id}/notes`],
@@ -516,6 +559,66 @@ export function CrmOrgDetail({
 
             <TabsContent value="info" className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-start gap-2" data-testid="row-org-owner">
+                  <User className="w-4 h-4 mt-1 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">Owner</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      {orgOwnerLabel ? (
+                        <span
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary shrink-0"
+                          data-testid="avatar-org-owner"
+                        >
+                          {initialsOf(orgOwnerLabel)}
+                        </span>
+                      ) : null}
+                      <Select
+                        value={orgOwnerId ?? "__unassigned__"}
+                        onValueChange={(value) => {
+                          if (!selectedOrg) return;
+                          const newOwnerId = value === "__unassigned__" ? null : value;
+                          if (newOwnerId === orgOwnerId) return;
+                          reassignOrgOwnerMutation?.mutate({
+                            organisationIds: [selectedOrg.id],
+                            ownerId: newOwnerId,
+                          });
+                        }}
+                        disabled={!reassignOrgOwnerMutation || reassignOrgOwnerMutation.isPending}
+                      >
+                        <SelectTrigger
+                          className="h-8 text-sm w-auto min-w-[160px] max-w-[220px]"
+                          data-testid="select-org-detail-owner"
+                        >
+                          <SelectValue placeholder="Unassigned" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__unassigned__" data-testid="option-org-detail-owner-unassigned">
+                            Unassigned
+                          </SelectItem>
+                          {currentUserId && (
+                            <SelectItem value={currentUserId} data-testid="option-org-detail-owner-mine">
+                              Me ({ownerLabelLookup.get(currentUserId) ?? "current user"})
+                            </SelectItem>
+                          )}
+                          {orgUsers
+                            .filter((u) => u.id !== currentUserId)
+                            .map((u) => {
+                              const label = ownerLabelLookup.get(u.id) ?? u.id;
+                              return (
+                                <SelectItem
+                                  key={u.id}
+                                  value={u.id}
+                                  data-testid={`option-org-detail-owner-${u.id}`}
+                                >
+                                  {label}
+                                </SelectItem>
+                              );
+                            })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
                 {selectedOrg?.address && (
                   <div className="flex items-start gap-2">
                     <MapPin className="w-4 h-4 mt-1 text-muted-foreground" />
