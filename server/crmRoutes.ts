@@ -213,6 +213,59 @@ import { upsertCustomFieldValues, getCustomFieldsMap, getCustomFieldsMapBatch, g
 const router = Router();
 
 // ========================================
+// Admin: backfill crm_contacts.timezone for legacy rows.
+// Idempotent — safe to re-run; only fills NULL timezones using the parent
+// crm_organisation's `state`, then any contact-level state column.
+// Tenant-scoped: ORG ADMINs only ever touch their own organization's
+// contacts. SUPER_ADMINs may pass `?organizationId=` to target a tenant,
+// or omit it to run the global backfill.
+// ========================================
+router.post(
+  "/api/crm/contacts/backfill-timezones",
+  requireAuth,
+  requireRole("ADMIN", "SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, isSuperAdmin: isSuper, mustDenyAccess } =
+        getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      let targetOrgId: string | null = null;
+      if (!isSuper) {
+        if (!orgId) {
+          return res.status(400).json({ error: "Organization required" });
+        }
+        targetOrgId = orgId;
+      } else {
+        // SUPER_ADMIN may scope to a specific tenant via query/body, or run global.
+        const requested =
+          (req.query?.organizationId as string | undefined) ||
+          (req.body?.organizationId as string | undefined) ||
+          null;
+        targetOrgId = requested || null;
+      }
+
+      const { backfillCrmContactTimezones } = await import(
+        "./utils/ensureCrmContactTimezoneBackfill"
+      );
+      const result = await backfillCrmContactTimezones({ orgId: targetOrgId });
+      res.json({
+        ok: true,
+        organizationId: targetOrgId,
+        scanned: result.scanned,
+        updated: result.updated,
+        fromOrgState: result.fromOrgState,
+        fromContactState: result.fromContactState,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ========================================
 // Routes from crmVendorRoutes.ts
 // ========================================
 
