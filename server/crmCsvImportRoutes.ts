@@ -4,8 +4,9 @@ import { db, pool } from "./db";
 import {
   crmCsvImportJobs,
   crmContacts, crmOrganisations, crmOpportunities,
+  crmCustomFieldDefinitions,
 } from "@shared/schema";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { kickCrmCsvImportWorker } from "./crmCsvImportWorker";
@@ -19,8 +20,9 @@ const EDIT_ROLES = ["ADMIN", "HUSTLER", "MANAGER"] as const;
 // type?: data-type hint shown in the mapping UI so users pair date/number Excel
 // cells with typed targets, required?: at least one required field must be
 // mapped to import a row }.
-export type CsvImportFieldType = "text" | "date" | "number";
-export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", Array<{ value: string; label: string; required?: boolean; type?: CsvImportFieldType }>> = {
+export type CsvImportFieldType = "text" | "date" | "number" | "boolean" | "multi";
+export type CsvImportField = { value: string; label: string; required?: boolean; type?: CsvImportFieldType; custom?: boolean };
+export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", Array<CsvImportField>> = {
   CONTACT: [
     { value: "fullName", label: "Full name", required: true },
     { value: "firstName", label: "First name", required: true },
@@ -52,8 +54,52 @@ export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY
   ],
 };
 
-router.get("/api/crm/csv-imports/fields", requireAuth, requireRole(...READ_ROLES), (_req, res) => {
-  res.json(CSV_IMPORT_FIELDS);
+// Map a custom-field-definition fieldType to the UI/worker type hint.
+export function customFieldTypeHint(ft: string): CsvImportFieldType {
+  switch (ft) {
+    case "NUMBER":
+    case "CURRENCY":
+      return "number";
+    case "DATE":
+      return "date";
+    case "CHECKBOX":
+      return "boolean";
+    case "MULTI_SELECT":
+      return "multi";
+    default:
+      return "text";
+  }
+}
+
+router.get("/api/crm/csv-imports/fields", requireAuth, requireRole(...READ_ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const customDefs = await db.select().from(crmCustomFieldDefinitions)
+      .where(and(
+        eq(crmCustomFieldDefinitions.organizationId, orgId),
+        eq(crmCustomFieldDefinitions.isActive, true),
+      ))
+      .orderBy(asc(crmCustomFieldDefinitions.entityType), asc(crmCustomFieldDefinitions.sortOrder), asc(crmCustomFieldDefinitions.label));
+
+    const out: typeof CSV_IMPORT_FIELDS = {
+      CONTACT: [...CSV_IMPORT_FIELDS.CONTACT],
+      ORGANISATION: [...CSV_IMPORT_FIELDS.ORGANISATION],
+      OPPORTUNITY: [...CSV_IMPORT_FIELDS.OPPORTUNITY],
+    };
+    for (const def of customDefs) {
+      const bucket = def.entityType as keyof typeof out;
+      if (!out[bucket]) continue;
+      out[bucket].push({
+        value: `cf:${def.id}`,
+        label: def.label,
+        type: customFieldTypeHint(def.fieldType),
+        custom: true,
+      });
+    }
+    res.json(out);
+  } catch (e) { next(e); }
 });
 
 const importBody = z.object({

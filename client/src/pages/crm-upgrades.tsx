@@ -303,13 +303,16 @@ function ReportsPanel() {
   );
 }
 
-type FieldDef = { value: string; label: string; required?: boolean; type?: "text" | "date" | "number" };
+type FieldDef = { value: string; label: string; required?: boolean; type?: "text" | "date" | "number" | "boolean" | "multi"; custom?: boolean };
 type FieldsByEntity = Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", FieldDef[]>;
 const SKIP_VALUE = "__skip__";
+const CUSTOM_HEADER_VALUE = "__custom_header__";
 
 function fieldTypeBadge(t: FieldDef["type"]): string {
   if (t === "date") return "date";
   if (t === "number") return "number";
+  if (t === "boolean") return "yes/no";
+  if (t === "multi") return "multi";
   return "";
 }
 
@@ -341,11 +344,23 @@ function autoMatchField(header: string, fields: FieldDef[]): string {
     contractExpiration: ["contractexpiration", "contractexpiry", "contractend", "contractenddate"],
   };
   for (const f of fields) {
+    if (f.custom) continue;
     const candidates = aliases[f.value] ?? [f.value.toLowerCase()];
     if (candidates.includes(h)) return f.value;
   }
+  // Custom fields: match by normalized label (we don't have the raw key on the
+  // client, but the label is what admins authored and is the most user-facing).
   for (const f of fields) {
+    if (!f.custom) continue;
+    if (norm(f.label) === h) return f.value;
+  }
+  for (const f of fields) {
+    if (f.custom) continue;
     if (h.includes(f.value.toLowerCase())) return f.value;
+  }
+  for (const f of fields) {
+    if (!f.custom) continue;
+    if (h.includes(norm(f.label))) return f.value;
   }
   return SKIP_VALUE;
 }
@@ -780,12 +795,15 @@ function ImportPanel() {
                     <div className="col-span-7">
                       <Select
                         value={mapping[h] ?? SKIP_VALUE}
-                        onValueChange={(v) => setMapping((prev) => ({ ...prev, [h]: v }))}
+                        onValueChange={(v) => {
+                          if (v === CUSTOM_HEADER_VALUE) return;
+                          setMapping((prev) => ({ ...prev, [h]: v }));
+                        }}
                       >
                         <SelectTrigger data-testid={`select-mapping-${h}`}><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value={SKIP_VALUE}>— Skip this column —</SelectItem>
-                          {fields.map((f) => {
+                          {fields.filter((f) => !f.custom).map((f) => {
                             const badge = fieldTypeBadge(f.type);
                             return (
                               <SelectItem key={f.value} value={f.value}>
@@ -796,6 +814,29 @@ function ImportPanel() {
                               </SelectItem>
                             );
                           })}
+                          {fields.some((f) => f.custom) && (
+                            <>
+                              <SelectItem
+                                value={CUSTOM_HEADER_VALUE}
+                                disabled
+                                className="opacity-100 text-[11px] uppercase tracking-wide text-muted-foreground border-t mt-1 pt-2"
+                                data-testid="custom-fields-separator"
+                              >
+                                Custom fields
+                              </SelectItem>
+                              {fields.filter((f) => f.custom).map((f) => {
+                                const badge = fieldTypeBadge(f.type);
+                                return (
+                                  <SelectItem key={f.value} value={f.value} data-testid={`select-mapping-option-${f.value}`}>
+                                    {f.label}
+                                    {badge && (
+                                      <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground" data-testid={`field-type-${f.value}`}>[{badge}]</span>
+                                    )}
+                                  </SelectItem>
+                                );
+                              })}
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>

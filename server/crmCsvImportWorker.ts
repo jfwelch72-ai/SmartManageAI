@@ -3,11 +3,13 @@ import {
   crmCsvImportJobs,
   crmContacts, crmOrganisations, crmOpportunities,
   users,
+  type CrmCustomFieldDefinition,
 } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { logError, logInfo } from "./utils/logger";
 import { insertNotification } from "./services/notificationService";
 import { sendEmail } from "./services/emailService";
+import { getDefinitionsForEntity, upsertCustomFieldValues } from "./crmCustomFieldsRoutes";
 
 const EMAIL_THRESHOLD_MS = 30_000;
 
@@ -93,6 +95,51 @@ function pickDateStr(row: Record<string, any>, mapping: Record<string, string>, 
   const d = new Date(raw);
   if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   return undefined;
+}
+
+// Convert a raw cell value into a shape that `upsertCustomFieldValues` accepts
+// for the given custom field definition. Returns undefined when the cell is
+// empty (so we don't accidentally clear an existing value during re-imports).
+function coerceCustomFieldRaw(def: CrmCustomFieldDefinition, raw: any): unknown {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw === "string" && raw.trim() === "") return undefined;
+  switch (def.fieldType) {
+    case "NUMBER":
+    case "CURRENCY": {
+      if (typeof raw === "number") return Number.isFinite(raw) ? raw : undefined;
+      const cleaned = String(raw).replace(/[$,\s]/g, "").trim();
+      if (cleaned === "") return undefined;
+      const n = Number(cleaned);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    case "DATE": {
+      if (raw instanceof Date) {
+        return isNaN(raw.getTime()) ? undefined : raw.toISOString().slice(0, 10);
+      }
+      const s = typeof raw === "string" ? raw.trim() : String(raw);
+      const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (iso) return iso[1];
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
+    }
+    case "CHECKBOX": {
+      if (typeof raw === "boolean") return raw;
+      if (typeof raw === "number") return raw !== 0;
+      const s = String(raw).trim().toLowerCase();
+      if (["true", "1", "yes", "y", "checked"].includes(s)) return true;
+      if (["false", "0", "no", "n", "unchecked"].includes(s)) return false;
+      return undefined;
+    }
+    case "MULTI_SELECT": {
+      if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter(Boolean);
+      const parts = String(raw).split(/[,;|]/).map((s) => s.trim()).filter(Boolean);
+      return parts.length > 0 ? parts : undefined;
+    }
+    default: {
+      const s = typeof raw === "string" ? raw.trim() : String(raw);
+      return s === "" ? undefined : s;
+    }
+  }
 }
 
 interface RowError {
@@ -202,9 +249,64 @@ async function processOneJob(): Promise<boolean> {
   // Resume from where we left off if a previous worker died mid-flight.
   const startIdx = progress.processed;
 
+  // Pre-load custom field defs for this entity type once. We index by their
+  // mapping target value (`cf:<id>`) so the per-row loop can quickly translate
+  // mapped columns into definition+key pairs for upsertCustomFieldValues.
+  // If this lookup fails (e.g. transient DB error) we log and continue with an
+  // empty list — built-in fields will still import, and any `cf:<id>` mappings
+  // become no-ops rather than aborting the whole job. The log line makes the
+  // problem observable in operational alerts.
+  let customDefs: CrmCustomFieldDefinition[] = [];
+  try {
+    customDefs = await getDefinitionsForEntity(orgId, entityType as any);
+  } catch (defErr) {
+    logError(
+      `[crm-csv-import] failed to load custom field definitions for job ${jobId}; custom field mappings will be skipped for this run`,
+      { jobId, orgId, entityType },
+      defErr instanceof Error ? defErr : new Error(String(defErr)),
+    );
+  }
+  const customDefByTarget = new Map<string, CrmCustomFieldDefinition>();
+  for (const def of customDefs) {
+    if (!def.isActive) continue;
+    customDefByTarget.set(`cf:${def.id}`, def);
+  }
+  // Pull (csvColumn, definition) pairs that this job actually mapped, so we
+  // skip the per-row work when no custom fields are mapped at all.
+  const customFieldColumnMappings: Array<{ csvCol: string; def: CrmCustomFieldDefinition }> = [];
+  for (const [csvCol, target] of Object.entries(mapping)) {
+    const def = customDefByTarget.get(target);
+    if (def) customFieldColumnMappings.push({ csvCol, def });
+  }
+
+  // Apply mapped custom-field values to a single entity. Errors are surfaced
+  // as row-level errors (including the source row, so the user can re-import
+  // just the failed rows) instead of failing the whole job.
+  async function applyCustomFieldValues(rowIdx: number, row: Record<string, any>, eType: string, entityId: string): Promise<void> {
+    if (customFieldColumnMappings.length === 0) return;
+    const customFields: Record<string, unknown> = {};
+    for (const { csvCol, def } of customFieldColumnMappings) {
+      const coerced = coerceCustomFieldRaw(def, row[csvCol]);
+      if (coerced === undefined) continue;
+      customFields[def.key] = coerced;
+    }
+    if (Object.keys(customFields).length === 0) return;
+    const result = await upsertCustomFieldValues({
+      orgId,
+      entityType: eType as any,
+      entityId,
+      customFields,
+      enforceRequired: false,
+    });
+    if (!result.ok) {
+      recordError(rowIdx, row, { row: rowIdx + 1, error: `Custom field: ${result.error}` });
+    }
+  }
+
   try {
     for (let i = startIdx; i < payloadRows.length; i++) {
       const r = payloadRows[i];
+      let entityId: string | null = null;
       try {
         if (entityType === "CONTACT") {
           const email = pickStr(r, mapping, "email");
@@ -229,6 +331,7 @@ async function processOneJob(): Promise<boolean> {
                 } as any).where(eq(crmContacts.id, existing.id));
                 progress.updated++;
                 didUpdate = true;
+                entityId = existing.id;
               }
             }
             if (!didUpdate) {
@@ -255,6 +358,7 @@ async function processOneJob(): Promise<boolean> {
               } as any).returning();
               progress.insertedIds.push(c.id);
               progress.inserted++;
+              entityId = c.id;
             }
           }
         } else if (entityType === "ORGANISATION") {
@@ -272,7 +376,7 @@ async function processOneJob(): Promise<boolean> {
               });
             } else {
               const [existing] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.organizationId, orgId), eq(crmOrganisations.name, name))).limit(1);
-              if (existing) { progress.updated++; }
+              if (existing) { progress.updated++; entityId = existing.id; }
               else {
                 const [o] = await db.insert(crmOrganisations).values({
                   organizationId: orgId,
@@ -288,6 +392,7 @@ async function processOneJob(): Promise<boolean> {
                 } as any).returning();
                 progress.insertedIds.push(o.id);
                 progress.inserted++;
+                entityId = o.id;
               }
             }
           }
@@ -318,8 +423,13 @@ async function processOneJob(): Promise<boolean> {
               } as any).returning();
               progress.insertedIds.push(o.id);
               progress.inserted++;
+              entityId = o.id;
             }
           }
+        }
+
+        if (entityId) {
+          await applyCustomFieldValues(i, r, entityType, entityId);
         }
       } catch (err: any) {
         recordError(i, r, { row: i + 1, error: err?.message ?? String(err) });
