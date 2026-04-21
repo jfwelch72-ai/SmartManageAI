@@ -390,10 +390,24 @@ function ImportPanel() {
     });
   });
 
+  const normalizeCellValue = (v: any): any => {
+    if (v === undefined || v === null) return "";
+    if (v instanceof Date) {
+      if (isNaN(v.getTime())) return "";
+      const hasTime = v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0 || v.getUTCSeconds() !== 0 || v.getUTCMilliseconds() !== 0;
+      return hasTime ? v.toISOString() : v.toISOString().slice(0, 10);
+    }
+    if (typeof v === "number" || typeof v === "boolean") return v;
+    return String(v);
+  };
+
   const parseSheet = (wb: XLSX.WorkBook, sheetName: string): { headers: string[]; rows: Record<string, any>[] } => {
     const sheet = wb.Sheets[sheetName];
     if (!sheet) throw new Error(`Sheet "${sheetName}" not found in workbook`);
-    const aoa = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: "", raw: false, blankrows: false });
+    // raw: true keeps native types — numbers stay numeric, formula cells return
+    // their cached calculated value (the `v` field) instead of formula text, and
+    // date cells come through as Date objects (because we read with cellDates).
+    const aoa = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: null, raw: true, blankrows: false });
     if (!aoa || aoa.length === 0) throw new Error("Sheet is empty");
     const rawHeaders = (aoa[0] || []).map((h) => (h == null ? "" : String(h).trim()));
     const headers: string[] = [];
@@ -416,9 +430,9 @@ function ImportPanel() {
       const obj: Record<string, any> = {};
       let any = false;
       for (let c = 0; c < headers.length; c++) {
-        const v = row[c];
-        if (v !== undefined && v !== null && String(v) !== "") any = true;
-        obj[headers[c]] = v == null ? "" : String(v);
+        const v = normalizeCellValue(row[c]);
+        if (v !== "" && v !== null && v !== undefined) any = true;
+        obj[headers[c]] = v;
       }
       if (any) rows.push(obj);
     }
@@ -430,7 +444,10 @@ function ImportPanel() {
     const buf = await f.arrayBuffer();
     let wb: XLSX.WorkBook;
     try {
-      wb = XLSX.read(buf, { type: "array" });
+      // cellDates: parse date-formatted cells as JS Date objects (instead of
+      // Excel serial numbers). Combined with sheet_to_json's raw:true, formula
+      // cells surface their cached calculated value rather than the formula text.
+      wb = XLSX.read(buf, { type: "array", cellDates: true });
     } catch (e: any) {
       const msg = String(e?.message || e || "").toLowerCase();
       if (msg.includes("password") || msg.includes("encrypt")) {
@@ -448,6 +465,26 @@ function ImportPanel() {
     "application/vnd.ms-excel",
     "application/vnd.oasis.opendocument.spreadsheet",
   ]);
+
+  const formatPreviewValue = (v: any): string => {
+    if (v === null || v === undefined || v === "") return "";
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return String(v);
+      return v.toLocaleString(undefined, { maximumFractionDigits: 10 });
+    }
+    if (typeof v === "boolean") return v ? "true" : "false";
+    return String(v);
+  };
+
+  const previewValueTypeLabel = (v: any): string | null => {
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return "number";
+    if (typeof v === "boolean") return "boolean";
+    if (typeof v === "string") {
+      if (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?Z)?$/.test(v)) return "date";
+    }
+    return null;
+  };
 
   const isExcelFile = (f: File) => {
     const name = f.name.toLowerCase();
@@ -682,9 +719,15 @@ function ImportPanel() {
               <tbody>
                 {parsedRows.slice(0, 5).map((r, i) => (
                   <tr key={i} className="border-t" data-testid={`row-preview-${i}`}>
-                    {headers.map((h) => (
-                      <td key={h} className="px-2 py-1 whitespace-nowrap">{r[h] != null ? String(r[h]) : ""}</td>
-                    ))}
+                    {headers.map((h) => {
+                      const typeLabel = previewValueTypeLabel(r[h]);
+                      return (
+                        <td key={h} className="px-2 py-1 whitespace-nowrap" data-testid={`cell-preview-${i}-${h}`}>
+                          <span>{formatPreviewValue(r[h])}</span>
+                          {typeLabel && <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground">{typeLabel}</span>}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -707,14 +750,17 @@ function ImportPanel() {
             </div>
             <div className="space-y-2">
               {headers.map((h) => {
-                const sample = parsedRows.find((r) => r?.[h] !== undefined && r?.[h] !== "")?.[h];
+                const sampleRaw = parsedRows.find((r) => r?.[h] !== undefined && r?.[h] !== "" && r?.[h] !== null)?.[h];
+                const sample = formatPreviewValue(sampleRaw);
+                const sampleType = previewValueTypeLabel(sampleRaw);
                 return (
                   <div key={h} className="grid grid-cols-12 gap-2 items-center" data-testid={`row-mapping-${h}`}>
                     <div className="col-span-5 min-w-0">
                       <div className="text-sm font-medium truncate" title={h}>{h}</div>
-                      {sample !== undefined && (
-                        <div className="text-xs text-muted-foreground truncate" title={String(sample)} data-testid={`text-sample-${h}`}>
-                          e.g. {String(sample)}
+                      {sample && (
+                        <div className="text-xs text-muted-foreground truncate" title={sample} data-testid={`text-sample-${h}`}>
+                          e.g. {sample}
+                          {sampleType && <span className="ml-1 uppercase tracking-wide">[{sampleType}]</span>}
                         </div>
                       )}
                     </div>
@@ -756,13 +802,15 @@ function ImportPanel() {
           );
           const previewColumns = fields.filter((t) => usedTargetValues.has(t.value));
           const previewRows = parsedRows.slice(0, 5).map((row) => {
-            const out: Record<string, string> = {};
+            const out: Record<string, { display: string; type: string | null }> = {};
             for (const [csvCol, target] of Object.entries(mapping)) {
               if (!target || target === SKIP_VALUE) continue;
               const v = row[csvCol];
               if (v === undefined || v === null || v === "") continue;
-              const s = typeof v === "string" ? v.trim() : String(v);
-              if (out[target] === undefined || out[target] === "") out[target] = s;
+              const display = typeof v === "string" ? v.trim() : formatPreviewValue(v);
+              if (out[target] === undefined || out[target].display === "") {
+                out[target] = { display, type: previewValueTypeLabel(v) };
+              }
             }
             return out;
           });
@@ -792,15 +840,21 @@ function ImportPanel() {
                     <tbody>
                       {previewRows.map((row, i) => (
                         <tr key={i} className="border-b last:border-0" data-testid={`preview-row-${i}`}>
-                          {previewColumns.map((c) => (
-                            <td key={c.value} className="py-1 pr-3 align-top" data-testid={`preview-cell-${i}-${c.value}`}>
-                              {row[c.value] ? (
-                                <span className="truncate inline-block max-w-[16rem]" title={row[c.value]}>{row[c.value]}</span>
-                              ) : (
-                                <span className="text-muted-foreground italic">—</span>
-                              )}
-                            </td>
-                          ))}
+                          {previewColumns.map((c) => {
+                            const cell = row[c.value];
+                            return (
+                              <td key={c.value} className="py-1 pr-3 align-top" data-testid={`preview-cell-${i}-${c.value}`}>
+                                {cell && cell.display ? (
+                                  <span className="truncate inline-block max-w-[16rem]" title={cell.display}>
+                                    {cell.display}
+                                    {cell.type && <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground">{cell.type}</span>}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground italic">—</span>
+                                )}
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>

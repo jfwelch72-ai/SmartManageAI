@@ -29,10 +29,32 @@ function pick(row: Record<string, any>, mapping: Record<string, string>, target:
   for (const [csvCol, schemaField] of Object.entries(mapping)) {
     if (schemaField === target) {
       const v = row[csvCol];
+      if (v === undefined || v === null || v === "") return undefined;
       return typeof v === "string" ? v.trim() : v;
     }
   }
   return undefined;
+}
+
+// Coerce any pick() value into a trimmed string for fields that store text.
+// Excel imports can deliver numbers/booleans/Date-as-ISO; CSV imports stay strings.
+function pickStr(row: Record<string, any>, mapping: Record<string, string>, target: string): string | undefined {
+  const v = pick(row, mapping, target);
+  if (v === undefined || v === null) return undefined;
+  const s = typeof v === "string" ? v : String(v);
+  const t = s.trim();
+  return t === "" ? undefined : t;
+}
+
+// Coerce a pick() value into a numeric string suitable for decimal columns.
+function pickNumericStr(row: Record<string, any>, mapping: Record<string, string>, target: string): string | undefined {
+  const v = pick(row, mapping, target);
+  if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : undefined;
+  const cleaned = String(v).replace(/[$,\s]/g, "").trim();
+  if (cleaned === "") return undefined;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? String(n) : undefined;
 }
 
 interface JobProgress {
@@ -105,10 +127,10 @@ async function processOneJob(): Promise<boolean> {
       const r = payloadRows[i];
       try {
         if (entityType === "CONTACT") {
-          const email = pick(r, mapping, "email");
-          const fullName = pick(r, mapping, "fullName") || pick(r, mapping, "name");
-          const firstNameRaw = pick(r, mapping, "firstName");
-          const lastNameRaw = pick(r, mapping, "lastName");
+          const email = pickStr(r, mapping, "email");
+          const fullName = pickStr(r, mapping, "fullName") || pickStr(r, mapping, "name");
+          const firstNameRaw = pickStr(r, mapping, "firstName");
+          const lastNameRaw = pickStr(r, mapping, "lastName");
           if (!fullName && !firstNameRaw) { progress.skipped++; }
           else {
             const parts = (fullName || "").split(/\s+/).filter(Boolean);
@@ -121,15 +143,15 @@ async function processOneJob(): Promise<boolean> {
                 await db.update(crmContacts).set({
                   firstName,
                   lastName,
-                  phone: pick(r, mapping, "phone") ?? existing.phone,
-                  title: pick(r, mapping, "title") ?? existing.title,
+                  phone: pickStr(r, mapping, "phone") ?? existing.phone,
+                  title: pickStr(r, mapping, "title") ?? existing.title,
                 } as any).where(eq(crmContacts.id, existing.id));
                 progress.updated++;
                 didUpdate = true;
               }
             }
             if (!didUpdate) {
-              const companyName = pick(r, mapping, "company") || pick(r, mapping, "organisation") || "Imported Contacts";
+              const companyName = pickStr(r, mapping, "company") || pickStr(r, mapping, "organisation") || "Imported Contacts";
               let [orgRow] = await db.select().from(crmOrganisations)
                 .where(and(eq(crmOrganisations.organizationId, orgId), eq(crmOrganisations.name, companyName)))
                 .limit(1);
@@ -146,19 +168,19 @@ async function processOneJob(): Promise<boolean> {
                 firstName,
                 lastName,
                 email: email ?? null,
-                phone: pick(r, mapping, "phone") ?? null,
-                title: pick(r, mapping, "title") ?? null,
+                phone: pickStr(r, mapping, "phone") ?? null,
+                title: pickStr(r, mapping, "title") ?? null,
               } as any).returning();
               progress.insertedIds.push(c.id);
               progress.inserted++;
             }
           }
         } else if (entityType === "ORGANISATION") {
-          const name = pick(r, mapping, "name");
+          const name = pickStr(r, mapping, "name");
           if (!name) { progress.skipped++; }
           else {
             const ALLOWED_ORG_TYPES = ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP", "RENTAL_VENDOR", "SERVICE_VENDOR"] as const;
-            const requestedType = pick(r, mapping, "type");
+            const requestedType = pickStr(r, mapping, "type");
             if (requestedType && !(ALLOWED_ORG_TYPES as readonly string[]).includes(requestedType)) {
               progress.errored++;
               progress.errors.push({ row: i + 1, error: `Invalid organisation type "${requestedType}"; allowed: ${ALLOWED_ORG_TYPES.join(", ")}` });
@@ -170,9 +192,9 @@ async function processOneJob(): Promise<boolean> {
                   organizationId: orgId,
                   name,
                   type: (requestedType as any) || "CONTRACTOR",
-                  website: pick(r, mapping, "website") ?? null,
-                  phone: pick(r, mapping, "phone") ?? null,
-                  address: pick(r, mapping, "address") ?? null,
+                  website: pickStr(r, mapping, "website") ?? null,
+                  phone: pickStr(r, mapping, "phone") ?? null,
+                  address: pickStr(r, mapping, "address") ?? null,
                 } as any).returning();
                 progress.insertedIds.push(o.id);
                 progress.inserted++;
@@ -180,15 +202,15 @@ async function processOneJob(): Promise<boolean> {
             }
           }
         } else if (entityType === "OPPORTUNITY") {
-          const name = pick(r, mapping, "name");
+          const name = pickStr(r, mapping, "name");
           if (!name) { progress.skipped++; }
           else {
             const [o] = await db.insert(crmOpportunities).values({
               organizationId: orgId,
               name,
-              stage: (pick(r, mapping, "stage") as any) || "LEAD",
-              dealValue: pick(r, mapping, "dealValue") ?? null,
-              source: pick(r, mapping, "source") ?? "CSV Import",
+              stage: (pickStr(r, mapping, "stage") as any) || "LEAD",
+              dealValue: pickNumericStr(r, mapping, "dealValue") ?? null,
+              source: pickStr(r, mapping, "source") ?? "CSV Import",
               stageEnteredAt: new Date(),
             } as any).returning();
             progress.insertedIds.push(o.id);
