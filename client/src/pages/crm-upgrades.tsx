@@ -377,10 +377,12 @@ function ImportPanel() {
   });
   const [entity, setEntity] = useState<string>("CONTACT");
   const [file, setFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [parsedData, setParsedData] = useState<{ headers: string[]; rows: Record<string, any>[] } | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const parseTokenRef = useRef(0);
 
   const headers = parsedData?.headers ?? [];
   const showMapping = headers.length > 0;
@@ -419,16 +421,25 @@ function ImportPanel() {
   });
 
   const handleFileChange = async (f: File | null) => {
+    const token = ++parseTokenRef.current;
     setFile(f);
     setParsedData(null);
     setParseError(null);
     setMappingOverrides({});
-    if (!f) return;
+    if (!f) {
+      setIsParsing(false);
+      return;
+    }
+    setIsParsing(true);
     try {
       const result = await parseCsvFile(f);
+      if (parseTokenRef.current !== token) return;
       setParsedData(result);
     } catch (e: any) {
+      if (parseTokenRef.current !== token) return;
       setParseError(e?.message || "Failed to parse CSV");
+    } finally {
+      if (parseTokenRef.current === token) setIsParsing(false);
     }
   };
 
@@ -495,9 +506,44 @@ function ImportPanel() {
           <span className="text-sm text-muted-foreground" data-testid="text-csv-filename">
             {file ? file.name : "No file selected"}
           </span>
+          {parsedData && (
+            <span className="text-sm text-muted-foreground" data-testid="text-csv-rowcount">
+              {parsedData.rows.length.toLocaleString()} rows detected
+            </span>
+          )}
+          {isParsing && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
         </div>
         {parseError && (
-          <div className="text-sm text-destructive" data-testid="text-parse-error">{parseError}</div>
+          <div className="text-sm text-destructive border border-destructive/50 rounded p-2" data-testid="text-csv-parse-error">
+            {parseError}
+          </div>
+        )}
+        {parsedData && (
+          <div className="border rounded overflow-x-auto" data-testid="table-csv-preview">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  {parsedData.headers.map((h) => (
+                    <th key={h} className="text-left px-2 py-1 font-medium whitespace-nowrap" data-testid={`th-preview-${h}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {parsedData.rows.slice(0, 5).map((r, i) => (
+                  <tr key={i} className="border-t" data-testid={`row-preview-${i}`}>
+                    {parsedData.headers.map((h) => (
+                      <td key={h} className="px-2 py-1 whitespace-nowrap">{r[h] != null ? String(r[h]) : ""}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {parsedData.rows.length > 5 && (
+              <div className="text-xs text-muted-foreground px-2 py-1 border-t">
+                Showing first 5 of {parsedData.rows.length.toLocaleString()} rows
+              </div>
+            )}
+          </div>
         )}
         {showMapping && parsedData && (
           <div className="border rounded p-3 space-y-2" data-testid="mapping-panel">
@@ -532,7 +578,7 @@ function ImportPanel() {
             </div>
           </div>
         )}
-        <Button onClick={() => submit.mutate()} disabled={!file || !parsedData || submit.isPending} data-testid="button-import">
+        <Button onClick={() => submit.mutate()} disabled={!file || !parsedData || isParsing || !!parseError || submit.isPending} data-testid="button-import">
           {submit.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}Import
         </Button>
         <div className="pt-3 border-t">
