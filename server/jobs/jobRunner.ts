@@ -2072,7 +2072,7 @@ async function processCrmIdleAutomations() {
 // preference. We use process.env.TZ when set so operators can override the
 // container's wall-clock zone via the standard env var; otherwise fall back
 // to the process's resolved timezone, then UTC as a last resort.
-function getServerDefaultTimezone(): string {
+export function getServerDefaultTimezone(): string {
   const envTz = process.env.TZ;
   if (envTz && isValidTimezone(envTz)) return envTz;
   try {
@@ -2091,7 +2091,7 @@ function getServerDefaultTimezone(): string {
 // "today / in N days" window matches the user's local date — a server in
 // UTC can still be on Sunday while a user in Asia/Tokyo is already on
 // their local Monday 8am.
-function getLocalDateParts(now: Date, timezone: string): {
+export function getLocalDateParts(now: Date, timezone: string): {
   weekday: number;
   hour: number;
   year: number;
@@ -2126,7 +2126,7 @@ const BIRTHDAY_DIGEST_DEDUPE_DAYS = 7;
 const BIRTHDAY_DIGEST_TARGET_WEEKDAY = 1; // Monday
 const BIRTHDAY_DIGEST_TARGET_HOUR = 8;    // 8am local
 
-async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: boolean } = {}) {
+export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: boolean } = {}) {
   const ignoreTimeOfDay = opts.ignoreTimeOfDay === true;
   const now = new Date();
   const serverTz = getServerDefaultTimezone();
