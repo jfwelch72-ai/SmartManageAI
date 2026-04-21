@@ -42,6 +42,7 @@ import { ensureEmailAccountPushColumns } from "./ensureEmailAccountPushColumns";
 import { ensureSequenceTables } from "./ensureSequenceTables";
 import { ensureUserSettingsTableDensity } from "./ensureUserSettingsTableDensity";
 import { ensureUserSettingsCrmBirthdayDigestOptOut } from "./ensureUserSettingsCrmBirthdayDigestOptOut";
+import { ensureUserSettingsBirthdayDigestSchedule } from "./ensureUserSettingsBirthdayDigestSchedule";
 import { ensureCrmCustomFieldTables } from "./ensureCrmCustomFieldTables";
 import { ensureGeocodeStatusColumns } from "./ensureGeocodeStatusColumns";
 import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
@@ -111,6 +112,7 @@ const migrations: MigrationStep[] = [
   { name: "crm_sequence_tables", category: "CREATE_TABLE", fn: ensureSequenceTables },
   { name: "user_settings_table_density", category: "ADD_COLUMN", fn: ensureUserSettingsTableDensity },
   { name: "user_settings_crm_birthday_digest_opt_out", category: "ADD_COLUMN", fn: ensureUserSettingsCrmBirthdayDigestOptOut },
+  { name: "user_settings_birthday_digest_schedule", category: "ADD_COLUMN", fn: ensureUserSettingsBirthdayDigestSchedule },
   { name: "crm_custom_field_tables", category: "CREATE_TABLE", fn: ensureCrmCustomFieldTables },
   { name: "user_saved_views_table", category: "CREATE_TABLE", fn: ensureUserSavedViewsTable },
   { name: "schedule_baselines_table", category: "CREATE_TABLE", fn: ensureScheduleBaselinesTable },
