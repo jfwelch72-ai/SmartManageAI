@@ -194,6 +194,51 @@ describe("CRM Upgrade — Meeting Booking Links", () => {
   });
 });
 
+describe("CRM Upgrade — Send-Time Optimization", () => {
+  it("defers a 2am-scheduled send to 10am local when the window is 9–11am", async () => {
+    const { applyOptimizedSendWindow } = await import("../services/sequenceService");
+    // 2am New_York on a winter day → UTC 07:00
+    const tz = "America/New_York";
+    const scheduled = new Date(Date.UTC(2026, 0, 12, 7, 0, 0));
+    const out = applyOptimizedSendWindow(scheduled, tz, 9, 11);
+    // Expect 10am NY → UTC 15:00 (EST = UTC-5)
+    expect(out.toISOString()).toBe("2026-01-12T15:00:00.000Z");
+  });
+
+  it("defers an after-window send (8pm) to next day 10am local", async () => {
+    const { applyOptimizedSendWindow } = await import("../services/sequenceService");
+    const tz = "America/New_York";
+    // 8pm NY on Jan 12 → UTC Jan 13 01:00
+    const scheduled = new Date(Date.UTC(2026, 0, 13, 1, 0, 0));
+    const out = applyOptimizedSendWindow(scheduled, tz, 9, 11);
+    expect(out.toISOString()).toBe("2026-01-13T15:00:00.000Z");
+  });
+
+  it("leaves an in-window send (10:30am) alone", async () => {
+    const { applyOptimizedSendWindow } = await import("../services/sequenceService");
+    const tz = "America/New_York";
+    const scheduled = new Date(Date.UTC(2026, 0, 12, 15, 30, 0)); // 10:30am NY
+    const out = applyOptimizedSendWindow(scheduled, tz, 9, 11);
+    expect(out.toISOString()).toBe(scheduled.toISOString());
+  });
+
+  it("honors a learned preferred hour when within the window", async () => {
+    const { applyOptimizedSendWindow } = await import("../services/sequenceService");
+    const tz = "America/New_York";
+    const scheduled = new Date(Date.UTC(2026, 0, 12, 7, 0, 0)); // 2am NY
+    const out = applyOptimizedSendWindow(scheduled, tz, 9, 11, 11);
+    expect(out.toISOString()).toBe("2026-01-12T16:00:00.000Z"); // 11am NY → 16:00 UTC
+  });
+
+  it("falls back to window midpoint when preferred hour is outside the window", async () => {
+    const { applyOptimizedSendWindow } = await import("../services/sequenceService");
+    const tz = "America/New_York";
+    const scheduled = new Date(Date.UTC(2026, 0, 12, 7, 0, 0));
+    const out = applyOptimizedSendWindow(scheduled, tz, 9, 11, 18);
+    expect(out.toISOString()).toBe("2026-01-12T15:00:00.000Z");
+  });
+});
+
 describe("CRM Upgrade — CSV Import", () => {
   it("imports contacts from inline rows and reports counts", async () => {
     const res = await auth("post")("/api/crm/csv-imports").send({

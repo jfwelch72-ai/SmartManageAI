@@ -1516,6 +1516,7 @@ export const crmContacts = pgTable("crm_contacts", {
   mobile: text("mobile"),
   preferredContact: crmPreferredContactEnum("preferred_contact").default("EMAIL"),
   preferredContactOther: text("preferred_contact_other"),
+  timezone: text("timezone"),
   notes: text("notes"),
   isPrimary: boolean("is_primary").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
@@ -9346,6 +9347,8 @@ export const crmSequences = pgTable("crm_sequences", {
   businessHoursOnly: boolean("business_hours_only").notNull().default(true),
   weekdaysOnly: boolean("weekdays_only").notNull().default(true),
   dailySendCap: integer("daily_send_cap").notNull().default(200),
+  optimizedSendWindowStartHour: integer("optimized_send_window_start_hour").notNull().default(9),
+  optimizedSendWindowEndHour: integer("optimized_send_window_end_hour").notNull().default(11),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

@@ -98,6 +98,148 @@ export function computeScheduledAt(
   return d;
 }
 
+// ---- Send-time optimization helpers --------------------------------------
+
+/** Get the year/month/day/hour of `date` as observed in `tz`. */
+function getLocalParts(date: Date, tz: string): { year: number; month: number; day: number; hour: number } {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts: Record<string, string> = {};
+  for (const p of fmt.formatToParts(date)) {
+    if (p.type !== "literal") parts[p.type] = p.value;
+  }
+  let hour = Number(parts.hour);
+  if (hour === 24) hour = 0; // some ICU versions emit "24" for midnight
+  return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day), hour };
+}
+
+/** Build a UTC Date that represents `Y-M-D H:00:00` in the given `tz`. */
+function makeUtcFromLocal(year: number, month: number, day: number, hour: number, tz: string): Date {
+  // We want f(utc).asUtcLike == desired, where f converts utc→local parts.
+  // Newton iterate: utc <- utc + (desired - f(utc).asUtcLike).
+  const desired = Date.UTC(year, month - 1, day, hour, 0, 0);
+  let utc = desired;
+  for (let i = 0; i < 4; i++) {
+    const probe = new Date(utc);
+    const local = getLocalParts(probe, tz);
+    const localUtcLike = Date.UTC(local.year, local.month - 1, local.day, local.hour, 0, 0);
+    const drift = desired - localUtcLike;
+    if (drift === 0) break;
+    utc += drift;
+  }
+  return new Date(utc);
+}
+
+/**
+ * Shift `scheduledAt` forward to fall inside the recipient's preferred local-time window.
+ * Used when a step has `sendTimeOptimized` enabled.
+ *
+ * - If `preferredHour` is provided and falls inside [windowStart, windowEnd], the result
+ *   targets that exact hour. Otherwise the midpoint of the window is used.
+ * - If `scheduledAt` (in `tz`) is already within [windowStart, windowEnd], it is left alone.
+ * - If the local hour is before the window, the result targets `targetHour` on the same day.
+ * - If the local hour is after the window, the result targets `targetHour` on the next day.
+ *
+ * The function only ever moves the send forward in time; it never returns an earlier date.
+ */
+export function applyOptimizedSendWindow(
+  scheduledAt: Date,
+  tz: string,
+  windowStartHour: number,
+  windowEndHour: number,
+  preferredHour: number | null = null,
+): Date {
+  const start = Math.max(0, Math.min(23, Math.floor(windowStartHour)));
+  const end = Math.max(start, Math.min(23, Math.floor(windowEndHour)));
+  const target =
+    preferredHour != null && preferredHour >= start && preferredHour <= end
+      ? Math.floor(preferredHour)
+      : Math.floor((start + end) / 2);
+
+  const local = getLocalParts(scheduledAt, tz);
+
+  if (local.hour >= start && local.hour <= end) {
+    // Already inside the window — leave the original time alone.
+    return scheduledAt;
+  }
+
+  let { year, month, day } = local;
+  if (local.hour > end) {
+    // Past the window — advance the local calendar day by one (DST-agnostic).
+    const next = new Date(Date.UTC(year, month - 1, day + 1));
+    year = next.getUTCFullYear();
+    month = next.getUTCMonth() + 1;
+    day = next.getUTCDate();
+  }
+
+  const candidate = makeUtcFromLocal(year, month, day, target, tz);
+  // Defensive: never return a time earlier than the original schedule.
+  return candidate.getTime() < scheduledAt.getTime() ? scheduledAt : candidate;
+}
+
+/**
+ * Examine recent open/click history for a contact (across all sequences in the org)
+ * and return the hour-of-day in `tz` that the contact most frequently engages, or
+ * null if there isn't enough history yet.
+ */
+export async function getPreferredSendHourForContact(
+  organizationId: string,
+  contactId: string,
+  tz: string,
+  windowStartHour: number,
+  windowEndHour: number,
+): Promise<number | null> {
+  // Pull OPEN/CLICK events for this contact's sequence executions (same org).
+  const events = await db
+    .select({ createdAt: crmSequenceEmailEvents.createdAt })
+    .from(crmSequenceEmailEvents)
+    .innerJoin(
+      crmSequenceStepExecutions,
+      eq(crmSequenceStepExecutions.id, crmSequenceEmailEvents.executionId),
+    )
+    .innerJoin(
+      crmSequenceEnrollments,
+      eq(crmSequenceEnrollments.id, crmSequenceStepExecutions.enrollmentId),
+    )
+    .where(and(
+      eq(crmSequenceEnrollments.contactId, contactId),
+      eq(crmSequenceEnrollments.organizationId, organizationId),
+      inArray(crmSequenceEmailEvents.eventType, ["OPEN", "CLICK"]),
+    ))
+    .limit(500);
+
+  if (events.length === 0) return null;
+
+  const start = Math.max(0, Math.min(23, Math.floor(windowStartHour)));
+  const end = Math.max(start, Math.min(23, Math.floor(windowEndHour)));
+  const counts = new Map<number, number>();
+  for (const ev of events) {
+    if (!ev.createdAt) continue;
+    const hour = getLocalParts(ev.createdAt as Date, tz).hour;
+    if (hour < start || hour > end) continue;
+    counts.set(hour, (counts.get(hour) ?? 0) + 1);
+  }
+  if (counts.size === 0) return null;
+
+  let bestHour = start;
+  let bestCount = -1;
+  for (const [hour, count] of counts) {
+    if (count > bestCount) {
+      bestHour = hour;
+      bestCount = count;
+    }
+  }
+  return bestHour;
+}
+
 /**
  * After enrollment is created (or a step completes), schedule the next pending step execution.
  */
@@ -142,10 +284,42 @@ export async function scheduleNextStep(enrollmentId: string): Promise<void> {
     .limit(1);
   if (existing.length > 0) return;
 
-  const scheduledAt = computeScheduledAt(enrollment.startAt, step.delayDays, step.sendHourLocal, {
+  let scheduledAt = computeScheduledAt(enrollment.startAt, step.delayDays, step.sendHourLocal, {
     weekdaysOnly: seq.weekdaysOnly,
     businessHoursOnly: seq.businessHoursOnly,
   });
+
+  // Send-time optimization: if the step opts in, defer the send into the
+  // recipient's preferred local-time window (default 9-11am, configurable
+  // per-sequence by the org). The window's "best hour" is informed by the
+  // contact's prior open/click history when available.
+  if (step.sendTimeOptimized && enrollment.contactId) {
+    try {
+      const [contact] = await db
+        .select({ timezone: crmContacts.timezone })
+        .from(crmContacts)
+        .where(eq(crmContacts.id, enrollment.contactId))
+        .limit(1);
+      let tz = contact?.timezone || null;
+      if (!tz && enrollment.senderId) {
+        const [sender] = await db.select({ timezone: users.timezone }).from(users).where(eq(users.id, enrollment.senderId)).limit(1);
+        tz = sender?.timezone || null;
+      }
+      const effectiveTz = tz || "UTC";
+      const startHour = seq.optimizedSendWindowStartHour ?? 9;
+      const endHour = seq.optimizedSendWindowEndHour ?? 11;
+      const preferred = await getPreferredSendHourForContact(
+        enrollment.organizationId,
+        enrollment.contactId,
+        effectiveTz,
+        startHour,
+        endHour,
+      );
+      scheduledAt = applyOptimizedSendWindow(scheduledAt, effectiveTz, startHour, endHour, preferred);
+    } catch (err) {
+      logError("Send-time optimization failed; using base schedule", { enrollmentId, error: String(err) });
+    }
+  }
 
   await db.insert(crmSequenceStepExecutions).values({
     organizationId: enrollment.organizationId,
