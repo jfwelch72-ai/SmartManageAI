@@ -243,6 +243,9 @@ export interface EvaluateResult {
   alertsSuppressed: number;
   notifiedAdmins: number;
   emailsSent: number;
+  // Task #744 — count of alerts where email delivery was attempted but
+  // failed. Useful in operational logs and for the cron tick to surface.
+  emailsFailed: number;
 }
 
 /**
@@ -440,6 +443,11 @@ function shouldEmail(rule: AlertRuleResolved, observed: number): boolean {
 interface EmailDeliveryResult {
   delivered: boolean;
   recipientCount: number;
+  // Task #744 — true whenever we actually invoked sendEmail (so failures
+  // are recorded distinctly from "didn't try"). `error` captures why a
+  // delivery attempt failed when known.
+  attempted: boolean;
+  error: string | null;
 }
 
 async function emailSuperAdminsForAlert(
@@ -447,11 +455,15 @@ async function emailSuperAdminsForAlert(
   rule: AlertRuleResolved,
   recipients: Array<{ email: string }>,
 ): Promise<EmailDeliveryResult> {
-  if (recipients.length === 0) return { delivered: false, recipientCount: 0 };
+  if (recipients.length === 0) {
+    return { delivered: false, recipientCount: 0, attempted: false, error: null };
+  }
   const emails = Array.from(
     new Set(recipients.map((r) => r.email).filter((e): e is string => !!e && e.length > 0)),
   );
-  if (emails.length === 0) return { delivered: false, recipientCount: 0 };
+  if (emails.length === 0) {
+    return { delivered: false, recipientCount: 0, attempted: false, error: null };
+  }
 
   const subject =
     alert.kind === "spike"
@@ -473,14 +485,36 @@ async function emailSuperAdminsForAlert(
 
   try {
     const ok = await sendEmail({ to: emails, subject, text, html });
-    return { delivered: ok, recipientCount: ok ? emails.length : 0 };
-  } catch (err) {
+    if (ok) {
+      return { delivered: true, recipientCount: emails.length, attempted: true, error: null };
+    }
+    // sendEmail returned false — SendGrid declined the message. We log it
+    // (matching the pre-#744 behavior) but also surface the failure to the
+    // caller so it lands in the dashboard.
     logError("Job metric alerts: email delivery failed", {
-      error: String(err),
+      error: "sendEmail returned false",
       job: alert.job,
       kind: alert.kind,
     });
-    return { delivered: false, recipientCount: 0 };
+    return {
+      delivered: false,
+      recipientCount: 0,
+      attempted: true,
+      error: "SendGrid did not accept the message",
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError("Job metric alerts: email delivery failed", {
+      error: message,
+      job: alert.job,
+      kind: alert.kind,
+    });
+    return {
+      delivered: false,
+      recipientCount: 0,
+      attempted: true,
+      error: message,
+    };
   }
 }
 
@@ -501,6 +535,7 @@ export async function evaluateJobMetricAlerts(
     alertsSuppressed: 0,
     notifiedAdmins: 0,
     emailsSent: 0,
+    emailsFailed: 0,
   };
 
   const source = opts.metricsSource ?? (() => getAllJobMetrics());
@@ -695,11 +730,20 @@ export async function evaluateJobMetricAlerts(
       if (!meta) continue;
       if (!shouldEmail(meta.rule, meta.emailMetric)) continue;
       const outcome = await emailSuperAdminsForAlert(alert, meta.rule, emailRecipients);
+      if (outcome.attempted) {
+        eventRows[i].emailAttempted = true;
+      }
       if (outcome.delivered) {
         alert.emailed = true;
         result.emailsSent++;
         eventRows[i].emailed = true;
         eventRows[i].emailedRecipientCount = outcome.recipientCount;
+      } else if (outcome.attempted) {
+        // Task #744 — record the failure reason so the dashboard can show
+        // a distinct "email failed" warning instead of looking identical to
+        // an alert that simply didn't meet the email threshold.
+        eventRows[i].emailError = outcome.error ?? "Unknown email delivery failure";
+        result.emailsFailed++;
       }
     }
   }
@@ -719,6 +763,7 @@ export async function evaluateJobMetricAlerts(
     suppressed: result.alertsSuppressed,
     notifiedAdmins: result.notifiedAdmins,
     emailsSent: result.emailsSent,
+    emailsFailed: result.emailsFailed,
   });
   return result;
 }
@@ -751,6 +796,12 @@ export interface JobMetricAlertEventView {
   // Task #739 — email escalation outcome recorded at alert-time.
   emailed: boolean;
   emailedRecipientCount: number;
+  // Task #744 — distinguish "email never attempted" from
+  // "email attempted but SendGrid delivery failed". When `emailAttempted`
+  // is true and `emailed` is false, `emailError` carries the failure
+  // reason so the dashboard can surface it.
+  emailAttempted: boolean;
+  emailError: string | null;
 }
 
 export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
@@ -809,6 +860,8 @@ export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
       emailedRecipientCount: Number(
         (r as unknown as { emailedRecipientCount?: number }).emailedRecipientCount ?? 0,
       ),
+      emailAttempted: Boolean((r as unknown as { emailAttempted?: boolean }).emailAttempted ?? false),
+      emailError: ((r as unknown as { emailError?: string | null }).emailError ?? null),
     };
   });
   return { events, activeByJob };
@@ -854,6 +907,10 @@ async function hydrateEventRow(updated: typeof jobMetricAlertEvents.$inferSelect
     emailedRecipientCount: Number(
       (updated as unknown as { emailedRecipientCount?: number }).emailedRecipientCount ?? 0,
     ),
+    emailAttempted: Boolean(
+      (updated as unknown as { emailAttempted?: boolean }).emailAttempted ?? false,
+    ),
+    emailError: ((updated as unknown as { emailError?: string | null }).emailError ?? null),
   };
 }
 

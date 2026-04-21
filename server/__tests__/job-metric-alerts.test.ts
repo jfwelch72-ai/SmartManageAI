@@ -37,6 +37,8 @@ interface EventRow {
   snoozedById: string | null;
   emailed: boolean;
   emailedRecipientCount: number;
+  emailAttempted: boolean;
+  emailError: string | null;
 }
 
 const state = {
@@ -85,6 +87,8 @@ const dbMock = {
             snoozedById: (r.snoozedById as string | null) ?? null,
             emailed: (r.emailed as boolean | undefined) ?? false,
             emailedRecipientCount: (r.emailedRecipientCount as number | undefined) ?? 0,
+            emailAttempted: (r.emailAttempted as boolean | undefined) ?? false,
+            emailError: (r.emailError as string | null | undefined) ?? null,
           });
         }
       }
@@ -130,7 +134,13 @@ const dbMock = {
           receivesJobMetricAlertEmails: true,
           firstName: null,
           lastName: null,
+          // Task #740 — alert engine filters opted-in recipients via this
+          // flag. Default to true here so the email-escalation tests can
+          // see SendGrid being invoked.
           receivesJobMetricAlertEmails: true,
+          // Task #748 — quiet-hours fields read by the alert engine when
+          // deciding whether to skip emailing an admin during their
+          // configured quiet window.
           jobMetricAlertQuietHoursEnabled: false,
           jobMetricAlertQuietHoursStart: null,
           jobMetricAlertQuietHoursEnd: null,
@@ -396,6 +406,8 @@ describe("jobMetricAlerts (Task #718)", () => {
       snoozedById: "admin-1",
       emailed: false,
       emailedRecipientCount: 0,
+      emailAttempted: false,
+      emailError: null,
     });
 
     const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
@@ -439,6 +451,8 @@ describe("jobMetricAlerts (Task #718)", () => {
       snoozedById: null,
       emailed: false,
       emailedRecipientCount: 0,
+      emailAttempted: false,
+      emailError: null,
     });
     // Unacknowledged event in the active window — SHOULD count.
     state.events.push({
@@ -458,6 +472,8 @@ describe("jobMetricAlerts (Task #718)", () => {
       snoozedById: null,
       emailed: false,
       emailedRecipientCount: 0,
+      emailAttempted: false,
+      emailError: null,
     });
 
     const { events, activeByJob } = await alerts.listRecentJobMetricAlertEvents();
@@ -513,6 +529,92 @@ describe("jobMetricAlerts (Task #718)", () => {
     expect(state.events).toHaveLength(1);
     expect(state.events[0].emailed).toBe(true);
     expect(state.events[0].emailedRecipientCount).toBe(2);
+  });
+
+  it("records emailAttempted + emailError when SendGrid throws (Task #744)", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    sendEmailMock.mockClear();
+    sendEmailMock.mockRejectedValueOnce(new Error("SendGrid 502"));
+
+    state.rules = [
+      {
+        id: "r-email",
+        job: "pageable_job",
+        counter: "c",
+        kind: "spike",
+        threshold: "3",
+        minAbsolute: 5,
+        dedupeMinutes: 60,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as RuleRow & { emailWhenAbove: string },
+    ];
+    (state.rules[0] as unknown as { emailWhenAbove: string }).emailWhenAbove = "5";
+
+    const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+    for (let i = 1; i <= 23; i++) {
+      samples.push({ timestamp: now - i * HOUR - 1000, counters: { c: 1 } });
+    }
+    samples.push({ timestamp: now - 60_000, counters: { c: 50 } });
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: source([{ job: "pageable_job", samples }]),
+    });
+
+    expect(result.alertsFired).toHaveLength(1);
+    expect(result.alertsFired[0].emailed).toBe(false);
+    expect(result.emailsSent).toBe(0);
+    expect(result.emailsFailed).toBe(1);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    // The persisted row distinguishes "tried but failed" from "didn't try":
+    // emailed=false, emailAttempted=true, emailError carries the reason.
+    expect(state.events).toHaveLength(1);
+    expect(state.events[0].emailed).toBe(false);
+    expect(state.events[0].emailAttempted).toBe(true);
+    expect(state.events[0].emailError).toMatch(/SendGrid 502/);
+  });
+
+  it("records emailAttempted + emailError when SendGrid returns false (Task #744)", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    sendEmailMock.mockClear();
+    sendEmailMock.mockResolvedValueOnce(false);
+
+    state.rules = [
+      {
+        id: "r-email",
+        job: "pageable_job",
+        counter: "c",
+        kind: "spike",
+        threshold: "3",
+        minAbsolute: 5,
+        dedupeMinutes: 60,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as RuleRow & { emailWhenAbove: string },
+    ];
+    (state.rules[0] as unknown as { emailWhenAbove: string }).emailWhenAbove = "5";
+
+    const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+    for (let i = 1; i <= 23; i++) {
+      samples.push({ timestamp: now - i * HOUR - 1000, counters: { c: 1 } });
+    }
+    samples.push({ timestamp: now - 60_000, counters: { c: 50 } });
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: source([{ job: "pageable_job", samples }]),
+    });
+
+    expect(result.alertsFired).toHaveLength(1);
+    expect(result.emailsSent).toBe(0);
+    expect(result.emailsFailed).toBe(1);
+    expect(state.events).toHaveLength(1);
+    expect(state.events[0].emailed).toBe(false);
+    expect(state.events[0].emailAttempted).toBe(true);
+    expect(state.events[0].emailError).toMatch(/SendGrid/i);
   });
 
   // Task #748 — quiet-hours helper unit tests (no DB).

@@ -1356,6 +1356,13 @@ export const jobMetricAlertEvents = pgTable("job_metric_alert_events", {
   // Super Admins via email (vs. in-app notification only).
   emailed: boolean("emailed").notNull().default(false),
   emailedRecipientCount: integer("emailed_recipient_count").notNull().default(0),
+  // Task #744 — distinguish "email never attempted" (didn't meet escalation
+  // threshold or no opted-in recipients) from "email attempted but SendGrid
+  // delivery failed". `emailAttempted` is true whenever we called the email
+  // service, even if it returned false or threw; `emailError` captures the
+  // failure reason so Super Admins can investigate from the dashboard.
+  emailAttempted: boolean("email_attempted").notNull().default(false),
+  emailError: text("email_error"),
 }, (table) => ({
   jobTriggeredIdx: index("job_metric_alert_events_job_triggered_idx").on(table.job, table.triggeredAt),
   triggeredIdx: index("job_metric_alert_events_triggered_idx").on(table.triggeredAt),

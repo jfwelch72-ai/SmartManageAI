@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail } from "lucide-react";
+import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail, MailWarning } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -325,6 +325,11 @@ interface AlertEvent {
   snoozedByName: string | null;
   emailed: boolean;
   emailedRecipientCount: number;
+  // Task #744 — email attempt outcome. `emailAttempted && !emailed`
+  // means SendGrid was contacted but delivery failed; `emailError` carries
+  // the failure reason for the warning badge tooltip.
+  emailAttempted: boolean;
+  emailError: string | null;
 }
 
 const SNOOZE_OPTIONS: Array<{ hours: number; label: string }> = [
@@ -501,6 +506,20 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                       >
                         <Mail className="h-3 w-3" /> Emailed
                         {a.emailedRecipientCount > 0 ? ` · ${a.emailedRecipientCount}` : ""}
+                      </Badge>
+                    )}
+                    {a.emailAttempted && !a.emailed && (
+                      <Badge
+                        variant="destructive"
+                        className="ml-1 gap-1 bg-amber-600 hover:bg-amber-700"
+                        data-testid={`badge-active-email-failed-${a.id}`}
+                        title={
+                          a.emailError
+                            ? `Email delivery failed: ${a.emailError}. Check SendGrid or inbox rules.`
+                            : "Email delivery failed. Check SendGrid or inbox rules."
+                        }
+                      >
+                        <MailWarning className="h-3 w-3" /> Email failed
                       </Badge>
                     )}
                     {" — "}{a.message}
@@ -811,6 +830,20 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                           >
                             <Mail className="h-3 w-3" /> Emailed
                             {e.emailedRecipientCount > 0 ? ` · ${e.emailedRecipientCount}` : ""}
+                          </Badge>
+                        )}
+                        {e.emailAttempted && !e.emailed && (
+                          <Badge
+                            variant="destructive"
+                            className="ml-1 gap-1 bg-amber-600 hover:bg-amber-700"
+                            data-testid={`badge-email-failed-${e.id}`}
+                            title={
+                              e.emailError
+                                ? `Email delivery failed: ${e.emailError}. Check SendGrid or inbox rules.`
+                                : "Email delivery failed. Check SendGrid or inbox rules."
+                            }
+                          >
+                            <MailWarning className="h-3 w-3" /> Email failed
                           </Badge>
                         )}
                         {e.acknowledgedAt && (
