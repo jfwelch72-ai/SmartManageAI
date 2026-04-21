@@ -127,6 +127,12 @@ const dbMock = {
           isActive: true,
           firstName: null,
           lastName: null,
+          receivesJobMetricAlertEmails: true,
+          jobMetricAlertQuietHoursEnabled: false,
+          jobMetricAlertQuietHoursStart: null,
+          jobMetricAlertQuietHoursEnd: null,
+          jobMetricAlertQuietHoursTimezone: null,
+          jobMetricAlertQuietHoursWeekdays: null,
         }));
       }
       const innerChain: Record<string, unknown> = {};
@@ -481,6 +487,132 @@ describe("jobMetricAlerts (Task #718)", () => {
     expect(state.events).toHaveLength(1);
     expect(state.events[0].emailed).toBe(true);
     expect(state.events[0].emailedRecipientCount).toBe(2);
+  });
+
+  // Task #748 — quiet-hours helper unit tests (no DB).
+  describe("isInJobMetricAlertQuietWindow (Task #748)", () => {
+    function at(iso: string): Date {
+      return new Date(iso);
+    }
+
+    it("returns false when quiet hours are disabled", () => {
+      expect(
+        alerts.isInJobMetricAlertQuietWindow(
+          {
+            quietHoursEnabled: false,
+            quietHoursStart: "22:00",
+            quietHoursEnd: "07:00",
+            quietHoursTimezone: "UTC",
+          },
+          at("2026-04-21T03:00:00Z"),
+        ),
+      ).toBe(false);
+    });
+
+    it("returns false when start/end are not configured", () => {
+      expect(
+        alerts.isInJobMetricAlertQuietWindow(
+          { quietHoursEnabled: true, quietHoursStart: null, quietHoursEnd: null },
+          at("2026-04-21T03:00:00Z"),
+        ),
+      ).toBe(false);
+    });
+
+    it("matches a same-day window (UTC)", () => {
+      expect(
+        alerts.isInJobMetricAlertQuietWindow(
+          {
+            quietHoursEnabled: true,
+            quietHoursStart: "09:00",
+            quietHoursEnd: "17:00",
+            quietHoursTimezone: "UTC",
+          },
+          at("2026-04-21T12:00:00Z"),
+        ),
+      ).toBe(true);
+      expect(
+        alerts.isInJobMetricAlertQuietWindow(
+          {
+            quietHoursEnabled: true,
+            quietHoursStart: "09:00",
+            quietHoursEnd: "17:00",
+            quietHoursTimezone: "UTC",
+          },
+          at("2026-04-21T18:00:00Z"),
+        ),
+      ).toBe(false);
+    });
+
+    it("matches a wrap-around window (22:00 → 07:00)", () => {
+      const recipient = {
+        quietHoursEnabled: true,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+        quietHoursTimezone: "UTC",
+      };
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T03:00:00Z"))).toBe(true);
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T23:30:00Z"))).toBe(true);
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T12:00:00Z"))).toBe(false);
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T07:00:00Z"))).toBe(false);
+    });
+
+    it("respects per-weekday filtering keyed off the start day", () => {
+      // 2026-04-20 is a Monday (UTC). Window 22:00 Mon → 07:00 Tue.
+      const recipient = {
+        quietHoursEnabled: true,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+        quietHoursTimezone: "UTC",
+        quietHoursWeekdays: [1], // Monday only (start day)
+      };
+      // Mon 23:00 — inside window, start-day matches → suppressed.
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-20T23:00:00Z"))).toBe(true);
+      // Tue 03:00 — wrap-around, start-day was Monday → still suppressed.
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T03:00:00Z"))).toBe(true);
+      // Wed 03:00 — wrap-around's start-day would be Tuesday → not suppressed.
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-22T03:00:00Z"))).toBe(false);
+      // Tue 23:00 — start-day is Tuesday, not in [Mon] → not suppressed.
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T23:00:00Z"))).toBe(false);
+    });
+
+    it("treats empty/null weekday list as 'every day'", () => {
+      const recipient = {
+        quietHoursEnabled: true,
+        quietHoursStart: "09:00",
+        quietHoursEnd: "17:00",
+        quietHoursTimezone: "UTC",
+        quietHoursWeekdays: [] as number[],
+      };
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-20T12:00:00Z"))).toBe(true);
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-25T12:00:00Z"))).toBe(true);
+    });
+
+    it("uses the recipient's timezone when comparing the wall-clock time", () => {
+      // 22:00 → 07:00 in America/New_York. 06:00 UTC == 02:00 EDT (April).
+      const recipient = {
+        quietHoursEnabled: true,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+        quietHoursTimezone: "America/New_York",
+      };
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T06:00:00Z"))).toBe(true);
+      // 18:00 UTC == 14:00 EDT — outside the window.
+      expect(alerts.isInJobMetricAlertQuietWindow(recipient, at("2026-04-21T18:00:00Z"))).toBe(false);
+    });
+
+    it("fails open (returns false) when the timezone string is invalid", () => {
+      expect(
+        alerts.isInJobMetricAlertQuietWindow(
+          {
+            quietHoursEnabled: true,
+            quietHoursStart: "22:00",
+            quietHoursEnd: "07:00",
+            quietHoursTimezone: "Not/A_Real_Tz",
+          },
+          at("2026-04-21T03:00:00Z"),
+        ),
+      ).toBe(false);
+    });
   });
 
   it("snoozeJobMetricAlertEvent rejects non-positive hours", async () => {

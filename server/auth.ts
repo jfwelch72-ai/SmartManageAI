@@ -197,6 +197,11 @@ export async function authMiddleware(
       walkthroughStep: user.walkthroughStep,
       walkthroughStartedAt: user.walkthroughStartedAt,
       receivesJobMetricAlertEmails: user.receivesJobMetricAlertEmails,
+      jobMetricAlertQuietHoursEnabled: user.jobMetricAlertQuietHoursEnabled,
+      jobMetricAlertQuietHoursStart: user.jobMetricAlertQuietHoursStart,
+      jobMetricAlertQuietHoursEnd: user.jobMetricAlertQuietHoursEnd,
+      jobMetricAlertQuietHoursTimezone: user.jobMetricAlertQuietHoursTimezone,
+      jobMetricAlertQuietHoursWeekdays: user.jobMetricAlertQuietHoursWeekdays,
       effectiveRole,
       isHustlerOwner,
     };

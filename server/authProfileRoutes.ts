@@ -952,13 +952,35 @@ const upload = multer({
         emergencyContactAddress: z.string().max(500).optional().nullable(),
         emergencyContactEmail: z.string().max(200).optional().nullable(),
         receivesJobMetricAlertEmails: z.boolean().optional(),
+        // Task #748: optional quiet-hours window for job-metric alert
+        // emails (Super-Admin-only feature, but harmless on other roles).
+        jobMetricAlertQuietHoursEnabled: z.boolean().optional(),
+        jobMetricAlertQuietHoursStart: z
+          .string()
+          .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, { message: "Use HH:MM (24h) format" })
+          .optional()
+          .nullable(),
+        jobMetricAlertQuietHoursEnd: z
+          .string()
+          .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, { message: "Use HH:MM (24h) format" })
+          .optional()
+          .nullable(),
+        jobMetricAlertQuietHoursTimezone: z.string().max(100).optional().nullable(),
+        jobMetricAlertQuietHoursWeekdays: z
+          .array(z.number().int().min(0).max(6))
+          .max(7)
+          .optional()
+          .nullable(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
 
       const { firstName, lastName, phone, birthdate, timezone, profileDescription,
         tradeSpecialization, employmentType, emergencyContactName, emergencyContactPhone,
-        emergencyContactAddress, emergencyContactEmail, receivesJobMetricAlertEmails } = parsed.data;
+        emergencyContactAddress, emergencyContactEmail, receivesJobMetricAlertEmails,
+        jobMetricAlertQuietHoursEnabled, jobMetricAlertQuietHoursStart,
+        jobMetricAlertQuietHoursEnd, jobMetricAlertQuietHoursTimezone,
+        jobMetricAlertQuietHoursWeekdays } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -973,6 +995,11 @@ const upload = multer({
       if (emergencyContactAddress !== undefined) updateData.emergencyContactAddress = emergencyContactAddress || null;
       if (emergencyContactEmail !== undefined) updateData.emergencyContactEmail = emergencyContactEmail || null;
       if (receivesJobMetricAlertEmails !== undefined) updateData.receivesJobMetricAlertEmails = receivesJobMetricAlertEmails;
+      if (jobMetricAlertQuietHoursEnabled !== undefined) updateData.jobMetricAlertQuietHoursEnabled = jobMetricAlertQuietHoursEnabled;
+      if (jobMetricAlertQuietHoursStart !== undefined) updateData.jobMetricAlertQuietHoursStart = jobMetricAlertQuietHoursStart || null;
+      if (jobMetricAlertQuietHoursEnd !== undefined) updateData.jobMetricAlertQuietHoursEnd = jobMetricAlertQuietHoursEnd || null;
+      if (jobMetricAlertQuietHoursTimezone !== undefined) updateData.jobMetricAlertQuietHoursTimezone = jobMetricAlertQuietHoursTimezone || null;
+      if (jobMetricAlertQuietHoursWeekdays !== undefined) updateData.jobMetricAlertQuietHoursWeekdays = jobMetricAlertQuietHoursWeekdays;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }

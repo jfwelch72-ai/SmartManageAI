@@ -300,13 +300,29 @@ async function fetchRecentEventLookup(now: number): Promise<Map<string, number>>
   return map;
 }
 
-async function loadSuperAdmins(): Promise<Array<{ id: string; email: string; receivesJobMetricAlertEmails: boolean }>> {
+export interface SuperAdminRecipient {
+  id: string;
+  email: string;
+  receivesJobMetricAlertEmails: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  quietHoursTimezone: string | null;
+  quietHoursWeekdays: number[] | null;
+}
+
+async function loadSuperAdmins(): Promise<SuperAdminRecipient[]> {
   const rows = await db
     .select({
       id: users.id,
       email: users.email,
       isActive: users.isActive,
       receivesJobMetricAlertEmails: users.receivesJobMetricAlertEmails,
+      quietHoursEnabled: users.jobMetricAlertQuietHoursEnabled,
+      quietHoursStart: users.jobMetricAlertQuietHoursStart,
+      quietHoursEnd: users.jobMetricAlertQuietHoursEnd,
+      quietHoursTimezone: users.jobMetricAlertQuietHoursTimezone,
+      quietHoursWeekdays: users.jobMetricAlertQuietHoursWeekdays,
     })
     .from(users)
     .where(eq(users.role, "SUPER_ADMIN"));
@@ -316,7 +332,103 @@ async function loadSuperAdmins(): Promise<Array<{ id: string; email: string; rec
       id: r.id,
       email: r.email,
       receivesJobMetricAlertEmails: r.receivesJobMetricAlertEmails,
+      quietHoursEnabled: r.quietHoursEnabled ?? false,
+      quietHoursStart: r.quietHoursStart ?? null,
+      quietHoursEnd: r.quietHoursEnd ?? null,
+      quietHoursTimezone: r.quietHoursTimezone ?? null,
+      quietHoursWeekdays: r.quietHoursWeekdays ?? null,
     }));
+}
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+function parseHHMMToMinutes(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * Task #748: Returns true when `now` falls inside the recipient's
+ * quiet-hours window. Supports windows that wrap past midnight (e.g.
+ * 22:00 → 07:00) and weekday filters (where the weekday is keyed off
+ * the day the window *starts*, so a Monday-night-into-Tuesday-morning
+ * window with weekdays=[Mon] still suppresses Tuesday's pre-end alerts).
+ *
+ * If the recipient has not enabled quiet hours, or has not configured
+ * a valid start/end pair, this returns false (no suppression).
+ */
+export function isInJobMetricAlertQuietWindow(
+  recipient: {
+    quietHoursEnabled?: boolean | null;
+    quietHoursStart?: string | null;
+    quietHoursEnd?: string | null;
+    quietHoursTimezone?: string | null;
+    quietHoursWeekdays?: number[] | null;
+  },
+  now: Date,
+): boolean {
+  if (!recipient.quietHoursEnabled) return false;
+  const startMin = parseHHMMToMinutes(recipient.quietHoursStart);
+  const endMin = parseHHMMToMinutes(recipient.quietHoursEnd);
+  if (startMin === null || endMin === null) return false;
+  if (startMin === endMin) return false; // empty window
+
+  const tz = recipient.quietHoursTimezone || "UTC";
+  let parts: Record<string, string> = {};
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      weekday: "short",
+    });
+    for (const p of fmt.formatToParts(now)) parts[p.type] = p.value;
+  } catch {
+    // Bad timezone string — fail open (do not suppress) so admins are
+    // not silently locked out of alerts by a typo.
+    return false;
+  }
+
+  // Some ICU locales render "24" for midnight; normalize to 00.
+  const hourRaw = parseInt(parts.hour ?? "0", 10);
+  const hour = hourRaw === 24 ? 0 : hourRaw;
+  const minute = parseInt(parts.minute ?? "0", 10);
+  const minutesNow = hour * 60 + minute;
+  const todayIdx = WEEKDAY_INDEX[parts.weekday] ?? -1;
+
+  const weekdays = recipient.quietHoursWeekdays;
+  const dayMatches = (idx: number): boolean => {
+    if (!weekdays || weekdays.length === 0) return true;
+    return weekdays.includes(idx);
+  };
+
+  if (startMin < endMin) {
+    // Same-day window, e.g. 09:00 → 17:00.
+    if (minutesNow >= startMin && minutesNow < endMin) {
+      return dayMatches(todayIdx);
+    }
+    return false;
+  }
+
+  // Wrap-around window (start > end), e.g. 22:00 → 07:00.
+  if (minutesNow >= startMin) {
+    // Inside the late-evening half; weekday-keyed off today.
+    return dayMatches(todayIdx);
+  }
+  if (minutesNow < endMin) {
+    // Inside the early-morning half; weekday-keyed off the previous day.
+    const yesterdayIdx = (todayIdx + 6) % 7;
+    return dayMatches(yesterdayIdx);
+  }
+  return false;
 }
 
 function shouldEmail(rule: AlertRuleResolved, observed: number): boolean {
@@ -569,7 +681,13 @@ export async function evaluateJobMetricAlerts(
   // loop is never emailed either. We email BEFORE persisting the event
   // rows so the `emailed` outcome (task #739) is written in a single
   // INSERT and visible on the dashboard.
-  const emailRecipients = admins.filter((a) => a.receivesJobMetricAlertEmails);
+  // Task #748: a recipient is also excluded when their personal quiet-
+  // hours window is active. In-app notifications already went out above
+  // — only the email channel is suppressed during quiet hours.
+  const evaluatedAt = new Date(now);
+  const emailRecipients = admins.filter(
+    (a) => a.receivesJobMetricAlertEmails && !isInJobMetricAlertQuietWindow(a, evaluatedAt),
+  );
   if (emailRecipients.length > 0) {
     for (let i = 0; i < fired.length; i++) {
       const alert = fired[i];

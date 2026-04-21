@@ -352,6 +352,17 @@ export const users = pgTable("users", {
   // the job-metric alert engine — other notification channels (in-app)
   // are unaffected.
   receivesJobMetricAlertEmails: boolean("receives_job_metric_alert_emails").notNull().default(true),
+  // Task #748: optional quiet-hours window for job-metric alert emails.
+  // When `enabled` and the recipient's local time falls inside the
+  // [start, end) window on one of the selected weekdays, the alert
+  // engine skips the email but still fires the in-app notification.
+  // Times are stored as "HH:MM" strings, weekdays as 0=Sunday…6=Saturday.
+  // Empty/null weekdays array means "every day".
+  jobMetricAlertQuietHoursEnabled: boolean("job_metric_alert_quiet_hours_enabled").notNull().default(false),
+  jobMetricAlertQuietHoursStart: text("job_metric_alert_quiet_hours_start"),
+  jobMetricAlertQuietHoursEnd: text("job_metric_alert_quiet_hours_end"),
+  jobMetricAlertQuietHoursTimezone: text("job_metric_alert_quiet_hours_timezone"),
+  jobMetricAlertQuietHoursWeekdays: integer("job_metric_alert_quiet_hours_weekdays").array(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

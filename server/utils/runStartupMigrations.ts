@@ -56,6 +56,7 @@ import { ensureCrmContactTimezoneBackfill } from "./ensureCrmContactTimezoneBack
 import { ensureBirthdayReminderCadenceColumn } from "./ensureBirthdayReminderCadenceColumn";
 import { ensureJobMetricAlertTables } from "./ensureJobMetricAlertTables";
 import { ensureUsersJobMetricAlertEmailsColumn } from "./ensureUsersJobMetricAlertEmailsColumn";
+import { ensureUsersJobMetricAlertQuietHoursColumns } from "./ensureUsersJobMetricAlertQuietHoursColumns";
 import { ensurePendingContactReassignmentTable } from "./ensurePendingContactReassignmentTable";
 import { ensureCrmOrganisationOwnerColumn } from "./ensureCrmOrganisationOwnerColumn";
 
@@ -123,6 +124,7 @@ const migrations: MigrationStep[] = [
   { name: "birthday_reminder_cadence_column", category: "ADD_COLUMN", fn: ensureBirthdayReminderCadenceColumn },
   { name: "job_metric_alert_tables", category: "CREATE_TABLE", fn: ensureJobMetricAlertTables },
   { name: "users_receives_job_metric_alert_emails_column", category: "ADD_COLUMN", fn: ensureUsersJobMetricAlertEmailsColumn },
+  { name: "users_job_metric_alert_quiet_hours_columns", category: "ADD_COLUMN", fn: ensureUsersJobMetricAlertQuietHoursColumns },
   { name: "pending_contact_reassignment_notifications_table", category: "CREATE_TABLE", fn: ensurePendingContactReassignmentTable },
   { name: "crm_organisation_owner_column", category: "ADD_COLUMN", fn: ensureCrmOrganisationOwnerColumn },
 ];

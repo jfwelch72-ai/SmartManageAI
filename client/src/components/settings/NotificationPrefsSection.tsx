@@ -12,7 +12,9 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon } from "lucide-react";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -191,6 +193,95 @@ export default function NotificationPrefsSection() {
   function handleJobMetricAlertEmailsToggle(receive: boolean) {
     setReceivesJobMetricAlertEmails(receive);
     updateJobMetricAlertEmailsMutation.mutate(receive);
+  }
+
+  // Task #748: Super-Admin quiet-hours window for job-metric alert emails.
+  // Stored on users.* via PATCH /api/auth/profile alongside the opt-out
+  // toggle above. The alert engine consults these fields and skips email
+  // delivery (in-app still fires) inside the window.
+  const detectedTimezone = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }
+    catch { return "UTC"; }
+  })();
+  const supportedTimezones: string[] = (() => {
+    try {
+      const fn = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf;
+      if (typeof fn === "function") return fn("timeZone");
+    } catch { /* fall through */ }
+    return [];
+  })();
+  const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const [quietEnabled, setQuietEnabled] = useState(false);
+  const [quietStart, setQuietStart] = useState("22:00");
+  const [quietEnd, setQuietEnd] = useState("07:00");
+  const [quietTimezone, setQuietTimezone] = useState(detectedTimezone);
+  // weekdays = days of week (0=Sun … 6=Sat) the quiet window applies on.
+  // Empty array means "every day" — matches the server-side helper.
+  const [quietWeekdays, setQuietWeekdays] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (!authUser) return;
+    setQuietEnabled(Boolean(authUser.jobMetricAlertQuietHoursEnabled));
+    if (authUser.jobMetricAlertQuietHoursStart) setQuietStart(authUser.jobMetricAlertQuietHoursStart);
+    if (authUser.jobMetricAlertQuietHoursEnd) setQuietEnd(authUser.jobMetricAlertQuietHoursEnd);
+    if (authUser.jobMetricAlertQuietHoursTimezone) setQuietTimezone(authUser.jobMetricAlertQuietHoursTimezone);
+    if (Array.isArray(authUser.jobMetricAlertQuietHoursWeekdays)) {
+      setQuietWeekdays(authUser.jobMetricAlertQuietHoursWeekdays as number[]);
+    }
+  }, [authUser]);
+
+  const updateQuietHoursMutation = useMutation({
+    mutationFn: async (payload: {
+      jobMetricAlertQuietHoursEnabled: boolean;
+      jobMetricAlertQuietHoursStart: string | null;
+      jobMetricAlertQuietHoursEnd: string | null;
+      jobMetricAlertQuietHoursTimezone: string | null;
+      jobMetricAlertQuietHoursWeekdays: number[] | null;
+    }) => {
+      return await apiRequest("PATCH", "/api/auth/profile", payload);
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: vars.jobMetricAlertQuietHoursEnabled ? "Quiet hours saved" : "Quiet hours disabled",
+        description: vars.jobMetricAlertQuietHoursEnabled
+          ? `No job-alert emails between ${vars.jobMetricAlertQuietHoursStart} and ${vars.jobMetricAlertQuietHoursEnd} (${vars.jobMetricAlertQuietHoursTimezone}).`
+          : "Job-alert emails will be sent at any time of day.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to save quiet hours",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function toggleQuietWeekday(idx: number) {
+    setQuietWeekdays((prev) => (prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx].sort()));
+  }
+
+  function handleQuietHoursEnabledToggle(enabled: boolean) {
+    setQuietEnabled(enabled);
+    updateQuietHoursMutation.mutate({
+      jobMetricAlertQuietHoursEnabled: enabled,
+      jobMetricAlertQuietHoursStart: quietStart || null,
+      jobMetricAlertQuietHoursEnd: quietEnd || null,
+      jobMetricAlertQuietHoursTimezone: quietTimezone || null,
+      jobMetricAlertQuietHoursWeekdays: quietWeekdays.length > 0 ? quietWeekdays : null,
+    });
+  }
+
+  function handleSaveQuietHours() {
+    updateQuietHoursMutation.mutate({
+      jobMetricAlertQuietHoursEnabled: quietEnabled,
+      jobMetricAlertQuietHoursStart: quietStart || null,
+      jobMetricAlertQuietHoursEnd: quietEnd || null,
+      jobMetricAlertQuietHoursTimezone: quietTimezone || null,
+      jobMetricAlertQuietHoursWeekdays: quietWeekdays.length > 0 ? quietWeekdays : null,
+    });
   }
 
   const [channelPrefs, setChannelPrefs] = useState<ChannelPrefsData>({
@@ -594,6 +685,117 @@ export default function NotificationPrefsSection() {
                       data-testid="switch-job-metric-alert-emails"
                     />
                   </div>
+
+                  {receivesJobMetricAlertEmails && (
+                    <div className="mt-4 rounded-md border border-border p-3 space-y-3" data-testid="section-job-metric-alert-quiet-hours">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Moon className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-sm font-medium">Quiet hours</p>
+                            <p className="text-xs text-muted-foreground">
+                              Skip email delivery during this window. In-app alerts still fire.
+                            </p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={quietEnabled}
+                          onCheckedChange={handleQuietHoursEnabledToggle}
+                          disabled={updateQuietHoursMutation.isPending}
+                          data-testid="switch-job-metric-alert-quiet-hours-enabled"
+                        />
+                      </div>
+
+                      {quietEnabled && (
+                        <div className="space-y-3 pt-1">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <Label htmlFor="quiet-hours-start" className="text-xs text-muted-foreground">Start</Label>
+                              <Input
+                                id="quiet-hours-start"
+                                type="time"
+                                value={quietStart}
+                                onChange={(e) => setQuietStart(e.target.value)}
+                                data-testid="input-quiet-hours-start"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="quiet-hours-end" className="text-xs text-muted-foreground">End</Label>
+                              <Input
+                                id="quiet-hours-end"
+                                type="time"
+                                value={quietEnd}
+                                onChange={(e) => setQuietEnd(e.target.value)}
+                                data-testid="input-quiet-hours-end"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label htmlFor="quiet-hours-timezone" className="text-xs text-muted-foreground">Timezone</Label>
+                            {supportedTimezones.length > 0 ? (
+                              <Select value={quietTimezone} onValueChange={setQuietTimezone}>
+                                <SelectTrigger id="quiet-hours-timezone" data-testid="select-quiet-hours-timezone">
+                                  <SelectValue placeholder="Select timezone" />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-64">
+                                  {supportedTimezones.map((tz) => (
+                                    <SelectItem key={tz} value={tz} data-testid={`option-quiet-hours-timezone-${tz}`}>{tz}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                id="quiet-hours-timezone"
+                                value={quietTimezone}
+                                onChange={(e) => setQuietTimezone(e.target.value)}
+                                placeholder="America/New_York"
+                                data-testid="input-quiet-hours-timezone"
+                              />
+                            )}
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Active on</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Leave all unchecked to apply every day.
+                            </p>
+                            <div className="flex flex-wrap gap-3 pt-1">
+                              {WEEKDAY_LABELS.map((label, idx) => (
+                                <label
+                                  key={label}
+                                  htmlFor={`quiet-hours-weekday-${idx}`}
+                                  className="flex items-center gap-2 cursor-pointer"
+                                  data-testid={`row-quiet-hours-weekday-${idx}`}
+                                >
+                                  <Checkbox
+                                    id={`quiet-hours-weekday-${idx}`}
+                                    checked={quietWeekdays.includes(idx)}
+                                    onCheckedChange={() => toggleQuietWeekday(idx)}
+                                    data-testid={`checkbox-quiet-hours-weekday-${idx}`}
+                                  />
+                                  <span className="text-sm">{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          <Button
+                            size="sm"
+                            onClick={handleSaveQuietHours}
+                            disabled={updateQuietHoursMutation.isPending}
+                            data-testid="button-save-quiet-hours"
+                          >
+                            {updateQuietHoursMutation.isPending ? (
+                              <Fragment><Loader2 className="h-3 w-3 mr-2 animate-spin" />Saving...</Fragment>
+                            ) : (
+                              "Save quiet hours"
+                            )}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
