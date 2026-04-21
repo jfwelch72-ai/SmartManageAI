@@ -203,7 +203,7 @@ import { crmOrganisations, crmContacts, crmOrganisationNotes, insertCrmOrganisat
 import { eq, and, sql, desc, or, lte, gte, isNotNull, isNull, inArray, ilike, ne, type SQL, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
-import { insertNotification } from "./services/notificationService";
+import { insertNotification, queueContactReassignmentNotification } from "./services/notificationService";
 import { eventBus } from "./events";
 import { scoreWinProbability } from "./ai/winProbabilityService";
 import { evaluateAssignment } from "./utils/crmAssignmentEngine";
@@ -1809,6 +1809,9 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
     // Task #709: notify the new owner (in-app + email) when the contact owner
     // actually changes to a different active user. Skip self-assignment, no-op
     // updates, and clears (ownerId -> null).
+    // Task #715: route the notification through the coalescing helper so
+    // rapid-fire one-by-one reassignments collapse into a single summary
+    // instead of spamming one email per contact.
     if (
       ownerProvided &&
       rawOwnerId &&
@@ -1823,15 +1826,13 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
         .filter(Boolean)
         .join(" ")
         .trim() || "a contact";
-      insertNotification({
-        userId: rawOwnerId,
+      queueContactReassignmentNotification({
+        recipientUserId: rawOwnerId,
         organizationId: orgId ?? undefined,
-        type: "CRM_CONTACT_REASSIGNED",
-        title: "A CRM contact was assigned to you",
-        message: `${reassignerName} assigned ${contactName} to you.`,
-        relatedEntityId: updated.id,
-        relatedEntityType: "CRM_CONTACT",
-      }).catch(() => undefined);
+        reassignerName,
+        contactId: updated.id,
+        contactName,
+      });
     }
 
     const customFields = orgId ? await getCustomFieldsMap(orgId, "CONTACT", updated.id) : {};
