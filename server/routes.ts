@@ -783,6 +783,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Task #718 — Job metric alert configuration & state.
+  app.get("/api/admin/metrics/jobs/alerts", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const [rules, recent] = await Promise.all([
+        mod.listJobMetricAlertRules(),
+        mod.listRecentJobMetricAlertEvents(50),
+      ]);
+      res.json({
+        rules,
+        events: recent.events,
+        activeByJob: recent.activeByJob,
+        defaults: mod.ALERT_DEFAULTS,
+        lastEvaluatedAt: mod.getLastEvaluationAt(),
+      });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.post("/api/admin/metrics/jobs/alerts/rules", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const schema = z.object({
+        id: z.string().optional().nullable(),
+        job: z.string().min(1).max(120),
+        counter: z.string().min(1).max(120).optional().nullable(),
+        kind: z.enum(["spike", "stall"]),
+        threshold: z.number().positive().max(100000),
+        minAbsolute: z.number().int().min(0).max(1_000_000).optional(),
+        dedupeMinutes: z.number().int().min(1).max(24 * 60).optional(),
+        enabled: z.boolean().optional(),
+      });
+      const parsed = schema.parse(req.body);
+      const mod = await import("./utils/jobMetricAlerts");
+      const rule = await mod.upsertJobMetricAlertRule(parsed);
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: parsed.id ? "UPDATE" : "CREATE", entityType: "job_metric_alert_rule", entityId: rule.id, newValue: JSON.stringify(parsed) }, req);
+      res.json(rule);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid rule", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  app.delete("/api/admin/metrics/jobs/alerts/rules/:id", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const ok = await mod.deleteJobMetricAlertRule(req.params.id);
+      if (!ok) {
+        res.status(404).json({ error: "Rule not found" });
+        return;
+      }
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "job_metric_alert_rule", entityId: req.params.id }, req);
+      res.json({ deleted: req.params.id });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.post("/api/admin/metrics/jobs/alerts/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const mod = await import("./utils/jobMetricAlerts");
+      const result = await mod.evaluateJobMetricAlerts();
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: "EXECUTE", entityType: "background_job", entityId: "job_metric_alerts", newValue: `Manual evaluation: ${result.alertsFired.length} fired, ${result.alertsSuppressed} suppressed` }, req);
+      res.json(result);
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
   app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { jobName } = req.params;

@@ -1287,6 +1287,60 @@ export const jobMetricSamples = pgTable("job_metric_samples", {
   recordedAtIdx: index("job_metric_samples_recorded_at_idx").on(table.recordedAt),
 }));
 
+// Job Metric Alert Rules table — Task #718
+// Configurable alert thresholds per job/counter. Two kinds:
+//   - "spike": fires when a counter's last-hour total exceeds a multiple
+//     of its rolling baseline (avg of prior hourly buckets) and an
+//     absolute floor.
+//   - "stall": fires when a job has not produced a sample in N hours
+//     (counter is empty for stall rules — applies job-wide).
+// When no rule exists for a job/counter the engine falls back to sane
+// defaults so admins get coverage out of the box.
+export const jobMetricAlertRules = pgTable("job_metric_alert_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  job: text("job").notNull(),
+  counter: text("counter"),
+  kind: text("kind").notNull(),
+  threshold: decimal("threshold", { precision: 12, scale: 4 }).notNull(),
+  minAbsolute: integer("min_absolute").notNull().default(0),
+  dedupeMinutes: integer("dedupe_minutes").notNull().default(60),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  jobKindIdx: index("job_metric_alert_rules_job_kind_idx").on(table.job, table.kind),
+}));
+
+// Job Metric Alert Events table — Task #718
+// Append-only history of fired alerts. The engine reads from this table
+// to dedupe (no repeat alert for the same job+counter+kind within the
+// rule's dedupe window) and the admin dashboard reads from it to show
+// the current alert state.
+export const jobMetricAlertEvents = pgTable("job_metric_alert_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  job: text("job").notNull(),
+  counter: text("counter"),
+  kind: text("kind").notNull(),
+  ruleId: varchar("rule_id"),
+  message: text("message").notNull(),
+  observedValue: decimal("observed_value", { precision: 18, scale: 4 }),
+  baselineValue: decimal("baseline_value", { precision: 18, scale: 4 }),
+  triggeredAt: timestamp("triggered_at").notNull().defaultNow(),
+  notifiedUserCount: integer("notified_user_count").notNull().default(0),
+}, (table) => ({
+  jobTriggeredIdx: index("job_metric_alert_events_job_triggered_idx").on(table.job, table.triggeredAt),
+  triggeredIdx: index("job_metric_alert_events_triggered_idx").on(table.triggeredAt),
+}));
+
+export const insertJobMetricAlertRuleSchema = createInsertSchema(jobMetricAlertRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertJobMetricAlertRule = z.infer<typeof insertJobMetricAlertRuleSchema>;
+export type JobMetricAlertRule = typeof jobMetricAlertRules.$inferSelect;
+export type JobMetricAlertEvent = typeof jobMetricAlertEvents.$inferSelect;
+
 // Audit Log table
 export const auditLog = pgTable("audit_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

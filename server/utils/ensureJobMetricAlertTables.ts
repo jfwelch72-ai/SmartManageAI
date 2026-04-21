@@ -1,0 +1,64 @@
+import { db } from "../db";
+import { sql } from "drizzle-orm";
+
+export async function ensureJobMetricAlertTables(): Promise<void> {
+  const rulesExists = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'job_metric_alert_rules'
+    ) AS exists
+  `);
+  if (!(rulesExists.rows[0] as { exists: boolean }).exists) {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "job_metric_alert_rules" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        "job" text NOT NULL,
+        "counter" text,
+        "kind" text NOT NULL,
+        "threshold" numeric(12,4) NOT NULL,
+        "min_absolute" integer NOT NULL DEFAULT 0,
+        "dedupe_minutes" integer NOT NULL DEFAULT 60,
+        "enabled" boolean NOT NULL DEFAULT true,
+        "created_at" timestamp NOT NULL DEFAULT now(),
+        "updated_at" timestamp NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "job_metric_alert_rules_job_kind_idx"
+      ON "job_metric_alert_rules" ("job", "kind")
+    `);
+    console.log("[migration] job_metric_alert_rules — table created");
+  }
+
+  const eventsExists = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'job_metric_alert_events'
+    ) AS exists
+  `);
+  if (!(eventsExists.rows[0] as { exists: boolean }).exists) {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "job_metric_alert_events" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        "job" text NOT NULL,
+        "counter" text,
+        "kind" text NOT NULL,
+        "rule_id" varchar,
+        "message" text NOT NULL,
+        "observed_value" numeric(18,4),
+        "baseline_value" numeric(18,4),
+        "triggered_at" timestamp NOT NULL DEFAULT now(),
+        "notified_user_count" integer NOT NULL DEFAULT 0
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "job_metric_alert_events_job_triggered_idx"
+      ON "job_metric_alert_events" ("job", "triggered_at")
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "job_metric_alert_events_triggered_idx"
+      ON "job_metric_alert_events" ("triggered_at")
+    `);
+    console.log("[migration] job_metric_alert_events — table created");
+  }
+}

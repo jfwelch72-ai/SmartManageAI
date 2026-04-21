@@ -5,6 +5,7 @@ import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../utils/jobMetrics";
+import { evaluateJobMetricAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, type InsertNotification } from "@shared/schema";
@@ -50,6 +51,7 @@ let crmIdleAutomationTask: ReturnType<typeof cron.schedule> | null = null;
 let crmBirthdayDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let crmBirthdayDailyTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricsPruneTask: ReturnType<typeof cron.schedule> | null = null;
+let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -71,6 +73,24 @@ export function startJobRunner() {
       if (deleted > 0) logInfo("Pruned old job metric samples", { deleted });
     } catch (err) {
       logError("Job metric DB prune failed", { error: String(err) });
+    }
+  });
+
+  // Task #718: every 15 minutes, scan the rolling 24h job-metric window
+  // for spikes vs the trailing baseline and for jobs that have gone
+  // silent. Fires in-app notifications to every Super Admin and records
+  // a row in `job_metric_alert_events` for the dashboard.
+  jobMetricAlertsTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      const result = await evaluateJobMetricAlerts();
+      if (result.alertsFired.length > 0) {
+        logInfo("Job metric alerts fired", {
+          fired: result.alertsFired.length,
+          suppressed: result.alertsSuppressed,
+        });
+      }
+    } catch (err) {
+      logError("Job metric alert evaluation failed", { error: String(err) });
     }
   });
 
@@ -419,6 +439,10 @@ export function stopJobRunner() {
     jobMetricsPruneTask.stop();
     jobMetricsPruneTask = null;
   }
+  if (jobMetricAlertsTask) {
+    jobMetricAlertsTask.stop();
+    jobMetricAlertsTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -448,6 +472,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   crm_idle_automations:{ fn: () => processCrmIdleAutomations(),        description: "Tick CRM automation engine for IDLE_DAYS triggers",   schedule: "*/10 * * * *" },
   crm_birthday_digest: { fn: () => processCrmContactBirthdayDigest({ ignoreTimeOfDay: true }), description: "Send weekly CRM contact birthday digest in each user's local timezone", schedule: "0 * * * *" },
   crm_birthday_daily:  { fn: () => processCrmContactBirthdayDailyDigest(), description: "Daily morning email reminder of today's CRM contact birthdays to contact owners", schedule: "0 7 * * *" },
+  job_metric_alerts:   { fn: async () => { await evaluateJobMetricAlerts(); }, description: "Evaluate job metric counters for spikes vs baseline and stalled jobs", schedule: "*/15 * * * *" },
 };
 
 async function processOutbox() {
