@@ -463,15 +463,35 @@ function ImportPanel() {
 
   const parseExcelFile = async (f: File): Promise<{ wb: XLSX.WorkBook; sheets: string[] }> => {
     const buf = await f.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array" });
+    let wb: XLSX.WorkBook;
+    try {
+      wb = XLSX.read(buf, { type: "array" });
+    } catch (e: any) {
+      const msg = String(e?.message || e || "").toLowerCase();
+      if (msg.includes("password") || msg.includes("encrypt")) {
+        throw new Error("This file is password-protected. Please remove the password and try again.");
+      }
+      throw e;
+    }
     const sheets = wb.SheetNames || [];
     if (sheets.length === 0) throw new Error("Workbook has no sheets");
     return { wb, sheets };
   };
 
+  const EXCEL_MIME_TYPES = new Set([
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/vnd.oasis.opendocument.spreadsheet",
+  ]);
+
   const isExcelFile = (f: File) => {
     const name = f.name.toLowerCase();
-    return name.endsWith(".xlsx") || f.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    return (
+      name.endsWith(".xlsx") ||
+      name.endsWith(".xls") ||
+      name.endsWith(".ods") ||
+      EXCEL_MIME_TYPES.has(f.type)
+    );
   };
 
   const handleFileChange = async (f: File | null) => {
@@ -570,7 +590,7 @@ function ImportPanel() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>CSV / Excel Import</CardTitle><CardDescription>Drag and drop or choose a CSV or Excel (.xlsx) file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported for CSV. Multi-sheet workbooks let you pick which sheet to import. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>CSV / Excel Import</CardTitle><CardDescription>Drag and drop or choose a CSV or spreadsheet (.xlsx, .xls, .ods) file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported for CSV. Multi-sheet workbooks let you pick which sheet to import. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
         <Select value={entity} onValueChange={(v) => { setEntity(v); setMappingOverrides({}); }}>
           <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
@@ -602,7 +622,7 @@ function ImportPanel() {
               setSelectedSheet(null);
               workbookRef.current = null;
               if (fileInputRef.current) fileInputRef.current.value = "";
-              setParseError("Please drop a .csv or .xlsx file");
+              setParseError("Please drop a .csv, .xlsx, .xls, or .ods file");
               return;
             }
             handleFileChange(dropped);
@@ -612,13 +632,13 @@ function ImportPanel() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xls,application/vnd.ms-excel,.ods,application/vnd.oasis.opendocument.spreadsheet"
             className="hidden"
             onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
             data-testid="input-csv-file"
           />
           <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
-          <div className="text-sm mb-2">Drag and drop a .csv or .xlsx file here, or</div>
+          <div className="text-sm mb-2">Drag and drop a .csv, .xlsx, .xls, or .ods file here, or</div>
           <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-choose-file">
             <Upload className="h-4 w-4 mr-1" />Choose file
           </Button>
