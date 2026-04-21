@@ -1,0 +1,299 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity } from "lucide-react";
+import { useMemo } from "react";
+import {
+  ComposedChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+
+interface JobMetricSample {
+  timestamp: number;
+  counters: Record<string, number>;
+}
+
+interface JobMetricsResponse {
+  job: string;
+  windowMs: number;
+  samples: JobMetricSample[];
+  totals: Record<string, number>;
+  latest: JobMetricSample | null;
+}
+
+interface JobsListResponse {
+  jobs: JobMetricsResponse[];
+}
+
+const BIRTHDAY_JOB = "crm_birthday_digest";
+const BIRTHDAY_COUNTERS = [
+  "digestsSent",
+  "skippedTimeOfDay",
+  "skippedDedupe",
+  "skippedNoBirthdays",
+] as const;
+
+const COUNTER_COLORS: Record<string, string> = {
+  digestsSent: "hsl(var(--chart-1))",
+  skippedTimeOfDay: "hsl(var(--chart-2))",
+  skippedDedupe: "hsl(var(--chart-3))",
+  skippedNoBirthdays: "hsl(var(--chart-4))",
+};
+
+const COUNTER_LABELS: Record<string, string> = {
+  digestsSent: "Digests sent",
+  skippedTimeOfDay: "Skipped (time of day)",
+  skippedDedupe: "Skipped (dedupe)",
+  skippedNoBirthdays: "Skipped (no birthdays)",
+};
+
+function formatDuration(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${totalSec}s`;
+}
+
+function formatRelative(ts: number | null): string {
+  if (!ts) return "Never";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  const m = Math.floor(diff / 60_000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+function formatTimestamp(ts: number | null): string {
+  if (!ts) return "Never";
+  return new Date(ts).toLocaleString();
+}
+
+const BIRTHDAY_KEY = ["/api/admin/metrics/jobs", BIRTHDAY_JOB] as const;
+const ALL_JOBS_KEY = ["/api/admin/metrics/jobs"] as const;
+
+function bucketSamples(samples: JobMetricSample[], counters: readonly string[]) {
+  const now = Date.now();
+  const windowMs = 24 * 60 * 60 * 1000;
+  const bucketMs = 60 * 60 * 1000;
+  const bucketCount = 24;
+  const start = now - windowMs;
+  const buckets: Array<{
+    label: string;
+    ts: number;
+    [key: string]: number | string;
+  }> = [];
+  for (let i = 0; i < bucketCount; i++) {
+    const bucketStart = start + i * bucketMs;
+    const row: Record<string, number | string> = {
+      ts: bucketStart,
+      label: new Date(bucketStart).getHours().toString().padStart(2, "0") + ":00",
+    };
+    for (const c of counters) row[c] = 0;
+    buckets.push(row as typeof buckets[number]);
+  }
+  for (const s of samples) {
+    if (s.timestamp < start) continue;
+    const idx = Math.min(
+      bucketCount - 1,
+      Math.floor((s.timestamp - start) / bucketMs)
+    );
+    for (const c of counters) {
+      const v = s.counters[c];
+      if (typeof v === "number") {
+        (buckets[idx][c] as number) = (buckets[idx][c] as number) + v;
+      }
+    }
+  }
+  return buckets;
+}
+
+export default function JobMetricsHealth() {
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<JobMetricsResponse>({
+    queryKey: BIRTHDAY_KEY,
+    refetchInterval: 15000,
+  });
+
+  const { data: allJobs } = useQuery<JobsListResponse>({
+    queryKey: ALL_JOBS_KEY,
+    refetchInterval: 30000,
+  });
+
+  const chartData = useMemo(
+    () => (data ? bucketSamples(data.samples, BIRTHDAY_COUNTERS) : []),
+    [data]
+  );
+
+  const totals = data?.totals ?? {};
+  const latest = data?.latest ?? null;
+  const sampleCount = data?.samples.length ?? 0;
+  const otherJobs = (allJobs?.jobs ?? []).filter((j) => j.job !== BIRTHDAY_JOB);
+
+  return (
+    <div className="container mx-auto p-4 sm:p-6 space-y-6">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Link href="/admin">
+            <Button variant="ghost" size="sm" data-testid="link-back-admin">
+              <ArrowLeft className="h-4 w-4 mr-1" /> Back to admin
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-semibold" data-testid="text-page-title">
+              Background job metrics
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Rolling 24h delivery health for the CRM birthday digest job and any other
+              job that publishes counters via <code>recordJobMetrics</code>. Samples are
+              process-local and reset on restart.
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          data-testid="button-refresh"
+        >
+          <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {isError && (
+        <Alert variant="destructive" data-testid="alert-error">
+          <XCircle className="h-4 w-4" />
+          <AlertTitle>Failed to load job metrics</AlertTitle>
+          <AlertDescription>Try refreshing or check server logs.</AlertDescription>
+        </Alert>
+      )}
+
+      <Card data-testid="card-birthday-digest">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Cake className="h-4 w-4" /> CRM birthday digest
+              </CardTitle>
+              <CardDescription>
+                Window: {data ? formatDuration(data.windowMs) : "24h"} · Samples retained:{" "}
+                <span data-testid="text-sample-count">{sampleCount}</span> · Last tick:{" "}
+                <span data-testid="text-last-tick">{formatRelative(latest?.timestamp ?? null)}</span>
+                {latest && (
+                  <span className="text-muted-foreground"> ({formatTimestamp(latest.timestamp)})</span>
+                )}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading || !data ? (
+            <Skeleton className="h-64 w-full" />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                {BIRTHDAY_COUNTERS.map((c) => (
+                  <div key={c} data-testid={`stat-${c}`}>
+                    <div className="text-muted-foreground">{COUNTER_LABELS[c]}</div>
+                    <div className="font-medium text-lg" data-testid={`text-total-${c}`}>
+                      {totals[c] ?? 0}
+                    </div>
+                    {latest && (
+                      <div className="text-xs text-muted-foreground" data-testid={`text-latest-${c}`}>
+                        Last tick: {latest.counters[c] ?? 0}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {sampleCount === 0 ? (
+                <div
+                  className="h-64 flex items-center justify-center text-sm text-muted-foreground"
+                  data-testid="text-no-samples"
+                >
+                  No samples recorded yet. The job has not run since the server started.
+                </div>
+              ) : (
+                <div className="h-64 w-full" data-testid="chart-birthday-digest">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={2} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      {BIRTHDAY_COUNTERS.map((c) => (
+                        <Bar
+                          key={c}
+                          dataKey={c}
+                          name={COUNTER_LABELS[c]}
+                          stackId="counters"
+                          fill={COUNTER_COLORS[c]}
+                        />
+                      ))}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {otherJobs.length > 0 && (
+        <Card data-testid="card-other-jobs">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-4 w-4" /> Other tracked jobs
+            </CardTitle>
+            <CardDescription>
+              Totals over the rolling 24h window for any other job that publishes counters.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {otherJobs.map((job) => (
+              <div key={job.job} className="border rounded-md p-3" data-testid={`job-${job.job}`}>
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                  <div className="font-medium" data-testid={`text-job-name-${job.job}`}>
+                    {job.job}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {job.samples.length} sample{job.samples.length === 1 ? "" : "s"} · Last tick:{" "}
+                    {formatRelative(job.latest?.timestamp ?? null)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  {Object.entries(job.totals).length === 0 ? (
+                    <div className="text-muted-foreground">No counters recorded.</div>
+                  ) : (
+                    Object.entries(job.totals).map(([k, v]) => (
+                      <div key={k} data-testid={`text-other-counter-${job.job}-${k}`}>
+                        <span className="text-muted-foreground">{k}: </span>
+                        <span className="font-medium">{v}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}

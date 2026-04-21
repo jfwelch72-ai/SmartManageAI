@@ -401,6 +401,18 @@ export default function PlatformAdminDashboard() {
             </CardHeader>
           </Card>
         </Link>
+
+        <Link href="/admin/job-metrics">
+          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-job-metrics">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Background job metrics
+              </CardTitle>
+              <CardDescription>Birthday digest delivery health and counters from other tracked jobs</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
       </main>
     </div>
