@@ -4,6 +4,7 @@ import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
+import { recordJobMetrics } from "../utils/jobMetrics";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, type InsertNotification } from "@shared/schema";
@@ -2151,7 +2152,19 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
     sql`SELECT DISTINCT organization_id AS id FROM crm_contacts WHERE birthday IS NOT NULL`,
   );
   const orgs = (orgsResult.rows || []) as Array<{ id: string }>;
-  if (orgs.length === 0) return;
+  if (orgs.length === 0) {
+    // Task #700: still publish a zero-sample so the metrics surface shows
+    // the job ran and produced no work this tick (helps distinguish a
+    // stalled scheduler from a genuinely empty week).
+    recordJobMetrics("crm_birthday_digest", {
+      digestsSent: 0,
+      skippedTimeOfDay: 0,
+      skippedDedupe: 0,
+      skippedNoBirthdays: 0,
+      ignoreTimeOfDay: ignoreTimeOfDay ? 1 : 0,
+    });
+    return;
+  }
 
   const horizonDays = 7;
 
@@ -2332,6 +2345,18 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
       logError("CRM contact birthday digest org iteration failed", { orgId: org.id, error: String(err) });
     }
   }
+
+  // Task #700: always record per-tick counters to the in-process metrics
+  // surface so admins can spot regressions (DST bug spiking dedupe, empty
+  // weeks dominated by no-birthdays, etc.) even on ticks that produced no
+  // digests. Logging stays gated to noisy ticks to avoid log spam.
+  recordJobMetrics("crm_birthday_digest", {
+    digestsSent: totalDigests,
+    skippedTimeOfDay: totalSkippedTimeOfDay,
+    skippedDedupe: totalSkippedDedupe,
+    skippedNoBirthdays: totalSkippedNoBirthdays,
+    ignoreTimeOfDay: ignoreTimeOfDay ? 1 : 0,
+  });
 
   if (totalDigests > 0 || totalSkippedDedupe > 0) {
     logInfo("CRM contact birthday digest tick", {
