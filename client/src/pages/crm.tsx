@@ -634,6 +634,9 @@ export default function CRMPage() {
 
   const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports" | "analytics">("orgs");
   const [contactSearch, setContactSearch] = useState("");
+  // Task #701: filter contacts table by owner. "all" = no filter, "me" = current
+  // user, "__unassigned__" = no owner, otherwise a specific user id.
+  const [contactOwnerFilter, setContactOwnerFilter] = useState<string>("all");
   const contactSearchRef = useRef<HTMLInputElement>(null);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
 
@@ -802,17 +805,61 @@ export default function CRMPage() {
   interface AllContact extends CrmContact {
     orgName?: string | null;
     orgType?: string | null;
+    ownerId?: string | null;
   }
   const { data: allContacts = [], isLoading: contactsLoading } = useQuery<AllContact[]>({
-    queryKey: ["/api/crm/contacts", { search: contactSearch }],
+    queryKey: ["/api/crm/contacts", { search: contactSearch, owner: contactOwnerFilter }],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (contactSearch) params.set("search", contactSearch);
+      if (contactOwnerFilter && contactOwnerFilter !== "all") params.set("ownerId", contactOwnerFilter);
       const res = await fetch(`/api/crm/contacts?${params}`);
       if (!res.ok) return [];
       return res.json();
     },
     enabled: crmTab === "contacts",
+  });
+
+  // Task #701: org users feed the owner column, owner filter, and bulk re-assign action.
+  interface OrgUserOption {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  }
+  const { data: orgUsersForOwner = [] } = useQuery<OrgUserOption[]>({
+    queryKey: ["/api/users"],
+    enabled: crmTab === "contacts",
+  });
+  const ownerLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of orgUsersForOwner) {
+      const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+      map.set(u.id, name || u.email || u.id);
+    }
+    return map;
+  }, [orgUsersForOwner]);
+  const ownerInitials = (label: string): string => {
+    const parts = label.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const reassignOwnerMutation = useMutation({
+    mutationFn: async ({ contactIds, ownerId }: { contactIds: string[]; ownerId: string | null }) => {
+      return apiRequest("POST", "/api/crm/contacts/bulk-reassign-owner", { contactIds, ownerId });
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/contacts"] });
+      setSelectedContactIds(new Set());
+      const ownerLabel = vars.ownerId ? (ownerLabelById.get(vars.ownerId) ?? "selected owner") : "Unassigned";
+      toast({ title: `Reassigned ${vars.contactIds.length} contact${vars.contactIds.length === 1 ? "" : "s"} to ${ownerLabel}` });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "";
+      toast({ title: "Failed to reassign owner", description: message, variant: "destructive" });
+    },
   });
 
   const ROLE_LABELS: Record<string, string> = {
@@ -821,7 +868,7 @@ export default function CRMPage() {
     OWNER: "Owner", GENERAL_MANAGER: "General Manager", FOREMAN: "Foreman", OTHER: "Other",
   };
 
-  type ContactSortKey = "name" | "role" | "orgName" | "email" | "phone";
+  type ContactSortKey = "name" | "role" | "orgName" | "email" | "phone" | "owner";
   const [contactSort, setContactSort] = useState<{ key: ContactSortKey; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
 
   const sortedContacts = [...allContacts].sort((a, b) => {
@@ -832,6 +879,9 @@ export default function CRMPage() {
       if (contactSort.key === "orgName") return (c.orgName ?? "").toLowerCase();
       if (contactSort.key === "email") return (c.email ?? "").toLowerCase();
       if (contactSort.key === "phone") return (c.phone ?? "").toLowerCase();
+      if (contactSort.key === "owner") {
+        return (c.ownerId ? (ownerLabelById.get(c.ownerId) ?? "") : "").toLowerCase();
+      }
       return "";
     };
     return getVal(a) < getVal(b) ? -dir : getVal(a) > getVal(b) ? dir : 0;
@@ -1184,7 +1234,7 @@ export default function CRMPage() {
                       <Badge variant="secondary" className="ml-1 text-xs font-normal">{allContacts.length}</Badge>
                     )}
                     {selectedContactIds.size > 0 && (
-                      <span className="ml-2 flex items-center gap-2" data-testid="bulk-contact-actions">
+                      <span className="ml-2 flex items-center gap-2 flex-wrap" data-testid="bulk-contact-actions">
                         <Badge variant="default" className="text-xs">{selectedContactIds.size} selected</Badge>
                         <EnrollSequenceDialog
                           contactIds={Array.from(selectedContactIds)}
@@ -1195,6 +1245,41 @@ export default function CRMPage() {
                             </Button>
                           }
                         />
+                        <Select
+                          value=""
+                          onValueChange={(value) => {
+                            if (!value) return;
+                            const ids = Array.from(selectedContactIds);
+                            const ownerId = value === "__unassigned__" ? null : value;
+                            reassignOwnerMutation.mutate({ contactIds: ids, ownerId });
+                          }}
+                          disabled={reassignOwnerMutation.isPending}
+                        >
+                          <SelectTrigger
+                            className="h-8 w-[200px]"
+                            data-testid="select-bulk-reassign-owner"
+                          >
+                            <SelectValue placeholder={reassignOwnerMutation.isPending ? "Reassigning..." : "Reassign owner..."} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__unassigned__" data-testid="option-reassign-unassigned">Unassigned</SelectItem>
+                            {user?.id && (
+                              <SelectItem value={user.id} data-testid="option-reassign-mine">
+                                Me ({ownerLabelById.get(user.id) ?? "current user"})
+                              </SelectItem>
+                            )}
+                            {orgUsersForOwner
+                              .filter((u) => u.id !== user?.id)
+                              .map((u) => {
+                                const label = ownerLabelById.get(u.id) ?? u.id;
+                                return (
+                                  <SelectItem key={u.id} value={u.id} data-testid={`option-reassign-${u.id}`}>
+                                    {label}
+                                  </SelectItem>
+                                );
+                              })}
+                          </SelectContent>
+                        </Select>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1206,8 +1291,8 @@ export default function CRMPage() {
                       </span>
                     )}
                   </CardTitle>
-                  <div className="flex items-center gap-2 flex-1 max-w-sm">
-                    <div className="relative flex-1">
+                  <div className="flex items-center gap-2 flex-1 max-w-2xl">
+                    <div className="relative flex-1 min-w-[180px]">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
                         ref={contactSearchRef}
@@ -1218,6 +1303,26 @@ export default function CRMPage() {
                         data-testid="input-contacts-search"
                       />
                     </div>
+                    <Select value={contactOwnerFilter} onValueChange={setContactOwnerFilter}>
+                      <SelectTrigger className="w-[200px]" data-testid="select-contact-owner-filter">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" data-testid="option-owner-filter-all">All owners</SelectItem>
+                        {user?.id && (
+                          <SelectItem value="me" data-testid="option-owner-filter-mine">My contacts</SelectItem>
+                        )}
+                        <SelectItem value="__unassigned__" data-testid="option-owner-filter-unassigned">Unassigned</SelectItem>
+                        {orgUsersForOwner.map((u) => {
+                          const label = ownerLabelById.get(u.id) ?? u.id;
+                          return (
+                            <SelectItem key={u.id} value={u.id} data-testid={`option-owner-filter-${u.id}`}>
+                              {label}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
                     <ContactsDensityMenu />
                   </div>
                 </div>
@@ -1271,6 +1376,7 @@ export default function CRMPage() {
                               { key: "name", label: "Name" },
                               { key: "role", label: "Role" },
                               { key: "orgName", label: "Organization" },
+                              { key: "owner", label: "Owner" },
                               { key: "email", label: "Email" },
                               { key: "phone", label: "Phone" },
                             ] as { key: ContactSortKey; label: string }[]
@@ -1338,6 +1444,25 @@ export default function CRMPage() {
                             </td>
                             <td className="px-4 py-3 text-muted-foreground">
                               {contact.orgName || "—"}
+                            </td>
+                            <td className="px-4 py-3" data-testid={`cell-owner-${contact.id}`}>
+                              {(() => {
+                                const ownerId = contact.ownerId;
+                                if (!ownerId) {
+                                  return <span className="text-muted-foreground/60 text-xs">Unassigned</span>;
+                                }
+                                const label = ownerLabelById.get(ownerId) ?? ownerId;
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary">
+                                      {ownerInitials(label)}
+                                    </span>
+                                    <span className="truncate max-w-[160px] text-muted-foreground" title={label}>
+                                      {label}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3">
                               {contact.email ? (

@@ -200,7 +200,7 @@ import { Router } from "express";
 import { validateBody } from "./utils/validation";
 import { db } from "./db";
 import { crmOrganisations, crmContacts, crmOrganisationNotes, insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema, auditLog, users, emailThreads, emailMessages, calendarEvents, projects, crmOpportunities, vendorPricingCatalogs, vendorPricebooks, vendorPricebookItems, subcontractorContracts, rentalVendors, rentalEquipmentCatalog, vendorEnrollments, vendorUsers, websiteContactSubmissions, emailTasks, pricebookImportJobs, vendorScores, materialPriceIndex, rfis, transmittalRecipients, submittals, subcontractorPortalTokens, bidDocumentDistributions, insertCrmContactSchema, crmOpportunityActivities, insertCrmOpportunitySchema, insertCrmOpportunityActivitySchema, notifications, organizationNetworkSettings } from "@shared/schema";
-import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, ilike, ne, type SQL, asc } from "drizzle-orm";
+import { eq, and, sql, desc, or, lte, gte, isNotNull, isNull, inArray, ilike, ne, type SQL, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { insertNotification } from "./services/notificationService";
@@ -1363,11 +1363,22 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
 
-    const { organisationId, search } = req.query as Record<string, string>;
+    const { organisationId, search, ownerId: ownerFilter } = req.query as Record<string, string>;
 
     const conditions: SQL[] = [];
     if (shouldFilter && orgId) conditions.push(eq(crmContacts.organizationId, orgId));
     if (organisationId) conditions.push(eq(crmContacts.organisationId, organisationId));
+    // Task #701: filter by contact owner. `me` resolves to the current user;
+    // `__unassigned__` matches contacts without an owner.
+    if (ownerFilter) {
+      if (ownerFilter === "__unassigned__") {
+        conditions.push(isNull(crmContacts.ownerId));
+      } else if (ownerFilter === "me") {
+        conditions.push(eq(crmContacts.ownerId, req.user!.id));
+      } else {
+        conditions.push(eq(crmContacts.ownerId, ownerFilter));
+      }
+    }
     if (search) {
       const term = `%${search}%`;
       conditions.push(
@@ -1801,6 +1812,68 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
     next(error);
   }
 });
+
+// Task #701: bulk re-assign owner across multiple contacts in one call so the
+// CRM contacts table can offer a "Reassign owner" action on selected rows.
+router.post(
+  "/api/crm/contacts/bulk-reassign-owner",
+  requireAuth,
+  requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
+
+      const schema = z.object({
+        contactIds: z.array(z.string().min(1)).min(1).max(500),
+        ownerId: z.union([z.string(), z.null()]),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const { contactIds } = parsed.data;
+      const newOwnerId = parsed.data.ownerId && parsed.data.ownerId.trim() !== "" ? parsed.data.ownerId : null;
+
+      if (newOwnerId && shouldFilter && orgId) {
+        const [ownerUser] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, newOwnerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+          .limit(1);
+        if (!ownerUser) {
+          return res.status(400).json({ error: "Selected owner is not an active member of this organization" });
+        }
+      }
+
+      const scopeConditions: SQL[] = [inArray(crmContacts.id, contactIds)];
+      if (shouldFilter && orgId) scopeConditions.push(eq(crmContacts.organizationId, orgId));
+
+      const updated = await db
+        .update(crmContacts)
+        .set({ ownerId: newOwnerId, updatedAt: new Date() })
+        .where(and(...scopeConditions))
+        .returning({ id: crmContacts.id });
+
+      if (updated.length > 0) {
+        await db.insert(auditLog).values(
+          updated.map((row) => ({
+            userId: req.user!.id,
+            action: "UPDATE" as const,
+            entityType: "crm_contacts",
+            entityId: row.id,
+            oldValue: null,
+            newValue: JSON.stringify({ ownerId: newOwnerId }),
+          })),
+        );
+      }
+
+      res.json({ updated: updated.length, ownerId: newOwnerId });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 router.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
