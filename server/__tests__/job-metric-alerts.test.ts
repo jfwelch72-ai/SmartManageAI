@@ -31,6 +31,10 @@ interface EventRow {
   baselineValue: string | null;
   triggeredAt: Date;
   notifiedUserCount: number;
+  acknowledgedAt: Date | null;
+  acknowledgedById: string | null;
+  snoozedUntil: Date | null;
+  snoozedById: string | null;
 }
 
 const state = {
@@ -73,6 +77,10 @@ const dbMock = {
             baselineValue: (r.baselineValue as string | null) ?? null,
             triggeredAt: (r.triggeredAt as Date) ?? new Date(),
             notifiedUserCount: (r.notifiedUserCount as number) ?? 0,
+            acknowledgedAt: (r.acknowledgedAt as Date | null) ?? null,
+            acknowledgedById: (r.acknowledgedById as string | null) ?? null,
+            snoozedUntil: (r.snoozedUntil as Date | null) ?? null,
+            snoozedById: (r.snoozedById as string | null) ?? null,
           });
         }
       }
@@ -125,8 +133,22 @@ const dbMock = {
     where: (_c: unknown) => ({ returning: async (_cols: unknown) => [] }),
     returning: async (_cols: unknown) => [],
   }),
-  update: (_table: unknown) => ({
-    set: () => ({ where: () => ({ returning: async () => [] }) }),
+  update: (table: unknown) => ({
+    set: (values: Record<string, unknown>) => ({
+      where: (_cond: unknown) => ({
+        returning: async () => {
+          const tableName = tableNameOf(table);
+          if (tableName !== "job_metric_alert_events") return [];
+          // The mock can't decode drizzle's where() expression, so apply
+          // the update to the most recently-inserted matching row. Tests
+          // that exercise update() seed a single event and target it.
+          const target = state.events[state.events.length - 1];
+          if (!target) return [];
+          Object.assign(target, values);
+          return [target];
+        },
+      }),
+    }),
   }),
 };
 
@@ -300,5 +322,108 @@ describe("jobMetricAlerts (Task #718)", () => {
 
     // 20 < custom minAbsolute 50, so no fire.
     expect(result.alertsFired).toHaveLength(0);
+  });
+
+  it("suppresses re-firing for a job/counter/kind with an active snoozedUntil", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+
+    // Seed a previously-snoozed event for the same job/counter/kind that
+    // we're about to (otherwise) trigger. snoozedUntil is in the future
+    // and acknowledgedAt is set (snooze marks ack).
+    state.events.push({
+      id: "evt-prior",
+      job: "snoozed_job",
+      counter: "c",
+      kind: "spike",
+      ruleId: null,
+      message: "prior",
+      observedValue: "10.0000",
+      baselineValue: "1.0000",
+      // Triggered far enough in the past that the dedupe window alone
+      // wouldn't suppress (default dedupe 60min) — only the snooze does.
+      triggeredAt: new Date(now - 6 * HOUR),
+      notifiedUserCount: 0,
+      acknowledgedAt: new Date(now - 6 * HOUR),
+      acknowledgedById: "admin-1",
+      snoozedUntil: new Date(now + 2 * HOUR),
+      snoozedById: "admin-1",
+    });
+
+    const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+    for (let i = 1; i <= 23; i++) {
+      samples.push({ timestamp: now - i * HOUR - 1000, counters: { c: 1 } });
+    }
+    samples.push({ timestamp: now - 60_000, counters: { c: 50 } });
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: source([{ job: "snoozed_job", samples }]),
+    });
+
+    expect(result.alertsFired).toHaveLength(0);
+    expect(result.alertsSuppressed).toBe(1);
+    // No new event row was persisted (only the seeded one remains).
+    expect(state.events).toHaveLength(1);
+    // No new admin notifications either.
+    expect(state.insertedNotifications).toHaveLength(0);
+  });
+
+  it("excludes acknowledged events from activeByJob in listRecentJobMetricAlertEvents", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+
+    // Acknowledged event in the active window (last hour) — should NOT
+    // count toward activeByJob.
+    state.events.push({
+      id: "evt-ack",
+      job: "ack_job",
+      counter: "c",
+      kind: "spike",
+      ruleId: null,
+      message: "acked",
+      observedValue: "10.0000",
+      baselineValue: "1.0000",
+      triggeredAt: new Date(now - 10 * 60 * 1000),
+      notifiedUserCount: 1,
+      acknowledgedAt: new Date(now - 5 * 60 * 1000),
+      acknowledgedById: "admin-1",
+      snoozedUntil: null,
+      snoozedById: null,
+    });
+    // Unacknowledged event in the active window — SHOULD count.
+    state.events.push({
+      id: "evt-open",
+      job: "open_job",
+      counter: "c",
+      kind: "spike",
+      ruleId: null,
+      message: "open",
+      observedValue: "10.0000",
+      baselineValue: "1.0000",
+      triggeredAt: new Date(now - 5 * 60 * 1000),
+      notifiedUserCount: 1,
+      acknowledgedAt: null,
+      acknowledgedById: null,
+      snoozedUntil: null,
+      snoozedById: null,
+    });
+
+    const { events, activeByJob } = await alerts.listRecentJobMetricAlertEvents();
+
+    expect(events).toHaveLength(2);
+    expect(activeByJob).toEqual({ open_job: 1 });
+    expect(activeByJob.ack_job).toBeUndefined();
+  });
+
+  it("snoozeJobMetricAlertEvent rejects non-positive hours", async () => {
+    await expect(
+      alerts.snoozeJobMetricAlertEvent("evt-x", "admin-1", 0),
+    ).rejects.toThrow(/positive/i);
+    await expect(
+      alerts.snoozeJobMetricAlertEvent("evt-x", "admin-1", -3),
+    ).rejects.toThrow(/positive/i);
+    await expect(
+      alerts.snoozeJobMetricAlertEvent("evt-x", "admin-1", Number.NaN),
+    ).rejects.toThrow(/positive/i);
   });
 });
