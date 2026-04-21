@@ -578,6 +578,67 @@ function ImportPanel() {
             </div>
           </div>
         )}
+        {showMapping && parsedData && (() => {
+          const targets = TARGET_FIELDS[entity] || [];
+          const usedTargetValues = new Set(
+            Object.values(effectiveMapping).filter((t) => t && t !== SKIP_VALUE)
+          );
+          const previewColumns = targets.filter((t) => usedTargetValues.has(t.value));
+          const previewRows = parsedData.rows.slice(0, 5).map((row) => {
+            const out: Record<string, string> = {};
+            for (const [csvCol, target] of Object.entries(effectiveMapping)) {
+              if (!target || target === SKIP_VALUE) continue;
+              const v = row[csvCol];
+              if (v === undefined || v === null || v === "") continue;
+              const s = typeof v === "string" ? v.trim() : String(v);
+              if (out[target] === undefined || out[target] === "") out[target] = s;
+            }
+            return out;
+          });
+          return (
+            <div className="border rounded p-3 space-y-2" data-testid="preview-panel">
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium text-sm">Preview</h4>
+                <p className="text-xs text-muted-foreground">
+                  First {previewRows.length} {entity.toLowerCase()} record{previewRows.length === 1 ? "" : "s"} as they will be imported. Updates live as you change mappings.
+                </p>
+              </div>
+              {previewColumns.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="text-preview-empty">Map at least one column to see a preview.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        {previewColumns.map((c) => (
+                          <th key={c.value} className="text-left font-medium py-1 pr-3" data-testid={`preview-header-${c.value}`}>
+                            {c.label}
+                            <div className="text-xs text-muted-foreground font-normal">{c.value}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((row, i) => (
+                        <tr key={i} className="border-b last:border-0" data-testid={`preview-row-${i}`}>
+                          {previewColumns.map((c) => (
+                            <td key={c.value} className="py-1 pr-3 align-top" data-testid={`preview-cell-${i}-${c.value}`}>
+                              {row[c.value] ? (
+                                <span className="truncate inline-block max-w-[16rem]" title={row[c.value]}>{row[c.value]}</span>
+                              ) : (
+                                <span className="text-muted-foreground italic">—</span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <Button onClick={() => submit.mutate()} disabled={!file || !parsedData || isParsing || !!parseError || submit.isPending} data-testid="button-import">
           {submit.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}Import
         </Button>
