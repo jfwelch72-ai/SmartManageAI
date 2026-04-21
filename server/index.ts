@@ -280,6 +280,18 @@ app.use((req, res, next) => {
   await seedBuiltInPresets();
   await backfillMissingFeatureFlags();
 
+  // Task #722: re-arm any CRM contact reassignment summaries that were
+  // buffered before the previous restart so the bundled notification still
+  // fires.
+  const { recoverPendingContactReassignments } = await import("./services/notificationService");
+  recoverPendingContactReassignments().catch((err) => {
+    logError(
+      "Failed to recover pending contact reassignment buffers",
+      {},
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  });
+
   // Hydrate persisted Gantt PDF render history from the database so the
   // admin chart survives restarts and deployments.
   initializeGanttPdfHistory().catch((err) => {

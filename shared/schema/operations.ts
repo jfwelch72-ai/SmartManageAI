@@ -1238,6 +1238,24 @@ export const notifications = pgTable("notifications", {
   orgUserReadIdx: index("notifications_org_user_read_idx").on(table.organizationId, table.userId, table.isRead),
 }));
 
+// Task #722: Persistent buffer for the rapid-fire CRM contact reassignment
+// coalescer in `server/services/notificationService.ts`. Persisting these rows
+// in Postgres (instead of an in-memory map) ensures the bundled "extras"
+// summary email is still sent if the server restarts inside the 5-minute
+// coalescing window, and lets multiple instances safely share state — only
+// one instance can claim and flush a given row via `DELETE ... RETURNING`.
+export const pendingContactReassignmentNotifications = pgTable("pending_contact_reassignment_notifications", {
+  recipientUserId: varchar("recipient_user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  additionalCount: integer("additional_count").notNull().default(0),
+  reassignerNames: text("reassigner_names").array().notNull().default(sql`ARRAY[]::text[]`),
+  firstAdditionalContactId: varchar("first_additional_contact_id"),
+  windowStartedAt: timestamp("window_started_at").notNull().defaultNow(),
+  flushAt: timestamp("flush_at").notNull(),
+}, (table) => ({
+  flushAtIdx: index("pending_contact_reassignment_flush_at_idx").on(table.flushAt),
+}));
+
 // Payroll Notifications table - tracks when time entries are ready for payroll processing
 export const payrollNotifications = pgTable("payroll_notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
