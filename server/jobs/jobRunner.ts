@@ -21,6 +21,7 @@ import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
 import { processDueExecutions } from "../services/sequenceService";
 import { geocodePendingProjects } from "../utils/geocodingService";
+import { isValidTimezone } from "@shared/timezones";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -264,9 +265,11 @@ export function startJobRunner() {
     }
   });
 
-  // Task #682: weekly digest of upcoming CRM contact birthdays so estimators
-  // and account managers see them without having to open each contact card.
-  crmBirthdayDigestTask = cron.schedule("0 8 * * 1", async () => {
+  // Task #682/#692: digest of upcoming CRM contact birthdays. Runs hourly
+  // and gates per-recipient on Monday 8am in each user's local timezone so
+  // the notification lands during business hours regardless of where the
+  // user is, not at the server's wall-clock time.
+  crmBirthdayDigestTask = cron.schedule("0 * * * *", async () => {
     try {
       await processCrmContactBirthdayDigest();
     } catch (err) {
@@ -417,7 +420,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   geocode_projects:    { fn: async () => { await geocodePendingProjects(); }, description: "Geocode projects with addresses but no coordinates",   schedule: "30 4 * * *" },
   crm_sla_breaches:    { fn: () => processCrmSlaBreaches(),            description: "Flag CRM stage SLA breaches across all orgs",         schedule: "*/5 * * * *" },
   crm_idle_automations:{ fn: () => processCrmIdleAutomations(),        description: "Tick CRM automation engine for IDLE_DAYS triggers",   schedule: "*/10 * * * *" },
-  crm_birthday_digest: { fn: () => processCrmContactBirthdayDigest(),  description: "Send weekly CRM contact birthday digest per org",     schedule: "0 8 * * 1" },
+  crm_birthday_digest: { fn: () => processCrmContactBirthdayDigest({ ignoreTimeOfDay: true }), description: "Send weekly CRM contact birthday digest in each user's local timezone", schedule: "0 * * * *" },
   crm_birthday_daily:  { fn: () => processCrmContactBirthdayDailyDigest(), description: "Daily morning email reminder of today's CRM contact birthdays to contact owners", schedule: "0 7 * * *" },
 };
 
@@ -2065,26 +2068,170 @@ async function processCrmIdleAutomations() {
 }
 
 
-async function processCrmContactBirthdayDigest() {
+// Server-side fallback timezone used when a recipient has no saved
+// preference. We use process.env.TZ when set so operators can override the
+// container's wall-clock zone via the standard env var; otherwise fall back
+// to the process's resolved timezone, then UTC as a last resort.
+function getServerDefaultTimezone(): string {
+  const envTz = process.env.TZ;
+  if (envTz && isValidTimezone(envTz)) return envTz;
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (resolved && isValidTimezone(resolved)) return resolved;
+  } catch {
+    // ignore
+  }
+  return "UTC";
+}
+
+// Returns the weekday (0=Sun..6=Sat), hour (0-23), and calendar Y/M/D for
+// `now` rendered in the given IANA timezone. Falls back to the server
+// default zone if the supplied zone is invalid. Computing the calendar
+// date in the recipient's zone is required so that the digest's
+// "today / in N days" window matches the user's local date — a server in
+// UTC can still be on Sunday while a user in Asia/Tokyo is already on
+// their local Monday 8am.
+function getLocalDateParts(now: Date, timezone: string): {
+  weekday: number;
+  hour: number;
+  year: number;
+  month: number;
+  day: number;
+  tz: string;
+} {
+  const tz = isValidTimezone(timezone) ? timezone : getServerDefaultTimezone();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "short",
+    hour: "numeric",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const weekday = weekdayMap[get("weekday")] ?? 0;
+  // Intl can return "24" for midnight in some locales — normalise to 0.
+  let hour = parseInt(get("hour"), 10);
+  if (!Number.isFinite(hour) || hour === 24) hour = 0;
+  const year = parseInt(get("year"), 10);
+  const month = parseInt(get("month"), 10);
+  const day = parseInt(get("day"), 10);
+  return { weekday, hour, year, month, day, tz };
+}
+
+const BIRTHDAY_DIGEST_RELATED_ENTITY_TYPE = "CRM_CONTACT_BIRTHDAY";
+const BIRTHDAY_DIGEST_DEDUPE_DAYS = 7;
+const BIRTHDAY_DIGEST_TARGET_WEEKDAY = 1; // Monday
+const BIRTHDAY_DIGEST_TARGET_HOUR = 8;    // 8am local
+
+async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: boolean } = {}) {
+  const ignoreTimeOfDay = opts.ignoreTimeOfDay === true;
+  const now = new Date();
+  const serverTz = getServerDefaultTimezone();
+
   const orgsResult = await db.execute(
     sql`SELECT DISTINCT organization_id AS id FROM crm_contacts WHERE birthday IS NOT NULL`,
   );
   const orgs = (orgsResult.rows || []) as Array<{ id: string }>;
   if (orgs.length === 0) return;
 
-  const today = new Date();
-  const todayY = today.getFullYear();
-  const todayM = today.getMonth() + 1;
-  const todayD = today.getDate();
   const horizonDays = 7;
 
+  type ContactBirthday = { firstName: string | null; lastName: string | null; orgName: string | null; month: number; day: number };
+  type UpcomingItem = { name: string; orgName: string | null; daysUntil: number; monthDay: string };
+
+  // Build upcoming list anchored to a specific local date. We only care
+  // about month/day for matching since birthdays repeat annually, so the
+  // local Y/M/D drives the "today vs in N days" computation.
+  function buildUpcoming(contacts: ContactBirthday[], localY: number, localM: number, localD: number): UpcomingItem[] {
+    const todayDate = new Date(Date.UTC(localY, localM - 1, localD));
+    const list: UpcomingItem[] = [];
+    for (const c of contacts) {
+      let next = new Date(Date.UTC(localY, c.month - 1, c.day));
+      if (next < todayDate) next = new Date(Date.UTC(localY + 1, c.month - 1, c.day));
+      const diffDays = Math.round((next.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays >= 0 && diffDays <= horizonDays) {
+        list.push({
+          name: `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim(),
+          orgName: c.orgName ?? null,
+          daysUntil: diffDays,
+          monthDay: `${c.month}/${c.day}`,
+        });
+      }
+    }
+    list.sort((a, b) => a.daysUntil - b.daysUntil);
+    return list;
+  }
+
   let totalDigests = 0;
+  let totalSkippedTimeOfDay = 0;
+  let totalSkippedDedupe = 0;
+  let totalSkippedNoBirthdays = 0;
 
   for (const org of orgs) {
     try {
-      const contacts = await db
+      const recipients = await db
+        .select({ id: users.id, timezone: users.timezone })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, org.id),
+          eq(users.isActive, true),
+          inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]),
+        ));
+      if (recipients.length === 0) continue;
+
+      // Resolve each recipient's effective timezone and current local
+      // wall-clock once. We need both the time-of-day (to gate Monday 8am
+      // local) and the calendar Y/M/D (to compute the upcoming-birthday
+      // window from the user's local date, not the server's).
+      const recipientLocal = recipients.map((u) => {
+        const tz = u.timezone && isValidTimezone(u.timezone) ? u.timezone : serverTz;
+        const local = getLocalDateParts(now, tz);
+        return { id: u.id, tz, local };
+      });
+
+      // Filter to recipients whose local wall-clock is currently Monday 8am.
+      // When triggered manually (ignoreTimeOfDay), keep all of them.
+      const eligible = ignoreTimeOfDay
+        ? recipientLocal
+        : recipientLocal.filter((r) => {
+            const match =
+              r.local.weekday === BIRTHDAY_DIGEST_TARGET_WEEKDAY &&
+              r.local.hour === BIRTHDAY_DIGEST_TARGET_HOUR;
+            if (!match) totalSkippedTimeOfDay++;
+            return match;
+          });
+      if (eligible.length === 0) continue;
+
+      // 7-day per-user dedupe: skip recipients who already received a
+      // birthday digest within the rolling window. Belt-and-braces against
+      // hourly cron drift, manual re-runs, and DST transitions that could
+      // otherwise let two ticks both look like Monday 8am.
+      const dedupeCutoff = new Date(now.getTime() - BIRTHDAY_DIGEST_DEDUPE_DAYS * 24 * 60 * 60 * 1000);
+      const recentlyNotified = await db
+        .select({ userId: notifications.userId })
+        .from(notifications)
+        .where(and(
+          inArray(notifications.userId, eligible.map((u) => u.id)),
+          eq(notifications.relatedEntityType, BIRTHDAY_DIGEST_RELATED_ENTITY_TYPE),
+          gte(notifications.createdAt, dedupeCutoff),
+        ));
+      const recentlyNotifiedIds = new Set(recentlyNotified.map((r) => r.userId));
+      const toNotify = eligible.filter((u) => {
+        if (recentlyNotifiedIds.has(u.id)) {
+          totalSkippedDedupe++;
+          return false;
+        }
+        return true;
+      });
+      if (toNotify.length === 0) continue;
+
+      // Load org contacts with valid birthday month/day once per org and
+      // reuse the parsed list across recipients.
+      const contactRows = await db
         .select({
-          id: crmContacts.id,
           firstName: crmContacts.firstName,
           lastName: crmContacts.lastName,
           birthday: crmContacts.birthday,
@@ -2094,59 +2241,59 @@ async function processCrmContactBirthdayDigest() {
         .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmContacts.organisationId))
         .where(and(eq(crmContacts.organizationId, org.id), isNotNull(crmContacts.birthday)));
 
-      const upcoming: Array<{ name: string; orgName: string | null; daysUntil: number; monthDay: string }> = [];
-      for (const c of contacts) {
+      const contacts: ContactBirthday[] = [];
+      for (const c of contactRows) {
         const bd = c.birthday ? String(c.birthday) : null;
         const m = bd ? /^(\d{4})-(\d{2})-(\d{2})/.exec(bd) : null;
         if (!m) continue;
         const month = parseInt(m[2], 10);
         const day = parseInt(m[3], 10);
         if (!month || !day) continue;
-        let next = new Date(todayY, month - 1, day);
-        const todayDate = new Date(todayY, todayM - 1, todayD);
-        if (next < todayDate) next = new Date(todayY + 1, month - 1, day);
-        const diffDays = Math.round((next.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays >= 0 && diffDays <= horizonDays) {
-          upcoming.push({
-            name: `${c.firstName} ${c.lastName}`.trim(),
-            orgName: c.orgName ?? null,
-            daysUntil: diffDays,
-            monthDay: `${month}/${day}`,
+        contacts.push({ firstName: c.firstName, lastName: c.lastName, orgName: c.orgName, month, day });
+      }
+
+      // Group recipients by their local calendar date so we only build
+      // the digest body once per (orgId, localYMD) bucket — every user in
+      // the same local date sees an identical message.
+      const byDate = new Map<string, typeof toNotify>();
+      for (const r of toNotify) {
+        const key = `${r.local.year}-${String(r.local.month).padStart(2, "0")}-${String(r.local.day).padStart(2, "0")}`;
+        const bucket = byDate.get(key);
+        if (bucket) bucket.push(r);
+        else byDate.set(key, [r]);
+      }
+
+      const notifs: InsertNotification[] = [];
+      for (const [, bucket] of byDate) {
+        const sample = bucket[0].local;
+        const upcoming = buildUpcoming(contacts, sample.year, sample.month, sample.day);
+        if (upcoming.length === 0) {
+          totalSkippedNoBirthdays += bucket.length;
+          continue;
+        }
+        const lines = upcoming.map((u) => {
+          const when = u.daysUntil === 0
+            ? "today"
+            : `in ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"} (${u.monthDay})`;
+          return `${u.name}${u.orgName ? ` — ${u.orgName}` : ""}: ${when}`;
+        });
+        const message = `Upcoming contact birthdays this week:\n${lines.join("\n")}`;
+        const title = upcoming.length === 1
+          ? "1 contact birthday this week"
+          : `${upcoming.length} contact birthdays this week`;
+        for (const r of bucket) {
+          notifs.push({
+            userId: r.id,
+            organizationId: org.id,
+            type: "REMINDER" as const,
+            title,
+            message,
+            relatedEntityType: BIRTHDAY_DIGEST_RELATED_ENTITY_TYPE,
           });
         }
       }
 
-      if (upcoming.length === 0) continue;
-      upcoming.sort((a, b) => a.daysUntil - b.daysUntil);
-
-      const recipients = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(and(
-          eq(users.organizationId, org.id),
-          inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]),
-        ));
-      if (recipients.length === 0) continue;
-
-      const lines = upcoming.map((u) => {
-        const when = u.daysUntil === 0
-          ? "today"
-          : `in ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"} (${u.monthDay})`;
-        return `${u.name}${u.orgName ? ` — ${u.orgName}` : ""}: ${when}`;
-      });
-      const message = `Upcoming contact birthdays this week:\n${lines.join("\n")}`;
-      const title = upcoming.length === 1
-        ? "1 contact birthday this week"
-        : `${upcoming.length} contact birthdays this week`;
-
-      const notifs: InsertNotification[] = recipients.map((u) => ({
-        userId: u.id,
-        organizationId: org.id,
-        type: "REMINDER" as const,
-        title,
-        message,
-        relatedEntityType: "CRM_CONTACT_BIRTHDAY",
-      }));
+      if (notifs.length === 0) continue;
       await insertNotifications(notifs);
       totalDigests += notifs.length;
     } catch (err) {
@@ -2154,8 +2301,14 @@ async function processCrmContactBirthdayDigest() {
     }
   }
 
-  if (totalDigests > 0) {
-    logInfo("CRM contact birthday digest sent", { notifications: totalDigests });
+  if (totalDigests > 0 || totalSkippedDedupe > 0) {
+    logInfo("CRM contact birthday digest tick", {
+      notifications: totalDigests,
+      skippedTimeOfDay: totalSkippedTimeOfDay,
+      skippedDedupe: totalSkippedDedupe,
+      skippedNoBirthdays: totalSkippedNoBirthdays,
+      ignoreTimeOfDay,
+    });
   }
 }
 
