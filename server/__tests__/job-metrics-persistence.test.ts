@@ -25,6 +25,7 @@ interface DbMock {
 const inserted: Row[] = [];
 let selectRows: Row[] = [];
 let lastDeleteCutoff: Date | null = null;
+let lastDeleteJob: string | null = null;
 
 const defaultInsert = (): InsertChain => ({
   values: async (row: Row) => {
@@ -58,12 +59,25 @@ const dbMock: DbMock = {
       // pruneJobMetricsDb returns the deleted rows; we mimic that by
       // returning a synthetic id row per pruned record.
       returning: async (_cols: unknown) => {
-        const removed = applyPrune();
+        const removed = lastDeleteJob
+          ? (() => {
+              const before = selectRows.length;
+              selectRows = selectRows.filter((r) => r.job !== lastDeleteJob);
+              return before - selectRows.length;
+            })()
+          : applyPrune();
         return Array.from({ length: removed }, (_, i) => ({ id: `deleted-${i}` }));
       },
     };
     return {
       where: (_cond: unknown) => whereChain,
+      // Drizzle's `.delete().returning(...)` (no where) path used by
+      // clearJobMetrics() to wipe every persisted sample.
+      returning: async (_cols: unknown) => {
+        const removed = selectRows.length;
+        selectRows = [];
+        return Array.from({ length: removed }, (_, i) => ({ id: `wiped-${i}` }));
+      },
     };
   },
 };
@@ -82,6 +96,7 @@ beforeEach(async () => {
   inserted.length = 0;
   selectRows = [];
   lastDeleteCutoff = null;
+  lastDeleteJob = null;
   mod = await import("../utils/jobMetrics");
   mod.setJobMetricsPersistenceEnabled(true);
   mod.resetJobMetrics();
@@ -179,6 +194,49 @@ describe("jobMetrics persistence (Task #705)", () => {
     } finally {
       dbMock.insert = original;
     }
+  });
+
+  it("clearJobMetrics() wipes all in-memory and persisted samples", async () => {
+    const now = Date.now();
+    selectRows = [
+      { job: "a", recordedAt: new Date(now - 60_000), counters: { n: 1 } },
+      { job: "b", recordedAt: new Date(now - 30_000), counters: { n: 2 } },
+    ];
+    await mod.loadJobMetricsFromDb();
+    expect(mod.getAllJobMetrics()).toHaveLength(2);
+
+    const deleted = await mod.clearJobMetrics();
+    expect(deleted).toBe(2);
+    expect(selectRows).toHaveLength(0);
+    expect(mod.getAllJobMetrics()).toHaveLength(0);
+  });
+
+  it("clearJobMetrics(job) only clears the named job", async () => {
+    const now = Date.now();
+    selectRows = [
+      { job: "a", recordedAt: new Date(now - 60_000), counters: { n: 1 } },
+      { job: "a", recordedAt: new Date(now - 30_000), counters: { n: 3 } },
+      { job: "b", recordedAt: new Date(now - 10_000), counters: { n: 2 } },
+    ];
+    await mod.loadJobMetricsFromDb();
+    lastDeleteJob = "a";
+
+    const deleted = await mod.clearJobMetrics("a");
+    expect(deleted).toBe(2);
+    expect(selectRows.map((r) => r.job)).toEqual(["b"]);
+
+    const all = mod.getAllJobMetrics().map((j) => j.job);
+    expect(all).toEqual(["b"]);
+  });
+
+  it("clearJobMetrics() still wipes memory when persistence is disabled", async () => {
+    mod.setJobMetricsPersistenceEnabled(false);
+    mod.recordJobMetrics("a", { n: 1 });
+    expect(mod.getAllJobMetrics()).toHaveLength(1);
+
+    const deleted = await mod.clearJobMetrics();
+    expect(deleted).toBe(0);
+    expect(mod.getAllJobMetrics()).toHaveLength(0);
   });
 
   it("persistence can be disabled (test helper short-circuits DB writes)", async () => {

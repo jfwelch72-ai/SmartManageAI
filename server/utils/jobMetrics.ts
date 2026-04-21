@@ -18,7 +18,7 @@
 
 import { db } from "../db";
 import { jobMetricSamples } from "@shared/schema";
-import { gte, lt } from "drizzle-orm";
+import { eq, gte, lt } from "drizzle-orm";
 import { logError } from "./logger";
 
 export type JobCounters = Record<string, number>;
@@ -181,6 +181,36 @@ export async function pruneJobMetricsDb(): Promise<number> {
  */
 export function resetJobMetrics(): void {
   samplesByJob.clear();
+}
+
+/**
+ * Clear stored job metric history. Wipes both the in-memory rolling
+ * window and the persisted `job_metric_samples` rows. When `job` is
+ * provided only that job's samples are removed; otherwise every job is
+ * cleared. Returns the number of DB rows deleted.
+ *
+ * Used by the Super Admin "reset metrics" endpoint so a known-bad
+ * deploy or noisy backfill can be flushed without manual SQL.
+ */
+export async function clearJobMetrics(job?: string): Promise<number> {
+  if (job) {
+    samplesByJob.delete(job);
+  } else {
+    samplesByJob.clear();
+  }
+  if (!persistenceEnabled) return 0;
+  try {
+    const deleted = job
+      ? await db
+          .delete(jobMetricSamples)
+          .where(eq(jobMetricSamples.job, job))
+          .returning({ id: jobMetricSamples.id })
+      : await db.delete(jobMetricSamples).returning({ id: jobMetricSamples.id });
+    return deleted.length;
+  } catch (err) {
+    logError("Failed to clear persisted job metrics", { job: job ?? "*", error: String(err) });
+    return 0;
+  }
 }
 
 /**

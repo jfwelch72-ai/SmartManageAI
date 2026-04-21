@@ -736,6 +736,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(getJobMetrics(req.params.jobName));
   });
 
+  // Task #713: let a Super Admin clear stored job metric history so a
+  // bad deploy or noisy backfill can be flushed without manual SQL.
+  app.delete("/api/admin/metrics/jobs", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { clearJobMetrics } = await import("./utils/jobMetrics");
+      const deleted = await clearJobMetrics();
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "job_metrics", entityId: "*", oldValue: `Cleared all job metric history (${deleted} rows)` }, req);
+      res.json({ cleared: "*", deleted });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.delete("/api/admin/metrics/jobs/:jobName", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { jobName } = req.params;
+      const { clearJobMetrics } = await import("./utils/jobMetrics");
+      const deleted = await clearJobMetrics(jobName);
+      const { logAudit } = await import("./auditLogger");
+      await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "job_metrics", entityId: jobName, oldValue: `Cleared job metric history for '${jobName}' (${deleted} rows)` }, req);
+      res.json({ cleared: jobName, deleted });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
   app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { jobName } = req.params;
