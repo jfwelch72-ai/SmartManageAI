@@ -300,14 +300,23 @@ async function fetchRecentEventLookup(now: number): Promise<Map<string, number>>
   return map;
 }
 
-async function loadSuperAdmins(): Promise<Array<{ id: string; email: string }>> {
+async function loadSuperAdmins(): Promise<Array<{ id: string; email: string; receivesJobMetricAlertEmails: boolean }>> {
   const rows = await db
-    .select({ id: users.id, email: users.email, isActive: users.isActive })
+    .select({
+      id: users.id,
+      email: users.email,
+      isActive: users.isActive,
+      receivesJobMetricAlertEmails: users.receivesJobMetricAlertEmails,
+    })
     .from(users)
     .where(eq(users.role, "SUPER_ADMIN"));
   return rows
     .filter((r) => r.isActive)
-    .map((r) => ({ id: r.id, email: r.email }));
+    .map((r) => ({
+      id: r.id,
+      email: r.email,
+      receivesJobMetricAlertEmails: r.receivesJobMetricAlertEmails,
+    }));
 }
 
 function shouldEmail(rule: AlertRuleResolved, observed: number): boolean {
@@ -513,7 +522,7 @@ export async function evaluateJobMetricAlerts(
 
   if (fired.length === 0) return result;
 
-  let admins: Array<{ id: string; email: string }> = [];
+  let admins: Array<{ id: string; email: string; receivesJobMetricAlertEmails: boolean }> = [];
   try {
     admins = await loadSuperAdmins();
   } catch (err) {
@@ -554,16 +563,20 @@ export async function evaluateJobMetricAlerts(
 
   // Email escalation — for each newly-fired alert (already deduped by
   // the in-app pass above) decide whether the rule's `emailWhenAbove`
-  // threshold is met and, if so, email every active Super Admin. The
-  // dedupe window is shared with the in-app pass, so an alert that was
-  // suppressed earlier in the loop is never emailed either.
-  if (admins.length > 0) {
+  // threshold is met and, if so, email every active Super Admin who has
+  // not opted out of job-metric alert emails (task #740). In-app
+  // notifications still go to every Super Admin — only the SendGrid
+  // email is suppressed for opted-out users. The dedupe window is shared
+  // with the in-app pass, so an alert that was suppressed earlier in the
+  // loop is never emailed either.
+  const emailRecipients = admins.filter((a) => a.receivesJobMetricAlertEmails);
+  if (emailRecipients.length > 0) {
     for (let i = 0; i < fired.length; i++) {
       const alert = fired[i];
       const meta = firedRules[i];
       if (!meta) continue;
       if (!shouldEmail(meta.rule, meta.emailMetric)) continue;
-      const ok = await emailSuperAdminsForAlert(alert, meta.rule, admins);
+      const ok = await emailSuperAdminsForAlert(alert, meta.rule, emailRecipients);
       if (ok) {
         alert.emailed = true;
         result.emailsSent++;

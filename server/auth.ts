@@ -196,6 +196,7 @@ export async function authMiddleware(
       walkthroughCompleted: user.walkthroughCompleted,
       walkthroughStep: user.walkthroughStep,
       walkthroughStartedAt: user.walkthroughStartedAt,
+      receivesJobMetricAlertEmails: user.receivesJobMetricAlertEmails,
       effectiveRole,
       isHustlerOwner,
     };

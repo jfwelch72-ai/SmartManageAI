@@ -951,13 +951,14 @@ const upload = multer({
         emergencyContactPhone: z.string().max(30).optional().nullable(),
         emergencyContactAddress: z.string().max(500).optional().nullable(),
         emergencyContactEmail: z.string().max(200).optional().nullable(),
+        receivesJobMetricAlertEmails: z.boolean().optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
 
       const { firstName, lastName, phone, birthdate, timezone, profileDescription,
         tradeSpecialization, employmentType, emergencyContactName, emergencyContactPhone,
-        emergencyContactAddress, emergencyContactEmail } = parsed.data;
+        emergencyContactAddress, emergencyContactEmail, receivesJobMetricAlertEmails } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -971,6 +972,7 @@ const upload = multer({
       if (emergencyContactPhone !== undefined) updateData.emergencyContactPhone = emergencyContactPhone || null;
       if (emergencyContactAddress !== undefined) updateData.emergencyContactAddress = emergencyContactAddress || null;
       if (emergencyContactEmail !== undefined) updateData.emergencyContactEmail = emergencyContactEmail || null;
+      if (receivesJobMetricAlertEmails !== undefined) updateData.receivesJobMetricAlertEmails = receivesJobMetricAlertEmails;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }

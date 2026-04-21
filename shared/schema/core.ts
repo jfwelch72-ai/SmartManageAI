@@ -346,6 +346,12 @@ export const users = pgTable("users", {
   walkthroughCompleted: boolean("walkthrough_completed").notNull().default(false),
   walkthroughStep: integer("walkthrough_step").notNull().default(0),
   walkthroughStartedAt: timestamp("walkthrough_started_at"),
+  // Task #740: per-user opt-out for escalated job-metric alert emails.
+  // Defaults to true (opted in) so existing Super Admins keep receiving
+  // alert emails until they explicitly silence them. Only consulted by
+  // the job-metric alert engine — other notification channels (in-app)
+  // are unaffected.
+  receivesJobMetricAlertEmails: boolean("receives_job_metric_alert_emails").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

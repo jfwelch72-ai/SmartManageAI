@@ -12,8 +12,9 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Bell, Loader2, Lock, AlertCircle, Cake } from "lucide-react";
+import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock } from "lucide-react";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
+import { useAuth } from "@/hooks/use-auth";
 
 type BirthdayReminderCadence = "OFF" | "DAILY_TODAY" | "DAILY_LOOKAHEAD" | "WEEKLY";
 
@@ -102,6 +103,8 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 export default function NotificationPrefsSection() {
   const { toast } = useToast();
+  const { user: authUser } = useAuth();
+  const isSuperAdmin = authUser?.role === "SUPER_ADMIN";
   const { can } = useEntitlements();
   const hasEnterpriseNotifications = can("ENTERPRISE_NOTIFICATIONS");
   const { status: integrationStatus } = useIntegrationStatus();
@@ -148,6 +151,46 @@ export default function NotificationPrefsSection() {
     const optOut = !receive;
     setCrmBirthdayDigestOptOut(optOut);
     updateCrmBirthdayDigestMutation.mutate(optOut);
+  }
+
+  // Task #740: Super-Admin-only toggle for escalated job-metric alert emails.
+  // Backed by `users.receivesJobMetricAlertEmails`; server defaults to true
+  // for existing admins so disabling it is an explicit opt-out.
+  const [receivesJobMetricAlertEmails, setReceivesJobMetricAlertEmails] = useState(true);
+  useEffect(() => {
+    if (authUser) {
+      setReceivesJobMetricAlertEmails(Boolean(authUser.receivesJobMetricAlertEmails ?? true));
+    }
+  }, [authUser]);
+
+  const updateJobMetricAlertEmailsMutation = useMutation({
+    mutationFn: async (receives: boolean) => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        receivesJobMetricAlertEmails: receives,
+      });
+    },
+    onSuccess: (_data, receives) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: receives ? "Job-alert emails enabled" : "Job-alert emails silenced",
+        description: receives
+          ? "You will receive escalated job-metric alert emails."
+          : "You will no longer receive job-metric alert emails. In-app alerts will still appear.",
+      });
+    },
+    onError: (error: Error) => {
+      setReceivesJobMetricAlertEmails(Boolean(authUser?.receivesJobMetricAlertEmails ?? true));
+      toast({
+        title: "Failed to update job-alert email preference",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleJobMetricAlertEmailsToggle(receive: boolean) {
+    setReceivesJobMetricAlertEmails(receive);
+    updateJobMetricAlertEmailsMutation.mutate(receive);
   }
 
   const [channelPrefs, setChannelPrefs] = useState<ChannelPrefsData>({
@@ -529,6 +572,30 @@ export default function NotificationPrefsSection() {
                   ))}
                 </RadioGroup>
               </div>
+
+              {isSuperAdmin && (
+                <div data-testid="section-job-metric-alert-emails">
+                  <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                    <AlarmClock className="h-4 w-4" />
+                    Job-Metric Alert Emails
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    High-severity job spike and stall alerts can be escalated by email to every Super Admin. Turn this off to stop receiving those emails. You will still see in-app notifications for the same alerts.
+                  </p>
+                  <div className="flex items-center justify-between py-1" data-testid="row-job-metric-alert-emails">
+                    <div>
+                      <p className="text-sm font-medium">Receive job-metric alert emails</p>
+                      <p className="text-xs text-muted-foreground">Escalated spike/stall alerts from the job metrics engine.</p>
+                    </div>
+                    <Switch
+                      checked={receivesJobMetricAlertEmails}
+                      onCheckedChange={handleJobMetricAlertEmailsToggle}
+                      disabled={updateJobMetricAlertEmailsMutation.isPending}
+                      data-testid="switch-job-metric-alert-emails"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div data-testid="section-crm-contact-reassigned-prefs">
                 <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">CRM Contact Reassigned</h3>
