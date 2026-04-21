@@ -1542,6 +1542,91 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
   }
 });
 
+router.get("/api/crm/contacts/birthdays/upcoming", requireAuth, requireRole(...CONTACT_READ_ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
+
+    const daysParam = parseInt(String(req.query.days ?? "7"), 10);
+    const days = Number.isFinite(daysParam) ? Math.min(Math.max(daysParam, 0), 60) : 7;
+
+    const conditions: SQL[] = [isNotNull(crmContacts.birthday), eq(crmContacts.isActive, true)];
+    if (shouldFilter && orgId) conditions.push(eq(crmContacts.organizationId, orgId));
+
+    const rows = await db
+      .select({
+        id: crmContacts.id,
+        firstName: crmContacts.firstName,
+        lastName: crmContacts.lastName,
+        title: crmContacts.title,
+        role: crmContacts.role,
+        email: crmContacts.email,
+        phone: crmContacts.phone,
+        birthday: crmContacts.birthday,
+        organisationId: crmContacts.organisationId,
+        orgName: crmOrganisations.name,
+      })
+      .from(crmContacts)
+      .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmContacts.organisationId))
+      .where(and(...conditions));
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const items = rows
+      .map((r) => {
+        let raw: string;
+        if (r.birthday instanceof Date) {
+          // Use UTC components to avoid local-timezone shifts pushing the
+          // date back/forward by a day when the column is a DATE.
+          const y = r.birthday.getUTCFullYear();
+          const mo = String(r.birthday.getUTCMonth() + 1).padStart(2, "0");
+          const da = String(r.birthday.getUTCDate()).padStart(2, "0");
+          raw = `${y}-${mo}-${da}`;
+        } else {
+          raw = String(r.birthday);
+        }
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+        if (!m) return null;
+        const birthYear = parseInt(m[1], 10);
+        const month = parseInt(m[2], 10) - 1;
+        const day = parseInt(m[3], 10);
+        if (Number.isNaN(month) || Number.isNaN(day)) return null;
+        let next = new Date(today.getFullYear(), month, day);
+        if (next < today) next = new Date(today.getFullYear() + 1, month, day);
+        const daysUntil = Math.round((next.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysUntil > days) return null;
+        const turningAge = Number.isFinite(birthYear) && birthYear > 1900
+          ? next.getFullYear() - birthYear
+          : null;
+        return {
+          id: r.id,
+          firstName: r.firstName,
+          lastName: r.lastName,
+          title: r.title,
+          role: r.role,
+          email: r.email,
+          phone: r.phone,
+          birthday: `${m[1]}-${m[2]}-${m[3]}`,
+          organisationId: r.organisationId,
+          orgName: r.orgName,
+          daysUntil,
+          turningAge,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => a.daysUntil - b.daysUntil || a.lastName.localeCompare(b.lastName));
+
+    res.json({
+      today: items.filter((i) => i.daysUntil === 0),
+      upcoming: items.filter((i) => i.daysUntil > 0),
+      days,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);

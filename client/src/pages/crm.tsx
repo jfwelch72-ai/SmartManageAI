@@ -84,6 +84,7 @@ import {
   type OrgFormState,
 } from "@/components/crm/CrmOrgDialogs";
 import { CrmContactDialogs } from "@/components/crm/CrmContactDialogs";
+import { CrmBirthdaysWidget } from "@/components/crm/CrmBirthdaysWidget";
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CrmOrgDetail } from "@/components/crm/CrmOrgDetail";
@@ -1371,7 +1372,22 @@ export default function CRMPage() {
             </Card>
           )}
 
-          {crmTab === "orgs" && <><div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {crmTab === "orgs" && <>
+            <CrmBirthdaysWidget
+              onSelectContact={(contact) => {
+                setCrmTab("contacts");
+                apiRequest("GET", `/api/crm/contacts/${encodeURIComponent(contact.id)}`)
+                  .then((res) => res.json())
+                  .then((full) => {
+                    if (full) {
+                      setSelectedContact(full as CrmContact);
+                      setViewContactOpen(true);
+                    }
+                  })
+                  .catch(() => undefined);
+              }}
+            />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card
               className="hover-elevate cursor-pointer"
               onClick={() => setSelectedType("all")}
