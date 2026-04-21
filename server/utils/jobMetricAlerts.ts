@@ -1138,6 +1138,34 @@ async function fetchDigestEventsSince(since: Date): Promise<DigestEventRow[]> {
     .orderBy(jobMetricAlertEvents.triggeredAt);
 }
 
+/**
+ * Task #770 — Fetch alert events triggered between [from, to] for the
+ * dashboard CSV export. Mirrors the columns used by the digest CSV so
+ * a download from the dashboard matches the file delivered by email.
+ */
+export async function fetchAlertEventsBetween(
+  from: Date,
+  to: Date,
+): Promise<DigestEventRow[]> {
+  return db
+    .select({
+      job: jobMetricAlertEvents.job,
+      counter: jobMetricAlertEvents.counter,
+      kind: jobMetricAlertEvents.kind,
+      message: jobMetricAlertEvents.message,
+      triggeredAt: jobMetricAlertEvents.triggeredAt,
+      emailed: jobMetricAlertEvents.emailed,
+    })
+    .from(jobMetricAlertEvents)
+    .where(
+      and(
+        gte(jobMetricAlertEvents.triggeredAt, from),
+        lte(jobMetricAlertEvents.triggeredAt, to),
+      ),
+    )
+    .orderBy(jobMetricAlertEvents.triggeredAt);
+}
+
 function formatDigestSubject(count: number): string {
   return count === 1
     ? `Quiet-hours digest: 1 alert fired while you were silenced`

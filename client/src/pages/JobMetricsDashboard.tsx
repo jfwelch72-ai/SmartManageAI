@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail, MailWarning, MoonStar, Send } from "lucide-react";
+import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail, MailWarning, MoonStar, Send, Download } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1175,6 +1175,169 @@ function DigestRowGroup({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// Task #770 — Lets a Super Admin re-pull the same alert-event CSV that
+// the quiet-hours digest attaches, for any time window. Mirrors the
+// preset (24h / 7d) and custom-range options listed in the task.
+type ExportRange = "24h" | "7d" | "custom";
+
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function ExportEventsPanel() {
+  const { toast } = useToast();
+  const now = useMemo(() => new Date(), []);
+  const [range, setRange] = useState<ExportRange>("24h");
+  const [customFrom, setCustomFrom] = useState<string>(() =>
+    toLocalInput(new Date(now.getTime() - 24 * HOUR_MS)),
+  );
+  const [customTo, setCustomTo] = useState<string>(() => toLocalInput(now));
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    let url = "/api/admin/metrics/jobs/alerts/events.csv";
+    if (range === "custom") {
+      const from = new Date(customFrom);
+      const to = new Date(customTo);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        toast({
+          title: "Invalid date range",
+          description: "Pick a valid start and end date and time.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (from.getTime() >= to.getTime()) {
+        toast({
+          title: "Invalid date range",
+          description: "The 'from' time must be before the 'to' time.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const params = new URLSearchParams({
+        from: from.toISOString(),
+        to: to.toISOString(),
+      });
+      url = `${url}?${params.toString()}`;
+    } else {
+      const params = new URLSearchParams({ range });
+      url = `${url}?${params.toString()}`;
+    }
+
+    setIsDownloading(true);
+    try {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        let message = `Export failed (HTTP ${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // body wasn't JSON — fall back to the status message
+        }
+        throw new Error(message);
+      }
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = /filename="?([^";]+)"?/.exec(disposition);
+      const filename = match?.[1] ?? `quiet-hours-digest_${Date.now()}.csv`;
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast({
+        title: "Export ready",
+        description: `Downloaded ${filename}.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      toast({ title: "Export failed", description: message, variant: "destructive" });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  return (
+    <Card data-testid="card-export-events">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Download className="h-4 w-4" /> Export alert events
+        </CardTitle>
+        <CardDescription>
+          Re-pull a CSV of alert events for any time range. Columns match the digest email
+          attachment (job, counter, kind, triggeredAt, message).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <ToggleGroup
+            type="single"
+            value={range}
+            onValueChange={(v) => {
+              if (v === "24h" || v === "7d" || v === "custom") setRange(v);
+            }}
+            size="sm"
+            variant="outline"
+            data-testid="toggle-export-range"
+          >
+            <ToggleGroupItem value="24h" data-testid="toggle-export-range-24h">
+              Last 24h
+            </ToggleGroupItem>
+            <ToggleGroupItem value="7d" data-testid="toggle-export-range-7d">
+              Last 7d
+            </ToggleGroupItem>
+            <ToggleGroupItem value="custom" data-testid="toggle-export-range-custom">
+              Custom
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <Button
+            size="sm"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            data-testid="button-download-events-csv"
+          >
+            <Download className="h-4 w-4 mr-1" />
+            {isDownloading ? "Preparing…" : "Download CSV"}
+          </Button>
+        </div>
+        {range === "custom" && (
+          <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
+            <div className="space-y-1">
+              <Label htmlFor="export-from" className="text-xs">From</Label>
+              <Input
+                id="export-from"
+                type="datetime-local"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                data-testid="input-export-from"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="export-to" className="text-xs">To</Label>
+              <Input
+                id="export-to"
+                type="datetime-local"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                data-testid="input-export-to"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Custom ranges are capped at 90 days.
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function JobMetricsDashboard() {
   const [range, setRange] = useState<RangeKey>("24h");
 
@@ -1292,6 +1455,8 @@ export default function JobMetricsDashboard() {
       )}
 
       <AlertsPanel data={alertsData} />
+
+      <ExportEventsPanel />
 
       <DigestsPanel data={digestsData} />
     </div>

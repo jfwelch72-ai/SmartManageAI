@@ -946,6 +946,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Task #770 — Download a CSV of alert events for an arbitrary range so
+  // recipients can re-pull a past quiet-hours digest export without
+  // hunting through their inbox. Columns mirror `buildDigestCsv` exactly.
+  app.get("/api/admin/metrics/jobs/alerts/events.csv", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const schema = z.object({
+        from: z.string().datetime({ offset: true }).optional(),
+        to: z.string().datetime({ offset: true }).optional(),
+        range: z.enum(["24h", "7d"]).optional(),
+      });
+      const parsed = schema.parse(req.query);
+      const now = Date.now();
+      let to: Date;
+      let from: Date;
+      if (parsed.from || parsed.to) {
+        if (!parsed.from || !parsed.to) {
+          res.status(400).json({ error: "Both 'from' and 'to' are required for a custom range" });
+          return;
+        }
+        from = new Date(parsed.from);
+        to = new Date(parsed.to);
+        if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+          res.status(400).json({ error: "Invalid 'from' or 'to' timestamp" });
+          return;
+        }
+        if (from.getTime() >= to.getTime()) {
+          res.status(400).json({ error: "'from' must be before 'to'" });
+          return;
+        }
+        // Cap arbitrary ranges to 90 days so a misclick can't pull years
+        // of events into a single response.
+        const MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000;
+        if (to.getTime() - from.getTime() > MAX_RANGE_MS) {
+          res.status(400).json({ error: "Range must be 90 days or less" });
+          return;
+        }
+      } else {
+        const rangeKey = parsed.range ?? "24h";
+        const lookbackMs = rangeKey === "7d" ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+        to = new Date(now);
+        from = new Date(now - lookbackMs);
+      }
+
+      const mod = await import("./utils/jobMetricAlerts");
+      const events = await mod.fetchAlertEventsBetween(from, to);
+      const csv = mod.buildDigestCsv(events);
+      const fmt = (d: Date) =>
+        d.toISOString().replace(/[:.]/g, "-").replace(/T/, "_").slice(0, 19);
+      const filename = `quiet-hours-digest_${fmt(from)}_to_${fmt(to)}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid range", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  });
+
   app.post("/api/admin/metrics/jobs/alerts/digests/test", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const mod = await import("./utils/jobMetricAlerts");
