@@ -44,8 +44,15 @@ interface Sequence {
   businessHoursOnly: boolean;
   weekdaysOnly: boolean;
   dailySendCap: number;
+  optimizedSendWindowStartHour: number;
+  optimizedSendWindowEndHour: number;
   steps: Step[];
 }
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
+  value: String(h),
+  label: `${((h + 11) % 12) + 1}:00 ${h < 12 ? "AM" : "PM"}`,
+}));
 
 export default function SequenceDetailPage() {
   const params = useParams<{ id: string }>();
@@ -83,7 +90,17 @@ export default function SequenceDetailPage() {
   const updateMut = useMutation({
     mutationFn: async (patch: Partial<Sequence>) =>
       (await apiRequest("PATCH", `/api/crm/sequences/${id}`, patch)).json(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/sequences", id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/sequences", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/sequences", id, "next-send"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Couldn't save sequence", description: err?.message || "Please try again", variant: "destructive" });
+    },
+  });
+
+  const { data: nextSend } = useQuery<{ nextSendAt: string | null }>({
+    queryKey: ["/api/crm/sequences", id, "next-send"],
   });
 
   const addStepMut = useMutation({
@@ -290,6 +307,45 @@ export default function SequenceDetailPage() {
               <div>
                 <Label>Daily send cap (per org)</Label>
                 <Input type="number" defaultValue={seq.dailySendCap} onBlur={(e) => updateMut.mutate({ dailySendCap: Number(e.target.value) })} data-testid="input-daily-cap" />
+              </div>
+              <div className="border-t pt-4 space-y-3">
+                <div>
+                  <Label className="text-base">Best-time send window</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    For steps with send-time optimization on, sends are deferred into this local-time window for each recipient. Default is 9 AM – 11 AM.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Start hour (local)</Label>
+                    <Select
+                      value={String(seq.optimizedSendWindowStartHour)}
+                      onValueChange={(v) => updateMut.mutate({ optimizedSendWindowStartHour: Number(v) })}
+                    >
+                      <SelectTrigger data-testid="select-window-start"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {HOUR_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>End hour (local)</Label>
+                    <Select
+                      value={String(seq.optimizedSendWindowEndHour)}
+                      onValueChange={(v) => updateMut.mutate({ optimizedSendWindowEndHour: Number(v) })}
+                    >
+                      <SelectTrigger data-testid="select-window-end"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {HOUR_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground" data-testid="text-next-send">
+                  {nextSend?.nextSendAt
+                    ? `Next planned send: ${new Date(nextSend.nextSendAt).toLocaleString()}`
+                    : "No upcoming sends scheduled."}
+                </div>
               </div>
             </CardContent>
           </Card>

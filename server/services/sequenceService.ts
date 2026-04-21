@@ -241,6 +241,117 @@ export async function getPreferredSendHourForContact(
 }
 
 /**
+ * Recompute scheduled times for all PENDING executions of a sequence whose step
+ * has `sendTimeOptimized` enabled. Used after the sequence's optimized send
+ * window changes so future sends shift into the new window.
+ */
+export async function rescheduleOptimizedPendingForSequence(sequenceId: string): Promise<{ updated: number }> {
+  const [seq] = await db.select().from(crmSequences).where(eq(crmSequences.id, sequenceId)).limit(1);
+  if (!seq) return { updated: 0 };
+  const steps = await db.select().from(crmSequenceSteps).where(eq(crmSequenceSteps.sequenceId, sequenceId));
+  const optimizedStepIds = steps.filter(s => s.sendTimeOptimized).map(s => s.id);
+  if (optimizedStepIds.length === 0) return { updated: 0 };
+  const stepById = new Map(steps.map(s => [s.id, s] as const));
+
+  const pending = await db
+    .select()
+    .from(crmSequenceStepExecutions)
+    .where(and(
+      eq(crmSequenceStepExecutions.status, "PENDING"),
+      inArray(crmSequenceStepExecutions.stepId, optimizedStepIds),
+    ));
+  if (pending.length === 0) return { updated: 0 };
+
+  const enrollmentIds = Array.from(new Set(pending.map(p => p.enrollmentId)));
+  const enrollments = enrollmentIds.length > 0
+    ? await db.select().from(crmSequenceEnrollments).where(inArray(crmSequenceEnrollments.id, enrollmentIds))
+    : [];
+  const enrById = new Map(enrollments.map(e => [e.id, e] as const));
+
+  const startHour = seq.optimizedSendWindowStartHour ?? 9;
+  const endHour = seq.optimizedSendWindowEndHour ?? 11;
+  let updated = 0;
+
+  for (const exec of pending) {
+    const enrollment = enrById.get(exec.enrollmentId);
+    const step = stepById.get(exec.stepId);
+    if (!enrollment || !step || enrollment.status !== "ACTIVE") continue;
+
+    const baseScheduledAt = computeScheduledAt(enrollment.startAt, step.delayDays, step.sendHourLocal, {
+      weekdaysOnly: seq.weekdaysOnly,
+      businessHoursOnly: seq.businessHoursOnly,
+    });
+
+    let tz: string | null = null;
+    if (enrollment.contactId) {
+      const [contact] = await db
+        .select({ timezone: crmContacts.timezone })
+        .from(crmContacts)
+        .where(eq(crmContacts.id, enrollment.contactId))
+        .limit(1);
+      tz = contact?.timezone || null;
+    }
+    if (!tz && enrollment.senderId) {
+      const [sender] = await db.select({ timezone: users.timezone }).from(users).where(eq(users.id, enrollment.senderId)).limit(1);
+      tz = sender?.timezone || null;
+    }
+    const effectiveTz = tz || "UTC";
+
+    let preferred: number | null = null;
+    if (enrollment.contactId) {
+      try {
+        preferred = await getPreferredSendHourForContact(
+          enrollment.organizationId,
+          enrollment.contactId,
+          effectiveTz,
+          startHour,
+          endHour,
+        );
+      } catch (err) {
+        logError("Failed to compute preferred send hour during reschedule; using window midpoint", {
+          enrollmentId: enrollment.id,
+          contactId: enrollment.contactId,
+          error: String(err),
+        });
+      }
+    }
+
+    const newScheduledAt = applyOptimizedSendWindow(baseScheduledAt, effectiveTz, startHour, endHour, preferred);
+    if (newScheduledAt.getTime() !== exec.scheduledAt.getTime()) {
+      await db
+        .update(crmSequenceStepExecutions)
+        .set({ scheduledAt: newScheduledAt })
+        .where(eq(crmSequenceStepExecutions.id, exec.id));
+      updated++;
+    }
+  }
+  return { updated };
+}
+
+/**
+ * Return the earliest pending execution scheduled across this sequence's enrollments,
+ * for the "next planned send" preview.
+ */
+export async function getNextPlannedSendForSequence(sequenceId: string): Promise<Date | null> {
+  const enrollments = await db
+    .select({ id: crmSequenceEnrollments.id })
+    .from(crmSequenceEnrollments)
+    .where(eq(crmSequenceEnrollments.sequenceId, sequenceId));
+  if (enrollments.length === 0) return null;
+  const ids = enrollments.map(e => e.id);
+  const [next] = await db
+    .select({ scheduledAt: crmSequenceStepExecutions.scheduledAt })
+    .from(crmSequenceStepExecutions)
+    .where(and(
+      eq(crmSequenceStepExecutions.status, "PENDING"),
+      inArray(crmSequenceStepExecutions.enrollmentId, ids),
+    ))
+    .orderBy(crmSequenceStepExecutions.scheduledAt)
+    .limit(1);
+  return next?.scheduledAt || null;
+}
+
+/**
  * After enrollment is created (or a step completes), schedule the next pending step execution.
  */
 export async function scheduleNextStep(enrollmentId: string): Promise<void> {

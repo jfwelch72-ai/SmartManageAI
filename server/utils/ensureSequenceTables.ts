@@ -47,6 +47,9 @@ export async function ensureSequenceTables(): Promise<void> {
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_sequences_org_idx" ON "crm_sequences"("organization_id")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_sequences_status_idx" ON "crm_sequences"("status")`);
+  // Task #656 — per-sequence "best-time" send window for send-time optimization.
+  await db.execute(sql`ALTER TABLE "crm_sequences" ADD COLUMN IF NOT EXISTS "optimized_send_window_start_hour" integer NOT NULL DEFAULT 9`);
+  await db.execute(sql`ALTER TABLE "crm_sequences" ADD COLUMN IF NOT EXISTS "optimized_send_window_end_hour" integer NOT NULL DEFAULT 11`);
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "crm_sequence_steps" (
@@ -64,6 +67,12 @@ export async function ensureSequenceTables(): Promise<void> {
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_sequence_steps_seq_idx" ON "crm_sequence_steps"("sequence_id")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_sequence_steps_order_idx" ON "crm_sequence_steps"("sequence_id","step_order")`);
+  // A/B variants, winner promotion, and per-step send-time optimization opt-in.
+  await db.execute(sql`ALTER TABLE "crm_sequence_steps" ADD COLUMN IF NOT EXISTS "variant_group" text`);
+  await db.execute(sql`ALTER TABLE "crm_sequence_steps" ADD COLUMN IF NOT EXISTS "is_winner" boolean NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE "crm_sequence_steps" ADD COLUMN IF NOT EXISTS "send_time_optimized" boolean NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE "crm_sequence_steps" ADD COLUMN IF NOT EXISTS "winning_metric" text`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_sequence_steps_variant_idx" ON "crm_sequence_steps"("sequence_id","variant_group")`);
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "crm_sequence_enrollments" (

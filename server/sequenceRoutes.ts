@@ -25,6 +25,8 @@ import {
   recordEmailEvent,
   exitEnrollment,
   processDueExecutions,
+  rescheduleOptimizedPendingForSequence,
+  getNextPlannedSendForSequence,
 } from "./services/sequenceService";
 import { logError } from "./utils/logger";
 
@@ -90,7 +92,22 @@ router.get("/api/crm/sequences", requireAuth, requireRole(...ROLES), async (req:
   } catch (e) { next(e); }
 });
 
-const sequenceBodySchema = insertCrmSequenceSchema.omit({ organizationId: true, ownerId: true });
+const sequenceBodySchema = insertCrmSequenceSchema
+  .omit({ organizationId: true, ownerId: true })
+  .extend({
+    optimizedSendWindowStartHour: z.number().int().min(0).max(23).optional(),
+    optimizedSendWindowEndHour: z.number().int().min(0).max(23).optional(),
+  });
+
+function validateOptimizedWindow(
+  patch: { optimizedSendWindowStartHour?: number; optimizedSendWindowEndHour?: number },
+  existing: { optimizedSendWindowStartHour: number; optimizedSendWindowEndHour: number },
+): string | null {
+  const start = patch.optimizedSendWindowStartHour ?? existing.optimizedSendWindowStartHour;
+  const end = patch.optimizedSendWindowEndHour ?? existing.optimizedSendWindowEndHour;
+  if (end < start) return "Best-time window end hour must be greater than or equal to start hour";
+  return null;
+}
 
 router.post("/api/crm/sequences", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
@@ -98,12 +115,26 @@ router.post("/api/crm/sequences", requireAuth, requireRole(...ROLES), async (req
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
     const parsed = sequenceBodySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+    const windowErr = validateOptimizedWindow(parsed.data, { optimizedSendWindowStartHour: 9, optimizedSendWindowEndHour: 11 });
+    if (windowErr) return res.status(400).json({ error: windowErr });
     const [created] = await db.insert(crmSequences).values({
       ...parsed.data,
       organizationId: orgId,
       ownerId: req.user!.id,
     }).returning();
     res.status(201).json(created);
+  } catch (e) { next(e); }
+});
+
+router.get("/api/crm/sequences/:id/next-send", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+    const [seq] = await db.select().from(crmSequences).where(eq(crmSequences.id, req.params.id)).limit(1);
+    if (!seq) return res.status(404).json({ error: "Not found" });
+    if (!isSuperAdmin && orgId && seq.organizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+    const nextAt = await getNextPlannedSendForSequence(seq.id);
+    res.json({ nextSendAt: nextAt ? nextAt.toISOString() : null });
   } catch (e) { next(e); }
 });
 
@@ -131,7 +162,22 @@ router.patch("/api/crm/sequences/:id", requireAuth, requireRole(...ROLES), async
     }
     const parsed = sequenceBodySchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+    const windowErr = validateOptimizedWindow(parsed.data, {
+      optimizedSendWindowStartHour: seq.optimizedSendWindowStartHour,
+      optimizedSendWindowEndHour: seq.optimizedSendWindowEndHour,
+    });
+    if (windowErr) return res.status(400).json({ error: windowErr });
     const [updated] = await db.update(crmSequences).set({ ...parsed.data, updatedAt: new Date() }).where(eq(crmSequences.id, seq.id)).returning();
+    const windowChanged =
+      (parsed.data.optimizedSendWindowStartHour != null && parsed.data.optimizedSendWindowStartHour !== seq.optimizedSendWindowStartHour) ||
+      (parsed.data.optimizedSendWindowEndHour != null && parsed.data.optimizedSendWindowEndHour !== seq.optimizedSendWindowEndHour);
+    if (windowChanged) {
+      try {
+        await rescheduleOptimizedPendingForSequence(seq.id);
+      } catch (err) {
+        logError("Failed to reschedule optimized pending sends after window change", { sequenceId: seq.id, error: String(err) });
+      }
+    }
     res.json(updated);
   } catch (e) { next(e); }
 });
@@ -166,6 +212,8 @@ router.post("/api/crm/sequences/:id/clone", requireAuth, requireRole(...ROLES), 
       businessHoursOnly: seq.businessHoursOnly,
       weekdaysOnly: seq.weekdaysOnly,
       dailySendCap: seq.dailySendCap,
+      optimizedSendWindowStartHour: seq.optimizedSendWindowStartHour,
+      optimizedSendWindowEndHour: seq.optimizedSendWindowEndHour,
     }).returning();
     const steps = await db.select().from(crmSequenceSteps).where(eq(crmSequenceSteps.sequenceId, seq.id));
     if (steps.length > 0) {
