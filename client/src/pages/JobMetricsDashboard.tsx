@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff } from "lucide-react";
+import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -323,6 +323,8 @@ interface AlertEvent {
   snoozedUntil: number | null;
   snoozedById: string | null;
   snoozedByName: string | null;
+  emailed: boolean;
+  emailedRecipientCount: number;
 }
 
 const SNOOZE_OPTIONS: Array<{ hours: number; label: string }> = [
@@ -489,7 +491,19 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                 >
                   <span className="flex-1 min-w-[12rem]">
                     <span className="font-mono">{a.job}</span>
-                    {a.counter ? ` · ${a.counter}` : ""} · {a.kind} · {formatRelative(a.triggeredAt)} — {a.message}
+                    {a.counter ? ` · ${a.counter}` : ""} · {a.kind} · {formatRelative(a.triggeredAt)}
+                    {a.emailed && (
+                      <Badge
+                        variant="destructive"
+                        className="ml-1 gap-1"
+                        data-testid={`badge-active-emailed-${a.id}`}
+                        title={`Emailed ${a.emailedRecipientCount} Super Admin${a.emailedRecipientCount === 1 ? "" : "s"}`}
+                      >
+                        <Mail className="h-3 w-3" /> Emailed
+                        {a.emailedRecipientCount > 0 ? ` · ${a.emailedRecipientCount}` : ""}
+                      </Badge>
+                    )}
+                    {" — "}{a.message}
                   </span>
                   <span className="flex items-center gap-1 shrink-0">
                     <Button
@@ -788,6 +802,17 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                       <span className="flex-1 min-w-[12rem]">
                         <span className="font-mono">{e.job}</span>
                         {e.counter ? ` · ${e.counter}` : ""} · {e.kind} · {formatRelative(e.triggeredAt)} · notified {e.notifiedUserCount} admin{e.notifiedUserCount === 1 ? "" : "s"}
+                        {e.emailed && (
+                          <Badge
+                            variant="destructive"
+                            className="ml-1 gap-1"
+                            data-testid={`badge-emailed-${e.id}`}
+                            title={`Emailed ${e.emailedRecipientCount} Super Admin${e.emailedRecipientCount === 1 ? "" : "s"}`}
+                          >
+                            <Mail className="h-3 w-3" /> Emailed
+                            {e.emailedRecipientCount > 0 ? ` · ${e.emailedRecipientCount}` : ""}
+                          </Badge>
+                        )}
                         {e.acknowledgedAt && (
                           <Badge
                             variant="secondary"

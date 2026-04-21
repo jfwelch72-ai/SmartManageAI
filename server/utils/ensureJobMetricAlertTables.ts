@@ -77,4 +77,37 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
     `);
     console.log("[migration] job_metric_alert_events — table created");
   }
+
+  // Task #739 — track email escalation outcome per event so the
+  // dashboard can badge alerts that paged Super Admins by email.
+  const eventEmailedExists = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'job_metric_alert_events'
+        AND column_name = 'emailed'
+    ) AS exists
+  `);
+  if (!(eventEmailedExists.rows[0] as { exists: boolean }).exists) {
+    await db.execute(sql`
+      ALTER TABLE "job_metric_alert_events"
+      ADD COLUMN "emailed" boolean NOT NULL DEFAULT false
+    `);
+    console.log("[migration] job_metric_alert_events.emailed — column added");
+  }
+  const eventEmailedCountExists = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'job_metric_alert_events'
+        AND column_name = 'emailed_recipient_count'
+    ) AS exists
+  `);
+  if (!(eventEmailedCountExists.rows[0] as { exists: boolean }).exists) {
+    await db.execute(sql`
+      ALTER TABLE "job_metric_alert_events"
+      ADD COLUMN "emailed_recipient_count" integer NOT NULL DEFAULT 0
+    `);
+    console.log("[migration] job_metric_alert_events.emailed_recipient_count — column added");
+  }
 }

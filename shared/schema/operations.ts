@@ -1351,6 +1351,11 @@ export const jobMetricAlertEvents = pgTable("job_metric_alert_events", {
   acknowledgedById: varchar("acknowledged_by_id"),
   snoozedUntil: timestamp("snoozed_until"),
   snoozedById: varchar("snoozed_by_id"),
+  // Task #739 — track email escalation outcome per event so the
+  // dashboard can show at a glance which fired alerts also paged
+  // Super Admins via email (vs. in-app notification only).
+  emailed: boolean("emailed").notNull().default(false),
+  emailedRecipientCount: integer("emailed_recipient_count").notNull().default(0),
 }, (table) => ({
   jobTriggeredIdx: index("job_metric_alert_events_job_triggered_idx").on(table.job, table.triggeredAt),
   triggeredIdx: index("job_metric_alert_events_triggered_idx").on(table.triggeredAt),

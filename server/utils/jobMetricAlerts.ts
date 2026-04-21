@@ -325,16 +325,21 @@ function shouldEmail(rule: AlertRuleResolved, observed: number): boolean {
   return observed >= rule.emailWhenAbove;
 }
 
+interface EmailDeliveryResult {
+  delivered: boolean;
+  recipientCount: number;
+}
+
 async function emailSuperAdminsForAlert(
   alert: JobMetricAlert,
   rule: AlertRuleResolved,
   recipients: Array<{ email: string }>,
-): Promise<boolean> {
-  if (recipients.length === 0) return false;
+): Promise<EmailDeliveryResult> {
+  if (recipients.length === 0) return { delivered: false, recipientCount: 0 };
   const emails = Array.from(
     new Set(recipients.map((r) => r.email).filter((e): e is string => !!e && e.length > 0)),
   );
-  if (emails.length === 0) return false;
+  if (emails.length === 0) return { delivered: false, recipientCount: 0 };
 
   const subject =
     alert.kind === "spike"
@@ -355,14 +360,15 @@ async function emailSuperAdminsForAlert(
   const html = `<p>${alert.message}</p><p>${escalation}</p><p><a href="${dashboardUrl}">Open the job metrics dashboard</a></p>`;
 
   try {
-    return await sendEmail({ to: emails, subject, text, html });
+    const ok = await sendEmail({ to: emails, subject, text, html });
+    return { delivered: ok, recipientCount: ok ? emails.length : 0 };
   } catch (err) {
     logError("Job metric alerts: email delivery failed", {
       error: String(err),
       job: alert.job,
       kind: alert.kind,
     });
-    return false;
+    return { delivered: false, recipientCount: 0 };
   }
 }
 
@@ -553,14 +559,6 @@ export async function evaluateJobMetricAlerts(
     }
   }
 
-  // Persist event rows (with the actual notified count) for the dashboard.
-  for (const row of eventRows) row.notifiedUserCount = adminIds.length;
-  try {
-    await db.insert(jobMetricAlertEvents).values(eventRows);
-  } catch (err) {
-    logError("Job metric alerts: failed to persist alert events", { error: String(err) });
-  }
-
   // Email escalation — for each newly-fired alert (already deduped by
   // the in-app pass above) decide whether the rule's `emailWhenAbove`
   // threshold is met and, if so, email every active Super Admin who has
@@ -568,7 +566,9 @@ export async function evaluateJobMetricAlerts(
   // notifications still go to every Super Admin — only the SendGrid
   // email is suppressed for opted-out users. The dedupe window is shared
   // with the in-app pass, so an alert that was suppressed earlier in the
-  // loop is never emailed either.
+  // loop is never emailed either. We email BEFORE persisting the event
+  // rows so the `emailed` outcome (task #739) is written in a single
+  // INSERT and visible on the dashboard.
   const emailRecipients = admins.filter((a) => a.receivesJobMetricAlertEmails);
   if (emailRecipients.length > 0) {
     for (let i = 0; i < fired.length; i++) {
@@ -576,12 +576,23 @@ export async function evaluateJobMetricAlerts(
       const meta = firedRules[i];
       if (!meta) continue;
       if (!shouldEmail(meta.rule, meta.emailMetric)) continue;
-      const ok = await emailSuperAdminsForAlert(alert, meta.rule, emailRecipients);
-      if (ok) {
+      const outcome = await emailSuperAdminsForAlert(alert, meta.rule, emailRecipients);
+      if (outcome.delivered) {
         alert.emailed = true;
         result.emailsSent++;
+        eventRows[i].emailed = true;
+        eventRows[i].emailedRecipientCount = outcome.recipientCount;
       }
     }
+  }
+
+  // Persist event rows (with the actual notified count and email
+  // escalation outcome) for the dashboard.
+  for (const row of eventRows) row.notifiedUserCount = adminIds.length;
+  try {
+    await db.insert(jobMetricAlertEvents).values(eventRows);
+  } catch (err) {
+    logError("Job metric alerts: failed to persist alert events", { error: String(err) });
   }
 
   result.alertsFired = fired;
@@ -619,6 +630,9 @@ export interface JobMetricAlertEventView {
   snoozedUntil: number | null;
   snoozedById: string | null;
   snoozedByName: string | null;
+  // Task #739 — email escalation outcome recorded at alert-time.
+  emailed: boolean;
+  emailedRecipientCount: number;
 }
 
 export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
@@ -673,6 +687,10 @@ export async function listRecentJobMetricAlertEvents(limit = 50): Promise<{
       snoozedUntil: snoozeTs,
       snoozedById: r.snoozedById ?? null,
       snoozedByName: r.snoozedById ? buildDisplayName(snoozeFirst, snoozeLast, snoozeEmail) : null,
+      emailed: Boolean((r as unknown as { emailed?: boolean }).emailed ?? false),
+      emailedRecipientCount: Number(
+        (r as unknown as { emailedRecipientCount?: number }).emailedRecipientCount ?? 0,
+      ),
     };
   });
   return { events, activeByJob };
@@ -714,6 +732,10 @@ async function hydrateEventRow(updated: typeof jobMetricAlertEvents.$inferSelect
     snoozedUntil: updated.snoozedUntil ? new Date(updated.snoozedUntil).getTime() : null,
     snoozedById: updated.snoozedById ?? null,
     snoozedByName,
+    emailed: Boolean((updated as unknown as { emailed?: boolean }).emailed ?? false),
+    emailedRecipientCount: Number(
+      (updated as unknown as { emailedRecipientCount?: number }).emailedRecipientCount ?? 0,
+    ),
   };
 }
 
