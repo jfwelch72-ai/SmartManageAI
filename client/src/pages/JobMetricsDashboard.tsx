@@ -470,13 +470,18 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
     },
   });
 
+  const [emailedOnly, setEmailedOnly] = useState(false);
+
   const now = Date.now();
   const recentActive = (data?.events ?? []).filter(
     (e) =>
       now - e.triggeredAt < 60 * 60 * 1000 &&
       e.acknowledgedAt === null &&
-      (e.snoozedUntil === null || e.snoozedUntil <= now),
+      (e.snoozedUntil === null || e.snoozedUntil <= now) &&
+      (!emailedOnly || e.emailed),
   );
+
+  const recentEvents = (data?.events ?? []).filter((e) => !emailedOnly || e.emailed);
 
   return (
     <div className="space-y-4">
@@ -582,15 +587,28 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                 {data?.lastEvaluatedAt && <> Last evaluated {formatRelative(data.lastEvaluatedAt)}.</>}
               </CardDescription>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => evaluateMutation.mutate()}
-              disabled={evaluateMutation.isPending}
-              data-testid="button-evaluate-alerts"
-            >
-              <PlayCircle className="h-4 w-4 mr-1" /> Evaluate now
-            </Button>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="switch-emailed-only"
+                  checked={emailedOnly}
+                  onCheckedChange={setEmailedOnly}
+                  data-testid="switch-emailed-only"
+                />
+                <Label htmlFor="switch-emailed-only" className="text-xs flex items-center gap-1 cursor-pointer">
+                  <Mail className="h-3 w-3" /> Emailed only
+                </Label>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => evaluateMutation.mutate()}
+                disabled={evaluateMutation.isPending}
+                data-testid="button-evaluate-alerts"
+              >
+                <PlayCircle className="h-4 w-4 mr-1" /> Evaluate now
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -810,9 +828,21 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
 
           {data?.events && data.events.length > 0 && (
             <div className="border-t pt-4">
-              <p className="text-sm font-medium mb-2">Recent alerts (last 24h)</p>
+              <p className="text-sm font-medium mb-2">
+                Recent alerts (last 24h)
+                {emailedOnly && (
+                  <span className="ml-2 text-xs text-muted-foreground" data-testid="text-emailed-only-indicator">
+                    · emailed only ({recentEvents.length} of {data.events.length})
+                  </span>
+                )}
+              </p>
+              {recentEvents.length === 0 ? (
+                <p className="text-xs text-muted-foreground" data-testid="text-no-emailed-events">
+                  No emailed alerts in the last 24h.
+                </p>
+              ) : (
               <ul className="space-y-1 text-xs text-muted-foreground" data-testid="list-recent-events">
-                {data.events.slice(0, 10).map((e) => {
+                {recentEvents.slice(0, 10).map((e) => {
                   const snoozeActive = e.snoozedUntil !== null && e.snoozedUntil > Date.now();
                   const ackName = e.acknowledgedByName ?? (e.acknowledgedById ? "unknown admin" : null);
                   const snoozeName = e.snoozedByName ?? (e.snoozedById ? "unknown admin" : null);
@@ -884,6 +914,7 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                   );
                 })}
               </ul>
+              )}
             </div>
           )}
         </CardContent>
