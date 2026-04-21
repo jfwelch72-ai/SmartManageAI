@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Plus, Trash2, Copy, ExternalLink, AlertTriangle, Upload, BarChart3, Zap, Calendar, FileText, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Trash2, Copy, ExternalLink, AlertTriangle, Upload, BarChart3, Zap, Calendar, FileText, Clock, ChevronDown, ChevronRight, Download } from "lucide-react";
 
 const STAGES = ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION", "WON", "LOST"];
 
@@ -910,17 +910,30 @@ function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) =
           <div className="text-xs text-muted-foreground mt-1" data-testid={`text-job-progress-${job.id}`}>{processed} / {total} rows ({pct}%)</div>
         </div>
       )}
-      {errors.length > 0 && (
+      {errorCount > 0 && (
         <div className="mt-2">
-          <button
-            type="button"
-            className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => setShowErrors((v) => !v)}
-            data-testid={`button-toggle-errors-${job.id}`}
-          >
-            {showErrors ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
-            {showErrors ? "Hide" : "Show"} row errors ({errors.length}{truncated ? ` of ${errorCount}` : ""})
-          </button>
+          <div className="flex items-center gap-3">
+            {errors.length > 0 && (
+              <button
+                type="button"
+                className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setShowErrors((v) => !v)}
+                data-testid={`button-toggle-errors-${job.id}`}
+              >
+                {showErrors ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+                {showErrors ? "Hide" : "Show"} row errors ({errors.length}{truncated ? ` of ${errorCount}` : ""})
+              </button>
+            )}
+            <a
+              href={`/api/crm/csv-imports/${job.id}/errors.csv`}
+              download
+              className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
+              data-testid={`link-download-errors-${job.id}`}
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Download errors CSV
+            </a>
+          </div>
           {showErrors && (
             <div className="mt-2 border rounded overflow-x-auto" data-testid={`table-errors-${job.id}`}>
               <table className="w-full text-xs">
@@ -953,7 +966,7 @@ function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) =
               </table>
               {truncated && (
                 <div className="text-[10px] text-muted-foreground px-2 py-1 border-t">
-                  Showing first {errors.length} of {errorCount} errors. Fix these and re-import to see the rest.
+                  Showing first {errors.length} of {errorCount} errors. Download the CSV above to see them all.
                 </div>
               )}
             </div>

@@ -105,7 +105,7 @@ async function flushProgress(jobId: string, p: JobProgress, final = false): Prom
     updatedRows: p.updated,
     skippedRows: p.skipped,
     errorRows: p.errored,
-    errors: p.errors.slice(0, 100),
+    errors: p.errors,
     insertedIds: p.insertedIds,
     ...(final
       ? { status: "COMPLETED" as const, completedAt: new Date(), payload: [] as any }
@@ -294,7 +294,7 @@ async function processOneJob(): Promise<boolean> {
         updatedRows: progress.updated,
         skippedRows: progress.skipped,
         errorRows: progress.errored,
-        errors: [...progress.errors.slice(0, 99), { row: progress.processed, error: failureMessage }],
+        errors: [...progress.errors, { row: progress.processed, error: failureMessage }],
         insertedIds: progress.insertedIds,
       } as any).where(eq(crmCsvImportJobs.id, jobId));
     } catch {}

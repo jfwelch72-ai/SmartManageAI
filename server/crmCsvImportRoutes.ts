@@ -77,7 +77,49 @@ router.get("/api/crm/csv-imports", requireAuth, requireRole(...READ_ROLES), asyn
       // Deliberately omit `payload` and `insertedIds` from the listing to keep
       // the response small for large imports.
     }).from(crmCsvImportJobs).where(eq(crmCsvImportJobs.organizationId, orgId)).orderBy(desc(crmCsvImportJobs.createdAt)).limit(50);
-    res.json(rows);
+    // The worker now stores the full error list per job. Cap what we return in
+    // the listing to keep responses small; the full list is downloadable via
+    // /api/crm/csv-imports/:id/errors.csv.
+    const ERROR_PREVIEW_CAP = 100;
+    const trimmed = rows.map((r) => {
+      const errs = Array.isArray(r.errors) ? (r.errors as any[]) : [];
+      return { ...r, errors: errs.slice(0, ERROR_PREVIEW_CAP) };
+    });
+    res.json(trimmed);
+  } catch (e) { next(e); }
+});
+
+function csvEscape(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  const s = typeof val === "string" ? val : String(val);
+  if (s === "") return "";
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+router.get("/api/crm/csv-imports/:id/errors.csv", requireAuth, requireRole(...READ_ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+    const [job] = await db.select({
+      id: crmCsvImportJobs.id,
+      filename: crmCsvImportJobs.filename,
+      errors: crmCsvImportJobs.errors,
+    }).from(crmCsvImportJobs).where(and(eq(crmCsvImportJobs.id, req.params.id), eq(crmCsvImportJobs.organizationId, orgId))).limit(1);
+    if (!job) return res.status(404).json({ error: "Not found" });
+
+    const errs = Array.isArray(job.errors) ? (job.errors as Array<{ row?: number; column?: string; value?: string; error?: string }>) : [];
+    const safeName = (job.filename || `import-${job.id}`).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}-errors.csv"`);
+
+    res.write("row,column,value,error\r\n");
+    for (const e of errs) {
+      res.write(
+        [csvEscape(e.row ?? ""), csvEscape(e.column ?? ""), csvEscape(e.value ?? ""), csvEscape(e.error ?? "")].join(",") + "\r\n",
+      );
+    }
+    res.end();
   } catch (e) { next(e); }
 });
 
