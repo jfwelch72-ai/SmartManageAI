@@ -5,7 +5,7 @@ import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../utils/jobMetrics";
-import { evaluateJobMetricAlerts } from "../utils/jobMetricAlerts";
+import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, type InsertNotification } from "@shared/schema";
@@ -52,6 +52,7 @@ let crmBirthdayDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let crmBirthdayDailyTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricsPruneTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
+let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -91,6 +92,24 @@ export function startJobRunner() {
       }
     } catch (err) {
       logError("Job metric alert evaluation failed", { error: String(err) });
+    }
+  });
+
+  // Task #754: every 15 minutes, send the quiet-hours digest to any
+  // Super Admin who has just exited their quiet-hours window. The
+  // function itself is idempotent and skips users still inside their
+  // window or with no events to summarize.
+  jobMetricQuietDigestTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      const result = await sendJobMetricAlertQuietHoursDigests();
+      if (result.digestsSent > 0) {
+        logInfo("Job metric quiet-hours digest sent", {
+          digestsSent: result.digestsSent,
+          recipientsConsidered: result.recipientsConsidered,
+        });
+      }
+    } catch (err) {
+      logError("Job metric quiet-hours digest failed", { error: String(err) });
     }
   });
 
@@ -443,6 +462,10 @@ export function stopJobRunner() {
     jobMetricAlertsTask.stop();
     jobMetricAlertsTask = null;
   }
+  if (jobMetricQuietDigestTask) {
+    jobMetricQuietDigestTask.stop();
+    jobMetricQuietDigestTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -473,6 +496,9 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   crm_birthday_digest: { fn: () => processCrmContactBirthdayDigest({ ignoreTimeOfDay: true }), description: "Send weekly CRM contact birthday digest in each user's local timezone", schedule: "0 * * * *" },
   crm_birthday_daily:  { fn: () => processCrmContactBirthdayDailyDigest(), description: "Daily morning email reminder of today's CRM contact birthdays to contact owners", schedule: "0 7 * * *" },
   job_metric_alerts:   { fn: async () => { await evaluateJobMetricAlerts(); }, description: "Evaluate job metric counters for spikes vs baseline and stalled jobs", schedule: "*/15 * * * *" },
+  // Task #754: send the quiet-hours digest to Super Admins who have
+  // exited their quiet window so they can catch up on overnight alerts.
+  job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests(); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
 };
 
 async function processOutbox() {

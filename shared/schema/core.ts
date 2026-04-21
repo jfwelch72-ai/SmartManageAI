@@ -363,6 +363,13 @@ export const users = pgTable("users", {
   jobMetricAlertQuietHoursEnd: text("job_metric_alert_quiet_hours_end"),
   jobMetricAlertQuietHoursTimezone: text("job_metric_alert_quiet_hours_timezone"),
   jobMetricAlertQuietHoursWeekdays: integer("job_metric_alert_quiet_hours_weekdays").array(),
+  // Task #754: opt-in (default on) to receive a once-per-window digest
+  // email summarizing alerts that fired while the user was inside their
+  // quiet-hours window. `lastDigestAt` tracks the high-water mark of
+  // events that have already been included in a previous digest, so
+  // each quiet window is summarized at most once after it ends.
+  jobMetricAlertQuietHoursDigestEnabled: boolean("job_metric_alert_quiet_hours_digest_enabled").notNull().default(true),
+  jobMetricAlertQuietHoursLastDigestAt: timestamp("job_metric_alert_quiet_hours_last_digest_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

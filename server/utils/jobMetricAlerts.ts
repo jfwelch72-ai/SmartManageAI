@@ -343,6 +343,44 @@ async function loadSuperAdmins(): Promise<SuperAdminRecipient[]> {
     }));
 }
 
+interface QuietHoursDigestRecipient extends SuperAdminRecipient {
+  digestEnabled: boolean;
+  lastDigestAt: Date | null;
+}
+
+async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      isActive: users.isActive,
+      receivesJobMetricAlertEmails: users.receivesJobMetricAlertEmails,
+      quietHoursEnabled: users.jobMetricAlertQuietHoursEnabled,
+      quietHoursStart: users.jobMetricAlertQuietHoursStart,
+      quietHoursEnd: users.jobMetricAlertQuietHoursEnd,
+      quietHoursTimezone: users.jobMetricAlertQuietHoursTimezone,
+      quietHoursWeekdays: users.jobMetricAlertQuietHoursWeekdays,
+      digestEnabled: users.jobMetricAlertQuietHoursDigestEnabled,
+      lastDigestAt: users.jobMetricAlertQuietHoursLastDigestAt,
+    })
+    .from(users)
+    .where(eq(users.role, "SUPER_ADMIN"));
+  return rows
+    .filter((r) => r.isActive)
+    .map((r) => ({
+      id: r.id,
+      email: r.email,
+      receivesJobMetricAlertEmails: r.receivesJobMetricAlertEmails,
+      quietHoursEnabled: r.quietHoursEnabled ?? false,
+      quietHoursStart: r.quietHoursStart ?? null,
+      quietHoursEnd: r.quietHoursEnd ?? null,
+      quietHoursTimezone: r.quietHoursTimezone ?? null,
+      quietHoursWeekdays: r.quietHoursWeekdays ?? null,
+      digestEnabled: r.digestEnabled ?? true,
+      lastDigestAt: r.lastDigestAt ? new Date(r.lastDigestAt) : null,
+    }));
+}
+
 const WEEKDAY_INDEX: Record<string, number> = {
   Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
 };
@@ -1031,6 +1069,300 @@ export async function deleteJobMetricAlertRule(id: string): Promise<boolean> {
     .where(eq(jobMetricAlertRules.id, id))
     .returning({ id: jobMetricAlertRules.id });
   return deleted.length > 0;
+}
+
+// ---------------------------------------------------------------------
+// Task #754 — Quiet-hours digest
+// ---------------------------------------------------------------------
+// Once a recipient exits their quiet-hours window, send (at most once
+// per window) a single email summarizing alerts that fired during the
+// period that they were silenced. The cron tick runs frequently
+// (every 15 minutes) and uses `users.jobMetricAlertQuietHoursLastDigestAt`
+// as a high-water mark so that each finished quiet window produces a
+// single digest, even across multiple ticks.
+//
+// Selection rule for "in the digest" — an event fired between the
+// recipient's `lastDigestAt` (or 24h ago, whichever is later) and now,
+// whose triggered timestamp falls inside the recipient's quiet-hours
+// window for that timestamp. Events that fired while the recipient
+// was awake are not part of the digest because the recipient already
+// received the regular per-alert email (subject to other filters).
+// ---------------------------------------------------------------------
+
+const DIGEST_LOOKBACK_MS = 24 * HOUR_MS;
+const DIGEST_MAX_EVENTS = 100;
+
+export interface QuietHoursDigestSummary {
+  evaluatedAt: number;
+  recipientsConsidered: number;
+  digestsSent: number;
+  digestsSkippedNoEvents: number;
+  digestsSkippedInQuiet: number;
+  digestsSkippedDisabled: number;
+}
+
+interface DigestEventRow {
+  job: string;
+  counter: string | null;
+  kind: string;
+  message: string;
+  triggeredAt: Date;
+  emailed: boolean;
+}
+
+async function fetchDigestEventsSince(since: Date): Promise<DigestEventRow[]> {
+  return db
+    .select({
+      job: jobMetricAlertEvents.job,
+      counter: jobMetricAlertEvents.counter,
+      kind: jobMetricAlertEvents.kind,
+      message: jobMetricAlertEvents.message,
+      triggeredAt: jobMetricAlertEvents.triggeredAt,
+      emailed: jobMetricAlertEvents.emailed,
+    })
+    .from(jobMetricAlertEvents)
+    .where(gte(jobMetricAlertEvents.triggeredAt, since))
+    .orderBy(jobMetricAlertEvents.triggeredAt);
+}
+
+function formatDigestSubject(count: number): string {
+  return count === 1
+    ? `Quiet-hours digest: 1 alert fired while you were silenced`
+    : `Quiet-hours digest: ${count} alerts fired while you were silenced`;
+}
+
+function buildDigestEmailBody(
+  events: DigestEventRow[],
+  windowStart: Date,
+  windowEnd: Date,
+): { text: string; html: string } {
+  const baseUrl = (
+    process.env.APP_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "")
+  ).replace(/\/$/, "");
+  const dashboardUrl = `${baseUrl}/admin/job-metrics`;
+  const range = `${windowStart.toISOString()} → ${windowEnd.toISOString()}`;
+
+  const lines = events.map((e) => {
+    const ts = e.triggeredAt.toISOString();
+    const counter = e.counter ? ` · ${e.counter}` : "";
+    const kindLabel = e.kind === "stall" ? "stall" : "spike";
+    return `• [${ts}] (${kindLabel}) ${e.job}${counter} — ${e.message}`;
+  });
+  const text =
+    `While you were inside your quiet-hours window (${range}), the following ` +
+    `${events.length} job-metric alert${events.length === 1 ? "" : "s"} fired:\n\n` +
+    `${lines.join("\n")}\n\n` +
+    `Review the dashboard: ${dashboardUrl}`;
+
+  const items = events
+    .map((e) => {
+      const ts = escapeHtmlSafe(e.triggeredAt.toISOString());
+      const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
+      const kindLabel = e.kind === "stall" ? "stall" : "spike";
+      return `<li style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#333;">
+        <strong style="color:#0070f3;">[${ts}]</strong>
+        <span style="text-transform:uppercase;font-size:11px;color:#666;">${kindLabel}</span>
+        <strong>${escapeHtmlSafe(e.job)}${counter}</strong><br/>
+        <span style="color:#555;">${escapeHtmlSafe(e.message)}</span>
+      </li>`;
+    })
+    .join("");
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
+      <h2 style="color:#333;margin-bottom:8px;">Quiet-hours digest</h2>
+      <p style="color:#666;line-height:1.5;margin-top:0;">
+        While you were inside your quiet-hours window
+        (<code>${escapeHtmlSafe(range)}</code>), the following
+        <strong>${events.length}</strong> job-metric alert${events.length === 1 ? "" : "s"} fired.
+      </p>
+      <ul style="list-style:none;padding:8px 16px;margin:16px 0;background:#fafafa;border:1px solid #eee;border-radius:6px;">
+        ${items}
+      </ul>
+      <p style="margin-top:20px;">
+        <a href="${dashboardUrl}" style="background-color:#0070f3;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;display:inline-block;">
+          Open the job metrics dashboard
+        </a>
+      </p>
+      <hr style="margin-top:30px;border:none;border-top:1px solid #eee;">
+      <p style="color:#999;font-size:12px;">
+        You can disable this digest from your Notification Preferences page.
+      </p>
+    </div>
+  `;
+  return { text, html };
+}
+
+function escapeHtmlSafe(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+interface DigestEvaluateOptions {
+  /** Override recipient source — primarily for tests. */
+  recipientsSource?: () => Promise<QuietHoursDigestRecipient[]>;
+  /** Override events source — primarily for tests. */
+  eventsSource?: (since: Date) => Promise<DigestEventRow[]>;
+  /** Override email send — primarily for tests. */
+  sendEmailFn?: typeof sendEmail;
+  /** Skip persisting `lastDigestAt` to the database (tests only). */
+  skipPersist?: boolean;
+}
+
+/**
+ * Iterate every Super Admin and (where applicable) send a once-per-
+ * window digest of alerts that fired while they were inside their
+ * quiet-hours window. Safe to run on a frequent cron tick; uses
+ * `lastDigestAt` to avoid double-sending.
+ */
+export async function sendJobMetricAlertQuietHoursDigests(
+  opts: DigestEvaluateOptions = {},
+): Promise<QuietHoursDigestSummary> {
+  const now = nowFn();
+  const summary: QuietHoursDigestSummary = {
+    evaluatedAt: now,
+    recipientsConsidered: 0,
+    digestsSent: 0,
+    digestsSkippedNoEvents: 0,
+    digestsSkippedInQuiet: 0,
+    digestsSkippedDisabled: 0,
+  };
+
+  let recipients: QuietHoursDigestRecipient[];
+  try {
+    recipients = await (opts.recipientsSource ?? loadSuperAdminsForDigest)();
+  } catch (err) {
+    logError("Quiet-hours digest: failed to load recipients", { error: String(err) });
+    return summary;
+  }
+  summary.recipientsConsidered = recipients.length;
+  if (recipients.length === 0) return summary;
+
+  const nowDate = new Date(now);
+  // Pre-fetch events once for the global lookback window. The lookback
+  // is bounded so this is cheap even with many recipients.
+  const lookbackSince = new Date(now - DIGEST_LOOKBACK_MS);
+  let allEvents: DigestEventRow[] = [];
+  try {
+    allEvents = await (opts.eventsSource ?? fetchDigestEventsSince)(lookbackSince);
+  } catch (err) {
+    logError("Quiet-hours digest: failed to load events", { error: String(err) });
+    return summary;
+  }
+
+  const sendFn = opts.sendEmailFn ?? sendEmail;
+
+  for (const r of recipients) {
+    if (!r.digestEnabled) {
+      summary.digestsSkippedDisabled++;
+      continue;
+    }
+    // Task #754: respect the existing email opt-out from Task #740 — a
+    // Super Admin who silenced job-metric alert emails altogether
+    // should not receive the digest either. In-app alerts still fire
+    // independently of this path.
+    if (!r.receivesJobMetricAlertEmails) {
+      summary.digestsSkippedDisabled++;
+      continue;
+    }
+    if (!r.quietHoursEnabled || !r.quietHoursStart || !r.quietHoursEnd) {
+      // Quiet hours not configured — nothing to digest.
+      summary.digestsSkippedDisabled++;
+      continue;
+    }
+    if (!r.email) {
+      // No email address — cannot deliver.
+      continue;
+    }
+    if (isInJobMetricAlertQuietWindow(r, nowDate)) {
+      // Still inside their quiet window — wait until they exit before
+      // sending the digest. This is what gives the "once per window"
+      // guarantee: we only send after the window closes.
+      summary.digestsSkippedInQuiet++;
+      continue;
+    }
+
+    const lowerBoundMs = Math.max(
+      lookbackSince.getTime(),
+      r.lastDigestAt ? r.lastDigestAt.getTime() : 0,
+    );
+
+    const matched: DigestEventRow[] = [];
+    let firstTs: number | null = null;
+    let lastTs: number | null = null;
+    for (const e of allEvents) {
+      const ts = e.triggeredAt.getTime();
+      if (ts <= lowerBoundMs) continue;
+      if (ts > now) continue;
+      if (!isInJobMetricAlertQuietWindow(r, e.triggeredAt)) continue;
+      matched.push(e);
+      if (firstTs === null || ts < firstTs) firstTs = ts;
+      if (lastTs === null || ts > lastTs) lastTs = ts;
+      if (matched.length >= DIGEST_MAX_EVENTS) break;
+    }
+
+    if (matched.length === 0) {
+      summary.digestsSkippedNoEvents++;
+      // Still bump the high-water mark so future ticks don't re-scan
+      // the same empty window forever. Persisting on a quiet-but-empty
+      // window keeps the per-tick query cheap.
+      if (!opts.skipPersist) {
+        try {
+          await db
+            .update(users)
+            .set({ jobMetricAlertQuietHoursLastDigestAt: nowDate })
+            .where(eq(users.id, r.id));
+        } catch (err) {
+          logError("Quiet-hours digest: failed to update lastDigestAt", {
+            userId: r.id,
+            error: String(err),
+          });
+        }
+      }
+      continue;
+    }
+
+    const subject = formatDigestSubject(matched.length);
+    const windowStart = new Date(firstTs ?? lowerBoundMs);
+    const windowEnd = new Date(lastTs ?? now);
+    const { text, html } = buildDigestEmailBody(matched, windowStart, windowEnd);
+
+    try {
+      const ok = await sendFn({ to: r.email, subject, text, html });
+      if (ok) {
+        summary.digestsSent++;
+        if (!opts.skipPersist) {
+          try {
+            await db
+              .update(users)
+              .set({ jobMetricAlertQuietHoursLastDigestAt: nowDate })
+              .where(eq(users.id, r.id));
+          } catch (err) {
+            logError("Quiet-hours digest: failed to update lastDigestAt", {
+              userId: r.id,
+              error: String(err),
+            });
+          }
+        }
+      }
+    } catch (err) {
+      logError("Quiet-hours digest: email delivery failed", {
+        userId: r.id,
+        error: String(err),
+      });
+    }
+  }
+
+  if (summary.digestsSent > 0 || summary.digestsSkippedNoEvents > 0) {
+    logInfo("Quiet-hours digest evaluated", summary as unknown as Record<string, unknown>);
+  }
+  return summary;
 }
 
 export const ALERT_DEFAULTS = {

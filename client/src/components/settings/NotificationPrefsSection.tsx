@@ -469,6 +469,45 @@ export default function NotificationPrefsSection() {
     });
   }
 
+  // Task #754: opt-in/out toggle for the once-per-window quiet-hours
+  // digest email. Defaults to true on the server so existing Super
+  // Admins receive the digest until they explicitly silence it.
+  const [quietDigestEnabled, setQuietDigestEnabled] = useState(true);
+  useEffect(() => {
+    if (!authUser) return;
+    setQuietDigestEnabled(Boolean(authUser.jobMetricAlertQuietHoursDigestEnabled ?? true));
+  }, [authUser]);
+
+  const updateQuietDigestMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        jobMetricAlertQuietHoursDigestEnabled: enabled,
+      });
+    },
+    onSuccess: (_data, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: enabled ? "Quiet-hours digest enabled" : "Quiet-hours digest silenced",
+        description: enabled
+          ? "You will receive a digest email summarizing alerts that fired while you were in quiet hours."
+          : "You will no longer receive the quiet-hours digest. In-app alerts will still appear.",
+      });
+    },
+    onError: (error: Error) => {
+      setQuietDigestEnabled(Boolean(authUser?.jobMetricAlertQuietHoursDigestEnabled ?? true));
+      toast({
+        title: "Failed to update quiet-hours digest preference",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleQuietDigestToggle(enabled: boolean) {
+    setQuietDigestEnabled(enabled);
+    updateQuietDigestMutation.mutate(enabled);
+  }
+
   function handleSaveQuietHours() {
     updateQuietHoursMutation.mutate({
       jobMetricAlertQuietHoursEnabled: quietEnabled,
@@ -994,6 +1033,23 @@ export default function NotificationPrefsSection() {
                               "Save quiet hours"
                             )}
                           </Button>
+                        </div>
+                      )}
+
+                      {quietEnabled && (
+                        <div className="flex items-center justify-between border-t border-border pt-3" data-testid="row-job-metric-alert-quiet-hours-digest">
+                          <div>
+                            <p className="text-sm font-medium">Quiet-hours catch-up digest</p>
+                            <p className="text-xs text-muted-foreground">
+                              After your quiet window ends, send one email summarizing the alerts that fired while you were quiet.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={quietDigestEnabled}
+                            onCheckedChange={handleQuietDigestToggle}
+                            disabled={updateQuietDigestMutation.isPending}
+                            data-testid="switch-job-metric-alert-quiet-hours-digest"
+                          />
                         </div>
                       )}
                     </div>
