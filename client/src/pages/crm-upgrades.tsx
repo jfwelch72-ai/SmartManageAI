@@ -969,8 +969,8 @@ function ImportPanel() {
         </Button>
         <div className="pt-3 border-t">
           <h4 className="font-medium mb-2">Recent imports</h4>
-          {(jobs as any[]).map((j) => (
-            <RecentImportRow key={j.id} job={j} onRevert={(id) => revert.mutate(id)} />
+          {groupJobsIntoChains(jobs as any[]).map((chain) => (
+            <ImportChain key={chain.rootId} chain={chain} onRevert={(id) => revert.mutate(id)} />
           ))}
         </div>
       </CardContent>
@@ -980,7 +980,85 @@ function ImportPanel() {
 
 type ImportRowError = { row: number; error: string; column?: string; value?: string };
 
-function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) => void }) {
+type JobChain = { rootId: string; jobs: any[] };
+
+// Group the flat job list returned by the API into chains. The server already
+// returns every job that belongs to a recent chain together with a `rootJobId`
+// pointer, so we just bucket by that field. Chains keep the server's chain
+// ordering (most recent activity first); within a chain we display the
+// original first followed by retries in chronological order.
+function groupJobsIntoChains(jobs: any[]): JobChain[] {
+  const order: string[] = [];
+  const buckets = new Map<string, any[]>();
+  for (const j of jobs) {
+    const root = (j.rootJobId as string) || (j.id as string);
+    if (!buckets.has(root)) {
+      buckets.set(root, []);
+      order.push(root);
+    }
+    buckets.get(root)!.push(j);
+  }
+  return order.map((rootId) => {
+    const chainJobs = (buckets.get(rootId) || []).slice().sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    });
+    return { rootId, jobs: chainJobs };
+  });
+}
+
+function scrollToJob(id: string) {
+  if (typeof document === "undefined") return;
+  const el = document.querySelector(`[data-job-anchor="${id}"]`);
+  if (el && "scrollIntoView" in el) {
+    (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-primary");
+    setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 1500);
+  }
+}
+
+function ImportChain({ chain, onRevert }: { chain: JobChain; onRevert: (id: string) => void }) {
+  const root = chain.jobs[0];
+  const retries = chain.jobs.slice(1);
+  const latest = chain.jobs[chain.jobs.length - 1];
+  const latestErrorCount = Number(latest?.errorRows ?? 0);
+  return (
+    <div className="mb-3" data-testid={`chain-${chain.rootId}`}>
+      <RecentImportRow
+        job={root}
+        onRevert={onRevert}
+        chainInfo={retries.length > 0 ? {
+          retryCount: retries.length,
+          latestId: latest.id,
+          latestErrorCount,
+          latestStatus: latest.status,
+        } : null}
+      />
+      {retries.length > 0 && (
+        <div className="ml-6 border-l-2 border-muted pl-3 mt-1" data-testid={`chain-retries-${chain.rootId}`}>
+          {retries.map((r, idx) => (
+            <RecentImportRow
+              key={r.id}
+              job={r}
+              onRevert={onRevert}
+              retryIndex={idx + 1}
+              totalRetries={retries.length}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecentImportRow({ job, onRevert, chainInfo, retryIndex, totalRetries }: {
+  job: any;
+  onRevert: (id: string) => void;
+  chainInfo?: { retryCount: number; latestId: string; latestErrorCount: number; latestStatus: string } | null;
+  retryIndex?: number;
+  totalRetries?: number;
+}) {
   const { toast } = useToast();
   const [showErrors, setShowErrors] = useState(false);
   const retryFileRef = useRef<HTMLInputElement | null>(null);
@@ -1039,18 +1117,48 @@ function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) =
   };
 
   return (
-    <div className="border rounded p-2 mb-2" data-testid={`row-job-${job.id}`}>
+    <div className="border rounded p-2 mb-2 transition-shadow" data-job-anchor={job.id} data-testid={`row-job-${job.id}`}>
       <div className="flex items-center justify-between">
         <div className="text-sm">
+          {retryIndex !== undefined && (
+            <Badge variant="outline" className="mr-2" data-testid={`badge-retry-index-${job.id}`}>
+              Retry {retryIndex}{totalRetries ? ` / ${totalRetries}` : ""}
+            </Badge>
+          )}
           <span data-testid={`text-job-status-${job.id}`}>{job.entityType} · {job.status}</span>
           {" · "}
           <span data-testid={`text-job-counts-${job.id}`}>{job.insertedRows ?? 0} inserted, {job.updatedRows ?? 0} updated, {job.skippedRows ?? 0} skipped, {job.errorRows ?? 0} errors</span>
           {job.parentJobId && (
             <>
               {" · "}
-              <span className="text-xs text-muted-foreground" data-testid={`text-job-parent-${job.id}`}>
+              <button
+                type="button"
+                onClick={() => scrollToJob(String(job.parentJobId))}
+                className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                data-testid={`button-job-parent-${job.id}`}
+                title="Jump to parent import"
+              >
                 Retry of <span className="font-mono">{String(job.parentJobId).slice(0, 8)}</span>
-              </span>
+              </button>
+            </>
+          )}
+          {chainInfo && (
+            <>
+              {" · "}
+              <button
+                type="button"
+                onClick={() => scrollToJob(chainInfo.latestId)}
+                className="inline-flex items-center text-xs hover:underline underline-offset-2"
+                data-testid={`button-chain-summary-${job.id}`}
+                title="Jump to latest retry"
+              >
+                <Badge variant="secondary" className="mr-1">
+                  {chainInfo.retryCount} {chainInfo.retryCount === 1 ? "retry" : "retries"}
+                </Badge>
+                <span className="text-muted-foreground">
+                  latest: {chainInfo.latestStatus.toLowerCase()}, {chainInfo.latestErrorCount} {chainInfo.latestErrorCount === 1 ? "error" : "errors"}
+                </span>
+              </button>
             </>
           )}
         </div>

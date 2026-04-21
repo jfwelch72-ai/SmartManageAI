@@ -6,7 +6,7 @@ import {
   crmContacts, crmOrganisations, crmOpportunities,
   crmCustomFieldDefinitions,
 } from "@shared/schema";
-import { and, eq, desc, inArray, asc } from "drizzle-orm";
+import { and, eq, inArray, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { kickCrmCsvImportWorker } from "./crmCsvImportWorker";
@@ -113,32 +113,71 @@ router.get("/api/crm/csv-imports", requireAuth, requireRole(...READ_ROLES), asyn
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
-    const rows = await db.select({
-      id: crmCsvImportJobs.id,
-      organizationId: crmCsvImportJobs.organizationId,
-      entityType: crmCsvImportJobs.entityType,
-      status: crmCsvImportJobs.status,
-      filename: crmCsvImportJobs.filename,
-      totalRows: crmCsvImportJobs.totalRows,
-      processedRows: crmCsvImportJobs.processedRows,
-      insertedRows: crmCsvImportJobs.insertedRows,
-      updatedRows: crmCsvImportJobs.updatedRows,
-      skippedRows: crmCsvImportJobs.skippedRows,
-      errorRows: crmCsvImportJobs.errorRows,
-      mapping: crmCsvImportJobs.mapping,
-      errors: crmCsvImportJobs.errors,
-      parentJobId: crmCsvImportJobs.parentJobId,
-      startedAt: crmCsvImportJobs.startedAt,
-      createdAt: crmCsvImportJobs.createdAt,
-      completedAt: crmCsvImportJobs.completedAt,
-      // Deliberately omit `payload` and `insertedIds` from the listing to keep
-      // the response small for large imports.
-    }).from(crmCsvImportJobs).where(eq(crmCsvImportJobs.organizationId, orgId)).orderBy(desc(crmCsvImportJobs.createdAt)).limit(50);
-    // The worker now stores the full error list per job. Cap what we return in
+    // Walk every job's parent chain up to its root so we can group retries
+    // with their original import. Each chain (root + retries) counts as a
+    // single "import" for the purpose of the 50-row recent-imports cap, so
+    // long retry trains don't crowd out unrelated imports.
+    // Deliberately omit `payload` and `inserted_ids` from the listing to keep
+    // the response small for large imports.
+    const sql = `
+      WITH RECURSIVE walk AS (
+        SELECT id, parent_job_id, id AS root_id, 0 AS depth
+        FROM crm_csv_import_jobs
+        WHERE organization_id = $1
+        UNION ALL
+        SELECT w.id, p.parent_job_id, p.id, w.depth + 1
+        FROM walk w
+        JOIN crm_csv_import_jobs p
+          ON w.parent_job_id = p.id AND p.organization_id = $1
+      ),
+      job_root AS (
+        SELECT DISTINCT ON (id) id, root_id
+        FROM walk
+        ORDER BY id, depth DESC
+      ),
+      recent_roots AS (
+        SELECT jr.root_id,
+               MAX(j.created_at) AS chain_latest,
+               COUNT(*)::int     AS chain_size
+        FROM job_root jr
+        JOIN crm_csv_import_jobs j
+          ON j.id = jr.id AND j.organization_id = $1
+        GROUP BY jr.root_id
+        ORDER BY chain_latest DESC
+        LIMIT 50
+      )
+      SELECT j.id                   AS "id",
+             j.organization_id      AS "organizationId",
+             j.entity_type          AS "entityType",
+             j.status               AS "status",
+             j.filename             AS "filename",
+             j.total_rows           AS "totalRows",
+             j.processed_rows       AS "processedRows",
+             j.inserted_rows        AS "insertedRows",
+             j.updated_rows         AS "updatedRows",
+             j.skipped_rows         AS "skippedRows",
+             j.error_rows           AS "errorRows",
+             j.mapping              AS "mapping",
+             j.errors               AS "errors",
+             j.parent_job_id        AS "parentJobId",
+             j.started_at           AS "startedAt",
+             j.created_at           AS "createdAt",
+             j.completed_at         AS "completedAt",
+             jr.root_id             AS "rootJobId",
+             rr.chain_size          AS "chainSize",
+             rr.chain_latest        AS "chainLatestAt"
+      FROM crm_csv_import_jobs j
+      JOIN job_root jr ON jr.id = j.id
+      JOIN recent_roots rr ON rr.root_id = jr.root_id
+      WHERE j.organization_id = $1
+      ORDER BY rr.chain_latest DESC, j.created_at ASC
+    `;
+    const result = await pool.query(sql, [orgId]);
+    // The worker stores the full error list per job. Cap what we return in
     // the listing to keep responses small; the full list is downloadable via
     // /api/crm/csv-imports/:id/errors.csv.
     const ERROR_PREVIEW_CAP = 100;
-    const trimmed = rows.map((r) => {
+    const trimmed = result.rows.map((r) => {
       const errs = Array.isArray(r.errors) ? (r.errors as any[]) : [];
       return { ...r, errors: errs.slice(0, ERROR_PREVIEW_CAP) };
     });
