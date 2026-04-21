@@ -278,7 +278,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         return res.status(403).json({ error: "Access denied - no organization" });
       }
       
-      const { type, search, active, status, state } = req.query as Record<string, string | undefined>;
+      const { type, search, active, status, state, ownerId: ownerFilter } = req.query as Record<string, string | undefined>;
       // specialty may be repeated: ?specialty=A&specialty=B
       const specialtyRaw = req.query.specialty;
       const specialties: string[] = specialtyRaw
@@ -312,6 +312,18 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         conditions.push(
           sql`LOWER(${crmOrganisations.name}) LIKE LOWER(${'%' + search + '%'})`
         );
+      }
+      // Task #741: filter by organisation owner. Mirrors the contacts filter:
+      // `me` resolves to the current user; `__unassigned__` matches orgs
+      // without an owner; otherwise treat the value as a specific user id.
+      if (ownerFilter) {
+        if (ownerFilter === "__unassigned__") {
+          conditions.push(isNull(crmOrganisations.ownerId));
+        } else if (ownerFilter === "me") {
+          conditions.push(eq(crmOrganisations.ownerId, req.user!.id));
+        } else {
+          conditions.push(eq(crmOrganisations.ownerId, ownerFilter));
+        }
       }
 
       if (orgId) {

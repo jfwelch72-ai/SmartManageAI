@@ -687,10 +687,41 @@ export default function CRMPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [specialtyFilters, setSpecialtyFilters] = useState<string[]>([]);
+  // Task #741: orgs tab owner filter. Mirrors contactOwnerFilter — persists per
+  // user in localStorage so triaging "my organisations" is sticky across visits.
+  const orgOwnerFilterStorageKey = user?.id
+    ? `crm:orgOwnerFilter:${user.id}`
+    : "crm:orgOwnerFilter";
+  const [orgOwnerFilter, setOrgOwnerFilterState] = useState<string>(() => {
+    if (typeof window === "undefined") return "all";
+    const stored = localStorage.getItem(orgOwnerFilterStorageKey);
+    return stored ?? "all";
+  });
+  const setOrgOwnerFilter = useCallback((value: string) => {
+    setOrgOwnerFilterState(value);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(orgOwnerFilterStorageKey, value);
+    }
+  }, [orgOwnerFilterStorageKey]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!user?.id) return;
+    let stored = localStorage.getItem(orgOwnerFilterStorageKey);
+    if (!stored && orgOwnerFilterStorageKey !== "crm:orgOwnerFilter") {
+      const anon = localStorage.getItem("crm:orgOwnerFilter");
+      if (anon) {
+        localStorage.setItem(orgOwnerFilterStorageKey, anon);
+        stored = anon;
+      }
+    }
+    if (stored && stored !== orgOwnerFilter) {
+      setOrgOwnerFilterState(stored);
+    }
+  }, [orgOwnerFilterStorageKey]);
 
   useEffect(() => {
     setSelectedOrgIds(new Set());
-  }, [crmTab, searchTerm, selectedType, statusFilter, stateFilter, specialtyFilters]);
+  }, [crmTab, searchTerm, selectedType, statusFilter, stateFilter, specialtyFilters, orgOwnerFilter]);
   const [showFilters, setShowFilters] = useState(false);
 
   const [dupOpen, setDupOpen] = useState(false);
@@ -812,6 +843,7 @@ export default function CRMPage() {
     status: statusFilter !== "all" ? statusFilter : "",
     state: stateFilter,
     specialties: specialtyFilters,
+    ownerId: orgOwnerFilter !== "all" ? orgOwnerFilter : "",
   };
 
   const { data: organizations, isLoading: orgsLoading } = useQuery<CrmOrganization[]>({
@@ -823,6 +855,7 @@ export default function CRMPage() {
       if (orgQueryParams.status) params.set("status", orgQueryParams.status);
       if (orgQueryParams.state) params.set("state", orgQueryParams.state);
       orgQueryParams.specialties.forEach((s) => params.append("specialty", s));
+      if (orgQueryParams.ownerId) params.set("ownerId", orgQueryParams.ownerId);
       const res = await fetch(`/api/crm/organisations?${params}`);
       if (!res.ok) throw new Error("Failed to fetch organizations");
       return res.json();
@@ -1806,6 +1839,26 @@ export default function CRMPage() {
                       data-testid="input-search"
                     />
                   </div>
+                  <Select value={orgOwnerFilter} onValueChange={setOrgOwnerFilter}>
+                    <SelectTrigger className="w-[200px]" data-testid="select-org-owner-filter">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" data-testid="option-org-owner-filter-all">All owners</SelectItem>
+                      {user?.id && (
+                        <SelectItem value="me" data-testid="option-org-owner-filter-mine">My organizations</SelectItem>
+                      )}
+                      <SelectItem value="__unassigned__" data-testid="option-org-owner-filter-unassigned">Unassigned</SelectItem>
+                      {orgUsersForOwner.map((u) => {
+                        const label = ownerLabelById.get(u.id) ?? u.id;
+                        return (
+                          <SelectItem key={u.id} value={u.id} data-testid={`option-org-owner-filter-${u.id}`}>
+                            {label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant="outline"
                     size="sm"
