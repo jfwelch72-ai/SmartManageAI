@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import { ContactSequenceTimeline } from "@/components/crm/ContactSequenceTimeline";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit, User, Mail, Phone, Globe, Cake } from "lucide-react";
+import { Edit, User, Mail, Phone, Globe, Cake, UserCog } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import type { CrmContact } from "@shared/schema";
 import { COMMON_TIMEZONES } from "@shared/timezones";
 import { CrmCustomFieldsForm, CrmCustomFieldsDisplay, type CustomFieldsValue } from "./CrmCustomFieldsForm";
@@ -39,6 +40,14 @@ interface ContactFormState {
   notes: string;
   timezone: string;
   birthday: string;
+  ownerId: string;
+}
+
+interface OwnerOption {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
 }
 
 function formatBirthdayLabel(birthday: string): string {
@@ -87,6 +96,30 @@ interface CrmContactDialogsProps {
   setCustomFields?: (v: CustomFieldsValue) => void;
 }
 
+function OwnerSummary({ ownerId }: { ownerId: string | null | undefined }) {
+  const { data: orgUsers = [] } = useQuery<OwnerOption[]>({
+    queryKey: ["/api/users"],
+    enabled: !!ownerId,
+  });
+  if (!ownerId) return null;
+  const owner = orgUsers.find((u) => u.id === ownerId);
+  return (
+    <div className="flex items-start gap-3" data-testid="text-contact-owner">
+      <UserCog className="w-5 h-5 mt-0.5 text-muted-foreground" />
+      <div>
+        <p className="text-sm font-medium">Owner</p>
+        <p className="text-sm text-muted-foreground">{owner ? ownerLabel(owner) : ownerId}</p>
+      </div>
+    </div>
+  );
+}
+
+function ownerLabel(u: OwnerOption): string {
+  const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+  if (name && u.email) return `${name} (${u.email})`;
+  return name || u.email || u.id;
+}
+
 function ContactFormFields({ newContact, setNewContact, prefix, customFields, setCustomFields }: {
   newContact: ContactFormState;
   setNewContact: (c: ContactFormState) => void;
@@ -94,6 +127,9 @@ function ContactFormFields({ newContact, setNewContact, prefix, customFields, se
   customFields?: CustomFieldsValue;
   setCustomFields?: (v: CustomFieldsValue) => void;
 }) {
+  const { data: orgUsers = [] } = useQuery<OwnerOption[]>({
+    queryKey: ["/api/users"],
+  });
   return (
     <div className="grid gap-4 py-4">
       <div className="grid grid-cols-2 gap-4">
@@ -204,6 +240,26 @@ function ContactFormFields({ newContact, setNewContact, prefix, customFields, se
         </Select>
         <p className="text-xs text-muted-foreground">
           Used by optimized sends to land messages in this contact's local hours.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label>Owner</Label>
+        <Select
+          value={newContact.ownerId || "__none__"}
+          onValueChange={(v) => setNewContact({ ...newContact, ownerId: v === "__none__" ? "" : v })}
+        >
+          <SelectTrigger data-testid={`select-${prefix}contact-owner`}>
+            <SelectValue placeholder="Select owner" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Unassigned</SelectItem>
+            {orgUsers.map((u) => (
+              <SelectItem key={u.id} value={u.id}>{ownerLabel(u)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Receives birthday reminders and other ownership-based notifications for this contact.
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -404,6 +460,7 @@ export function CrmContactDialogs({
                 </div>
               </div>
             )}
+            <OwnerSummary ownerId={selectedContact?.ownerId ?? null} />
             {selectedContact?.timezone && (
               <div className="flex items-start gap-3" data-testid="text-contact-timezone">
                 <Globe className="w-5 h-5 mt-0.5 text-muted-foreground" />

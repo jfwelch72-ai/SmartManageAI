@@ -179,6 +179,7 @@ const DEFAULT_CONTACT = {
   notes: "",
   timezone: "",
   birthday: "",
+  ownerId: "",
 };
 
 interface DupOrg {
@@ -679,7 +680,7 @@ export default function CRMPage() {
     setContactCustomFields({});
     if (open) {
       const suggestedTz = inferTimezoneFromUSState(selectedOrg?.state ?? null);
-      setNewContact({ ...DEFAULT_CONTACT, timezone: suggestedTz ?? "" });
+      setNewContact({ ...DEFAULT_CONTACT, timezone: suggestedTz ?? "", ownerId: user?.id ?? "" });
     }
     setCreateContactOpen(open);
   };
@@ -1044,6 +1045,7 @@ export default function CRMPage() {
       notes: contact.notes || "",
       timezone: contact.timezone || "",
       birthday: contact.birthday ? String(contact.birthday).slice(0, 10) : "",
+      ownerId: (contact as { ownerId?: string | null }).ownerId ?? "",
     });
     setContactCustomFields(contact.customFields ?? {});
     setSelectedContact(contact);

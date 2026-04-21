@@ -1521,12 +1521,14 @@ export const crmContacts = pgTable("crm_contacts", {
   notes: text("notes"),
   isPrimary: boolean("is_primary").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   organizationIdx: index("crm_contacts_org_idx").on(table.organizationId),
   organisationIdx: index("crm_contacts_organisation_idx").on(table.organisationId),
+  ownerIdx: index("crm_contacts_owner_idx").on(table.ownerId),
 }));
 
 export const insertCrmContactSchema = createInsertSchema(crmContacts).omit({ id: true, createdAt: true, updatedAt: true });

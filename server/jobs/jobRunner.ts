@@ -2323,7 +2323,9 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
 
 // Task #693: daily morning email reminder routed to each contact's owner so
 // account managers see today's birthdays even when they aren't in the app.
-// Recipients are the contact's createdById ("owner"); contacts with no owner
+// Recipients are the contact's explicit ownerId (Task #699), falling back to
+// createdById for legacy contacts that pre-date the owner field; contacts with
+// no owner
 // fall back to the org's admins/managers/estimators. Per-user opt-in/opt-out
 // is honoured automatically by deliverNotification, which only sends email
 // when the user has the email channel enabled for REMINDER notifications in
@@ -2354,6 +2356,7 @@ async function processCrmContactBirthdayDailyDigest() {
           lastName: crmContacts.lastName,
           birthday: crmContacts.birthday,
           createdById: crmContacts.createdById,
+          ownerId: crmContacts.ownerId,
           orgName: crmOrganisations.name,
         })
         .from(crmContacts)
@@ -2383,7 +2386,7 @@ async function processCrmContactBirthdayDailyDigest() {
           orgName: c.orgName ?? null,
           daysUntil: diffDays,
           monthDay: `${month}/${day}`,
-          ownerId: c.createdById ?? null,
+          ownerId: c.ownerId ?? c.createdById ?? null,
         });
       }
 

@@ -1405,6 +1405,8 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
         timezone: crmContacts.timezone,
         birthday: crmContacts.birthday,
         notes: crmContacts.notes,
+        ownerId: crmContacts.ownerId,
+        createdById: crmContacts.createdById,
         createdAt: crmContacts.createdAt,
         updatedAt: crmContacts.updatedAt,
         orgName: crmOrganisations.name,
@@ -1483,10 +1485,33 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
       ? null
       : req.body?.birthday;
 
+    // Task #699: explicit ownerId on contacts so reminders/automations route
+    // to the current relationship owner, not whoever first added the contact.
+    // If the client doesn't send the field at all, default to the creating
+    // user; if it's explicitly sent as an empty string, honour that as
+    // "Unassigned" (the digest's org-wide fallback will catch it).
+    const ownerProvided = "ownerId" in (req.body ?? {});
+    const rawOwnerId = ownerProvided && typeof req.body.ownerId === "string" && req.body.ownerId.trim() !== ""
+      ? req.body.ownerId
+      : null;
+    const ownerId = ownerProvided ? rawOwnerId : req.user!.id;
+
+    if (rawOwnerId && shouldFilter && orgId) {
+      const [ownerUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, rawOwnerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+        .limit(1);
+      if (!ownerUser) {
+        return res.status(400).json({ error: "Selected owner is not an active member of this organization" });
+      }
+    }
+
     const validationResult = insertCrmContactSchema.safeParse({
       ...req.body,
       timezone,
       birthday: normalizedBirthday,
+      ownerId,
       organizationId: orgId,
       createdById: req.user!.id,
     });
@@ -1688,6 +1713,23 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
       ? null
       : req.body?.birthday;
 
+    // Task #699: allow re-assigning the contact owner via PATCH. Empty string
+    // clears the owner; missing field leaves the existing owner alone.
+    const ownerProvided = "ownerId" in (req.body ?? {});
+    const rawOwnerId = ownerProvided && typeof req.body.ownerId === "string" && req.body.ownerId.trim() !== ""
+      ? req.body.ownerId
+      : null;
+    if (ownerProvided && rawOwnerId && shouldFilter && orgId) {
+      const [ownerUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, rawOwnerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+        .limit(1);
+      if (!ownerUser) {
+        return res.status(400).json({ error: "Selected owner is not an active member of this organization" });
+      }
+    }
+
     const updateBody = {
       ...req.body,
       ...(timezoneProvided
@@ -1696,6 +1738,7 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
           ? { timezone: inferredTimezone }
           : {}),
       ...(birthdayProvided ? { birthday: normalizedBirthday } : {}),
+      ...(ownerProvided ? { ownerId: rawOwnerId } : {}),
     };
     const validationResult = insertCrmContactSchema.partial().safeParse(updateBody);
     if (!validationResult.success) {
