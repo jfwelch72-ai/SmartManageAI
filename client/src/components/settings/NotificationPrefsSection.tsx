@@ -14,7 +14,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon, Download } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon, Eye, Mail, Download } from "lucide-react";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -582,6 +590,49 @@ export default function NotificationPrefsSection() {
       setQuietDigestCsvEnabled(Boolean(authUser?.jobMetricAlertQuietHoursDigestCsvEnabled ?? false));
       toast({
         title: "Failed to update CSV attachment preference",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Task #765 — Preview the quiet-hours digest. The user can either
+  // render an in-app HTML preview in a dialog or send a sample to
+  // their own email so they can see exactly how the layout looks
+  // without waiting for the next quiet window to close.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewSubject, setPreviewSubject] = useState<string>("");
+  const [previewIsSynthetic, setPreviewIsSynthetic] = useState(false);
+  const [previewEventCount, setPreviewEventCount] = useState(0);
+
+  const previewDigestMutation = useMutation({
+    mutationFn: async (mode: "render" | "send") => {
+      return await apiRequest("POST", "/api/auth/profile/quiet-hours/preview-digest", {
+        format: quietDigestFormat,
+        mode,
+      });
+    },
+    onSuccess: async (response, mode) => {
+      const data = await response.json();
+      if (mode === "render") {
+        setPreviewHtml(typeof data.html === "string" ? data.html : "");
+        setPreviewSubject(typeof data.subject === "string" ? data.subject : "");
+        setPreviewIsSynthetic(Boolean(data.isSynthetic));
+        setPreviewEventCount(Number(data.eventCount ?? 0));
+        setPreviewOpen(true);
+      } else {
+        toast({
+          title: "Sample digest sent",
+          description: data.isSynthetic
+            ? `A sample digest using example events was emailed to ${data.sentTo}.`
+            : `A sample digest using your ${data.eventCount} most recent events was emailed to ${data.sentTo}.`,
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to preview digest",
         description: error.message,
         variant: "destructive",
       });
@@ -1324,6 +1375,40 @@ export default function NotificationPrefsSection() {
                               </p>
                             </div>
                           </div>
+
+                          <div className="flex flex-wrap gap-2 pt-2" data-testid="row-job-metric-alert-quiet-hours-digest-preview">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => previewDigestMutation.mutate("render")}
+                              disabled={previewDigestMutation.isPending}
+                              data-testid="button-preview-quiet-hours-digest"
+                            >
+                              {previewDigestMutation.isPending && previewDigestMutation.variables === "render" ? (
+                                <Fragment><Loader2 className="h-3 w-3 mr-2 animate-spin" />Loading preview...</Fragment>
+                              ) : (
+                                <Fragment><Eye className="h-3 w-3 mr-2" />Preview digest</Fragment>
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => previewDigestMutation.mutate("send")}
+                              disabled={previewDigestMutation.isPending}
+                              data-testid="button-send-sample-quiet-hours-digest"
+                            >
+                              {previewDigestMutation.isPending && previewDigestMutation.variables === "send" ? (
+                                <Fragment><Loader2 className="h-3 w-3 mr-2 animate-spin" />Sending...</Fragment>
+                              ) : (
+                                <Fragment><Mail className="h-3 w-3 mr-2" />Send me a sample</Fragment>
+                              )}
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Preview uses your most recent alerts (or example events if none have fired in the last 24 hours). Works even when you are outside your quiet window.
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1440,6 +1525,46 @@ export default function NotificationPrefsSection() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" data-testid="dialog-quiet-hours-digest-preview">
+          <DialogHeader>
+            <DialogTitle data-testid="text-quiet-hours-digest-preview-subject">{previewSubject || "Quiet-hours digest preview"}</DialogTitle>
+            <DialogDescription data-testid="text-quiet-hours-digest-preview-meta">
+              {previewIsSynthetic
+                ? `Showing example events because no alerts have fired in the last 24 hours. Detail level: ${quietDigestFormat}.`
+                : `Showing the ${previewEventCount} most recent alert${previewEventCount === 1 ? "" : "s"}. Detail level: ${quietDigestFormat}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div
+            className="overflow-auto rounded-md border bg-white p-4"
+            data-testid="container-quiet-hours-digest-preview-html"
+            dangerouslySetInnerHTML={{ __html: previewHtml ?? "" }}
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => previewDigestMutation.mutate("send")}
+              disabled={previewDigestMutation.isPending}
+              data-testid="button-send-sample-from-dialog"
+            >
+              {previewDigestMutation.isPending && previewDigestMutation.variables === "send" ? (
+                <Fragment><Loader2 className="h-3 w-3 mr-2 animate-spin" />Sending...</Fragment>
+              ) : (
+                <Fragment><Mail className="h-3 w-3 mr-2" />Email me this sample</Fragment>
+              )}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setPreviewOpen(false)}
+              data-testid="button-close-quiet-hours-digest-preview"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

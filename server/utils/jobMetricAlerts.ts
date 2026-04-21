@@ -1569,6 +1569,102 @@ function buildDigestCsvFilename(windowStart: Date, windowEnd: Date): string {
   return `quiet-hours-digest_${fmt(windowStart)}_to_${fmt(windowEnd)}.csv`;
 }
 
+/**
+ * Task #765 — Build a sample digest body for the "Preview digest" feature.
+ *
+ * Pulls the user's most recent real events from the last digest lookback
+ * window and renders the digest body using the requested format. If no
+ * real events exist (a fresh install, a quiet system, etc.) we fall back
+ * to a small set of synthetic events so the preview still illustrates
+ * each format's layout.
+ */
+export async function buildQuietHoursDigestPreview(
+  format: QuietHoursDigestFormat,
+  opts: { eventsSource?: (since: Date) => Promise<DigestEventRow[]>; nowMs?: number } = {},
+): Promise<{
+  subject: string;
+  html: string;
+  text: string;
+  isSynthetic: boolean;
+  eventCount: number;
+}> {
+  const PREVIEW_MAX_EVENTS = 25;
+  const nowMs = opts.nowMs ?? nowFn();
+  const lookbackSince = new Date(nowMs - DIGEST_LOOKBACK_MS);
+  let events: DigestEventRow[] = [];
+  try {
+    const fetched = await (opts.eventsSource ?? fetchDigestEventsSince)(lookbackSince);
+    events = fetched.slice(-PREVIEW_MAX_EVENTS);
+  } catch (err) {
+    logError("Quiet-hours digest preview: failed to load events", { error: String(err) });
+    events = [];
+  }
+
+  let isSynthetic = false;
+  if (events.length === 0) {
+    isSynthetic = true;
+    const t = (mins: number) => new Date(nowMs - mins * 60 * 1000);
+    events = [
+      {
+        job: "sample.daily-rollup",
+        counter: "rows_processed",
+        kind: "spike",
+        message:
+          "Sample: rows_processed spiked to 432 in the last hour (baseline ~25/hr)",
+        triggeredAt: t(330),
+        emailed: false,
+      },
+      {
+        job: "sample.daily-rollup",
+        counter: null,
+        kind: "stall",
+        message: "Sample: no samples received for 8h (expected within 4h)",
+        triggeredAt: t(180),
+        emailed: false,
+      },
+      {
+        job: "sample.invoice-sync",
+        counter: "errors",
+        kind: "spike",
+        message:
+          "Sample: errors spiked to 18 in the last hour (baseline ~1/hr)",
+        triggeredAt: t(90),
+        emailed: false,
+      },
+      {
+        job: "sample.invoice-sync",
+        counter: "rows_processed",
+        kind: "spike",
+        message:
+          "Sample: rows_processed spiked to 1,204 in the last hour (baseline ~120/hr)",
+        triggeredAt: t(60),
+        emailed: false,
+      },
+      {
+        job: "sample.email-digest",
+        counter: null,
+        kind: "stall",
+        message: "Sample: no samples received for 14h (expected within 6h)",
+        triggeredAt: t(20),
+        emailed: false,
+      },
+    ];
+  }
+
+  const windowStart = events.reduce(
+    (acc, e) => (acc === null || e.triggeredAt < acc ? e.triggeredAt : acc),
+    null as Date | null,
+  ) ?? new Date(nowMs);
+  const windowEnd = events.reduce(
+    (acc, e) => (acc === null || e.triggeredAt > acc ? e.triggeredAt : acc),
+    null as Date | null,
+  ) ?? new Date(nowMs);
+
+  const { text, html } = buildDigestEmailBody(events, windowStart, windowEnd, format);
+  const subject = `[Preview] ${formatDigestSubject(events.length)}`;
+  return { subject, html, text, isSynthetic, eventCount: events.length };
+}
+
 function escapeHtmlSafe(s: string): string {
   return s
     .replace(/&/g, "&amp;")

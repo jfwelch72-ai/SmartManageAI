@@ -460,6 +460,8 @@ import { logUpdate, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { emailVerificationTokens } from "@shared/schema";
 import { sendEmail, getEmailVerificationHtml, getEmailVerificationText } from "./email";
+import { sendEmail as sendEmailViaService } from "./services/emailService";
+import { buildQuietHoursDigestPreview, type QuietHoursDigestFormat } from "./utils/jobMetricAlerts";
 import { insertNotification } from "./services/notificationService";
 import { setAllFeatureFlags } from "./services/featureFlagService";
 import { FEATURE_FLAG_KEYS } from "@shared/schema";
@@ -1037,6 +1039,73 @@ const upload = multer({
 
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Task #765 — Render or send a sample quiet-hours digest so a recipient
+  // can preview how their selected detail level will look without waiting
+  // for the next quiet window to close. Works regardless of whether the
+  // user is currently inside their quiet window.
+  router.post("/api/auth/profile/quiet-hours/preview-digest", requireAuth, async (req: AuthRequest, res, next) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const previewSchema = z.object({
+        format: z.enum(["summary", "full", "grouped"]).optional(),
+        mode: z.enum(["render", "send"]).default("render"),
+      });
+      const parsed = previewSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        return;
+      }
+
+      const userFormat = (req.user?.jobMetricAlertQuietHoursDigestFormat ?? "full") as QuietHoursDigestFormat;
+      const format: QuietHoursDigestFormat = parsed.data.format ?? userFormat;
+      const mode = parsed.data.mode;
+
+      const preview = await buildQuietHoursDigestPreview(format);
+
+      if (mode === "send") {
+        const to = req.user?.email;
+        if (!to) {
+          res.status(400).json({ error: "No email address on file for the current user" });
+          return;
+        }
+        const ok = await sendEmailViaService({
+          to,
+          subject: preview.subject,
+          html: preview.html,
+          text: preview.text,
+        });
+        if (!ok) {
+          res.status(502).json({ error: "Failed to send sample digest email" });
+          return;
+        }
+        res.json({
+          ok: true,
+          mode,
+          format,
+          isSynthetic: preview.isSynthetic,
+          eventCount: preview.eventCount,
+          sentTo: to,
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        mode,
+        format,
+        isSynthetic: preview.isSynthetic,
+        eventCount: preview.eventCount,
+        subject: preview.subject,
+        html: preview.html,
+        text: preview.text,
+      });
     } catch (error) {
       next(error);
     }
