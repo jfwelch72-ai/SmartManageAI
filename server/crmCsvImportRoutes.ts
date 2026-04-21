@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db } from "./db";
+import { db, pool } from "./db";
 import {
   crmCsvImportJobs,
   crmContacts, crmOrganisations, crmOpportunities,
@@ -98,29 +98,104 @@ function csvEscape(val: unknown): string {
 }
 
 router.get("/api/crm/csv-imports/:id/errors.csv", requireAuth, requireRole(...READ_ROLES), async (req: AuthRequest, res, next) => {
+  let client: import("pg").PoolClient | null = null;
+  let cursorOpen = false;
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    // Look up the job (without loading the errors column) so we can set headers
+    // and return 404 before opening a streaming cursor.
     const [job] = await db.select({
       id: crmCsvImportJobs.id,
       filename: crmCsvImportJobs.filename,
-      errors: crmCsvImportJobs.errors,
     }).from(crmCsvImportJobs).where(and(eq(crmCsvImportJobs.id, req.params.id), eq(crmCsvImportJobs.organizationId, orgId))).limit(1);
     if (!job) return res.status(404).json({ error: "Not found" });
 
-    const errs = Array.isArray(job.errors) ? (job.errors as Array<{ row?: number; column?: string; value?: string; error?: string }>) : [];
     const safeName = (job.filename || `import-${job.id}`).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${safeName}-errors.csv"`);
 
-    res.write("row,column,value,error\r\n");
-    for (const e of errs) {
-      res.write(
-        [csvEscape(e.row ?? ""), csvEscape(e.column ?? ""), csvEscape(e.value ?? ""), csvEscape(e.error ?? "")].join(",") + "\r\n",
-      );
+    // Track client disconnect so we can stop fetching/writing promptly and
+    // avoid leaking the streaming transaction.
+    let clientGone = false;
+    const onClose = () => { clientGone = true; };
+    res.on("close", onClose);
+
+    // Backpressure-aware write: if the socket buffer is full, wait for it to
+    // drain so memory stays roughly constant regardless of how many error rows
+    // a job has. Race against close/error so a disconnected client doesn't
+    // hang the request indefinitely.
+    const safeWrite = async (chunk: string): Promise<boolean> => {
+      if (clientGone) return false;
+      if (res.write(chunk)) return true;
+      await new Promise<void>((resolve) => {
+        const cleanup = () => {
+          res.off("drain", onDrain);
+          res.off("close", onEnd);
+          res.off("error", onEnd);
+          resolve();
+        };
+        const onDrain = () => cleanup();
+        const onEnd = () => { clientGone = true; cleanup(); };
+        res.once("drain", onDrain);
+        res.once("close", onEnd);
+        res.once("error", onEnd);
+      });
+      return !clientGone;
+    };
+
+    // Stream rows from Postgres using a server-side cursor over
+    // jsonb_array_elements(errors) so neither this process nor the JSON parser
+    // ever has to materialize the full error list.
+    const FETCH_BATCH = 500;
+    client = await pool.connect();
+    if (!(await safeWrite("row,column,value,error\r\n"))) {
+      res.off("close", onClose);
+      return;
     }
-    res.end();
-  } catch (e) { next(e); }
+    await client.query("BEGIN");
+    await client.query(
+      `DECLARE crm_csv_err_cur NO SCROLL CURSOR FOR
+         SELECT elem->>'row'    AS row,
+                elem->>'column' AS col,
+                elem->>'value'  AS value,
+                elem->>'error'  AS error
+         FROM "crm_csv_import_jobs" j,
+              jsonb_array_elements(j.errors) AS elem
+         WHERE j.id = $1 AND j.organization_id = $2`,
+      [job.id, orgId],
+    );
+    cursorOpen = true;
+    while (!clientGone) {
+      const batch = await client.query(`FETCH ${FETCH_BATCH} FROM crm_csv_err_cur`);
+      if (batch.rows.length === 0) break;
+      let buf = "";
+      for (const r of batch.rows) {
+        buf +=
+          [csvEscape(r.row ?? ""), csvEscape(r.col ?? ""), csvEscape(r.value ?? ""), csvEscape(r.error ?? "")].join(",") +
+          "\r\n";
+      }
+      if (!(await safeWrite(buf))) break;
+    }
+    if (cursorOpen) {
+      try { await client.query("CLOSE crm_csv_err_cur"); } catch {}
+      cursorOpen = false;
+    }
+    await client.query("COMMIT");
+    res.off("close", onClose);
+    if (!clientGone) res.end();
+  } catch (e) {
+    if (client) {
+      try { if (cursorOpen) await client.query("CLOSE crm_csv_err_cur"); } catch {}
+      try { await client.query("ROLLBACK"); } catch {}
+    }
+    if (!res.headersSent) return next(e);
+    // Headers already flushed; we can't send a JSON error, just terminate.
+    try { res.destroy(e instanceof Error ? e : new Error(String(e))); } catch {}
+  } finally {
+    if (client) client.release();
+  }
 });
 
 router.post("/api/crm/csv-imports", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res, next) => {
