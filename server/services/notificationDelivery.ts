@@ -2,6 +2,7 @@ import { db } from "../db";
 import { users, notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { sendNotificationEmail } from "../email";
+import { sendEmail } from "./emailService";
 import { sendPushToUser } from "./pushService";
 import { sendSms, isTwilioConfigured } from "./smsService";
 import { sendTeamsMessage } from "./teamsService";
@@ -96,14 +97,60 @@ async function loadEffectivePrefs(userId: string, notifType: NotificationType | 
   };
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function composeEmailContent(notification: NotificationRecord): {
   subject: string;
   body: string;
   actionUrl?: string;
   actionText?: string;
+  html?: string;
 } {
   const baseUrl = process.env.APP_BASE_URL || "";
   const type = notification.type;
+
+  // Task #688: rich HTML email for the weekly CRM contact birthday digest.
+  if (notification.relatedEntityType === "CRM_CONTACT_BIRTHDAY") {
+    const lines = notification.message.split("\n").filter(Boolean);
+    // First line is the header ("Upcoming contact birthdays this week:")
+    const [header, ...itemLines] = lines.length > 1 ? lines : ["Upcoming contact birthdays this week:", ...lines];
+    const actionUrl = `${baseUrl}/crm`;
+    const subject = `${notification.title} — SmartManageAI`;
+    const items = itemLines.length > 0 ? itemLines : [notification.message];
+    const listHtml = items
+      .map((line) => `<li style="padding: 6px 0; border-bottom: 1px solid #f0f0f0; color: #333;">${escapeHtml(line)}</li>`)
+      .join("");
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333; margin-bottom: 8px;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #666; line-height: 1.6; margin-top: 0;">${escapeHtml(header)}</p>
+        <ul style="list-style: none; padding: 0; margin: 16px 0; background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 8px 16px;">
+          ${listHtml}
+        </ul>
+        <p style="margin-top: 20px;">
+          <a href="${actionUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            Open CRM
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px;">You are receiving this weekly digest because reminder emails are enabled in your SmartManageAI notification preferences.</p>
+      </div>
+    `;
+    return {
+      subject,
+      body: notification.message,
+      actionUrl,
+      actionText: "Open CRM",
+      html,
+    };
+  }
 
   // Type-aware composition
   if (type === "CHANGE_ORDER_APPROVED" || type === "CHANGE_ORDER_REJECTED") {
@@ -382,8 +429,12 @@ function composeEmailContent(notification: NotificationRecord): {
 
 async function deliverEmail(userEmail: string, notification: NotificationRecord): Promise<void> {
   try {
-    const { subject, body, actionUrl, actionText } = composeEmailContent(notification);
-    await sendNotificationEmail(userEmail, subject, body, actionUrl, actionText);
+    const { subject, body, actionUrl, actionText, html } = composeEmailContent(notification);
+    if (html) {
+      await sendEmail({ to: userEmail, subject, html, text: body });
+    } else {
+      await sendNotificationEmail(userEmail, subject, body, actionUrl, actionText);
+    }
   } catch (err) {
     logError("notificationDelivery: email send failed", {
       userId: notification.userId,
