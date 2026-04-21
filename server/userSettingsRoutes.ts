@@ -122,10 +122,23 @@ router.post("/api/user-settings/birthday-digest/test", requireAuth, async (req: 
     try {
       const result = await sendCrmContactBirthdayDigestForUser(userId, orgId);
       if (result.sent) {
+        const count = result.upcomingCount ?? 0;
+        const base = `Test digest sent (${count} upcoming birthday${count === 1 ? "" : "s"}).`;
+        let emailSuffix: string;
+        if (result.emailAttempted && result.emailSent) {
+          emailSuffix = ` Emailed to ${result.emailRecipient}. Also added to your in-app notifications.`;
+        } else if (result.emailAttempted && !result.emailSent) {
+          emailSuffix = ` In-app notification was created, but the email to ${result.emailRecipient} could not be delivered — check email service configuration.`;
+        } else {
+          emailSuffix = " Added to your in-app notifications. (No email on file, so nothing was emailed.)";
+        }
         return res.json({
           success: true,
           sent: true,
-          message: `Test digest sent (${result.upcomingCount} upcoming birthday${result.upcomingCount === 1 ? "" : "s"}). Check your notifications.`,
+          emailAttempted: !!result.emailAttempted,
+          emailSent: !!result.emailSent,
+          emailRecipient: result.emailRecipient ?? null,
+          message: base + emailSuffix,
         });
       }
       if (result.reason === "no_upcoming_birthdays") {

@@ -370,13 +370,31 @@ function PreferencesSection() {
   const sendTestBirthdayDigestMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/user-settings/birthday-digest/test", {});
-      return (await res.json()) as { success?: boolean; message?: string; sent?: boolean };
+      return (await res.json()) as {
+        success?: boolean;
+        message?: string;
+        sent?: boolean;
+        emailAttempted?: boolean;
+        emailSent?: boolean;
+        emailRecipient?: string | null;
+      };
     },
     onSuccess: (data) => {
       const wasSent = data.sent !== false && !/no contact birthdays/i.test(data.message || "");
+      let title: string;
+      if (!wasSent) {
+        title = "No birthdays to preview";
+      } else if (data.emailAttempted && data.emailSent) {
+        title = "Test digest sent (email + in-app)";
+      } else if (data.emailAttempted && !data.emailSent) {
+        title = "Sent in-app, email failed";
+      } else {
+        title = "Test digest sent";
+      }
       toast({
-        title: wasSent ? "Test digest sent" : "No birthdays to preview",
-        description: data.message || (wasSent ? "Check your notifications." : "There are no contact birthdays in the next 7 days."),
+        title,
+        description: data.message || (wasSent ? "Check your inbox and notifications." : "There are no contact birthdays in the next 7 days."),
+        variant: data.emailAttempted && !data.emailSent ? "destructive" : undefined,
       });
     },
     onError: (error: Error) => {

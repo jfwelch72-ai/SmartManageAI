@@ -2428,12 +2428,24 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
 export async function sendCrmContactBirthdayDigestForUser(
   userId: string,
   organizationId: string,
-): Promise<{ sent: boolean; reason?: string; upcomingCount?: number }> {
+): Promise<{
+  sent: boolean;
+  reason?: string;
+  upcomingCount?: number;
+  emailAttempted?: boolean;
+  emailSent?: boolean;
+  emailRecipient?: string | null;
+}> {
   const now = new Date();
   const serverTz = getServerDefaultTimezone();
 
   const [user] = await db
-    .select({ id: users.id, timezone: users.timezone })
+    .select({
+      id: users.id,
+      timezone: users.timezone,
+      email: users.email,
+      firstName: users.firstName,
+    })
     .from(users)
     .where(and(
       eq(users.id, userId),
@@ -2506,7 +2518,63 @@ export async function sendCrmContactBirthdayDigestForUser(
     relatedEntityType: BIRTHDAY_DIGEST_RELATED_ENTITY_TYPE,
   });
 
-  return { sent: true, upcomingCount: upcoming.length };
+  // Task #716: also email the digest to the requester so they can verify
+  // formatting/deliverability outside the in-app notification surface. The
+  // body mirrors the weekly tick's plain-text body, wrapped in a light HTML
+  // shell consistent with other transactional emails (sendNotificationEmail).
+  let emailAttempted = false;
+  let emailSent = false;
+  const recipientEmail = user.email && user.email.includes("@") ? user.email : null;
+  if (recipientEmail) {
+    emailAttempted = true;
+    const greeting = user.firstName ? `Hi ${user.firstName},` : "Hi,";
+    const escapeHtml = (s: string) =>
+      s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    const listItemsHtml = upcoming
+      .map((u) => {
+        const name = `${u.c.firstName ?? ""} ${u.c.lastName ?? ""}`.trim();
+        const when = u.daysUntil === 0
+          ? "today"
+          : `in ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"} (${u.c.month}/${u.c.day})`;
+        const orgPart = u.c.orgName ? ` — ${escapeHtml(u.c.orgName)}` : "";
+        return `<li style="margin: 4px 0;"><strong>${escapeHtml(name)}</strong>${orgPart}: ${escapeHtml(when)}</li>`;
+      })
+      .join("");
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">${escapeHtml(title)}</h2>
+        <p style="color: #666;">${escapeHtml(greeting)}</p>
+        <p style="color: #666;">This is a test of your CRM contact birthday digest. Upcoming contact birthdays in the next 7 days:</p>
+        <ul style="color: #333; line-height: 1.6; padding-left: 20px;">${listItemsHtml}</ul>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px;">This is a test message triggered from App Preferences &gt; Birthday Digest Delivery. The real weekly digest is delivered on your chosen weekday and hour.</p>
+      </div>
+    `;
+    try {
+      emailSent = await sendEmail({
+        to: recipientEmail,
+        subject: `[Test] ${title}`,
+        html,
+        text: message,
+      });
+    } catch (err) {
+      logError("Birthday digest test email send threw", { userId, error: String(err) });
+      emailSent = false;
+    }
+  }
+
+  return {
+    sent: true,
+    upcomingCount: upcoming.length,
+    emailAttempted,
+    emailSent,
+    emailRecipient: recipientEmail,
+  };
 }
 
 // Task #693: daily morning email reminder routed to each contact's owner so
