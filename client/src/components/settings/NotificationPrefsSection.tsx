@@ -39,7 +39,17 @@ const BIRTHDAY_CADENCE_OPTIONS: { value: BirthdayReminderCadence; label: string;
 interface TypeOverride {
   notificationType: string;
   emailEnabled: boolean;
+  smsEnabled?: boolean;
+  pushEnabled?: boolean;
 }
+
+interface TypeChannelPrefs {
+  emailEnabled?: boolean;
+  smsEnabled?: boolean;
+  pushEnabled?: boolean;
+}
+
+const CRM_CONTACT_REASSIGNED = "CRM_CONTACT_REASSIGNED";
 
 const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
   {
@@ -150,7 +160,7 @@ export default function NotificationPrefsSection() {
   const [smsPhoneInput, setSmsPhoneInput] = useState("");
   const [teamsWebhookInput, setTeamsWebhookInput] = useState("");
   const [slackWebhookInput, setSlackWebhookInput] = useState("");
-  const [typeEmailOverrides, setTypeEmailOverrides] = useState<Record<string, boolean>>({});
+  const [typeChannelOverrides, setTypeChannelOverrides] = useState<Record<string, TypeChannelPrefs>>({});
   const [pushPermission, setPushPermission] = useState<NotificationPermission>("default");
   const [pushSubscribing, setPushSubscribing] = useState(false);
 
@@ -178,11 +188,15 @@ export default function NotificationPrefsSection() {
       setSlackWebhookInput(notifPrefs.channel.slackWebhookUrl ?? "");
     }
     if (notifPrefs?.typeOverrides) {
-      const overrides: Record<string, boolean> = {};
+      const overrides: Record<string, TypeChannelPrefs> = {};
       for (const o of notifPrefs.typeOverrides) {
-        overrides[o.notificationType] = o.emailEnabled;
+        overrides[o.notificationType] = {
+          emailEnabled: o.emailEnabled,
+          smsEnabled: o.smsEnabled,
+          pushEnabled: o.pushEnabled,
+        };
       }
-      setTypeEmailOverrides(overrides);
+      setTypeChannelOverrides(overrides);
     }
   }, [notifPrefs]);
 
@@ -259,9 +273,9 @@ export default function NotificationPrefsSection() {
 
   const updatePrefsMutation = useMutation({
     mutationFn: async () => {
-      const typeOverrides: Record<string, { emailEnabled: boolean }> = {};
-      for (const [type, emailEnabled] of Object.entries(typeEmailOverrides)) {
-        typeOverrides[type] = { emailEnabled };
+      const typeOverrides: Record<string, TypeChannelPrefs> = {};
+      for (const [type, prefs] of Object.entries(typeChannelOverrides)) {
+        typeOverrides[type] = prefs;
       }
       return await apiRequest("PUT", "/api/notifications/preferences", {
         channel: channelPrefs,
@@ -516,6 +530,74 @@ export default function NotificationPrefsSection() {
                 </RadioGroup>
               </div>
 
+              <div data-testid="section-crm-contact-reassigned-prefs">
+                <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">CRM Contact Reassigned</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Choose which channels should alert you when a CRM contact is reassigned to you. Turn all of these off to mute the notification entirely.
+                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between py-1" data-testid="row-crm-reassigned-email">
+                    <span className="text-sm">Email</span>
+                    <Switch
+                      checked={typeChannelOverrides[CRM_CONTACT_REASSIGNED]?.emailEnabled ?? channelPrefs.emailEnabled}
+                      onCheckedChange={(checked) => setTypeChannelOverrides(prev => ({ ...prev, [CRM_CONTACT_REASSIGNED]: { ...prev[CRM_CONTACT_REASSIGNED], emailEnabled: checked } }))}
+                      data-testid="switch-crm-reassigned-email"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between py-1" data-testid="row-crm-reassigned-push">
+                    <span className="text-sm">Push</span>
+                    {pushPermission === "denied" ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} className="inline-flex">
+                            <Switch checked={false} disabled data-testid="switch-crm-reassigned-push" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">
+                          Notifications are blocked in your browser settings.
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Switch
+                        checked={typeChannelOverrides[CRM_CONTACT_REASSIGNED]?.pushEnabled ?? channelPrefs.pushEnabled}
+                        onCheckedChange={(checked) => setTypeChannelOverrides(prev => ({ ...prev, [CRM_CONTACT_REASSIGNED]: { ...prev[CRM_CONTACT_REASSIGNED], pushEnabled: checked } }))}
+                        data-testid="switch-crm-reassigned-push"
+                      />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between py-1" data-testid="row-crm-reassigned-sms">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">SMS</span>
+                      {(!smsAvailable || !hasEnterpriseNotifications) && (
+                        <Badge variant="outline" className="text-xs gap-1 text-muted-foreground" data-testid="badge-crm-reassigned-sms-unavailable">
+                          {!smsAvailable ? <><AlertCircle className="h-3 w-3" />Not configured</> : <><Lock className="h-3 w-3" />Enterprise</>}
+                        </Badge>
+                      )}
+                    </div>
+                    {smsAvailable && hasEnterpriseNotifications ? (
+                      <Switch
+                        checked={typeChannelOverrides[CRM_CONTACT_REASSIGNED]?.smsEnabled ?? channelPrefs.smsEnabled}
+                        onCheckedChange={(checked) => setTypeChannelOverrides(prev => ({ ...prev, [CRM_CONTACT_REASSIGNED]: { ...prev[CRM_CONTACT_REASSIGNED], smsEnabled: checked } }))}
+                        data-testid="switch-crm-reassigned-sms"
+                      />
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} className="inline-flex">
+                            <Switch checked={false} disabled data-testid="switch-crm-reassigned-sms" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">
+                          {!smsAvailable
+                            ? "SMS requires additional setup by your administrator."
+                            : "Upgrade to the Scale plan to enable SMS notifications."}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {channelPrefs.emailEnabled && (
                 <div>
                   <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">Email Alerts by Type</h3>
@@ -527,11 +609,11 @@ export default function NotificationPrefsSection() {
                         <div className="space-y-2">
                           {group.types.map((type) => {
                             const label = type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-                            const isEnabled = typeEmailOverrides[type] ?? channelPrefs.emailEnabled;
+                            const isEnabled = typeChannelOverrides[type]?.emailEnabled ?? channelPrefs.emailEnabled;
                             return (
                               <div key={type} className="flex items-center justify-between py-1" data-testid={`row-type-pref-${type}`}>
                                 <span className="text-sm">{label}</span>
-                                <Switch checked={isEnabled} onCheckedChange={(checked) => setTypeEmailOverrides(prev => ({ ...prev, [type]: checked }))} data-testid={`switch-type-pref-${type}`} />
+                                <Switch checked={isEnabled} onCheckedChange={(checked) => setTypeChannelOverrides(prev => ({ ...prev, [type]: { ...prev[type], emailEnabled: checked } }))} data-testid={`switch-type-pref-${type}`} />
                               </div>
                             );
                           })}
