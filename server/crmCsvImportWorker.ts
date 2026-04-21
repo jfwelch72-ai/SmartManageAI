@@ -57,14 +57,45 @@ function pickNumericStr(row: Record<string, any>, mapping: Record<string, string
   return Number.isFinite(n) ? String(n) : undefined;
 }
 
+interface RowError {
+  row: number;
+  error: string;
+  column?: string;
+  value?: string;
+}
+
 interface JobProgress {
   inserted: number;
   updated: number;
   skipped: number;
   errored: number;
   processed: number;
-  errors: { row: number; error: string }[];
+  errors: RowError[];
   insertedIds: string[];
+}
+
+// Reverse-lookup: given a target schema field, return the spreadsheet column
+// header that was mapped to it (for surfacing in row-level error messages).
+function findColumnForTarget(mapping: Record<string, string>, target: string): string | undefined {
+  for (const [csvCol, schemaField] of Object.entries(mapping)) {
+    if (schemaField === target) return csvCol;
+  }
+  return undefined;
+}
+
+// Truncate offending values so a single bad cell can't blow up the errors
+// jsonb column when a user pastes a multi-megabyte string.
+function shortenValue(v: any): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  let s: string;
+  if (typeof v === "string") s = v;
+  else if (typeof v === "number" || typeof v === "boolean") s = String(v);
+  else {
+    try { s = JSON.stringify(v); } catch { s = String(v); }
+  }
+  s = s.trim();
+  if (s === "") return undefined;
+  return s.length > 200 ? `${s.slice(0, 200)}…` : s;
 }
 
 async function flushProgress(jobId: string, p: JobProgress, final = false): Promise<void> {
@@ -183,7 +214,12 @@ async function processOneJob(): Promise<boolean> {
             const requestedType = pickStr(r, mapping, "type");
             if (requestedType && !(ALLOWED_ORG_TYPES as readonly string[]).includes(requestedType)) {
               progress.errored++;
-              progress.errors.push({ row: i + 1, error: `Invalid organisation type "${requestedType}"; allowed: ${ALLOWED_ORG_TYPES.join(", ")}` });
+              progress.errors.push({
+                row: i + 1,
+                error: `Invalid organisation type "${requestedType}"; allowed: ${ALLOWED_ORG_TYPES.join(", ")}`,
+                column: findColumnForTarget(mapping, "type"),
+                value: shortenValue(requestedType),
+              });
             } else {
               const [existing] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.organizationId, orgId), eq(crmOrganisations.name, name))).limit(1);
               if (existing) { progress.updated++; }
@@ -205,16 +241,28 @@ async function processOneJob(): Promise<boolean> {
           const name = pickStr(r, mapping, "name");
           if (!name) { progress.skipped++; }
           else {
-            const [o] = await db.insert(crmOpportunities).values({
-              organizationId: orgId,
-              name,
-              stage: (pickStr(r, mapping, "stage") as any) || "LEAD",
-              dealValue: pickNumericStr(r, mapping, "dealValue") ?? null,
-              source: pickStr(r, mapping, "source") ?? "CSV Import",
-              stageEnteredAt: new Date(),
-            } as any).returning();
-            progress.insertedIds.push(o.id);
-            progress.inserted++;
+            const rawDealValue = pick(r, mapping, "dealValue");
+            const parsedDealValue = pickNumericStr(r, mapping, "dealValue");
+            if (rawDealValue !== undefined && rawDealValue !== null && rawDealValue !== "" && parsedDealValue === undefined) {
+              progress.errored++;
+              progress.errors.push({
+                row: i + 1,
+                error: `Could not parse "${shortenValue(rawDealValue) ?? ""}" as a number`,
+                column: findColumnForTarget(mapping, "dealValue"),
+                value: shortenValue(rawDealValue),
+              });
+            } else {
+              const [o] = await db.insert(crmOpportunities).values({
+                organizationId: orgId,
+                name,
+                stage: (pickStr(r, mapping, "stage") as any) || "LEAD",
+                dealValue: parsedDealValue ?? null,
+                source: pickStr(r, mapping, "source") ?? "CSV Import",
+                stageEnteredAt: new Date(),
+              } as any).returning();
+              progress.insertedIds.push(o.id);
+              progress.inserted++;
+            }
           }
         }
       } catch (err: any) {

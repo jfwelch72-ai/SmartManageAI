@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Plus, Trash2, Copy, ExternalLink, AlertTriangle, Upload, BarChart3, Zap, Calendar, FileText, Clock } from "lucide-react";
+import { Loader2, Plus, Trash2, Copy, ExternalLink, AlertTriangle, Upload, BarChart3, Zap, Calendar, FileText, Clock, ChevronDown, ChevronRight } from "lucide-react";
 
 const STAGES = ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION", "WON", "LOST"];
 
@@ -869,37 +869,98 @@ function ImportPanel() {
         </Button>
         <div className="pt-3 border-t">
           <h4 className="font-medium mb-2">Recent imports</h4>
-          {(jobs as any[]).map((j) => {
-            const total = Number(j.totalRows ?? 0);
-            const processed = Number(j.processedRows ?? 0);
-            const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
-            const isActive = j.status === "PENDING" || j.status === "PROCESSING";
-            return (
-              <div key={j.id} className="border rounded p-2 mb-2" data-testid={`row-job-${j.id}`}>
-                <div className="flex items-center justify-between">
-                  <div className="text-sm">
-                    <span data-testid={`text-job-status-${j.id}`}>{j.entityType} · {j.status}</span>
-                    {" · "}
-                    <span data-testid={`text-job-counts-${j.id}`}>{j.insertedRows ?? 0} inserted, {j.updatedRows ?? 0} updated, {j.skippedRows ?? 0} skipped, {j.errorRows ?? 0} errors</span>
-                  </div>
-                  {j.status === "COMPLETED" && (
-                    <Button size="sm" variant="outline" onClick={() => revert.mutate(j.id)} data-testid={`button-revert-${j.id}`}>Revert</Button>
-                  )}
-                </div>
-                {isActive && total > 0 && (
-                  <div className="mt-2">
-                    <div className="h-1.5 w-full bg-muted rounded overflow-hidden">
-                      <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} data-testid={`progress-bar-${j.id}`} />
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1" data-testid={`text-job-progress-${j.id}`}>{processed} / {total} rows ({pct}%)</div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {(jobs as any[]).map((j) => (
+            <RecentImportRow key={j.id} job={j} onRevert={(id) => revert.mutate(id)} />
+          ))}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+type ImportRowError = { row: number; error: string; column?: string; value?: string };
+
+function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) => void }) {
+  const [showErrors, setShowErrors] = useState(false);
+  const total = Number(job.totalRows ?? 0);
+  const processed = Number(job.processedRows ?? 0);
+  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const isActive = job.status === "PENDING" || job.status === "PROCESSING";
+  const errors: ImportRowError[] = Array.isArray(job.errors) ? job.errors : [];
+  const errorCount = Number(job.errorRows ?? 0);
+  const truncated = errorCount > errors.length;
+
+  return (
+    <div className="border rounded p-2 mb-2" data-testid={`row-job-${job.id}`}>
+      <div className="flex items-center justify-between">
+        <div className="text-sm">
+          <span data-testid={`text-job-status-${job.id}`}>{job.entityType} · {job.status}</span>
+          {" · "}
+          <span data-testid={`text-job-counts-${job.id}`}>{job.insertedRows ?? 0} inserted, {job.updatedRows ?? 0} updated, {job.skippedRows ?? 0} skipped, {job.errorRows ?? 0} errors</span>
+        </div>
+        {job.status === "COMPLETED" && (
+          <Button size="sm" variant="outline" onClick={() => onRevert(job.id)} data-testid={`button-revert-${job.id}`}>Revert</Button>
+        )}
+      </div>
+      {isActive && total > 0 && (
+        <div className="mt-2">
+          <div className="h-1.5 w-full bg-muted rounded overflow-hidden">
+            <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} data-testid={`progress-bar-${job.id}`} />
+          </div>
+          <div className="text-xs text-muted-foreground mt-1" data-testid={`text-job-progress-${job.id}`}>{processed} / {total} rows ({pct}%)</div>
+        </div>
+      )}
+      {errors.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setShowErrors((v) => !v)}
+            data-testid={`button-toggle-errors-${job.id}`}
+          >
+            {showErrors ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+            {showErrors ? "Hide" : "Show"} row errors ({errors.length}{truncated ? ` of ${errorCount}` : ""})
+          </button>
+          {showErrors && (
+            <div className="mt-2 border rounded overflow-x-auto" data-testid={`table-errors-${job.id}`}>
+              <table className="w-full text-xs">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left px-2 py-1 font-medium">Row</th>
+                    <th className="text-left px-2 py-1 font-medium">Column</th>
+                    <th className="text-left px-2 py-1 font-medium">Value</th>
+                    <th className="text-left px-2 py-1 font-medium">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {errors.map((e, idx) => (
+                    <tr key={idx} className="border-t align-top" data-testid={`row-error-${job.id}-${idx}`}>
+                      <td className="px-2 py-1 whitespace-nowrap font-mono" data-testid={`text-error-row-${job.id}-${idx}`}>{e.row}</td>
+                      <td className="px-2 py-1 whitespace-nowrap" data-testid={`text-error-column-${job.id}-${idx}`}>
+                        {e.column ? e.column : <span className="text-muted-foreground italic">—</span>}
+                      </td>
+                      <td className="px-2 py-1" data-testid={`text-error-value-${job.id}-${idx}`}>
+                        {e.value !== undefined && e.value !== "" ? (
+                          <span className="font-mono break-all" title={e.value}>{e.value}</span>
+                        ) : (
+                          <span className="text-muted-foreground italic">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-destructive" data-testid={`text-error-message-${job.id}-${idx}`}>{e.error}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {truncated && (
+                <div className="text-[10px] text-muted-foreground px-2 py-1 border-t">
+                  Showing first {errors.length} of {errorCount} errors. Fix these and re-import to see the rest.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
