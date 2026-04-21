@@ -30,6 +30,22 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
     console.log("[migration] job_metric_alert_rules — table created");
   }
 
+  const emailColumnExists = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'job_metric_alert_rules'
+        AND column_name = 'email_when_above'
+    ) AS exists
+  `);
+  if (!(emailColumnExists.rows[0] as { exists: boolean }).exists) {
+    await db.execute(sql`
+      ALTER TABLE "job_metric_alert_rules"
+      ADD COLUMN "email_when_above" numeric(12,4)
+    `);
+    console.log("[migration] job_metric_alert_rules.email_when_above — column added");
+  }
+
   const eventsExists = await db.execute(sql`
     SELECT EXISTS (
       SELECT FROM information_schema.tables

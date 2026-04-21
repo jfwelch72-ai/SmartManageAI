@@ -304,6 +304,7 @@ interface AlertRule {
   minAbsolute: number;
   dedupeMinutes: number;
   enabled: boolean;
+  emailWhenAbove: string | null;
 }
 
 interface AlertEvent {
@@ -336,8 +337,8 @@ interface AlertsResponse {
   events: AlertEvent[];
   activeByJob: Record<string, number>;
   defaults: {
-    spike: { multiplier: number; minAbsolute: number; dedupeMinutes: number };
-    stall: { hours: number; dedupeMinutes: number };
+    spike: { multiplier: number; minAbsolute: number; dedupeMinutes: number; emailWhenAbove: number };
+    stall: { hours: number; dedupeMinutes: number; emailWhenAbove: number };
   };
   lastEvaluatedAt: number | null;
 }
@@ -351,6 +352,8 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
     threshold: "",
     minAbsolute: "",
     dedupeMinutes: "",
+    emailEnabled: false,
+    emailWhenAbove: "",
   });
 
   const evaluateMutation = useMutation({
@@ -377,7 +380,7 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
     },
     onSuccess: () => {
       toast({ title: "Rule saved" });
-      setForm({ job: "", counter: "", kind: "spike", threshold: "", minAbsolute: "", dedupeMinutes: "" });
+      setForm({ job: "", counter: "", kind: "spike", threshold: "", minAbsolute: "", dedupeMinutes: "", emailEnabled: false, emailWhenAbove: "" });
       queryClient.invalidateQueries({ queryKey: ALERTS_KEY });
     },
     onError: (err: Error) => {
@@ -451,6 +454,7 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
         minAbsolute: rule.minAbsolute,
         dedupeMinutes: rule.dedupeMinutes,
         enabled: !rule.enabled,
+        emailWhenAbove: rule.emailWhenAbove === null ? null : Number(rule.emailWhenAbove),
       });
       return res.json();
     },
@@ -541,6 +545,7 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
               <CardDescription>
                 Super Admins are notified when a counter spikes vs its 24h baseline or when a job goes silent.
                 Defaults: spike ≥ {data?.defaults.spike.multiplier ?? 3}× baseline (min {data?.defaults.spike.minAbsolute ?? 5}/hr), stall ≥ {data?.defaults.stall.hours ?? 4}h, dedupe {data?.defaults.spike.dedupeMinutes ?? 60}m.
+                High-severity alerts also email every Super Admin — defaults: spike ≥ {data?.defaults.spike.emailWhenAbove ?? 10}× baseline, stall ≥ {data?.defaults.stall.emailWhenAbove ?? 12}h.
                 {data?.lastEvaluatedAt && <> Last evaluated {formatRelative(data.lastEvaluatedAt)}.</>}
               </CardDescription>
             </div>
@@ -567,6 +572,7 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                     <TableHead>Threshold</TableHead>
                     <TableHead>Min/hr</TableHead>
                     <TableHead>Dedupe (m)</TableHead>
+                    <TableHead>Email ≥</TableHead>
                     <TableHead>Enabled</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -585,6 +591,11 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                       </TableCell>
                       <TableCell>{rule.minAbsolute}</TableCell>
                       <TableCell>{rule.dedupeMinutes}</TableCell>
+                      <TableCell data-testid={`text-email-threshold-${rule.id}`}>
+                        {rule.emailWhenAbove === null || rule.emailWhenAbove === undefined
+                          ? "—"
+                          : `${Number(rule.emailWhenAbove)}${rule.kind === "stall" ? "h" : "×"}`}
+                      </TableCell>
                       <TableCell>
                         <Switch
                           checked={rule.enabled}
@@ -616,7 +627,7 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
 
           <div className="border-t pt-4">
             <p className="text-sm font-medium mb-2">Add rule</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-2 items-end">
               <div className="space-y-1">
                 <Label htmlFor="rule-job" className="text-xs">Job (or *)</Label>
                 <Input
@@ -693,6 +704,33 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                   data-testid="input-rule-dedupe"
                 />
               </div>
+              <div className="space-y-1">
+                <Label htmlFor="rule-email-toggle" className="text-xs">Email Super Admins</Label>
+                <div className="h-10 flex items-center">
+                  <Switch
+                    id="rule-email-toggle"
+                    checked={form.emailEnabled}
+                    onCheckedChange={(v) => setForm({ ...form, emailEnabled: v })}
+                    data-testid="switch-rule-email"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="rule-email-threshold" className="text-xs">
+                  {form.kind === "stall" ? "Email if ≥ (h)" : "Email if ≥ (×)"}
+                </Label>
+                <Input
+                  id="rule-email-threshold"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  value={form.emailWhenAbove}
+                  onChange={(e) => setForm({ ...form, emailWhenAbove: e.target.value })}
+                  placeholder={form.kind === "stall" ? "12" : "10"}
+                  disabled={!form.emailEnabled}
+                  data-testid="input-rule-email-threshold"
+                />
+              </div>
               <Button
                 onClick={() => {
                   const threshold = parseFloat(form.threshold);
@@ -704,6 +742,21 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                     });
                     return;
                   }
+                  let emailWhenAbove: number | null | undefined = undefined;
+                  if (form.emailEnabled) {
+                    const ewa = parseFloat(form.emailWhenAbove);
+                    if (!Number.isFinite(ewa) || ewa <= 0) {
+                      toast({
+                        title: "Email threshold required",
+                        description: "Enter a positive value for the email-escalation threshold or turn off email.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    emailWhenAbove = ewa;
+                  } else {
+                    emailWhenAbove = null;
+                  }
                   upsertMutation.mutate({
                     job: form.job.trim(),
                     counter: form.kind === "stall" ? null : form.counter.trim() || null,
@@ -711,6 +764,7 @@ function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
                     threshold,
                     minAbsolute: form.minAbsolute ? parseInt(form.minAbsolute, 10) : undefined,
                     dedupeMinutes: form.dedupeMinutes ? parseInt(form.dedupeMinutes, 10) : undefined,
+                    emailWhenAbove,
                   });
                 }}
                 disabled={upsertMutation.isPending}

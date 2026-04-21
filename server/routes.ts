@@ -814,6 +814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         minAbsolute: z.number().int().min(0).max(1_000_000).optional(),
         dedupeMinutes: z.number().int().min(1).max(24 * 60).optional(),
         enabled: z.boolean().optional(),
+        emailWhenAbove: z.number().positive().max(100000).nullable().optional(),
       });
       const parsed = schema.parse(req.body);
       const mod = await import("./utils/jobMetricAlerts");

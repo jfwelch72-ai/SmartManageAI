@@ -33,6 +33,7 @@ import {
 import { getAllJobMetrics, type JobCounters } from "./jobMetrics";
 import { logError, logInfo } from "./logger";
 import { insertNotifications } from "../services/notificationService";
+import { sendEmail } from "../services/emailService";
 
 function buildDisplayName(
   firstName: string | null | undefined,
@@ -50,6 +51,11 @@ export const DEFAULT_SPIKE_MULTIPLIER = 3;
 export const DEFAULT_SPIKE_MIN_ABSOLUTE = 5;
 export const DEFAULT_STALL_HOURS = 4;
 export const DEFAULT_DEDUPE_MINUTES = 60;
+// Built-in email-escalation thresholds — applied when a rule does not
+// specify its own `emailWhenAbove`. Tuned to "high-severity only" so
+// Super Admins are not flooded with routine spikes.
+export const DEFAULT_EMAIL_SPIKE_MULTIPLIER = 10;
+export const DEFAULT_EMAIL_STALL_HOURS = 12;
 
 export type AlertKind = "spike" | "stall";
 
@@ -61,6 +67,7 @@ export interface JobMetricAlert {
   message: string;
   observedValue: number | null;
   baselineValue: number | null;
+  emailed: boolean;
 }
 
 interface AlertRuleResolved {
@@ -73,6 +80,13 @@ interface AlertRuleResolved {
   dedupeMinutes: number;
   enabled: boolean;
   isDefault: boolean;
+  /**
+   * Optional severity escalation. When set and the observed value
+   * (spike: lastHour count, stall: idle hours) meets or exceeds it,
+   * Super Admins receive a SendGrid email in addition to the in-app
+   * notification. `null` means "in-app only — no email escalation".
+   */
+  emailWhenAbove: number | null;
 }
 
 let lastEvaluationAt: number | null = null;
@@ -94,6 +108,7 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
 }
 
 function ruleFromRow(row: JobMetricAlertRule): AlertRuleResolved {
+  const emailRaw = (row as unknown as { emailWhenAbove: string | null }).emailWhenAbove;
   return {
     id: row.id,
     job: row.job,
@@ -104,6 +119,8 @@ function ruleFromRow(row: JobMetricAlertRule): AlertRuleResolved {
     dedupeMinutes: row.dedupeMinutes,
     enabled: row.enabled,
     isDefault: false,
+    emailWhenAbove:
+      emailRaw === null || emailRaw === undefined ? null : toNumber(emailRaw, 0),
   };
 }
 
@@ -118,6 +135,7 @@ function defaultSpikeRule(job: string, counter: string): AlertRuleResolved {
     dedupeMinutes: DEFAULT_DEDUPE_MINUTES,
     enabled: true,
     isDefault: true,
+    emailWhenAbove: DEFAULT_EMAIL_SPIKE_MULTIPLIER,
   };
 }
 
@@ -132,6 +150,7 @@ function defaultStallRule(job: string): AlertRuleResolved {
     dedupeMinutes: DEFAULT_DEDUPE_MINUTES,
     enabled: true,
     isDefault: true,
+    emailWhenAbove: DEFAULT_EMAIL_STALL_HOURS,
   };
 }
 
@@ -223,6 +242,7 @@ export interface EvaluateResult {
   alertsFired: JobMetricAlert[];
   alertsSuppressed: number;
   notifiedAdmins: number;
+  emailsSent: number;
 }
 
 /**
@@ -280,12 +300,61 @@ async function fetchRecentEventLookup(now: number): Promise<Map<string, number>>
   return map;
 }
 
-async function loadSuperAdminIds(): Promise<string[]> {
+async function loadSuperAdmins(): Promise<Array<{ id: string; email: string }>> {
   const rows = await db
-    .select({ id: users.id })
+    .select({ id: users.id, email: users.email, isActive: users.isActive })
     .from(users)
     .where(eq(users.role, "SUPER_ADMIN"));
-  return rows.map((r) => r.id);
+  return rows
+    .filter((r) => r.isActive)
+    .map((r) => ({ id: r.id, email: r.email }));
+}
+
+function shouldEmail(rule: AlertRuleResolved, observed: number): boolean {
+  if (rule.emailWhenAbove === null || rule.emailWhenAbove === undefined) return false;
+  if (rule.emailWhenAbove <= 0) return false;
+  return observed >= rule.emailWhenAbove;
+}
+
+async function emailSuperAdminsForAlert(
+  alert: JobMetricAlert,
+  rule: AlertRuleResolved,
+  recipients: Array<{ email: string }>,
+): Promise<boolean> {
+  if (recipients.length === 0) return false;
+  const emails = Array.from(
+    new Set(recipients.map((r) => r.email).filter((e): e is string => !!e && e.length > 0)),
+  );
+  if (emails.length === 0) return false;
+
+  const subject =
+    alert.kind === "spike"
+      ? `[High severity] Job spike: ${alert.job}${alert.counter ? ` · ${alert.counter}` : ""}`
+      : `[High severity] Job stalled: ${alert.job}`;
+  const escalation =
+    alert.kind === "spike"
+      ? `Observed ${alert.observedValue?.toFixed?.(2) ?? alert.observedValue} in the last hour vs baseline ${alert.baselineValue?.toFixed?.(2) ?? alert.baselineValue}/hr (email threshold ≥ ${rule.emailWhenAbove}× baseline).`
+      : `Job has been silent for ${alert.observedValue?.toFixed?.(1) ?? alert.observedValue}h (email threshold ≥ ${rule.emailWhenAbove}h).`;
+  const baseUrl = (
+    process.env.APP_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "")
+  ).replace(/\/$/, "");
+  const dashboardUrl = `${baseUrl}/admin/job-metrics`;
+  const text = `${alert.message}\n\n${escalation}\n\nReview: ${dashboardUrl}`;
+  const html = `<p>${alert.message}</p><p>${escalation}</p><p><a href="${dashboardUrl}">Open the job metrics dashboard</a></p>`;
+
+  try {
+    return await sendEmail({ to: emails, subject, text, html });
+  } catch (err) {
+    logError("Job metric alerts: email delivery failed", {
+      error: String(err),
+      job: alert.job,
+      kind: alert.kind,
+    });
+    return false;
+  }
 }
 
 /**
@@ -304,6 +373,7 @@ export async function evaluateJobMetricAlerts(
     alertsFired: [],
     alertsSuppressed: 0,
     notifiedAdmins: 0,
+    emailsSent: 0,
   };
 
   const source = opts.metricsSource ?? (() => getAllJobMetrics());
@@ -331,6 +401,10 @@ export async function evaluateJobMetricAlerts(
 
   const fired: JobMetricAlert[] = [];
   const eventRows: Array<typeof jobMetricAlertEvents.$inferInsert> = [];
+  // Parallel array — index N here corresponds to fired[N]. Tracks the
+  // resolved rule + the value to compare against `emailWhenAbove` so
+  // we can email after dedupe has already filtered out repeats.
+  const firedRules: Array<{ rule: AlertRuleResolved; emailMetric: number }> = [];
 
   for (const j of jobs) {
     // ---- Spike checks (per counter) ----
@@ -372,8 +446,12 @@ export async function evaluateJobMetricAlerts(
         message,
         observedValue: lastHour,
         baselineValue: baseline,
+        emailed: false,
       };
       fired.push(alert);
+      // For spike emails, compare the observed multiple-vs-baseline to
+      // the email threshold so "emailWhenAbove: 10" means ">=10× baseline".
+      firedRules.push({ rule, emailMetric: baseline > 0 ? lastHour / baseline : 0 });
       eventRows.push({
         job: alert.job,
         counter: alert.counter,
@@ -411,8 +489,12 @@ export async function evaluateJobMetricAlerts(
             message,
             observedValue: idleHours,
             baselineValue: stallRule.threshold,
+            emailed: false,
           };
           fired.push(alert);
+          // For stall emails, compare idle hours directly against the
+          // email threshold ("emailWhenAbove: 12" means >=12h idle).
+          firedRules.push({ rule: stallRule, emailMetric: idleHours });
           eventRows.push({
             job: alert.job,
             counter: null,
@@ -431,12 +513,13 @@ export async function evaluateJobMetricAlerts(
 
   if (fired.length === 0) return result;
 
-  let adminIds: string[] = [];
+  let admins: Array<{ id: string; email: string }> = [];
   try {
-    adminIds = await loadSuperAdminIds();
+    admins = await loadSuperAdmins();
   } catch (err) {
     logError("Job metric alerts: failed to load super admins", { error: String(err) });
   }
+  const adminIds = admins.map((a) => a.id);
 
   // Notify every Super Admin in-app — one notification per alert per admin.
   if (adminIds.length > 0) {
@@ -469,11 +552,31 @@ export async function evaluateJobMetricAlerts(
     logError("Job metric alerts: failed to persist alert events", { error: String(err) });
   }
 
+  // Email escalation — for each newly-fired alert (already deduped by
+  // the in-app pass above) decide whether the rule's `emailWhenAbove`
+  // threshold is met and, if so, email every active Super Admin. The
+  // dedupe window is shared with the in-app pass, so an alert that was
+  // suppressed earlier in the loop is never emailed either.
+  if (admins.length > 0) {
+    for (let i = 0; i < fired.length; i++) {
+      const alert = fired[i];
+      const meta = firedRules[i];
+      if (!meta) continue;
+      if (!shouldEmail(meta.rule, meta.emailMetric)) continue;
+      const ok = await emailSuperAdminsForAlert(alert, meta.rule, admins);
+      if (ok) {
+        alert.emailed = true;
+        result.emailsSent++;
+      }
+    }
+  }
+
   result.alertsFired = fired;
   logInfo("Job metric alerts evaluated", {
     fired: fired.length,
     suppressed: result.alertsSuppressed,
     notifiedAdmins: result.notifiedAdmins,
+    emailsSent: result.emailsSent,
   });
   return result;
 }
@@ -676,6 +779,13 @@ export interface UpsertRuleInput {
   minAbsolute?: number;
   dedupeMinutes?: number;
   enabled?: boolean;
+  /**
+   * Opt-in email escalation. `null` (or omitted) disables email and the
+   * rule stays in-app only. A positive number enables email when the
+   * observed metric (multiplier for spike, hours for stall) is at least
+   * this value.
+   */
+  emailWhenAbove?: number | null;
 }
 
 export async function upsertJobMetricAlertRule(input: UpsertRuleInput): Promise<JobMetricAlertRule> {
@@ -687,6 +797,10 @@ export async function upsertJobMetricAlertRule(input: UpsertRuleInput): Promise<
     minAbsolute: input.minAbsolute ?? (input.kind === "spike" ? DEFAULT_SPIKE_MIN_ABSOLUTE : 0),
     dedupeMinutes: input.dedupeMinutes ?? DEFAULT_DEDUPE_MINUTES,
     enabled: input.enabled ?? true,
+    emailWhenAbove:
+      input.emailWhenAbove === undefined || input.emailWhenAbove === null
+        ? null
+        : Number(input.emailWhenAbove).toFixed(4),
     updatedAt: new Date(),
   };
   if (input.id) {
@@ -714,9 +828,11 @@ export const ALERT_DEFAULTS = {
     multiplier: DEFAULT_SPIKE_MULTIPLIER,
     minAbsolute: DEFAULT_SPIKE_MIN_ABSOLUTE,
     dedupeMinutes: DEFAULT_DEDUPE_MINUTES,
+    emailWhenAbove: DEFAULT_EMAIL_SPIKE_MULTIPLIER,
   },
   stall: {
     hours: DEFAULT_STALL_HOURS,
     dedupeMinutes: DEFAULT_DEDUPE_MINUTES,
+    emailWhenAbove: DEFAULT_EMAIL_STALL_HOURS,
   },
 } as const;

@@ -1323,6 +1323,7 @@ export const jobMetricAlertRules = pgTable("job_metric_alert_rules", {
   minAbsolute: integer("min_absolute").notNull().default(0),
   dedupeMinutes: integer("dedupe_minutes").notNull().default(60),
   enabled: boolean("enabled").notNull().default(true),
+  emailWhenAbove: decimal("email_when_above", { precision: 12, scale: 4 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
