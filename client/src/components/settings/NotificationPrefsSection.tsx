@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -91,6 +91,148 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
     types: ["GENERAL", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "MATERIAL_OVERAGE"],
   },
 ];
+
+/**
+ * Task #753: Compute the next quiet-hours window so admins can see
+ * exactly when the window they just configured will fire.
+ *
+ * Mirrors the server-side semantics of `isInJobMetricAlertQuietWindow`
+ * (server/utils/jobMetricAlerts.ts): wrap-around windows (start > end)
+ * span midnight, weekday filters key off the day the window *starts*,
+ * and an empty weekday list means "every day". Times are interpreted
+ * in the configured `timezone`; the returned start/end are absolute
+ * Date instants suitable for formatting in the user's local timezone.
+ */
+interface QuietWindowPreview {
+  start: Date;
+  end: Date;
+  active: boolean;
+}
+
+function parseHHMMToMinutes(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * Return the absolute UTC instant corresponding to the given
+ * year/month/day/hour/minute interpreted in `timeZone`. Uses an
+ * iterative correction so DST transitions resolve cleanly.
+ */
+function zonedDateTimeToInstant(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string,
+): Date {
+  let guess = Date.UTC(year, month - 1, day, hour, minute);
+  for (let i = 0; i < 2; i++) {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    const parts: Record<string, string> = {};
+    for (const p of fmt.formatToParts(new Date(guess))) parts[p.type] = p.value;
+    const observedHour = parseInt(parts.hour ?? "0", 10) === 24 ? 0 : parseInt(parts.hour ?? "0", 10);
+    const observedMs = Date.UTC(
+      parseInt(parts.year ?? "0", 10),
+      parseInt(parts.month ?? "1", 10) - 1,
+      parseInt(parts.day ?? "1", 10),
+      observedHour,
+      parseInt(parts.minute ?? "0", 10),
+    );
+    const targetMs = Date.UTC(year, month - 1, day, hour, minute);
+    const diff = observedMs - targetMs;
+    if (diff === 0) break;
+    guess -= diff;
+  }
+  return new Date(guess);
+}
+
+const WEEKDAY_TO_IDX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+function computeNextQuietWindow(
+  enabled: boolean,
+  startHHMM: string,
+  endHHMM: string,
+  timezone: string,
+  weekdays: number[],
+  now: Date,
+): QuietWindowPreview | null {
+  if (!enabled) return null;
+  const startMin = parseHHMMToMinutes(startHHMM);
+  const endMin = parseHHMMToMinutes(endHHMM);
+  if (startMin === null || endMin === null || startMin === endMin) return null;
+
+  let tz = timezone || "UTC";
+  let todayParts: Record<string, string>;
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      weekday: "short",
+    });
+    todayParts = {};
+    for (const p of fmt.formatToParts(now)) todayParts[p.type] = p.value;
+  } catch {
+    return null;
+  }
+
+  const baseYear = parseInt(todayParts.year ?? "0", 10);
+  const baseMonth = parseInt(todayParts.month ?? "1", 10);
+  const baseDay = parseInt(todayParts.day ?? "1", 10);
+
+  const startH = Math.floor(startMin / 60);
+  const startM = startMin % 60;
+  const endH = Math.floor(endMin / 60);
+  const endM = endMin % 60;
+  const wraps = startMin > endMin;
+
+  const dayMatches = (idx: number) =>
+    !weekdays || weekdays.length === 0 ? true : weekdays.includes(idx);
+
+  // Look back one day so a currently-active wrap-around window (whose
+  // start was yesterday) is still surfaced as the "current" window.
+  for (let offset = -1; offset <= 14; offset++) {
+    const probeStart = new Date(Date.UTC(baseYear, baseMonth - 1, baseDay + offset, 12, 0));
+    const probeFmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric", month: "2-digit", day: "2-digit", weekday: "short",
+    });
+    const dParts: Record<string, string> = {};
+    for (const p of probeFmt.formatToParts(probeStart)) dParts[p.type] = p.value;
+    const y = parseInt(dParts.year ?? "0", 10);
+    const m = parseInt(dParts.month ?? "1", 10);
+    const d = parseInt(dParts.day ?? "1", 10);
+    const wd = WEEKDAY_TO_IDX[dParts.weekday ?? ""] ?? -1;
+    if (wd < 0 || !dayMatches(wd)) continue;
+
+    const start = zonedDateTimeToInstant(y, m, d, startH, startM, tz);
+    const endProbe = wraps
+      ? new Date(Date.UTC(y, m - 1, d + 1, 12, 0))
+      : probeStart;
+    const eParts: Record<string, string> = {};
+    for (const p of probeFmt.formatToParts(endProbe)) eParts[p.type] = p.value;
+    const ey = parseInt(eParts.year ?? "0", 10);
+    const em = parseInt(eParts.month ?? "1", 10);
+    const ed = parseInt(eParts.day ?? "1", 10);
+    const end = zonedDateTimeToInstant(ey, em, ed, endH, endM, tz);
+
+    if (end.getTime() <= now.getTime()) continue;
+    return { start, end, active: start.getTime() <= now.getTime() };
+  }
+  return null;
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -219,6 +361,59 @@ export default function NotificationPrefsSection() {
   // weekdays = days of week (0=Sun … 6=Sat) the quiet window applies on.
   // Empty array means "every day" — matches the server-side helper.
   const [quietWeekdays, setQuietWeekdays] = useState<number[]>([]);
+
+  // Task #753: Tick a clock every 30s so the "next quiet period" preview
+  // stays accurate across midnight, daylight savings, and the moment a
+  // window starts/ends — without flooding the component with re-renders.
+  const [previewNow, setPreviewNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setPreviewNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const browserTimezone = detectedTimezone;
+  const nextQuietWindow = useMemo(
+    () => computeNextQuietWindow(quietEnabled, quietStart, quietEnd, quietTimezone, quietWeekdays, previewNow),
+    [quietEnabled, quietStart, quietEnd, quietTimezone, quietWeekdays, previewNow],
+  );
+
+  const isQuietTimezoneValid = useMemo(() => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: quietTimezone || "UTC" }).format(new Date());
+      return true;
+    } catch { return false; }
+  }, [quietTimezone]);
+
+  const quietPreviewText: string = (() => {
+    if (!quietEnabled) {
+      return "Quiet hours are off — emails can be sent at any time.";
+    }
+    if (!isQuietTimezoneValid) {
+      return "Select a valid timezone to preview the next quiet window.";
+    }
+    if (!nextQuietWindow) {
+      const startMin = parseHHMMToMinutes(quietStart);
+      const endMin = parseHHMMToMinutes(quietEnd);
+      if (startMin === null || endMin === null) return "Set valid start and end times to preview the next quiet window.";
+      if (startMin === endMin) return "Start and end times must differ to preview the next quiet window.";
+      if (quietWeekdays.length === 0) return "No upcoming quiet window in the next two weeks.";
+      return "No upcoming quiet window in the next two weeks for the selected weekdays.";
+    }
+    const fmt = (d: Date) =>
+      new Intl.DateTimeFormat(undefined, {
+        weekday: "short", month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit",
+      }).format(d);
+    const sameDay = (a: Date, b: Date) => {
+      const f = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
+      return f.format(a) === f.format(b);
+    };
+    const endStr = sameDay(nextQuietWindow.start, nextQuietWindow.end)
+      ? new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(nextQuietWindow.end)
+      : fmt(nextQuietWindow.end);
+    const label = nextQuietWindow.active ? "Currently in quiet hours" : "Next quiet period";
+    return `${label}: ${fmt(nextQuietWindow.start)} – ${endStr} (your time, ${browserTimezone})`;
+  })();
 
   useEffect(() => {
     if (!authUser) return;
@@ -705,6 +900,13 @@ export default function NotificationPrefsSection() {
                           data-testid="switch-job-metric-alert-quiet-hours-enabled"
                         />
                       </div>
+
+                      <p
+                        className="text-xs text-muted-foreground"
+                        data-testid="text-quiet-hours-preview"
+                      >
+                        {quietPreviewText}
+                      </p>
 
                       {quietEnabled && (
                         <div className="space-y-3 pt-1">
