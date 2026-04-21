@@ -367,6 +367,23 @@ function PreferencesSection() {
     },
   });
 
+  const sendTestBirthdayDigestMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/user-settings/birthday-digest/test", {});
+      return (await res.json()) as { success?: boolean; message?: string; sent?: boolean };
+    },
+    onSuccess: (data) => {
+      const wasSent = data.sent !== false && !/no contact birthdays/i.test(data.message || "");
+      toast({
+        title: wasSent ? "Test digest sent" : "No birthdays to preview",
+        description: data.message || (wasSent ? "Check your notifications." : "There are no contact birthdays in the next 7 days."),
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to send test digest", description: error.message, variant: "destructive" });
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -604,6 +621,27 @@ function PreferencesSection() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2 border-t">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Send a test now</p>
+                <p className="text-xs text-muted-foreground">
+                  Preview your weekly digest immediately. Limited to once every 5 minutes.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => sendTestBirthdayDigestMutation.mutate()}
+                disabled={sendTestBirthdayDigestMutation.isPending}
+                data-testid="button-send-test-birthday-digest"
+              >
+                {sendTestBirthdayDigestMutation.isPending && <Loader2 className="h-3 w-3 mr-2 animate-spin" />}
+                Send test digest
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

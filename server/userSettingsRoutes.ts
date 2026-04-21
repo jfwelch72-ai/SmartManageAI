@@ -9,8 +9,16 @@ import { TOTP, generateSecret as otpGenerateSecret, generateURI } from "otplib";
 import QRCode from "qrcode";
 import type { TimeEntry, UserCertification } from "@shared/schema";
 import { logError, logWarn } from "./utils/logger";
+import { sendCrmContactBirthdayDigestForUser } from "./jobs/jobRunner";
 
 const router = Router();
+
+// Task #706: per-user cooldown for the "Send a test now" digest button so the
+// endpoint can't be hammered. In-memory map keyed by userId is sufficient
+// since the test trigger is best-effort and a process restart simply resets
+// the cooldown — no need for a durable store.
+const BIRTHDAY_DIGEST_TEST_COOLDOWN_MS = 5 * 60 * 1000;
+const lastBirthdayDigestTestAt = new Map<string, number>();
 
 function requireAdminRole(req: AuthRequest, res: Response): boolean {
   const role = req.user?.role;
@@ -88,6 +96,53 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid settings data", details: error.errors });
     }
+    return next(error);
+  }
+});
+
+router.post("/api/user-settings/birthday-digest/test", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ error: "User is not associated with an organization." });
+    }
+
+    const now = Date.now();
+    const last = lastBirthdayDigestTestAt.get(userId);
+    if (last && now - last < BIRTHDAY_DIGEST_TEST_COOLDOWN_MS) {
+      const waitSeconds = Math.ceil((BIRTHDAY_DIGEST_TEST_COOLDOWN_MS - (now - last)) / 1000);
+      return res.status(429).json({
+        error: `Please wait ${waitSeconds} seconds before sending another test digest.`,
+        retryAfterSeconds: waitSeconds,
+      });
+    }
+    lastBirthdayDigestTestAt.set(userId, now);
+
+    try {
+      const result = await sendCrmContactBirthdayDigestForUser(userId, orgId);
+      if (result.sent) {
+        return res.json({
+          success: true,
+          sent: true,
+          message: `Test digest sent (${result.upcomingCount} upcoming birthday${result.upcomingCount === 1 ? "" : "s"}). Check your notifications.`,
+        });
+      }
+      if (result.reason === "no_upcoming_birthdays") {
+        return res.json({
+          success: true,
+          sent: false,
+          message: "No contact birthdays in the next 7 days — nothing to send.",
+        });
+      }
+      return res.status(400).json({ error: result.reason || "Unable to send test digest." });
+    } catch (err) {
+      // Allow a retry sooner than the cooldown if the send itself blew up.
+      lastBirthdayDigestTestAt.delete(userId);
+      throw err;
+    }
+  } catch (error) {
+    logError("Birthday digest test send failed", { error: String(error) });
     return next(error);
   }
 });

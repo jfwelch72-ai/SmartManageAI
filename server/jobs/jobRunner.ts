@@ -2420,6 +2420,95 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
   }
 }
 
+// Task #706: one-off "Send a test now" trigger for the App Preferences UI.
+// Builds the same digest the weekly tick would build, but for a single
+// recipient and with both the time-of-day gate and the 7-day dedupe window
+// bypassed so estimators can preview their digest immediately. The endpoint
+// that calls this enforces its own rate limit to prevent abuse.
+export async function sendCrmContactBirthdayDigestForUser(
+  userId: string,
+  organizationId: string,
+): Promise<{ sent: boolean; reason?: string; upcomingCount?: number }> {
+  const now = new Date();
+  const serverTz = getServerDefaultTimezone();
+
+  const [user] = await db
+    .select({ id: users.id, timezone: users.timezone })
+    .from(users)
+    .where(and(
+      eq(users.id, userId),
+      eq(users.organizationId, organizationId),
+      eq(users.isActive, true),
+    ))
+    .limit(1);
+  if (!user) return { sent: false, reason: "user_not_found" };
+
+  const tz = user.timezone && isValidTimezone(user.timezone) ? user.timezone : serverTz;
+  const local = getLocalDateParts(now, tz);
+
+  const contactRows = await db
+    .select({
+      firstName: crmContacts.firstName,
+      lastName: crmContacts.lastName,
+      birthday: crmContacts.birthday,
+      orgName: crmOrganisations.name,
+    })
+    .from(crmContacts)
+    .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmContacts.organisationId))
+    .where(and(eq(crmContacts.organizationId, organizationId), isNotNull(crmContacts.birthday)));
+
+  type ContactBirthday = { firstName: string | null; lastName: string | null; orgName: string | null; month: number; day: number };
+  const contacts: ContactBirthday[] = [];
+  for (const c of contactRows) {
+    const bd = c.birthday ? String(c.birthday) : null;
+    const m = bd ? /^(\d{4})-(\d{2})-(\d{2})/.exec(bd) : null;
+    if (!m) continue;
+    const month = parseInt(m[2], 10);
+    const day = parseInt(m[3], 10);
+    if (!month || !day) continue;
+    contacts.push({ firstName: c.firstName, lastName: c.lastName, orgName: c.orgName, month, day });
+  }
+
+  const horizonDays = 7;
+  const todayDate = new Date(Date.UTC(local.year, local.month - 1, local.day));
+  const upcoming = contacts
+    .map((c) => {
+      let next = new Date(Date.UTC(local.year, c.month - 1, c.day));
+      if (next < todayDate) next = new Date(Date.UTC(local.year + 1, c.month - 1, c.day));
+      const daysUntil = Math.round((next.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+      return { c, daysUntil };
+    })
+    .filter((u) => u.daysUntil >= 0 && u.daysUntil <= horizonDays)
+    .sort((a, b) => a.daysUntil - b.daysUntil);
+
+  if (upcoming.length === 0) {
+    return { sent: false, reason: "no_upcoming_birthdays", upcomingCount: 0 };
+  }
+
+  const lines = upcoming.map((u) => {
+    const name = `${u.c.firstName ?? ""} ${u.c.lastName ?? ""}`.trim();
+    const when = u.daysUntil === 0
+      ? "today"
+      : `in ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"} (${u.c.month}/${u.c.day})`;
+    return `${name}${u.c.orgName ? ` — ${u.c.orgName}` : ""}: ${when}`;
+  });
+  const title = upcoming.length === 1
+    ? "1 contact birthday this week (test)"
+    : `${upcoming.length} contact birthdays this week (test)`;
+  const message = `Test digest — upcoming contact birthdays this week:\n${lines.join("\n")}`;
+
+  await insertNotification({
+    userId,
+    organizationId,
+    type: "REMINDER" as const,
+    title,
+    message,
+    relatedEntityType: BIRTHDAY_DIGEST_RELATED_ENTITY_TYPE,
+  });
+
+  return { sent: true, upcomingCount: upcoming.length };
+}
+
 // Task #693: daily morning email reminder routed to each contact's owner so
 // account managers see today's birthdays even when they aren't in the app.
 // Recipients are the contact's explicit ownerId (Task #699), falling back to
