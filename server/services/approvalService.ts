@@ -4,7 +4,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
 import { notifyApprovers } from "./approvalNotificationService";
 
-export type ApprovalEntityType = "CHANGE_ORDER" | "SOV_PAY_APP" | "TIME_APPROVAL" | "VENDOR_BILL" | "ESIGN_SEND" | "QBO_EXPORT";
+export type ApprovalEntityType = "CHANGE_ORDER" | "SOV_PAY_APP" | "TIME_APPROVAL" | "VENDOR_BILL" | "ESIGN_SEND" | "QBO_EXPORT" | "CRM_QUOTE" | "CRM_OPPORTUNITY";
 
 export async function createApprovalRequest(
   orgId: string,
@@ -36,6 +36,31 @@ export async function createApprovalRequest(
   return request;
 }
 
+async function syncDownstreamAfterDecision(
+  request: { entityType: string; entityId: string; organizationId: string },
+  decision: "approved" | "rejected"
+): Promise<void> {
+  try {
+    const { crmQuotes, crmOpportunities } = await import("@shared/schema");
+    if (request.entityType === "CRM_QUOTE") {
+      await db.update(crmQuotes).set({
+        approvalStatus: decision === "approved" ? "APPROVED" : "REJECTED",
+        updatedAt: new Date(),
+      } as any).where(eq(crmQuotes.id, request.entityId));
+    } else if (request.entityType === "CRM_OPPORTUNITY") {
+      if (decision === "approved") {
+        await db.update(crmOpportunities).set({
+          stage: "WON" as any,
+          wonAt: new Date(),
+          updatedAt: new Date(),
+        } as any).where(eq(crmOpportunities.id, request.entityId));
+      }
+    }
+  } catch (e) {
+    logError("Approval downstream sync failed", { entityType: request.entityType, entityId: request.entityId }, e as Error);
+  }
+}
+
 export async function approveRequest(
   requestId: string,
   orgId: string,
@@ -61,6 +86,7 @@ export async function approveRequest(
 
   if (updated) {
     logInfo("Approval request approved", { requestId, orgId, approverUserId });
+    await syncDownstreamAfterDecision(updated, "approved");
   }
   return updated || null;
 }
@@ -90,6 +116,7 @@ export async function rejectRequest(
 
   if (updated) {
     logInfo("Approval request rejected", { requestId, orgId, approverUserId });
+    await syncDownstreamAfterDecision(updated, "rejected");
   }
   return updated || null;
 }

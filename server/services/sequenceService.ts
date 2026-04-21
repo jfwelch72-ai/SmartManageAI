@@ -226,6 +226,56 @@ export async function processDueExecutions(now: Date = new Date()): Promise<{ pr
         seqCache.set(s.id, s);
       }
 
+      // A/B variant selection: if step.variantGroup is set, randomly pick a sibling variant
+      // (or use the winner if a winner exists). Tracks selection via selectedVariantId.
+      if (step.variantGroup) {
+        try {
+          const variants = await db.select().from(crmSequenceSteps).where(and(
+            eq(crmSequenceSteps.sequenceId, step.sequenceId),
+            eq(crmSequenceSteps.variantGroup, step.variantGroup),
+          ));
+          if (variants.length > 1) {
+            const winner = variants.find((v) => v.isWinner);
+            const chosen = winner ?? variants[Math.floor(Math.random() * variants.length)];
+            if (chosen.id !== step.id) {
+              step = chosen as CrmSequenceStep;
+              stepCache.set(chosen.id, chosen as CrmSequenceStep);
+            }
+            await db.update(crmSequenceStepExecutions).set({ selectedVariantId: step.id }).where(eq(crmSequenceStepExecutions.id, exec.id));
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      // SMS step delivery
+      if (step.stepType === "SMS") {
+        try {
+          const { sendSms, isTwilioConfigured } = await import("./smsService");
+          if (!isTwilioConfigured()) {
+            await db.update(crmSequenceStepExecutions).set({ status: "SKIPPED", errorMessage: "Twilio not configured" }).where(eq(crmSequenceStepExecutions.id, exec.id));
+            continue;
+          }
+          const ctx = await buildMergeContext(enrollment.contactId, enrollment.senderId, enrollment.opportunityId);
+          const phone = (ctx.contact as any)?.phone;
+          if (!phone) {
+            await db.update(crmSequenceStepExecutions).set({ status: "SKIPPED", errorMessage: "Contact has no phone" }).where(eq(crmSequenceStepExecutions.id, exec.id));
+            continue;
+          }
+          const body = renderMergeTokens(step.body || "", ctx);
+          await sendSms(phone, body);
+          await db.update(crmSequenceStepExecutions).set({ status: "SENT", sentAt: new Date() }).where(eq(crmSequenceStepExecutions.id, exec.id));
+          await db.update(crmSequenceEnrollments)
+            .set({ currentStepIndex: enrollment.currentStepIndex + 1, lastActivityAt: new Date(), updatedAt: new Date() })
+            .where(eq(crmSequenceEnrollments.id, enrollment.id));
+          enrollment = { ...enrollment, currentStepIndex: enrollment.currentStepIndex + 1 };
+          enrollmentCache.set(enrollment.id, enrollment);
+          await scheduleNextStep(enrollment.id);
+        } catch (err: any) {
+          await db.update(crmSequenceStepExecutions).set({ status: "FAILED", errorMessage: err?.message ?? "SMS failed" }).where(eq(crmSequenceStepExecutions.id, exec.id));
+        }
+        processed++;
+        continue;
+      }
+
       if (step.stepType === "AUTOMATED_EMAIL") {
         // Daily send cap is enforced per organization (across ALL sequences in that org).
         // The cap value applied is the current sequence's dailySendCap.

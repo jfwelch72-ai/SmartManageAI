@@ -99,7 +99,7 @@ export const crmLeadScoringOperatorEnum = pgEnum("crm_lead_scoring_operator", ["
 
 // CRM Sequences / Cadences
 export const crmSequenceStatusEnum = pgEnum("crm_sequence_status", ["DRAFT", "ACTIVE", "ARCHIVED"]);
-export const crmSequenceStepTypeEnum = pgEnum("crm_sequence_step_type", ["AUTOMATED_EMAIL", "MANUAL_EMAIL", "CALL_TASK", "LINKEDIN_TASK", "TODO"]);
+export const crmSequenceStepTypeEnum = pgEnum("crm_sequence_step_type", ["AUTOMATED_EMAIL", "MANUAL_EMAIL", "CALL_TASK", "LINKEDIN_TASK", "TODO", "SMS"]);
 export const crmSequenceEnrollmentStatusEnum = pgEnum("crm_sequence_enrollment_status", ["ACTIVE", "PAUSED", "REPLIED", "BOUNCED", "FINISHED", "REMOVED"]);
 export const crmSequenceExecutionStatusEnum = pgEnum("crm_sequence_execution_status", ["PENDING", "SENT", "COMPLETED", "SKIPPED", "FAILED", "BOUNCED"]);
 export const crmSequenceEmailEventTypeEnum = pgEnum("crm_sequence_email_event_type", ["OPEN", "CLICK", "REPLY", "BOUNCE"]);
@@ -654,7 +654,17 @@ export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "g
 export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected"]);
 export const integrationEventStatusEnum = pgEnum("integration_event_status", ["queued", "processing", "sent", "failed", "dead_letter"]);
 export const approvalStatusEnum = pgEnum("approval_status_v2", ["pending", "approved", "rejected"]);
-export const approvalEntityTypeEnum = pgEnum("approval_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "VENDOR_BILL", "ESIGN_SEND", "QBO_EXPORT"]);
+export const approvalEntityTypeEnum = pgEnum("approval_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "VENDOR_BILL", "ESIGN_SEND", "QBO_EXPORT", "CRM_QUOTE", "CRM_OPPORTUNITY"]);
+
+// CRM Upgrade enums (lead forms, meeting booking, automation, imports)
+export const crmLeadFormStatusEnum = pgEnum("crm_lead_form_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
+export const crmLeadFormFieldTypeEnum = pgEnum("crm_lead_form_field_type", ["TEXT", "EMAIL", "PHONE", "TEXTAREA", "SELECT", "CHECKBOX", "NUMBER", "DATE"]);
+export const crmMeetingBookingStatusEnum = pgEnum("crm_meeting_booking_status", ["SCHEDULED", "CANCELED", "COMPLETED", "NO_SHOW"]);
+export const crmAutomationTriggerEnum = pgEnum("crm_automation_trigger", ["STAGE_CHANGE", "IDLE_DAYS", "SCORE_THRESHOLD", "FORM_SUBMIT", "FIELD_CHANGE", "EMAIL_REPLY"]);
+export const crmAutomationActionTypeEnum = pgEnum("crm_automation_action_type", ["ASSIGN", "NOTIFY", "CREATE_TASK", "ENROLL_SEQUENCE", "UPDATE_FIELD", "WEBHOOK", "SEND_SMS"]);
+export const crmCsvImportEntityEnum = pgEnum("crm_csv_import_entity", ["CONTACT", "ORGANISATION", "OPPORTUNITY"]);
+export const crmCsvImportStatusEnum = pgEnum("crm_csv_import_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "REVERTED"]);
+export const crmQuoteApprovalStatusEnum = pgEnum("crm_quote_approval_status", ["NOT_REQUIRED", "PENDING", "APPROVED", "REJECTED"]);
 export const documentRevisionStatusEnum = pgEnum("document_revision_status", ["active", "superseded"]);
 export const documentRevisionSourceEnum = pgEnum("document_revision_source", ["upload", "email", "import", "esign"]);
 

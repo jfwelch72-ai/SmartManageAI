@@ -176,6 +176,12 @@ import crmAnalyticsRoutes from "./crmAnalyticsRoutes";
 import crmDuplicatesRoutes from "./crmDuplicatesRoutes";
 import crmLeadScoringRoutes from "./crmLeadScoringRoutes";
 import publicQuoteAcceptRoutes from "./publicQuoteAcceptRoutes";
+import crmLeadFormsRoutes from "./crmLeadFormsRoutes";
+import crmMeetingRoutes from "./crmMeetingRoutes";
+import crmSlaRoutes from "./crmSlaRoutes";
+import crmAutomationsRoutes from "./crmAutomationsRoutes";
+import crmCsvImportRoutes from "./crmCsvImportRoutes";
+import crmCustomReportsRoutes from "./crmCustomReportsRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
 import notificationRoutes2 from "./notificationRoutes2";
 import notificationPreferencesRoutes from "./notificationPreferencesRoutes";
@@ -576,6 +582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(productionRateRoutes);
 
   // CRM Routes (consolidated: vendor, contact, pipeline, enrollment, pricing)
+  app.use(crmSlaRoutes);
   app.use(crmRoutes);
   app.use(crmTasksRoutes);
   app.use(sequenceRoutes);
@@ -588,6 +595,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(crmDuplicatesRoutes);
   app.use(crmLeadScoringRoutes);
   app.use(publicQuoteAcceptRoutes);
+  app.use(crmLeadFormsRoutes);
+  app.use(crmMeetingRoutes);
+  app.use(crmAutomationsRoutes);
+  app.use(crmCsvImportRoutes);
+  app.use(crmCustomReportsRoutes);
 
   // Location Routes (project locations + field takeoff)
   app.use(locationRoutes);

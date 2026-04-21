@@ -1,0 +1,207 @@
+import { db } from "../db";
+import {
+  crmAutomations, crmAutomationRuns,
+  crmOpportunities, crmTasks, crmContacts,
+  notifications,
+  crmSequenceEnrollments,
+} from "@shared/schema";
+import { and, eq } from "drizzle-orm";
+import { logInfo, logError } from "../utils/logger";
+import { sendSms, isTwilioConfigured } from "./smsService";
+
+export type AutomationTrigger = "STAGE_CHANGE" | "IDLE_DAYS" | "SCORE_THRESHOLD" | "FORM_SUBMIT" | "FIELD_CHANGE" | "EMAIL_REPLY";
+
+export interface AutomationContext {
+  orgId: string;
+  trigger: AutomationTrigger;
+  entityType: "OPPORTUNITY" | "CONTACT" | "ORGANISATION";
+  entityId: string;
+  context?: Record<string, any>;
+}
+
+interface ActionConfig {
+  type: "ASSIGN" | "NOTIFY" | "CREATE_TASK" | "ENROLL_SEQUENCE" | "UPDATE_FIELD" | "WEBHOOK" | "SEND_SMS";
+  config: Record<string, any>;
+}
+
+export async function runAutomationsForTrigger(ctx: AutomationContext): Promise<{ matched: number; executed: number }> {
+  const automations = await db.select().from(crmAutomations).where(and(
+    eq(crmAutomations.organizationId, ctx.orgId),
+    eq(crmAutomations.trigger, ctx.trigger),
+    eq(crmAutomations.isActive, true),
+  ));
+
+  let executed = 0;
+  for (const auto of automations) {
+    try {
+      if (!matchesTrigger(auto.triggerConfig as any, ctx)) continue;
+      const actions = (auto.actions as ActionConfig[]) || [];
+      for (const action of actions) {
+        await executeAction(action, auto.id, ctx);
+      }
+      await db.insert(crmAutomationRuns).values({
+        organizationId: ctx.orgId,
+        automationId: auto.id,
+        entityType: ctx.entityType,
+        entityId: ctx.entityId,
+        status: "SUCCESS",
+        details: { trigger: ctx.trigger, context: ctx.context ?? {} },
+      } as any);
+      executed++;
+    } catch (e) {
+      logError("Automation run failed", { automationId: auto.id }, e as Error);
+      try {
+        await db.insert(crmAutomationRuns).values({
+          organizationId: ctx.orgId,
+          automationId: auto.id,
+          entityType: ctx.entityType,
+          entityId: ctx.entityId,
+          status: "FAILED",
+          errorMessage: (e as Error).message,
+        } as any);
+      } catch { /* ignore */ }
+    }
+  }
+  if (executed > 0) logInfo("CRM automations executed", { trigger: ctx.trigger, executed, of: automations.length });
+  return { matched: automations.length, executed };
+}
+
+function matchesTrigger(cfg: Record<string, any> | null, ctx: AutomationContext): boolean {
+  if (!cfg) return true;
+  switch (ctx.trigger) {
+    case "STAGE_CHANGE": {
+      const newStage = ctx.context?.newStage;
+      const oldStage = ctx.context?.oldStage;
+      if (cfg.toStage && newStage !== cfg.toStage) return false;
+      if (cfg.fromStage && oldStage !== cfg.fromStage) return false;
+      return true;
+    }
+    case "SCORE_THRESHOLD": {
+      const score = ctx.context?.score ?? 0;
+      const min = Number(cfg.scoreMin ?? 0);
+      return score >= min;
+    }
+    case "IDLE_DAYS": {
+      const idle = ctx.context?.idleDays ?? 0;
+      return idle >= Number(cfg.idleDays ?? 7);
+    }
+    case "FORM_SUBMIT": {
+      if (cfg.formId && ctx.context?.formId !== cfg.formId) return false;
+      return true;
+    }
+    default:
+      return true;
+  }
+}
+
+async function executeAction(action: ActionConfig, automationId: string, ctx: AutomationContext): Promise<void> {
+  switch (action.type) {
+    case "ASSIGN": {
+      if (ctx.entityType !== "OPPORTUNITY") return;
+      const userId = action.config.userId;
+      if (!userId) return;
+      await db.update(crmOpportunities).set({ assignedToId: userId, updatedAt: new Date() })
+        .where(and(eq(crmOpportunities.id, ctx.entityId), eq(crmOpportunities.organizationId, ctx.orgId)));
+      return;
+    }
+    case "NOTIFY": {
+      const userIds: string[] = action.config.userIds || [];
+      const title = action.config.title || "CRM automation alert";
+      const message = action.config.message || `Triggered by ${ctx.trigger}`;
+      for (const uid of userIds) {
+        try {
+          await db.insert(notifications).values({
+            userId: uid,
+            organizationId: ctx.orgId,
+            type: "CRM_AUTOMATION",
+            title,
+            message,
+            relatedEntityId: ctx.entityId,
+            relatedEntityType: ctx.entityType === "OPPORTUNITY" ? "CRM_OPPORTUNITY" : "CRM_CONTACT",
+          } as any);
+        } catch { /* ignore */ }
+      }
+      return;
+    }
+    case "CREATE_TASK": {
+      const due = action.config.dueInDays ? new Date(Date.now() + Number(action.config.dueInDays) * 24 * 60 * 60 * 1000) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const opportunityId = ctx.entityType === "OPPORTUNITY" ? ctx.entityId : null;
+      const contactId = ctx.entityType === "CONTACT" ? ctx.entityId : null;
+      await db.insert(crmTasks).values({
+        organizationId: ctx.orgId,
+        title: action.config.title || "CRM automation task",
+        description: action.config.description || `Created by automation`,
+        dueDate: due,
+        assignedToId: action.config.assignedToId ?? null,
+        opportunityId,
+        contactId,
+      } as any);
+      return;
+    }
+    case "ENROLL_SEQUENCE": {
+      const sequenceId = action.config.sequenceId;
+      const senderId = action.config.senderId;
+      if (!sequenceId || !senderId) return;
+      let contactId = ctx.entityType === "CONTACT" ? ctx.entityId : null;
+      let opportunityId = ctx.entityType === "OPPORTUNITY" ? ctx.entityId : null;
+      if (opportunityId && !contactId) {
+        const [opp] = await db.select().from(crmOpportunities).where(eq(crmOpportunities.id, opportunityId)).limit(1);
+        if (opp?.contactId) contactId = opp.contactId;
+      }
+      if (!contactId) return;
+      try {
+        await db.insert(crmSequenceEnrollments).values({
+          organizationId: ctx.orgId,
+          sequenceId,
+          contactId,
+          opportunityId,
+          senderId,
+          status: "ACTIVE",
+          startAt: new Date(),
+        } as any);
+      } catch { /* unique constraint or other - ignore */ }
+      return;
+    }
+    case "UPDATE_FIELD": {
+      if (ctx.entityType !== "OPPORTUNITY") return;
+      const field = String(action.config.field || "");
+      const value = action.config.value;
+      const allowed = ["stage", "probability", "assignedToId", "source", "notes"];
+      if (!allowed.includes(field)) return;
+      await db.update(crmOpportunities).set({ [field]: value, updatedAt: new Date() } as any)
+        .where(and(eq(crmOpportunities.id, ctx.entityId), eq(crmOpportunities.organizationId, ctx.orgId)));
+      return;
+    }
+    case "WEBHOOK": {
+      const url = action.config.url;
+      if (!url) return;
+      try {
+        await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            automationId,
+            trigger: ctx.trigger,
+            entityType: ctx.entityType,
+            entityId: ctx.entityId,
+            context: ctx.context ?? {},
+          }),
+        });
+      } catch (e) {
+        logError("Webhook action failed", { url }, e as Error);
+      }
+      return;
+    }
+    case "SEND_SMS": {
+      if (!isTwilioConfigured()) return;
+      let phone = action.config.phone as string | undefined;
+      if (!phone && ctx.entityType === "CONTACT") {
+        const [c] = await db.select().from(crmContacts).where(eq(crmContacts.id, ctx.entityId)).limit(1);
+        phone = c?.phone ?? undefined;
+      }
+      if (!phone) return;
+      await sendSms(phone, action.config.message || "Update on your inquiry");
+      return;
+    }
+  }
+}

@@ -149,6 +149,10 @@ const CrmDealDetailPage = lazy(() => import("@/pages/crm-deal-detail"));
 const SequencesPage = lazy(() => import("@/pages/sequences"));
 const SequenceDetailPage = lazy(() => import("@/pages/sequence-detail"));
 const PublicLeadFormPage = lazy(() => import("@/pages/public-lead-form"));
+const PublicFormPage = lazy(() => import("@/pages/public-form"));
+const PublicBookingPage = lazy(() => import("@/pages/public-booking"));
+const CrmUpgradesPage = lazy(() => import("@/pages/crm-upgrades"));
+const FieldSalesPage = lazy(() => import("@/pages/field-sales"));
 const PublicQuoteAcceptPage = lazy(() => import("@/pages/public-quote-accept"));
 const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
 const EquipmentPage = lazy(() => import("@/pages/equipment"));
@@ -412,6 +416,10 @@ function Router() {
       <Route path="/sequences/:id" component={() => <ProtectedRoute component={SequenceDetailPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crm-settings" component={() => <ProtectedRoute component={CrmSettingsPage} permission={RoutePermissions.CRM} />} />
       <Route path="/leads/:orgSlug" component={PublicLeadFormPage} />
+      <Route path="/forms/:slug" component={PublicFormPage} />
+      <Route path="/book/:slug" component={PublicBookingPage} />
+      <Route path="/crm-upgrades" component={() => <ProtectedRoute component={CrmUpgradesPage} permission={RoutePermissions.CRM} />} />
+      <Route path="/field-sales" component={() => <ProtectedRoute component={FieldSalesPage} permission={RoutePermissions.CRM} />} />
       <Route path="/quotes/accept/:token" component={PublicQuoteAcceptPage} />
       <Route path="/scope-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=scope-settings" />} permission={RoutePermissions.SCOPE_SETTINGS} />} />
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />

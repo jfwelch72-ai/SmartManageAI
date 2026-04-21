@@ -246,6 +246,19 @@ router.post("/api/crm/quotes/:id/send-for-acceptance", requireAuth, requireRole(
     const [quote] = await db.select().from(crmQuotes).where(and(eq(crmQuotes.id, req.params.id), eq(crmQuotes.organizationId, orgId))).limit(1);
     if (!quote) return res.status(404).json({ error: "Quote not found" });
 
+    // Approval gating: large quotes require approval (>$25k by default)
+    const approvalThreshold = Number(process.env.CRM_QUOTE_APPROVAL_THRESHOLD ?? "25000");
+    const totalAmount = Number(quote.totalAmount ?? 0);
+    if (totalAmount >= approvalThreshold && quote.approvalStatus !== "APPROVED") {
+      if (quote.approvalStatus === "PENDING") {
+        return res.status(409).json({ error: "Quote already pending approval", approvalId: quote.approvalId });
+      }
+      const { createApprovalRequest } = await import("./services/approvalService");
+      const approval = await createApprovalRequest(orgId, "CRM_QUOTE" as any, quote.id, req.user!.id, `Quote ${quote.quoteNumber} (${totalAmount.toFixed(2)}) requires approval before sending.`);
+      await db.update(crmQuotes).set({ approvalStatus: "PENDING", approvalId: approval.id, updatedAt: new Date() }).where(eq(crmQuotes.id, quote.id));
+      return res.status(202).json({ ok: false, requiresApproval: true, approvalId: approval.id });
+    }
+
     const token = crypto.randomBytes(32).toString("base64url");
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const expiresAt = new Date(Date.now() + parsed.data.expiresInDays * 86400000);

@@ -1917,7 +1917,26 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
     const stageChange = safeData.stage && safeData.stage !== existing.stage;
     const patchExtras: Record<string, unknown> = {};
     if (stageChange) {
-      if (safeData.stage === "WON" && !existing.wonAt) patchExtras.wonAt = new Date();
+      patchExtras.stageEnteredAt = new Date();
+      patchExtras.slaBreachedAt = null;
+      patchExtras.needsAttentionReason = null;
+      if (safeData.stage === "WON" && !existing.wonAt) {
+        // Approval gating for high-value won deals
+        const wonThreshold = Number(process.env.CRM_OPPORTUNITY_WON_APPROVAL_THRESHOLD ?? "100000");
+        const dealValue = Number(existing.dealValue ?? 0);
+        if (dealValue >= wonThreshold) {
+          const { createApprovalRequest, getApprovalStatus } = await import("./services/approvalService");
+          const pending = await getApprovalStatus(existing.organizationId, "CRM_OPPORTUNITY", existing.id);
+          if (!pending || pending.status === "rejected") {
+            const approval = await createApprovalRequest(existing.organizationId, "CRM_OPPORTUNITY" as any, existing.id, req.user!.id, `Mark "${existing.name}" Won (deal value ${dealValue.toFixed(2)}) requires manager approval`);
+            return res.status(202).json({ ok: false, requiresApproval: true, approvalId: approval.id });
+          }
+          if (pending.status === "pending") {
+            return res.status(409).json({ error: "Won transition pending approval", approvalId: pending.id });
+          }
+        }
+        patchExtras.wonAt = new Date();
+      }
       if (safeData.stage === "LOST" && !existing.lostAt) patchExtras.lostAt = new Date();
     }
     // Recalc leadScore if any scorable field changed
@@ -1998,6 +2017,18 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
           newStage: safeData.stage,
         },
       });
+
+      // Fire CRM automations on stage change
+      try {
+        const { runAutomationsForTrigger } = await import("./services/crmAutomationEngine");
+        await runAutomationsForTrigger({
+          orgId: updated.organizationId,
+          trigger: "STAGE_CHANGE",
+          entityType: "OPPORTUNITY",
+          entityId: updated.id,
+          context: { oldStage: existing.stage, newStage: updated.stage, score: updated.leadScore ?? 0 },
+        });
+      } catch { /* non-fatal */ }
     }
 
     await db.insert(auditLog).values({
