@@ -57,6 +57,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "CRM_CONTACT_REASSIGNED",
   "CRM_OPPORTUNITY_REASSIGNED",
   "PROJECT_REASSIGNED",
+  "CRM_ORGANIZATION_REASSIGNED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

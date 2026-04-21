@@ -51,7 +51,7 @@ export async function insertNotification(values: InsertNotification): Promise<vo
 const REASSIGNMENT_COALESCE_WINDOW_MS = 5 * 60 * 1000;
 const PENDING_TABLE = "pending_contact_reassignment_notifications";
 
-export type ReassignmentKind = "contact" | "opportunity" | "project";
+export type ReassignmentKind = "contact" | "opportunity" | "project" | "organization";
 
 interface KindConfig {
   notificationType: NotificationRecord["type"];
@@ -91,6 +91,17 @@ const KIND_CONFIG: Record<ReassignmentKind, KindConfig> = {
     singularLabel: "project",
     pluralLabel: "projects",
     immediateTitle: "A project was assigned to you",
+    summaryIncludesNoun: true,
+  },
+  // Task #731: CRM organisations gained an explicit ownerId column, so owner
+  // reassignments can now route through the same coalescer as the other CRM
+  // entities and bundle into a single summary per recipient per window.
+  organization: {
+    notificationType: "CRM_ORGANIZATION_REASSIGNED" as NotificationRecord["type"],
+    relatedEntityType: "CRM_ORGANIZATION",
+    singularLabel: "CRM organization",
+    pluralLabel: "CRM organizations",
+    immediateTitle: "A CRM organization was assigned to you",
     summaryIncludesNoun: true,
   },
 };

@@ -19,6 +19,9 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // a separate email per record.
   "CRM_OPPORTUNITY_REASSIGNED",
   "PROJECT_REASSIGNED",
+  // Task #731: bundle the same coalesced reassignment notifications for CRM
+  // organisations now that the table has its own ownerId column.
+  "CRM_ORGANIZATION_REASSIGNED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {

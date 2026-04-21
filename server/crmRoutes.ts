@@ -869,6 +869,25 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         }
       }
 
+      // Task #731: track owner reassignment so we can notify the new owner.
+      // Mirrors the contact PUT pattern — only treat the owner as "provided"
+      // when the field is present in the body so partial updates don't clear
+      // it accidentally.
+      const ownerProvided = "ownerId" in (req.body ?? {});
+      const rawOwnerId = ownerProvided && typeof req.body.ownerId === "string" && req.body.ownerId.trim() !== ""
+        ? req.body.ownerId.trim()
+        : null;
+      if (ownerProvided && rawOwnerId && shouldFilter && orgId) {
+        const [ownerUser] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, rawOwnerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+          .limit(1);
+        if (!ownerUser) {
+          return res.status(400).json({ error: "Selected owner is not an active member of this organization" });
+        }
+      }
+
       const validationResult = insertCrmOrganisationSchema.partial().safeParse(updateBody);
       
       if (!validationResult.success) {
@@ -876,7 +895,14 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         return;
       }
       
-      const { organizationId: _, ...safeData } = validationResult.data;
+      const { organizationId: _, ...parsedData } = validationResult.data;
+      // Task #731: normalize the owner field into the persisted patch using
+      // the trimmed value we already validated above. Mirrors the contact PUT
+      // path so whitespace-only payloads consistently clear the owner instead
+      // of slipping past validation and then failing the FK at write time.
+      const safeData = ownerProvided
+        ? { ...parsedData, ownerId: rawOwnerId }
+        : parsedData;
 
       let updated: typeof existing;
       try {
@@ -919,12 +945,130 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "HUSTLER"
         newValue: JSON.stringify({ name: updated.name, type: updated.type }),
       });
 
+      // Task #731: notify the new owner (in-app + email) when the organisation
+      // owner actually changes to a different active user, routed through the
+      // coalescer so rapid-fire one-by-one reassignments collapse into a single
+      // summary instead of one email per organisation. Skip self-assignment,
+      // no-op updates, and clears (ownerId -> null).
+      if (
+        ownerProvided &&
+        rawOwnerId &&
+        rawOwnerId !== existing.ownerId &&
+        rawOwnerId !== req.user!.id
+      ) {
+        const reassignerName = [req.user!.firstName, req.user!.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || req.user!.email || "A teammate";
+        queueOwnerReassignmentNotification({
+          kind: "organization",
+          recipientUserId: rawOwnerId,
+          organizationId: updated.organizationId,
+          reassignerName,
+          entityId: updated.id,
+          entityName: updated.name || "an organization",
+        });
+      }
+
       const customFields = orgId ? await getCustomFieldsMap(orgId, "ORGANISATION", updated.id) : {};
       res.json({ ...updated, customFields });
     } catch (error) {
       next(error);
     }
   });
+
+  // Task #731: bulk re-assign owner across multiple CRM organisations in one
+  // call so the orgs table can offer a "Reassign owner" action on selected
+  // rows. Mirrors the contact bulk-reassign endpoint (Task #701) and emits a
+  // single summary notification to the new owner instead of one per row.
+  router.post(
+    "/api/crm/organisations/bulk-reassign-owner",
+    requireAuth,
+    requireRole("ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"),
+    async (req: AuthRequest, res, next) => {
+      try {
+        const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+        if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
+
+        const schema = z.object({
+          organisationIds: z.array(z.string().min(1)).min(1).max(500),
+          ownerId: z.union([z.string(), z.null()]),
+        });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        }
+        const { organisationIds } = parsed.data;
+        const newOwnerId = parsed.data.ownerId && parsed.data.ownerId.trim() !== "" ? parsed.data.ownerId.trim() : null;
+
+        if (newOwnerId && shouldFilter && orgId) {
+          const [ownerUser] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.id, newOwnerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+            .limit(1);
+          if (!ownerUser) {
+            return res.status(400).json({ error: "Selected owner is not an active member of this organization" });
+          }
+        }
+
+        const scopeConditions: SQL[] = [inArray(crmOrganisations.id, organisationIds)];
+        if (shouldFilter && orgId) scopeConditions.push(eq(crmOrganisations.organizationId, orgId));
+        // Only touch rows whose owner is actually changing so the notification
+        // count reflects real reassignments (not no-op updates).
+        scopeConditions.push(
+          newOwnerId === null
+            ? sql`${crmOrganisations.ownerId} IS NOT NULL`
+            : sql`${crmOrganisations.ownerId} IS DISTINCT FROM ${newOwnerId}`,
+        );
+
+        const updated = await db
+          .update(crmOrganisations)
+          .set({ ownerId: newOwnerId, updatedAt: new Date() })
+          .where(and(...scopeConditions))
+          .returning({ id: crmOrganisations.id, name: crmOrganisations.name });
+
+        if (updated.length > 0) {
+          await db.insert(auditLog).values(
+            updated.map((row) => ({
+              userId: req.user!.id,
+              action: "UPDATE" as const,
+              entityType: "crm_organisations",
+              entityId: row.id,
+              oldValue: null,
+              newValue: JSON.stringify({ ownerId: newOwnerId }),
+            })),
+          );
+
+          // Task #731: route every reassigned org through the coalescer so the
+          // shared 5-minute window bundles bulk + repeated single reassignments
+          // for the same recipient into one immediate + one summary notification
+          // instead of N separate emails. The coalescer fires the first event
+          // immediately and accumulates the rest into the summary.
+          if (newOwnerId && newOwnerId !== req.user!.id) {
+            const reassignerName = [req.user!.firstName, req.user!.lastName]
+              .filter(Boolean)
+              .join(" ")
+              .trim() || req.user!.email || "A teammate";
+            for (const row of updated) {
+              queueOwnerReassignmentNotification({
+                kind: "organization",
+                recipientUserId: newOwnerId,
+                organizationId: orgId ?? undefined,
+                reassignerName,
+                entityId: row.id,
+                entityName: row.name || "an organization",
+              });
+            }
+          }
+        }
+
+        res.json({ updated: updated.length, ownerId: newOwnerId });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.delete("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
     try {

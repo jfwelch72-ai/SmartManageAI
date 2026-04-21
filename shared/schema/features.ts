@@ -1487,6 +1487,10 @@ export const crmOrganisations = pgTable("crm_organisations", {
   primaryCertificationType: text("primary_certification_type"),
   primaryCertificationExpiration: date("primary_certification_expiration"),
   certificationsSummary: text("certifications_summary"),
+  // Task #731: explicit owner field on CRM organisations so reassignment events
+  // can be detected and notified through the coalesced reassignment helper,
+  // matching contacts/opportunities/projects.
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1496,6 +1500,7 @@ export const crmOrganisations = pgTable("crm_organisations", {
   nameIdx: index("crm_organisations_name_idx").on(table.name),
   isDeletedIdx: index("crm_organisations_is_deleted_idx").on(table.isDeleted),
   primaryCertIdx: index("crm_organisations_primary_cert_idx").on(table.primaryCertificationType),
+  ownerIdx: index("crm_organisations_owner_idx").on(table.ownerId),
 }));
 
 export const insertCrmOrganisationSchema = createInsertSchema(crmOrganisations).omit({ id: true, createdAt: true, updatedAt: true });

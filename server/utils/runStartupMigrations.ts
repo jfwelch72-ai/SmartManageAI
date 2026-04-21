@@ -56,6 +56,7 @@ import { ensureCrmContactTimezoneBackfill } from "./ensureCrmContactTimezoneBack
 import { ensureBirthdayReminderCadenceColumn } from "./ensureBirthdayReminderCadenceColumn";
 import { ensureJobMetricAlertTables } from "./ensureJobMetricAlertTables";
 import { ensurePendingContactReassignmentTable } from "./ensurePendingContactReassignmentTable";
+import { ensureCrmOrganisationOwnerColumn } from "./ensureCrmOrganisationOwnerColumn";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -121,6 +122,7 @@ const migrations: MigrationStep[] = [
   { name: "birthday_reminder_cadence_column", category: "ADD_COLUMN", fn: ensureBirthdayReminderCadenceColumn },
   { name: "job_metric_alert_tables", category: "CREATE_TABLE", fn: ensureJobMetricAlertTables },
   { name: "pending_contact_reassignment_notifications_table", category: "CREATE_TABLE", fn: ensurePendingContactReassignmentTable },
+  { name: "crm_organisation_owner_column", category: "ADD_COLUMN", fn: ensureCrmOrganisationOwnerColumn },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

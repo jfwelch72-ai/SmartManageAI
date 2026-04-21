@@ -105,6 +105,15 @@ export function getNotificationDestination(notification: {
       }
       return "/crm?tab=opportunities&assignedFilter=me";
 
+    case "CRM_ORGANIZATION_REASSIGNED":
+      // Task #731: deep-link from the immediate notification opens the
+      // assigned organisation's detail dialog; the bundled summary (no
+      // entityId) lands on the orgs tab so the new owner can review them.
+      if (relatedEntityId) {
+        return `/crm?tab=orgs&organisationId=${relatedEntityId}`;
+      }
+      return "/crm?tab=orgs";
+
     case "PROJECT_REASSIGNED":
       if (relatedEntityId) {
         return `/projects/${relatedEntityId}`;
