@@ -11,6 +11,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { runAutomationsForTrigger } from "./services/crmAutomationEngine";
+import { inferTimezoneFromUSState, isValidTimezone } from "@shared/timezones";
 import rateLimit from "express-rate-limit";
 
 const publicLeadFormLimiter = rateLimit({
@@ -145,12 +146,23 @@ router.post("/api/public/lead-forms/:slug/submit", publicLeadFormLimiter, async 
     const name: string = payload.name || payload.fullName || payload.full_name || `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim() || "Web Lead";
     const phone: string | undefined = payload.phone || payload.Phone || payload.phoneNumber;
     const company: string | undefined = payload.company || payload.companyName;
+    const stateRaw: string | undefined = payload.state || payload.State || payload.region;
+    const tzRaw: string | undefined = payload.timezone || payload.Timezone || payload.tz || payload.timeZone;
+    const submittedTz =
+      tzRaw && typeof tzRaw === "string" && isValidTimezone(tzRaw) ? tzRaw : null;
+    const inferredTz = submittedTz ?? inferTimezoneFromUSState(stateRaw ?? null);
 
     let contactId: string | null = null;
     if (email) {
       const [existing] = await db.select().from(crmContacts).where(and(eq(crmContacts.organizationId, form.organizationId), eq(crmContacts.email, email))).limit(1);
       if (existing) {
         contactId = existing.id;
+        if (inferredTz && !existing.timezone) {
+          await db
+            .update(crmContacts)
+            .set({ timezone: inferredTz, updatedAt: new Date() })
+            .where(eq(crmContacts.id, existing.id));
+        }
       } else {
         const orgName = company || "Web Leads";
         let [orgRow] = await db.select().from(crmOrganisations)
@@ -173,6 +185,7 @@ router.post("/api/public/lead-forms/:slug/submit", publicLeadFormLimiter, async 
           lastName,
           email,
           phone: phone ?? null,
+          timezone: inferredTz ?? null,
         } as any).returning();
         contactId = c.id;
       }

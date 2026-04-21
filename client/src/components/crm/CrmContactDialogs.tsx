@@ -7,8 +7,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import { ContactSequenceTimeline } from "@/components/crm/ContactSequenceTimeline";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit, User, Mail, Phone } from "lucide-react";
+import { Edit, User, Mail, Phone, Globe } from "lucide-react";
 import type { CrmContact } from "@shared/schema";
+import { COMMON_TIMEZONES } from "@shared/timezones";
 import { CrmCustomFieldsForm, CrmCustomFieldsDisplay, type CustomFieldsValue } from "./CrmCustomFieldsForm";
 
 type ContactRole = "PM" | "ESTIMATOR" | "SUPERINTENDENT" | "SALES" | "ACCOUNTS_PAYABLE" | "ACCOUNTS_RECEIVABLE" | "OWNER" | "GENERAL_MANAGER" | "FOREMAN" | "OTHER";
@@ -36,6 +37,7 @@ interface ContactFormState {
   mobile: string;
   isPrimary: boolean;
   notes: string;
+  timezone: string;
 }
 
 interface CrmContactDialogsProps {
@@ -146,6 +148,26 @@ function ContactFormFields({ newContact, setNewContact, prefix, customFields, se
             data-testid={`input-${prefix}contact-mobile`}
           />
         </div>
+      </div>
+      <div className="space-y-2">
+        <Label>Timezone</Label>
+        <Select
+          value={newContact.timezone || "__none__"}
+          onValueChange={(v) => setNewContact({ ...newContact, timezone: v === "__none__" ? "" : v })}
+        >
+          <SelectTrigger data-testid={`select-${prefix}contact-timezone`}>
+            <SelectValue placeholder="Select timezone" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">No timezone (use sender default)</SelectItem>
+            {COMMON_TIMEZONES.map((tz) => (
+              <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Used by optimized sends to land messages in this contact's local hours.
+        </p>
       </div>
       <div className="flex items-center gap-2">
         <input
@@ -321,6 +343,15 @@ export function CrmContactDialogs({
                 <div>
                   <p className="text-sm font-medium">Mobile</p>
                   <p className="text-sm text-muted-foreground">{selectedContact.mobile}</p>
+                </div>
+              </div>
+            )}
+            {selectedContact?.timezone && (
+              <div className="flex items-start gap-3" data-testid="text-contact-timezone">
+                <Globe className="w-5 h-5 mt-0.5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Timezone</p>
+                  <p className="text-sm text-muted-foreground">{selectedContact.timezone}</p>
                 </div>
               </div>
             )}

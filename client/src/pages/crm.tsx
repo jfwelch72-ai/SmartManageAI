@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { inferTimezoneFromUSState } from "@shared/timezones";
 import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
@@ -175,6 +176,7 @@ const DEFAULT_CONTACT = {
   mobile: "",
   isPrimary: false,
   notes: "",
+  timezone: "",
 };
 
 interface DupOrg {
@@ -673,6 +675,10 @@ export default function CRMPage() {
   };
   const handleCreateContactOpenChange = (open: boolean) => {
     setContactCustomFields({});
+    if (open) {
+      const suggestedTz = inferTimezoneFromUSState(selectedOrg?.state ?? null);
+      setNewContact({ ...DEFAULT_CONTACT, timezone: suggestedTz ?? "" });
+    }
     setCreateContactOpen(open);
   };
 
@@ -1021,6 +1027,7 @@ export default function CRMPage() {
       mobile: contact.mobile || "",
       isPrimary: contact.isPrimary,
       notes: contact.notes || "",
+      timezone: contact.timezone || "",
     });
     setContactCustomFields(contact.customFields ?? {});
     setSelectedContact(contact);

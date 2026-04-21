@@ -1348,6 +1348,7 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
         mobile: crmContacts.mobile,
         isPrimary: crmContacts.isPrimary,
         preferredContact: crmContacts.preferredContact,
+        timezone: crmContacts.timezone,
         notes: crmContacts.notes,
         createdAt: crmContacts.createdAt,
         updatedAt: crmContacts.updatedAt,
@@ -1415,6 +1416,9 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
 
     const validationResult = insertCrmContactSchema.safeParse({
       ...req.body,
+      timezone: typeof req.body?.timezone === "string" && req.body.timezone.trim() === ""
+        ? null
+        : req.body?.timezone,
       organizationId: orgId,
       createdById: req.user!.id,
     });
@@ -1503,7 +1507,13 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
       return;
     }
 
-    const validationResult = insertCrmContactSchema.partial().safeParse(req.body);
+    const updateBody = {
+      ...req.body,
+      ...(typeof req.body?.timezone === "string" && req.body.timezone.trim() === ""
+        ? { timezone: null }
+        : {}),
+    };
+    const validationResult = insertCrmContactSchema.partial().safeParse(updateBody);
     if (!validationResult.success) {
       res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
       return;
