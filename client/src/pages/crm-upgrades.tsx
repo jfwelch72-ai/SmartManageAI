@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Papa from "papaparse";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -312,28 +312,49 @@ function ImportPanel() {
       return hasActive ? 2000 : false;
     },
   });
-  const [csvText, setCsvText] = useState("");
   const [entity, setEntity] = useState<string>("CONTACT");
+  const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const parseCsvFile = (f: File) => new Promise<{ headers: string[]; rows: Record<string, any>[] }>((resolve, reject) => {
+    Papa.parse<Record<string, any>>(f, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim(),
+      complete: (results) => {
+        if (results.errors && results.errors.length > 0) {
+          const first = results.errors[0];
+          reject(new Error(`CSV parse error on row ${first.row ?? "?"}: ${first.message}`));
+          return;
+        }
+        const headers = (results.meta.fields || []).map((h) => h.trim());
+        if (headers.length === 0) {
+          reject(new Error("CSV is missing a header row"));
+          return;
+        }
+        const rows = (results.data || []).filter((r) => r && Object.keys(r).length > 0);
+        if (rows.length === 0) {
+          reject(new Error("Need header + at least 1 row"));
+          return;
+        }
+        resolve({ headers, rows });
+      },
+      error: (err) => reject(err),
+    });
+  });
 
   const submit = useMutation({
     mutationFn: async () => {
-      const lines = csvText.trim().split("\n");
-      if (lines.length < 2) throw new Error("Need header + at least 1 row");
-      const headers = lines[0].split(",").map((h) => h.trim());
-      const rows = lines.slice(1).map((line) => {
-        const cols = line.split(",");
-        const obj: Record<string, any> = {};
-        headers.forEach((h, i) => { obj[h] = (cols[i] || "").trim(); });
-        return obj;
-      });
-      // Simple identity mapping (csvCol → schemaField)
+      if (!file) throw new Error("Please choose a CSV file");
+      const { headers, rows } = await parseCsvFile(file);
       const mapping: Record<string, string> = {};
       headers.forEach((h) => { mapping[h] = h; });
-      return apiRequest("POST", "/api/crm/csv-imports", { entityType: entity, mapping, rows, filename: "paste.csv" });
+      return apiRequest("POST", "/api/crm/csv-imports", { entityType: entity, mapping, rows, filename: file.name });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/csv-imports"] });
-      setCsvText("");
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       toast({ title: "Import queued", description: "We'll process the rows in the background — progress will update below." });
     },
     onError: (e: any) => toast({ title: "Import failed", description: e.message, variant: "destructive" }),
@@ -355,7 +376,7 @@ function ImportPanel() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Paste CSV (with header row). Column names should match field names (e.g. fullName, email, phone). Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Upload a CSV file (with header row). Column names should match field names (e.g. fullName, email, phone). Quoted fields, embedded commas, and CRLF line endings are supported. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
         <Select value={entity} onValueChange={setEntity}>
           <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
@@ -365,8 +386,25 @@ function ImportPanel() {
             <SelectItem value="OPPORTUNITY">Opportunities</SelectItem>
           </SelectContent>
         </Select>
-        <Textarea rows={8} placeholder="fullName,email,phone&#10;Jane Doe,jane@example.com,555-0100" value={csvText} onChange={(e) => setCsvText(e.target.value)} data-testid="input-csv" />
-        <Button onClick={() => submit.mutate()} disabled={!csvText || submit.isPending} data-testid="button-import"><Upload className="h-4 w-4 mr-1" />Import</Button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            data-testid="input-csv-file"
+          />
+          <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-choose-file">
+            <Upload className="h-4 w-4 mr-1" />Choose file
+          </Button>
+          <span className="text-sm text-muted-foreground" data-testid="text-csv-filename">
+            {file ? file.name : "No file selected"}
+          </span>
+        </div>
+        <Button onClick={() => submit.mutate()} disabled={!file || submit.isPending} data-testid="button-import">
+          {submit.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}Import
+        </Button>
         <div className="pt-3 border-t">
           <h4 className="font-medium mb-2">Recent imports</h4>
           {(jobs as any[]).map((j) => {
