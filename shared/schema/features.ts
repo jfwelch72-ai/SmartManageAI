@@ -8650,6 +8650,8 @@ export const userSettings = pgTable("user_settings", {
   // Defaults to false (opted in) so existing recipients keep receiving the
   // digest until they explicitly silence it from notification preferences.
   crmBirthdayDigestOptOut: boolean("crm_birthday_digest_opt_out").notNull().default(false),
+  birthdayDigestWeekday: integer("birthday_digest_weekday").notNull().default(1),
+  birthdayDigestHour: integer("birthday_digest_hour").notNull().default(8),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -8658,6 +8660,9 @@ export const userSettings = pgTable("user_settings", {
 
 export const TABLE_DENSITY_VALUES = ["COMPACT", "COZY", "COMFORTABLE"] as const;
 export type TableDensity = (typeof TABLE_DENSITY_VALUES)[number];
+
+export const BIRTHDAY_DIGEST_DEFAULT_WEEKDAY = 1;
+export const BIRTHDAY_DIGEST_DEFAULT_HOUR = 8;
 
 export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;

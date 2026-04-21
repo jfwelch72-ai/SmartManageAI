@@ -44,7 +44,25 @@ interface SettingsData {
   dateFormat: string;
   timeFormat: string;
   timezone: string | null;
+  birthdayDigestWeekday: number;
+  birthdayDigestHour: number;
 }
+
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+];
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => {
+  const display12 = ((h + 11) % 12) + 1;
+  const ampm = h < 12 ? "AM" : "PM";
+  return { value: h, label: `${display12}:00 ${ampm} (${String(h).padStart(2, "0")}:00)` };
+});
 
 interface ActivityLogEntry {
   id: string;
@@ -358,12 +376,14 @@ function PreferencesSection() {
     );
   }
 
-  const currentSettings = settings || {
+  const currentSettings: SettingsData = settings || {
     themePreference: "system",
     defaultLandingPage: "/dashboard",
     dateFormat: "MM/DD/YYYY",
     timeFormat: "12h",
     timezone: user?.timezone || null,
+    birthdayDigestWeekday: 1,
+    birthdayDigestHour: 8,
   };
 
   return (
@@ -530,6 +550,57 @@ function PreferencesSection() {
               <SelectContent>
                 {TIMEZONES.map((tz) => (
                   <SelectItem key={tz} value={tz} data-testid={`select-item-tz-${tz}`}>{tz}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            Birthday Digest Delivery
+          </CardTitle>
+          <CardDescription>
+            Choose when you'd like to receive the weekly CRM contact birthday digest. Times are in your local timezone.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium">Day of Week</Label>
+            <Select
+              value={String(currentSettings.birthdayDigestWeekday)}
+              onValueChange={(val) => updateSettingsMutation.mutate({ birthdayDigestWeekday: parseInt(val, 10) })}
+            >
+              <SelectTrigger className="mt-1" data-testid="select-birthday-digest-weekday">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WEEKDAY_OPTIONS.map((d) => (
+                  <SelectItem key={d.value} value={String(d.value)} data-testid={`select-item-birthday-weekday-${d.value}`}>
+                    {d.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Hour of Day</Label>
+            <Select
+              value={String(currentSettings.birthdayDigestHour)}
+              onValueChange={(val) => updateSettingsMutation.mutate({ birthdayDigestHour: parseInt(val, 10) })}
+            >
+              <SelectTrigger className="mt-1" data-testid="select-birthday-digest-hour">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {HOUR_OPTIONS.map((h) => (
+                  <SelectItem key={h.value} value={String(h.value)} data-testid={`select-item-birthday-hour-${h.value}`}>
+                    {h.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

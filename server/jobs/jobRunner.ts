@@ -7,7 +7,7 @@ import { logInfo, logError } from "../utils/logger";
 import { recordJobMetrics } from "../utils/jobMetrics";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, type InsertNotification } from "@shared/schema";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -2159,8 +2159,6 @@ export function getLocalDateParts(now: Date, timezone: string): {
 
 const BIRTHDAY_DIGEST_RELATED_ENTITY_TYPE = "CRM_CONTACT_BIRTHDAY";
 const BIRTHDAY_DIGEST_DEDUPE_DAYS = 7;
-const BIRTHDAY_DIGEST_TARGET_WEEKDAY = 1; // Monday
-const BIRTHDAY_DIGEST_TARGET_HOUR = 8;    // 8am local
 
 export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: boolean } = {}) {
   const ignoreTimeOfDay = opts.ignoreTimeOfDay === true;
@@ -2225,7 +2223,12 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
       // page (NULL row) keep the existing default-on behaviour. Only rows
       // explicitly flagged opt-out are excluded.
       const recipients = await db
-        .select({ id: users.id, timezone: users.timezone })
+        .select({
+          id: users.id,
+          timezone: users.timezone,
+          weekdayPref: userSettings.birthdayDigestWeekday,
+          hourPref: userSettings.birthdayDigestHour,
+        })
         .from(users)
         .leftJoin(userSettings, eq(userSettings.userId, users.id))
         .where(and(
@@ -2247,23 +2250,27 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
       if (weeklyRecipients.length === 0) continue;
 
       // Resolve each recipient's effective timezone and current local
-      // wall-clock once. We need both the time-of-day (to gate Monday 8am
-      // local) and the calendar Y/M/D (to compute the upcoming-birthday
-      // window from the user's local date, not the server's).
+      // wall-clock once. We need both the time-of-day (to gate the user's
+      // chosen weekday/hour) and the calendar Y/M/D (to compute the
+      // upcoming-birthday window from the user's local date, not the
+      // server's). Each user can pick their preferred delivery weekday/hour
+      // in App Preferences; defaults are Mon 8am local.
       const recipientLocal = weeklyRecipients.map((u) => {
         const tz = u.timezone && isValidTimezone(u.timezone) ? u.timezone : serverTz;
         const local = getLocalDateParts(now, tz);
-        return { id: u.id, tz, local };
+        const targetWeekday = u.weekdayPref ?? BIRTHDAY_DIGEST_DEFAULT_WEEKDAY;
+        const targetHour = u.hourPref ?? BIRTHDAY_DIGEST_DEFAULT_HOUR;
+        return { id: u.id, tz, local, targetWeekday, targetHour };
       });
 
-      // Filter to recipients whose local wall-clock is currently Monday 8am.
-      // When triggered manually (ignoreTimeOfDay), keep all of them.
+      // Filter to recipients whose local wall-clock matches their preferred
+      // weekday/hour. When triggered manually (ignoreTimeOfDay), keep all.
       const eligible = ignoreTimeOfDay
         ? recipientLocal
         : recipientLocal.filter((r) => {
             const match =
-              r.local.weekday === BIRTHDAY_DIGEST_TARGET_WEEKDAY &&
-              r.local.hour === BIRTHDAY_DIGEST_TARGET_HOUR;
+              r.local.weekday === r.targetWeekday &&
+              r.local.hour === r.targetHour;
             if (!match) totalSkippedTimeOfDay++;
             return match;
           });
