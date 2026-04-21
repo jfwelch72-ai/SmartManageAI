@@ -46,14 +46,15 @@
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
-import { notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
-import { requireAuth, type AuthRequest } from "./auth";
-import { eq } from "drizzle-orm";
+import { notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum, jobMetricAlertEvents } from "@shared/schema";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { desc, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 import { isValidE164, isTwilioConfigured } from "./services/smsService";
 import { isValidTeamsWebhookUrl } from "./services/teamsService";
 import { isValidSlackWebhookUrl } from "./services/slackService";
 import { hasFeature } from "./services/featureAccess";
+import { buildDigestCsv } from "./utils/jobMetricAlerts";
 
 const router = Router();
 
@@ -341,5 +342,105 @@ router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: A
     next(error);
   }
 });
+
+/**
+ * Task #772 — Stream a real CSV sample of past digest alerts so Super
+ * Admins can validate it opens cleanly in their spreadsheet tool before
+ * opting into the digest CSV attachment. Pulls up to 50 of the most
+ * recent `jobMetricAlertEvents` from the last 30 days; if there are
+ * none, falls back to a deterministic synthetic set so the file is
+ * never empty (admins still need a representative sample to test with).
+ *
+ * Auth-gated to SUPER_ADMIN — same role that owns the digest toggle.
+ */
+const SAMPLE_LIMIT = 50;
+const SAMPLE_LOOKBACK_DAYS = 30;
+
+function buildSyntheticDigestSample(): Array<{
+  job: string;
+  counter: string | null;
+  kind: string;
+  message: string;
+  triggeredAt: Date;
+  emailed: boolean;
+}> {
+  const base = Date.UTC(2026, 3, 21, 2, 14, 0);
+  const HOUR = 60 * 60 * 1000;
+  return [
+    {
+      job: "JOB-104",
+      counter: "labor_hours",
+      kind: "spike",
+      message: "Labor hours 112% of budget",
+      triggeredAt: new Date(base),
+      emailed: true,
+    },
+    {
+      job: "JOB-217",
+      counter: "material_cost",
+      kind: "spike",
+      message: 'Forecast exceeds budget by $4,820 — vendor "Acme, Inc." flagged',
+      triggeredAt: new Date(base + HOUR),
+      emailed: true,
+    },
+    {
+      job: "JOB-309",
+      counter: "schedule_variance",
+      kind: "stall",
+      message: "Critical path slipped 3 days\n(rain delay reported by foreman)",
+      triggeredAt: new Date(base + 3 * HOUR),
+      emailed: false,
+    },
+  ];
+}
+
+router.get(
+  "/api/notifications/digest-csv-sample",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (_req: AuthRequest, res, next) => {
+    try {
+      const since = new Date(Date.now() - SAMPLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+      const rows = await db
+        .select({
+          job: jobMetricAlertEvents.job,
+          counter: jobMetricAlertEvents.counter,
+          kind: jobMetricAlertEvents.kind,
+          message: jobMetricAlertEvents.message,
+          triggeredAt: jobMetricAlertEvents.triggeredAt,
+          emailed: jobMetricAlertEvents.emailed,
+        })
+        .from(jobMetricAlertEvents)
+        .where(gte(jobMetricAlertEvents.triggeredAt, since))
+        .orderBy(desc(jobMetricAlertEvents.triggeredAt))
+        .limit(SAMPLE_LIMIT);
+
+      const events =
+        rows.length > 0
+          ? rows
+              .map((r) => ({
+                job: r.job,
+                counter: r.counter,
+                kind: r.kind,
+                message: r.message,
+                triggeredAt: new Date(r.triggeredAt),
+                emailed: r.emailed,
+              }))
+              .reverse() // oldest first to match digest output ordering
+          : buildSyntheticDigestSample();
+
+      const csv = buildDigestCsv(events);
+      const filename = `digest-csv-sample_${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Digest-Csv-Sample-Source", rows.length > 0 ? "live" : "synthetic");
+      res.send(csv);
+    } catch (error) {
+      logError("Failed to build digest CSV sample", { error: String(error) });
+      next(error);
+    }
+  },
+);
 
 export default router;

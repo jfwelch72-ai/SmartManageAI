@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon } from "lucide-react";
+import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon, Download } from "lucide-react";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -591,6 +591,55 @@ export default function NotificationPrefsSection() {
   function handleQuietDigestCsvToggle(enabled: boolean) {
     setQuietDigestCsvEnabled(enabled);
     updateQuietDigestCsvMutation.mutate(enabled);
+  }
+
+  // Task #772: download a real CSV sample (using the user's recent
+  // alert events when available, or a deterministic synthetic set
+  // otherwise) so admins can validate it opens cleanly in their
+  // spreadsheet tool before opting into the digest CSV attachment.
+  const [isDownloadingDigestCsvSample, setIsDownloadingDigestCsvSample] = useState(false);
+  async function handleDownloadDigestCsvSample() {
+    if (isDownloadingDigestCsvSample) return;
+    setIsDownloadingDigestCsvSample(true);
+    try {
+      const res = await fetch("/api/notifications/digest-csv-sample", {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Download failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = /filename="?([^";]+)"?/.exec(disposition);
+      const filename = match?.[1] || `digest-csv-sample_${new Date().toISOString().slice(0, 10)}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Defer revoke so the click has a chance to start the download.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const source = res.headers.get("X-Digest-Csv-Sample-Source");
+      toast({
+        title: "Sample downloaded",
+        description:
+          source === "synthetic"
+            ? "No recent alerts found, so a representative sample was provided."
+            : "Saved a CSV of your most recent digest alerts.",
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to download sample",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloadingDigestCsvSample(false);
+    }
   }
 
   function handleSaveQuietHours() {
@@ -1215,7 +1264,25 @@ export default function NotificationPrefsSection() {
                               />
                             </div>
                             <div className="mt-3" data-testid="preview-job-metric-alert-quiet-hours-digest-csv">
-                              <p className="text-xs font-semibold text-muted-foreground mb-1.5">Sample columns</p>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <p className="text-xs font-semibold text-muted-foreground">Sample columns</p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1.5 text-xs"
+                                  onClick={handleDownloadDigestCsvSample}
+                                  disabled={isDownloadingDigestCsvSample}
+                                  data-testid="button-download-digest-csv-sample"
+                                >
+                                  {isDownloadingDigestCsvSample ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Download className="h-3 w-3" />
+                                  )}
+                                  Download sample
+                                </Button>
+                              </div>
                               <div className="overflow-x-auto rounded-md border border-border bg-muted/30">
                                 <table className="w-full text-xs">
                                   <thead className="bg-muted/60 text-muted-foreground">
