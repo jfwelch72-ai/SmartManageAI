@@ -57,12 +57,16 @@ import { hasFeature } from "./services/featureAccess";
 
 const router = Router();
 
+const BIRTHDAY_REMINDER_CADENCES = ["OFF", "DAILY_TODAY", "DAILY_LOOKAHEAD", "WEEKLY"] as const;
+type BirthdayReminderCadence = typeof BIRTHDAY_REMINDER_CADENCES[number];
+
 const channelPrefsSchema = z.object({
   emailEnabled: z.boolean(),
   smsEnabled: z.boolean(),
   pushEnabled: z.boolean(),
   teamsEnabled: z.boolean(),
   slackEnabled: z.boolean(),
+  birthdayReminderCadence: z.enum(BIRTHDAY_REMINDER_CADENCES).optional(),
 });
 
 const typePrefsSchema = z.record(
@@ -111,6 +115,7 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
             smsPhoneNumber: channelRow.smsPhoneNumber ?? null,
             teamsWebhookUrl: channelRow.teamsWebhookUrl ?? null,
             slackWebhookUrl: channelRow.slackWebhookUrl ?? null,
+            birthdayReminderCadence: channelRow.birthdayReminderCadence ?? "DAILY_LOOKAHEAD",
           }
         : {
             emailEnabled: false,
@@ -121,6 +126,7 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
             smsPhoneNumber: null,
             teamsWebhookUrl: null,
             slackWebhookUrl: null,
+            birthdayReminderCadence: "DAILY_LOOKAHEAD" as BirthdayReminderCadence,
           },
       typeOverrides: typeRows.map((r) => ({
         notificationType: r.notificationType,
@@ -163,6 +169,8 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
       });
     }
 
+    const cadence = (channel.birthdayReminderCadence ?? "DAILY_LOOKAHEAD") as BirthdayReminderCadence;
+
     if (enterpriseNotifs) {
       await db
         .insert(notificationChannelPrefs)
@@ -173,6 +181,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
           pushEnabled: channel.pushEnabled,
           teamsEnabled: channel.teamsEnabled,
           slackEnabled: channel.slackEnabled,
+          birthdayReminderCadence: cadence,
           updatedAt: now,
         })
         .onConflictDoUpdate({
@@ -183,6 +192,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
             pushEnabled: channel.pushEnabled,
             teamsEnabled: channel.teamsEnabled,
             slackEnabled: channel.slackEnabled,
+            birthdayReminderCadence: cadence,
             updatedAt: now,
           },
         });
@@ -196,6 +206,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
           pushEnabled: channel.pushEnabled,
           teamsEnabled: false,
           slackEnabled: false,
+          birthdayReminderCadence: cadence,
           updatedAt: now,
         })
         .onConflictDoUpdate({
@@ -203,6 +214,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
           set: {
             emailEnabled: channel.emailEnabled,
             pushEnabled: channel.pushEnabled,
+            birthdayReminderCadence: cadence,
             updatedAt: now,
           },
         });

@@ -11,8 +11,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Bell, Loader2, Lock, AlertCircle } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Bell, Loader2, Lock, AlertCircle, Cake } from "lucide-react";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
+
+type BirthdayReminderCadence = "OFF" | "DAILY_TODAY" | "DAILY_LOOKAHEAD" | "WEEKLY";
 
 interface ChannelPrefsData {
   emailEnabled: boolean;
@@ -23,7 +26,15 @@ interface ChannelPrefsData {
   smsPhoneNumber: string | null;
   teamsWebhookUrl: string | null;
   slackWebhookUrl: string | null;
+  birthdayReminderCadence: BirthdayReminderCadence;
 }
+
+const BIRTHDAY_CADENCE_OPTIONS: { value: BirthdayReminderCadence; label: string; description: string }[] = [
+  { value: "OFF", label: "Off", description: "Don't email me about CRM contact birthdays." },
+  { value: "DAILY_TODAY", label: "Daily — today only", description: "Email each morning, but only when a contact's birthday is today." },
+  { value: "DAILY_LOOKAHEAD", label: "Daily — today + next few days", description: "Email each morning, including birthdays in the next two days." },
+  { value: "WEEKLY", label: "Weekly digest", description: "One Monday-morning summary of birthdays for the week ahead." },
+];
 
 interface TypeOverride {
   notificationType: string;
@@ -133,6 +144,7 @@ export default function NotificationPrefsSection() {
     emailEnabled: false, smsEnabled: false, pushEnabled: false,
     teamsEnabled: false, slackEnabled: false,
     smsPhoneNumber: null, teamsWebhookUrl: null, slackWebhookUrl: null,
+    birthdayReminderCadence: "DAILY_LOOKAHEAD",
   });
 
   const [smsPhoneInput, setSmsPhoneInput] = useState("");
@@ -159,6 +171,7 @@ export default function NotificationPrefsSection() {
         smsPhoneNumber: notifPrefs.channel.smsPhoneNumber ?? null,
         teamsWebhookUrl: notifPrefs.channel.teamsWebhookUrl ?? null,
         slackWebhookUrl: notifPrefs.channel.slackWebhookUrl ?? null,
+        birthdayReminderCadence: (notifPrefs.channel.birthdayReminderCadence ?? "DAILY_LOOKAHEAD") as BirthdayReminderCadence,
       });
       setSmsPhoneInput(notifPrefs.channel.smsPhoneNumber ?? "");
       setTeamsWebhookInput(notifPrefs.channel.teamsWebhookUrl ?? "");
@@ -473,21 +486,34 @@ export default function NotificationPrefsSection() {
                 </Button>
               )}
 
-              <div>
-                <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">CRM Digests</h3>
-                <p className="text-xs text-muted-foreground mb-3">Silence recurring CRM summaries that aren't relevant to your role.</p>
-                <div className="flex items-center justify-between py-1" data-testid="row-pref-crm-birthday-digest">
-                  <div>
-                    <p className="text-sm font-medium">Weekly CRM birthday digest</p>
-                    <p className="text-xs text-muted-foreground">Monday morning summary of upcoming CRM contact birthdays this week.</p>
-                  </div>
-                  <Switch
-                    checked={!crmBirthdayDigestOptOut}
-                    disabled={loadingUserSettings || updateCrmBirthdayDigestMutation.isPending}
-                    onCheckedChange={handleCrmBirthdayDigestToggle}
-                    data-testid="switch-pref-crm-birthday-digest"
-                  />
-                </div>
+              <div data-testid="section-birthday-reminder-cadence">
+                <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <Cake className="h-4 w-4" />
+                  CRM Contact Birthday Reminders
+                </h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Choose how often you want to be emailed about CRM contact birthdays. This setting is independent of other reminders.
+                </p>
+                <RadioGroup
+                  value={channelPrefs.birthdayReminderCadence}
+                  onValueChange={(v) => setChannelPrefs((p) => ({ ...p, birthdayReminderCadence: v as BirthdayReminderCadence }))}
+                  className="space-y-2"
+                >
+                  {BIRTHDAY_CADENCE_OPTIONS.map((opt) => (
+                    <div key={opt.value} className="flex items-start gap-3" data-testid={`row-birthday-cadence-${opt.value}`}>
+                      <RadioGroupItem
+                        value={opt.value}
+                        id={`birthday-cadence-${opt.value}`}
+                        className="mt-1"
+                        data-testid={`radio-birthday-cadence-${opt.value}`}
+                      />
+                      <Label htmlFor={`birthday-cadence-${opt.value}`} className="flex-1 cursor-pointer">
+                        <div className="text-sm font-medium">{opt.label}</div>
+                        <div className="text-xs text-muted-foreground">{opt.description}</div>
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
               </div>
 
               {channelPrefs.emailEnabled && (

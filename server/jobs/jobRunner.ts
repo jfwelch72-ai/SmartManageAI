@@ -6,7 +6,7 @@ import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, type InsertNotification } from "@shared/schema";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -2068,6 +2068,22 @@ async function processCrmIdleAutomations() {
 }
 
 
+// Task #698: per-user birthday reminder cadence. Returns a map of userId →
+// cadence (defaults to DAILY_LOOKAHEAD when no row exists for the user, which
+// matches the database default and preserves prior behaviour).
+type BirthdayCadence = "OFF" | "DAILY_TODAY" | "DAILY_LOOKAHEAD" | "WEEKLY";
+async function loadBirthdayCadences(userIds: string[]): Promise<Map<string, BirthdayCadence>> {
+  const out = new Map<string, BirthdayCadence>();
+  if (userIds.length === 0) return out;
+  const rows = await db
+    .select({ userId: notificationChannelPrefs.userId, cadence: notificationChannelPrefs.birthdayReminderCadence })
+    .from(notificationChannelPrefs)
+    .where(inArray(notificationChannelPrefs.userId, userIds));
+  for (const r of rows) out.set(r.userId, (r.cadence as BirthdayCadence) ?? "DAILY_LOOKAHEAD");
+  for (const id of userIds) if (!out.has(id)) out.set(id, "DAILY_LOOKAHEAD");
+  return out;
+}
+
 // Server-side fallback timezone used when a recipient has no saved
 // preference. We use process.env.TZ when set so operators can override the
 // container's wall-clock zone via the standard env var; otherwise fall back
@@ -2191,11 +2207,18 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
         ));
       if (recipients.length === 0) continue;
 
+      // Task #698: weekly digest only goes to users whose birthday reminder
+      // cadence is explicitly WEEKLY. Default cadence is DAILY_LOOKAHEAD, so
+      // existing users must opt in to keep receiving the weekly summary.
+      const weeklyCadenceMap = await loadBirthdayCadences(recipients.map((r) => r.id));
+      const weeklyRecipients = recipients.filter((r) => weeklyCadenceMap.get(r.id) === "WEEKLY");
+      if (weeklyRecipients.length === 0) continue;
+
       // Resolve each recipient's effective timezone and current local
       // wall-clock once. We need both the time-of-day (to gate Monday 8am
       // local) and the calendar Y/M/D (to compute the upcoming-birthday
       // window from the user's local date, not the server's).
-      const recipientLocal = recipients.map((u) => {
+      const recipientLocal = weeklyRecipients.map((u) => {
         const tz = u.timezone && isValidTimezone(u.timezone) ? u.timezone : serverTz;
         const local = getLocalDateParts(now, tz);
         return { id: u.id, tz, local };
@@ -2459,6 +2482,20 @@ async function processCrmContactBirthdayDailyDigest() {
         fallbackRecipientIds = fallbackRows.map((r) => r.id);
       }
 
+      // Task #698: load cadence prefs for all candidate recipients (owners +
+      // fallback) so we can drop OFF/WEEKLY users entirely and trim
+      // lookahead-only items for users who chose DAILY_TODAY.
+      const allRecipientIds = Array.from(new Set([...byOwner.keys(), ...fallbackRecipientIds]));
+      const cadenceMap = await loadBirthdayCadences(allRecipientIds);
+      const isDailyOptedIn = (id: string) => {
+        const c = cadenceMap.get(id) ?? "DAILY_LOOKAHEAD";
+        return c === "DAILY_TODAY" || c === "DAILY_LOOKAHEAD";
+      };
+      const trimItemsForCadence = (id: string, items: Item[]): Item[] => {
+        const c = cadenceMap.get(id) ?? "DAILY_LOOKAHEAD";
+        return c === "DAILY_TODAY" ? items.filter((i) => i.daysUntil === 0) : items;
+      };
+
       const buildDigest = (items: Item[]): { title: string; message: string } => {
         items.sort((a, b) => a.daysUntil - b.daysUntil || a.name.localeCompare(b.name));
         const todayCount = items.filter((i) => i.daysUntil === 0).length;
@@ -2483,8 +2520,11 @@ async function processCrmContactBirthdayDailyDigest() {
       const notifs: InsertNotification[] = [];
 
       for (const [ownerId, items] of byOwner.entries()) {
-        // Only include orphans in fallback digest, not in per-owner digests.
-        const { title, message } = buildDigest(items);
+        // Task #698: respect this owner's birthday cadence preference.
+        if (!isDailyOptedIn(ownerId)) continue;
+        const trimmed = trimItemsForCadence(ownerId, items);
+        if (trimmed.length === 0) continue;
+        const { title, message } = buildDigest(trimmed);
         notifs.push({
           userId: ownerId,
           organizationId: org.id,
@@ -2496,8 +2536,11 @@ async function processCrmContactBirthdayDailyDigest() {
       }
 
       if (orphanItems.length > 0 && fallbackRecipientIds.length > 0) {
-        const { title, message } = buildDigest(orphanItems);
         for (const userId of fallbackRecipientIds) {
+          if (!isDailyOptedIn(userId)) continue;
+          const trimmed = trimItemsForCadence(userId, orphanItems);
+          if (trimmed.length === 0) continue;
+          const { title, message } = buildDigest(trimmed);
           notifs.push({
             userId,
             organizationId: org.id,
