@@ -353,8 +353,30 @@ interface QuietHoursDigestRecipient extends SuperAdminRecipient {
   digestFormat: QuietHoursDigestFormat;
   // Task #764 — when true, attach a CSV of every matched event so the
   // recipient can audit large windows offline (the in-email body is
-  // still capped at DIGEST_MAX_EVENTS rows).
+  // still capped at digestMaxEvents rows).
   digestCsvEnabled: boolean;
+  // Task #776 — per-recipient cap on how many recent alerts the digest
+  // email body — and the in-app preview — surface. Falls back to
+  // DIGEST_MAX_EVENTS_DEFAULT when unset (e.g. legacy callers/tests).
+  digestMaxEvents?: number | null;
+}
+
+// Task #776 — Allowed values for the per-recipient max-events cap. Kept
+// in sync with the Zod schema in `authProfileRoutes.ts` and the
+// <Select> options in `NotificationPrefsSection.tsx`.
+export const DIGEST_MAX_EVENTS_OPTIONS = [25, 50, 100, 250] as const;
+export type DigestMaxEventsOption = (typeof DIGEST_MAX_EVENTS_OPTIONS)[number];
+
+function clampDigestMaxEvents(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 100;
+  // Bucket-up policy: snap a stale or hand-edited value to the smallest
+  // allowed option that is >= the stored value, so a recipient never
+  // silently gets *fewer* alerts than they previously had configured.
+  // Anything above 250 is capped at 250.
+  if (value <= 25) return 25;
+  if (value <= 50) return 50;
+  if (value <= 100) return 100;
+  return 250;
 }
 
 async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> {
@@ -373,6 +395,7 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       lastDigestAt: users.jobMetricAlertQuietHoursLastDigestAt,
       digestFormat: users.jobMetricAlertQuietHoursDigestFormat,
       digestCsvEnabled: users.jobMetricAlertQuietHoursDigestCsvEnabled,
+      digestMaxEvents: users.jobMetricAlertQuietHoursDigestMaxEvents,
     })
     .from(users)
     .where(eq(users.role, "SUPER_ADMIN"));
@@ -391,6 +414,7 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       lastDigestAt: r.lastDigestAt ? new Date(r.lastDigestAt) : null,
       digestFormat: (r.digestFormat as QuietHoursDigestFormat | null) ?? "full",
       digestCsvEnabled: r.digestCsvEnabled ?? false,
+      digestMaxEvents: clampDigestMaxEvents(r.digestMaxEvents),
     }));
 }
 
@@ -1103,7 +1127,10 @@ export async function deleteJobMetricAlertRule(id: string): Promise<boolean> {
 // ---------------------------------------------------------------------
 
 const DIGEST_LOOKBACK_MS = 24 * HOUR_MS;
-const DIGEST_MAX_EVENTS = 100;
+// Task #776 — Default cap when a recipient has no per-user override
+// configured. The actual cap is now `users.jobMetricAlertQuietHoursDigestMaxEvents`,
+// resolved per-recipient via clampDigestMaxEvents above.
+const DIGEST_MAX_EVENTS_DEFAULT = 100;
 
 export interface QuietHoursDigestSummary {
   evaluatedAt: number;
@@ -1545,7 +1572,7 @@ function csvEscape(value: string | null | undefined): string {
 /**
  * Task #764 — Build the digest CSV body. Columns mirror the task spec:
  * job, counter, kind, triggeredAt (ISO-8601), message. The CSV is not
- * truncated by the in-email DIGEST_MAX_EVENTS cap.
+ * truncated by the in-email per-recipient max-events cap (Task #776).
  */
 export function buildDigestCsv(events: DigestEventRow[]): string {
   const header = "job,counter,kind,triggeredAt,message";
@@ -1580,21 +1607,30 @@ function buildDigestCsvFilename(windowStart: Date, windowEnd: Date): string {
  */
 export async function buildQuietHoursDigestPreview(
   format: QuietHoursDigestFormat,
-  opts: { eventsSource?: (since: Date) => Promise<DigestEventRow[]>; nowMs?: number } = {},
+  opts: {
+    eventsSource?: (since: Date) => Promise<DigestEventRow[]>;
+    nowMs?: number;
+    // Task #776 — honor the recipient's per-user max-events cap so the
+    // in-app preview matches what their next live digest will look like.
+    // Defaults to 25 to preserve the original preview behavior when the
+    // caller does not specify a cap.
+    maxEvents?: number;
+  } = {},
 ): Promise<{
   subject: string;
   html: string;
   text: string;
   isSynthetic: boolean;
   eventCount: number;
+  maxEvents: number;
 }> {
-  const PREVIEW_MAX_EVENTS = 25;
+  const previewMaxEvents = clampDigestMaxEvents(opts.maxEvents ?? 25);
   const nowMs = opts.nowMs ?? nowFn();
   const lookbackSince = new Date(nowMs - DIGEST_LOOKBACK_MS);
   let events: DigestEventRow[] = [];
   try {
     const fetched = await (opts.eventsSource ?? fetchDigestEventsSince)(lookbackSince);
-    events = fetched.slice(-PREVIEW_MAX_EVENTS);
+    events = fetched.slice(-previewMaxEvents);
   } catch (err) {
     logError("Quiet-hours digest preview: failed to load events", { error: String(err) });
     events = [];
@@ -1662,7 +1698,7 @@ export async function buildQuietHoursDigestPreview(
 
   const { text, html } = buildDigestEmailBody(events, windowStart, windowEnd, format);
   const subject = `[Preview] ${formatDigestSubject(events.length)}`;
-  return { subject, html, text, isSynthetic, eventCount: events.length };
+  return { subject, html, text, isSynthetic, eventCount: events.length, maxEvents: previewMaxEvents };
 }
 
 function escapeHtmlSafe(s: string): string {
@@ -1779,10 +1815,13 @@ export async function sendJobMetricAlertQuietHoursDigests(
           r.lastDigestAt ? r.lastDigestAt.getTime() : 0,
         );
 
-    // Task #764: when the recipient opted into CSV, collect every
-    // matched event (no in-loop cap) so the attachment is complete for
-    // large windows. The in-email body is still trimmed to
-    // DIGEST_MAX_EVENTS rows below to keep messages readable.
+    // Task #764: collect every matched event so the optional CSV
+    // attachment is complete for large windows.
+    // Task #776: the in-email body is trimmed to the *most recent* N
+    // events (slice(-N) below), where N is the recipient's per-user
+    // cap. The lookback window is bounded to 24h so iterating every
+    // event in the window is cheap even at high alert volumes.
+    const recipientMaxEvents = clampDigestMaxEvents(r.digestMaxEvents);
     const matchedAll: DigestEventRow[] = [];
     let firstTs: number | null = null;
     let lastTs: number | null = null;
@@ -1798,11 +1837,13 @@ export async function sendJobMetricAlertQuietHoursDigests(
       matchedAll.push(e);
       if (firstTs === null || ts < firstTs) firstTs = ts;
       if (lastTs === null || ts > lastTs) lastTs = ts;
-      if (!r.digestCsvEnabled && matchedAll.length >= DIGEST_MAX_EVENTS) break;
     }
+    // `allEvents` is sorted ascending by triggeredAt, so slice(-N)
+    // selects the N most recent events while preserving chronological
+    // order in the rendered email body.
     const matched =
-      r.digestCsvEnabled && matchedAll.length > DIGEST_MAX_EVENTS
-        ? matchedAll.slice(0, DIGEST_MAX_EVENTS)
+      matchedAll.length > recipientMaxEvents
+        ? matchedAll.slice(-recipientMaxEvents)
         : matchedAll;
 
     if (matchedAll.length === 0) {
@@ -1971,6 +2012,7 @@ export async function sendTestQuietHoursDigestToUser(
       lastDigestAt: users.jobMetricAlertQuietHoursLastDigestAt,
       digestFormat: users.jobMetricAlertQuietHoursDigestFormat,
       digestCsvEnabled: users.jobMetricAlertQuietHoursDigestCsvEnabled,
+      digestMaxEvents: users.jobMetricAlertQuietHoursDigestMaxEvents,
     })
     .from(users)
     .where(eq(users.id, userId));
@@ -1998,6 +2040,7 @@ export async function sendTestQuietHoursDigestToUser(
     lastDigestAt: r.lastDigestAt ? new Date(r.lastDigestAt) : null,
     digestFormat: (r.digestFormat as QuietHoursDigestFormat | null) ?? "full",
     digestCsvEnabled: r.digestCsvEnabled ?? false,
+    digestMaxEvents: clampDigestMaxEvents(r.digestMaxEvents),
   };
   return sendJobMetricAlertQuietHoursDigests({
     recipientsSource: async () => [recipient],

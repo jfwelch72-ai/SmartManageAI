@@ -644,6 +644,59 @@ export default function NotificationPrefsSection() {
     updateQuietDigestCsvMutation.mutate(enabled);
   }
 
+  // Task #776 — per-recipient cap on how many recent alerts the digest
+  // email body and the in-app preview surface. Defaults to 100 (the
+  // prior hard-coded cap) so existing recipients see no behavior change
+  // until they explicitly pick a different value.
+  const DIGEST_MAX_EVENTS_OPTIONS = [25, 50, 100, 250] as const;
+  type QuietDigestMaxEvents = (typeof DIGEST_MAX_EVENTS_OPTIONS)[number];
+  // Bucket-up policy (mirrors clampDigestMaxEvents on the server): a
+  // stale/legacy value snaps to the smallest allowed option that is
+  // >= the stored value, so users never silently see fewer alerts
+  // than they previously had configured.
+  function coerceMaxEvents(value: unknown): QuietDigestMaxEvents {
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n)) return 100;
+    if (n <= 25) return 25;
+    if (n <= 50) return 50;
+    if (n <= 100) return 100;
+    return 250;
+  }
+  const [quietDigestMaxEvents, setQuietDigestMaxEvents] = useState<QuietDigestMaxEvents>(100);
+  useEffect(() => {
+    if (!authUser) return;
+    setQuietDigestMaxEvents(coerceMaxEvents(authUser.jobMetricAlertQuietHoursDigestMaxEvents));
+  }, [authUser]);
+
+  const updateQuietDigestMaxEventsMutation = useMutation({
+    mutationFn: async (value: QuietDigestMaxEvents) => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        jobMetricAlertQuietHoursDigestMaxEvents: value,
+      });
+    },
+    onSuccess: (_data, value) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: "Digest size updated",
+        description: `Quiet-hours digest will now include up to ${value} recent alert${value === 1 ? "" : "s"}.`,
+      });
+    },
+    onError: (error: Error) => {
+      setQuietDigestMaxEvents(coerceMaxEvents(authUser?.jobMetricAlertQuietHoursDigestMaxEvents));
+      toast({
+        title: "Failed to update digest size",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleQuietDigestMaxEventsChange(raw: string) {
+    const value = coerceMaxEvents(raw);
+    setQuietDigestMaxEvents(value);
+    updateQuietDigestMaxEventsMutation.mutate(value);
+  }
+
   // Task #772: download a real CSV sample (using the user's recent
   // alert events when available, or a deterministic synthetic set
   // otherwise) so admins can validate it opens cleanly in their
@@ -1295,6 +1348,49 @@ export default function NotificationPrefsSection() {
                               </span>
                             </Label>
                           </RadioGroup>
+
+                          <div
+                            className="pt-3 border-t border-border space-y-1"
+                            data-testid="row-job-metric-alert-quiet-hours-digest-max-events"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="space-y-0.5 pr-4">
+                                <Label
+                                  htmlFor="select-job-metric-alert-quiet-hours-digest-max-events"
+                                  className="text-sm font-medium"
+                                >
+                                  Up to how many recent alerts
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  Cap the number of recent alerts the catch-up email — and the in-app preview — will list. The CSV attachment (if enabled) still includes every alert.
+                                </p>
+                              </div>
+                              <Select
+                                value={String(quietDigestMaxEvents)}
+                                onValueChange={handleQuietDigestMaxEventsChange}
+                                disabled={updateQuietDigestMaxEventsMutation.isPending}
+                              >
+                                <SelectTrigger
+                                  id="select-job-metric-alert-quiet-hours-digest-max-events"
+                                  className="w-[120px]"
+                                  data-testid="select-job-metric-alert-quiet-hours-digest-max-events"
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {DIGEST_MAX_EVENTS_OPTIONS.map((opt) => (
+                                    <SelectItem
+                                      key={opt}
+                                      value={String(opt)}
+                                      data-testid={`select-job-metric-alert-quiet-hours-digest-max-events-option-${opt}`}
+                                    >
+                                      Up to {opt}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
 
                           <div className="pt-3 border-t border-border" data-testid="row-job-metric-alert-quiet-hours-digest-csv">
                             <div className="flex items-center justify-between">

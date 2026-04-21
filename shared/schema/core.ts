@@ -383,6 +383,12 @@ export const users = pgTable("users", {
   // matched in the window, ignoring the in-email 100-event cap so
   // large windows are still complete.
   jobMetricAlertQuietHoursDigestCsvEnabled: boolean("job_metric_alert_quiet_hours_digest_csv_enabled").notNull().default(false),
+  // Task #776: per-recipient cap on how many recent alerts the quiet-hours
+  // digest email body — and the in-app preview — surface. Heavy-traffic
+  // Super Admins dial this down to keep the catch-up email scannable;
+  // quieter recipients widen it to see more history. Allowed values are
+  // 25 / 50 / 100 / 250; defaults to 100 to match the prior hard-coded cap.
+  jobMetricAlertQuietHoursDigestMaxEvents: integer("job_metric_alert_quiet_hours_digest_max_events").notNull().default(100),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

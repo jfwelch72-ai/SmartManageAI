@@ -317,6 +317,66 @@ describe("sendJobMetricAlertQuietHoursDigests (Task #754)", () => {
     expect(lines[150]).toContain("sample row 149");
   });
 
+  it("Task #776 — trims the email body to the recipient's most recent N events", async () => {
+    // 09:00 UTC, after a 22:00→07:00 quiet window. 60 events fire one
+    // second apart inside the window; recipient cap is 25.
+    const now = Date.UTC(2026, 0, 15, 9, 0, 0);
+    alerts.setJobMetricAlertsClockForTests(() => now);
+
+    const insideTs = Date.UTC(2026, 0, 15, 2, 0, 0);
+    const events = Array.from({ length: 60 }, (_, i) =>
+      makeEvent(new Date(insideTs + i * 1000), {
+        id: `evt-${i}`,
+        message: `errors spiked, sample row ${i}`,
+      }),
+    );
+
+    const recipient = makeRecipient({
+      digestMaxEvents: 25,
+    } as Partial<FakeRecipient> & { digestMaxEvents?: number });
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const call = sendEmailMock.mock.calls[0][0];
+    // Subject reports the full count so recipients know the actual
+    // alert volume, even when the body is trimmed to the cap.
+    expect(call.subject).toContain("60");
+    // Body should contain the most recent rows (35..59) and not the
+    // oldest (0..34).
+    expect(call.text ?? "").toContain("sample row 59");
+    expect(call.text ?? "").toContain("sample row 35");
+    expect(call.text ?? "").not.toContain("sample row 34");
+    expect(call.text ?? "").not.toContain("sample row 0");
+  });
+
+  it("Task #776 — preview honors the maxEvents option for slicing recent events", async () => {
+    const now = Date.UTC(2026, 0, 15, 9, 0, 0);
+    alerts.setJobMetricAlertsClockForTests(() => now);
+
+    const insideTs = Date.UTC(2026, 0, 15, 2, 0, 0);
+    const events = Array.from({ length: 60 }, (_, i) =>
+      makeEvent(new Date(insideTs + i * 1000), {
+        id: `evt-${i}`,
+        message: `preview row ${i}`,
+      }),
+    );
+
+    const preview = await alerts.buildQuietHoursDigestPreview("full", {
+      eventsSource: async () => events as never,
+      nowMs: now,
+      maxEvents: 50,
+    });
+    expect(preview.eventCount).toBe(50);
+    expect(preview.maxEvents).toBe(50);
+    expect(preview.text).toContain("preview row 59");
+    expect(preview.text).toContain("preview row 10");
+    expect(preview.text).not.toContain("preview row 9");
+  });
+
+
   it("escapes CSV fields containing commas, quotes, and newlines", async () => {
     const csv = alerts.buildDigestCsv([
       {

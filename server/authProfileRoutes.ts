@@ -991,6 +991,15 @@ const upload = multer({
           .optional(),
         // Task #764: opt-in CSV attachment for the quiet-hours digest.
         jobMetricAlertQuietHoursDigestCsvEnabled: z.boolean().optional(),
+        // Task #776: per-recipient cap on how many recent alerts the
+        // quiet-hours digest body and the in-app preview surface.
+        jobMetricAlertQuietHoursDigestMaxEvents: z
+          .number()
+          .int()
+          .refine((v) => [25, 50, 100, 250].includes(v), {
+            message: "Must be one of 25, 50, 100, or 250",
+          })
+          .optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -1002,7 +1011,8 @@ const upload = multer({
         jobMetricAlertQuietHoursEnd, jobMetricAlertQuietHoursTimezone,
         jobMetricAlertQuietHoursWeekdays, jobMetricAlertQuietHoursDigestEnabled,
         jobMetricAlertQuietHoursDigestFormat,
-        jobMetricAlertQuietHoursDigestCsvEnabled } = parsed.data;
+        jobMetricAlertQuietHoursDigestCsvEnabled,
+        jobMetricAlertQuietHoursDigestMaxEvents } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1025,6 +1035,7 @@ const upload = multer({
       if (jobMetricAlertQuietHoursDigestEnabled !== undefined) updateData.jobMetricAlertQuietHoursDigestEnabled = jobMetricAlertQuietHoursDigestEnabled;
       if (jobMetricAlertQuietHoursDigestFormat !== undefined) updateData.jobMetricAlertQuietHoursDigestFormat = jobMetricAlertQuietHoursDigestFormat;
       if (jobMetricAlertQuietHoursDigestCsvEnabled !== undefined) updateData.jobMetricAlertQuietHoursDigestCsvEnabled = jobMetricAlertQuietHoursDigestCsvEnabled;
+      if (jobMetricAlertQuietHoursDigestMaxEvents !== undefined) updateData.jobMetricAlertQuietHoursDigestMaxEvents = jobMetricAlertQuietHoursDigestMaxEvents;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }
@@ -1067,7 +1078,14 @@ const upload = multer({
       const format: QuietHoursDigestFormat = parsed.data.format ?? userFormat;
       const mode = parsed.data.mode;
 
-      const preview = await buildQuietHoursDigestPreview(format);
+      // Task #776 — honor the recipient's per-user max-events cap so the
+      // preview matches what the next live digest will surface.
+      const userMaxEventsRaw = req.user?.jobMetricAlertQuietHoursDigestMaxEvents;
+      const userMaxEvents =
+        typeof userMaxEventsRaw === "number" && Number.isFinite(userMaxEventsRaw)
+          ? userMaxEventsRaw
+          : 100;
+      const preview = await buildQuietHoursDigestPreview(format, { maxEvents: userMaxEvents });
 
       if (mode === "send") {
         const to = req.user?.email;
@@ -1091,6 +1109,7 @@ const upload = multer({
           format,
           isSynthetic: preview.isSynthetic,
           eventCount: preview.eventCount,
+          maxEvents: preview.maxEvents,
           sentTo: to,
         });
         return;
@@ -1102,6 +1121,7 @@ const upload = multer({
         format,
         isSynthetic: preview.isSynthetic,
         eventCount: preview.eventCount,
+        maxEvents: preview.maxEvents,
         subject: preview.subject,
         html: preview.html,
         text: preview.text,
