@@ -203,7 +203,7 @@ import { crmOrganisations, crmContacts, crmOrganisationNotes, insertCrmOrganisat
 import { eq, and, sql, desc, or, lte, gte, isNotNull, isNull, inArray, ilike, ne, type SQL, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
-import { insertNotification, queueContactReassignmentNotification } from "./services/notificationService";
+import { insertNotification, queueContactReassignmentNotification, queueOwnerReassignmentNotification } from "./services/notificationService";
 import { eventBus } from "./events";
 import { scoreWinProbability } from "./ai/winProbabilityService";
 import { evaluateAssignment } from "./utils/crmAssignmentEngine";
@@ -2341,6 +2341,47 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
         return res.status(400).json({ error: msg.slice("__CF_VALIDATION__:".length) });
       }
       throw e;
+    }
+
+    // Task #723: notify the new assignee (in-app + email) when the
+    // opportunity assignee actually changes to a different active user, and
+    // route through the coalescer so rapid-fire one-by-one reassignments
+    // collapse into a single summary instead of one email per opportunity.
+    // Skip self-assignment, no-op updates, and clears (assignedToId -> null).
+    // Mirrors the contact-owner validation: only notify if the new assignee
+    // is an active member of the same tenant org so we don't leak the
+    // opportunity name into a notification for a foreign or deactivated user.
+    if (
+      "assignedToId" in safeData &&
+      safeData.assignedToId &&
+      safeData.assignedToId !== existing.assignedToId &&
+      safeData.assignedToId !== req.user!.id
+    ) {
+      const [assigneeUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.id, safeData.assignedToId),
+            eq(users.organizationId, updated.organizationId),
+            eq(users.isActive, true),
+          ),
+        )
+        .limit(1);
+      if (assigneeUser) {
+        const reassignerName = [req.user!.firstName, req.user!.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || req.user!.email || "A teammate";
+        queueOwnerReassignmentNotification({
+          kind: "opportunity",
+          recipientUserId: safeData.assignedToId,
+          organizationId: updated.organizationId,
+          reassignerName,
+          entityId: updated.id,
+          entityName: updated.name || "an opportunity",
+        });
+      }
     }
 
     if (safeData.stage && safeData.stage !== existing.stage) {

@@ -300,6 +300,41 @@ function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  if (type === "CRM_CONTACT_REASSIGNED") {
+    return {
+      subject: `${notification.title} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/crm?tab=contacts&ownerFilter=me`,
+      actionText: "View in CRM",
+    };
+  }
+
+  // Task #723: surface deep links for the new opportunity / project owner
+  // reassignment notifications so the email "View" button takes the new
+  // owner straight to the record (or the filtered list when the immediate
+  // first-in-window notification is itself a coalesced summary).
+  if (type === "CRM_OPPORTUNITY_REASSIGNED") {
+    return {
+      subject: `${notification.title} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/crm?tab=opportunities&opportunityId=${notification.relatedEntityId}`
+        : `${baseUrl}/crm?tab=opportunities&assignedFilter=me`,
+      actionText: "View Opportunity",
+    };
+  }
+
+  if (type === "PROJECT_REASSIGNED") {
+    return {
+      subject: `${notification.title} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/projects/${notification.relatedEntityId}`
+        : `${baseUrl}/projects`,
+      actionText: "View Project",
+    };
+  }
+
   if (type === "TASK_MENTIONED") {
     return {
       subject: `You were mentioned — SmartManageAI`,

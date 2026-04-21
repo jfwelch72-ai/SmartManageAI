@@ -26,6 +26,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const insertedNotifications: Array<Record<string, unknown>> = [];
 
 interface PendingRow {
+  kind: string;
   recipient_user_id: string;
   organization_id: string | null;
   additional_count: number;
@@ -34,19 +35,23 @@ interface PendingRow {
   flush_at: Date;
 }
 const pendingRows = new Map<string, PendingRow>();
+const rowKey = (kind: string, recipientUserId: string) => `${kind}:${recipientUserId}`;
 
 function poolQuery(sql: string, params: unknown[] = []): Promise<{ rows: unknown[] }> {
   const text = sql.trim();
   if (text.startsWith("INSERT INTO pending_contact_reassignment_notifications")) {
-    const [recipientUserId, organizationId, reassignerName, contactId] = params as [
+    const [kind, recipientUserId, organizationId, reassignerName, contactId] = params as [
+      string,
       string,
       string | null,
       string,
       string,
     ];
-    const existing = pendingRows.get(recipientUserId);
+    const key = rowKey(kind, recipientUserId);
+    const existing = pendingRows.get(key);
     if (!existing) {
       const row: PendingRow = {
+        kind,
         recipient_user_id: recipientUserId,
         organization_id: organizationId,
         additional_count: 0,
@@ -54,7 +59,7 @@ function poolQuery(sql: string, params: unknown[] = []): Promise<{ rows: unknown
         first_additional_contact_id: null,
         flush_at: new Date(Date.now() + 5 * 60 * 1000),
       };
-      pendingRows.set(recipientUserId, row);
+      pendingRows.set(key, row);
       return Promise.resolve({ rows: [{ inserted: true, flush_at: row.flush_at }] });
     }
     existing.additional_count += 1;
@@ -70,24 +75,26 @@ function poolQuery(sql: string, params: unknown[] = []): Promise<{ rows: unknown
     return Promise.resolve({ rows: [{ inserted: false, flush_at: existing.flush_at }] });
   }
   if (text.startsWith("DELETE FROM pending_contact_reassignment_notifications")) {
-    const [recipientUserId] = params as [string];
-    const row = pendingRows.get(recipientUserId);
+    const [kind, recipientUserId] = params as [string, string];
+    const key = rowKey(kind, recipientUserId);
+    const row = pendingRows.get(key);
     if (!row) return Promise.resolve({ rows: [] });
-    pendingRows.delete(recipientUserId);
+    pendingRows.delete(key);
     return Promise.resolve({ rows: [row] });
   }
-  if (text.startsWith("SELECT recipient_user_id FROM pending_contact_reassignment_notifications")) {
+  if (text.startsWith("SELECT kind, recipient_user_id FROM pending_contact_reassignment_notifications")) {
     const [thresholdMs] = params as [number];
     const cutoff = Date.now() - Number(thresholdMs);
     return Promise.resolve({
       rows: Array.from(pendingRows.values())
         .filter((r) => r.flush_at.getTime() < cutoff)
-        .map((r) => ({ recipient_user_id: r.recipient_user_id })),
+        .map((r) => ({ kind: r.kind, recipient_user_id: r.recipient_user_id })),
     });
   }
-  if (text.startsWith("SELECT recipient_user_id, flush_at FROM pending_contact_reassignment_notifications")) {
+  if (text.startsWith("SELECT kind, recipient_user_id, flush_at FROM pending_contact_reassignment_notifications")) {
     return Promise.resolve({
       rows: Array.from(pendingRows.values()).map((r) => ({
+        kind: r.kind,
         recipient_user_id: r.recipient_user_id,
         flush_at: r.flush_at,
       })),
@@ -120,7 +127,9 @@ vi.mock("../services/notificationDelivery", () => ({
 
 import {
   queueContactReassignmentNotification,
+  queueOwnerReassignmentNotification,
   __flushContactReassignmentForTest,
+  __flushReassignmentForTest,
   __resetContactReassignmentQueueForTest,
   recoverPendingContactReassignments,
   sweepStaleContactReassignments,
@@ -191,7 +200,7 @@ describe("queueContactReassignmentNotification (Task #715 + #722)", () => {
       title: "49 more CRM contacts assigned to you",
       relatedEntityId: "contact-1",
     });
-    expect(insertedNotifications[1].message).toContain("Alice assigned 49 more contacts");
+    expect(insertedNotifications[1].message).toContain("Alice assigned 49 more CRM contacts");
   });
 
   it("uses singular noun when exactly one extra reassignment is coalesced", async () => {
@@ -227,7 +236,100 @@ describe("queueContactReassignmentNotification (Task #715 + #722)", () => {
     await __flushContactReassignmentForTest("user-1");
 
     expect(insertedNotifications).toHaveLength(2);
-    expect(insertedNotifications[1].message).toMatch(/^Teammates assigned 2 more contacts/);
+    expect(insertedNotifications[1].message).toMatch(/^Teammates assigned 2 more CRM contacts/);
+  });
+
+  it("collapses opportunity reassignments using opportunity-flavored copy (Task #723)", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      queueOwnerReassignmentNotification({
+        kind: "opportunity",
+        recipientUserId: "user-9",
+        organizationId: "org-1",
+        reassignerName: "Alice",
+        entityId: `opp-${i}`,
+        entityName: `Opportunity ${i}`,
+      });
+    }
+    await flushMicrotasks();
+
+    expect(insertedNotifications).toHaveLength(1);
+    expect(insertedNotifications[0]).toMatchObject({
+      userId: "user-9",
+      type: "CRM_OPPORTUNITY_REASSIGNED",
+      title: "A CRM opportunity was assigned to you",
+      relatedEntityType: "CRM_OPPORTUNITY",
+      relatedEntityId: "opp-0",
+    });
+
+    await __flushReassignmentForTest("opportunity", "user-9");
+    expect(insertedNotifications).toHaveLength(2);
+    expect(insertedNotifications[1]).toMatchObject({
+      type: "CRM_OPPORTUNITY_REASSIGNED",
+      title: "9 more CRM opportunities assigned to you",
+    });
+  });
+
+  it("collapses project reassignments using project-flavored copy (Task #723)", async () => {
+    for (let i = 0; i < 5; i += 1) {
+      queueOwnerReassignmentNotification({
+        kind: "project",
+        recipientUserId: "user-7",
+        organizationId: "org-1",
+        reassignerName: "Alice",
+        entityId: `proj-${i}`,
+        entityName: `Project ${i}`,
+      });
+    }
+    await flushMicrotasks();
+
+    expect(insertedNotifications).toHaveLength(1);
+    expect(insertedNotifications[0]).toMatchObject({
+      userId: "user-7",
+      type: "PROJECT_REASSIGNED",
+      title: "A project was assigned to you",
+      relatedEntityType: "PROJECT",
+      relatedEntityId: "proj-0",
+    });
+
+    await __flushReassignmentForTest("project", "user-7");
+    expect(insertedNotifications).toHaveLength(2);
+    expect(insertedNotifications[1]).toMatchObject({
+      type: "PROJECT_REASSIGNED",
+      title: "4 more projects assigned to you",
+    });
+  });
+
+  it("keeps separate coalescing windows per (kind, recipient) (Task #723)", async () => {
+    queueContactReassignmentNotification({
+      recipientUserId: "user-x",
+      reassignerName: "Alice",
+      contactId: "c1",
+      contactName: "C1",
+    });
+    queueOwnerReassignmentNotification({
+      kind: "opportunity",
+      recipientUserId: "user-x",
+      reassignerName: "Alice",
+      entityId: "o1",
+      entityName: "O1",
+    });
+    queueOwnerReassignmentNotification({
+      kind: "project",
+      recipientUserId: "user-x",
+      reassignerName: "Alice",
+      entityId: "p1",
+      entityName: "P1",
+    });
+    await flushMicrotasks();
+
+    // Each kind has its own immediate notification (3 different first-in-window).
+    expect(insertedNotifications).toHaveLength(3);
+    const types = insertedNotifications.map((n) => n.type).sort();
+    expect(types).toEqual([
+      "CRM_CONTACT_REASSIGNED",
+      "CRM_OPPORTUNITY_REASSIGNED",
+      "PROJECT_REASSIGNED",
+    ]);
   });
 
   it("keeps separate windows per recipient", async () => {
@@ -358,13 +460,13 @@ describe("queueContactReassignmentNotification (Task #715 + #722)", () => {
 
     // Simulate a server that was down past the coalescing window: backdate
     // flush_at and wipe local timers so only the sweeper can recover the row.
-    const row = pendingRows.get("user-stale")!;
+    const row = pendingRows.get("contact:user-stale")!;
     row.flush_at = new Date(Date.now() - 30 * 60 * 1000);
     __resetContactReassignmentQueueForTest();
 
     const claimed = await sweepStaleContactReassignments();
     expect(claimed).toBe(1);
-    expect(pendingRows.has("user-stale")).toBe(false);
+    expect(pendingRows.has("contact:user-stale")).toBe(false);
 
     // 1 immediate + 1 swept summary = 2.
     expect(insertedNotifications).toHaveLength(2);
@@ -393,7 +495,7 @@ describe("queueContactReassignmentNotification (Task #715 + #722)", () => {
     const claimed = await sweepStaleContactReassignments();
     expect(claimed).toBe(0);
     // Buffer is still there for the regular timer-driven flush.
-    expect(pendingRows.has("user-fresh")).toBe(true);
+    expect(pendingRows.has("contact:user-fresh")).toBe(true);
   });
 
   it("sweeper is safe under concurrent invocations (Task #730)", async () => {
@@ -411,7 +513,7 @@ describe("queueContactReassignmentNotification (Task #715 + #722)", () => {
       contactName: "C1",
     });
     await flushMicrotasks();
-    pendingRows.get("user-race-sweep")!.flush_at = new Date(Date.now() - 30 * 60 * 1000);
+    pendingRows.get("contact:user-race-sweep")!.flush_at = new Date(Date.now() - 30 * 60 * 1000);
     __resetContactReassignmentQueueForTest();
 
     const [a, b] = await Promise.all([

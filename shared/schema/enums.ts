@@ -55,6 +55,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "MATERIAL_CERT_SUBMITTED", "MATERIAL_CERT_VERIFIED", "MATERIAL_CERT_REJECTED",
   "SURETY_BOND_ACTIVATED", "SURETY_BOND_RELEASED", "SURETY_BOND_EXPIRED", "SURETY_BOND_CANCELED",
   "CRM_CONTACT_REASSIGNED",
+  "CRM_OPPORTUNITY_REASSIGNED",
+  "PROJECT_REASSIGNED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

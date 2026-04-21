@@ -99,6 +99,18 @@ export function getNotificationDestination(notification: {
     case "CRM_CONTACT_REASSIGNED":
       return "/crm?tab=contacts&ownerFilter=me";
 
+    case "CRM_OPPORTUNITY_REASSIGNED":
+      if (relatedEntityId) {
+        return `/crm?tab=opportunities&opportunityId=${relatedEntityId}`;
+      }
+      return "/crm?tab=opportunities&assignedFilter=me";
+
+    case "PROJECT_REASSIGNED":
+      if (relatedEntityId) {
+        return `/projects/${relatedEntityId}`;
+      }
+      return "/projects";
+
     case "TASK_MENTIONED":
       if (relatedEntityId) {
         return `/projects?taskId=${relatedEntityId}`;

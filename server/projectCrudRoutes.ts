@@ -183,6 +183,7 @@ import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
+import { queueOwnerReassignmentNotification } from "./services/notificationService";
 import { geocodePendingProjects } from "./utils/geocodingService";
 
 const router = Router();
@@ -1152,6 +1153,62 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
     if (!updatedProject) {
       res.status(404).json({ error: "Project not found" });
       return;
+    }
+
+    // Task #723: notify each newly-assigned owner role (PM / superintendent /
+    // estimator / safety officer) when their slot actually changes to a
+    // different active user. Route through the per-recipient coalescer so
+    // reassigning many projects one-by-one collapses into a single summary
+    // notification per new owner instead of spamming one email per project.
+    // Skip self-assignments, no-op updates, and clears (id -> null).
+    const ownerRoleFields = [
+      "projectManagerId",
+      "superintendentId",
+      "estimatorId",
+      "safetyOfficerId",
+    ] as const;
+    const reassignerName = [req.user!.firstName, req.user!.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || req.user!.email || "A teammate";
+    const notifiedRecipients = new Set<string>();
+    const projectOrgId = updatedProject.gcOrganizationId ?? req.user!.organizationId ?? null;
+    for (const field of ownerRoleFields) {
+      if (!(field in validationResult)) continue;
+      const newId = (validationResult as Record<string, unknown>)[field];
+      const oldId = (existingProject as Record<string, unknown>)[field];
+      if (
+        typeof newId === "string" &&
+        newId &&
+        newId !== oldId &&
+        newId !== req.user!.id &&
+        !notifiedRecipients.has(newId)
+      ) {
+        // Validate the new owner is an active member of the project's tenant
+        // org before notifying so we don't leak the project name into a
+        // notification for a foreign or deactivated user.
+        if (projectOrgId) {
+          const [recipient] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(
+              eq(users.id, newId),
+              eq(users.organizationId, projectOrgId),
+              eq(users.isActive, true),
+            ))
+            .limit(1);
+          if (!recipient) continue;
+        }
+        notifiedRecipients.add(newId);
+        queueOwnerReassignmentNotification({
+          kind: "project",
+          recipientUserId: newId,
+          organizationId: projectOrgId ?? undefined,
+          reassignerName,
+          entityId: updatedProject.id,
+          entityName: updatedProject.name || updatedProject.code || "a project",
+        });
+      }
     }
 
     if (validationResult.status !== undefined && validationResult.status !== existingProject.status) {

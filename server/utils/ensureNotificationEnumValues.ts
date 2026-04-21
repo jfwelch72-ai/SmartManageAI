@@ -14,6 +14,11 @@ const REQUIRED_NOTIFICATION_TYPES = [
   "SURETY_BOND_ACTIVATED", "SURETY_BOND_RELEASED", "SURETY_BOND_EXPIRED", "SURETY_BOND_CANCELED",
   // Task #709: CRM contact reassignment heads-up notification
   "CRM_CONTACT_REASSIGNED",
+  // Task #723: bundle the same coalesced reassignment notifications for
+  // CRM opportunities and projects so rapid-fire owner changes don't spam
+  // a separate email per record.
+  "CRM_OPPORTUNITY_REASSIGNED",
+  "PROJECT_REASSIGNED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {
