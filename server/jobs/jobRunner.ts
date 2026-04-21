@@ -6,7 +6,7 @@ import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, type InsertNotification } from "@shared/schema";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -45,6 +45,7 @@ let sequenceCadenceTask: ReturnType<typeof cron.schedule> | null = null;
 let projectGeocodeTask: ReturnType<typeof cron.schedule> | null = null;
 let crmSlaBreachTask: ReturnType<typeof cron.schedule> | null = null;
 let crmIdleAutomationTask: ReturnType<typeof cron.schedule> | null = null;
+let crmBirthdayDigestTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -262,6 +263,16 @@ export function startJobRunner() {
     }
   });
 
+  // Task #682: weekly digest of upcoming CRM contact birthdays so estimators
+  // and account managers see them without having to open each contact card.
+  crmBirthdayDigestTask = cron.schedule("0 8 * * 1", async () => {
+    try {
+      await processCrmContactBirthdayDigest();
+    } catch (err) {
+      logError("CRM contact birthday digest failed", { error: String(err) });
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, and project geocoding schedulers)");
 }
 
@@ -358,6 +369,10 @@ export function stopJobRunner() {
     crmIdleAutomationTask.stop();
     crmIdleAutomationTask = null;
   }
+  if (crmBirthdayDigestTask) {
+    crmBirthdayDigestTask.stop();
+    crmBirthdayDigestTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -385,6 +400,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   geocode_projects:    { fn: async () => { await geocodePendingProjects(); }, description: "Geocode projects with addresses but no coordinates",   schedule: "30 4 * * *" },
   crm_sla_breaches:    { fn: () => processCrmSlaBreaches(),            description: "Flag CRM stage SLA breaches across all orgs",         schedule: "*/5 * * * *" },
   crm_idle_automations:{ fn: () => processCrmIdleAutomations(),        description: "Tick CRM automation engine for IDLE_DAYS triggers",   schedule: "*/10 * * * *" },
+  crm_birthday_digest: { fn: () => processCrmContactBirthdayDigest(),  description: "Send weekly CRM contact birthday digest per org",     schedule: "0 8 * * 1" },
 };
 
 async function processOutbox() {
@@ -2027,5 +2043,100 @@ async function processCrmIdleAutomations() {
 
   if (totalFired > 0) {
     logInfo("CRM idle automations fired", { count: totalFired, automations: automations.length });
+  }
+}
+
+
+async function processCrmContactBirthdayDigest() {
+  const orgsResult = await db.execute(
+    sql`SELECT DISTINCT organization_id AS id FROM crm_contacts WHERE birthday IS NOT NULL`,
+  );
+  const orgs = (orgsResult.rows || []) as Array<{ id: string }>;
+  if (orgs.length === 0) return;
+
+  const today = new Date();
+  const todayY = today.getFullYear();
+  const todayM = today.getMonth() + 1;
+  const todayD = today.getDate();
+  const horizonDays = 7;
+
+  let totalDigests = 0;
+
+  for (const org of orgs) {
+    try {
+      const contacts = await db
+        .select({
+          id: crmContacts.id,
+          firstName: crmContacts.firstName,
+          lastName: crmContacts.lastName,
+          birthday: crmContacts.birthday,
+          orgName: crmOrganisations.name,
+        })
+        .from(crmContacts)
+        .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmContacts.organisationId))
+        .where(and(eq(crmContacts.organizationId, org.id), isNotNull(crmContacts.birthday)));
+
+      const upcoming: Array<{ name: string; orgName: string | null; daysUntil: number; monthDay: string }> = [];
+      for (const c of contacts) {
+        const bd = c.birthday ? String(c.birthday) : null;
+        const m = bd ? /^(\d{4})-(\d{2})-(\d{2})/.exec(bd) : null;
+        if (!m) continue;
+        const month = parseInt(m[2], 10);
+        const day = parseInt(m[3], 10);
+        if (!month || !day) continue;
+        let next = new Date(todayY, month - 1, day);
+        const todayDate = new Date(todayY, todayM - 1, todayD);
+        if (next < todayDate) next = new Date(todayY + 1, month - 1, day);
+        const diffDays = Math.round((next.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0 && diffDays <= horizonDays) {
+          upcoming.push({
+            name: `${c.firstName} ${c.lastName}`.trim(),
+            orgName: c.orgName ?? null,
+            daysUntil: diffDays,
+            monthDay: `${month}/${day}`,
+          });
+        }
+      }
+
+      if (upcoming.length === 0) continue;
+      upcoming.sort((a, b) => a.daysUntil - b.daysUntil);
+
+      const recipients = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, org.id),
+          inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]),
+        ));
+      if (recipients.length === 0) continue;
+
+      const lines = upcoming.map((u) => {
+        const when = u.daysUntil === 0
+          ? "today"
+          : `in ${u.daysUntil} day${u.daysUntil === 1 ? "" : "s"} (${u.monthDay})`;
+        return `${u.name}${u.orgName ? ` — ${u.orgName}` : ""}: ${when}`;
+      });
+      const message = `Upcoming contact birthdays this week:\n${lines.join("\n")}`;
+      const title = upcoming.length === 1
+        ? "1 contact birthday this week"
+        : `${upcoming.length} contact birthdays this week`;
+
+      const notifs: InsertNotification[] = recipients.map((u) => ({
+        userId: u.id,
+        organizationId: org.id,
+        type: "REMINDER" as const,
+        title,
+        message,
+        relatedEntityType: "CRM_CONTACT_BIRTHDAY",
+      }));
+      await insertNotifications(notifs);
+      totalDigests += notifs.length;
+    } catch (err) {
+      logError("CRM contact birthday digest org iteration failed", { orgId: org.id, error: String(err) });
+    }
+  }
+
+  if (totalDigests > 0) {
+    logInfo("CRM contact birthday digest sent", { notifications: totalDigests });
   }
 }

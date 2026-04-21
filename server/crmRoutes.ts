@@ -1403,6 +1403,7 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
         isPrimary: crmContacts.isPrimary,
         preferredContact: crmContacts.preferredContact,
         timezone: crmContacts.timezone,
+        birthday: crmContacts.birthday,
         notes: crmContacts.notes,
         createdAt: crmContacts.createdAt,
         updatedAt: crmContacts.updatedAt,
@@ -1478,9 +1479,14 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
       mobile: req.body?.mobile ?? null,
     });
 
+    const normalizedBirthday = typeof req.body?.birthday === "string" && req.body.birthday.trim() === ""
+      ? null
+      : req.body?.birthday;
+
     const validationResult = insertCrmContactSchema.safeParse({
       ...req.body,
       timezone,
+      birthday: normalizedBirthday,
       organizationId: orgId,
       createdById: req.user!.id,
     });
@@ -1592,6 +1598,11 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
       });
     }
 
+    const birthdayProvided = "birthday" in (req.body ?? {});
+    const normalizedBirthday = birthdayProvided && typeof req.body.birthday === "string" && req.body.birthday.trim() === ""
+      ? null
+      : req.body?.birthday;
+
     const updateBody = {
       ...req.body,
       ...(timezoneProvided
@@ -1599,6 +1610,7 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
         : inferredTimezone
           ? { timezone: inferredTimezone }
           : {}),
+      ...(birthdayProvided ? { birthday: normalizedBirthday } : {}),
     };
     const validationResult = insertCrmContactSchema.partial().safeParse(updateBody);
     if (!validationResult.success) {

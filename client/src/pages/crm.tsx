@@ -177,6 +177,7 @@ const DEFAULT_CONTACT = {
   isPrimary: false,
   notes: "",
   timezone: "",
+  birthday: "",
 };
 
 interface DupOrg {
@@ -1028,6 +1029,7 @@ export default function CRMPage() {
       isPrimary: contact.isPrimary,
       notes: contact.notes || "",
       timezone: contact.timezone || "",
+      birthday: contact.birthday ? String(contact.birthday).slice(0, 10) : "",
     });
     setContactCustomFields(contact.customFields ?? {});
     setSelectedContact(contact);

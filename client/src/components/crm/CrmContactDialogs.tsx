@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import { ContactSequenceTimeline } from "@/components/crm/ContactSequenceTimeline";
 import { Textarea } from "@/components/ui/textarea";
-import { Edit, User, Mail, Phone, Globe } from "lucide-react";
+import { Edit, User, Mail, Phone, Globe, Cake } from "lucide-react";
 import type { CrmContact } from "@shared/schema";
 import { COMMON_TIMEZONES } from "@shared/timezones";
 import { CrmCustomFieldsForm, CrmCustomFieldsDisplay, type CustomFieldsValue } from "./CrmCustomFieldsForm";
@@ -38,6 +38,34 @@ interface ContactFormState {
   isPrimary: boolean;
   notes: string;
   timezone: string;
+  birthday: string;
+}
+
+function formatBirthdayLabel(birthday: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthday);
+  if (!m) return birthday;
+  const [, , month, day] = m;
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const monthIdx = parseInt(month, 10) - 1;
+  if (monthIdx < 0 || monthIdx > 11) return birthday;
+  return `${monthNames[monthIdx]} ${parseInt(day, 10)}`;
+}
+
+function getBirthdayBadge(birthday: string | null | undefined): { label: string; variant: "default" | "secondary" } | null {
+  if (!birthday) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(birthday));
+  if (!m) return null;
+  const [, , monthStr, dayStr] = m;
+  const month = parseInt(monthStr, 10) - 1;
+  const day = parseInt(dayStr, 10);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next = new Date(today.getFullYear(), month, day);
+  if (next < today) next = new Date(today.getFullYear() + 1, month, day);
+  const diffDays = Math.round((next.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return { label: "Birthday today", variant: "default" };
+  if (diffDays <= 30) return { label: `Birthday in ${diffDays} day${diffDays === 1 ? "" : "s"}`, variant: "secondary" };
+  return null;
 }
 
 interface CrmContactDialogsProps {
@@ -148,6 +176,15 @@ function ContactFormFields({ newContact, setNewContact, prefix, customFields, se
             data-testid={`input-${prefix}contact-mobile`}
           />
         </div>
+      </div>
+      <div className="space-y-2">
+        <Label>Birthday</Label>
+        <Input
+          type="date"
+          value={newContact.birthday}
+          onChange={(e) => setNewContact({ ...newContact, birthday: e.target.value })}
+          data-testid={`input-${prefix}contact-birthday`}
+        />
       </div>
       <div className="space-y-2">
         <Label>Timezone</Label>
@@ -343,6 +380,27 @@ export function CrmContactDialogs({
                 <div>
                   <p className="text-sm font-medium">Mobile</p>
                   <p className="text-sm text-muted-foreground">{selectedContact.mobile}</p>
+                </div>
+              </div>
+            )}
+            {selectedContact?.birthday && (
+              <div className="flex items-start gap-3" data-testid="text-contact-birthday">
+                <Cake className="w-5 h-5 mt-0.5 text-muted-foreground" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Birthday</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm text-muted-foreground">
+                      {formatBirthdayLabel(String(selectedContact.birthday))}
+                    </p>
+                    {(() => {
+                      const badge = getBirthdayBadge(String(selectedContact.birthday));
+                      return badge ? (
+                        <Badge variant={badge.variant} data-testid="badge-contact-birthday-upcoming">
+                          {badge.label}
+                        </Badge>
+                      ) : null;
+                    })()}
+                  </div>
                 </div>
               </div>
             )}
