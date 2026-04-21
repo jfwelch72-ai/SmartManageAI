@@ -653,18 +653,55 @@ function ImportPanel() {
     },
   });
 
+  const downloadSampleCsv = () => {
+    if (fields.length === 0) {
+      toast({ title: "Sample not ready", description: "Field list is still loading — try again in a moment.", variant: "destructive" });
+      return;
+    }
+    const csvEscapeCell = (s: string) => {
+      if (s === "") return "";
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = fields.map((f) => f.label);
+    const csv = headers.map(csvEscapeCell).join(",") + "\r\n";
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `crm-${entity.toLowerCase()}-template.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Card>
       <CardHeader><CardTitle>CSV / Excel Import</CardTitle><CardDescription>Drag and drop or choose a CSV or spreadsheet (.xlsx, .xls, .ods) file (with header row), then match each column to a target field. Unmapped columns are skipped. Multi-sheet workbooks let you pick which sheet to import. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
-        <Select value={entity} onValueChange={handleEntityChange}>
-          <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="CONTACT">Contacts</SelectItem>
-            <SelectItem value="ORGANISATION">Organisations</SelectItem>
-            <SelectItem value="OPPORTUNITY">Opportunities</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={entity} onValueChange={handleEntityChange}>
+            <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="CONTACT">Contacts</SelectItem>
+              <SelectItem value="ORGANISATION">Organisations</SelectItem>
+              <SelectItem value="OPPORTUNITY">Opportunities</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadSampleCsv}
+            disabled={fields.length === 0}
+            data-testid="button-download-sample-csv"
+          >
+            <Download className="h-4 w-4 mr-1" />Download sample CSV
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Includes one column per built-in and active custom field for the selected entity.
+          </span>
+        </div>
         <div
           className={`border-2 border-dashed rounded p-6 text-center transition-colors ${isDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25"}`}
           onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
