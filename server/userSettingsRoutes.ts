@@ -37,6 +37,7 @@ router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res, next
         timeFormat: "12h",
         timezone: req.user!.timezone || null,
         tableDensity: "COZY",
+        crmBirthdayDigestOptOut: false,
       });
     }
     return res.json(settings);
@@ -55,6 +56,7 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
       timeFormat: z.enum(["12h", "24h"]).optional(),
       timezone: z.string().nullable().optional(),
       tableDensity: z.enum(["COMPACT", "COZY", "COMFORTABLE"]).optional(),
+      crmBirthdayDigestOptOut: z.boolean().optional(),
     });
 
     const parsed = schema.parse(req.body);

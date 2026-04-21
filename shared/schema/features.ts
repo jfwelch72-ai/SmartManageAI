@@ -8644,6 +8644,10 @@ export const userSettings = pgTable("user_settings", {
   timeFormat: text("time_format").notNull().default("12h"),
   timezone: text("timezone"),
   tableDensity: text("table_density").notNull().default("COZY"),
+  // Task #696: per-user opt-out for the weekly CRM contact birthday digest.
+  // Defaults to false (opted in) so existing recipients keep receiving the
+  // digest until they explicitly silence it from notification preferences.
+  crmBirthdayDigestOptOut: boolean("crm_birthday_digest_opt_out").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

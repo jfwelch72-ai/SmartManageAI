@@ -90,6 +90,45 @@ export default function NotificationPrefsSection() {
     queryKey: ["/api/notifications/preferences"],
   });
 
+  // Task #696: per-user opt-out for the weekly CRM contact birthday digest.
+  // Stored in user_settings (separate from notification channel/type prefs).
+  const { data: userSettingsData, isLoading: loadingUserSettings } = useQuery<{ crmBirthdayDigestOptOut?: boolean }>({
+    queryKey: ["/api/user-settings"],
+  });
+  const [crmBirthdayDigestOptOut, setCrmBirthdayDigestOptOut] = useState(false);
+  useEffect(() => {
+    if (userSettingsData) {
+      setCrmBirthdayDigestOptOut(Boolean(userSettingsData.crmBirthdayDigestOptOut));
+    }
+  }, [userSettingsData]);
+
+  const updateCrmBirthdayDigestMutation = useMutation({
+    mutationFn: async (optOut: boolean) => {
+      return await apiRequest("PATCH", "/api/user-settings", { crmBirthdayDigestOptOut: optOut });
+    },
+    onSuccess: (_data, optOut) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-settings"] });
+      toast({
+        title: optOut ? "CRM birthday digest silenced" : "CRM birthday digest re-enabled",
+        description: optOut
+          ? "You will no longer receive the weekly CRM contact birthday digest."
+          : "You will receive the weekly CRM contact birthday digest on Monday mornings.",
+      });
+    },
+    onError: (error: Error, _optOut) => {
+      // Roll the local state back so the switch reflects the persisted value.
+      setCrmBirthdayDigestOptOut(Boolean(userSettingsData?.crmBirthdayDigestOptOut));
+      toast({ title: "Failed to update CRM birthday digest preference", description: error.message, variant: "destructive" });
+    },
+  });
+
+  function handleCrmBirthdayDigestToggle(receive: boolean) {
+    // Switch represents "receive" — invert to store opt-out flag.
+    const optOut = !receive;
+    setCrmBirthdayDigestOptOut(optOut);
+    updateCrmBirthdayDigestMutation.mutate(optOut);
+  }
+
   const [channelPrefs, setChannelPrefs] = useState<ChannelPrefsData>({
     emailEnabled: false, smsEnabled: false, pushEnabled: false,
     teamsEnabled: false, slackEnabled: false,
@@ -433,6 +472,23 @@ export default function NotificationPrefsSection() {
                   ) : "Save Connection Settings"}
                 </Button>
               )}
+
+              <div>
+                <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">CRM Digests</h3>
+                <p className="text-xs text-muted-foreground mb-3">Silence recurring CRM summaries that aren't relevant to your role.</p>
+                <div className="flex items-center justify-between py-1" data-testid="row-pref-crm-birthday-digest">
+                  <div>
+                    <p className="text-sm font-medium">Weekly CRM birthday digest</p>
+                    <p className="text-xs text-muted-foreground">Monday morning summary of upcoming CRM contact birthdays this week.</p>
+                  </div>
+                  <Switch
+                    checked={!crmBirthdayDigestOptOut}
+                    disabled={loadingUserSettings || updateCrmBirthdayDigestMutation.isPending}
+                    onCheckedChange={handleCrmBirthdayDigestToggle}
+                    data-testid="switch-pref-crm-birthday-digest"
+                  />
+                </div>
+              </div>
 
               {channelPrefs.emailEnabled && (
                 <div>

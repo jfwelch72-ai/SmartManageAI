@@ -6,7 +6,7 @@ import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, type InsertNotification } from "@shared/schema";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -2172,13 +2172,22 @@ async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: boolean
 
   for (const org of orgs) {
     try {
+      // Task #696: respect per-user opt-out of the CRM birthday digest. We
+      // LEFT JOIN user_settings so users who never visited the preferences
+      // page (NULL row) keep the existing default-on behaviour. Only rows
+      // explicitly flagged opt-out are excluded.
       const recipients = await db
         .select({ id: users.id, timezone: users.timezone })
         .from(users)
+        .leftJoin(userSettings, eq(userSettings.userId, users.id))
         .where(and(
           eq(users.organizationId, org.id),
           eq(users.isActive, true),
           inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]),
+          or(
+            isNull(userSettings.crmBirthdayDigestOptOut),
+            eq(userSettings.crmBirthdayDigestOptOut, false),
+          ),
         ));
       if (recipients.length === 0) continue;
 
