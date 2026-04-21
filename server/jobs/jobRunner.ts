@@ -6,7 +6,7 @@ import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, type InsertNotification } from "@shared/schema";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -43,6 +43,8 @@ let socialEngagementTask: ReturnType<typeof cron.schedule> | null = null;
 let scheduledCampaignTask: ReturnType<typeof cron.schedule> | null = null;
 let sequenceCadenceTask: ReturnType<typeof cron.schedule> | null = null;
 let projectGeocodeTask: ReturnType<typeof cron.schedule> | null = null;
+let crmSlaBreachTask: ReturnType<typeof cron.schedule> | null = null;
+let crmIdleAutomationTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -239,6 +241,27 @@ export function startJobRunner() {
     }
   });
 
+  // Task #648: detect SLA breaches across all orgs every 5 minutes so the
+  // "needs attention" deal queue stays current without an admin manually
+  // hitting POST /api/crm/sla/run-check.
+  crmSlaBreachTask = cron.schedule("*/5 * * * *", async () => {
+    try {
+      await processCrmSlaBreaches();
+    } catch (err) {
+      logError("CRM SLA breach sweep failed", { error: String(err) });
+    }
+  });
+
+  // Task #648: tick the CRM automation engine for IDLE_DAYS triggers every
+  // 10 minutes so idle-day automations actually fire on their own.
+  crmIdleAutomationTask = cron.schedule("*/10 * * * *", async () => {
+    try {
+      await processCrmIdleAutomations();
+    } catch (err) {
+      logError("CRM idle automation tick failed", { error: String(err) });
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, and project geocoding schedulers)");
 }
 
@@ -327,6 +350,14 @@ export function stopJobRunner() {
     projectGeocodeTask.stop();
     projectGeocodeTask = null;
   }
+  if (crmSlaBreachTask) {
+    crmSlaBreachTask.stop();
+    crmSlaBreachTask = null;
+  }
+  if (crmIdleAutomationTask) {
+    crmIdleAutomationTask.stop();
+    crmIdleAutomationTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -352,6 +383,8 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   scheduled_campaigns: { fn: () => processScheduledCampaigns(),        description: "Send scheduled email campaigns",          schedule: "*/2 * * * *" },
   sequence_cadences:   { fn: async () => { await processDueExecutions(); }, description: "Run CRM sequence cadence executions",   schedule: "*/2 * * * *" },
   geocode_projects:    { fn: async () => { await geocodePendingProjects(); }, description: "Geocode projects with addresses but no coordinates",   schedule: "30 4 * * *" },
+  crm_sla_breaches:    { fn: () => processCrmSlaBreaches(),            description: "Flag CRM stage SLA breaches across all orgs",         schedule: "*/5 * * * *" },
+  crm_idle_automations:{ fn: () => processCrmIdleAutomations(),        description: "Tick CRM automation engine for IDLE_DAYS triggers",   schedule: "*/10 * * * *" },
 };
 
 async function processOutbox() {
@@ -1830,5 +1863,169 @@ async function processScheduledCampaigns() {
       logError(`Failed to process scheduled campaign: ${campaign.id}`, { error: String(err) });
       await db.update(emailCampaigns).set({ status: "FAILED" }).where(eq(emailCampaigns.id, campaign.id));
     }
+  }
+}
+
+// Task #648: scheduled SLA breach sweep across all orgs.
+async function processCrmSlaBreaches() {
+  const { checkAndFlagSlaBreaches } = await import("../services/crmSlaService");
+  const result = await checkAndFlagSlaBreaches();
+  if (result.flagged > 0) {
+    logInfo("CRM SLA breach sweep complete", { flagged: result.flagged });
+  }
+}
+
+// Task #648: tick the automation engine for IDLE_DAYS triggers. For every
+// active IDLE_DAYS automation we look for open opportunities in that org
+// whose latest activity (or updatedAt fallback) is older than the configured
+// idleDays threshold, then run the automation through the existing engine.
+// We dedupe via crm_automation_runs so a deal that has already triggered the
+// same automation in its current idle stretch doesn't get re-fired on every
+// tick — but if the deal becomes active again and goes idle later, it will
+// re-trigger.
+async function processCrmIdleAutomations() {
+  const automations = await db
+    .select()
+    .from(crmAutomations)
+    .where(and(
+      eq(crmAutomations.trigger, "IDLE_DAYS"),
+      eq(crmAutomations.isActive, true),
+    ));
+
+  if (automations.length === 0) return;
+
+  const { runSingleAutomation } = await import("../services/crmAutomationEngine");
+  const now = Date.now();
+  let totalFired = 0;
+
+  // Group by org so we can do one opp/activity scan per org regardless of how
+  // many IDLE_DAYS automations the org has. Each opportunity is then evaluated
+  // against every automation individually so dedupe stays per (automation,
+  // entity) and the engine isn't re-invoked redundantly.
+  const byOrg = new Map<string, typeof automations>();
+  for (const a of automations) {
+    const list = byOrg.get(a.organizationId) ?? [];
+    list.push(a);
+    byOrg.set(a.organizationId, list);
+  }
+
+  for (const [orgId, orgAutomations] of byOrg) {
+    try {
+      // Use the smallest configured threshold to define the candidate window.
+      const thresholds = orgAutomations.map((a) => {
+        const cfg = (a.triggerConfig as Record<string, any>) || {};
+        const raw = Number(cfg.idleDays);
+        return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 7;
+      });
+      const minThreshold = Math.min(...thresholds);
+      const minCutoff = new Date(now - minThreshold * 24 * 60 * 60 * 1000);
+
+      const candidates = await db
+        .select({
+          id: crmOpportunities.id,
+          updatedAt: crmOpportunities.updatedAt,
+        })
+        .from(crmOpportunities)
+        .where(and(
+          eq(crmOpportunities.organizationId, orgId),
+          sql`${crmOpportunities.stage} NOT IN ('WON', 'LOST')`,
+          isNull(crmOpportunities.wonAt),
+          isNull(crmOpportunities.lostAt),
+          lt(crmOpportunities.updatedAt, minCutoff),
+        ));
+
+      if (candidates.length === 0) continue;
+
+      const oppIds = candidates.map((c) => c.id);
+
+      // True latest activity per opp = max(latest activity.createdAt,
+      // opportunity.updatedAt). updatedAt is the fallback; activities advance
+      // it independently of opportunity row writes, so we can't rely on
+      // updatedAt alone.
+      const latestActivityRows = await db
+        .select({
+          opportunityId: crmOpportunityActivities.opportunityId,
+          latest: sql<Date>`max(${crmOpportunityActivities.createdAt})`,
+        })
+        .from(crmOpportunityActivities)
+        .where(inArray(crmOpportunityActivities.opportunityId, oppIds))
+        .groupBy(crmOpportunityActivities.opportunityId);
+      const latestActivityByOpp = new Map<string, Date>();
+      for (const r of latestActivityRows) {
+        if (r.latest) latestActivityByOpp.set(r.opportunityId, new Date(r.latest as any));
+      }
+
+      type EnrichedOpp = { id: string; latestActivityAt: Date; idleDays: number };
+      const enriched: EnrichedOpp[] = candidates.map((c) => {
+        const fromActivity = latestActivityByOpp.get(c.id);
+        const latestActivityAt = fromActivity && fromActivity > c.updatedAt ? fromActivity : c.updatedAt;
+        const idleDays = Math.floor((now - latestActivityAt.getTime()) / (24 * 60 * 60 * 1000));
+        return { id: c.id, latestActivityAt, idleDays };
+      }).filter((o) => o.idleDays >= minThreshold);
+
+      if (enriched.length === 0) continue;
+
+      // Dedupe lookup: most recent SUCCESS run per (automation, entity) for
+      // any of this org's IDLE_DAYS automations against any of these opps.
+      const automationIds = orgAutomations.map((a) => a.id);
+      // Only consider SUCCESS rows so a transient FAILED run on a previous
+      // tick doesn't permanently suppress retries until the deal sees new
+      // activity.
+      const priorRuns = await db
+        .select({
+          automationId: crmAutomationRuns.automationId,
+          entityId: crmAutomationRuns.entityId,
+          createdAt: crmAutomationRuns.createdAt,
+        })
+        .from(crmAutomationRuns)
+        .where(and(
+          inArray(crmAutomationRuns.automationId, automationIds),
+          eq(crmAutomationRuns.entityType, "OPPORTUNITY"),
+          inArray(crmAutomationRuns.entityId, enriched.map((o) => o.id)),
+          eq(crmAutomationRuns.status, "SUCCESS"),
+        ));
+      const lastRun = new Map<string, Date>(); // key: `${automationId}::${entityId}`
+      for (const r of priorRuns) {
+        const key = `${r.automationId}::${r.entityId}`;
+        const prev = lastRun.get(key);
+        if (!prev || r.createdAt > prev) lastRun.set(key, r.createdAt);
+      }
+
+      for (const opp of enriched) {
+        for (let i = 0; i < orgAutomations.length; i++) {
+          const auto = orgAutomations[i];
+          const threshold = thresholds[i];
+          if (opp.idleDays < threshold) continue;
+
+          // Skip if a prior run for THIS automation+opp is newer than the
+          // deal's last activity. A new idle stretch (after fresh activity)
+          // will re-arm the automation.
+          const last = lastRun.get(`${auto.id}::${opp.id}`);
+          if (last && last > opp.latestActivityAt) continue;
+
+          try {
+            const ok = await runSingleAutomation(
+              { id: auto.id, actions: auto.actions },
+              {
+                orgId,
+                trigger: "IDLE_DAYS",
+                entityType: "OPPORTUNITY",
+                entityId: opp.id,
+                context: { idleDays: opp.idleDays },
+              },
+            );
+            if (ok) totalFired++;
+          } catch (err) {
+            logError("CRM idle automation fire failed", { automationId: auto.id, opportunityId: opp.id, error: String(err) });
+          }
+        }
+      }
+    } catch (err) {
+      logError("CRM idle automation org iteration failed", { orgId, error: String(err) });
+    }
+  }
+
+  if (totalFired > 0) {
+    logInfo("CRM idle automations fired", { count: totalFired, automations: automations.length });
   }
 }

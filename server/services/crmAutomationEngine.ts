@@ -33,37 +33,51 @@ export async function runAutomationsForTrigger(ctx: AutomationContext): Promise<
 
   let executed = 0;
   for (const auto of automations) {
-    try {
-      if (!matchesTrigger(auto.triggerConfig as any, ctx)) continue;
-      const actions = (auto.actions as ActionConfig[]) || [];
-      for (const action of actions) {
-        await executeAction(action, auto.id, ctx);
-      }
-      await db.insert(crmAutomationRuns).values({
-        organizationId: ctx.orgId,
-        automationId: auto.id,
-        entityType: ctx.entityType,
-        entityId: ctx.entityId,
-        status: "SUCCESS",
-        details: { trigger: ctx.trigger, context: ctx.context ?? {} },
-      } as any);
-      executed++;
-    } catch (e) {
-      logError("Automation run failed", { automationId: auto.id }, e as Error);
-      try {
-        await db.insert(crmAutomationRuns).values({
-          organizationId: ctx.orgId,
-          automationId: auto.id,
-          entityType: ctx.entityType,
-          entityId: ctx.entityId,
-          status: "FAILED",
-          errorMessage: (e as Error).message,
-        } as any);
-      } catch { /* ignore */ }
-    }
+    if (!matchesTrigger(auto.triggerConfig as any, ctx)) continue;
+    const ok = await runSingleAutomation({ id: auto.id, actions: auto.actions }, ctx);
+    if (ok) executed++;
   }
   if (executed > 0) logInfo("CRM automations executed", { trigger: ctx.trigger, executed, of: automations.length });
   return { matched: automations.length, executed };
+}
+
+/**
+ * Execute a single, already-loaded automation against a context. Used by the
+ * idle-days background sweep so it can dedupe per (automation, entity) without
+ * relying on the engine re-evaluating every active automation for the org.
+ *
+ * Note: this intentionally does NOT call matchesTrigger — the caller is
+ * responsible for deciding whether the automation should fire.
+ */
+export async function runSingleAutomation(automation: { id: string; actions: unknown }, ctx: AutomationContext): Promise<boolean> {
+  try {
+    const actions = (automation.actions as ActionConfig[]) || [];
+    for (const action of actions) {
+      await executeAction(action, automation.id, ctx);
+    }
+    await db.insert(crmAutomationRuns).values({
+      organizationId: ctx.orgId,
+      automationId: automation.id,
+      entityType: ctx.entityType,
+      entityId: ctx.entityId,
+      status: "SUCCESS",
+      details: { trigger: ctx.trigger, context: ctx.context ?? {} },
+    } as any);
+    return true;
+  } catch (e) {
+    logError("Automation run failed", { automationId: automation.id }, e as Error);
+    try {
+      await db.insert(crmAutomationRuns).values({
+        organizationId: ctx.orgId,
+        automationId: automation.id,
+        entityType: ctx.entityType,
+        entityId: ctx.entityId,
+        status: "FAILED",
+        errorMessage: (e as Error).message,
+      } as any);
+    } catch { /* ignore */ }
+    return false;
+  }
 }
 
 function matchesTrigger(cfg: Record<string, any> | null, ctx: AutomationContext): boolean {
