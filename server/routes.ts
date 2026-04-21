@@ -220,6 +220,7 @@ import executiveDigestRoutes from "./executiveDigestRoutes";
 import emailCampaignRoutes from "./emailCampaignRoutes";
 import savedViewsRoutes from "./savedViewsRoutes";
 import myDayRoutes from "./myDayRoutes";
+import devEmailRoutes from "./devEmailRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -441,6 +442,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // My Day — personal work inbox aggregator
   app.use(myDayRoutes);
+
+  // Dev/QA test email outbox — only active when EMAIL_TRANSPORT=noop
+  app.use(devEmailRoutes);
 
   if (process.env.NODE_ENV === "development") {
     app.use("/api/dev", devSeedEnterpriseRoutes);
