@@ -57,6 +57,44 @@ function pickNumericStr(row: Record<string, any>, mapping: Record<string, string
   return Number.isFinite(n) ? String(n) : undefined;
 }
 
+// Coerce a pick() value into a finite integer (clamped to a safe range) for
+// integer columns. Returns undefined when the value can't be parsed.
+function pickIntStr(row: Record<string, any>, mapping: Record<string, string>, target: string): number | undefined {
+  const s = pickNumericStr(row, mapping, target);
+  if (s === undefined) return undefined;
+  const n = Math.round(Number(s));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// Coerce a pick() value into an ISO YYYY-MM-DD string suitable for `date`
+// columns. Excel date cells arrive as ISO strings (the importer converts Date
+// objects to ISO before queuing). Plain CSV strings are parsed leniently — if
+// we can't make sense of them we return undefined so the row keeps importing
+// without erroring out a whole batch.
+function pickDateStr(row: Record<string, any>, mapping: Record<string, string>, target: string): string | undefined {
+  const v = pick(row, mapping, target);
+  if (v === undefined || v === null || v === "") return undefined;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return undefined;
+    return v.toISOString().slice(0, 10);
+  }
+  const raw = typeof v === "string" ? v.trim() : String(v);
+  if (raw === "") return undefined;
+  // Already YYYY-MM-DD or ISO timestamp — take the date prefix.
+  const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  // Numeric Excel serial date (rare — the importer normalizes most, but be safe).
+  if (typeof v === "number" && Number.isFinite(v)) {
+    // Excel epoch: 1899-12-30 (accounts for the 1900 leap-year bug).
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return undefined;
+}
+
 interface RowError {
   row: number;
   error: string;
@@ -176,6 +214,7 @@ async function processOneJob(): Promise<boolean> {
                   lastName,
                   phone: pickStr(r, mapping, "phone") ?? existing.phone,
                   title: pickStr(r, mapping, "title") ?? existing.title,
+                  birthday: pickDateStr(r, mapping, "birthday") ?? existing.birthday,
                 } as any).where(eq(crmContacts.id, existing.id));
                 progress.updated++;
                 didUpdate = true;
@@ -201,6 +240,7 @@ async function processOneJob(): Promise<boolean> {
                 email: email ?? null,
                 phone: pickStr(r, mapping, "phone") ?? null,
                 title: pickStr(r, mapping, "title") ?? null,
+                birthday: pickDateStr(r, mapping, "birthday") ?? null,
               } as any).returning();
               progress.insertedIds.push(c.id);
               progress.inserted++;
@@ -231,6 +271,10 @@ async function processOneJob(): Promise<boolean> {
                   website: pickStr(r, mapping, "website") ?? null,
                   phone: pickStr(r, mapping, "phone") ?? null,
                   address: pickStr(r, mapping, "address") ?? null,
+                  insuranceExpiration: pickDateStr(r, mapping, "insuranceExpiration") ?? null,
+                  insuranceCoverageAmount: pickNumericStr(r, mapping, "insuranceCoverageAmount") ?? null,
+                  licenseExpiration: pickDateStr(r, mapping, "licenseExpiration") ?? null,
+                  contractExpiration: pickDateStr(r, mapping, "contractExpiration") ?? null,
                 } as any).returning();
                 progress.insertedIds.push(o.id);
                 progress.inserted++;
@@ -252,12 +296,15 @@ async function processOneJob(): Promise<boolean> {
                 value: shortenValue(rawDealValue),
               });
             } else {
+              const probability = pickIntStr(r, mapping, "probability");
               const [o] = await db.insert(crmOpportunities).values({
                 organizationId: orgId,
                 name,
                 stage: (pickStr(r, mapping, "stage") as any) || "LEAD",
                 dealValue: parsedDealValue ?? null,
                 source: pickStr(r, mapping, "source") ?? "CSV Import",
+                expectedCloseDate: pickDateStr(r, mapping, "expectedCloseDate") ?? null,
+                probability: probability !== undefined ? Math.max(0, Math.min(100, probability)) : undefined,
                 stageEnteredAt: new Date(),
               } as any).returning();
               progress.insertedIds.push(o.id);

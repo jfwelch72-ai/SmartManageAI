@@ -303,9 +303,15 @@ function ReportsPanel() {
   );
 }
 
-type FieldDef = { value: string; label: string; required?: boolean };
+type FieldDef = { value: string; label: string; required?: boolean; type?: "text" | "date" | "number" };
 type FieldsByEntity = Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", FieldDef[]>;
 const SKIP_VALUE = "__skip__";
+
+function fieldTypeBadge(t: FieldDef["type"]): string {
+  if (t === "date") return "date";
+  if (t === "number") return "number";
+  return "";
+}
 
 function autoMatchField(header: string, fields: FieldDef[]): string {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -324,8 +330,15 @@ function autoMatchField(header: string, fields: FieldDef[]): string {
     website: ["website", "url", "site", "web"],
     address: ["address", "street", "location", "streetaddress"],
     stage: ["stage", "status", "pipelinestage"],
-    dealValue: ["dealvalue", "value", "amount", "price", "revenue", "dealamount"],
+    dealValue: ["dealvalue", "value", "amount", "price", "revenue", "dealamount", "expectedrevenue", "contractamount"],
     source: ["source", "leadsource", "channel"],
+    birthday: ["birthday", "birthdate", "dob", "dateofbirth"],
+    expectedCloseDate: ["expectedclosedate", "closedate", "closingdate", "estimatedclosedate", "expectedclose"],
+    probability: ["probability", "winprobability", "winchance", "chance"],
+    insuranceExpiration: ["insuranceexpiration", "insuranceexpiry", "insexpiration", "insexpiry"],
+    insuranceCoverageAmount: ["insurancecoverage", "insurancecoverageamount", "coverageamount", "coverage"],
+    licenseExpiration: ["licenseexpiration", "licenseexpiry", "licexpiration"],
+    contractExpiration: ["contractexpiration", "contractexpiry", "contractend", "contractenddate"],
   };
   for (const f of fields) {
     const candidates = aliases[f.value] ?? [f.value.toLowerCase()];
@@ -772,11 +785,17 @@ function ImportPanel() {
                         <SelectTrigger data-testid={`select-mapping-${h}`}><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value={SKIP_VALUE}>— Skip this column —</SelectItem>
-                          {fields.map((f) => (
-                            <SelectItem key={f.value} value={f.value}>
-                              {f.label}{f.required ? " *" : ""}
-                            </SelectItem>
-                          ))}
+                          {fields.map((f) => {
+                            const badge = fieldTypeBadge(f.type);
+                            return (
+                              <SelectItem key={f.value} value={f.value}>
+                                {f.label}{f.required ? " *" : ""}
+                                {badge && (
+                                  <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground" data-testid={`field-type-${f.value}`}>[{badge}]</span>
+                                )}
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     </div>
@@ -832,6 +851,9 @@ function ImportPanel() {
                         {previewColumns.map((c) => (
                           <th key={c.value} className="text-left font-medium py-1 pr-3" data-testid={`preview-header-${c.value}`}>
                             {c.label}
+                            {fieldTypeBadge(c.type) && (
+                              <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground font-normal">[{fieldTypeBadge(c.type)}]</span>
+                            )}
                             <div className="text-xs text-muted-foreground font-normal">{c.value}</div>
                           </th>
                         ))}

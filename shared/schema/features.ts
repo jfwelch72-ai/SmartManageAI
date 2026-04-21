@@ -1517,6 +1517,7 @@ export const crmContacts = pgTable("crm_contacts", {
   preferredContact: crmPreferredContactEnum("preferred_contact").default("EMAIL"),
   preferredContactOther: text("preferred_contact_other"),
   timezone: text("timezone"),
+  birthday: date("birthday"),
   notes: text("notes"),
   isPrimary: boolean("is_primary").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),

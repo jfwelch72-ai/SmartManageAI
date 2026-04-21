@@ -16,8 +16,11 @@ const EDIT_ROLES = ["ADMIN", "HUSTLER", "MANAGER"] as const;
 
 // Valid target fields per entity, kept in sync with crmCsvImportWorker.ts.
 // Each entry: { value: schema field key the worker reads, label: human-friendly,
-// required?: at least one of the required fields must be mapped to import a row }.
-export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", Array<{ value: string; label: string; required?: boolean }>> = {
+// type?: data-type hint shown in the mapping UI so users pair date/number Excel
+// cells with typed targets, required?: at least one required field must be
+// mapped to import a row }.
+export type CsvImportFieldType = "text" | "date" | "number";
+export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY", Array<{ value: string; label: string; required?: boolean; type?: CsvImportFieldType }>> = {
   CONTACT: [
     { value: "fullName", label: "Full name", required: true },
     { value: "firstName", label: "First name", required: true },
@@ -26,6 +29,7 @@ export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY
     { value: "phone", label: "Phone" },
     { value: "title", label: "Title / role" },
     { value: "company", label: "Company / organisation" },
+    { value: "birthday", label: "Birthday", type: "date" },
   ],
   ORGANISATION: [
     { value: "name", label: "Name", required: true },
@@ -33,12 +37,18 @@ export const CSV_IMPORT_FIELDS: Record<"CONTACT" | "ORGANISATION" | "OPPORTUNITY
     { value: "website", label: "Website" },
     { value: "phone", label: "Phone" },
     { value: "address", label: "Address" },
+    { value: "insuranceExpiration", label: "Insurance expiration", type: "date" },
+    { value: "insuranceCoverageAmount", label: "Insurance coverage amount", type: "number" },
+    { value: "licenseExpiration", label: "License expiration", type: "date" },
+    { value: "contractExpiration", label: "Contract expiration", type: "date" },
   ],
   OPPORTUNITY: [
     { value: "name", label: "Name", required: true },
     { value: "stage", label: "Stage" },
-    { value: "dealValue", label: "Deal value" },
+    { value: "dealValue", label: "Deal value (expected revenue)", type: "number" },
     { value: "source", label: "Source" },
+    { value: "expectedCloseDate", label: "Expected close date", type: "date" },
+    { value: "probability", label: "Probability (%)", type: "number" },
   ],
 };
 
