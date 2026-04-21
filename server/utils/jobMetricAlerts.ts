@@ -1172,6 +1172,176 @@ export async function fetchAlertEventsBetween(
     .orderBy(jobMetricAlertEvents.triggeredAt);
 }
 
+/**
+ * Task #774 — Shared helper that powers
+ * `GET /api/admin/metrics/jobs/alerts/events.csv`.
+ *
+ * Parsing the `from`/`to`/`range` query, enforcing the 90-day cap, and
+ * stitching together `fetchAlertEventsBetween` + `buildDigestCsv` lives
+ * here so the route in `server/routes.ts` stays a thin wrapper and so
+ * the CSV contract (header + escape rules + filename format) can be
+ * pinned by the existing job metric alert test suite without spinning
+ * up the full Express app.
+ */
+export interface AlertEventsCsvQuery {
+  from?: string;
+  to?: string;
+  range?: string;
+  job?: string;
+  counter?: string;
+}
+
+export type AlertEventsCsvResponse =
+  | {
+      ok: true;
+      from: Date;
+      to: Date;
+      csv: string;
+      filename: string;
+      contentType: string;
+    }
+  | { ok: false; status: 400; error: string; details?: unknown };
+
+const ALERT_EVENTS_CSV_MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+function isIsoDateTimeWithOffset(value: string): boolean {
+  // RFC 3339 with offset (Z or ±HH:MM); mirrors zod's
+  // `z.string().datetime({ offset: true })` behavior closely enough
+  // for the CSV endpoint without pulling zod into the helper.
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+    value,
+  );
+}
+
+export function resolveAlertEventsCsvRange(
+  query: AlertEventsCsvQuery,
+  now: number,
+):
+  | { ok: true; from: Date; to: Date }
+  | { ok: false; status: 400; error: string; details?: unknown } {
+  if (
+    query.range !== undefined &&
+    query.range !== "24h" &&
+    query.range !== "7d"
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Invalid range",
+      details: [{ path: ["range"], message: "Expected '24h' or '7d'" }],
+    };
+  }
+  if (query.from !== undefined && !isIsoDateTimeWithOffset(query.from)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Invalid range",
+      details: [{ path: ["from"], message: "Expected ISO 8601 with offset" }],
+    };
+  }
+  if (query.to !== undefined && !isIsoDateTimeWithOffset(query.to)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Invalid range",
+      details: [{ path: ["to"], message: "Expected ISO 8601 with offset" }],
+    };
+  }
+  if (query.job !== undefined && query.job.trim().length > 200) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Invalid range",
+      details: [{ path: ["job"], message: "Must be 200 characters or fewer" }],
+    };
+  }
+  if (query.counter !== undefined && query.counter.trim().length > 200) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Invalid range",
+      details: [{ path: ["counter"], message: "Must be 200 characters or fewer" }],
+    };
+  }
+  if (query.from || query.to) {
+    if (!query.from || !query.to) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Both 'from' and 'to' are required for a custom range",
+      };
+    }
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      return { ok: false, status: 400, error: "Invalid 'from' or 'to' timestamp" };
+    }
+    if (from.getTime() >= to.getTime()) {
+      return { ok: false, status: 400, error: "'from' must be before 'to'" };
+    }
+    if (to.getTime() - from.getTime() > ALERT_EVENTS_CSV_MAX_RANGE_MS) {
+      return { ok: false, status: 400, error: "Range must be 90 days or less" };
+    }
+    return { ok: true, from, to };
+  }
+  const rangeKey = query.range ?? "24h";
+  const lookbackMs = rangeKey === "7d" ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  return { ok: true, from: new Date(now - lookbackMs), to: new Date(now) };
+}
+
+function slugifyAlertEventsCsvFilter(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+function appendAlertEventsCsvFilterSuffix(
+  baseFilename: string,
+  filters: { job?: string | null; counter?: string | null },
+): string {
+  const suffix = [
+    filters.job ? `job-${slugifyAlertEventsCsvFilter(filters.job)}` : null,
+    filters.counter
+      ? `counter-${slugifyAlertEventsCsvFilter(filters.counter)}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("_");
+  if (!suffix) return baseFilename;
+  return baseFilename.replace(/\.csv$/, `_${suffix}.csv`);
+}
+
+export async function buildAlertEventsCsvResponse(opts: {
+  query: AlertEventsCsvQuery;
+  now?: number;
+  fetchEvents?: (
+    from: Date,
+    to: Date,
+    filters: { job?: string | null; counter?: string | null },
+  ) => Promise<DigestEventRow[]>;
+}): Promise<AlertEventsCsvResponse> {
+  const now = opts.now ?? Date.now();
+  const range = resolveAlertEventsCsvRange(opts.query, now);
+  if (!range.ok) return range;
+  const job = opts.query.job?.trim() || undefined;
+  const counter = opts.query.counter?.trim() || undefined;
+  const fetchEvents = opts.fetchEvents ?? fetchAlertEventsBetween;
+  const events = await fetchEvents(range.from, range.to, { job, counter });
+  const csv = buildDigestCsv(events);
+  const baseFilename = buildDigestCsvFilename(range.from, range.to);
+  const filename = appendAlertEventsCsvFilterSuffix(baseFilename, { job, counter });
+  return {
+    ok: true,
+    from: range.from,
+    to: range.to,
+    csv,
+    filename,
+    contentType: "text/csv; charset=utf-8",
+  };
+}
+
 function formatDigestSubject(count: number): string {
   return count === 1
     ? `Quiet-hours digest: 1 alert fired while you were silenced`

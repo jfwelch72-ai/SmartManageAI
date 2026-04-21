@@ -951,74 +951,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // hunting through their inbox. Columns mirror `buildDigestCsv` exactly.
   app.get("/api/admin/metrics/jobs/alerts/events.csv", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const schema = z.object({
-        from: z.string().datetime({ offset: true }).optional(),
-        to: z.string().datetime({ offset: true }).optional(),
-        range: z.enum(["24h", "7d"]).optional(),
-        job: z.string().trim().min(1).max(200).optional(),
-        counter: z.string().trim().min(1).max(200).optional(),
-      });
-      const parsed = schema.parse(req.query);
-      const now = Date.now();
-      let to: Date;
-      let from: Date;
-      if (parsed.from || parsed.to) {
-        if (!parsed.from || !parsed.to) {
-          res.status(400).json({ error: "Both 'from' and 'to' are required for a custom range" });
-          return;
-        }
-        from = new Date(parsed.from);
-        to = new Date(parsed.to);
-        if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-          res.status(400).json({ error: "Invalid 'from' or 'to' timestamp" });
-          return;
-        }
-        if (from.getTime() >= to.getTime()) {
-          res.status(400).json({ error: "'from' must be before 'to'" });
-          return;
-        }
-        // Cap arbitrary ranges to 90 days so a misclick can't pull years
-        // of events into a single response.
-        const MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000;
-        if (to.getTime() - from.getTime() > MAX_RANGE_MS) {
-          res.status(400).json({ error: "Range must be 90 days or less" });
-          return;
-        }
-      } else {
-        const rangeKey = parsed.range ?? "24h";
-        const lookbackMs = rangeKey === "7d" ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-        to = new Date(now);
-        from = new Date(now - lookbackMs);
-      }
-
       const mod = await import("./utils/jobMetricAlerts");
-      const events = await mod.fetchAlertEventsBetween(from, to, {
-        job: parsed.job,
-        counter: parsed.counter,
+      const result = await mod.buildAlertEventsCsvResponse({
+        query: {
+          from: typeof req.query.from === "string" ? req.query.from : undefined,
+          to: typeof req.query.to === "string" ? req.query.to : undefined,
+          range: typeof req.query.range === "string" ? req.query.range : undefined,
+          job: typeof req.query.job === "string" ? req.query.job : undefined,
+          counter: typeof req.query.counter === "string" ? req.query.counter : undefined,
+        },
       });
-      const csv = mod.buildDigestCsv(events);
-      const fmt = (d: Date) =>
-        d.toISOString().replace(/[:.]/g, "-").replace(/T/, "_").slice(0, 19);
-      const slugify = (v: string) =>
-        v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
-      const filterSuffix = [
-        parsed.job ? `job-${slugify(parsed.job)}` : null,
-        parsed.counter ? `counter-${slugify(parsed.counter)}` : null,
-      ]
-        .filter(Boolean)
-        .join("_");
-      const baseName = `quiet-hours-digest_${fmt(from)}_to_${fmt(to)}`;
-      const filename = filterSuffix
-        ? `${baseName}_${filterSuffix}.csv`
-        : `${baseName}.csv`;
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(csv);
-    } catch (err: any) {
-      if (err instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid range", details: err.errors });
+      if (!result.ok) {
+        const body: Record<string, unknown> = { error: result.error };
+        if (result.details !== undefined) body.details = result.details;
+        res.status(result.status).json(body);
         return;
       }
+      res.setHeader("Content-Type", result.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);
+      res.send(result.csv);
+    } catch (err: any) {
       next(err);
     }
   });

@@ -628,3 +628,243 @@ describe("sendJobMetricAlertQuietHoursDigests honors digestFormat (Task #766)", 
     expect(i3).toBeGreaterThan(i2);
   });
 });
+
+/**
+ * Task #774 — Pin the contract of the new
+ * `GET /api/admin/metrics/jobs/alerts/events.csv` endpoint, which reuses
+ * `buildDigestCsv` so the dashboard download matches the digest email
+ * attachment exactly. The route delegates to
+ * `buildAlertEventsCsvResponse`, which is exercised here with seeded
+ * `job_metric_alert_events` rows fed through an injected fetcher.
+ */
+describe("buildAlertEventsCsvResponse (Task #774 — alert events CSV download)", () => {
+  type SeedRow = {
+    job: string;
+    counter: string | null;
+    kind: string;
+    message: string;
+    triggeredAt: Date;
+    emailed: boolean;
+  };
+
+  function seed(rows: SeedRow[]) {
+    return async (_from: Date, _to: Date) => rows;
+  }
+
+  function captureRange() {
+    const calls: Array<{ from: Date; to: Date }> = [];
+    return {
+      calls,
+      fetcher: async (from: Date, to: Date) => {
+        calls.push({ from, to });
+        return [] as SeedRow[];
+      },
+    };
+  }
+
+  const NOW = Date.UTC(2026, 3, 21, 12, 0, 0);
+  const HEADER = "job,counter,kind,triggeredAt,message";
+
+  it("uses a 24-hour lookback window by default and returns the digest CSV header + escaped rows", async () => {
+    const rows: SeedRow[] = [
+      {
+        job: "ingest,worker",
+        counter: 'errors"raw',
+        kind: "spike",
+        message: "errors spiked 12x baseline\nfollow-up line",
+        triggeredAt: new Date(Date.UTC(2026, 3, 21, 6, 30, 0)),
+        emailed: true,
+      },
+      {
+        job: "report_runner",
+        counter: "latency_ms",
+        kind: "stall",
+        message: "latency_ms stalled at 0",
+        triggeredAt: new Date(Date.UTC(2026, 3, 21, 9, 15, 0)),
+        emailed: false,
+      },
+    ];
+    const cap = captureRange();
+    const wrapped = async (from: Date, to: Date) => {
+      cap.calls.push({ from, to });
+      return rows;
+    };
+
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: {},
+      now: NOW,
+      fetchEvents: wrapped,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.contentType).toBe("text/csv; charset=utf-8");
+    // 24h lookback
+    expect(result.from.getTime()).toBe(NOW - 24 * 60 * 60 * 1000);
+    expect(result.to.getTime()).toBe(NOW);
+    expect(cap.calls).toHaveLength(1);
+    expect(cap.calls[0].from.getTime()).toBe(result.from.getTime());
+    expect(cap.calls[0].to.getTime()).toBe(result.to.getTime());
+
+    // Filename mirrors the digest attachment naming: ISO with `:` and `.`
+    // swapped to `-` so the file lands cleanly on every OS.
+    expect(result.filename).toMatch(/^quiet-hours-digest_.+_to_.+\.csv$/);
+
+    // CRLF-delimited per RFC 4180.
+    const lines = result.csv.split("\r\n");
+    expect(lines[0]).toBe(HEADER);
+    // header + 2 rows + trailing empty line from the closing CRLF.
+    expect(lines).toHaveLength(4);
+    expect(lines[3]).toBe("");
+    // Row 1 must escape commas, embedded quotes, and the newline.
+    expect(lines[1]).toContain('"ingest,worker"');
+    expect(lines[1]).toContain('"errors""raw"');
+    expect(lines[1]).toContain("spike");
+    expect(lines[1]).toContain("2026-04-21T06:30:00.000Z");
+    expect(result.csv).toContain('"errors spiked 12x baseline\nfollow-up line"');
+    // Row 2 — unescaped fields stay unquoted.
+    expect(lines[2]).toBe(
+      "report_runner,latency_ms,stall,2026-04-21T09:15:00.000Z,latency_ms stalled at 0",
+    );
+  });
+
+  it("uses a 7-day lookback window when range=7d is passed", async () => {
+    const cap = captureRange();
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: { range: "7d" },
+      now: NOW,
+      fetchEvents: cap.fetcher,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.from.getTime()).toBe(NOW - 7 * 24 * 60 * 60 * 1000);
+    expect(result.to.getTime()).toBe(NOW);
+    expect(cap.calls[0].from.getTime()).toBe(NOW - 7 * 24 * 60 * 60 * 1000);
+    // Empty result still produces the header + trailing CRLF.
+    expect(result.csv).toBe(HEADER + "\r\n");
+  });
+
+  it("uses an explicit from/to range when both are provided", async () => {
+    const from = "2026-03-01T00:00:00.000Z";
+    const to = "2026-03-15T00:00:00.000Z";
+    const rows: SeedRow[] = [
+      {
+        job: "nightly_rollup",
+        counter: null,
+        kind: "stall",
+        message: "nightly_rollup has not reported in 12h",
+        triggeredAt: new Date(Date.UTC(2026, 2, 10, 4, 0, 0)),
+        emailed: true,
+      },
+    ];
+    const cap = captureRange();
+    const wrapped = async (f: Date, t: Date) => {
+      cap.calls.push({ from: f, to: t });
+      return rows;
+    };
+
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: { from, to },
+      now: NOW,
+      fetchEvents: wrapped,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.from.toISOString()).toBe(from);
+    expect(result.to.toISOString()).toBe(to);
+    expect(cap.calls[0].from.toISOString()).toBe(from);
+    expect(cap.calls[0].to.toISOString()).toBe(to);
+    // null counter renders as an empty field between the leading job and kind.
+    const lines = result.csv.split("\r\n");
+    expect(lines[0]).toBe(HEADER);
+    expect(lines[1]).toBe(
+      "nightly_rollup,,stall,2026-03-10T04:00:00.000Z,nightly_rollup has not reported in 12h",
+    );
+    // Filename reflects the requested window.
+    expect(result.filename).toContain("2026-03-01_00-00-00");
+    expect(result.filename).toContain("2026-03-15_00-00-00");
+  });
+
+  it("rejects an unknown range value with a 400 + zod-style details", async () => {
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: { range: "30d" },
+      now: NOW,
+      fetchEvents: seed([]),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(400);
+    expect(result.error).toBe("Invalid range");
+    expect(result.details).toBeDefined();
+  });
+
+  it("rejects a malformed ISO timestamp with a 400", async () => {
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: { from: "not-a-date", to: "2026-03-15T00:00:00.000Z" },
+      now: NOW,
+      fetchEvents: seed([]),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(400);
+    expect(result.error).toBe("Invalid range");
+  });
+
+  it("rejects a custom range that is missing one of from/to", async () => {
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: { from: "2026-03-01T00:00:00.000Z" },
+      now: NOW,
+      fetchEvents: seed([]),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(400);
+    expect(result.error).toMatch(/Both 'from' and 'to'/);
+  });
+
+  it("rejects a reversed range where from >= to", async () => {
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: {
+        from: "2026-03-15T00:00:00.000Z",
+        to: "2026-03-01T00:00:00.000Z",
+      },
+      now: NOW,
+      fetchEvents: seed([]),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(400);
+    expect(result.error).toBe("'from' must be before 'to'");
+  });
+
+  it("rejects a custom range longer than 90 days", async () => {
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: {
+        from: "2026-01-01T00:00:00.000Z",
+        // Exactly 91 days later
+        to: "2026-04-02T00:00:00.000Z",
+      },
+      now: NOW,
+      fetchEvents: seed([]),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(400);
+    expect(result.error).toBe("Range must be 90 days or less");
+  });
+
+  it("accepts a custom range that is exactly 90 days long", async () => {
+    const cap = captureRange();
+    const result = await alerts.buildAlertEventsCsvResponse({
+      query: {
+        from: "2026-01-01T00:00:00.000Z",
+        to: "2026-04-01T00:00:00.000Z",
+      },
+      now: NOW,
+      fetchEvents: cap.fetcher,
+    });
+    expect(result.ok).toBe(true);
+  });
+});
