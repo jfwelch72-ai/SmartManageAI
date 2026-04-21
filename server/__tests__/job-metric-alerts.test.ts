@@ -113,18 +113,21 @@ const dbMock = {
     const dynamicChain: Record<string, unknown> = {};
     dynamicChain.from = (table: unknown) => {
       const tableName = tableNameOf(table);
-      let rows: unknown[] = [];
+      let baseRows: unknown[] = [];
+      let isEventsTable = false;
       if (tableName === "job_metric_alert_rules") {
-        rows = state.rules.filter((r) => r.enabled);
+        baseRows = state.rules.filter((r) => r.enabled);
       } else if (tableName === "job_metric_alert_events") {
-        rows = state.events
+        baseRows = state.events
           .slice()
           .sort((a, b) => b.triggeredAt.getTime() - a.triggeredAt.getTime());
+        isEventsTable = true;
       } else if (tableName === "users") {
-        rows = state.superAdminIds.map((id) => ({
+        baseRows = state.superAdminIds.map((id) => ({
           id,
           email: `${id}@example.com`,
           isActive: true,
+          receivesJobMetricAlertEmails: true,
           firstName: null,
           lastName: null,
           receivesJobMetricAlertEmails: true,
@@ -135,12 +138,35 @@ const dbMock = {
           jobMetricAlertQuietHoursWeekdays: null,
         }));
       }
+      let joinCount = 0;
+      const computeRows = () => {
+        // listRecentJobMetricAlertEvents projects {event, ackFirst, ackLast,
+        // ackEmail, snoozeFirst, snoozeLast, snoozeEmail} and joins users
+        // twice. Wrap event rows to match that shape when joins are used.
+        if (isEventsTable && joinCount > 0) {
+          return baseRows.map((r) => ({
+            event: r,
+            ackFirst: null,
+            ackLast: null,
+            ackEmail: null,
+            snoozeFirst: null,
+            snoozeLast: null,
+            snoozeEmail: null,
+          }));
+        }
+        return baseRows;
+      };
       const innerChain: Record<string, unknown> = {};
       innerChain.where = (_cond: unknown) => innerChain;
-      innerChain.orderBy = (..._args2: unknown[]) => Promise.resolve(rows);
+      innerChain.leftJoin = (_t: unknown, _c: unknown) => {
+        joinCount++;
+        return innerChain;
+      };
+      innerChain.orderBy = (..._args2: unknown[]) =>
+        Promise.resolve(computeRows());
       (innerChain as { then?: unknown }).then = (
         onFulfilled: (value: unknown) => unknown,
-      ) => Promise.resolve(rows).then(onFulfilled);
+      ) => Promise.resolve(computeRows()).then(onFulfilled);
       return innerChain;
     };
     return dynamicChain;
