@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Inbox, Loader2, Trash2, Mail, FilterX, Search } from "lucide-react";
+import { Inbox, Loader2, Trash2, Mail, FilterX, Search, Wifi, WifiOff } from "lucide-react";
 import { format } from "date-fns";
 import NotFound from "@/pages/not-found";
 
@@ -36,10 +36,12 @@ const QUERY_KEY = ["/api/admin/dev/email-outbox"];
 
 export default function AdminEmailOutboxPage() {
   const { toast } = useToast();
+  const [streamConnected, setStreamConnected] = useState(false);
 
-  const { data, isLoading, isError, error } = useQuery<OutboxResponse>({
+  // Initial load + fallback when SSE isn't available (e.g. transport not in
+  // noop mode → 404 → render NotFound below).
+  const { data, isLoading, isError } = useQuery<OutboxResponse>({
     queryKey: QUERY_KEY,
-    refetchInterval: 5000,
     retry: false,
   });
 
@@ -98,12 +100,58 @@ export default function AdminEmailOutboxPage() {
     setSearchQuery("");
   };
 
+  // Subscribe to the SSE stream so captured emails appear without waiting
+  // on a poll. The stream sends an initial `snapshot` event followed by
+  // one `captured` event per outbound email.
+  useEffect(() => {
+    if (isError) return;
+    const source = new EventSource("/api/admin/dev/email-outbox/stream", {
+      withCredentials: true,
+    });
+
+    source.addEventListener("open", () => setStreamConnected(true));
+    source.addEventListener("error", () => setStreamConnected(false));
+
+    source.addEventListener("snapshot", (ev: MessageEvent) => {
+      try {
+        const payload = JSON.parse(ev.data) as { messages: CapturedEmail[] };
+        queryClient.setQueryData<OutboxResponse>(QUERY_KEY, {
+          transport: "noop",
+          messages: payload.messages,
+        });
+        setStreamConnected(true);
+      } catch {
+        // Ignore malformed payloads — the next event will refresh state.
+      }
+    });
+
+    source.addEventListener("captured", (ev: MessageEvent) => {
+      try {
+        const email = JSON.parse(ev.data) as CapturedEmail;
+        queryClient.setQueryData<OutboxResponse>(QUERY_KEY, (prev) => ({
+          transport: "noop",
+          messages: [...(prev?.messages ?? []), email],
+        }));
+      } catch {
+        // Ignore malformed payloads.
+      }
+    });
+
+    return () => {
+      source.close();
+      setStreamConnected(false);
+    };
+  }, [isError]);
+
   const clearMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("DELETE", "/api/admin/dev/email-outbox");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.setQueryData<OutboxResponse>(QUERY_KEY, {
+        transport: "noop",
+        messages: [],
+      });
       toast({ title: "Outbox cleared", description: "All captured test emails were removed." });
     },
     onError: (err: Error) => {
@@ -224,17 +272,34 @@ export default function AdminEmailOutboxPage() {
         </CardContent>
       </Card>
 
-      <div className="text-sm text-muted-foreground" data-testid="text-message-count">
-        {filtersActive ? (
-          <>
-            Showing {filteredMessages.length} of {messages.length}{" "}
-            {messages.length === 1 ? "message" : "messages"}
-          </>
-        ) : (
-          <>
-            {messages.length} captured {messages.length === 1 ? "message" : "messages"}
-          </>
-        )}
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <span data-testid="text-message-count">
+          {filtersActive ? (
+            <>
+              Showing {filteredMessages.length} of {messages.length}{" "}
+              {messages.length === 1 ? "message" : "messages"}
+            </>
+          ) : (
+            <>
+              {messages.length} captured {messages.length === 1 ? "message" : "messages"}
+            </>
+          )}
+        </span>
+        <Badge
+          variant={streamConnected ? "secondary" : "outline"}
+          className="gap-1"
+          data-testid="badge-stream-status"
+        >
+          {streamConnected ? (
+            <>
+              <Wifi className="h-3 w-3" /> live
+            </>
+          ) : (
+            <>
+              <WifiOff className="h-3 w-3" /> reconnecting
+            </>
+          )}
+        </Badge>
       </div>
 
       {messages.length === 0 ? (
@@ -264,7 +329,7 @@ export default function AdminEmailOutboxPage() {
           {filteredMessages
             .slice()
             .reverse()
-            .map((msg, idx) => {
+            .map((msg) => {
               const realIndex = messages.indexOf(msg);
               return (
                 <Card key={`${msg.capturedAt}-${realIndex}`} data-testid={`card-email-${realIndex}`}>
