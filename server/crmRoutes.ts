@@ -209,6 +209,7 @@ import { scoreWinProbability } from "./ai/winProbabilityService";
 import { evaluateAssignment } from "./utils/crmAssignmentEngine";
 import { scoreOpportunity } from "./utils/crmLeadScorer";
 import { upsertCustomFieldValues, getCustomFieldsMap, getCustomFieldsMapBatch, getEntityIdsMatchingCustomFieldFilters, deleteCustomFieldValuesForEntity } from "./crmCustomFieldsRoutes";
+import { inferTimezoneFromSignals } from "@shared/timezones";
 
 const router = Router();
 
@@ -1467,11 +1468,19 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "HUSTLER", "M
 
     if (!parentOrg) return res.status(404).json({ error: "Parent organisation not found" });
 
+    const rawTimezone = typeof req.body?.timezone === "string" && req.body.timezone.trim() === ""
+      ? null
+      : req.body?.timezone;
+    const timezone = rawTimezone ?? inferTimezoneFromSignals({
+      zip: parentOrg.zipCode ?? null,
+      state: parentOrg.state ?? null,
+      phone: req.body?.phone ?? null,
+      mobile: req.body?.mobile ?? null,
+    });
+
     const validationResult = insertCrmContactSchema.safeParse({
       ...req.body,
-      timezone: typeof req.body?.timezone === "string" && req.body.timezone.trim() === ""
-        ? null
-        : req.body?.timezone,
+      timezone,
       organizationId: orgId,
       createdById: req.user!.id,
     });
@@ -1560,11 +1569,36 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "HUSTLER",
       return;
     }
 
+    const timezoneProvided = "timezone" in (req.body ?? {});
+    const explicitTimezone = typeof req.body?.timezone === "string" && req.body.timezone.trim() === ""
+      ? null
+      : req.body?.timezone;
+    const phoneAfter = "phone" in (req.body ?? {}) ? req.body.phone : existing.phone;
+    const mobileAfter = "mobile" in (req.body ?? {}) ? req.body.mobile : existing.mobile;
+    const timezoneAfter = timezoneProvided ? explicitTimezone : existing.timezone;
+
+    let inferredTimezone: string | null | undefined;
+    if (!timezoneAfter) {
+      const [parentOrgForTz] = await db
+        .select({ state: crmOrganisations.state, zipCode: crmOrganisations.zipCode })
+        .from(crmOrganisations)
+        .where(eq(crmOrganisations.id, existing.organisationId))
+        .limit(1);
+      inferredTimezone = inferTimezoneFromSignals({
+        zip: parentOrgForTz?.zipCode ?? null,
+        state: parentOrgForTz?.state ?? null,
+        phone: phoneAfter ?? null,
+        mobile: mobileAfter ?? null,
+      });
+    }
+
     const updateBody = {
       ...req.body,
-      ...(typeof req.body?.timezone === "string" && req.body.timezone.trim() === ""
-        ? { timezone: null }
-        : {}),
+      ...(timezoneProvided
+        ? { timezone: explicitTimezone ?? inferredTimezone ?? null }
+        : inferredTimezone
+          ? { timezone: inferredTimezone }
+          : {}),
     };
     const validationResult = insertCrmContactSchema.partial().safeParse(updateBody);
     if (!validationResult.success) {

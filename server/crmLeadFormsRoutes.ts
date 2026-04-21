@@ -11,7 +11,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { runAutomationsForTrigger } from "./services/crmAutomationEngine";
-import { inferTimezoneFromUSState, isValidTimezone } from "@shared/timezones";
+import { inferTimezoneFromSignals, isValidTimezone } from "@shared/timezones";
 import rateLimit from "express-rate-limit";
 
 const publicLeadFormLimiter = rateLimit({
@@ -147,10 +147,19 @@ router.post("/api/public/lead-forms/:slug/submit", publicLeadFormLimiter, async 
     const phone: string | undefined = payload.phone || payload.Phone || payload.phoneNumber;
     const company: string | undefined = payload.company || payload.companyName;
     const stateRaw: string | undefined = payload.state || payload.State || payload.region;
+    const zipRaw: string | undefined =
+      payload.zip || payload.zipCode || payload.zip_code ||
+      payload.postalCode || payload.postal_code || payload.postcode;
+    const countryRaw: string | undefined = payload.country || payload.Country;
     const tzRaw: string | undefined = payload.timezone || payload.Timezone || payload.tz || payload.timeZone;
     const submittedTz =
       tzRaw && typeof tzRaw === "string" && isValidTimezone(tzRaw) ? tzRaw : null;
-    const inferredTz = submittedTz ?? inferTimezoneFromUSState(stateRaw ?? null);
+    const inferredTz = submittedTz ?? inferTimezoneFromSignals({
+      zip: zipRaw ?? null,
+      state: stateRaw ?? null,
+      country: countryRaw ?? null,
+      phone: phone ?? null,
+    });
 
     let contactId: string | null = null;
     if (email) {
