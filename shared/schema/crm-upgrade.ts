@@ -196,6 +196,12 @@ export const crmCsvImportJobs = pgTable("crm_csv_import_jobs", {
   // payload: array of raw csv rows queued for processing (cleared once processed)
   payload: jsonb("payload").notNull().default([]),
   errors: jsonb("errors").notNull().default([]),
+  // Source rows (objects keyed by original CSV header) that hit a row-level
+  // error during processing. Persisted after completion so users can download
+  // / re-import just the failed rows without keeping the full payload.
+  erroredSourceRows: jsonb("errored_source_rows").notNull().default([]),
+  // When this job is a retry of a previous job, point back to the parent.
+  parentJobId: varchar("parent_job_id"),
   startedAt: timestamp("started_at"),
   insertedIds: text("inserted_ids").array().notNull().default(sql`ARRAY[]::text[]`),
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
@@ -204,6 +210,7 @@ export const crmCsvImportJobs = pgTable("crm_csv_import_jobs", {
 }, (table) => ({
   orgIdx: index("crm_csv_import_jobs_org_idx").on(table.organizationId),
   statusIdx: index("crm_csv_import_jobs_status_idx").on(table.status),
+  parentIdx: index("crm_csv_import_jobs_parent_idx").on(table.parentJobId),
 }));
 export const insertCrmCsvImportJobSchema = createInsertSchema(crmCsvImportJobs).omit({ id: true, createdAt: true });
 export type InsertCrmCsvImportJob = z.infer<typeof insertCrmCsvImportJobSchema>;

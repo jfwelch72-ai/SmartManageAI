@@ -81,6 +81,7 @@ router.get("/api/crm/csv-imports", requireAuth, requireRole(...READ_ROLES), asyn
       errorRows: crmCsvImportJobs.errorRows,
       mapping: crmCsvImportJobs.mapping,
       errors: crmCsvImportJobs.errors,
+      parentJobId: crmCsvImportJobs.parentJobId,
       startedAt: crmCsvImportJobs.startedAt,
       createdAt: crmCsvImportJobs.createdAt,
       completedAt: crmCsvImportJobs.completedAt,
@@ -265,6 +266,101 @@ router.post("/api/crm/csv-imports/:id/revert", requireAuth, requireRole(...EDIT_
     const [updated] = await db.update(crmCsvImportJobs).set({ status: "REVERTED", completedAt: new Date() } as any).where(eq(crmCsvImportJobs.id, job.id)).returning();
     const { payload: _omit, ...response } = updated as any;
     res.json(response);
+  } catch (e) { next(e); }
+});
+
+// Build the union of CSV column headers across a list of source rows so the
+// re-export preserves every original column the user uploaded.
+function collectHeaders(rows: Array<Record<string, any>>, mapping: Record<string, string>): string[] {
+  const seen = new Set<string>();
+  const headers: string[] = [];
+  // Prefer headers from the original mapping first so the column order is
+  // stable / familiar.
+  for (const k of Object.keys(mapping || {})) {
+    if (!seen.has(k)) { seen.add(k); headers.push(k); }
+  }
+  for (const r of rows) {
+    if (!r || typeof r !== "object") continue;
+    for (const k of Object.keys(r)) {
+      if (!seen.has(k)) { seen.add(k); headers.push(k); }
+    }
+  }
+  return headers;
+}
+
+router.get("/api/crm/csv-imports/:id/error-rows.csv", requireAuth, requireRole(...READ_ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+    const [job] = await db.select({
+      id: crmCsvImportJobs.id,
+      filename: crmCsvImportJobs.filename,
+      mapping: crmCsvImportJobs.mapping,
+      erroredSourceRows: crmCsvImportJobs.erroredSourceRows,
+    }).from(crmCsvImportJobs).where(and(eq(crmCsvImportJobs.id, req.params.id), eq(crmCsvImportJobs.organizationId, orgId))).limit(1);
+    if (!job) return res.status(404).json({ error: "Not found" });
+
+    const rows = (Array.isArray(job.erroredSourceRows) ? job.erroredSourceRows : []) as Array<Record<string, any>>;
+    const mapping = (job.mapping || {}) as Record<string, string>;
+    const headers = collectHeaders(rows, mapping);
+
+    const safeName = (job.filename || `import-${job.id}`).replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}-error-rows.csv"`);
+
+    res.write(headers.map(csvEscape).join(",") + "\r\n");
+    for (const r of rows) {
+      res.write(headers.map((h) => csvEscape(r?.[h])).join(",") + "\r\n");
+    }
+    res.end();
+  } catch (e) { next(e); }
+});
+
+const retryBody = z.object({
+  // If `rows` is omitted, the server resubmits the parent job's stored
+  // errored source rows verbatim. If provided, the user has uploaded a
+  // (presumably corrected) version of those rows.
+  rows: z.array(z.record(z.any())).max(50000).optional(),
+  filename: z.string().optional(),
+});
+
+router.post("/api/crm/csv-imports/:id/retry", requireAuth, requireRole(...EDIT_ROLES), async (req: AuthRequest, res, next) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+    const parsed = retryBody.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+
+    const [parent] = await db.select().from(crmCsvImportJobs).where(and(eq(crmCsvImportJobs.id, req.params.id), eq(crmCsvImportJobs.organizationId, orgId))).limit(1);
+    if (!parent) return res.status(404).json({ error: "Not found" });
+    if (parent.status === "PENDING" || parent.status === "PROCESSING") {
+      return res.status(409).json({ error: "Cannot retry a job that is still running. Wait for it to finish." });
+    }
+
+    const rows = parsed.data.rows ?? ((parent.erroredSourceRows as any[]) || []);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: "No errored rows available to retry. Download the error rows CSV, edit it, and re-upload it." });
+    }
+
+    const baseName = parsed.data.filename
+      ?? (parent.filename ? `${parent.filename} (retry)` : `retry-${parent.id}`);
+
+    const [job] = await db.insert(crmCsvImportJobs).values({
+      organizationId: orgId,
+      entityType: parent.entityType,
+      status: "PENDING",
+      filename: baseName,
+      totalRows: rows.length,
+      mapping: parent.mapping,
+      payload: rows,
+      parentJobId: parent.id,
+      createdById: req.user!.id,
+    } as any).returning();
+
+    kickCrmCsvImportWorker();
+
+    const { payload: _omit, ...response } = job as any;
+    res.status(202).json(response);
   } catch (e) { next(e); }
 });
 

@@ -110,6 +110,7 @@ interface JobProgress {
   processed: number;
   errors: RowError[];
   insertedIds: string[];
+  erroredSourceRows: Record<string, any>[];
 }
 
 // Reverse-lookup: given a target schema field, return the spreadsheet column
@@ -145,6 +146,7 @@ async function flushProgress(jobId: string, p: JobProgress, final = false): Prom
     errorRows: p.errored,
     errors: p.errors,
     insertedIds: p.insertedIds,
+    erroredSourceRows: p.erroredSourceRows,
     ...(final
       ? { status: "COMPLETED" as const, completedAt: new Date(), payload: [] as any }
       : { startedAt: new Date() }),
@@ -164,7 +166,7 @@ async function processOneJob(): Promise<boolean> {
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, organization_id, entity_type, mapping, payload, processed_rows, inserted_rows, updated_rows, skipped_rows, error_rows, errors, inserted_ids, created_by_id, created_at, started_at
+    RETURNING id, organization_id, entity_type, mapping, payload, processed_rows, inserted_rows, updated_rows, skipped_rows, error_rows, errors, errored_source_rows, inserted_ids, created_by_id, created_at, started_at
   `);
 
   const row = (claimed as any).rows?.[0];
@@ -186,6 +188,15 @@ async function processOneJob(): Promise<boolean> {
     processed: row.processed_rows ?? 0,
     errors: Array.isArray(row.errors) ? row.errors : [],
     insertedIds: Array.isArray(row.inserted_ids) ? row.inserted_ids : [],
+    erroredSourceRows: Array.isArray(row.errored_source_rows) ? row.errored_source_rows : [],
+  };
+
+  // Helper: record a row-level error and remember the source row so the user
+  // can later download / re-import just the failed rows.
+  const recordError = (_rowIdx: number, srcRow: Record<string, any>, err: RowError) => {
+    progress.errored++;
+    progress.errors.push(err);
+    progress.erroredSourceRows.push(srcRow);
   };
 
   // Resume from where we left off if a previous worker died mid-flight.
@@ -253,8 +264,7 @@ async function processOneJob(): Promise<boolean> {
             const ALLOWED_ORG_TYPES = ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP", "RENTAL_VENDOR", "SERVICE_VENDOR"] as const;
             const requestedType = pickStr(r, mapping, "type");
             if (requestedType && !(ALLOWED_ORG_TYPES as readonly string[]).includes(requestedType)) {
-              progress.errored++;
-              progress.errors.push({
+              recordError(i, r, {
                 row: i + 1,
                 error: `Invalid organisation type "${requestedType}"; allowed: ${ALLOWED_ORG_TYPES.join(", ")}`,
                 column: findColumnForTarget(mapping, "type"),
@@ -288,8 +298,7 @@ async function processOneJob(): Promise<boolean> {
             const rawDealValue = pick(r, mapping, "dealValue");
             const parsedDealValue = pickNumericStr(r, mapping, "dealValue");
             if (rawDealValue !== undefined && rawDealValue !== null && rawDealValue !== "" && parsedDealValue === undefined) {
-              progress.errored++;
-              progress.errors.push({
+              recordError(i, r, {
                 row: i + 1,
                 error: `Could not parse "${shortenValue(rawDealValue) ?? ""}" as a number`,
                 column: findColumnForTarget(mapping, "dealValue"),
@@ -313,8 +322,7 @@ async function processOneJob(): Promise<boolean> {
           }
         }
       } catch (err: any) {
-        progress.errored++;
-        progress.errors.push({ row: i + 1, error: err?.message ?? String(err) });
+        recordError(i, r, { row: i + 1, error: err?.message ?? String(err) });
       }
 
       progress.processed = i + 1;
@@ -343,6 +351,7 @@ async function processOneJob(): Promise<boolean> {
         errorRows: progress.errored,
         errors: [...progress.errors, { row: progress.processed, error: failureMessage }],
         insertedIds: progress.insertedIds,
+        erroredSourceRows: progress.erroredSourceRows,
       } as any).where(eq(crmCsvImportJobs.id, jobId));
     } catch {}
     await notifyJobFinished({

@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Plus, Trash2, Copy, ExternalLink, AlertTriangle, Upload, BarChart3, Zap, Calendar, FileText, Clock, ChevronDown, ChevronRight, Download } from "lucide-react";
+import { Loader2, Plus, Trash2, Copy, ExternalLink, AlertTriangle, Upload, BarChart3, Zap, Calendar, FileText, Clock, ChevronDown, ChevronRight, Download, RotateCcw } from "lucide-react";
 
 const STAGES = ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION", "WON", "LOST"];
 
@@ -903,7 +903,9 @@ function ImportPanel() {
 type ImportRowError = { row: number; error: string; column?: string; value?: string };
 
 function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) => void }) {
+  const { toast } = useToast();
   const [showErrors, setShowErrors] = useState(false);
+  const retryFileRef = useRef<HTMLInputElement | null>(null);
   const total = Number(job.totalRows ?? 0);
   const processed = Number(job.processedRows ?? 0);
   const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
@@ -911,6 +913,52 @@ function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) =
   const errors: ImportRowError[] = Array.isArray(job.errors) ? job.errors : [];
   const errorCount = Number(job.errorRows ?? 0);
   const truncated = errorCount > errors.length;
+  const isFinished = job.status === "COMPLETED" || job.status === "FAILED";
+  const canRetry = isFinished && errorCount > 0;
+
+  const retry = useMutation({
+    mutationFn: async (rows?: Record<string, any>[]) => {
+      const body: any = {};
+      if (rows && rows.length > 0) body.rows = rows;
+      return apiRequest("POST", `/api/crm/csv-imports/${job.id}/retry`, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/csv-imports"] });
+      toast({ title: "Retry queued", description: "We'll re-import the rows in the background." });
+    },
+    onError: async (e: any) => {
+      let description = e?.message || "Retry failed";
+      try {
+        if (e?.response && typeof e.response.json === "function") {
+          const body = await e.response.json();
+          if (body?.error) description = body.error;
+        }
+      } catch {}
+      toast({ title: "Cannot retry", description, variant: "destructive" });
+    },
+  });
+
+  const handleRetryFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = Papa.parse<Record<string, any>>(text, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim(),
+      });
+      if (parsed.errors && parsed.errors.length > 0) {
+        const first = parsed.errors[0];
+        throw new Error(`CSV parse error on row ${first.row ?? "?"}: ${first.message}`);
+      }
+      const rows = (parsed.data || []).filter((r) => r && Object.keys(r).length > 0);
+      if (rows.length === 0) throw new Error("Need header + at least 1 row");
+      retry.mutate(rows);
+    } catch (err: any) {
+      toast({ title: "Could not read file", description: err?.message || String(err), variant: "destructive" });
+    } finally {
+      if (retryFileRef.current) retryFileRef.current.value = "";
+    }
+  };
 
   return (
     <div className="border rounded p-2 mb-2" data-testid={`row-job-${job.id}`}>
@@ -919,6 +967,14 @@ function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) =
           <span data-testid={`text-job-status-${job.id}`}>{job.entityType} · {job.status}</span>
           {" · "}
           <span data-testid={`text-job-counts-${job.id}`}>{job.insertedRows ?? 0} inserted, {job.updatedRows ?? 0} updated, {job.skippedRows ?? 0} skipped, {job.errorRows ?? 0} errors</span>
+          {job.parentJobId && (
+            <>
+              {" · "}
+              <span className="text-xs text-muted-foreground" data-testid={`text-job-parent-${job.id}`}>
+                Retry of <span className="font-mono">{String(job.parentJobId).slice(0, 8)}</span>
+              </span>
+            </>
+          )}
         </div>
         {job.status === "COMPLETED" && (
           <Button size="sm" variant="outline" onClick={() => onRevert(job.id)} data-testid={`button-revert-${job.id}`}>Revert</Button>
@@ -955,6 +1011,50 @@ function RecentImportRow({ job, onRevert }: { job: any; onRevert: (id: string) =
               <Download className="h-3 w-3 mr-1" />
               Download errors CSV
             </a>
+            {canRetry && (
+              <>
+                <a
+                  href={`/api/crm/csv-imports/${job.id}/error-rows.csv`}
+                  download
+                  className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
+                  data-testid={`link-download-error-rows-${job.id}`}
+                >
+                  <Download className="h-3 w-3 mr-1" />
+                  Download error rows
+                </a>
+                <input
+                  ref={retryFileRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleRetryFile(f);
+                  }}
+                  data-testid={`input-retry-file-${job.id}`}
+                />
+                <button
+                  type="button"
+                  className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  onClick={() => retryFileRef.current?.click()}
+                  disabled={retry.isPending}
+                  data-testid={`button-retry-upload-${job.id}`}
+                >
+                  <Upload className="h-3 w-3 mr-1" />
+                  Re-upload corrected rows
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  onClick={() => retry.mutate(undefined)}
+                  disabled={retry.isPending}
+                  data-testid={`button-retry-resubmit-${job.id}`}
+                >
+                  {retry.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RotateCcw className="h-3 w-3 mr-1" />}
+                  Re-import errored rows
+                </button>
+              </>
+            )}
           </div>
           {showErrors && (
             <div className="mt-2 border rounded overflow-x-auto" data-testid={`table-errors-${job.id}`}>
