@@ -857,6 +857,19 @@ export default function CRMPage() {
 
   const isAdminOrManager = user?.role === "ADMIN" || user?.role === "MANAGER";
 
+  const handleSelectBirthdayContact = (contact: { id: string }) => {
+    setCrmTab("contacts");
+    apiRequest("GET", `/api/crm/contacts/${encodeURIComponent(contact.id)}`)
+      .then((res) => res.json())
+      .then((full) => {
+        if (full) {
+          setSelectedContact(full as CrmContact);
+          setViewContactOpen(true);
+        }
+      })
+      .catch(() => undefined);
+  };
+
   const { data: dupData, isLoading: dupLoading } = useQuery<{ pairs: DupPair[]; total: number }>({
     queryKey: ["/api/crm/organisations/duplicates"],
     enabled: dupOpen && isAdminOrManager,
@@ -1142,7 +1155,12 @@ export default function CRMPage() {
             </button>
           </div>
 
-          {crmTab === "pipeline" && <CrmPipelineView />}
+          {crmTab === "pipeline" && (
+            <>
+              <CrmBirthdaysWidget onSelectContact={handleSelectBirthdayContact} />
+              <CrmPipelineView />
+            </>
+          )}
 
           {crmTab === "tasks" && <CrmTasksView />}
 
@@ -1152,6 +1170,8 @@ export default function CRMPage() {
           {crmTab === "reports" && <CrmPipelineReports />}
 
           {crmTab === "contacts" && (
+            <>
+            <CrmBirthdaysWidget onSelectContact={handleSelectBirthdayContact} />
             <Card>
               <CardHeader className="pb-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1370,23 +1390,11 @@ export default function CRMPage() {
                 )}
               </CardContent>
             </Card>
+            </>
           )}
 
           {crmTab === "orgs" && <>
-            <CrmBirthdaysWidget
-              onSelectContact={(contact) => {
-                setCrmTab("contacts");
-                apiRequest("GET", `/api/crm/contacts/${encodeURIComponent(contact.id)}`)
-                  .then((res) => res.json())
-                  .then((full) => {
-                    if (full) {
-                      setSelectedContact(full as CrmContact);
-                      setViewContactOpen(true);
-                    }
-                  })
-                  .catch(() => undefined);
-              }}
-            />
+            <CrmBirthdaysWidget onSelectContact={handleSelectBirthdayContact} />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card
               className="hover-elevate cursor-pointer"
