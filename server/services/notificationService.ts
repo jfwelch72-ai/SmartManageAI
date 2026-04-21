@@ -177,6 +177,107 @@ async function flushPendingReassignment(recipientUserId: string): Promise<void> 
   });
 }
 
+// Task #730: belt-and-braces sweeper. The in-process timer + restart recovery
+// covers the common path, but a row could be orphaned if (a) the server is
+// shut down for longer than the coalescing window and the recovery hook
+// silently fails, or (b) a hot redeploy drops timers without the new instance
+// observing them. This periodic sweep claims any rows whose flush_at is well
+// past so the bundled summary still goes out. Uses the same atomic
+// `DELETE ... RETURNING` claim as the timer-driven path so it's safe to run
+// alongside other instances or a concurrent timer fire.
+const STALE_REASSIGNMENT_THRESHOLD_MS = 10 * 60 * 1000;
+const SWEEP_INTERVAL_MS = 2 * 60 * 1000;
+let sweeperInterval: NodeJS.Timeout | null = null;
+
+export async function sweepStaleContactReassignments(
+  thresholdMs: number = STALE_REASSIGNMENT_THRESHOLD_MS,
+): Promise<number> {
+  let staleRecipients: string[] = [];
+  try {
+    const { rows } = await pool.query<{ recipient_user_id: string }>(
+      `SELECT recipient_user_id FROM ${PENDING_TABLE}
+       WHERE flush_at < NOW() - ($1::bigint || ' milliseconds')::interval`,
+      [thresholdMs],
+    );
+    staleRecipients = rows.map((r) => r.recipient_user_id);
+  } catch (err) {
+    logError(
+      "Failed to scan for stale CRM contact reassignment buffers",
+      {},
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    return 0;
+  }
+
+  if (staleRecipients.length === 0) return 0;
+
+  let claimed = 0;
+  for (const recipientUserId of staleRecipients) {
+    // Cancel any local timer so we don't race ourselves between the sweeper
+    // and a still-armed setTimeout that's about to fire anyway.
+    const timer = localFlushTimers.get(recipientUserId);
+    if (timer) {
+      clearTimeout(timer);
+      localFlushTimers.delete(recipientUserId);
+    }
+    try {
+      const entry = await claimPendingRow(recipientUserId);
+      if (!entry) continue; // another instance / timer beat us to it
+      claimed += 1;
+      if (entry.additional_count === 0) continue;
+
+      const count = entry.additional_count;
+      const noun = count === 1 ? "contact" : "contacts";
+      const reassigners = entry.reassigner_names ?? [];
+      const reassignerName = reassigners.length === 1 ? reassigners[0] : "Teammates";
+
+      await insertNotification({
+        userId: recipientUserId,
+        organizationId: entry.organization_id ?? undefined,
+        type: "CRM_CONTACT_REASSIGNED",
+        title: `${count} more CRM ${noun} assigned to you`,
+        message: `${reassignerName} assigned ${count} more ${noun} to you in the last few minutes. Review them in the CRM.`,
+        relatedEntityId: entry.first_additional_contact_id,
+        relatedEntityType: "CRM_CONTACT",
+      });
+    } catch (err) {
+      logError(
+        "Failed to flush stale CRM contact reassignment buffer",
+        { recipientUserId },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+
+  if (claimed > 0) {
+    console.log(
+      `[notifications] Swept ${claimed} stale CRM contact reassignment buffer(s) past flush_at`,
+    );
+  }
+  return claimed;
+}
+
+export function startContactReassignmentSweeper(intervalMs: number = SWEEP_INTERVAL_MS): void {
+  if (sweeperInterval) return;
+  sweeperInterval = setInterval(() => {
+    sweepStaleContactReassignments().catch((err) => {
+      logError(
+        "Stale CRM contact reassignment sweeper failed",
+        {},
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    });
+  }, intervalMs);
+  if (typeof sweeperInterval.unref === "function") sweeperInterval.unref();
+}
+
+export function __stopContactReassignmentSweeperForTest(): void {
+  if (sweeperInterval) {
+    clearInterval(sweeperInterval);
+    sweeperInterval = null;
+  }
+}
+
 // On startup, re-arm timers for any rows still buffered from before the
 // restart so the bundled summary is delivered even if the server crashed
 // inside the coalescing window.

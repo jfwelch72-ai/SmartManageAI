@@ -76,6 +76,15 @@ function poolQuery(sql: string, params: unknown[] = []): Promise<{ rows: unknown
     pendingRows.delete(recipientUserId);
     return Promise.resolve({ rows: [row] });
   }
+  if (text.startsWith("SELECT recipient_user_id FROM pending_contact_reassignment_notifications")) {
+    const [thresholdMs] = params as [number];
+    const cutoff = Date.now() - Number(thresholdMs);
+    return Promise.resolve({
+      rows: Array.from(pendingRows.values())
+        .filter((r) => r.flush_at.getTime() < cutoff)
+        .map((r) => ({ recipient_user_id: r.recipient_user_id })),
+    });
+  }
   if (text.startsWith("SELECT recipient_user_id, flush_at FROM pending_contact_reassignment_notifications")) {
     return Promise.resolve({
       rows: Array.from(pendingRows.values()).map((r) => ({
@@ -114,6 +123,7 @@ import {
   __flushContactReassignmentForTest,
   __resetContactReassignmentQueueForTest,
   recoverPendingContactReassignments,
+  sweepStaleContactReassignments,
 } from "../services/notificationService";
 
 function flushMicrotasks(): Promise<void> {
@@ -321,5 +331,95 @@ describe("queueContactReassignmentNotification (Task #715 + #722)", () => {
     // 1 immediate + 1 summary = 2 total, never 3.
     expect(insertedNotifications).toHaveLength(2);
     expect(insertedNotifications[1].title).toBe("1 more CRM contact assigned to you");
+  });
+
+  it("sweeps stale buffers whose flush_at is past the threshold (Task #730)", async () => {
+    // Buffer two extras for a recipient.
+    queueContactReassignmentNotification({
+      recipientUserId: "user-stale",
+      reassignerName: "Alice",
+      contactId: "c0",
+      contactName: "C0",
+    });
+    await flushMicrotasks();
+    queueContactReassignmentNotification({
+      recipientUserId: "user-stale",
+      reassignerName: "Alice",
+      contactId: "c1",
+      contactName: "C1",
+    });
+    queueContactReassignmentNotification({
+      recipientUserId: "user-stale",
+      reassignerName: "Alice",
+      contactId: "c2",
+      contactName: "C2",
+    });
+    await flushMicrotasks();
+
+    // Simulate a server that was down past the coalescing window: backdate
+    // flush_at and wipe local timers so only the sweeper can recover the row.
+    const row = pendingRows.get("user-stale")!;
+    row.flush_at = new Date(Date.now() - 30 * 60 * 1000);
+    __resetContactReassignmentQueueForTest();
+
+    const claimed = await sweepStaleContactReassignments();
+    expect(claimed).toBe(1);
+    expect(pendingRows.has("user-stale")).toBe(false);
+
+    // 1 immediate + 1 swept summary = 2.
+    expect(insertedNotifications).toHaveLength(2);
+    expect(insertedNotifications[1]).toMatchObject({
+      userId: "user-stale",
+      title: "2 more CRM contacts assigned to you",
+    });
+  });
+
+  it("ignores buffers whose flush_at is still within the threshold (Task #730)", async () => {
+    queueContactReassignmentNotification({
+      recipientUserId: "user-fresh",
+      reassignerName: "Alice",
+      contactId: "c0",
+      contactName: "C0",
+    });
+    await flushMicrotasks();
+    queueContactReassignmentNotification({
+      recipientUserId: "user-fresh",
+      reassignerName: "Alice",
+      contactId: "c1",
+      contactName: "C1",
+    });
+    await flushMicrotasks();
+
+    const claimed = await sweepStaleContactReassignments();
+    expect(claimed).toBe(0);
+    // Buffer is still there for the regular timer-driven flush.
+    expect(pendingRows.has("user-fresh")).toBe(true);
+  });
+
+  it("sweeper is safe under concurrent invocations (Task #730)", async () => {
+    queueContactReassignmentNotification({
+      recipientUserId: "user-race-sweep",
+      reassignerName: "Alice",
+      contactId: "c0",
+      contactName: "C0",
+    });
+    await flushMicrotasks();
+    queueContactReassignmentNotification({
+      recipientUserId: "user-race-sweep",
+      reassignerName: "Alice",
+      contactId: "c1",
+      contactName: "C1",
+    });
+    await flushMicrotasks();
+    pendingRows.get("user-race-sweep")!.flush_at = new Date(Date.now() - 30 * 60 * 1000);
+    __resetContactReassignmentQueueForTest();
+
+    const [a, b] = await Promise.all([
+      sweepStaleContactReassignments(),
+      sweepStaleContactReassignments(),
+    ]);
+    // Exactly one sweeper claims the row.
+    expect(a + b).toBe(1);
+    expect(insertedNotifications).toHaveLength(2);
   });
 });

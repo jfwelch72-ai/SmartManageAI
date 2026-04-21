@@ -283,7 +283,10 @@ app.use((req, res, next) => {
   // Task #722: re-arm any CRM contact reassignment summaries that were
   // buffered before the previous restart so the bundled notification still
   // fires.
-  const { recoverPendingContactReassignments } = await import("./services/notificationService");
+  const {
+    recoverPendingContactReassignments,
+    startContactReassignmentSweeper,
+  } = await import("./services/notificationService");
   recoverPendingContactReassignments().catch((err) => {
     logError(
       "Failed to recover pending contact reassignment buffers",
@@ -291,6 +294,10 @@ app.use((req, res, next) => {
       err instanceof Error ? err : new Error(String(err)),
     );
   });
+  // Task #730: periodic sweeper picks up rows whose flush_at is well past
+  // (e.g. server was down longer than the coalescing window) so no buffer
+  // sits orphaned indefinitely.
+  startContactReassignmentSweeper();
 
   // Hydrate persisted Gantt PDF render history from the database so the
   // admin chart survives restarts and deployments.
