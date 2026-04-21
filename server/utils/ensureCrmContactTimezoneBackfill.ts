@@ -67,11 +67,15 @@ async function applyUpdates(
   const BATCH = 1000;
   for (let i = 0; i < ids.length; i += BATCH) {
     const slice = ids.slice(i, i + BATCH);
+    const idList = sql.join(
+      slice.map((id) => sql`${id}`),
+      sql`, `,
+    );
     const res = await db.execute(sql`
       UPDATE crm_contacts
       SET timezone = ${tz}, updated_at = NOW()
       WHERE timezone IS NULL
-        AND id = ANY(${slice}::varchar[])
+        AND id IN (${idList})
     `);
     updated += res.rowCount ?? 0;
   }
