@@ -383,6 +383,7 @@ function ImportPanel() {
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const parseTokenRef = useRef(0);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const headers = parsedData?.headers ?? [];
   const showMapping = headers.length > 0;
@@ -481,7 +482,7 @@ function ImportPanel() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Upload a CSV file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>CSV Import</CardTitle><CardDescription>Drag and drop or choose a CSV file (with header row), then map your columns to the right fields. Quoted fields, embedded commas, and CRLF line endings are supported. Large files are processed in the background — you can leave this page and come back.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
         <Select value={entity} onValueChange={(v) => { setEntity(v); setMappingOverrides({}); }}>
           <SelectTrigger className="w-48" data-testid="select-entity"><SelectValue /></SelectTrigger>
@@ -491,7 +492,30 @@ function ImportPanel() {
             <SelectItem value="OPPORTUNITY">Opportunities</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex items-center gap-2">
+        <div
+          className={`border-2 border-dashed rounded p-6 text-center transition-colors ${isDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25"}`}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragOver(false);
+            const dropped = e.dataTransfer.files?.[0];
+            if (!dropped) return;
+            const isCsv = dropped.type === "text/csv" || dropped.name.toLowerCase().endsWith(".csv");
+            if (!isCsv) {
+              setFile(null);
+              setParsedData(null);
+              setMappingOverrides({});
+              if (fileInputRef.current) fileInputRef.current.value = "";
+              setParseError("Please drop a .csv file");
+              return;
+            }
+            handleFileChange(dropped);
+          }}
+          data-testid="dropzone-csv"
+        >
           <input
             ref={fileInputRef}
             type="file"
@@ -500,18 +524,20 @@ function ImportPanel() {
             onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
             data-testid="input-csv-file"
           />
+          <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+          <div className="text-sm mb-2">Drag and drop a .csv file here, or</div>
           <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-choose-file">
             <Upload className="h-4 w-4 mr-1" />Choose file
           </Button>
-          <span className="text-sm text-muted-foreground" data-testid="text-csv-filename">
-            {file ? file.name : "No file selected"}
-          </span>
-          {parsedData && (
-            <span className="text-sm text-muted-foreground" data-testid="text-csv-rowcount">
-              {parsedData.rows.length.toLocaleString()} rows detected
-            </span>
-          )}
-          {isParsing && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          <div className="text-sm text-muted-foreground mt-2 flex items-center justify-center gap-2 flex-wrap">
+            <span data-testid="text-csv-filename">{file ? file.name : "No file selected"}</span>
+            {parsedData && (
+              <span data-testid="text-csv-rowcount">
+                · {parsedData.rows.length.toLocaleString()} rows detected
+              </span>
+            )}
+            {isParsing && <Loader2 className="h-4 w-4 animate-spin" />}
+          </div>
         </div>
         {parseError && (
           <div className="text-sm text-destructive border border-destructive/50 rounded p-2" data-testid="text-csv-parse-error">
