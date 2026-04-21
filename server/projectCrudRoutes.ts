@@ -183,7 +183,7 @@ import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
-import { queueOwnerReassignmentNotification } from "./services/notificationService";
+import { insertNotification, queueOwnerReassignmentNotification } from "./services/notificationService";
 import { geocodePendingProjects } from "./utils/geocodingService";
 
 const router = Router();
@@ -1232,6 +1232,116 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
   next(error);
   }
 });
+
+// Task #732: bulk re-assign one of the project owner roles (PM /
+// superintendent / estimator / safety officer) across many projects in one
+// call so admins can move a whole portfolio without firing one PATCH per
+// project. Touches only rows whose role slot is actually changing, then
+// sends a single summary notification (not coalesced; this is already a
+// one-shot bulk action) to the new owner. Skips self-reassignments and
+// clears (userId -> null).
+const PROJECT_OWNER_ROLE_FIELDS = {
+  projectManagerId: { column: projects.projectManagerId, label: "project manager" },
+  superintendentId: { column: projects.superintendentId, label: "superintendent" },
+  estimatorId: { column: projects.estimatorId, label: "estimator" },
+  safetyOfficerId: { column: projects.safetyOfficerId, label: "safety officer" },
+} as const;
+
+router.post(
+  "/api/projects/bulk-reassign-owner",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
+
+      const schema = z.object({
+        projectIds: z.array(z.string().min(1)).min(1).max(500),
+        roleField: z.enum([
+          "projectManagerId",
+          "superintendentId",
+          "estimatorId",
+          "safetyOfficerId",
+        ]),
+        userId: z.union([z.string(), z.null()]),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const { projectIds, roleField } = parsed.data;
+      const newOwnerId =
+        parsed.data.userId && parsed.data.userId.trim() !== "" ? parsed.data.userId : null;
+      const roleConfig = PROJECT_OWNER_ROLE_FIELDS[roleField];
+
+      if (newOwnerId && shouldFilter && orgId) {
+        const [ownerUser] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, newOwnerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+          .limit(1);
+        if (!ownerUser) {
+          return res.status(400).json({ error: "Selected owner is not an active member of this organization" });
+        }
+      }
+
+      const scopeConditions: SQL[] = [inArray(projects.id, projectIds)];
+      if (shouldFilter && orgId) scopeConditions.push(eq(projects.gcOrganizationId, orgId));
+      // Only touch rows whose role slot is actually changing so the
+      // notification count reflects real reassignments (not no-op updates).
+      scopeConditions.push(
+        newOwnerId === null
+          ? sql`${roleConfig.column} IS NOT NULL`
+          : sql`${roleConfig.column} IS DISTINCT FROM ${newOwnerId}`,
+      );
+
+      const updated = await db
+        .update(projects)
+        .set({ [roleField]: newOwnerId, updatedAt: new Date() })
+        .where(and(...scopeConditions))
+        .returning({ id: projects.id });
+
+      if (updated.length > 0) {
+        for (const row of updated) {
+          await logUpdate(
+            req.user!.id,
+            "projects",
+            row.id,
+            null,
+            { [roleField]: newOwnerId },
+            req,
+          );
+        }
+
+        // Send a single heads-up notification to the new owner summarizing
+        // how many projects were just assigned in this role and who reassigned
+        // them. Skip self-reassignments and clears.
+        if (newOwnerId && newOwnerId !== req.user!.id) {
+          const reassignerName = [req.user!.firstName, req.user!.lastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || req.user!.email || "A teammate";
+          const count = updated.length;
+          const noun = count === 1 ? "project" : "projects";
+          insertNotification({
+            userId: newOwnerId,
+            organizationId: orgId ?? undefined,
+            type: "PROJECT_REASSIGNED",
+            title: `${count} ${noun} assigned to you`,
+            message: `${reassignerName} reassigned ${count} ${noun} to you as ${roleConfig.label}.`,
+            relatedEntityId: updated[0]?.id ?? null,
+            relatedEntityType: "PROJECT",
+          }).catch(() => undefined);
+        }
+      }
+
+      res.json({ updated: updated.length, roleField, userId: newOwnerId });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateProjects"), async (req: AuthRequest, res, next) => {
   try {

@@ -2469,6 +2469,104 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
   }
 });
 
+// Task #732: bulk re-assign the owner across multiple opportunities in one
+// call so the CRM opportunities table can offer a "Reassign owner" action on
+// selected rows. Mirrors the contacts bulk-reassign route — touches only
+// rows whose owner is actually changing, then sends a single summary
+// notification (not coalesced; this is already a one-shot bulk action) to
+// the new owner. Skips self-reassignments and clears (assignedToId -> null).
+router.post(
+  "/api/crm/opportunities/bulk-reassign",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied - no organization" });
+
+      const schema = z.object({
+        opportunityIds: z.array(z.string().min(1)).min(1).max(500),
+        assignedToId: z.union([z.string(), z.null()]),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const { opportunityIds } = parsed.data;
+      const newOwnerId =
+        parsed.data.assignedToId && parsed.data.assignedToId.trim() !== ""
+          ? parsed.data.assignedToId
+          : null;
+
+      if (newOwnerId && shouldFilter && orgId) {
+        const [ownerUser] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, newOwnerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+          .limit(1);
+        if (!ownerUser) {
+          return res.status(400).json({ error: "Selected owner is not an active member of this organization" });
+        }
+      }
+
+      const scopeConditions: SQL[] = [inArray(crmOpportunities.id, opportunityIds)];
+      if (shouldFilter && orgId) scopeConditions.push(eq(crmOpportunities.organizationId, orgId));
+      // Only touch rows whose owner is actually changing so the notification
+      // count reflects real reassignments (not no-op updates the target user
+      // already owns).
+      scopeConditions.push(
+        newOwnerId === null
+          ? sql`${crmOpportunities.assignedToId} IS NOT NULL`
+          : sql`${crmOpportunities.assignedToId} IS DISTINCT FROM ${newOwnerId}`,
+      );
+
+      const updated = await db
+        .update(crmOpportunities)
+        .set({ assignedToId: newOwnerId, updatedAt: new Date() })
+        .where(and(...scopeConditions))
+        .returning({ id: crmOpportunities.id });
+
+      if (updated.length > 0) {
+        await db.insert(auditLog).values(
+          updated.map((row) => ({
+            userId: req.user!.id,
+            action: "UPDATE" as const,
+            entityType: "crm_opportunities",
+            entityId: row.id,
+            oldValue: null,
+            newValue: JSON.stringify({ assignedToId: newOwnerId }),
+          })),
+        );
+
+        // Send a single heads-up notification to the new owner summarizing
+        // how many opportunities were just assigned and who reassigned them.
+        // Skip self-reassignments and clears.
+        if (newOwnerId && newOwnerId !== req.user!.id) {
+          const reassignerName = [req.user!.firstName, req.user!.lastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || req.user!.email || "A teammate";
+          const count = updated.length;
+          const noun = count === 1 ? "opportunity" : "opportunities";
+          insertNotification({
+            userId: newOwnerId,
+            organizationId: orgId ?? undefined,
+            type: "CRM_OPPORTUNITY_REASSIGNED",
+            title: `${count} CRM ${noun} assigned to you`,
+            message: `${reassignerName} reassigned ${count} ${noun} to you. Review them in the CRM.`,
+            relatedEntityId: updated[0]?.id ?? null,
+            relatedEntityType: "CRM_OPPORTUNITY",
+          }).catch(() => undefined);
+        }
+      }
+
+      res.json({ updated: updated.length, assignedToId: newOwnerId });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 router.delete("/api/crm/opportunities/:id", requireAuth, requireRole(...DELETE_ROLES), async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
