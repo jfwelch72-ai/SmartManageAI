@@ -11,8 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Inbox, Loader2, Trash2, Mail, FilterX, Search, Wifi, WifiOff } from "lucide-react";
-import { format } from "date-fns";
+import { format, startOfDay, endOfDay } from "date-fns";
 import NotFound from "@/pages/not-found";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface CapturedEmail {
   to: string[];
@@ -49,6 +50,8 @@ export default function AdminEmailOutboxPage() {
   const [subjectFilter, setSubjectFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
 
   const messages = data?.messages ?? [];
 
@@ -56,6 +59,8 @@ export default function AdminEmailOutboxPage() {
     const recipient = recipientFilter.trim().toLowerCase();
     const subject = subjectFilter.trim().toLowerCase();
     const search = searchQuery.trim().toLowerCase();
+    const fromMs = fromDate ? startOfDay(fromDate).getTime() : null;
+    const toMs = toDate ? endOfDay(toDate).getTime() : null;
     return messages.filter((msg) => {
       if (sourceFilter !== "all" && msg.source !== sourceFilter) return false;
       if (subject && !(msg.subject ?? "").toLowerCase().includes(subject)) return false;
@@ -83,21 +88,31 @@ export default function AdminEmailOutboxPage() {
           .toLowerCase();
         if (!searchHaystack.includes(search)) return false;
       }
+      if (fromMs !== null || toMs !== null) {
+        const capturedMs = new Date(msg.capturedAt).getTime();
+        if (Number.isNaN(capturedMs)) return false;
+        if (fromMs !== null && capturedMs < fromMs) return false;
+        if (toMs !== null && capturedMs > toMs) return false;
+      }
       return true;
     });
-  }, [messages, recipientFilter, subjectFilter, sourceFilter, searchQuery]);
+  }, [messages, recipientFilter, subjectFilter, sourceFilter, searchQuery, fromDate, toDate]);
 
   const filtersActive =
     recipientFilter.trim() !== "" ||
     subjectFilter.trim() !== "" ||
     sourceFilter !== "all" ||
-    searchQuery.trim() !== "";
+    searchQuery.trim() !== "" ||
+    fromDate !== undefined ||
+    toDate !== undefined;
 
   const clearFilters = () => {
     setRecipientFilter("");
     setSubjectFilter("");
     setSourceFilter("all");
     setSearchQuery("");
+    setFromDate(undefined);
+    setToDate(undefined);
   };
 
   // Subscribe to the SSE stream so captured emails appear without waiting
@@ -222,7 +237,7 @@ export default function AdminEmailOutboxPage() {
               />
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_180px_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[1fr_1fr_180px_180px_180px_auto] lg:items-end">
           <div className="space-y-1.5">
             <Label htmlFor="filter-recipient" className="text-xs">Recipient</Label>
             <Input
@@ -258,6 +273,24 @@ export default function AdminEmailOutboxPage() {
                 <SelectItem value="smtp" data-testid="option-source-smtp">SMTP</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="filter-from-date" className="text-xs">From</Label>
+            <DatePicker
+              value={fromDate ?? null}
+              onChange={(d) => setFromDate(d)}
+              placeholder="From date"
+              data-testid="input-filter-from-date"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="filter-to-date" className="text-xs">To</Label>
+            <DatePicker
+              value={toDate ?? null}
+              onChange={(d) => setToDate(d)}
+              placeholder="To date"
+              data-testid="input-filter-to-date"
+            />
           </div>
           <Button
             variant="ghost"
