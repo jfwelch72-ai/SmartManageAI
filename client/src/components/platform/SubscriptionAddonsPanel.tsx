@@ -14,6 +14,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import {
   Building2,
   Loader2,
@@ -28,6 +38,7 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   Pause,
   Ban,
   ArrowDown,
@@ -633,16 +644,11 @@ export function AssignSubscriptionDialog({
             ) : availableOrgs.length === 0 ? (
               <p className="text-sm text-muted-foreground">All organizations already have subscriptions.</p>
             ) : (
-              <Select value={selectedOrg} onValueChange={setSelectedOrg}>
-                <SelectTrigger data-testid="select-assign-org">
-                  <SelectValue placeholder="Select organization..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableOrgs.map(org => (
-                    <SelectItem key={org.id} value={org.id}>{org.name}{org.tradeType ? ` (${org.tradeType})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <OrgCombobox
+                orgs={availableOrgs}
+                value={selectedOrg}
+                onChange={setSelectedOrg}
+              />
             )}
           </div>
           <div className="space-y-2">
@@ -696,5 +702,81 @@ export function AssignSubscriptionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function OrgCombobox({
+  orgs,
+  value,
+  onChange,
+}: {
+  orgs: { id: string; name: string; tradeType: string | null }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = orgs.find((o) => o.id === value);
+  const label = (o: { name: string; tradeType: string | null }) =>
+    `${o.name}${o.tradeType ? ` (${o.tradeType})` : ""}`;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "w-full justify-between font-normal",
+            !selected && "text-muted-foreground",
+          )}
+          data-testid="select-assign-org"
+        >
+          <span className="truncate">
+            {selected ? label(selected) : "Select organization..."}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="p-0 w-[--radix-popover-trigger-width]"
+        align="start"
+      >
+        <Command
+          filter={(itemValue, search) =>
+            itemValue.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+          }
+        >
+          <CommandInput
+            placeholder="Search organizations..."
+            data-testid="input-search-assign-org"
+          />
+          <CommandList>
+            <CommandEmpty>No organizations found.</CommandEmpty>
+            <CommandGroup>
+              {orgs.map((org) => (
+                <CommandItem
+                  key={org.id}
+                  value={label(org)}
+                  onSelect={() => {
+                    onChange(org.id);
+                    setOpen(false);
+                  }}
+                  data-testid={`option-assign-org-${org.id}`}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value === org.id ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <span className="truncate">{label(org)}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
