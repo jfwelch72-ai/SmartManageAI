@@ -46,7 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight, ListTree } from "lucide-react";
+import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight, ListTree, Eye } from "lucide-react";
 import type { ProjectTemplate } from "@shared/schema";
 import { TemplateContentEditorDialog } from "@/components/templates/template-content-editor-dialog";
 
@@ -123,6 +123,94 @@ export default function ProjectTemplatesPage() {
   const [editCategory, setEditCategory] = useState("");
   const [excludedRefIds, setExcludedRefIds] = useState<Set<string>>(new Set());
   const [collapsedRefIds, setCollapsedRefIds] = useState<Set<string>>(new Set());
+  const [previewTemplate, setPreviewTemplate] = useState<ProjectTemplate | null>(null);
+  const [previewCollapsedRefIds, setPreviewCollapsedRefIds] = useState<Set<string>>(new Set());
+
+  const previewSnapshotQuery = useQuery<SnapshotResponse>({
+    queryKey: ["/api/project-templates", previewTemplate?.id, "snapshot", "latest"],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/project-templates/${previewTemplate!.id}/snapshot`,
+      );
+      return res.json();
+    },
+    enabled: !!previewTemplate,
+  });
+
+  const previewChildrenByParent = useMemo(() => {
+    const map = new Map<string | null, SnapshotTask[]>();
+    const tasks = previewSnapshotQuery.data?.tasks ?? [];
+    for (const t of tasks) {
+      const key = t.parentRefId ?? null;
+      const arr = map.get(key) ?? [];
+      arr.push(t);
+      map.set(key, arr);
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    }
+    return map;
+  }, [previewSnapshotQuery.data?.tasks]);
+
+  const previewTaskByRefId = useMemo(() => {
+    const map = new Map<string, SnapshotTask>();
+    for (const t of previewSnapshotQuery.data?.tasks ?? []) map.set(t.refId, t);
+    return map;
+  }, [previewSnapshotQuery.data?.tasks]);
+
+  function togglePreviewCollapsed(refId: string) {
+    setPreviewCollapsedRefIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(refId)) next.delete(refId);
+      else next.add(refId);
+      return next;
+    });
+  }
+
+  function renderPreviewTaskNode(task: SnapshotTask, depth: number): JSX.Element {
+    const kids = previewChildrenByParent.get(task.refId) ?? [];
+    const hasKids = kids.length > 0;
+    const collapsed = previewCollapsedRefIds.has(task.refId);
+    return (
+      <div key={task.refId}>
+        <div
+          className="flex items-center gap-2 py-1 px-1 rounded hover-elevate text-sm"
+          style={{ paddingLeft: depth * 14 + 4 }}
+          data-testid={`row-preview-task-${task.refId}`}
+        >
+          {hasKids ? (
+            <button
+              type="button"
+              onClick={() => togglePreviewCollapsed(task.refId)}
+              className="shrink-0 text-muted-foreground"
+              data-testid={`button-preview-toggle-${task.refId}`}
+            >
+              {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          ) : (
+            <span className="w-3 h-3 shrink-0" />
+          )}
+          {task.isMilestone && <Flag className="w-3 h-3 text-amber-600 shrink-0" />}
+          <span className="truncate flex-1" title={task.name}>
+            {task.wbsCode ? <span className="text-muted-foreground mr-1">{task.wbsCode}</span> : null}
+            {task.name}
+          </span>
+          {task.durationDays !== null && (
+            <span className="text-xs text-muted-foreground shrink-0">{task.durationDays}d</span>
+          )}
+        </div>
+        {hasKids && !collapsed && (
+          <div>{kids.map((k) => renderPreviewTaskNode(k, depth + 1))}</div>
+        )}
+      </div>
+    );
+  }
+
+  function openPreviewDialog(tpl: ProjectTemplate) {
+    setPreviewTemplate(tpl);
+    setPreviewCollapsedRefIds(new Set());
+  }
 
   const detailQuery = useQuery<TemplateDetailResponse>({
     queryKey: ["/api/project-templates", activeTemplate?.id],
@@ -518,6 +606,14 @@ export default function ProjectTemplatesPage() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
+                    variant="outline"
+                    onClick={() => openPreviewDialog(tpl)}
+                    data-testid={`button-preview-template-${tpl.id}`}
+                  >
+                    <Eye className="w-4 h-4 mr-1" /> Preview
+                  </Button>
+                  <Button
+                    size="sm"
                     onClick={() => openUseDialog(tpl)}
                     disabled={!canCreate}
                     data-testid={`button-use-template-${tpl.id}`}
@@ -891,6 +987,139 @@ export default function ProjectTemplatesPage() {
             )}
           </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!previewTemplate}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewTemplate(null);
+            setPreviewCollapsedRefIds(new Set());
+          }
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-3xl max-h-[90vh] overflow-y-auto"
+          data-testid="dialog-preview-template"
+        >
+          <DialogHeader>
+            <DialogTitle data-testid="text-preview-title">
+              Preview: {previewTemplate?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Read-only view of the WBS and dependencies captured in v
+              {previewTemplate?.currentVersion ?? 1}. Use this to evaluate the
+              template's scope before starting a new project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Layers className="w-4 h-4" /> WBS
+              </h3>
+            </div>
+            {previewSnapshotQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground" data-testid="text-preview-loading">
+                Loading template snapshot...
+              </p>
+            ) : previewSnapshotQuery.isError ? (
+              <p className="text-sm text-destructive" data-testid="text-preview-error">
+                Could not load template snapshot.
+              </p>
+            ) : (previewSnapshotQuery.data?.tasks ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground" data-testid="text-preview-empty">
+                This template has no schedule tasks captured.
+              </p>
+            ) : (
+              <>
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-preview-counts"
+                >
+                  {previewSnapshotQuery.data!.tasks.length} task(s) •{" "}
+                  {previewSnapshotQuery.data!.dependencies.length} dependency
+                  link(s)
+                </p>
+                <div
+                  className="border rounded-md p-2 max-h-80 overflow-y-auto bg-muted/20"
+                  data-testid="tree-preview-tasks"
+                >
+                  {(previewChildrenByParent.get(null) ?? []).map((t) =>
+                    renderPreviewTaskNode(t, 0),
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    <ArrowRight className="w-4 h-4" /> Dependencies
+                  </h4>
+                  <div
+                    className="border rounded-md p-2 max-h-56 overflow-y-auto mt-2 space-y-1 bg-muted/20"
+                    data-testid="list-preview-dependencies"
+                  >
+                    {(previewSnapshotQuery.data?.dependencies ?? []).length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No dependencies captured.
+                      </p>
+                    ) : (
+                      (previewSnapshotQuery.data?.dependencies ?? []).map((d, i) => {
+                        const pred = previewTaskByRefId.get(d.predecessorRefId);
+                        const succ = previewTaskByRefId.get(d.successorRefId);
+                        return (
+                          <div
+                            key={`${d.predecessorRefId}-${d.successorRefId}-${i}`}
+                            className="text-xs flex items-center gap-1"
+                            data-testid={`row-preview-dependency-${i}`}
+                          >
+                            <span className="truncate">{pred?.name ?? d.predecessorRefId}</span>
+                            <ArrowRight className="w-3 h-3 shrink-0 text-muted-foreground" />
+                            <span className="truncate">{succ?.name ?? d.successorRefId}</span>
+                            <Badge
+                              variant="outline"
+                              className="ml-auto shrink-0 text-[10px] py-0 px-1"
+                            >
+                              {d.dependencyType}
+                              {d.lagDays
+                                ? ` ${d.lagDays > 0 ? "+" : ""}${d.lagDays}d`
+                                : ""}
+                            </Badge>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setPreviewTemplate(null);
+                setPreviewCollapsedRefIds(new Set());
+              }}
+              data-testid="button-preview-close"
+            >
+              Close
+            </Button>
+            {previewTemplate && canCreate && (
+              <Button
+                type="button"
+                onClick={() => {
+                  const tpl = previewTemplate;
+                  setPreviewTemplate(null);
+                  setPreviewCollapsedRefIds(new Set());
+                  openUseDialog(tpl);
+                }}
+                data-testid="button-preview-use-template"
+              >
+                Use template
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
