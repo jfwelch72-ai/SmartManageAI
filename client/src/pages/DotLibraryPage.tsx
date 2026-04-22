@@ -8,11 +8,27 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Loader2, Building2, BookOpen, Hash, Search, Wand2 } from "lucide-react";
+import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+interface PayItemOverrideEnriched {
+  id: string;
+  organizationId: string;
+  payItemId: string;
+  internalAlias: string | null;
+  customDescription: string | null;
+  customUnit: string | null;
+  customCategory: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  payItem: { id: string; itemNumber: string; description: string; unit: string; specSection: string | null; category: string | null } | null;
+  agency: { id: string; code: string; name: string; stateCode: string | null } | null;
+  specBook: { id: string; edition: string; title: string } | null;
+}
 
 interface BidTabItem {
   itemNumber: string;
@@ -148,6 +164,7 @@ export default function DotLibraryPage() {
       <Tabs defaultValue="agencies">
         <TabsList>
           <TabsTrigger value="agencies" data-testid="tab-agencies">Agencies</TabsTrigger>
+          <TabsTrigger value="aliases" data-testid="tab-aliases">Saved aliases</TabsTrigger>
           <TabsTrigger value="how" data-testid="tab-how-it-works">How it works</TabsTrigger>
         </TabsList>
 
@@ -178,6 +195,10 @@ export default function DotLibraryPage() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="aliases" className="space-y-3">
+          <SavedAliasesSection canManage={!!canManageLib} />
         </TabsContent>
 
         <TabsContent value="how">
@@ -258,5 +279,133 @@ function AgencyCard({ agency }: { agency: DotAgency }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function SavedAliasesSection({ canManage }: { canManage: boolean }) {
+  const { toast } = useToast();
+  const [filter, setFilter] = useState("");
+  const { data: rows = [], isLoading } = useQuery<PayItemOverrideEnriched[]>({
+    queryKey: ["/api/dot/pay-item-overrides", { include: "payItem" }],
+    queryFn: async () => {
+      const r = await fetch("/api/dot/pay-item-overrides?include=payItem", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load aliases");
+      return r.json();
+    },
+  });
+
+  // Clearing only the internalAlias preserves any sibling override data
+  // (customDescription, customUnit, etc.) the org has set for the same pay
+  // item. The server drops the row entirely if no override fields remain.
+  const deleteMut = useMutation<unknown, Error, string>({
+    mutationFn: async (id) => {
+      const r = await apiRequest("PATCH", `/api/dot/pay-item-overrides/${id}`, { internalAlias: null });
+      return r;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-item-overrides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match"] });
+      toast({ title: "Alias removed" });
+    },
+    onError: (err) => toast({ title: "Couldn't remove", description: err.message, variant: "destructive" }),
+  });
+
+  const aliasRows = rows.filter((r) => r.internalAlias && r.internalAlias.trim().length > 0);
+  const visible = aliasRows.filter((r) => {
+    if (!filter.trim()) return true;
+    const q = filter.toLowerCase();
+    return (
+      (r.internalAlias ?? "").toLowerCase().includes(q) ||
+      (r.payItem?.itemNumber ?? "").toLowerCase().includes(q) ||
+      (r.payItem?.description ?? "").toLowerCase().includes(q) ||
+      (r.agency?.code ?? "").toLowerCase().includes(q)
+    );
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted-foreground">
+        <Loader2 className="animate-spin h-5 w-5 mr-2" />Loading aliases…
+      </div>
+    );
+  }
+
+  if (aliasRows.length === 0) {
+    return (
+      <EmptyState
+        icon={Tag}
+        title="No saved aliases yet"
+        description="When you accept a fuzzy match in the pay-item picker, choose 'Remember' on the toast and the line description will be saved here as an alias for that DOT pay item."
+        testId="empty-state-aliases"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="relative max-w-md">
+        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Filter by alias, item #, agency"
+          className="pl-8"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          data-testid="input-alias-filter"
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        These aliases give the auto-matcher a top-priority hint for your organization. Removing one returns that description to fuzzy matching.
+      </p>
+      <div className="border rounded-md divide-y">
+        {visible.map((r) => (
+          <div
+            key={r.id}
+            className="flex items-start justify-between gap-3 p-3"
+            data-testid={`row-alias-${r.id}`}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary" className="gap-1"><Tag className="h-3 w-3" /> Alias</Badge>
+                <span className="text-sm font-medium" data-testid={`text-alias-${r.id}`}>
+                  {r.internalAlias}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                → resolves to{" "}
+                {r.payItem ? (
+                  <>
+                    <span className="font-mono">{r.payItem.itemNumber}</span>
+                    {" — "}
+                    {r.payItem.description}
+                  </>
+                ) : (
+                  <span className="italic">deleted pay item</span>
+                )}
+                {r.agency && (
+                  <>
+                    {" · "}
+                    <span>{r.agency.code}{r.agency.stateCode ? ` (${r.agency.stateCode})` : ""}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            {canManage && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={deleteMut.isPending}
+                onClick={() => deleteMut.mutate(r.id)}
+                data-testid={`button-delete-alias-${r.id}`}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        ))}
+        {visible.length === 0 && (
+          <div className="p-4 text-sm text-muted-foreground text-center">No aliases match your filter.</div>
+        )}
+      </div>
+    </div>
   );
 }

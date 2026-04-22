@@ -687,6 +687,38 @@ router.delete(
 // =========================
 // Pay item overrides (per-org)
 // =========================
+// Enrich override rows with the underlying pay item / agency / spec book so the
+// DOT Library settings page can show "alias → pay item" without N round-trips.
+async function enrichOverrides(
+  rows: (typeof dotPayItemOverrides.$inferSelect)[],
+): Promise<Array<typeof dotPayItemOverrides.$inferSelect & {
+  payItem: typeof dotPayItems.$inferSelect | null;
+  agency: typeof dotAgencies.$inferSelect | null;
+  specBook: typeof dotSpecBooks.$inferSelect | null;
+}>> {
+  if (rows.length === 0) return [];
+  const itemIds = [...new Set(rows.map((r) => r.payItemId))];
+  const items = await db.select().from(dotPayItems).where(inArray(dotPayItems.id, itemIds));
+  const aIds = [...new Set(items.map((i) => i.agencyId))];
+  const sbIds = [...new Set(items.map((i) => i.specBookId))];
+  const [ags, sbs] = await Promise.all([
+    aIds.length ? db.select().from(dotAgencies).where(inArray(dotAgencies.id, aIds)) : Promise.resolve([] as (typeof dotAgencies.$inferSelect)[]),
+    sbIds.length ? db.select().from(dotSpecBooks).where(inArray(dotSpecBooks.id, sbIds)) : Promise.resolve([] as (typeof dotSpecBooks.$inferSelect)[]),
+  ]);
+  const itemById = new Map(items.map((i) => [i.id, i]));
+  const agencyById = new Map(ags.map((a) => [a.id, a]));
+  const specBookById = new Map(sbs.map((s) => [s.id, s]));
+  return rows.map((r) => {
+    const pi = itemById.get(r.payItemId) ?? null;
+    return {
+      ...r,
+      payItem: pi,
+      agency: pi ? agencyById.get(pi.agencyId) ?? null : null,
+      specBook: pi ? specBookById.get(pi.specBookId) ?? null : null,
+    };
+  });
+}
+
 router.get(
   "/api/dot/pay-item-overrides",
   requireAuth,
@@ -694,17 +726,18 @@ router.get(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
+    const wantEnriched = req.query.include === "payItem";
     if (ctx.isSuperAdmin) {
       const targetOrg = superAdminTargetOrgId(req);
       const rows = targetOrg
         ? await db.select().from(dotPayItemOverrides).where(eq(dotPayItemOverrides.organizationId, targetOrg))
         : await db.select().from(dotPayItemOverrides);
-      return res.json(rows);
+      return res.json(wantEnriched ? await enrichOverrides(rows) : rows);
     }
     const rows = await orgScopedCache(ctx.orgId!, KEY_ORG_OVERRIDES, ORG_TTL_MS, () =>
       db.select().from(dotPayItemOverrides).where(eq(dotPayItemOverrides.organizationId, ctx.orgId!))
     );
-    res.json(rows);
+    res.json(wantEnriched ? await enrichOverrides(rows) : rows);
   },
 );
 
@@ -720,10 +753,103 @@ router.post(
     }
     const data = validateBody(insertDotPayItemOverrideSchema, { ...req.body, organizationId: ctx.orgId }, res);
     if (!data) return;
-    const [row] = await db.insert(dotPayItemOverrides).values(data).returning();
+    // Upsert on (organizationId, payItemId): saving an alias for a pay item
+    // that already has an override (e.g. customDescription) merges the alias
+    // into the existing row instead of failing the unique constraint.
+    const [existing] = await db
+      .select()
+      .from(dotPayItemOverrides)
+      .where(and(
+        eq(dotPayItemOverrides.organizationId, ctx.orgId!),
+        eq(dotPayItemOverrides.payItemId, data.payItemId),
+      ))
+      .limit(1);
+    const updateSet: Partial<typeof dotPayItemOverrides.$inferInsert> = { updatedAt: new Date() };
+    if (Object.prototype.hasOwnProperty.call(req.body, "internalAlias")) updateSet.internalAlias = data.internalAlias ?? null;
+    if (Object.prototype.hasOwnProperty.call(req.body, "customDescription")) updateSet.customDescription = data.customDescription ?? null;
+    if (Object.prototype.hasOwnProperty.call(req.body, "customUnit")) updateSet.customUnit = data.customUnit ?? null;
+    if (Object.prototype.hasOwnProperty.call(req.body, "customCategory")) updateSet.customCategory = data.customCategory ?? null;
+    if (Object.prototype.hasOwnProperty.call(req.body, "notes")) updateSet.notes = data.notes ?? null;
+    const [row] = await db
+      .insert(dotPayItemOverrides)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [dotPayItemOverrides.organizationId, dotPayItemOverrides.payItemId],
+        set: updateSet,
+      })
+      .returning();
     cacheInvalidate(ctx.orgId!, KEY_ORG_OVERRIDES);
-    await dotAudit(req, "CREATE", "dot_pay_item_override", row.id, null, row);
-    res.status(201).json(row);
+    await dotAudit(req, existing ? "UPDATE" : "CREATE", "dot_pay_item_override", row.id, existing ?? null, row);
+    res.status(existing ? 200 : 201).json(row);
+  },
+);
+
+// PATCH lets the UI clear/edit individual override fields (e.g. clear only the
+// internalAlias) without destroying sibling fields like customDescription. Body
+// is whitelisted to the per-org override columns.
+const overridePatchSchema = z.object({
+  internalAlias: z.string().nullable().optional(),
+  customDescription: z.string().nullable().optional(),
+  customUnit: z.string().max(16).nullable().optional(),
+  customCategory: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+router.patch(
+  "/api/dot/pay-item-overrides/:id",
+  requireAuth,
+  requireFeaturePermission("canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const data = validateBody(overridePatchSchema, req.body, res);
+    if (!data) return;
+    const conditions: SQL[] = [eq(dotPayItemOverrides.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dotPayItemOverrides.organizationId, ctx.orgId!));
+    const [existing] = await db.select().from(dotPayItemOverrides).where(and(...conditions)).limit(1);
+    if (!existing) return res.status(404).json({ error: "Override not found" });
+    const updates: Partial<typeof dotPayItemOverrides.$inferInsert> = { updatedAt: new Date() };
+    for (const key of ["internalAlias", "customDescription", "customUnit", "customCategory", "notes"] as const) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        (updates as Record<string, unknown>)[key] = data[key] ?? null;
+      }
+    }
+    // If the patch leaves the row with no override data at all, drop the row
+    // so empty shells don't accumulate. Otherwise update in place.
+    const merged = { ...existing, ...updates };
+    const isEmpty =
+      !merged.internalAlias && !merged.customDescription && !merged.customUnit &&
+      !merged.customCategory && !merged.notes;
+    if (isEmpty) {
+      await db.delete(dotPayItemOverrides).where(eq(dotPayItemOverrides.id, existing.id));
+      if (!ctx.isSuperAdmin) cacheInvalidate(ctx.orgId!, KEY_ORG_OVERRIDES);
+      await dotAudit(req, "DELETE", "dot_pay_item_override", existing.id, existing, null);
+      return res.status(204).end();
+    }
+    const [row] = await db
+      .update(dotPayItemOverrides)
+      .set(updates)
+      .where(eq(dotPayItemOverrides.id, existing.id))
+      .returning();
+    if (!ctx.isSuperAdmin) cacheInvalidate(ctx.orgId!, KEY_ORG_OVERRIDES);
+    await dotAudit(req, "UPDATE", "dot_pay_item_override", row.id, existing, row);
+    res.json(row);
+  },
+);
+
+router.delete(
+  "/api/dot/pay-item-overrides/:id",
+  requireAuth,
+  requireFeaturePermission("canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(dotPayItemOverrides.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(dotPayItemOverrides.organizationId, ctx.orgId!));
+    const [deleted] = await db.delete(dotPayItemOverrides).where(and(...conditions)).returning();
+    if (!deleted) return res.status(404).json({ error: "Override not found" });
+    if (!ctx.isSuperAdmin) cacheInvalidate(ctx.orgId!, KEY_ORG_OVERRIDES);
+    await dotAudit(req, "DELETE", "dot_pay_item_override", deleted.id, deleted, null);
+    res.status(204).end();
   },
 );
 

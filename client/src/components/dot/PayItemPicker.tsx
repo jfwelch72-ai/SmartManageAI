@@ -1,13 +1,15 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ToastAction } from "@/components/ui/toast";
 import { Search, Loader2, Sparkles, Tag, X } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface FacetEntry { value: string; count: number; }
 interface PayItemFacets { categories: FacetEntry[]; specSections: FacetEntry[]; }
@@ -165,6 +167,54 @@ export function PayItemPicker({
   });
   const suggestions = matchData?.matches ?? [];
 
+  // Save the seed description as an internalAlias on dotPayItemOverrides so the
+  // matcher returns this pay item as a top-priority "alias" hit next time the
+  // estimator types the same description.
+  const { toast } = useToast();
+  const saveAliasMut = useMutation<unknown, Error, { payItemId: string; alias: string; itemNumber: string }>({
+    mutationFn: async ({ payItemId, alias }) => {
+      const r = await apiRequest("POST", "/api/dot/pay-item-overrides", {
+        payItemId,
+        internalAlias: alias,
+      });
+      return r.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-item-overrides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match"] });
+      toast({
+        title: "Match saved",
+        description: `"${vars.alias.slice(0, 60)}${vars.alias.length > 60 ? "…" : ""}" will auto-resolve to ${vars.itemNumber}.`,
+      });
+    },
+    onError: (err) => {
+      toast({ title: "Couldn't save match", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleSuggestionClick = (s: MatchSuggestion) => {
+    onSelect({ payItem: s.payItem, agency: s.agency, specBook: s.specBook });
+    // Only offer to remember when this was a fuzzy guess — alias hits already
+    // resolve directly. Skip if the suggestion text is already an exact alias
+    // for this seed (case-insensitive).
+    const trimmed = seedKey.trim();
+    if (s.matchReason !== "fuzzy" || trimmed.length < 3) return;
+    if (s.aliasText && s.aliasText.toLowerCase() === trimmed.toLowerCase()) return;
+    toast({
+      title: "Remember this match?",
+      description: `Save "${trimmed.slice(0, 60)}${trimmed.length > 60 ? "…" : ""}" as an alias for ${s.payItem.itemNumber} so it auto-matches next time.`,
+      action: (
+        <ToastAction
+          altText="Remember this match"
+          data-testid={`button-remember-match-${s.payItem.id}`}
+          onClick={() => saveAliasMut.mutate({ payItemId: s.payItem.id, alias: trimmed, itemNumber: s.payItem.itemNumber })}
+        >
+          Remember
+        </ToastAction>
+      ),
+    });
+  };
+
   // If user hasn't picked an agency yet, default to the first suggestion's agency for browse context.
   useEffect(() => {
     if (open && !agencyId && suggestions.length > 0) {
@@ -198,7 +248,7 @@ export function PayItemPicker({
                 {suggestions.map((s) => (
                   <button
                     key={s.payItem.id}
-                    onClick={() => onSelect({ payItem: s.payItem, agency: s.agency, specBook: s.specBook })}
+                    onClick={() => handleSuggestionClick(s)}
                     className="w-full text-left p-3 hover-elevate active-elevate-2 flex items-start justify-between gap-3"
                     data-testid={`button-suggestion-${s.payItem.id}`}
                   >
