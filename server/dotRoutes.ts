@@ -240,11 +240,22 @@ router.post("/api/dot/spec-books", requireAuth, requireRole("SUPER_ADMIN"), asyn
 // =========================
 // DOT Pay Items — search + browse + admin upload
 // =========================
+const csvList = z
+  .string()
+  .optional()
+  .transform((v) =>
+    (v ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
+  );
 const payItemSearchQuerySchema = z.object({
   specBookId: z.string().optional(),
   agencyId: z.string().optional(),
   q: z.string().optional(),
   category: z.string().optional(),
+  categories: csvList,
+  specSections: csvList,
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
@@ -255,13 +266,19 @@ router.get(
   async (req: AuthRequest, res: Response) => {
     const parsed = payItemSearchQuerySchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: "Invalid query", details: parsed.error.flatten().fieldErrors });
-    const { specBookId, agencyId, q, category, limit } = parsed.data;
-    const cacheKey = `dot:pay-items:${specBookId ?? ""}:${agencyId ?? ""}:${category ?? ""}:${(q ?? "").toLowerCase()}:${limit}`;
+    const { specBookId, agencyId, q, category, categories, specSections, limit } = parsed.data;
+    const catList = categories.length > 0 ? categories : category ? [category] : [];
+    const catKey = catList.slice().sort().join("|");
+    const sectionKey = specSections.slice().sort().join("|");
+    const cacheKey = `dot:pay-items:${specBookId ?? ""}:${agencyId ?? ""}:${catKey}:${sectionKey}:${(q ?? "").toLowerCase()}:${limit}`;
     const rows = await orgScopedCache(null, cacheKey, REFERENCE_TTL_MS, () => {
       const conditions: SQL[] = [eq(dotPayItems.isActive, true)];
       if (specBookId) conditions.push(eq(dotPayItems.specBookId, specBookId));
       if (agencyId) conditions.push(eq(dotPayItems.agencyId, agencyId));
-      if (category) conditions.push(eq(dotPayItems.category, category));
+      if (catList.length === 1) conditions.push(eq(dotPayItems.category, catList[0]));
+      else if (catList.length > 1) conditions.push(inArray(dotPayItems.category, catList));
+      if (specSections.length === 1) conditions.push(eq(dotPayItems.specSection, specSections[0]));
+      else if (specSections.length > 1) conditions.push(inArray(dotPayItems.specSection, specSections));
       if (q && q.trim()) {
         const term = `%${q.trim().toLowerCase()}%`;
         const orExpr = or(
@@ -274,6 +291,62 @@ router.get(
       return db.select().from(dotPayItems).where(and(...conditions)).orderBy(dotPayItems.itemNumber).limit(limit);
     });
     res.json(rows);
+  },
+);
+
+// Distinct category and spec-section facets for the DOT Library browser.
+// Returns count per value so the UI can render multi-select facets and
+// users can drill into a section/category without typing a search term.
+const facetsQuerySchema = z.object({
+  specBookId: z.string().optional(),
+  agencyId: z.string().optional(),
+});
+router.get(
+  "/api/dot/pay-items/facets",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const parsed = facetsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid query", details: parsed.error.flatten().fieldErrors });
+    }
+    const { specBookId, agencyId } = parsed.data;
+    if (!specBookId && !agencyId) {
+      return res.status(400).json({ error: "specBookId or agencyId is required" });
+    }
+    const cacheKey = `dot:pay-items:facets:${specBookId ?? ""}:${agencyId ?? ""}`;
+    const data = await orgScopedCache(null, cacheKey, REFERENCE_TTL_MS, async () => {
+      const baseConds: SQL[] = [eq(dotPayItems.isActive, true)];
+      if (specBookId) baseConds.push(eq(dotPayItems.specBookId, specBookId));
+      if (agencyId) baseConds.push(eq(dotPayItems.agencyId, agencyId));
+      const categoriesRows = await db
+        .select({
+          value: dotPayItems.category,
+          count: sql<number>`COUNT(*)::int`.as("count"),
+        })
+        .from(dotPayItems)
+        .where(and(...baseConds))
+        .groupBy(dotPayItems.category)
+        .orderBy(dotPayItems.category);
+      const sectionsRows = await db
+        .select({
+          value: dotPayItems.specSection,
+          count: sql<number>`COUNT(*)::int`.as("count"),
+        })
+        .from(dotPayItems)
+        .where(and(...baseConds))
+        .groupBy(dotPayItems.specSection)
+        .orderBy(dotPayItems.specSection);
+      return {
+        categories: categoriesRows
+          .filter((r) => r.value && r.value.trim().length > 0)
+          .map((r) => ({ value: r.value as string, count: Number(r.count) || 0 })),
+        specSections: sectionsRows
+          .filter((r) => r.value && r.value.trim().length > 0)
+          .map((r) => ({ value: r.value as string, count: Number(r.count) || 0 })),
+      };
+    });
+    res.json(data);
   },
 );
 

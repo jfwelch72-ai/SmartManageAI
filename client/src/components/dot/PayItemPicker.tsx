@@ -6,8 +6,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Loader2, Sparkles, Tag } from "lucide-react";
+import { Search, Loader2, Sparkles, Tag, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+
+interface FacetEntry { value: string; count: number; }
+interface PayItemFacets { categories: FacetEntry[]; specSections: FacetEntry[]; }
 
 export interface DotAgency {
   id: string;
@@ -68,6 +71,8 @@ export function PayItemPicker({
   const [agencyId, setAgencyId] = useState<string | undefined>(defaultAgencyId);
   const [specBookId, setSpecBookId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedSections, setSelectedSections] = useState<string[]>([]);
 
   const { data: agencies = [] } = useQuery<DotAgency[]>({ queryKey: ["/api/dot/agencies"], enabled: open });
   const { data: specBooks = [] } = useQuery<DotSpecBook[]>({
@@ -81,19 +86,64 @@ export function PayItemPicker({
   });
 
   const effectiveSpecBookId = specBookId || specBooks.find((s) => s.isCurrent)?.id || specBooks[0]?.id;
+
+  // Reset facet selections when the spec book changes so stale category/section
+  // values from a different agency don't silently filter the new catalog.
+  useEffect(() => {
+    setSelectedCategories([]);
+    setSelectedSections([]);
+  }, [effectiveSpecBookId]);
+
+  const { data: facets } = useQuery<PayItemFacets>({
+    queryKey: ["/api/dot/pay-items/facets", { specBookId: effectiveSpecBookId }],
+    enabled: open && !!effectiveSpecBookId,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (effectiveSpecBookId) params.set("specBookId", effectiveSpecBookId);
+      const r = await fetch(`/api/dot/pay-items/facets?${params}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load facets");
+      return r.json();
+    },
+  });
+  const categoryFacets = facets?.categories ?? [];
+  const sectionFacets = facets?.specSections ?? [];
+
+  const sortedCategories = selectedCategories.slice().sort().join(",");
+  const sortedSections = selectedSections.slice().sort().join(",");
   const { data: payItems = [], isLoading } = useQuery<DotPayItem[]>({
-    queryKey: ["/api/dot/pay-items", { specBookId: effectiveSpecBookId, q: search }],
+    queryKey: [
+      "/api/dot/pay-items",
+      { specBookId: effectiveSpecBookId, q: search, categories: sortedCategories, specSections: sortedSections },
+    ],
     enabled: open && !!effectiveSpecBookId,
     queryFn: async () => {
       const params = new URLSearchParams();
       if (effectiveSpecBookId) params.set("specBookId", effectiveSpecBookId);
       if (search.trim()) params.set("q", search.trim());
+      if (sortedCategories) params.set("categories", sortedCategories);
+      if (sortedSections) params.set("specSections", sortedSections);
       params.set("limit", "150");
       const r = await fetch(`/api/dot/pay-items?${params}`, { credentials: "include" });
       if (!r.ok) throw new Error("Failed to load pay items");
       return r.json();
     },
   });
+
+  const toggleCategory = (value: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
+  const toggleSection = (value: string) => {
+    setSelectedSections((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
+  const clearFacets = () => {
+    setSelectedCategories([]);
+    setSelectedSections([]);
+  };
+  const hasActiveFacets = selectedCategories.length > 0 || selectedSections.length > 0;
 
   // Auto-match suggestions seeded from the line item description
   const seedKey = (seedDescription ?? "").trim();
@@ -213,6 +263,67 @@ export function PayItemPicker({
             data-testid="input-pay-item-search"
           />
         </div>
+        {effectiveSpecBookId && (categoryFacets.length > 0 || sectionFacets.length > 0) && (
+          <div className="border rounded-md p-2 space-y-2" data-testid="section-pay-item-facets">
+            {categoryFacets.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Category</div>
+                  {hasActiveFacets && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={clearFacets}
+                      data-testid="button-clear-facets"
+                    >
+                      <X className="h-3 w-3 mr-1" />Clear filters
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  {categoryFacets.map((c) => {
+                    const active = selectedCategories.includes(c.value);
+                    return (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => toggleCategory(c.value)}
+                        className={`text-xs px-2 py-1 rounded-md border hover-elevate active-elevate-2 ${active ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}
+                        data-testid={`button-facet-category-${c.value.replace(/[^a-zA-Z0-9]/g, "-")}`}
+                        aria-pressed={active}
+                      >
+                        {c.value} <span className={active ? "opacity-80" : "text-muted-foreground"}>({c.count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {sectionFacets.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Spec section</div>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  {sectionFacets.map((s) => {
+                    const active = selectedSections.includes(s.value);
+                    return (
+                      <button
+                        key={s.value}
+                        type="button"
+                        onClick={() => toggleSection(s.value)}
+                        className={`text-xs px-2 py-1 rounded-md border font-mono hover-elevate active-elevate-2 ${active ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}
+                        data-testid={`button-facet-section-${s.value.replace(/[^a-zA-Z0-9]/g, "-")}`}
+                        aria-pressed={active}
+                      >
+                        §{s.value} <span className={active ? "opacity-80" : "text-muted-foreground"}>({s.count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <ScrollArea className="flex-1 border rounded-md">
           {isLoading ? (
             <div className="flex items-center justify-center p-8 text-muted-foreground"><Loader2 className="animate-spin mr-2 h-4 w-4" />Loading…</div>
