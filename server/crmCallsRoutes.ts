@@ -46,6 +46,7 @@ import {
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
   listCrmTranscriptBackfillAlertDeliveries,
+  listOrgAdminAlertFailureModes,
   summarizeOrgAdminAlertFailureFallbackMutes,
   listCrmTranscriptBackfillTestAlerts,
   getCrmTranscriptBackfillTestAlertUsageSummary,
@@ -2939,6 +2940,38 @@ router.get(
       // of a hardcoded "5 minutes" string.
       const cfg = await getBackfillNotificationConfig(orgId);
       res.json({ ...cfg, heartbeatStaleMs: BACKFILL_HEARTBEAT_STALE_MS });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1085 — list each active org admin alongside their currently-saved
+// `alertFailureEmailMode` so the admin transcript-backfill page can render
+// a "who's set to receive what" panel and flag orgs where nobody is on the
+// realtime stream (so a misconfigured webhook would only be noticed via
+// the next day's digest). Mirrors the auth posture of the sibling
+// notification-config endpoint above (ADMIN-only, scoped to caller org).
+router.get(
+  "/api/crm/calls/transcripts/backfill/admin-alert-failure-modes",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const admins = await listOrgAdminAlertFailureModes(orgId);
+      const realtimeRecipientCount = admins.filter(
+        (a) =>
+          a.alertFailureEmailMode === "both" ||
+          a.alertFailureEmailMode === "realtime",
+      ).length;
+      res.json({
+        admins,
+        realtimeRecipientCount,
+        noRealtimeRecipients:
+          admins.length > 0 && realtimeRecipientCount === 0,
+      });
     } catch (e) {
       next(e);
     }

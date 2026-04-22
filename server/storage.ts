@@ -1457,6 +1457,85 @@ export async function summarizeOrgAdminAlertFailureFallbackMutes(
   return summary;
 }
 
+// Task #1085 — surface each active org admin's `alertFailureEmailMode`
+// (real-time / digest / both / none) on the admin transcript-backfill page
+// so ops leads can see at a glance which admins fall into which bucket
+// without having to open every admin profile. The visual flag on the
+// front-end fires when no admin has a mode that includes the realtime
+// stream, since a misconfigured webhook would then only be noticed via
+// the next day's digest.
+//
+// We deliberately do NOT apply the Task #1066 mute / Task #1051 fallback
+// disable filters here: an admin who fully opted out via those switches
+// is still useful to surface ("everybody muted us") and the per-row mode
+// badge stays meaningful regardless. Callers that want the actual fan-out
+// recipient list should keep using `listOrgAdminsForAlertFailureFallback`.
+export type OrgAdminAlertFailureMode = {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  alertFailureEmailMode: "both" | "realtime" | "digest" | "none";
+};
+
+export async function listOrgAdminAlertFailureModes(
+  organizationId: string,
+): Promise<OrgAdminAlertFailureMode[]> {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      alertFailureEmailMode: users.alertFailureEmailMode,
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.role, "ADMIN"),
+        eq(users.isActive, true),
+      ),
+    );
+
+  const seen = new Set<string>();
+  const out: OrgAdminAlertFailureMode[] = [];
+  for (const r of rows) {
+    const email = (r.email ?? "").trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // Treat unknown / null modes as the legacy "both" so existing rows that
+    // predate the Task #1076 column rollout don't render as "none".
+    const raw = r.alertFailureEmailMode ?? "both";
+    const mode: OrgAdminAlertFailureMode["alertFailureEmailMode"] =
+      raw === "realtime" || raw === "digest" || raw === "none" ? raw : "both";
+    out.push({
+      id: r.id,
+      email,
+      firstName: r.firstName ?? null,
+      lastName: r.lastName ?? null,
+      alertFailureEmailMode: mode,
+    });
+  }
+  // Stable, predictable ordering for the admin UI: "missing realtime"
+  // buckets bubble to the top so ops leads spot the at-risk admins first,
+  // then alphabetical by email within each bucket.
+  const rank: Record<OrgAdminAlertFailureMode["alertFailureEmailMode"], number> = {
+    none: 0,
+    digest: 1,
+    realtime: 2,
+    both: 3,
+  };
+  out.sort((a, b) => {
+    const r = rank[a.alertFailureEmailMode] - rank[b.alertFailureEmailMode];
+    if (r !== 0) return r;
+    return a.email.toLowerCase().localeCompare(b.email.toLowerCase());
+  });
+  return out;
+}
+
 // Task #1065 — daily digest of recent alert delivery failures.
 //
 // Aggregates the last N hours of `crm_transcript_backfill_alert_deliveries`

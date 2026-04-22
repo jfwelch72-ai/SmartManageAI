@@ -1287,6 +1287,8 @@ export default function AdminTranscriptBackfillPage() {
         </CardContent>
       </Card>
 
+      <BackfillAdminAlertFailureModesCard />
+
       {isCrossOrgSummary && crossOrgRunningJobs.length > 0 && (
         <Card data-testid="card-cross-org-running">
           <CardHeader className="pb-3">
@@ -4090,6 +4092,237 @@ export function BackfillAlertDeliveriesCard() {
               </li>
             ))}
           </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Task #1085 — surface each active org admin's currently-saved
+// `alertFailureEmailMode` (real-time / digest / both / none) so ops leads
+// can see at a glance who falls into which bucket without opening every
+// admin profile. The card flags orgs where no admin is on the realtime
+// stream, since a misconfigured webhook would then only be noticed via
+// the next day's digest.
+interface BackfillAdminAlertFailureModeRow {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  alertFailureEmailMode: "both" | "realtime" | "digest" | "none";
+}
+
+interface BackfillAdminAlertFailureModesResponse {
+  admins: BackfillAdminAlertFailureModeRow[];
+  realtimeRecipientCount: number;
+  noRealtimeRecipients: boolean;
+}
+
+const ADMIN_ALERT_FAILURE_MODES_PATH =
+  "/api/crm/calls/transcripts/backfill/admin-alert-failure-modes";
+
+function modeBadgeProps(
+  mode: BackfillAdminAlertFailureModeRow["alertFailureEmailMode"],
+): {
+  label: string;
+  variant: "default" | "secondary" | "outline" | "destructive";
+  description: string;
+} {
+  switch (mode) {
+    case "both":
+      return {
+        label: "Real-time + digest",
+        variant: "default",
+        description:
+          "Receives every per-failure email AND the daily digest (legacy default).",
+      };
+    case "realtime":
+      return {
+        label: "Real-time only",
+        variant: "secondary",
+        description:
+          "Receives the per-failure pages but suppresses the daily digest.",
+      };
+    case "digest":
+      return {
+        label: "Digest only",
+        variant: "outline",
+        description:
+          "Suppresses real-time pages — would only see a misconfigured webhook in the next day's digest.",
+      };
+    case "none":
+      return {
+        label: "None",
+        variant: "destructive",
+        description:
+          "Silenced both streams; in-app history page is still updated.",
+      };
+  }
+}
+
+function adminDisplayName(row: BackfillAdminAlertFailureModeRow): string {
+  const parts = [row.firstName, row.lastName].filter(
+    (p): p is string => typeof p === "string" && p.trim().length > 0,
+  );
+  return parts.length > 0 ? parts.join(" ") : row.email;
+}
+
+export function BackfillAdminAlertFailureModesCard() {
+  const query = useQuery<BackfillAdminAlertFailureModesResponse>({
+    queryKey: [ADMIN_ALERT_FAILURE_MODES_PATH],
+  });
+
+  const data = query.data;
+  const admins = data?.admins ?? [];
+  const noRealtime = data?.noRealtimeRecipients ?? false;
+
+  return (
+    <Card data-testid="card-admin-alert-failure-modes">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Admin alert-failure email recipients</CardTitle>
+            <CardDescription>
+              Which admins are currently set to receive per-failure pages,
+              the daily digest, both, or neither when a transcript backfill
+              alert fails to deliver. Each admin picks their own mode under
+              their notification preferences.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              queryClient.invalidateQueries({
+                queryKey: [ADMIN_ALERT_FAILURE_MODES_PATH],
+              })
+            }
+            disabled={query.isFetching}
+            data-testid="button-refresh-admin-alert-failure-modes"
+          >
+            {query.isFetching ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {query.isLoading ? (
+          <Loader2
+            className="h-6 w-6 animate-spin text-muted-foreground"
+            data-testid="status-loading-admin-alert-failure-modes"
+          />
+        ) : query.isError ? (
+          <div
+            className="text-sm text-destructive"
+            data-testid="text-admin-alert-failure-modes-error"
+          >
+            Failed to load admin alert-failure email modes.
+          </div>
+        ) : admins.length === 0 ? (
+          <div
+            className="text-sm text-muted-foreground"
+            data-testid="text-admin-alert-failure-modes-empty"
+          >
+            No active org admins were found. Add at least one ADMIN user so
+            backfill failure alerts have an in-org recipient.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {noRealtime && (
+              <div
+                className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200 flex items-start gap-2"
+                data-testid="alert-no-realtime-recipients"
+              >
+                <BellOff className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    No admin is on the real-time stream.
+                  </p>
+                  <p className="text-xs mt-0.5">
+                    A misconfigured webhook or SMTP outage would only be
+                    surfaced via the next day's digest. Have at least one
+                    admin switch their mode to "Real-time only" or
+                    "Real-time + digest" under{" "}
+                    <Link
+                      href="/settings/notifications"
+                      className="underline"
+                      data-testid="link-no-realtime-settings"
+                    >
+                      notification preferences
+                    </Link>
+                    .
+                  </p>
+                </div>
+              </div>
+            )}
+            <ul
+              className="divide-y rounded-md border"
+              data-testid="list-admin-alert-failure-modes"
+            >
+              {admins.map((row) => {
+                const badge = modeBadgeProps(row.alertFailureEmailMode);
+                const onRealtime =
+                  row.alertFailureEmailMode === "both" ||
+                  row.alertFailureEmailMode === "realtime";
+                return (
+                  <li
+                    key={row.id}
+                    className="px-3 py-2 flex items-start gap-3"
+                    data-testid={`row-admin-alert-failure-mode-${row.id}`}
+                  >
+                    {onRealtime ? (
+                      <Bell
+                        className="h-4 w-4 mt-0.5 text-green-600 shrink-0"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <BellOff
+                        className="h-4 w-4 mt-0.5 text-amber-600 shrink-0"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className="text-sm font-medium truncate"
+                        data-testid={`text-admin-alert-failure-mode-name-${row.id}`}
+                      >
+                        {adminDisplayName(row)}
+                      </div>
+                      <div
+                        className="text-xs text-muted-foreground truncate"
+                        data-testid={`text-admin-alert-failure-mode-email-${row.id}`}
+                      >
+                        {row.email}
+                      </div>
+                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">
+                          <Badge
+                            variant={badge.variant}
+                            data-testid={`badge-admin-alert-failure-mode-${row.id}`}
+                          >
+                            {badge.label}
+                          </Badge>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="left"
+                        className="max-w-xs text-xs leading-snug"
+                        data-testid={`tooltip-admin-alert-failure-mode-${row.id}`}
+                      >
+                        {badge.description}
+                      </TooltipContent>
+                    </Tooltip>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
       </CardContent>
     </Card>
