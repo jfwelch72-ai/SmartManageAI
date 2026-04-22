@@ -3196,6 +3196,140 @@ router.get(
   },
 );
 
+// Task #1096 — CSV export of the test-alert history. Mirrors the filters of
+// the JSON endpoint above and the UX of the main backfill `history.csv`
+// exporter so admins can save the filtered audit trail offline (to share
+// with ops, vendors, etc.) without screenshotting paginated rows.
+router.get(
+  "/api/crm/calls/transcripts/backfill/test-alert/history.csv",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | undefined;
+      if (superAdmin) {
+        const requestedOrg = typeof req.query.organizationId === "string"
+          ? req.query.organizationId.trim()
+          : "";
+        scopedOrgId = requestedOrg.length > 0 ? requestedOrg : undefined;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
+
+      const senderRaw =
+        typeof req.query.sender === "string" ? req.query.sender.trim() : "";
+      const sender = senderRaw.length > 0 ? senderRaw.slice(0, 200) : undefined;
+
+      const parseBool = (v: unknown): boolean | undefined => {
+        if (typeof v !== "string") return undefined;
+        const s = v.trim().toLowerCase();
+        if (s === "true" || s === "1") return true;
+        if (s === "false" || s === "0") return false;
+        return undefined;
+      };
+      const slackOk = parseBool(req.query.slackOk);
+      const emailOk = parseBool(req.query.emailOk);
+      const anyFailed = parseBool(req.query.anyFailed);
+
+      const parseDate = (v: unknown): Date | undefined => {
+        if (typeof v !== "string" || v.length === 0) return undefined;
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? undefined : d;
+      };
+      const sentAfter = parseDate(req.query.sentAfter);
+      const sentBefore = parseDate(req.query.sentBefore);
+
+      const escapeCsv = (v: unknown): string => {
+        if (v === null || v === undefined) return "";
+        const s = String(v);
+        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+
+      const HEADERS = [
+        "id",
+        "organization_id",
+        "organization_name",
+        "sent_at",
+        "sender_name",
+        "sender_email",
+        "operator_display",
+        "slack_configured",
+        "slack_ok",
+        "slack_error",
+        "email_configured",
+        "email_ok",
+        "email_error",
+        "email_recipients",
+      ];
+
+      const PAGE = 100;
+      const MAX_ROWS = 100_000;
+      const lines: string[] = [HEADERS.join(",")];
+      let offset = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { rows } = await listCrmTranscriptBackfillTestAlerts({
+          organizationId: scopedOrgId,
+          limit: PAGE,
+          offset,
+          sender,
+          slackOk,
+          emailOk,
+          anyFailed,
+          sentAfter,
+          sentBefore,
+        });
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          const fullName = [row.sentByFirstName, row.sentByLastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          const senderName = fullName || row.sentByEmail || row.operatorDisplay || "";
+          const sentAtIso = row.sentAt ? new Date(row.sentAt).toISOString() : "";
+          lines.push(
+            [
+              row.id,
+              row.organizationId ?? "",
+              row.organizationName ?? "",
+              sentAtIso,
+              senderName,
+              row.sentByEmail ?? "",
+              row.operatorDisplay ?? "",
+              row.slackConfigured ? "true" : "false",
+              row.slackOk ? "true" : "false",
+              row.slackError ?? "",
+              row.emailConfigured ? "true" : "false",
+              row.emailOk ? "true" : "false",
+              row.emailError ?? "",
+              (row.emailRecipients ?? []).join("; "),
+            ]
+              .map(escapeCsv)
+              .join(","),
+          );
+        }
+        offset += rows.length;
+        if (rows.length < PAGE) break;
+        if (offset >= MAX_ROWS) break;
+      }
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="transcript-backfill-test-alert-history-${stamp}.csv"`,
+      );
+      res.send(lines.join("\n") + "\n");
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 // Task #1060 — usage frequency rollup for the test-alert button (counts in
 // the last 24h / 7d / 30d). Lets admins see at a glance how often the button
 // is being clicked, which is far easier to scan than the raw history list

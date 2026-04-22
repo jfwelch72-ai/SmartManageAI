@@ -2723,8 +2723,12 @@ function TestAlertHistoryPanel({
   isSuperAdmin: boolean;
   orgFilter: string;
 }) {
+  const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [page, setPage] = useState(0);
+  // Task #1096 — export the currently-filtered audit trail to CSV so admins
+  // can share root-cause investigations offline without screenshotting.
+  const [isExporting, setIsExporting] = useState(false);
 
   // Task #1061 — filter controls so admins can narrow the panel by sender,
   // channel result, and date range without scrolling page by page. Sender is
@@ -2794,6 +2798,50 @@ function TestAlertHistoryPanel({
     enabled: expanded,
   });
 
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      // Mirror queryParams but drop pagination — the export streams the full
+      // matching set, not the visible page.
+      const params = new URLSearchParams();
+      if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+        params.set("organizationId", orgFilter);
+      }
+      if (appliedSender) params.set("sender", appliedSender);
+      if (resultFilter === "SLACK_FAILED") params.set("slackOk", "false");
+      else if (resultFilter === "EMAIL_FAILED") params.set("emailOk", "false");
+      else if (resultFilter === "EITHER_FAILED") params.set("anyFailed", "true");
+      else if (resultFilter === "ALL_OK") params.set("anyFailed", "false");
+      if (sentAfter) params.set("sentAfter", sentAfter.toISOString());
+      if (sentBefore) {
+        const end = new Date(sentBefore);
+        end.setHours(23, 59, 59, 999);
+        params.set("sentBefore", end.toISOString());
+      }
+      const qs = params.toString();
+      const url = `${TEST_ALERT_HISTORY_PATH}.csv${qs ? `?${qs}` : ""}`;
+      const res = await apiRequest("GET", url);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      a.download = `transcript-backfill-test-alert-history-${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast({
+        title: "Failed to export CSV",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const total = query.data?.total ?? 0;
   const alerts = query.data?.alerts ?? [];
   const totalPages = Math.max(1, Math.ceil(total / TEST_ALERT_HISTORY_PAGE_SIZE));
@@ -2806,22 +2854,43 @@ function TestAlertHistoryPanel({
 
   return (
     <div data-testid="panel-test-alert-history">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-7 px-2 text-xs"
-        onClick={() => setExpanded((v) => !v)}
-        data-testid="button-toggle-test-alert-history"
-        aria-expanded={expanded}
-      >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 mr-1" />
-        ) : (
-          <ChevronRight className="h-3 w-3 mr-1" />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => setExpanded((v) => !v)}
+          data-testid="button-toggle-test-alert-history"
+          aria-expanded={expanded}
+        >
+          {expanded ? (
+            <ChevronDown className="h-3 w-3 mr-1" />
+          ) : (
+            <ChevronRight className="h-3 w-3 mr-1" />
+          )}
+          {expanded ? "Hide previous tests" : "Show previous tests"}
+        </Button>
+        {expanded && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={handleExportCsv}
+            disabled={isExporting || query.isLoading || total === 0}
+            data-testid="button-export-test-alert-history-csv"
+            title="Download the currently filtered test-alert history as CSV"
+          >
+            {isExporting ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Download className="h-3 w-3 mr-1" />
+            )}
+            Download CSV
+          </Button>
         )}
-        {expanded ? "Hide previous tests" : "Show previous tests"}
-      </Button>
+      </div>
       {expanded && (
         <div
           className="mt-2 space-y-2"
