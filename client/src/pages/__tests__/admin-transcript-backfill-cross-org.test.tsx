@@ -138,6 +138,11 @@ vi.mock("@tanstack/react-query", async () => {
         data: {
           slack: { configured: false, valid: false },
           email: { configured: false, recipients: [] },
+          // Task #1063 — env-var summary panel now also carries the
+          // persisted last-test outcome and a fallback flag.
+          lastTestAt: null,
+          lastTestResult: null,
+          usingEnvFallback: true,
         },
       };
     }

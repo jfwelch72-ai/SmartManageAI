@@ -151,9 +151,16 @@ interface BackfillOperatorsResponse {
 
 // Task #1032 — read-only summary of which alert destinations are wired up
 // server-side. The Slack webhook URL is intentionally NOT included.
+// Task #1063 — also carries the persisted last-test outcome so the env-var
+// summary panel can render the same inline health indicator the per-org
+// settings card shows. `usingEnvFallback` is true when no per-org settings
+// row exists (the resolver is using the legacy env vars).
 interface NotificationConfig {
   slack: { configured: boolean; valid: boolean };
   email: { configured: boolean; recipients: string[] };
+  lastTestAt: string | null;
+  lastTestResult: BackfillTestAlertResult | null;
+  usingEnvFallback: boolean;
 }
 
 interface PendingRecording {
@@ -440,6 +447,35 @@ export default function AdminTranscriptBackfillPage() {
     !!notificationConfig &&
     !notificationConfig.slack.configured &&
     !notificationConfig.email.configured;
+
+  // Task #1063 — clear the persisted last-test outcome from the env-var
+  // summary panel. Mirrors the dismiss action on the per-org settings card
+  // (both hit the same DELETE endpoint, since the lastTest fields live on
+  // the same per-org settings row). We invalidate both queries so the panel
+  // disappears in either card immediately.
+  const dismissNotificationConfigTestResultMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(
+        "DELETE",
+        "/api/crm/calls/transcripts/backfill/notification-settings/last-test",
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/crm/calls/transcripts/backfill/notification-config"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/crm/calls/transcripts/backfill/notification-settings"],
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Couldn't dismiss the last test result",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   // Set of job ids visible on the current history page. Used by the lineage
   // chain so we can disable jump links pointing to jobs that aren't on this
@@ -1022,6 +1058,27 @@ export default function AdminTranscriptBackfillPage() {
                   notifications will be silently skipped until either env var is set.
                 </p>
               )}
+              {/* Task #1063 — show the persisted last-test outcome inline so
+                  platform support can spot a stale env-var config without
+                  firing a fresh test. Only rendered when the env-var
+                  fallback is in use; the per-org settings card already
+                  shows the same panel when admins have a saved row. */}
+              {notificationConfig.usingEnvFallback &&
+                notificationConfig.lastTestResult &&
+                notificationConfig.lastTestAt && (
+                  <div data-testid="panel-notification-config-last-test">
+                    <BackfillLastTestResultPanel
+                      result={notificationConfig.lastTestResult}
+                      testedAt={notificationConfig.lastTestAt}
+                      onDismiss={() =>
+                        dismissNotificationConfigTestResultMutation.mutate()
+                      }
+                      isDismissing={
+                        dismissNotificationConfigTestResultMutation.isPending
+                      }
+                    />
+                  </div>
+                )}
             </dl>
           )}
         </CardContent>

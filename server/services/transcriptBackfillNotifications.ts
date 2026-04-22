@@ -599,6 +599,24 @@ export type BackfillNotificationConfig = {
     configured: boolean;
     recipients: string[];
   };
+  // Task #1063 — surface the same persisted last-test outcome the per-org
+  // settings card uses, so the env-var/system-wide notification panel can
+  // show the destinations' last-known health when no per-org row exists
+  // (i.e. the deployment is still falling back to env vars). The data lives
+  // on the per-org settings row written by the test endpoint.
+  lastTestAt: string | null;
+  lastTestResult: TestAlertResult | null;
+  /**
+   * True when no per-org destinations are saved (either no settings row
+   * exists at all, or the row exists but both `slackWebhookUrl` and
+   * `emailRecipients` are empty — which happens in deployments still on
+   * the legacy env vars, where the test endpoint upserts a row to record
+   * the last-test result without any per-org destinations being saved).
+   * The admin UI uses this to decide whether to render the inline last-
+   * test panel inside the env-var summary card (the per-org settings card
+   * is empty in this mode and shouldn't double-render the panel).
+   */
+  usingEnvFallback: boolean;
 };
 
 /**
@@ -612,7 +630,14 @@ export type BackfillNotificationConfig = {
 export async function getBackfillNotificationConfig(
   orgId: string,
 ): Promise<BackfillNotificationConfig> {
-  const destinations = await resolveBackfillNotificationDestinations(orgId);
+  // Task #1063 — read both the resolved destinations (env-var fallback aware)
+  // AND the raw per-org settings row so we can (a) flag whether the env-var
+  // fallback is in use and (b) surface the persisted last-test outcome
+  // alongside the env-var summary panel.
+  const [destinations, settings] = await Promise.all([
+    resolveBackfillNotificationDestinations(orgId),
+    getCrmTranscriptBackfillNotificationSettings(orgId),
+  ]);
   const slackWebhook = (destinations.slackWebhookUrl ?? "").trim();
   const recipients = destinations.emailRecipients;
   return {
@@ -624,6 +649,19 @@ export async function getBackfillNotificationConfig(
       configured: recipients.length > 0,
       recipients,
     },
+    lastTestAt: settings?.lastTestAt ? settings.lastTestAt.toISOString() : null,
+    lastTestResult: settings?.lastTestResult ?? null,
+    // Task #1063 — "fallback" means no per-org destinations are in play:
+    // either the row is absent (true env-var fallback), or it exists with
+    // both destinations empty (which happens after a test alert in
+    // env-fallback mode upserts the row to persist lastTest data). In
+    // both cases the per-org settings card has no destinations to show,
+    // so the env-var summary card is the right place for the inline
+    // last-test panel.
+    usingEnvFallback:
+      settings === null ||
+      ((settings.slackWebhookUrl ?? "").trim() === "" &&
+        (settings.emailRecipients ?? []).length === 0),
   };
 }
 
