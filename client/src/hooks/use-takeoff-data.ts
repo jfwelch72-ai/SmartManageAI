@@ -467,6 +467,26 @@ export function useTakeoffData({
     },
   });
 
+  const updateMarkupMutation = useMutation({
+    mutationFn: async (data: {
+      id: string;
+      color?: string;
+      thickness?: number;
+      text?: string | null;
+      points?: { x: number; y: number }[];
+    }) => {
+      const { id, ...updates } = data;
+      const res = await apiRequest("PATCH", `/api/takeoff/markups/${id}`, updates);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update markup", variant: "destructive" });
+    },
+  });
+
   const deleteMarkupMutation = useMutation({
     mutationFn: async (markup: TakeoffMarkupWithAuthor | string) => {
       const markupId = typeof markup === "string" ? markup : markup.id;
@@ -738,6 +758,7 @@ export function useTakeoffData({
     updateMeasurementMutation,
     deleteMeasurementMutation,
     createMarkupMutation,
+    updateMarkupMutation,
     deleteMarkupMutation,
     createSheetLinkMutation,
     deleteSheetLinkMutation,

@@ -545,6 +545,86 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
   }
 });
 
+// Update a markup (label, color, thickness, points)
+router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { markupId } = req.params;
+    const { takeoffMarkups } = await import("@shared/schema");
+    const { z } = await import("zod");
+
+    const updateSchema = z.object({
+      color: z.string().min(1).optional(),
+      thickness: z.number().int().min(1).max(64).optional(),
+      text: z.string().nullable().optional(),
+      points: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
+    }).refine((data) => Object.keys(data).length > 0, { message: "No fields to update" });
+
+    const validated = updateSchema.parse(req.body);
+
+    const [markup] = await db
+      .select()
+      .from(takeoffMarkups)
+      .where(eq(takeoffMarkups.id, markupId))
+      .limit(1);
+
+    if (!markup) {
+      res.status(404).json({ error: "Markup not found" });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const isSuperAdmin = userRole === "SUPER_ADMIN";
+
+    if (!isSuperAdmin && markup.organizationId !== orgId) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const isOwner = markup.createdBy === userId;
+    const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
+
+    if (!isOwner && !isAdminOrManager) {
+      res.status(403).json({ error: "You can only edit your own markups" });
+      return;
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (validated.color !== undefined) updates.color = validated.color;
+    if (validated.thickness !== undefined) updates.thickness = validated.thickness;
+    if (validated.text !== undefined) updates.text = validated.text;
+    if (validated.points !== undefined) updates.points = JSON.stringify(validated.points);
+
+    const whereClause = isSuperAdmin
+      ? eq(takeoffMarkups.id, markupId)
+      : and(eq(takeoffMarkups.id, markupId), eq(takeoffMarkups.organizationId, orgId!));
+
+    const [updated] = await db
+      .update(takeoffMarkups)
+      .set(updates)
+      .where(whereClause)
+      .returning();
+
+    if (!updated) {
+      res.status(404).json({ error: "Markup not found" });
+      return;
+    }
+
+    res.json({
+      ...updated,
+      points: safeParsePoints(updated.points) || [],
+    });
+  } catch (error: any) {
+    logError("Error updating markup:", {}, error instanceof Error ? error : new Error(String(error)));
+    if (error.name === "ZodError") {
+      res.status(400).json({ error: "Invalid markup data", details: error.errors });
+    } else {
+      next(error);
+    }
+  }
+});
+
 // Delete a markup
 router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res, next) => {
   try {

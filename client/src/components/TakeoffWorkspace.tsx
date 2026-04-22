@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, Fragment } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect, Group, Path } from "react-konva";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -280,6 +281,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupDrawing, setMarkupDrawing] = useState(false);
   const [markupDrawPoints, setMarkupDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
+  const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
+  const [markupEditDraft, setMarkupEditDraft] = useState<{ color: string; thickness: number; text: string } | null>(null);
   const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
   const [thumbnailStripOpen, setThumbnailStripOpen] = useState(false);
   const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
@@ -457,7 +460,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
     updateMeasurementMutation, deleteMeasurementMutation,
-    createMarkupMutation, deleteMarkupMutation,
+    createMarkupMutation, updateMarkupMutation, deleteMarkupMutation,
     createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
     renameSheetMutation, duplicateSheetMutation,
@@ -821,6 +824,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setSelectedMeasurementIds,
     toggleMeasurementSelection,
   } = interactions;
+
+  useEffect(() => {
+    if (activeTool !== "select" && selectedMarkupId) {
+      setSelectedMarkupId(null);
+      setMarkupEditDraft(null);
+    }
+  }, [activeTool, selectedMarkupId]);
+
+  useEffect(() => {
+    setSelectedMarkupId(null);
+    setMarkupEditDraft(null);
+  }, [selectedSheet]);
 
   const handleMarkupMouseDown = (e: any) => {
     if (!isMarkupTool(activeTool) || !selectedSheet) return;
@@ -3682,17 +3697,33 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   const color = (markup.color as string) || "#ff0000";
                   const thickness = (markup.thickness as number) || 2;
                   const tool = markup.tool as string;
+                  const isSelectable = activeTool === "select";
+                  const isSelected = selectedMarkupId === markup.id;
+                  const onMarkupClick = (e: any) => {
+                    if (!isSelectable) return;
+                    e.cancelBubble = true;
+                    setSelectedMarkupId(markup.id);
+                    setMarkupEditDraft({
+                      color,
+                      thickness,
+                      text: (markup.text as string) || "",
+                    });
+                  };
+                  const selectedStrokeBoost = isSelected ? Math.max(1, 2 / stageScale) : 0;
+                  const selectionStroke = isSelected ? "#3b82f6" : undefined;
                   if (tool === "ARROW" && pts.length >= 2) {
                     return (
                       <Arrow
                         key={markup.id}
                         points={[pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y]}
-                        stroke={color}
-                        strokeWidth={thickness}
+                        stroke={selectionStroke || color}
+                        strokeWidth={thickness + selectedStrokeBoost}
                         fill={color}
                         pointerLength={12}
                         pointerWidth={8}
-                        listening={false}
+                        listening={isSelectable}
+                        onClick={onMarkupClick}
+                        onTap={onMarkupClick}
                       />
                     );
                   }
@@ -3705,7 +3736,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         text={(markup.text as string) || ""}
                         fontSize={16 / stageScale}
                         fill={color}
-                        listening={false}
+                        stroke={selectionStroke}
+                        strokeWidth={isSelected ? 0.5 / stageScale : 0}
+                        listening={isSelectable}
+                        onClick={onMarkupClick}
+                        onTap={onMarkupClick}
                       />
                     );
                   }
@@ -3718,10 +3753,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       <Rect
                         key={markup.id}
                         x={x} y={y} width={w} height={h}
-                        stroke={color}
-                        strokeWidth={thickness}
+                        stroke={selectionStroke || color}
+                        strokeWidth={thickness + selectedStrokeBoost}
                         fill="transparent"
-                        listening={false}
+                        listening={isSelectable}
+                        onClick={onMarkupClick}
+                        onTap={onMarkupClick}
                       />
                     );
                   }
@@ -3736,7 +3773,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         x={x} y={y} width={w} height={h}
                         fill={color}
                         opacity={0.3}
-                        listening={false}
+                        stroke={selectionStroke || color}
+                        strokeWidth={(selectionStroke ? 0 : thickness) + selectedStrokeBoost}
+                        listening={isSelectable}
+                        onClick={onMarkupClick}
+                        onTap={onMarkupClick}
                       />
                     );
                   }
@@ -3749,12 +3790,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       <Path
                         key={markup.id}
                         data={d}
-                        stroke={color}
-                        strokeWidth={thickness}
+                        stroke={selectionStroke || color}
+                        strokeWidth={thickness + selectedStrokeBoost}
                         fill="transparent"
                         lineCap="round"
                         lineJoin="round"
-                        listening={false}
+                        listening={isSelectable}
+                        onClick={onMarkupClick}
+                        onTap={onMarkupClick}
                       />
                     );
                   }
@@ -3763,12 +3806,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       <Line
                         key={markup.id}
                         points={pts.flatMap(p => [p.x, p.y])}
-                        stroke={color}
-                        strokeWidth={thickness}
+                        stroke={selectionStroke || color}
+                        strokeWidth={thickness + selectedStrokeBoost}
                         tension={0}
                         lineCap="round"
                         lineJoin="round"
-                        listening={false}
+                        listening={isSelectable}
+                        onClick={onMarkupClick}
+                        onTap={onMarkupClick}
                       />
                     );
                   }
@@ -4500,6 +4545,109 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           />
         </div>
       )}
+
+      {selectedMarkupId && markupEditDraft && (() => {
+        const editing = markups.find(m => m.id === selectedMarkupId);
+        if (!editing) return null;
+        const isText = (editing.tool as string) === "TEXT";
+        const isHighlight = (editing.tool as string) === "HIGHLIGHT";
+        const close = () => { setSelectedMarkupId(null); setMarkupEditDraft(null); };
+        const save = async () => {
+          const updates: { id: string; color?: string; thickness?: number; text?: string | null } = { id: editing.id };
+          if (markupEditDraft.color !== editing.color) updates.color = markupEditDraft.color;
+          if (markupEditDraft.thickness !== editing.thickness) updates.thickness = markupEditDraft.thickness;
+          if (isText) {
+            const newText = markupEditDraft.text;
+            if (newText !== (editing.text || "")) updates.text = newText;
+          }
+          if (Object.keys(updates).length === 1) { close(); return; }
+          try {
+            await updateMarkupMutation.mutateAsync(updates);
+            toast({ title: "Markup updated" });
+            close();
+          } catch (err) {
+            console.warn("[Takeoff] Failed to update markup:", err);
+          }
+        };
+        return (
+          <div
+            className="absolute top-16 right-3 z-50 bg-card border rounded-lg shadow-lg p-3 w-64 space-y-3"
+            data-testid="panel-markup-properties"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold">Edit markup</span>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={close} data-testid="button-close-markup-properties">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            {isText && (
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Label</label>
+                <Input
+                  value={markupEditDraft.text}
+                  onChange={(e) => setMarkupEditDraft({ ...markupEditDraft, text: e.target.value })}
+                  data-testid="input-markup-text"
+                />
+              </div>
+            )}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={markupEditDraft.color}
+                  onChange={(e) => setMarkupEditDraft({ ...markupEditDraft, color: e.target.value })}
+                  className="h-8 w-12 cursor-pointer rounded border"
+                  data-testid="input-markup-color"
+                />
+                <span className="text-xs font-mono">{markupEditDraft.color}</span>
+              </div>
+            </div>
+            {!isText && (
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">{isHighlight ? "Border thickness" : "Thickness"}: {markupEditDraft.thickness}px</label>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  value={markupEditDraft.thickness}
+                  onChange={(e) => setMarkupEditDraft({ ...markupEditDraft, thickness: parseInt(e.target.value, 10) })}
+                  className="w-full"
+                  data-testid="input-markup-thickness"
+                />
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await deleteMarkupMutation.mutateAsync(editing.id);
+                    close();
+                  } catch (err) {
+                    console.warn("[Takeoff] Failed to delete markup:", err);
+                  }
+                }}
+                data-testid="button-delete-markup"
+              >
+                Delete
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={close} data-testid="button-cancel-markup-edit">Cancel</Button>
+                <Button
+                  size="sm"
+                  onClick={save}
+                  disabled={updateMarkupMutation.isPending}
+                  data-testid="button-save-markup-edit"
+                >
+                  {updateMarkupMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {propertiesPanelOpen && selectedMeasurementId && (() => {
         const selectedMeasurement = measurements.find(m => m.id === selectedMeasurementId);
