@@ -2,10 +2,18 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  esbuild: {
+    jsx: 'automatic',
+  },
   test: {
     globals: true,
     environment: 'node',
-    include: ['shared/**/*.test.ts', 'server/**/*.test.ts'],
+    include: [
+      'shared/**/*.test.ts',
+      'server/**/*.test.ts',
+      'client/**/*.test.ts',
+      'client/**/*.test.tsx',
+    ],
     exclude: ['node_modules', 'dist', '.cache', '**/node_modules/**'],
     globalSetup: ['./server/__tests__/globalSetup.ts'],
     setupFiles: ['./server/__tests__/loadEnvTest.ts'],
