@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Droplets, Plus, Loader2, Pencil, Trash2, Wand2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -27,6 +28,7 @@ export default function SwpppInspectionsPage() {
   const canAccess = canView || canManage;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SwpppInspection | null>(null);
   const queryKey = ["/api/swppp-inspections", projectId ? { projectId } : {}];
   const { data = [], isLoading } = useQuery<SwpppInspection[]>({ queryKey, enabled: canAccess });
 
@@ -43,13 +45,10 @@ export default function SwpppInspectionsPage() {
     onSuccess: () => {
       toast({ title: "Inspection deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/swppp-inspections"] });
+      setDeleteTarget(null);
     },
     onError: (error: Error) => toast({ title: "Failed to delete", description: getErrorMessage(error), variant: "destructive" }),
   });
-
-  const handleDelete = (s: SwpppInspection) => {
-    if (window.confirm(`Delete SWPPP inspection from ${formatDate(s.inspectionDate)}?`)) delMut.mutate(s.id);
-  };
 
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
@@ -83,7 +82,7 @@ export default function SwpppInspectionsPage() {
                   <div className="flex items-center gap-1">
                     <Badge variant="outline">{s.inspectionType.replace(/_/g, " ")}</Badge>
                     {canManage && (<><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(s)} data-testid={`button-edit-swppp-${s.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(s)} data-testid={`button-delete-swppp-${s.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button></>)}
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteTarget(s)} data-testid={`button-delete-swppp-${s.id}`} aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></Button></>)}
                   </div>
                 </div>
               </CardHeader>
@@ -103,6 +102,28 @@ export default function SwpppInspectionsPage() {
           <SwpppForm key={editing === "new" ? "new" : editing.id} existing={editing === "new" ? null : editing} defaultProjectId={projectId} onClose={() => setEditing(null)} />
         )}
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent data-testid="dialog-delete-swppp">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete SWPPP Inspection?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the <strong>{deleteTarget?.inspectionType.replace(/_/g, " ")}</strong> inspection from <strong>{deleteTarget ? formatDate(deleteTarget.inspectionDate) : ""}</strong>. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-swppp-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={delMut.isPending}
+              onClick={(e) => { e.preventDefault(); if (deleteTarget) delMut.mutate(deleteTarget.id); }}
+              data-testid="button-delete-swppp-confirm"
+            >
+              {delMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

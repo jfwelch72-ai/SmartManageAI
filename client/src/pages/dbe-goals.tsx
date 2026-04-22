@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Award, Plus, Loader2, Pencil, Trash2, Sparkles } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -46,6 +47,7 @@ export default function DbeGoalsPage() {
   const canAccess = canView || canManage;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectDbeGoal | null>(null);
   const queryKey = ["/api/projects", projectId, "dbe-goals"];
   const { data = [], isLoading } = useQuery<ProjectDbeGoal[]>({ queryKey, enabled: !!projectId && canAccess });
 
@@ -71,13 +73,10 @@ export default function DbeGoalsPage() {
     onSuccess: () => {
       toast({ title: "Goal deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "dbe-goals"] });
+      setDeleteTarget(null);
     },
     onError: (error: Error) => toast({ title: "Failed to delete", description: getErrorMessage(error), variant: "destructive" }),
   });
-
-  const handleDelete = (g: ProjectDbeGoal) => {
-    if (window.confirm(`Delete ${g.certificationType} goal?`)) delMut.mutate(g.id);
-  };
 
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
@@ -149,7 +148,7 @@ export default function DbeGoalsPage() {
                   <div className="flex items-center gap-1">
                     <Badge variant="default">{Number(g.goalPercent).toFixed(2)}%</Badge>
                     {canManage && (<><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(g)} data-testid={`button-edit-dbe-${g.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(g)} data-testid={`button-delete-dbe-${g.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button></>)}
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteTarget(g)} data-testid={`button-delete-dbe-${g.id}`} aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></Button></>)}
                   </div>
                 </div>
               </CardHeader>
@@ -167,6 +166,28 @@ export default function DbeGoalsPage() {
           <DbeGoalForm key={editing === "new" ? "new" : editing.id} existing={editing === "new" ? null : editing} projectId={projectId} onClose={() => setEditing(null)} />
         )}
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent data-testid="dialog-delete-dbe-goal">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete DBE Goal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the <strong>{deleteTarget?.certificationType}</strong> participation goal ({deleteTarget ? Number(deleteTarget.goalPercent).toFixed(2) : ""}%) for this project. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-dbe-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={delMut.isPending}
+              onClick={(e) => { e.preventDefault(); if (deleteTarget) delMut.mutate(deleteTarget.id); }}
+              data-testid="button-delete-dbe-confirm"
+            >
+              {delMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

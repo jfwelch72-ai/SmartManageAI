@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Flag, Plus, Loader2, Pencil, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -32,6 +33,7 @@ export default function MaterialCertificationsPage() {
   const canAccess = canView || canManage || canVerify;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MaterialCertification | null>(null);
   const queryKey = ["/api/material-certifications", projectId ? { projectId } : {}];
   const { data = [], isLoading } = useQuery<MaterialCertification[]>({ queryKey, enabled: canAccess });
 
@@ -48,13 +50,10 @@ export default function MaterialCertificationsPage() {
     onSuccess: () => {
       toast({ title: "Certification deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/material-certifications"] });
+      setDeleteTarget(null);
     },
     onError: (error: Error) => toast({ title: "Failed to delete", description: getErrorMessage(error), variant: "destructive" }),
   });
-
-  const handleDelete = (c: MaterialCertification) => {
-    if (window.confirm(`Delete certification for ${c.materialDescription}?`)) delMut.mutate(c.id);
-  };
 
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
@@ -88,7 +87,7 @@ export default function MaterialCertificationsPage() {
                   <div className="flex items-center gap-1">
                     <Badge variant={STATUS_VARIANT[c.buyAmericaStatus] || "outline"}>{c.buyAmericaStatus.replace(/_/g, " ")}</Badge>
                     {(canManage || canVerify) && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(c)} data-testid={`button-edit-cert-${c.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>)}
-                    {canManage && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(c)} data-testid={`button-delete-cert-${c.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>)}
+                    {canManage && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteTarget(c)} data-testid={`button-delete-cert-${c.id}`} aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></Button>)}
                   </div>
                 </div>
               </CardHeader>
@@ -110,6 +109,29 @@ export default function MaterialCertificationsPage() {
           <CertForm key={editing === "new" ? "new" : editing.id} existing={editing === "new" ? null : editing} defaultProjectId={projectId} onClose={() => setEditing(null)} />
         )}
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent data-testid="dialog-delete-cert">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Material Certification?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the certification for <strong>{deleteTarget?.materialDescription}</strong>
+              {deleteTarget?.certNumber ? <> (cert #{deleteTarget.certNumber})</> : null}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-cert-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={delMut.isPending}
+              onClick={(e) => { e.preventDefault(); if (deleteTarget) delMut.mutate(deleteTarget.id); }}
+              data-testid="button-delete-cert-confirm"
+            >
+              {delMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

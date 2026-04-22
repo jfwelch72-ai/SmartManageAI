@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ClipboardList, Plus, Loader2, Pencil, Trash2, Wand2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -34,6 +35,7 @@ export default function DailyInspectorReportsPage() {
   const canAccess = canView || canSubmit || canManage || canApprove;
   const [projectId, setProjectId] = useState("");
   const [editing, setEditing] = useState<Editing>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DailyInspectorReport | null>(null);
   const queryKey = ["/api/daily-inspector-reports", projectId ? { projectId } : {}];
   const { data = [], isLoading } = useQuery<DailyInspectorReport[]>({ queryKey, enabled: canAccess });
 
@@ -50,13 +52,10 @@ export default function DailyInspectorReportsPage() {
     onSuccess: () => {
       toast({ title: "Report deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/daily-inspector-reports"] });
+      setDeleteTarget(null);
     },
     onError: (error: Error) => toast({ title: "Failed to delete", description: getErrorMessage(error), variant: "destructive" }),
   });
-
-  const handleDelete = (r: DailyInspectorReport) => {
-    if (window.confirm(`Delete IDR for ${formatDate(r.reportDate)}?`)) delMut.mutate(r.id);
-  };
 
   const canEditRow = canManage || canApprove;
   const { getRowProps: getIdrRowProps } = useTableKeyboardNav({
@@ -109,7 +108,7 @@ export default function DailyInspectorReportsPage() {
                   <div className="flex items-center gap-1">
                     <Badge variant={STATUS_VARIANT[r.status] || "outline"}>{r.status}</Badge>
                     {(canManage || canApprove) && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(r)} data-testid={`button-edit-idr-${r.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>)}
-                    {canManage && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(r)} data-testid={`button-delete-idr-${r.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>)}
+                    {canManage && (<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteTarget(r)} data-testid={`button-delete-idr-${r.id}`} aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></Button>)}
                   </div>
                 </div>
               </CardHeader>
@@ -132,6 +131,29 @@ export default function DailyInspectorReportsPage() {
           <IdrForm key={editing === "new" ? "new" : editing.id} existing={editing === "new" ? null : editing} defaultProjectId={projectId} onClose={() => setEditing(null)} />
         )}
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent data-testid="dialog-delete-idr">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Daily Inspector Report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the IDR for <strong>{deleteTarget ? formatDate(deleteTarget.reportDate) : ""}</strong>
+              {deleteTarget?.reportNumber ? <> (#{deleteTarget.reportNumber})</> : null}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-idr-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={delMut.isPending}
+              onClick={(e) => { e.preventDefault(); if (deleteTarget) delMut.mutate(deleteTarget.id); }}
+              data-testid="button-delete-idr-confirm"
+            >
+              {delMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

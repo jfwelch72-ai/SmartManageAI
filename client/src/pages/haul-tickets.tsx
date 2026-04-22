@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Truck, Plus, Loader2, Pencil, Trash2, Sparkles, Wand2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -66,6 +67,7 @@ export default function HaulTicketsPage() {
   const massHaulAnalyzerEnabled = isEnabled("MASS_HAUL_ANALYZER");
   const [projectId, setProjectId] = useState<string>("");
   const [editing, setEditing] = useState<Editing>(null);
+  const [deleteTarget, setDeleteTarget] = useState<HaulTicket | null>(null);
   const queryKey = ["/api/haul-tickets", projectId ? { projectId } : {}];
   const { data = [], isLoading } = useQuery<HaulTicket[]>({ queryKey, enabled: canAccess });
 
@@ -84,13 +86,10 @@ export default function HaulTicketsPage() {
     onSuccess: () => {
       toast({ title: "Ticket deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/haul-tickets"] });
+      setDeleteTarget(null);
     },
     onError: (error: Error) => toast({ title: "Failed to delete", description: getErrorMessage(error), variant: "destructive" }),
   });
-
-  const handleDelete = (t: HaulTicket) => {
-    if (window.confirm(`Delete haul ticket #${t.ticketNumber}?`)) delMut.mutate(t.id);
-  };
 
   const [massHaulOpen, setMassHaulOpen] = useState(false);
   const massHaulMut = useMutation<MassHaulResponse, Error, void>({
@@ -185,7 +184,7 @@ export default function HaulTicketsPage() {
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(t)} data-testid={`button-edit-haul-${t.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
                     )}
                     {canManage && (
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(t)} data-testid={`button-delete-haul-${t.id}`} aria-label="Delete" disabled={delMut.isPending}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteTarget(t)} data-testid={`button-delete-haul-${t.id}`} aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></Button>
                     )}
                   </div>
                 </div>
@@ -213,6 +212,29 @@ export default function HaulTicketsPage() {
           />
         )}
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent data-testid="dialog-delete-haul-ticket">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Haul Ticket?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete haul ticket <strong>#{deleteTarget?.ticketNumber}</strong>
+              {deleteTarget ? <> ({deleteTarget.materialClass}, {deleteTarget.quantity} {deleteTarget.unit})</> : null}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-haul-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={delMut.isPending}
+              onClick={(e) => { e.preventDefault(); if (deleteTarget) delMut.mutate(deleteTarget.id); }}
+              data-testid="button-delete-haul-confirm"
+            >
+              {delMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
