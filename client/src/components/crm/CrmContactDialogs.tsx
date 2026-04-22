@@ -492,9 +492,57 @@ export function CrmContactDialogs({
                 <ContactSequenceTimeline contactId={selectedContact.id} />
               </div>
             )}
+            {selectedContact?.id && (
+              <div className="pt-2 border-t">
+                <p className="text-sm font-medium mb-2">Email history</p>
+                <ContactEmailsPanel contactId={selectedContact.id} />
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+interface CrmEmailMessageRow {
+  id: string;
+  direction: "INBOUND" | "OUTBOUND";
+  fromAddress: string;
+  toAddresses: string | null;
+  subject: string;
+  snippet: string | null;
+  sentAt: string;
+}
+
+function ContactEmailsPanel({ contactId }: { contactId: string }) {
+  const { data, isLoading, error } = useQuery<CrmEmailMessageRow[]>({
+    queryKey: ["/api/crm/contacts", contactId, "emails"],
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/contacts/${contactId}/emails`, { credentials: "include" });
+      if (res.status === 403) return [];
+      if (!res.ok) throw new Error("Failed to load emails");
+      return res.json();
+    },
+  });
+  if (isLoading) return <p className="text-xs text-muted-foreground">Loading…</p>;
+  if (error) return <p className="text-xs text-muted-foreground">Unable to load emails.</p>;
+  if (!data || data.length === 0) {
+    return <p className="text-xs text-muted-foreground" data-testid="text-no-contact-emails">No logged emails yet.</p>;
+  }
+  return (
+    <div className="space-y-2 max-h-64 overflow-y-auto">
+      {data.map((m) => (
+        <div key={m.id} className="border rounded p-2 text-xs" data-testid={`row-contact-email-${m.id}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-medium truncate">{m.subject || "(no subject)"}</span>
+            <Badge variant={m.direction === "INBOUND" ? "secondary" : "outline"}>{m.direction}</Badge>
+          </div>
+          <div className="text-muted-foreground truncate">{m.direction === "INBOUND" ? m.fromAddress : m.toAddresses}</div>
+          {m.snippet && <div className="text-muted-foreground line-clamp-2 mt-1">{m.snippet}</div>}
+          <div className="text-muted-foreground mt-1">{new Date(m.sentAt).toLocaleString()}</div>
+        </div>
+      ))}
+    </div>
   );
 }

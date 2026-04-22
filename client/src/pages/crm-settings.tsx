@@ -79,6 +79,8 @@ export default function CrmSettingsPage() {
 
       <AssignmentRulesCard />
 
+      <EmailLoggingCard />
+
       <Tabs defaultValue="catalog" className="w-full">
         <TabsList className="grid grid-cols-4 w-full sm:w-auto">
           <TabsTrigger value="catalog" data-testid="tab-settings-catalog"><Package className="w-4 h-4 mr-1" /> Catalog</TabsTrigger>
@@ -876,5 +878,116 @@ function CustomFieldDialog({ open, onOpenChange, entityType, editing, onSaved }:
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function EmailLoggingCard() {
+  const { toast } = useToast();
+  const settingsQuery = useQuery<{ mode: "OFF" | "MY_DOMAIN" | "ALL" }>({
+    queryKey: ["/api/crm/email-logging/settings"],
+  });
+  const suppressionsQuery = useQuery<Array<{ id: string; pattern: string }>>({
+    queryKey: ["/api/crm/email-logging/suppressions"],
+  });
+  type EmailLoggingMode = "OFF" | "MY_DOMAIN" | "ALL";
+  const [mode, setMode] = useState<EmailLoggingMode>("OFF");
+  const [pattern, setPattern] = useState("");
+
+  useEffect(() => {
+    if (settingsQuery.data?.mode) setMode(settingsQuery.data.mode);
+  }, [settingsQuery.data?.mode]);
+
+  const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Failed");
+
+  const saveSettings = useMutation({
+    mutationFn: async (newMode: EmailLoggingMode) => apiRequest("PUT", "/api/crm/email-logging/settings", { mode: newMode }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/email-logging/settings"] });
+      toast({ title: "Saved", description: "Email logging mode updated." });
+    },
+    onError: (e) => toast({ title: "Error", description: errMsg(e), variant: "destructive" }),
+  });
+
+  const addSuppression = useMutation({
+    mutationFn: async (pat: string) => apiRequest("POST", "/api/crm/email-logging/suppressions", { pattern: pat }),
+    onSuccess: () => {
+      setPattern("");
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/email-logging/suppressions"] });
+    },
+    onError: (e) => toast({ title: "Error", description: errMsg(e), variant: "destructive" }),
+  });
+
+  const deleteSuppression = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/crm/email-logging/suppressions/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/email-logging/suppressions"] }),
+  });
+
+  const runBackfill = useMutation<{ accounts: number; scanned: number; logged: number }>({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/crm/email-logging/backfill", { days: 90 });
+      return r.json();
+    },
+    onSuccess: (data) => toast({ title: "Backfill complete", description: `${data?.logged ?? 0} messages logged across ${data?.accounts ?? 0} accounts.` }),
+    onError: (e) => toast({ title: "Error", description: errMsg(e), variant: "destructive" }),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Settings className="w-4 h-4" /> CRM Email Logging</CardTitle>
+        <CardDescription>Auto-log Gmail / Outlook messages onto matching CRM contacts &amp; opportunities.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-end">
+          <div>
+            <Label>Mode</Label>
+            <Select value={mode} onValueChange={(v) => setMode(v as EmailLoggingMode)}>
+              <SelectTrigger data-testid="select-email-logging-mode"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="OFF">Off — never log emails</SelectItem>
+                <SelectItem value="MY_DOMAIN">My domain — only when one party is on our email domain</SelectItem>
+                <SelectItem value="ALL">All — log every matching message</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => saveSettings.mutate(mode)} disabled={saveSettings.isPending} data-testid="button-save-email-logging">
+            Save
+          </Button>
+        </div>
+
+        <div>
+          <Label>Suppression list</Label>
+          <p className="text-xs text-muted-foreground mb-2">Patterns to skip. Use a full address (a@b.com) or a domain (@example.com).</p>
+          <div className="flex gap-2">
+            <Input
+              value={pattern}
+              onChange={(e) => setPattern(e.target.value)}
+              placeholder="@example.com or noreply@vendor.com"
+              data-testid="input-suppression-pattern"
+            />
+            <Button onClick={() => addSuppression.mutate(pattern)} disabled={!pattern || addSuppression.isPending} data-testid="button-add-suppression">
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(suppressionsQuery.data || []).map((s) => (
+              <Badge key={s.id} variant="secondary" className="gap-1" data-testid={`badge-suppression-${s.id}`}>
+                {s.pattern}
+                <button onClick={() => deleteSuppression.mutate(s.id)} className="hover:text-destructive" data-testid={`button-remove-suppression-${s.id}`}>
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-2 border-t">
+          <Button variant="outline" onClick={() => runBackfill.mutate()} disabled={runBackfill.isPending} data-testid="button-run-backfill">
+            Run 90-day backfill
+          </Button>
+          <p className="text-xs text-muted-foreground mt-1">Re-scan recent mailbox history and log any matching messages onto CRM contacts.</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

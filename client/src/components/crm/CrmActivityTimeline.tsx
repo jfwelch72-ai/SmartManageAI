@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckSquare, FileText, MessageSquare, FileSignature, Activity, X } from "lucide-react";
+import { CheckSquare, FileText, MessageSquare, FileSignature, Activity, X, MailOpen, Send } from "lucide-react";
 import { format, startOfDay, startOfWeek, startOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -239,7 +239,7 @@ export function CrmActivityTimeline({ opportunityId, urlSync = false }: Timeline
         <div className="space-y-3">
           {filtered.map((it, i) => (
             <div key={i} className="flex gap-3 border-l-2 border-muted pl-3 py-1" data-testid={`timeline-item-${i}`}>
-              <div className="mt-0.5">{iconFor(it.type)}</div>
+              <div className="mt-0.5">{iconFor(it.type, it.desc)}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium">{it.title}</span>
@@ -256,12 +256,16 @@ export function CrmActivityTimeline({ opportunityId, urlSync = false }: Timeline
   );
 }
 
-function iconFor(type: string) {
+function iconFor(type: string, desc?: string) {
   switch (type) {
     case "TASK": return <CheckSquare className="h-4 w-4 text-blue-600" />;
     case "QUOTE": return <FileSignature className="h-4 w-4 text-emerald-600" />;
     case "NOTE": return <MessageSquare className="h-4 w-4 text-muted-foreground" />;
-    case "EMAIL": case "CALL": case "MEETING": case "SITE_VISIT": return <FileText className="h-4 w-4 text-violet-600" />;
+    case "EMAIL":
+      if (desc?.startsWith("[OUTBOUND]")) return <Send className="h-4 w-4 text-sky-600" data-testid="icon-email-out" />;
+      if (desc?.startsWith("[INBOUND]")) return <MailOpen className="h-4 w-4 text-amber-600" data-testid="icon-email-in" />;
+      return <MailOpen className="h-4 w-4 text-violet-600" />;
+    case "CALL": case "MEETING": case "SITE_VISIT": return <FileText className="h-4 w-4 text-violet-600" />;
     default: return <Activity className="h-4 w-4 text-muted-foreground" />;
   }
 }

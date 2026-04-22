@@ -32,6 +32,54 @@ import {
   isOutlookPushConfigured,
 } from "./emailPushNotifications";
 import { detectInboundReply, detectInboundBounce } from "./services/sequenceService";
+import { logEmailMessageForCrm, backfillCrmEmailLogging } from "./services/crmEmailLoggerService";
+
+/**
+ * Helper used at every persistence site in this file: hand the freshly
+ * persisted message off to the CRM email logger asynchronously so any error
+ * can never break the email sync. (Task #886)
+ */
+function dispatchCrmEmailLog(args: {
+  account: { organizationId: string; provider: string; emailAddress: string };
+  externalId: string;
+  externalThreadId: string | null;
+  fromAddress: string;
+  toAddresses: string | null | undefined;
+  ccAddresses: string | null | undefined;
+  subject: string;
+  snippet: string | null | undefined;
+  bodyText: string | null | undefined;
+  receivedAt: Date;
+  isIncoming: boolean;
+  sourceEmailMessageId: string;
+}): void {
+  const parseList = (raw: string | null | undefined): string[] => {
+    if (!raw) return [];
+    try {
+      const v = JSON.parse(raw);
+      if (Array.isArray(v)) return v.map((x) => (typeof x === "string" ? x : x?.address || "")).filter(Boolean);
+    } catch {
+      return raw.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    return [];
+  };
+  void logEmailMessageForCrm({
+    organizationId: args.account.organizationId,
+    provider: args.account.provider === "OUTLOOK" ? "OUTLOOK" : "GMAIL",
+    ownerEmail: args.account.emailAddress,
+    externalMessageId: args.externalId,
+    externalThreadId: args.externalThreadId,
+    fromAddress: args.fromAddress,
+    toAddresses: parseList(args.toAddresses),
+    ccAddresses: parseList(args.ccAddresses),
+    subject: args.subject,
+    snippet: args.snippet ?? null,
+    bodyText: args.bodyText ?? null,
+    sentAt: args.receivedAt,
+    isIncoming: args.isIncoming,
+    sourceEmailMessageId: args.sourceEmailMessageId,
+  }).catch(() => {});
+}
 
 type EmailPushStatus = "REALTIME" | "POLLING" | "UNAVAILABLE";
 
@@ -331,6 +379,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
     } else if (newAccount.provider === "OUTLOOK" && newAccount.accessToken) {
       syncOutlookAccount(newAccount, req.user.id).then((syncResult) => {
         console.log(`Initial Outlook sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+        backfillCrmEmailLogging(newAccount.id, 90).catch(() => {});
       }).catch((err) => {
         logError(`Initial Outlook sync failed for ${newAccount.emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
@@ -1072,6 +1121,11 @@ router.get("/oauth/gmail/callback", async (req, res, next) => {
         ensureGmailWatch(savedAccount).catch((err) =>
           logError("Initial Gmail watch registration failed", { account: googleUser.email }, err instanceof Error ? err : new Error(String(err))),
         );
+        syncGmailAccount(savedAccount, userInfo.userId).then(() => {
+          backfillCrmEmailLogging(savedAccount.id, 90).catch(() => {});
+        }).catch((err) => {
+          logError("Initial Gmail OAuth sync failed", { account: googleUser.email }, err instanceof Error ? err : new Error(String(err)));
+        });
       }
     } catch (err) {
       logError("Failed to look up Gmail account for watch registration", { account: googleUser.email }, err instanceof Error ? err : new Error(String(err)));
@@ -1260,6 +1314,7 @@ router.get("/oauth/outlook/callback", async (req, res, next) => {
     if (savedAccount) {
       syncOutlookAccount(savedAccount, userInfo.userId).then((syncResult) => {
         console.log(`Initial Outlook OAuth sync for ${emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+        backfillCrmEmailLogging(savedAccount.id, 90).catch(() => {});
       }).catch((err) => {
         logError(`Initial Outlook OAuth sync failed for ${emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
@@ -2665,6 +2720,21 @@ async function persistGmailMessage(
   });
   result.messagesImported++;
 
+  dispatchCrmEmailLog({
+    account,
+    externalId: parsed.externalId,
+    externalThreadId: parsed.threadId,
+    fromAddress: parsed.fromAddress,
+    toAddresses: parsed.toAddresses,
+    ccAddresses: parsed.ccAddresses,
+    subject: parsed.subject,
+    snippet: parsed.snippet,
+    bodyText: parsed.bodyText,
+    receivedAt: parsed.receivedAt,
+    isIncoming: parsed.isIncoming,
+    sourceEmailMessageId: newMessageId,
+  });
+
   // Outbound auto-link by recipient (sent-folder messages whose `from` is the rep)
   if (!parsed.isIncoming) {
     await autoLinkThreadByRecipients(
@@ -3138,6 +3208,21 @@ export async function syncGmailAccount(
       });
       result.messagesImported++;
 
+      dispatchCrmEmailLog({
+        account,
+        externalId: parsed.externalId,
+        externalThreadId: parsed.threadId,
+        fromAddress: parsed.fromAddress,
+        toAddresses: parsed.toAddresses,
+        ccAddresses: parsed.ccAddresses,
+        subject: parsed.subject,
+        snippet: parsed.snippet,
+        bodyText: parsed.bodyText,
+        receivedAt: parsed.receivedAt,
+        isIncoming: parsed.isIncoming,
+        sourceEmailMessageId: newMessageId,
+      });
+
       // Outbound recipient-based CRM auto-link for backfilled sent mail
       if (!parsed.isIncoming) {
         await autoLinkThreadByRecipients(
@@ -3450,6 +3535,21 @@ async function persistOutlookMessage(
     hasAttachments: parsed.hasAttachments,
   });
   result.messagesImported++;
+
+  dispatchCrmEmailLog({
+    account,
+    externalId: parsed.externalId,
+    externalThreadId: parsed.threadId,
+    fromAddress: parsed.fromAddress,
+    toAddresses: parsed.toAddresses,
+    ccAddresses: parsed.ccAddresses,
+    subject: parsed.subject,
+    snippet: parsed.snippet,
+    bodyText: parsed.bodyText,
+    receivedAt: parsed.receivedAt,
+    isIncoming: parsed.isIncoming,
+    sourceEmailMessageId: newMessageId,
+  });
 
   // Outbound auto-link by recipient (sent-folder messages)
   if (folder === "SENT" || !parsed.isIncoming) {
@@ -3858,6 +3958,9 @@ export async function syncImapAccount(
           hasAttachments: msg.hasAttachments,
         });
         result.messagesImported++;
+
+        // Note: CRM email logging intentionally not dispatched for IMAP — Task #886
+        // scopes only Gmail and Outlook providers. IMAP/POP is out of scope.
 
         if (isIncoming) {
           try {
@@ -4413,6 +4516,21 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
       isArchived: false,
       folder: "SENT",
       hasAttachments: false,
+    });
+
+    dispatchCrmEmailLog({
+      account,
+      externalId: sendResult.messageId || `sent-${sentMessageId}`,
+      externalThreadId: sendResult.messageId || null,
+      fromAddress: account.emailAddress,
+      toAddresses: JSON.stringify([data.to]),
+      ccAddresses: data.cc ? JSON.stringify([data.cc]) : null,
+      subject: data.subject,
+      snippet: (data.text || "").substring(0, 200),
+      bodyText: data.text || null,
+      receivedAt: new Date(),
+      isIncoming: false,
+      sourceEmailMessageId: sentMessageId,
     });
 
     // Outbound auto-link by recipient

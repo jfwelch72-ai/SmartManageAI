@@ -324,9 +324,12 @@ export default function CrmDealDetailPage() {
             )}
 
             <Tabs defaultValue="timeline" className="w-full">
-              <TabsList className="grid grid-cols-4 w-full">
+              <TabsList className="grid grid-cols-5 w-full">
                 <TabsTrigger value="timeline" data-testid="tab-timeline">
                   <MessageSquare className="w-4 h-4 mr-1" /> Timeline
+                </TabsTrigger>
+                <TabsTrigger value="emails" data-testid="tab-emails">
+                  <MessageSquare className="w-4 h-4 mr-1" /> Emails
                 </TabsTrigger>
                 <TabsTrigger value="quotes" data-testid="tab-quotes">
                   <FileSignature className="w-4 h-4 mr-1" /> Quotes <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">{oppQuotes.length}</Badge>
@@ -338,6 +341,10 @@ export default function CrmDealDetailPage() {
                   <FileText className="w-4 h-4 mr-1" /> Notes
                 </TabsTrigger>
               </TabsList>
+
+              <TabsContent value="emails" className="mt-4">
+                <OpportunityEmailsPanel opportunityId={id} />
+              </TabsContent>
 
               <TabsContent value="timeline" className="mt-4 space-y-3">
                 <div className="flex justify-end">
@@ -633,6 +640,61 @@ function SidebarRow({ icon: Icon, label, value, accent }: { icon: any; label: st
     <div className="flex items-center justify-between gap-3">
       <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Icon className="w-3.5 h-3.5" />{label}</span>
       <span className={`text-sm ${accent ? "font-semibold text-primary" : ""}`} data-testid={`sidebar-${label.toLowerCase().replace(/\s+/g, "-")}`}>{value}</span>
+    </div>
+  );
+}
+
+interface OppEmailRow {
+  id: string;
+  direction: "INBOUND" | "OUTBOUND";
+  fromAddress: string;
+  toAddresses: string | null;
+  subject: string;
+  snippet: string | null;
+  sentAt: string;
+  providerDeepLink?: string | null;
+  provider?: string | null;
+}
+
+function OpportunityEmailsPanel({ opportunityId }: { opportunityId: string }) {
+  const { data, isLoading, error } = useQuery<OppEmailRow[]>({
+    queryKey: ["/api/crm/opportunities", opportunityId, "emails"],
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/opportunities/${opportunityId}/emails`, { credentials: "include" });
+      if (res.status === 403) return [];
+      if (!res.ok) throw new Error("Failed to load emails");
+      return res.json();
+    },
+  });
+  if (isLoading) return <p className="text-xs text-muted-foreground">Loading emails…</p>;
+  if (error) return <p className="text-xs text-muted-foreground">Unable to load emails.</p>;
+  if (!data || data.length === 0) {
+    return <p className="text-sm text-muted-foreground" data-testid="text-no-opportunity-emails">No emails logged for this opportunity yet. Configure CRM Email Logging in Settings to enable automatic capture.</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {data.map((m) => (
+        <div key={m.id} className="border rounded p-3" data-testid={`row-opportunity-email-${m.id}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Badge variant={m.direction === "INBOUND" ? "secondary" : "outline"} data-testid={`badge-direction-${m.id}`}>
+                {m.direction === "INBOUND" ? "← In" : "Out →"}
+              </Badge>
+              <span className="font-medium truncate">{m.subject || "(no subject)"}</span>
+            </div>
+            {m.providerDeepLink && (
+              <a href={m.providerDeepLink} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline" data-testid={`link-source-${m.id}`}>
+                Open in {m.provider === "OUTLOOK" ? "Outlook" : "Gmail"}
+              </a>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1 truncate">
+            {m.direction === "INBOUND" ? m.fromAddress : m.toAddresses}
+          </div>
+          {m.snippet && <div className="text-sm text-muted-foreground mt-2 line-clamp-2">{m.snippet}</div>}
+          <div className="text-xs text-muted-foreground mt-2">{new Date(m.sentAt).toLocaleString()}</div>
+        </div>
+      ))}
     </div>
   );
 }

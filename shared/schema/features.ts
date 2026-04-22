@@ -4960,6 +4960,101 @@ export const insertEmailMessageSchema = createInsertSchema(emailMessages).omit({
 export type InsertEmailMessage = z.infer<typeof insertEmailMessageSchema>;
 export type EmailMessage = typeof emailMessages.$inferSelect;
 
+// =============================================================================
+// CRM Email Logging (Task #886) — Two-way Gmail/Outlook → CRM activity sync
+// =============================================================================
+// Org-level setting controlling automatic email logging onto CRM contacts.
+export const crmEmailLoggingSettings = pgTable("crm_email_logging_settings", {
+  organizationId: varchar("organization_id").primaryKey().references(() => organizations.id, { onDelete: "cascade" }),
+  // 'OFF' | 'MY_DOMAIN' | 'ALL'
+  mode: text("mode").notNull().default("OFF"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertCrmEmailLoggingSettingsSchema = createInsertSchema(crmEmailLoggingSettings).omit({ createdAt: true, updatedAt: true });
+export type InsertCrmEmailLoggingSettings = z.infer<typeof insertCrmEmailLoggingSettingsSchema>;
+export type CrmEmailLoggingSettings = typeof crmEmailLoggingSettings.$inferSelect;
+
+// Per-org suppression list. `pattern` may be a full address ("a@b.com") or a
+// domain ("@example.com"). Anything matching is skipped by the logger.
+export const crmEmailLoggingSuppressions = pgTable("crm_email_logging_suppressions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  pattern: text("pattern").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_email_supp_org_idx").on(table.organizationId),
+  orgPatUnique: uniqueIndex("crm_email_supp_org_pattern_uidx").on(table.organizationId, table.pattern),
+}));
+export const insertCrmEmailLoggingSuppressionSchema = createInsertSchema(crmEmailLoggingSuppressions).omit({ id: true, createdAt: true });
+export type InsertCrmEmailLoggingSuppression = z.infer<typeof insertCrmEmailLoggingSuppressionSchema>;
+export type CrmEmailLoggingSuppression = typeof crmEmailLoggingSuppressions.$inferSelect;
+
+// CRM-owned email thread (denormalized from emailThreads/emailMessages so the
+// CRM activity timeline can read without crossing into the AI inbox domain).
+export const crmEmailThreads = pgTable("crm_email_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }),
+  opportunityId: varchar("opportunity_id").references(() => crmOpportunities.id, { onDelete: "set null" }),
+  organisationId: varchar("organisation_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  subject: text("subject").notNull(),
+  externalThreadId: text("external_thread_id"),
+  provider: text("provider").notNull(), // 'GMAIL' | 'OUTLOOK'
+  messageCount: integer("message_count").notNull().default(0),
+  lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_email_threads_org_idx").on(table.organizationId),
+  contactIdx: index("crm_email_threads_contact_idx").on(table.contactId),
+  oppIdx: index("crm_email_threads_opp_idx").on(table.opportunityId),
+  externalUnique: uniqueIndex("crm_email_threads_org_ext_uidx").on(table.organizationId, table.externalThreadId),
+}));
+export const insertCrmEmailThreadSchema = createInsertSchema(crmEmailThreads).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmEmailThread = z.infer<typeof insertCrmEmailThreadSchema>;
+export type CrmEmailThread = typeof crmEmailThreads.$inferSelect;
+
+// Individual CRM-logged email message. Idempotent on (orgId, externalMessageId,
+// direction) so re-running the logger or backfill never duplicates rows.
+export const crmEmailMessages = pgTable("crm_email_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  threadId: varchar("thread_id").notNull().references(() => crmEmailThreads.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }),
+  opportunityId: varchar("opportunity_id").references(() => crmOpportunities.id, { onDelete: "set null" }),
+  externalMessageId: text("external_message_id").notNull(),
+  direction: text("direction").notNull(), // 'INBOUND' | 'OUTBOUND'
+  fromAddress: text("from_address").notNull(),
+  toAddresses: text("to_addresses"),
+  ccAddresses: text("cc_addresses"),
+  subject: text("subject").notNull(),
+  snippet: text("snippet"),
+  bodyText: text("body_text"),
+  sentAt: timestamp("sent_at").notNull(),
+  // Source row in emailMessages, when the message came in via Gmail/Outlook
+  // sync. NULL is allowed for backfilled rows that pre-date the source row.
+  sourceEmailMessageId: varchar("source_email_message_id").references(() => emailMessages.id, { onDelete: "set null" }),
+  // Linked CRM activity row (created at the same time so the unified timeline
+  // can render without an extra join). Multiple messages of the same direction
+  // on the same thread share one activity row (aggregated, not per-message).
+  activityId: varchar("activity_id").references(() => crmOpportunityActivities.id, { onDelete: "set null" }),
+  // Provider deep-link back to the source message in Gmail/Outlook UI.
+  providerDeepLink: text("provider_deep_link"),
+  provider: text("provider"), // 'GMAIL' | 'OUTLOOK'
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_email_messages_org_idx").on(table.organizationId),
+  threadIdx: index("crm_email_messages_thread_idx").on(table.threadId),
+  contactIdx: index("crm_email_messages_contact_idx").on(table.contactId),
+  oppIdx: index("crm_email_messages_opp_idx").on(table.opportunityId),
+  sentAtIdx: index("crm_email_messages_sent_at_idx").on(table.sentAt),
+  externalUnique: uniqueIndex("crm_email_messages_org_ext_dir_uidx").on(table.organizationId, table.externalMessageId, table.direction),
+}));
+export const insertCrmEmailMessageSchema = createInsertSchema(crmEmailMessages).omit({ id: true, createdAt: true });
+export type InsertCrmEmailMessage = z.infer<typeof insertCrmEmailMessageSchema>;
+export type CrmEmailMessage = typeof crmEmailMessages.$inferSelect;
+
 // Email Attachments Table
 export const emailAttachments = pgTable("email_attachments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -5120,6 +5215,8 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canAccessCRM: boolean("can_access_crm").default(false),
   canCreateCRMContacts: boolean("can_create_crm_contacts").default(false),
   canAccessMarketplace: boolean("can_access_marketplace").default(false),
+  // Task #886: gate CRM email-thread viewing (logged Gmail/Outlook messages)
+  canViewCrmEmails: boolean("can_view_crm_emails").default(false),
 
   // Category 7: Hiring & Recruitment (51-53)
   canManageHiring: boolean("can_manage_hiring").default(false),

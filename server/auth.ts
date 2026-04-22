@@ -316,7 +316,7 @@ export type FeaturePermissionKey =
   | 'canManagePayroll' | 'canManageCrews' | 'canManageWorkforce' | 'canManageLeave'
   | 'canManageSafety' | 'canManageScheduling' | 'canAccessKPIs' | 'canLockDailyReports'
   | 'canManageEquipment' | 'canManageProcurement'
-  | 'canAccessCRM' | 'canCreateCRMContacts' | 'canAccessMarketplace'
+  | 'canAccessCRM' | 'canCreateCRMContacts' | 'canViewCrmEmails' | 'canAccessMarketplace'
   | 'canManageHiring' | 'canAccessHiringInterviews' | 'canManageHiringSettings'
   | 'canPostSocialMedia' | 'canManageWebsite' | 'canAccessExecutiveDigest'
   | 'canUseAiFeatures' | 'canViewSafety' | 'canViewAiSummaries'
