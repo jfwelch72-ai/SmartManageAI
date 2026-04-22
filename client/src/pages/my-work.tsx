@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format, formatDistanceToNowStrict, isToday, isPast } from "date-fns";
@@ -953,17 +953,59 @@ function KanbanBoard({
 }) {
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<Bucket | null>(null);
-  const draggedRef = useMemo(() => ({ current: null as MyWorkItem | null }), []);
+  const draggedRef = useRef<MyWorkItem | null>(null);
+  const dragOverRef = useRef<Bucket | null>(null);
+  const touchModeRef = useRef(false);
 
-  const handleDrop = (bucket: Bucket) => {
+  useEffect(() => {
+    dragOverRef.current = dragOverCol;
+  }, [dragOverCol]);
+
+  const finishDrop = (bucket: Bucket | null) => {
     const item = draggedRef.current;
     setDragOverCol(null);
     setDraggingKey(null);
     draggedRef.current = null;
-    if (!item) return;
+    touchModeRef.current = false;
+    if (!item || bucket == null) return;
     if (item.bucket === bucket) return;
     if (!item.canEditDueDate) return;
     onMove(item, bucket);
+  };
+
+  // Touch-drag: install document-level non-passive listeners while a touch
+  // drag is in progress so we can suppress page scroll and locate the
+  // column under the user's finger via elementFromPoint.
+  useEffect(() => {
+    if (!draggingKey || !touchModeRef.current) return;
+    const onMoveT = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      const el = document.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null;
+      const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
+      const bucket = (colEl?.dataset.bucket ?? null) as Bucket | null;
+      if (bucket !== dragOverRef.current) setDragOverCol(bucket);
+    };
+    const onEnd = () => finishDrop(dragOverRef.current);
+    document.addEventListener("touchmove", onMoveT, { passive: false });
+    document.addEventListener("touchend", onEnd);
+    document.addEventListener("touchcancel", onEnd);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("touchmove", onMoveT);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", onEnd);
+      document.body.style.overflow = "";
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingKey]);
+
+  const beginTouchDrag = (item: MyWorkItem, key: string) => {
+    if (!item.canEditDueDate) return;
+    draggedRef.current = item;
+    touchModeRef.current = true;
+    setDraggingKey(key);
   };
 
   return (
@@ -973,6 +1015,7 @@ function KanbanBoard({
         return (
           <div
             key={col.key}
+            data-bucket={col.key}
             className={cn(
               "flex flex-col rounded-md border bg-muted/30 p-2 transition-colors",
               isOver && "ring-2 ring-primary bg-muted/60",
@@ -989,7 +1032,7 @@ function KanbanBoard({
             }}
             onDrop={(e) => {
               e.preventDefault();
-              handleDrop(col.key);
+              finishDrop(col.key);
             }}
           >
             <div className="flex items-center justify-between mb-2 px-1">
@@ -1012,6 +1055,7 @@ function KanbanBoard({
                       e.dataTransfer.setData("text/plain", key);
                       e.dataTransfer.effectAllowed = "move";
                       draggedRef.current = it;
+                      touchModeRef.current = false;
                       setDraggingKey(key);
                     }}
                     onDragEnd={() => {
@@ -1019,6 +1063,7 @@ function KanbanBoard({
                       setDragOverCol(null);
                       draggedRef.current = null;
                     }}
+                    onTouchDragStart={() => beginTouchDrag(it, key)}
                   />
                 );
               })}
@@ -1040,24 +1085,94 @@ function KanbanCard({
   isDragging,
   onDragStart,
   onDragEnd,
+  onTouchDragStart,
 }: {
   item: MyWorkItem;
   isDragging?: boolean;
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void;
+  onTouchDragStart?: () => void;
 }) {
   const meta = TYPE_META[item.type];
   const draggable = item.canEditDueDate;
+
+  // Long-press detection so a tap still navigates via the link, while a
+  // press-and-hold begins a touch drag. The cancel-on-move threshold prevents
+  // accidental drags when the user is just trying to scroll the board.
+  const longPressTimer = useRef<number | null>(null);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+  const activatedRef = useRef(false);
+  const suppressClickUntil = useRef(0);
+
+  const clearTimer = () => {
+    if (longPressTimer.current != null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!draggable) return;
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    startPos.current = { x: t.clientX, y: t.clientY };
+    activatedRef.current = false;
+    clearTimer();
+    longPressTimer.current = window.setTimeout(() => {
+      activatedRef.current = true;
+      if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        try {
+          navigator.vibrate(15);
+        } catch {
+          /* ignore */
+        }
+      }
+      onTouchDragStart?.();
+    }, 220);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (activatedRef.current) return; // global handler is in charge now
+    if (!startPos.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startPos.current.x;
+    const dy = t.clientY - startPos.current.y;
+    if (Math.hypot(dx, dy) > 8) clearTimer();
+  };
+
+  const handleTouchEnd = () => {
+    clearTimer();
+    if (activatedRef.current) {
+      // Suppress the synthesized click that would otherwise navigate to the
+      // card's source URL after a long-press drag.
+      suppressClickUntil.current = Date.now() + 500;
+    }
+    activatedRef.current = false;
+    startPos.current = null;
+  };
+
+  const handleClickCapture = (e: React.MouseEvent) => {
+    if (Date.now() < suppressClickUntil.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
   return (
     <Card
       className={cn(
         "hover-elevate",
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
-        isDragging && "opacity-50",
+        isDragging && "opacity-50 ring-2 ring-primary",
       )}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      onClickCapture={handleClickCapture}
       data-testid={`kanban-card-${item.id}`}
       data-draggable={draggable ? "true" : "false"}
     >
