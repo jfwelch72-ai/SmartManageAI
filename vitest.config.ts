@@ -14,7 +14,22 @@ export default defineConfig({
       'client/**/*.test.ts',
       'client/**/*.test.tsx',
     ],
-    exclude: ['node_modules', 'dist', '.cache', '**/node_modules/**'],
+    exclude: [
+      'node_modules',
+      'dist',
+      '.cache',
+      '**/node_modules/**',
+      // Task #1088 — *.serial.test.ts files perform destructive, schema-level
+      // mutations (e.g. dropping a column on `users`) and must run in
+      // isolation from the parallel suite, otherwise other workers SELECTing
+      // from the affected table will fail with `column ... does not exist`.
+      // They are excluded from the default `npm test` parallel run and only
+      // included when `RUN_SERIAL_DB_TESTS=1` is set, which the dedicated
+      // invocation below also sets:
+      //   RUN_SERIAL_DB_TESTS=1 npx vitest run \
+      //     server/__tests__/<file>.serial.test.ts --no-file-parallelism
+      ...(process.env.RUN_SERIAL_DB_TESTS === '1' ? [] : ['**/*.serial.test.ts']),
+    ],
     globalSetup: ['./server/__tests__/globalSetup.ts'],
     setupFiles: ['./server/__tests__/loadEnvTest.ts'],
     coverage: {
