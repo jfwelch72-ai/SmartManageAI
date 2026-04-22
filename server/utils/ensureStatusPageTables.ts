@@ -85,6 +85,34 @@ export async function ensureStatusPageTables(): Promise<void> {
   `);
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "status_incident_notifications_unique" ON "status_incident_notifications" ("incident_id","update_id","subscriber_id")`);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "status_alert_state" (
+      "component_id" varchar PRIMARY KEY REFERENCES "status_components"("id") ON DELETE CASCADE,
+      "is_alerting" boolean NOT NULL DEFAULT false,
+      "consecutive_failures" integer NOT NULL DEFAULT 0,
+      "opened_at" timestamp,
+      "last_alert_sent_at" timestamp,
+      "last_recovery_sent_at" timestamp,
+      "last_error" text,
+      "updated_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "status_alert_dispatches" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "component_id" varchar NOT NULL REFERENCES "status_components"("id") ON DELETE CASCADE,
+      "kind" text NOT NULL,
+      "channel" text NOT NULL,
+      "target" text NOT NULL,
+      "ok" boolean NOT NULL,
+      "error" text,
+      "consecutive_failures" integer,
+      "sent_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_alert_dispatches_component_idx" ON "status_alert_dispatches" ("component_id","sent_at" DESC)`);
+
   // Seed default components if table is empty
   const existing = await db.execute(sql`SELECT COUNT(*)::int AS c FROM "status_components"`);
   const count = (existing.rows[0] as { c: number }).c;

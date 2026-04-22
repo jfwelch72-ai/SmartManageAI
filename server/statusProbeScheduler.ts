@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { logInfo, logError } from "./utils/logger";
+import { evaluateAlertsAfterSweep } from "./statusAlertService";
 
 type ComponentRow = {
   id: string;
@@ -161,6 +162,14 @@ export async function runProbeSweep(): Promise<{ probed: number; failures: numbe
 
   // Prune probe rows older than 35 days to keep table bounded
   await db.execute(sql`DELETE FROM "status_probes" WHERE checked_at < NOW() - INTERVAL '35 days'`);
+
+  // Evaluate alert thresholds and dispatch notifications for any
+  // newly-failing or newly-recovered alertable components.
+  try {
+    await evaluateAlertsAfterSweep();
+  } catch (err) {
+    logError("Status alert evaluation failed", {}, err instanceof Error ? err : new Error(String(err)));
+  }
 
   return { probed: components.length, failures };
 }

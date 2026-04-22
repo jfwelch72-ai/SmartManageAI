@@ -8,6 +8,7 @@ import { requireAuth, requireRole } from "./auth";
 import { sendEmail } from "./services/emailService";
 import { logError, logInfo } from "./utils/logger";
 import { runProbeSweep } from "./statusProbeScheduler";
+import { getAlertOverview, sendTestAlert } from "./statusAlertService";
 
 const router = Router();
 
@@ -375,6 +376,32 @@ router.delete("/api/admin/status/components/:id", ...adminGuard, async (req, res
 router.post("/api/admin/status/probe-now", ...adminGuard, async (_req, res, next) => {
   try {
     const result = await runProbeSweep();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- alert configuration & testing (env-driven) ----------
+
+router.get("/api/admin/status/alerts", ...adminGuard, async (_req, res, next) => {
+  try {
+    const overview = await getAlertOverview();
+    res.json(overview);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const alertTestSchema = z.object({
+  componentKey: z.string().min(1).max(64).optional(),
+});
+
+router.post("/api/admin/status/alerts/test", ...adminGuard, async (req, res, next) => {
+  try {
+    const data = alertTestSchema.parse(req.body || {});
+    const result = await sendTestAlert(data.componentKey);
+    if (!result.ok) return res.status(400).json(result);
     res.json(result);
   } catch (err) {
     next(err);
