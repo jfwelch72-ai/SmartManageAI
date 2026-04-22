@@ -40,7 +40,18 @@ merge on:
 4. End-to-end tests (Playwright)
 5. **Security Gate** — `scripts/ci-security.sh`, executed by the
    `Security Gate (SOC 2 CC8.1 / CC7.1)` job. The script runs:
-   - **Dependency audit** — `npm audit --audit-level=high` blocks merge
+   - **Dependency audit** — `npm audit --audit-level=high` blocks merge.
+     The same gate is additionally re-run against `main` nightly by the
+     `Nightly Dependency Audit` workflow
+     (`.github/workflows/dependency-audit-nightly.yml`), which invokes
+     `scripts/ci-security.sh --only deps`. The npm advisory database is
+     updated continuously, so a new CVE can be published against an
+     unchanged dependency tree on `main` between PRs without
+     re-triggering the PR-time gate; the nightly run catches that drift.
+     The workflow uploads the scanner log as the
+     `dependency-audit-nightly-report` artifact (90-day retention) and,
+     on any finding, opens (or updates) a `security`-labelled tracking
+     issue so the owner can upgrade or replace the offending package.
    - **SAST** — Semgrep `p/owasp-top-ten` + `p/javascript`
    - **Secret scan** — gitleaks against the working tree; `main` is also
      scanned weekly for any historical leak by the

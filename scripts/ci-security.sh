@@ -36,7 +36,11 @@ cd "$ROOT"
 # nightly license-audit workflow (`.github/workflows/license-audit-nightly.yml`)
 # to re-run just the license check against `main`, so transitive
 # dependency updates that change a package's license between PRs are
-# caught on a schedule rather than waiting for the next PR.
+# caught on a schedule rather than waiting for the next PR. The
+# nightly dependency-audit workflow
+# (`.github/workflows/dependency-audit-nightly.yml`) uses the same
+# mechanism with `--only deps` so newly disclosed npm advisories are
+# caught on `main` between PRs.
 #
 # Supported values: deps | sast | secrets | iac | license | all
 ONLY="${CI_SECURITY_ONLY:-all}"

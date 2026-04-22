@@ -1,0 +1,174 @@
+name: Nightly Dependency Audit
+
+# Scheduled npm dependency vulnerability audit over `main`.
+#
+# The PR-time Security Gate (`.github/workflows/ci.yml` -> `security` job,
+# `scripts/ci-security.sh`) runs the dependency audit on every pull
+# request, but the npm advisory database is updated continuously: a new
+# CVE can be published against an unchanged dependency tree on `main`
+# between PRs without anyone noticing. This workflow re-runs only the
+# dependency-audit gate against `main` on a nightly cron so newly
+# disclosed advisories are caught quickly rather than waiting for the
+# next unrelated PR.
+#
+# Mirrors the pattern used by the nightly license audit
+# (`.github/workflows/license-audit-nightly.yml`) and the weekly secret
+# history scan (`.github/workflows/security-history-scan.yml`). SOC 2
+# controls CC7.1 and CC8.1; SDLC policy
+# `docs/compliance/policies/09-sdlc-policy.md`.
+#
+# Findings:
+#   - Always uploaded as the `dependency-audit-nightly-report` artifact
+#     (90-day retention) so auditors can review the evidence.
+#   - On any finding (or tooling failure), an issue is opened (or a
+#     comment is appended to the existing one) and labelled `security`
+#     so the owner can either upgrade/replace the offending package or
+#     justify and patch the advisory.
+
+on:
+  schedule:
+    # Every day at 06:30 UTC (offset from the license audit at 06:00).
+    - cron: '30 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dependency-audit:
+    name: npm audit (high+ on main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run dependency audit
+        id: dependency_audit
+        run: |
+          set +e
+          mkdir -p security-reports
+          bash scripts/ci-security.sh --only deps 2>&1 \
+            | tee security-reports/dependency-audit-nightly.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          # Don't fail the job here — we want the artifact upload and the
+          # follow-up "open issue" step to run regardless. The final step
+          # below re-exits with the audit status.
+          exit 0
+
+      - name: Publish job summary
+        if: always()
+        run: |
+          {
+            echo "# Nightly Dependency Audit"
+            echo ""
+            echo "Tool: \`scripts/ci-security.sh --only deps\` against \`main\` (\`npm audit --audit-level=high\`)."
+            echo "Policy: \`docs/compliance/policies/09-sdlc-policy.md\` (SDLC, Build/CI)."
+            echo "SOC 2 controls: **CC7.1**, **CC8.1**."
+            echo ""
+            if [ "${{ steps.dependency_audit.outputs.exit_code }}" = "0" ]; then
+              echo "**Status:** PASSED — no high/critical advisories against current dependencies."
+            else
+              echo "**Status:** FAILED (exit code ${{ steps.dependency_audit.outputs.exit_code }}) — newly disclosed advisory detected on \`main\`. Upgrade or replace the offending package."
+            fi
+            echo ""
+            echo "<details><summary>Scanner output</summary>"
+            echo ""
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' security-reports/dependency-audit-nightly.log | tail -c 60000
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dependency audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-nightly-report
+          path: security-reports/
+          retention-days: 90
+
+      - name: Open or update tracking issue on finding
+        if: always() && steps.dependency_audit.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let log = '';
+            try {
+              log = fs.readFileSync('security-reports/dependency-audit-nightly.log', 'utf8')
+                .replace(/\x1b\[[0-9;]*m/g, '');
+            } catch (e) {
+              log = '(no log captured)';
+            }
+            const trimmed = log.length > 12000 ? '…(truncated)…\n' + log.slice(-12000) : log;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const marker = '<!-- nightly-dependency-audit-finding -->';
+            const title = '[security] Nightly dependency audit detected high/critical advisory on `main`';
+            const body = [
+              marker,
+              '## Nightly dependency audit — advisory detected on `main`',
+              '',
+              `Workflow run: ${runUrl}`,
+              '',
+              'A scheduled re-run of the npm dependency audit against `main`',
+              'found a high or critical advisory in the dependency tree (or',
+              'the auditor tooling failed). The npm advisory database is',
+              'updated continuously, so a new CVE can be published against an',
+              'unchanged dependency tree without re-triggering the PR-time',
+              'Security Gate, which is why this scheduled run exists.',
+              '',
+              'Per SDLC policy #09:',
+              '',
+              '1. Identify the offending package(s) in the scanner output below.',
+              '2. Upgrade or replace the package to a non-vulnerable version,',
+              '   **or** apply an `npm audit` override with documented',
+              '   justification in the PR.',
+              '3. Re-run this workflow (`workflow_dispatch`) to confirm the',
+              '   gate passes once the fix is merged.',
+              '',
+              '<details><summary>Scanner output</summary>',
+              '',
+              '```',
+              trimmed,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'security', per_page: 100,
+            });
+            const existing = issues.find(i => i.body && i.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `Nightly dependency audit failed again — see ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title, body,
+                labels: ['security', 'dependency-audit', 'priority:high'],
+              });
+            }
+
+      - name: Fail job if dependency audit found violations
+        if: steps.dependency_audit.outputs.exit_code != '0'
+        run: |
+          echo "dependency audit reported findings (exit code ${{ steps.dependency_audit.outputs.exit_code }})."
+          exit 1
