@@ -1,16 +1,78 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
-import { FileText, Pencil, Trash2, Layers, Ruler, Wrench } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { FileText, Pencil, Trash2, Layers, Ruler, Wrench, Camera } from "lucide-react";
 import type { EstimateLineItem } from "@shared/schema";
+
+function PhotoThumbnail({
+  photoUrl,
+  itemId,
+  description,
+  size = "sm",
+}: {
+  photoUrl: string;
+  itemId: string;
+  description: string;
+  size?: "sm" | "md";
+}) {
+  const [open, setOpen] = useState(false);
+  const dim = size === "md" ? "h-10 w-10" : "h-8 w-8";
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        className={`${dim} shrink-0 rounded-md overflow-hidden border border-border bg-muted hover-elevate active-elevate-2 relative group`}
+        data-testid={`button-photo-thumbnail-${itemId}`}
+        aria-label="View attached photo"
+      >
+        <img
+          src={photoUrl}
+          alt={`Photo for ${description}`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+        <span className="absolute bottom-0 right-0 bg-background/80 rounded-tl-sm p-0.5">
+          <Camera className="h-2.5 w-2.5 text-foreground" />
+        </span>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl" data-testid={`dialog-photo-preview-${itemId}`}>
+          <DialogHeader>
+            <DialogTitle className="text-sm font-medium pr-6 line-clamp-2">{description}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center bg-muted rounded-md overflow-hidden">
+            <img
+              src={photoUrl}
+              alt={`Photo for ${description}`}
+              className="max-h-[70vh] w-auto object-contain"
+              data-testid={`img-photo-preview-${itemId}`}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 interface LineItemsTableProps {
   lineItems: EstimateLineItem[];
@@ -97,13 +159,23 @@ export function LineItemsTable({
             return (
               <div key={item.id} className="px-4 py-4 space-y-3" data-testid={`row-line-item-${item.id}`}>
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm leading-snug">{item.description}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <p className="text-xs text-muted-foreground">
-                        {item.quantity.toLocaleString()} {item.unit}
-                      </p>
-                      <SourceBadge source={item.source} />
+                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                    {item.photoUrl && (
+                      <PhotoThumbnail
+                        photoUrl={item.photoUrl}
+                        itemId={item.id}
+                        description={item.description}
+                        size="md"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm leading-snug">{item.description}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-xs text-muted-foreground">
+                          {item.quantity.toLocaleString()} {item.unit}
+                        </p>
+                        <SourceBadge source={item.source} />
+                      </div>
                     </div>
                   </div>
                   <Badge variant="outline" className="text-xs shrink-0">{item.category}</Badge>
@@ -226,7 +298,16 @@ export function LineItemsTable({
                       )}
                     </TableCell>
                     <TableCell className="font-medium max-w-[250px]">
-                      <span className="line-clamp-3">{item.description}</span>
+                      <div className="flex items-start gap-2">
+                        {item.photoUrl && (
+                          <PhotoThumbnail
+                            photoUrl={item.photoUrl}
+                            itemId={item.id}
+                            description={item.description}
+                          />
+                        )}
+                        <span className="line-clamp-3">{item.description}</span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <SourceBadge source={item.source} />
