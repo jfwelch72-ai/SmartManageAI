@@ -90,7 +90,7 @@ export async function ensureStatusPageTables(): Promise<void> {
   const count = (existing.rows[0] as { c: number }).c;
   if (count === 0) {
     const defaults: Array<{ key: string; name: string; kind: string; sort: number }> = [
-      { key: "web", name: "Web application", kind: "http_self", sort: 1 },
+      { key: "web", name: "Web application", kind: "http_public", sort: 1 },
       { key: "api", name: "API", kind: "http_self_health", sort: 2 },
       { key: "database", name: "Database", kind: "db_ping", sort: 3 },
       { key: "files", name: "File uploads & downloads", kind: "object_storage", sort: 4 },
@@ -106,5 +106,13 @@ export async function ensureStatusPageTables(): Promise<void> {
     }
     console.log("[migration] status_page — seeded default components");
   }
+
+  // Upgrade legacy "web" component from local self-check to real outbound HTTP probe
+  await db.execute(sql`
+    UPDATE "status_components"
+    SET probe_kind = 'http_public'
+    WHERE key = 'web' AND probe_kind = 'http_self'
+  `);
+
   console.log("[migration] status_page — tables ready");
 }

@@ -22,6 +22,49 @@ function selfBaseUrl(): string {
   return `http://127.0.0.1:${port}`;
 }
 
+const DEFAULT_PUBLIC_WEB_URL = "https://smartmanageai.ai";
+
+function publicWebUrl(): string {
+  const explicit = process.env.STATUS_PUBLIC_WEB_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  return DEFAULT_PUBLIC_WEB_URL;
+}
+
+function publicWebProbeDisabled(): boolean {
+  const v = process.env.STATUS_DISABLE_PUBLIC_WEB_PROBE?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+async function strictHttpProbe(url: string, timeoutMs: number): Promise<ProbeResult> {
+  const start = Date.now();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: "GET", signal: ctrl.signal, redirect: "follow" });
+    const ms = Date.now() - start;
+    const ok = res.status >= 200 && res.status < 300;
+    return {
+      ok,
+      statusCode: res.status,
+      responseMs: ms,
+      error: ok ? null : `unexpected status ${res.status}`,
+    };
+  } catch (err: any) {
+    const ms = Date.now() - start;
+    const name = err?.name === "AbortError" ? `timeout after ${timeoutMs}ms` : String(err?.message || err);
+    return { ok: false, statusCode: null, responseMs: ms, error: name };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function publicWebProbe(timeoutMs: number): Promise<ProbeResult> {
+  if (publicWebProbeDisabled()) {
+    return { ok: true, statusCode: null, responseMs: 0, error: "public web probe disabled via STATUS_DISABLE_PUBLIC_WEB_PROBE" };
+  }
+  return strictHttpProbe(publicWebUrl(), timeoutMs);
+}
+
 async function httpProbe(url: string, expectStatus: number, timeoutMs: number): Promise<ProbeResult> {
   const start = Date.now();
   const ctrl = new AbortController();
@@ -78,6 +121,8 @@ async function probeComponent(c: ComponentRow): Promise<ProbeResult> {
       return httpProbe(c.probe_url, c.probe_expect_status, c.probe_timeout_ms);
     case "http_self":
       return httpProbe(selfBaseUrl() + "/healthz", 200, c.probe_timeout_ms);
+    case "http_public":
+      return publicWebProbe(c.probe_timeout_ms);
     case "http_self_health":
       return httpProbe(selfBaseUrl() + "/readyz", 200, c.probe_timeout_ms);
     case "db_ping":

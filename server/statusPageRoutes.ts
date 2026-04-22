@@ -289,7 +289,7 @@ const componentSchema = z.object({
   key: z.string().min(1).max(64),
   name: z.string().min(1).max(120),
   description: z.string().max(500).optional().nullable(),
-  probeKind: z.enum(["http_get", "http_self", "http_self_health", "db_ping", "object_storage", "config_present"]).default("http_get"),
+  probeKind: z.enum(["http_get", "http_self", "http_public", "http_self_health", "db_ping", "object_storage", "config_present"]).default("http_get"),
   probeUrl: z.string().url().max(500).optional().nullable(),
   probeExpectStatus: z.number().int().min(100).max(599).default(200),
   probeTimeoutMs: z.number().int().min(500).max(60000).default(8000),
