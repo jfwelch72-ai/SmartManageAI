@@ -15,7 +15,13 @@ import { rfiStatusEnum, changeOrderStatusEnum, punchListStatusEnum, projectStatu
 import { requireAuth, requireAnyFeaturePermission, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { calculateAllProjectsProfitability } from "./ai/profitabilityEngine";
-import { logError } from "./utils/logger";
+import { logError, logWarn } from "./utils/logger";
+import {
+  isPortfolioRendererAvailable,
+  renderPortfolioSummaryPdf,
+  isAllowedAssetUrl,
+} from "./portfolio-pdf-service";
+import { getOrganizationBranding } from "./organizationBranding";
 
 const router = Router();
 
@@ -571,7 +577,30 @@ router.get(
 
       const fmt = (n: number) =>
         new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
+      const escapeHtml = (s: string) =>
+        String(s).replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[c]!));
       const generatedAt = new Date();
+
+      const branding = await getOrganizationBranding(req.user?.organizationId || "");
+      const primary = branding.primaryColor || "#1a365d";
+      const accent = branding.accentColor || "#2563eb";
+      const allowedLogoOrigins = (process.env.PORTFOLIO_PDF_ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      // Only render the org logo if the URL is in our allowlist — defense in
+      // depth on top of the renderer's network blocker. Otherwise we fall
+      // back to a branded letter placeholder so the PDF still looks polished.
+      const logoTag =
+        branding.logoUrl && isAllowedAssetUrl(branding.logoUrl, allowedLogoOrigins)
+          ? `<img src="${escapeHtml(branding.logoUrl)}" alt="logo" class="logo"/>`
+          : `<div class="logo logo-placeholder">${escapeHtml((branding.organizationName || "S").slice(0, 1))}</div>`;
 
       const groupsMap = new Map<string, ProjectRow[]>();
       for (const p of projectRows) {
@@ -590,77 +619,152 @@ router.get(
       const totalContract = profitability.reduce((s, p) => s + p.adjusted_budget, 0);
       const totalActual = profitability.reduce((s, p) => s + p.total_actual_cost, 0);
       const totalVariance = profitability.reduce((s, p) => s + p.variance, 0);
+      const variancePct = totalContract > 0 ? (totalVariance / totalContract) * 100 : 0;
 
       const pageStyle = `
-        body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #111; padding: 24px; margin: 0; }
-        h1 { margin: 0 0 4px; font-size: 22px; }
-        h2 { margin: 0 0 6px; font-size: 18px; }
-        .meta { color: #555; font-size: 12px; margin-bottom: 18px; }
-        .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-        .kpi { border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px; }
-        .kpi .label { color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
-        .kpi .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
-        table { width: 100%; border-collapse: collapse; font-size: 11px; }
-        th, td { border-bottom: 1px solid #eee; padding: 6px 8px; text-align: left; }
-        th { background: #f7f7f7; font-weight: 600; }
+        @page { size: Letter; margin: 0.5in; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #111827; margin: 0; }
+        .header { display: flex; align-items: center; justify-content: space-between;
+                  border-bottom: 3px solid ${primary}; padding-bottom: 12px; margin-bottom: 18px; }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .logo { width: 48px; height: 48px; object-fit: contain; }
+        .logo-placeholder { background: ${primary}; color: #fff; border-radius: 8px;
+                            display: flex; align-items: center; justify-content: center;
+                            font-weight: 700; font-size: 22px; }
+        .brand-name { font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; }
+        .brand-title { font-size: 22px; font-weight: 700; color: ${primary}; margin-top: 2px; }
+        .header .meta { text-align: right; font-size: 11px; color: #6b7280; line-height: 1.4; }
+        h2 { margin: 0 0 6px; font-size: 16px; color: ${primary}; }
+        .section-meta { color: #6b7280; font-size: 11px; margin-bottom: 12px; }
+        .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+        .kpi { border: 1px solid #e5e7eb; border-left: 3px solid ${accent}; border-radius: 6px; padding: 10px 12px; background: #fff; }
+        .kpi .label { color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+        .kpi .value { font-size: 18px; font-weight: 600; margin-top: 4px; color: #111827; }
+        .kpi .sub { font-size: 10px; color: #6b7280; margin-top: 2px; }
+        .kpi.neg .value { color: #b91c1c; }
+        .kpi.pos .value { color: #047857; }
+        table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+        th, td { border-bottom: 1px solid #eef0f3; padding: 6px 8px; text-align: left; vertical-align: top; }
+        thead th { background: ${primary}; color: #fff; font-weight: 600; font-size: 10px;
+                    text-transform: uppercase; letter-spacing: 0.04em; border-bottom: none; }
+        tbody tr:nth-child(even) { background: #fafbfc; }
+        tfoot td { font-weight: 600; background: #f3f4f6; border-top: 2px solid ${primary}; }
+        .right { text-align: right; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 9px;
+                 font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+                 background: #e5e7eb; color: #374151; }
+        .badge.OVER_BUDGET, .badge.AT_RISK { background: #fee2e2; color: #b91c1c; }
+        .badge.ON_BUDGET { background: #d1fae5; color: #047857; }
+        .badge.UNDER_BUDGET { background: #dbeafe; color: #1d4ed8; }
         .program-page { page-break-after: always; }
         .program-page:last-child { page-break-after: auto; }
+        .footer { margin-top: 14px; font-size: 9px; color: #9ca3af; text-align: center; }
       `;
 
+      const renderHeader = (subtitle: string) => `
+        <div class="header">
+          <div class="brand">
+            ${logoTag}
+            <div>
+              <div class="brand-name">${escapeHtml(branding.organizationName)}</div>
+              <div class="brand-title">${escapeHtml(subtitle)}</div>
+            </div>
+          </div>
+          <div class="meta">
+            Generated ${escapeHtml(generatedAt.toLocaleString())}<br/>
+            ${projectRows.length} projects · ${programs.length} programs
+          </div>
+        </div>`;
+
+      const varianceClass = totalVariance > 0 ? "neg" : totalVariance < 0 ? "pos" : "";
       const coverHtml = `
         <section class="program-page">
-          <h1>Portfolio Summary</h1>
-          <div class="meta">Generated ${generatedAt.toLocaleString()} · ${projectRows.length} projects · ${programs.length} programs</div>
+          ${renderHeader("Portfolio Summary")}
           <div class="kpis">
-            <div class="kpi"><div class="label">Projects</div><div class="value">${projectRows.length}</div></div>
+            <div class="kpi"><div class="label">Projects</div><div class="value">${projectRows.length}</div><div class="sub">across ${programs.length} programs</div></div>
             <div class="kpi"><div class="label">Contract</div><div class="value">${fmt(totalContract)}</div></div>
-            <div class="kpi"><div class="label">Actual</div><div class="value">${fmt(totalActual)}</div></div>
-            <div class="kpi"><div class="label">Variance</div><div class="value">${fmt(totalVariance)}</div></div>
+            <div class="kpi"><div class="label">Actual to date</div><div class="value">${fmt(totalActual)}</div></div>
+            <div class="kpi ${varianceClass}"><div class="label">Variance</div><div class="value">${fmt(totalVariance)}</div><div class="sub">${variancePct.toFixed(1)}% of contract</div></div>
           </div>
+          <h2>Programs</h2>
           <table>
-            <thead><tr><th>Program</th><th style="text-align:right">Projects</th><th style="text-align:right">Contract</th><th style="text-align:right">Actual</th><th style="text-align:right">Variance</th></tr></thead>
+            <thead><tr>
+              <th>Program</th>
+              <th class="right">Projects</th>
+              <th class="right">Contract</th>
+              <th class="right">Actual</th>
+              <th class="right">Variance</th>
+              <th class="right">Var %</th>
+            </tr></thead>
             <tbody>
               ${programs.map((pg) => {
                 const sumC = pg.rows.reduce((s, p) => s + (profByCode.get(p.code)?.adjusted_budget || 0), 0);
                 const sumA = pg.rows.reduce((s, p) => s + (profByCode.get(p.code)?.total_actual_cost || 0), 0);
                 const sumV = pg.rows.reduce((s, p) => s + (profByCode.get(p.code)?.variance || 0), 0);
-                return `<tr><td>${pg.label}</td><td style="text-align:right">${pg.rows.length}</td><td style="text-align:right">${fmt(sumC)}</td><td style="text-align:right">${fmt(sumA)}</td><td style="text-align:right">${fmt(sumV)}</td></tr>`;
+                const vPct = sumC > 0 ? (sumV / sumC) * 100 : 0;
+                return `<tr>
+                  <td>${escapeHtml(pg.label)}</td>
+                  <td class="right">${pg.rows.length}</td>
+                  <td class="right">${fmt(sumC)}</td>
+                  <td class="right">${fmt(sumA)}</td>
+                  <td class="right">${fmt(sumV)}</td>
+                  <td class="right">${vPct.toFixed(1)}%</td>
+                </tr>`;
               }).join("")}
             </tbody>
+            <tfoot><tr>
+              <td>Total</td>
+              <td class="right">${projectRows.length}</td>
+              <td class="right">${fmt(totalContract)}</td>
+              <td class="right">${fmt(totalActual)}</td>
+              <td class="right">${fmt(totalVariance)}</td>
+              <td class="right">${variancePct.toFixed(1)}%</td>
+            </tr></tfoot>
           </table>
+          <div class="footer">${escapeHtml(branding.organizationName)} · Portfolio Summary · Page 1</div>
         </section>
       `;
 
-      const programPagesHtml = programs.map((pg) => {
+      const programPagesHtml = programs.map((pg, idx) => {
         const sumC = pg.rows.reduce((s, p) => s + (profByCode.get(p.code)?.adjusted_budget || 0), 0);
         const sumA = pg.rows.reduce((s, p) => s + (profByCode.get(p.code)?.total_actual_cost || 0), 0);
         const sumV = pg.rows.reduce((s, p) => s + (profByCode.get(p.code)?.variance || 0), 0);
+        const vPct = sumC > 0 ? (sumV / sumC) * 100 : 0;
         const projectRowsHtml = pg.rows.map((p) => {
           const prof = profByCode.get(p.code);
           const variance = prof ? prof.variance_percent.toFixed(1) + "%" : "—";
+          const health = prof?.status || "";
           return `<tr>
-              <td>${p.code}</td>
-              <td>${p.name}</td>
-              <td>${p.status}</td>
-              <td>${pmNameOf(p) ?? "—"}</td>
-              <td style="text-align:right">${fmt(prof?.adjusted_budget || Number(p.contractAmount || 0))}</td>
-              <td style="text-align:right">${fmt(prof?.total_actual_cost || 0)}</td>
-              <td style="text-align:right">${variance}</td>
-              <td>${prof?.status || "—"}</td>
+              <td>${escapeHtml(p.code)}</td>
+              <td>${escapeHtml(p.name)}</td>
+              <td>${escapeHtml(p.status)}</td>
+              <td>${escapeHtml(pmNameOf(p) ?? "—")}</td>
+              <td class="right">${fmt(prof?.adjusted_budget || Number(p.contractAmount || 0))}</td>
+              <td class="right">${fmt(prof?.total_actual_cost || 0)}</td>
+              <td class="right">${variance}</td>
+              <td>${health ? `<span class="badge ${escapeHtml(health)}">${escapeHtml(health.replace(/_/g, " "))}</span>` : "—"}</td>
             </tr>`;
         }).join("");
         return `
           <section class="program-page">
-            <h2>${pg.label}</h2>
-            <div class="meta">${pg.rows.length} projects · Contract ${fmt(sumC)} · Actual ${fmt(sumA)} · Variance ${fmt(sumV)}</div>
+            ${renderHeader(pg.label)}
+            <div class="kpis">
+              <div class="kpi"><div class="label">Projects</div><div class="value">${pg.rows.length}</div></div>
+              <div class="kpi"><div class="label">Contract</div><div class="value">${fmt(sumC)}</div></div>
+              <div class="kpi"><div class="label">Actual</div><div class="value">${fmt(sumA)}</div></div>
+              <div class="kpi ${sumV > 0 ? "neg" : sumV < 0 ? "pos" : ""}"><div class="label">Variance</div><div class="value">${fmt(sumV)}</div><div class="sub">${vPct.toFixed(1)}% of contract</div></div>
+            </div>
+            <h2>Project detail</h2>
             <table>
               <thead><tr>
                 <th>Code</th><th>Project</th><th>Status</th><th>PM</th>
-                <th style="text-align:right">Budget</th><th style="text-align:right">Actual</th>
-                <th style="text-align:right">Variance %</th><th>Health</th>
+                <th class="right">Budget</th><th class="right">Actual</th>
+                <th class="right">Var %</th><th>Health</th>
               </tr></thead>
               <tbody>${projectRowsHtml}</tbody>
             </table>
+            <div class="footer">${escapeHtml(branding.organizationName)} · ${escapeHtml(pg.label)} · Page ${idx + 2}</div>
           </section>
         `;
       }).join("");
@@ -674,20 +778,46 @@ router.get(
   ${programPagesHtml}
 </body></html>`;
 
+      const filenameBase = `portfolio-summary-${generatedAt.toISOString().slice(0, 10)}`;
+      const isProduction = process.env.NODE_ENV === "production";
+      const rendererAvailable = await isPortfolioRendererAvailable();
+
+      if (!rendererAvailable) {
+        if (isProduction) {
+          logError("portfolio.summary-pdf.renderer-unavailable", {
+            reason: "Chromium is not available in production",
+          });
+          return res.status(503).json({
+            error: "Portfolio PDF renderer is unavailable",
+            detail: "Chromium (Playwright) is not installed in this environment. Contact an administrator.",
+          });
+        }
+        logWarn("portfolio.summary-pdf.html-fallback", {
+          reason: "Chromium unavailable in non-production environment",
+        });
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.html"`);
+        return res.send(html);
+      }
+
       try {
-        const { chromium } = await import("playwright");
-        const browser = await chromium.launch({ args: ["--no-sandbox"] });
-        const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: "domcontentloaded" });
-        const pdf = await page.pdf({ format: "Letter", margin: { top: "0.5in", right: "0.5in", bottom: "0.5in", left: "0.5in" } });
-        await browser.close();
+        const pdf = await renderPortfolioSummaryPdf(html);
         res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename="portfolio-summary-${generatedAt.toISOString().slice(0, 10)}.pdf"`);
+        res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
         return res.send(pdf);
       } catch (pdfErr) {
-        logError("portfolio.summary-pdf.playwright-fallback", pdfErr);
+        logError(
+          "portfolio.summary-pdf.render-failed",
+          {},
+          pdfErr instanceof Error ? pdfErr : new Error(String(pdfErr)),
+        );
+        if (isProduction) {
+          return res.status(500).json({
+            error: "Failed to render portfolio summary PDF",
+          });
+        }
         res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.setHeader("Content-Disposition", `attachment; filename="portfolio-summary-${generatedAt.toISOString().slice(0, 10)}.html"`);
+        res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.html"`);
         return res.send(html);
       }
     } catch (err) {

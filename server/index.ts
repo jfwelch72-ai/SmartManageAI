@@ -33,6 +33,7 @@ import { seedBuiltInPresets } from "./dashboardRoutes";
 import { persistErrorLog } from "./services/errorLogService";
 import { getIntegrationStatus } from "./services/integrationStatusService";
 import { initializeGanttPdfHistory } from "./gantt-pdf-service";
+import { checkPortfolioRendererAtStartup } from "./portfolio-pdf-service";
 
 process.on("uncaughtException", (err) => {
   logError("Uncaught exception", {}, err);
@@ -310,6 +311,13 @@ app.use((req, res, next) => {
   // admin chart survives restarts and deployments.
   initializeGanttPdfHistory().catch((err) => {
     logError("Failed to initialize Gantt PDF render history", {}, err instanceof Error ? err : new Error(String(err)));
+  });
+
+  // Verify the portfolio PDF renderer (Chromium via Playwright) is reachable
+  // at startup so missing browsers in production are surfaced loudly instead
+  // of silently degrading to an HTML export.
+  checkPortfolioRendererAtStartup().catch((err) => {
+    logError("Portfolio PDF renderer startup check failed", {}, err instanceof Error ? err : new Error(String(err)));
   });
 
   // Task #805 — populate status component health on every cold start so the
