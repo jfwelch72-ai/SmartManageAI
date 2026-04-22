@@ -163,6 +163,72 @@ describe("BackfillAlertDeliveriesCard — fallback suppressed badge", () => {
     expect(screen.queryByTestId("badge-fallback-suppressed-del-x")).toBeNull();
   });
 
+  it("expands the badge wording when the daily digest fallback is also empty (Task #1100)", () => {
+    setDeliveriesData({
+      deliveries: [
+        {
+          id: "del-combo",
+          jobId: null,
+          channel: "slack",
+          status: "failure",
+          recipientSummary: "hooks.slack.com",
+          errorMessage: "404 not_found",
+          attemptedAt: new Date().toISOString(),
+        },
+      ],
+      fallbackMuteSummary: {
+        slack: { mutedAdminCount: 2, effectiveRecipientCount: 0 },
+        email: { mutedAdminCount: 0, effectiveRecipientCount: 1 },
+        // No admin opted into the digest stream — every otherwise-eligible
+        // admin set their alert-failure email mode to realtime/none, so the
+        // daily digest fallback is silenced too.
+        digest: { eligibleRecipientCount: 0, streamMutedAdminCount: 3 },
+      },
+    });
+
+    renderCard();
+
+    const badge = screen.getByTestId("badge-fallback-suppressed-del-combo");
+    expect(badge.textContent).toMatch(/realtime \+ digest/i);
+    expect(badge.textContent).toMatch(/channel muted by 2 admins/i);
+    expect(badge.textContent).toMatch(/digest off for 3 admins/i);
+  });
+
+  it("keeps the original wording when the digest stream still has eligible recipients", () => {
+    setDeliveriesData({
+      deliveries: [
+        {
+          id: "del-realtime-only",
+          jobId: null,
+          channel: "slack",
+          status: "failure",
+          recipientSummary: "hooks.slack.com",
+          errorMessage: "boom",
+          attemptedAt: new Date().toISOString(),
+        },
+      ],
+      fallbackMuteSummary: {
+        slack: { mutedAdminCount: 2, effectiveRecipientCount: 0 },
+        email: { mutedAdminCount: 0, effectiveRecipientCount: 1 },
+        // Digest still has at least one eligible recipient, so the daily
+        // rollup will catch this failure — keep the legacy realtime-only
+        // wording.
+        digest: { eligibleRecipientCount: 1, streamMutedAdminCount: 1 },
+      },
+    });
+
+    renderCard();
+
+    const badge = screen.getByTestId(
+      "badge-fallback-suppressed-del-realtime-only",
+    );
+    expect(badge.textContent).toMatch(/^Fallback suppressed/);
+    expect(badge.textContent).not.toMatch(/digest/i);
+    expect(
+      screen.queryByTestId("text-digest-suppressed-del-realtime-only"),
+    ).toBeNull();
+  });
+
   it("gracefully omits the badge when fallbackMuteSummary is missing from the response", () => {
     setDeliveriesData({
       deliveries: [

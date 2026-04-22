@@ -3894,9 +3894,20 @@ interface BackfillAlertFallbackChannelSummary {
   effectiveRecipientCount: number;
 }
 
+// Task #1100 — org-wide digest-stream eligibility lives alongside the
+// per-channel realtime counts so the badge can also surface "the daily
+// digest fallback was silenced too" when nobody is opted into the digest
+// stream. The digest is delivered per-org (not per-channel), so this
+// counter sits at the top level.
+interface BackfillAlertFallbackDigestSummary {
+  eligibleRecipientCount: number;
+  streamMutedAdminCount: number;
+}
+
 interface BackfillAlertFallbackMuteSummary {
   slack: BackfillAlertFallbackChannelSummary;
   email: BackfillAlertFallbackChannelSummary;
+  digest?: BackfillAlertFallbackDigestSummary;
 }
 
 interface BackfillAlertDeliveriesResponse {
@@ -4195,12 +4206,30 @@ export function BackfillAlertDeliveriesCard() {
                       // admin actively muted it, surface that the silence
                       // is org-wide so the reviewer doesn't assume the
                       // rest of the team got pinged.
+                      //
+                      // Task #1100 — additionally, if every otherwise-
+                      // eligible admin opted out of the daily digest
+                      // stream (alert-failure-email mode set to
+                      // realtime / none), the digest fallback is also
+                      // empty for this org. Combine both signals into a
+                      // single badge so the reviewer sees the full
+                      // picture and the tooltip distinguishes which
+                      // preference (per-channel mute vs. stream-mode)
+                      // drives each suppression.
                       const sum = fallbackMuteSummary[d.channel];
                       if (!sum) return null;
                       if (sum.effectiveRecipientCount > 0) return null;
                       if (sum.mutedAdminCount <= 0) return null;
                       const n = sum.mutedAdminCount;
-                      const label = `Fallback suppressed (channel muted by ${n} admin${n === 1 ? "" : "s"})`;
+                      const digest = fallbackMuteSummary.digest;
+                      const digestSuppressed =
+                        !!digest &&
+                        digest.eligibleRecipientCount === 0 &&
+                        digest.streamMutedAdminCount > 0;
+                      const m = digest?.streamMutedAdminCount ?? 0;
+                      const label = digestSuppressed
+                        ? `Realtime + digest fallback suppressed (channel muted by ${n} admin${n === 1 ? "" : "s"}; digest off for ${m} admin${m === 1 ? "" : "s"})`
+                        : `Fallback suppressed (channel muted by ${n} admin${n === 1 ? "" : "s"})`;
                       return (
                         <div className="mt-1">
                           <Tooltip>
@@ -4220,12 +4249,24 @@ export function BackfillAlertDeliveriesCard() {
                               data-testid={`tooltip-fallback-suppressed-${d.id}`}
                             >
                               <p>
-                                No fallback email went out for this {d.channel}{" "}
-                                failure because every eligible admin muted{" "}
-                                {d.channel} failures under "Alert delivery
-                                failure fallback" in their notification
-                                preferences.
+                                No realtime fallback email went out for this{" "}
+                                {d.channel} failure because every eligible
+                                admin muted {d.channel} failures under "Alert
+                                delivery failure fallback" in their
+                                notification preferences.
                               </p>
+                              {digestSuppressed && (
+                                <p
+                                  className="mt-1"
+                                  data-testid={`text-digest-suppressed-${d.id}`}
+                                >
+                                  The daily digest fallback is also empty:
+                                  every otherwise-eligible admin set their
+                                  alert-failure email mode to "real-time only"
+                                  or "none", so tomorrow's rollup won't catch
+                                  this either.
+                                </p>
+                              )}
                               <p className="mt-1">
                                 <Link
                                   href="/settings/notifications#section-alert-failure-fallback-prefs"
@@ -4234,7 +4275,10 @@ export function BackfillAlertDeliveriesCard() {
                                 >
                                   Open notification preferences
                                 </Link>{" "}
-                                to change the per-channel mute.
+                                to change the per-channel mute
+                                {digestSuppressed
+                                  ? " or the alert-failure email mode."
+                                  : "."}
                               </p>
                             </TooltipContent>
                           </Tooltip>

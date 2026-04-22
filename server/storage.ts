@@ -1451,9 +1451,33 @@ export type AlertFailureFallbackChannelSummary = {
   effectiveRecipientCount: number;
 };
 
+// Task #1100 — alongside the per-channel realtime counts, expose the
+// org-wide digest-stream eligibility so the admin transcript-backfill UI
+// can also flag "the daily digest fallback was silenced too" when nobody
+// is set to receive the digest stream. The digest is delivered per-org
+// (not per-channel) so we keep this counter at the top level.
+//
+// `eligibleRecipientCount` counts active admins who would receive the
+// daily digest — i.e. admins who pass the same baseline filters as the
+// realtime fan-out (summary-channel != "none", legacy email opt-out off,
+// `fallbackEnabled != false`) AND whose `alertFailureEmailMode` includes
+// the digest stream (`both`, `digest`, or unmigrated/null which we treat
+// as legacy `both`). `streamMutedAdminCount` is the strict subset of those
+// otherwise-eligible admins who actively opted out of the digest stream
+// by picking `realtime` or `none` for `alertFailureEmailMode`. When the
+// eligible count is zero AND the stream-mute count is positive, the
+// digest path is silenced by an active org-wide preference (rather than
+// e.g. the org just having no admins at all), which is the signal the UI
+// uses to extend the existing realtime "fallback suppressed" badge.
+export type AlertFailureFallbackDigestSummary = {
+  eligibleRecipientCount: number;
+  streamMutedAdminCount: number;
+};
+
 export type AlertFailureFallbackMuteSummary = {
   slack: AlertFailureFallbackChannelSummary;
   email: AlertFailureFallbackChannelSummary;
+  digest: AlertFailureFallbackDigestSummary;
 };
 
 export async function summarizeOrgAdminAlertFailureFallbackMutes(
@@ -1484,6 +1508,7 @@ export async function summarizeOrgAdminAlertFailureFallbackMutes(
   const summary: AlertFailureFallbackMuteSummary = {
     slack: { mutedAdminCount: 0, effectiveRecipientCount: 0 },
     email: { mutedAdminCount: 0, effectiveRecipientCount: 0 },
+    digest: { eligibleRecipientCount: 0, streamMutedAdminCount: 0 },
   };
   const seen = new Set<string>();
   for (const r of rows) {
@@ -1492,14 +1517,28 @@ export async function summarizeOrgAdminAlertFailureFallbackMutes(
     const key = email.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    // The "muted by N admins" count we surface is intentionally limited
-    // to admins who *would otherwise* have been on the realtime fan-out;
-    // admins already excluded (summary-channel none, legacy email
-    // opt-out, fallback fully disabled, or wrong stream mode) didn't
-    // actively pick a per-channel mute and shouldn't inflate the badge.
+    // The "muted by N admins" / digest counts we surface are intentionally
+    // limited to admins who *would otherwise* have been eligible for the
+    // alert-failure fallback; admins already excluded (summary-channel
+    // none, legacy email opt-out, fallback fully disabled) didn't actively
+    // pick a per-channel mute or stream-mode and shouldn't inflate the
+    // badge.
     if (r.backfillChannel === "none") continue;
     if (r.emailEnabled === false) continue;
     if (r.fallbackEnabled === false) continue;
+
+    // Task #1100 — digest counts are computed independently of the
+    // realtime stream filter so we can tell admins reviewing the page
+    // whether the daily digest fallback would have caught the channel
+    // failure when the realtime fan-out was silenced. The digest is
+    // org-wide (not per-channel), so per-channel mute switches don't
+    // factor in here — only the alert-failure-email mode does.
+    if (alertFailureEmailModeAllows(r.alertFailureEmailMode, "digest")) {
+      summary.digest.eligibleRecipientCount += 1;
+    } else {
+      summary.digest.streamMutedAdminCount += 1;
+    }
+
     if (!alertFailureEmailModeAllows(r.alertFailureEmailMode, "realtime")) {
       continue;
     }

@@ -1,23 +1,24 @@
 /**
- * Task #1101 — storage-level coverage for
- * `summarizeOrgAdminAlertFailureFallbackMutes`.
+ * Storage-level coverage for `summarizeOrgAdminAlertFailureFallbackMutes`.
  *
- * The UI side of the per-channel mute summary (Task #1079) is already
- * exercised in `admin-transcript-backfill-fallback-suppressed.test.tsx`
- * and the route wiring lives in `crmCallsRoutes.ts`, but the storage
- * helper itself only had implicit coverage. This suite locks in each
- * exclusion path the helper claims to mirror from
- * `listOrgAdminsForAlertFailureFallback`:
+ * Task #1101 — locks in each per-channel exclusion path the helper claims
+ * to mirror from `listOrgAdminsForAlertFailureFallback`:
  *   - `crmBackfillSummaryChannel = "none"`
  *   - legacy `notification_channel_prefs.email_enabled = false`
  *   - `crmAlertFailureFallbackEnabled = false`
  *   - `alertFailureEmailMode` not allowing the realtime stream
  *   - `crmAlertFailureFallbackMutedChannels` containing the channel
- *
- * We additionally cross-check the resulting `effectiveRecipientCount`
+ * It additionally cross-checks the resulting `effectiveRecipientCount`
  * against the actual fan-out returned by
  * `listOrgAdminsForAlertFailureFallback(orgId, channel)` so a future
  * refactor of either function can't silently drift the badge.
+ *
+ * Task #1100 — adds coverage for the org-wide `digest` rollup the helper
+ * also returns so the admin transcript-backfill page can flag "the daily
+ * digest fallback was silenced too" when nobody is opted into the digest
+ * stream. The digest counters live alongside the per-channel realtime
+ * counters and follow the same baseline filters but are independent of
+ * the per-channel mute switch (the daily digest is per-org).
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
@@ -122,6 +123,7 @@ describe("summarizeOrgAdminAlertFailureFallbackMutes (Task #1101)", () => {
     expect(summary).toEqual({
       slack: { mutedAdminCount: 0, effectiveRecipientCount: 0 },
       email: { mutedAdminCount: 0, effectiveRecipientCount: 0 },
+      digest: { eligibleRecipientCount: 0, streamMutedAdminCount: 0 },
     });
   });
 
@@ -274,9 +276,13 @@ describe("summarizeOrgAdminAlertFailureFallbackMutes (Task #1101)", () => {
     });
 
     const summary = await summarizeOrgAdminAlertFailureFallbackMutes(orgId);
-    expect(summary).toEqual({
-      slack: { mutedAdminCount: 0, effectiveRecipientCount: 1 },
-      email: { mutedAdminCount: 0, effectiveRecipientCount: 1 },
+    expect(summary.slack).toEqual({
+      mutedAdminCount: 0,
+      effectiveRecipientCount: 1,
+    });
+    expect(summary.email).toEqual({
+      mutedAdminCount: 0,
+      effectiveRecipientCount: 1,
     });
   });
 
@@ -376,5 +382,81 @@ describe("summarizeOrgAdminAlertFailureFallbackMutes (Task #1101)", () => {
       mutedAdminCount: 2,
       effectiveRecipientCount: 3,
     });
+  });
+});
+
+describe("summarizeOrgAdminAlertFailureFallbackMutes — digest counters (Task #1100)", () => {
+  it("counts only realtime/none modes as digest-stream-muted", async () => {
+    await seedUser({ label: "both", alertFailureEmailMode: "both" });
+    await seedUser({ label: "digest", alertFailureEmailMode: "digest" });
+    await seedUser({ label: "realtime", alertFailureEmailMode: "realtime" });
+    await seedUser({ label: "none", alertFailureEmailMode: "none" });
+
+    const summary = await summarizeOrgAdminAlertFailureFallbackMutes(orgId);
+
+    // both + digest → eligible (2); realtime + none → stream-muted (2)
+    expect(summary.digest.eligibleRecipientCount).toBe(2);
+    expect(summary.digest.streamMutedAdminCount).toBe(2);
+  });
+
+  it("excludes admins already filtered by baseline rules from both digest counters", async () => {
+    // Eligible admin to keep the org non-empty.
+    await seedUser({ label: "keep", alertFailureEmailMode: "both" });
+    // Excluded by baseline filters → must not contribute to either bucket.
+    await seedUser({
+      label: "channel-none",
+      alertFailureEmailMode: "none",
+      backfillChannel: "none",
+    });
+    await seedUser({
+      label: "fallback-off",
+      alertFailureEmailMode: "realtime",
+      fallbackEnabled: false,
+    });
+    await seedUser({
+      label: "legacy-off",
+      alertFailureEmailMode: "digest",
+      legacyEmailEnabled: false,
+    });
+    await seedUser({
+      label: "field-worker",
+      role: "FIELD_WORKER",
+      alertFailureEmailMode: "none",
+    });
+    await seedUser({
+      label: "inactive",
+      isActive: false,
+      alertFailureEmailMode: "realtime",
+    });
+
+    const summary = await summarizeOrgAdminAlertFailureFallbackMutes(orgId);
+
+    expect(summary.digest.eligibleRecipientCount).toBe(1);
+    expect(summary.digest.streamMutedAdminCount).toBe(0);
+  });
+
+  it("ignores per-channel mute switch when computing digest counters", async () => {
+    // Two admins on `digest`, one with the slack channel muted.
+    await seedUser({ label: "d1", alertFailureEmailMode: "digest" });
+    await seedUser({
+      label: "d2",
+      alertFailureEmailMode: "digest",
+      fallbackMutedChannels: ["slack"],
+    });
+    // One admin opted out of the digest stream entirely.
+    await seedUser({ label: "r1", alertFailureEmailMode: "realtime" });
+
+    const summary = await summarizeOrgAdminAlertFailureFallbackMutes(orgId);
+
+    // Both digest admins still count toward eligibility regardless of the
+    // per-channel mute, since the digest is per-org.
+    expect(summary.digest.eligibleRecipientCount).toBe(2);
+    expect(summary.digest.streamMutedAdminCount).toBe(1);
+  });
+
+  it("returns zeroed digest counters for an org with no eligible admins", async () => {
+    const summary = await summarizeOrgAdminAlertFailureFallbackMutes(orgId);
+    expect(summary.digest.eligibleRecipientCount).toBe(0);
+    expect(summary.digest.streamMutedAdminCount).toBe(0);
   });
 });
