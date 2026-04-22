@@ -299,12 +299,30 @@ export default function MyWorkPage() {
   const [selectedItem, setSelectedItem] = useState<MyWorkItem | null>(null);
 
   const sourceParam = filters.sources.length > 0 ? filters.sources.join(",") : "";
+  const projectsParam = filters.projects.length > 0 ? filters.projects.join(",") : "";
+
+  // Debounce the search input so we don't fire a new query on every keystroke.
+  const [searchDebounced, setSearchDebounced] = useState(filters.search);
+  useEffect(() => {
+    const h = setTimeout(() => setSearchDebounced(filters.search), 250);
+    return () => clearTimeout(h);
+  }, [filters.search]);
+
   const queryKey: readonly unknown[] = useMemo(
     () => [
       "/api/me/work",
-      { source: sourceParam, status: filters.status, team: teamMode ? "direct-reports" : "" },
+      {
+        source: sourceParam,
+        status: filters.status,
+        team: teamMode ? "direct-reports" : "",
+        search: searchDebounced,
+        priority: filters.priority,
+        projects: projectsParam,
+        dueFrom: filters.dueFrom ?? "",
+        dueTo: filters.dueTo ?? "",
+      },
     ],
-    [sourceParam, filters.status, teamMode],
+    [sourceParam, filters.status, teamMode, searchDebounced, filters.priority, projectsParam, filters.dueFrom, filters.dueTo],
   );
 
   const { data, isLoading } = useQuery<MyWorkResponse>({
@@ -314,6 +332,11 @@ export default function MyWorkPage() {
       if (sourceParam) params.set("source", sourceParam);
       params.set("status", filters.status);
       if (teamMode) params.set("team", "direct-reports");
+      if (searchDebounced) params.set("search", searchDebounced);
+      if (filters.priority && filters.priority !== "ALL") params.set("priority", filters.priority);
+      if (projectsParam) params.set("projects", projectsParam);
+      if (filters.dueFrom) params.set("dueFrom", filters.dueFrom);
+      if (filters.dueTo) params.set("dueTo", filters.dueTo);
       const res = await fetch(`/api/me/work?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load work");
       return res.json();
@@ -398,29 +421,9 @@ export default function MyWorkPage() {
     }
   };
 
-  // Filtering done client-side for project, search, priority, due-date range.
-  const items = useMemo(() => {
-    if (!data) return [] as MyWorkItem[];
-    return data.items.filter((it) => {
-      if (filters.search) {
-        const q = filters.search.toLowerCase();
-        if (!it.title.toLowerCase().includes(q) && !(it.description ?? "").toLowerCase().includes(q)) return false;
-      }
-      if (filters.priority !== "ALL" && (it.priority ?? "").toUpperCase() !== filters.priority) return false;
-      if (filters.projects.length > 0 && !(it.projectId && filters.projects.includes(it.projectId))) return false;
-      if (filters.dueFrom) {
-        if (!it.dueDate) return false;
-        if (new Date(it.dueDate) < new Date(filters.dueFrom)) return false;
-      }
-      if (filters.dueTo) {
-        if (!it.dueDate) return false;
-        const to = new Date(filters.dueTo);
-        to.setHours(23, 59, 59, 999);
-        if (new Date(it.dueDate) > to) return false;
-      }
-      return true;
-    });
-  }, [data, filters]);
+  // All filtering (search, priority, projects, due-date range, source, status)
+  // is applied server-side — we just render whatever the API returns.
+  const items = useMemo(() => (data?.items ?? []) as MyWorkItem[], [data]);
 
   const counts = data?.counts;
 
