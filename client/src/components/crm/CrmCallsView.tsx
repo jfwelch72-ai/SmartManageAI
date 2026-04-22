@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,13 @@ import {
 import { Phone, PhoneIncoming, PhoneOutgoing, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+interface OrgUser {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+}
 
 interface CrmCallRow {
   id: string;
@@ -76,15 +83,49 @@ export function CrmCallsView() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<string>("ALL");
+  const [ownerFilter, setOwnerFilter] = useState<string>("ALL");
+  const [directionFilter, setDirectionFilter] = useState<string>("ALL");
+  const [startedAfter, setStartedAfter] = useState<string>("");
+  const [startedBefore, setStartedBefore] = useState<string>("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkOutcome, setBulkOutcome] = useState<string>("__keep__");
   const [bulkNotes, setBulkNotes] = useState<string>("");
   const [bulkNotesEnabled, setBulkNotesEnabled] = useState(false);
 
+  const { data: users } = useQuery<OrgUser[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const queryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("limit", "500");
+    if (ownerFilter !== "ALL") params.set("ownerId", ownerFilter);
+    if (directionFilter !== "ALL") params.set("direction", directionFilter);
+    if (startedAfter) {
+      const d = new Date(startedAfter);
+      if (!isNaN(d.getTime())) params.set("startedAfter", d.toISOString());
+    }
+    if (startedBefore) {
+      const d = new Date(startedBefore);
+      if (!isNaN(d.getTime())) {
+        // Inclusive end-of-day
+        d.setHours(23, 59, 59, 999);
+        params.set("startedBefore", d.toISOString());
+      }
+    }
+    return params.toString();
+  }, [ownerFilter, directionFilter, startedAfter, startedBefore]);
+
+  // When server-side filters change, clear the selection so bulk actions can
+  // never apply to rows that are no longer visible after filtering.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [queryParams]);
+
   const { data: calls, isLoading } = useQuery<CrmCallRow[]>({
-    queryKey: ["/api/crm/calls"],
+    queryKey: ["/api/crm/calls", queryParams],
     queryFn: async () => {
-      const res = await fetch("/api/crm/calls?limit=500", { credentials: "include" });
+      const res = await fetch(`/api/crm/calls?${queryParams}`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -212,16 +253,16 @@ export function CrmCallsView() {
               </Badge>
             )}
           </CardTitle>
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2">
             <Input
               placeholder="Search notes, numbers, owner..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full sm:w-64"
+              className="w-full sm:w-56"
               data-testid="input-search-calls"
             />
             <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
-              <SelectTrigger className="w-full sm:w-44" data-testid="select-outcome-filter">
+              <SelectTrigger className="w-full sm:w-40" data-testid="select-outcome-filter">
                 <SelectValue placeholder="All outcomes" />
               </SelectTrigger>
               <SelectContent>
@@ -233,6 +274,68 @@ export function CrmCallsView() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={directionFilter} onValueChange={setDirectionFilter}>
+              <SelectTrigger className="w-full sm:w-36" data-testid="select-direction-filter">
+                <SelectValue placeholder="All directions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All directions</SelectItem>
+                <SelectItem value="INBOUND">Inbound</SelectItem>
+                <SelectItem value="OUTBOUND">Outbound</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+              <SelectTrigger className="w-full sm:w-44" data-testid="select-owner-filter">
+                <SelectValue placeholder="All owners" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All owners</SelectItem>
+                {(users ?? []).map((u) => {
+                  const name =
+                    [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+                    u.email ||
+                    u.id;
+                  return (
+                    <SelectItem key={u.id} value={u.id}>
+                      {name}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1">
+              <Input
+                type="date"
+                value={startedAfter}
+                onChange={(e) => setStartedAfter(e.target.value)}
+                className="w-full sm:w-40"
+                data-testid="input-started-after"
+                aria-label="From date"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={startedBefore}
+                onChange={(e) => setStartedBefore(e.target.value)}
+                className="w-full sm:w-40"
+                data-testid="input-started-before"
+                aria-label="To date"
+              />
+              {(startedAfter || startedBefore) && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => {
+                    setStartedAfter("");
+                    setStartedBefore("");
+                  }}
+                  data-testid="button-clear-dates"
+                  aria-label="Clear date range"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
         {selected.size > 0 && (

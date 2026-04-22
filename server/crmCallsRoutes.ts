@@ -102,12 +102,28 @@ router.get(
       const opportunityId = req.query.opportunityId as string | undefined;
       const contactId = req.query.contactId as string | undefined;
       const crmOrganisationId = req.query.crmOrganisationId as string | undefined;
+      const ownerId = req.query.ownerId as string | undefined;
+      const directionParam = req.query.direction as string | undefined;
+      const startedAfterRaw = req.query.startedAfter as string | undefined;
+      const startedBeforeRaw = req.query.startedBefore as string | undefined;
       const limit = Math.min(parseInt((req.query.limit as string) || "100", 10), 500);
 
       const conds: SQL[] = [eq(crmCalls.organizationId, orgId)];
       if (opportunityId) conds.push(eq(crmCalls.opportunityId, opportunityId));
       if (contactId) conds.push(eq(crmCalls.contactId, contactId));
       if (crmOrganisationId) conds.push(eq(crmCalls.crmOrganisationId, crmOrganisationId));
+      if (ownerId) conds.push(eq(crmCalls.createdById, ownerId));
+      if (directionParam === "INBOUND" || directionParam === "OUTBOUND") {
+        conds.push(eq(crmCalls.direction, directionParam));
+      }
+      if (startedAfterRaw) {
+        const d = new Date(startedAfterRaw);
+        if (!isNaN(d.getTime())) conds.push(gte(crmCalls.startedAt, d));
+      }
+      if (startedBeforeRaw) {
+        const d = new Date(startedBeforeRaw);
+        if (!isNaN(d.getTime())) conds.push(lte(crmCalls.startedAt, d));
+      }
 
       const rows = await db
         .select({
