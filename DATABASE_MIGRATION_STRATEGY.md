@@ -95,6 +95,43 @@ ALTER TABLE "projects" ADD COLUMN "estimated_completion_date" timestamp;
 
 ---
 
+## Test Database Sync
+
+The vitest suite ships its own schema-sync bootstrap so tests do not fail
+in fresh environments where the local database is missing recently-added
+columns or enum values.
+
+**File**: `server/__tests__/globalSetup.ts`
+
+What it does, in order, before any test file is loaded:
+
+1. **Apply idempotent SQL migrations** (always runs, even when
+   `SKIP_TEST_DB_PUSH=1`). These are listed in
+   `REQUIRED_IDEMPOTENT_MIGRATIONS` and live under `migrations/`. They
+   exist to capture schema fixes that would otherwise have to be
+   hand-applied with `ALTER TABLE` / `ALTER TYPE` (e.g. new enum values,
+   new nullable columns) so a fresh DB has them without waiting for the
+   slower full `drizzle-kit push` to finish.
+2. **Run `drizzle-kit push --force`** to bring the rest of the schema in
+   line with `shared/schema/*` (skipped when the cached schema hash is
+   unchanged or `SKIP_TEST_DB_PUSH=1` is set).
+
+When you patch the local DB with a manual `ALTER TABLE` / `ALTER TYPE` to
+unblock a test, you **must** also:
+
+1. Add the same change to the appropriate file under `shared/schema/`.
+2. Add an idempotent SQL file under `migrations/` (use `IF NOT EXISTS`,
+   `ADD VALUE IF NOT EXISTS`, `CREATE TYPE ... EXCEPTION WHEN
+   duplicate_object`).
+3. Append the new file to `REQUIRED_IDEMPOTENT_MIGRATIONS` in
+   `server/__tests__/globalSetup.ts` and to the matching list inside
+   `scripts/post-merge.sh`.
+
+This guarantees that the next contributor / CI run picks up the change
+without anyone having to know it existed.
+
+---
+
 ## Manual Migrations (When Needed)
 
 ### Existing Manual Migration
