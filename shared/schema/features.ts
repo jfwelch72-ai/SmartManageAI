@@ -9951,3 +9951,36 @@ export const ganttPdfAlertDeliveries = pgTable("gantt_pdf_alert_deliveries", {
 export const insertGanttPdfAlertDeliverySchema = createInsertSchema(ganttPdfAlertDeliveries).omit({ id: true, createdAt: true });
 export type InsertGanttPdfAlertDelivery = z.infer<typeof insertGanttPdfAlertDeliverySchema>;
 export type GanttPdfAlertDelivery = typeof ganttPdfAlertDeliveries.$inferSelect;
+
+// ============================================
+// PORTFOLIO PDF ALERT RECIPIENTS (Task #940)
+// Mirrors gantt_pdf_alert_recipients — operator-managed recipient list for
+// portfolio PDF availability/failure alerts.
+// ============================================
+export const portfolioPdfAlertRecipients = pgTable("portfolio_pdf_alert_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  notifyInApp: boolean("notify_in_app").notNull().default(true),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertPortfolioPdfAlertRecipientSchema = createInsertSchema(portfolioPdfAlertRecipients).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPortfolioPdfAlertRecipient = z.infer<typeof insertPortfolioPdfAlertRecipientSchema>;
+export type PortfolioPdfAlertRecipient = typeof portfolioPdfAlertRecipients.$inferSelect;
+
+export const portfolioPdfAlertDeliveries = pgTable("portfolio_pdf_alert_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  kind: text("kind").notNull(),
+  recipients: text("recipients").array().notNull(),
+  recipientCount: integer("recipient_count").notNull(),
+  emailSuccess: boolean("email_success").notNull(),
+  errorMessage: text("error_message"),
+  triggeredBy: text("triggered_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  createdAtIdx: index("portfolio_pdf_alert_deliveries_created_at_idx").on(t.createdAt),
+}));
+export const insertPortfolioPdfAlertDeliverySchema = createInsertSchema(portfolioPdfAlertDeliveries).omit({ id: true, createdAt: true });
+export type InsertPortfolioPdfAlertDelivery = z.infer<typeof insertPortfolioPdfAlertDeliverySchema>;
+export type PortfolioPdfAlertDelivery = typeof portfolioPdfAlertDeliveries.$inferSelect;

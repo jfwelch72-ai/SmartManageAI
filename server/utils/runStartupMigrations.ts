@@ -73,6 +73,7 @@ import { ensureProjectTemplateTables } from "./ensureProjectTemplateTables";
 import { ensureCrmCallTables } from "./ensureCrmCallTables";
 import { ensureProjectsRollupColumns } from "./ensureProjectsRollupColumns";
 import { ensureGanttPdfAlertTables } from "./ensureGanttPdfAlertTables";
+import { ensurePortfolioPdfAlertTables } from "./ensurePortfolioPdfAlertTables";
 import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
@@ -156,6 +157,7 @@ const migrations: MigrationStep[] = [
   { name: "crm_call_tables", category: "CREATE_TABLE", fn: ensureCrmCallTables },
   { name: "projects_rollup_columns", category: "ADD_COLUMN", fn: ensureProjectsRollupColumns },
   { name: "gantt_pdf_alert_tables", category: "CREATE_TABLE", fn: ensureGanttPdfAlertTables },
+  { name: "portfolio_pdf_alert_tables", category: "CREATE_TABLE", fn: ensurePortfolioPdfAlertTables },
   { name: "project_kpi_snapshots_table", category: "CREATE_TABLE", fn: ensureProjectKpiSnapshotsTable },
 ];
 

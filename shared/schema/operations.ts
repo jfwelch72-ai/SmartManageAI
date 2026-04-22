@@ -3489,3 +3489,23 @@ export const insertProjectTemplateVersionSchema = createInsertSchema(projectTemp
 export type InsertProjectTemplateVersion = z.infer<typeof insertProjectTemplateVersionSchema>;
 export type ProjectTemplateVersion = typeof projectTemplateVersions.$inferSelect;
 
+
+// ============================================
+// PORTFOLIO PDF RENDER SAMPLES (Task #940)
+// One row per portfolio summary PDF render attempt; lets the alert monitor
+// compute rolling failure rate and durations after restarts.
+// ============================================
+export const portfolioPdfRenderSamples = pgTable("portfolio_pdf_render_samples", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  startedAt: timestamp("started_at").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  success: boolean("success").notNull(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  startedAtIdx: index("portfolio_pdf_render_samples_started_at_idx").on(table.startedAt),
+}));
+
+export const insertPortfolioPdfRenderSampleSchema = createInsertSchema(portfolioPdfRenderSamples).omit({ id: true, createdAt: true });
+export type InsertPortfolioPdfRenderSample = z.infer<typeof insertPortfolioPdfRenderSampleSchema>;
+export type PortfolioPdfRenderSample = typeof portfolioPdfRenderSamples.$inferSelect;

@@ -22,7 +22,24 @@ import {
   renderPortfolioSummaryPdf,
   isAllowedAssetUrl,
   getPortfolioRendererStatus,
+  getPortfolioPdfHistory,
+  getPortfolioPdfAlertConfig,
+  updatePortfolioPdfAlertConfig,
+  getPortfolioPdfAlertState,
+  evaluatePortfolioPdfAlerts,
 } from "./portfolio-pdf-service";
+import {
+  getPortfolioPdfAlertRecipientConfig,
+  listPortfolioPdfAlertRecipients,
+  addPortfolioPdfAlertRecipient,
+  updatePortfolioPdfAlertRecipient,
+  deletePortfolioPdfAlertRecipient,
+  sendPortfolioPdfTestAlert,
+  listPortfolioPdfAlertDeliveries,
+  clearPortfolioPdfAlertDeliveries,
+  PORTFOLIO_PDF_ALERT_DELIVERIES_RETENTION_MS,
+} from "./portfolio-pdf-alerts";
+import { z } from "zod";
 import { getOrganizationBranding } from "./organizationBranding";
 
 const router = Router();
@@ -1087,7 +1104,312 @@ router.get(
         available: status.available,
         error: status.error,
         lastCheckedAt: status.lastCheckedAt,
+        cachedBrowser: status.cachedBrowser,
       });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ===========================================================================
+// Portfolio PDF render history + failure-rate / availability alerting
+// (Task #940 — mirrors /api/admin/gantt-pdf/* for portfolio summary PDFs)
+// ===========================================================================
+
+router.get(
+  "/api/admin/portfolio-pdf/history",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      res.json(getPortfolioPdfHistory());
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+const updatePortfolioAlertConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  evaluationWindowMs: z.number().int().min(60_000).max(24 * 60 * 60 * 1000).optional(),
+  minSamples: z.number().int().min(1).max(1000).optional(),
+  failureRatePct: z.number().min(0).max(100).optional(),
+  avgDurationMs: z.number().int().min(0).max(10 * 60 * 1000).optional(),
+  maxDurationMs: z.number().int().min(0).max(30 * 60 * 1000).optional(),
+  cooldownMs: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional(),
+});
+
+router.get(
+  "/api/admin/portfolio-pdf/alerts",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const recipients = await getPortfolioPdfAlertRecipientConfig();
+      res.json({
+        config: getPortfolioPdfAlertConfig(),
+        state: getPortfolioPdfAlertState(),
+        recipients,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.put(
+  "/api/admin/portfolio-pdf/alerts",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const parsed = updatePortfolioAlertConfigSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res
+          .status(400)
+          .json({ error: "Invalid alert config", details: parsed.error.flatten() });
+      }
+      const config = updatePortfolioPdfAlertConfig(parsed.data);
+      evaluatePortfolioPdfAlerts();
+      const recipients = await getPortfolioPdfAlertRecipientConfig();
+      res.json({ config, state: getPortfolioPdfAlertState(), recipients });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  "/api/admin/portfolio-pdf/alerts/evaluate",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const event = evaluatePortfolioPdfAlerts();
+      res.json({ triggered: event !== null, event, state: getPortfolioPdfAlertState() });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+const portfolioRecipientEmailSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(254)
+  .email("Must be a valid email address");
+
+const createPortfolioRecipientSchema = z.object({
+  email: portfolioRecipientEmailSchema,
+  notifyInApp: z.boolean().optional(),
+});
+
+const updatePortfolioRecipientSchema = z
+  .object({
+    email: portfolioRecipientEmailSchema.optional(),
+    notifyInApp: z.boolean().optional(),
+  })
+  .refine((v) => v.email !== undefined || v.notifyInApp !== undefined, {
+    message: "At least one of email or notifyInApp is required",
+  });
+
+router.get(
+  "/api/admin/portfolio-pdf/alert-recipients",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const [rows, config] = await Promise.all([
+        listPortfolioPdfAlertRecipients(),
+        getPortfolioPdfAlertRecipientConfig(),
+      ]);
+      res.json({ recipients: rows, config });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  "/api/admin/portfolio-pdf/alert-recipients",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const parsed = createPortfolioRecipientSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res
+          .status(400)
+          .json({ error: "Invalid recipient", details: parsed.error.flatten() });
+      }
+      try {
+        const row = await addPortfolioPdfAlertRecipient(parsed.data);
+        res.status(201).json({ recipient: row });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/duplicate key|unique/i.test(msg)) {
+          return res
+            .status(409)
+            .json({ error: "A recipient with that email already exists" });
+        }
+        throw err;
+      }
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  "/api/admin/portfolio-pdf/alert-recipients/:id",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const parsed = updatePortfolioRecipientSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res
+          .status(400)
+          .json({ error: "Invalid update", details: parsed.error.flatten() });
+      }
+      try {
+        const row = await updatePortfolioPdfAlertRecipient(req.params.id, parsed.data);
+        if (!row) return res.status(404).json({ error: "Recipient not found" });
+        res.json({ recipient: row });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/duplicate key|unique/i.test(msg)) {
+          return res
+            .status(409)
+            .json({ error: "A recipient with that email already exists" });
+        }
+        throw err;
+      }
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  "/api/admin/portfolio-pdf/alert-recipients/test",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const triggeredBy = req.user?.email || req.user?.id || null;
+      const result = await sendPortfolioPdfTestAlert({ triggeredBy });
+      if (result.recipientCount === 0) {
+        return res.status(409).json({
+          error:
+            "No recipients are currently configured. Add a recipient, set PORTFOLIO_PDF_ALERT_EMAILS, or ensure an active super admin exists.",
+          recipientCount: 0,
+          sentAt: result.sentAt,
+        });
+      }
+      res.json({
+        ok: true,
+        recipientCount: result.recipientCount,
+        recipients: result.recipients,
+        sentAt: result.sentAt,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  "/api/admin/portfolio-pdf/alert-recipients/:id",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const removed = await deletePortfolioPdfAlertRecipient(req.params.id);
+      if (!removed) return res.status(404).json({ error: "Recipient not found" });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+const ALLOWED_PORTFOLIO_DELIVERY_KINDS = new Set([
+  "renderer_unavailable",
+  "renderer_recovered",
+  "browser_disconnected",
+  "failure_rate",
+  "test_alert",
+]);
+
+function parsePortfolioDeliveryKindsParam(raw: unknown): string[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const values = Array.isArray(raw) ? raw : String(raw).split(",");
+  const cleaned = values
+    .map((v) => String(v).trim())
+    .filter((v) => v.length > 0 && ALLOWED_PORTFOLIO_DELIVERY_KINDS.has(v));
+  return cleaned.length > 0 ? Array.from(new Set(cleaned)) : undefined;
+}
+
+function parsePortfolioDeliverySuccessParam(raw: unknown): boolean | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const v = String(raw).toLowerCase();
+  if (v === "true" || v === "success" || v === "delivered" || v === "1") return true;
+  if (v === "false" || v === "failed" || v === "failure" || v === "0") return false;
+  return undefined;
+}
+
+router.get(
+  "/api/admin/portfolio-pdf/alert-deliveries",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const limitRaw = Number(req.query.limit);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 20;
+      const kinds = parsePortfolioDeliveryKindsParam(req.query.kind);
+      const emailSuccess = parsePortfolioDeliverySuccessParam(req.query.success);
+      const sinceMsRaw = Number(req.query.sinceMs);
+      const sinceMs =
+        Number.isFinite(sinceMsRaw) && sinceMsRaw > 0 ? sinceMsRaw : undefined;
+      const deliveries = await listPortfolioPdfAlertDeliveries({
+        limit,
+        kinds,
+        emailSuccess,
+        sinceMs,
+      });
+      res.json({
+        deliveries,
+        retentionMs: PORTFOLIO_PDF_ALERT_DELIVERIES_RETENTION_MS,
+        filters: {
+          kinds: kinds ?? null,
+          emailSuccess: emailSuccess ?? null,
+          sinceMs: sinceMs ?? null,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  "/api/admin/portfolio-pdf/alert-deliveries",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const olderThanMsRaw = Number(req.query.olderThanMs);
+      const olderThanMs =
+        Number.isFinite(olderThanMsRaw) && olderThanMsRaw > 0
+          ? olderThanMsRaw
+          : undefined;
+      const removed = await clearPortfolioPdfAlertDeliveries(
+        olderThanMs ? { olderThanMs } : undefined,
+      );
+      res.json({ ok: true, removed, olderThanMs: olderThanMs ?? null });
     } catch (error) {
       next(error);
     }

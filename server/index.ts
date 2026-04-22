@@ -33,7 +33,11 @@ import { seedBuiltInPresets } from "./dashboardRoutes";
 import { persistErrorLog } from "./services/errorLogService";
 import { getIntegrationStatus } from "./services/integrationStatusService";
 import { initializeGanttPdfHistory } from "./gantt-pdf-service";
-import { checkPortfolioRendererAtStartup } from "./portfolio-pdf-service";
+import {
+  checkPortfolioRendererAtStartup,
+  initializePortfolioPdfHistory,
+} from "./portfolio-pdf-service";
+import { startPortfolioPdfHealthMonitor } from "./portfolio-pdf-alerts";
 
 process.on("uncaughtException", (err) => {
   logError("Uncaught exception", {}, err);
@@ -273,6 +277,7 @@ app.use((req, res, next) => {
   onGanttPdfQueueFull(() => reportGanttPdfQueueFull());
   onGanttPdfBrowserDisconnected((at) => reportGanttPdfBrowserDisconnected(at));
   startGanttPdfHealthMonitor();
+  startPortfolioPdfHealthMonitor();
 
   // One-time idempotent backfill: any org row with NULL/empty feature_flags
   // gets the full all-enabled set. No-op once data is populated. Runs in all
@@ -318,6 +323,12 @@ app.use((req, res, next) => {
   // of silently degrading to an HTML export.
   checkPortfolioRendererAtStartup().catch((err) => {
     logError("Portfolio PDF renderer startup check failed", {}, err instanceof Error ? err : new Error(String(err)));
+  });
+
+  // Hydrate persisted Portfolio PDF render history so the admin chart and
+  // failure-rate evaluator have data after restarts/deployments.
+  initializePortfolioPdfHistory().catch((err) => {
+    logError("Failed to initialize Portfolio PDF render history", {}, err instanceof Error ? err : new Error(String(err)));
   });
 
   // Task #805 — populate status component health on every cold start so the
