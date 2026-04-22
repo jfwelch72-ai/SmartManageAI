@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { useEffect, useState } from "react";
-import { Shield, Lock, Database, Cloud, AlertTriangle, FileText, CheckCircle2, ExternalLink, Mail, Clock } from "lucide-react";
+import { Shield, Lock, Database, Cloud, AlertTriangle, FileText, CheckCircle2, ExternalLink, Mail, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 function PageShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   useEffect(() => {
@@ -237,23 +238,197 @@ export function SubProcessorsPage() {
   );
 }
 
-type StatusLevel = "operational" | "degraded" | "outage" | "maintenance";
+type StatusLevel = "operational" | "degraded" | "outage" | "maintenance" | "unknown";
 
-const COMPONENTS: Array<{ name: string; level: StatusLevel; note?: string }> = [
-  { name: "Web application", level: "operational" },
-  { name: "API", level: "operational" },
-  { name: "Database", level: "operational" },
-  { name: "File uploads & downloads", level: "operational" },
-  { name: "Email & notifications", level: "operational" },
-  { name: "AI features", level: "operational" },
-];
+type StatusComponent = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  status: StatusLevel;
+  uptime24h: number | null;
+  uptime30d: number | null;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+};
+
+type IncidentUpdate = { id: string; status: string; body: string; createdAt: string };
+type Incident = {
+  id: string;
+  title: string;
+  status: "INVESTIGATING" | "IDENTIFIED" | "MONITORING" | "RESOLVED";
+  impact: "NONE" | "MINOR" | "MAJOR" | "CRITICAL";
+  affectedComponents: string[];
+  startedAt: string;
+  resolvedAt: string | null;
+  postmortemUrl: string | null;
+  postmortem: string | null;
+  updates: IncidentUpdate[];
+};
+
+type StatusSummary = {
+  overall: StatusLevel;
+  components: StatusComponent[];
+  incidents: Incident[];
+  activeIncident: Incident | null;
+  generatedAt: string;
+};
 
 const STATUS_STYLES: Record<StatusLevel, { label: string; cls: string }> = {
   operational: { label: "Operational", cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30" },
   degraded:    { label: "Degraded",    cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30" },
   outage:      { label: "Outage",      cls: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30" },
   maintenance: { label: "Maintenance", cls: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30" },
+  unknown:     { label: "Awaiting probe", cls: "bg-muted text-muted-foreground border-border" },
 };
+
+const IMPACT_STYLES: Record<Incident["impact"], string> = {
+  NONE: "bg-muted text-muted-foreground border-border",
+  MINOR: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  MAJOR: "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30",
+  CRITICAL: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
+};
+
+function fmtUptime(value: number | null): string {
+  if (value == null) return "—";
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function fmtRelative(iso: string | null, now: Date): string {
+  if (!iso) return "never";
+  const ms = now.getTime() - new Date(iso).getTime();
+  if (ms < 0) return "just now";
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
+}
+
+function SubscribeForm() {
+  const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot
+  const [state, setState] = useState<"idle" | "submitting" | "ok" | "error">("idle");
+  const [message, setMessage] = useState<string>("");
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setState("submitting");
+    setMessage("");
+    try {
+      const res = await fetch("/api/public/status/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, website }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "Subscription failed");
+      }
+      const data = await res.json();
+      setState("ok");
+      setMessage(data.alreadyConfirmed ? "You're already subscribed." : "Check your email to confirm your subscription.");
+      setEmail("");
+    } catch (err: any) {
+      setState("error");
+      setMessage(err?.message || "Subscription failed");
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="rounded-lg border border-border bg-card p-4" data-testid="form-status-subscribe">
+      <div className="text-sm font-medium mb-2 flex items-center gap-2">
+        <Mail className="w-4 h-4" /> Subscribe to incident notifications
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        Get an email when we open, update, or resolve a status incident. No marketing.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="email"
+          required
+          placeholder="you@company.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
+          data-testid="input-subscribe-email"
+        />
+        {/* Honeypot */}
+        <input type="text" name="website" value={website} onChange={(e) => setWebsite(e.target.value)} className="hidden" tabIndex={-1} autoComplete="off" />
+        <button
+          type="submit"
+          disabled={state === "submitting"}
+          className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          data-testid="button-subscribe-submit"
+        >
+          {state === "submitting" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Subscribe"}
+        </button>
+      </div>
+      {message && (
+        <div
+          className={`mt-2 text-xs ${state === "error" ? "text-red-600 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}
+          data-testid="text-subscribe-message"
+        >
+          {message}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function IncidentCard({ incident }: { incident: Incident }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4" data-testid={`incident-${incident.id}`}>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="font-semibold text-sm" data-testid={`text-incident-title-${incident.id}`}>{incident.title}</div>
+          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+            <Clock className="w-3 h-3" /> Started {new Date(incident.startedAt).toLocaleString()}
+            {incident.resolvedAt && <> &middot; Resolved {new Date(incident.resolvedAt).toLocaleString()}</>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${IMPACT_STYLES[incident.impact]}`}>
+            {incident.impact}
+          </span>
+          <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium bg-muted">
+            {incident.status}
+          </span>
+        </div>
+      </div>
+
+      {incident.affectedComponents.length > 0 && (
+        <div className="text-xs text-muted-foreground mt-2">
+          Affected: {incident.affectedComponents.join(", ")}
+        </div>
+      )}
+
+      {incident.updates.length > 0 && (
+        <div className="mt-3 space-y-2 border-t border-border pt-3">
+          {[...incident.updates].reverse().map((u) => (
+            <div key={u.id} className="text-sm" data-testid={`incident-update-${u.id}`}>
+              <div className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{u.status}</span> &middot; {new Date(u.createdAt).toLocaleString()}
+              </div>
+              <div className="whitespace-pre-wrap">{u.body}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(incident.postmortem || incident.postmortemUrl) && (
+        <div className="mt-3 border-t border-border pt-3 text-sm">
+          <div className="font-medium mb-1">Post-mortem</div>
+          {incident.postmortem && <div className="whitespace-pre-wrap text-foreground/90">{incident.postmortem}</div>}
+          {incident.postmortemUrl && (
+            <a href={incident.postmortemUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline text-xs mt-1" data-testid={`link-postmortem-${incident.id}`}>
+              <ExternalLink className="w-3 h-3" /> Read full post-mortem
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function StatusPage() {
   const [now, setNow] = useState(() => new Date());
@@ -262,13 +437,16 @@ export function StatusPage() {
     return () => clearInterval(t);
   }, []);
 
-  const overall: StatusLevel = COMPONENTS.some((c) => c.level === "outage")
-    ? "outage"
-    : COMPONENTS.some((c) => c.level === "degraded")
-    ? "degraded"
-    : COMPONENTS.some((c) => c.level === "maintenance")
-    ? "maintenance"
-    : "operational";
+  const { data, isLoading, isError } = useQuery<StatusSummary>({
+    queryKey: ["/api/public/status/summary"],
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
+  const overall: StatusLevel = data?.overall ?? "unknown";
+  const components = data?.components ?? [];
+  const incidents = data?.incidents ?? [];
+  const activeIncident = data?.activeIncident ?? null;
 
   return (
     <PageShell
@@ -277,25 +455,62 @@ export function StatusPage() {
     >
       <h1 className="text-3xl font-bold mb-2" data-testid="heading-status-title">Service Status</h1>
 
+      {isError && (
+        <div className="mt-2 mb-6 rounded-lg border border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400 px-4 py-3 text-sm" data-testid="text-status-error">
+          Unable to reach the status feed right now. Please refresh in a moment.
+        </div>
+      )}
+
       <div className={`mt-2 mb-8 rounded-lg border px-4 py-3 ${STATUS_STYLES[overall].cls}`} data-testid="status-overall">
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="font-semibold">All systems {STATUS_STYLES[overall].label.toLowerCase()}</span>
+          {overall === "operational" ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+          <span className="font-semibold">
+            {isLoading ? "Loading status…" : overall === "operational" ? "All systems operational" : `Service ${STATUS_STYLES[overall].label.toLowerCase()}`}
+          </span>
         </div>
         <div className="text-xs mt-1 opacity-80 flex items-center gap-1">
           <Clock className="w-3 h-3" /> As of {now.toLocaleString()}
+          {data?.generatedAt && <span className="opacity-70">&middot; data refreshed {fmtRelative(data.generatedAt, now)}</span>}
         </div>
       </div>
 
-      <div className="rounded-lg border border-border divide-y divide-border">
-        {COMPONENTS.map((c) => (
-          <div key={c.name} className="flex items-center justify-between px-4 py-3" data-testid={`status-component-${c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
-            <div>
+      {activeIncident && (
+        <section className="mb-8">
+          <h2 className="text-lg font-semibold mb-2" data-testid="heading-active-incident">Active incident</h2>
+          <IncidentCard incident={activeIncident} />
+        </section>
+      )}
+
+      <div className="rounded-lg border border-border divide-y divide-border" data-testid="list-status-components">
+        {isLoading && (
+          <div className="px-4 py-6 text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading component health…
+          </div>
+        )}
+        {!isLoading && components.length === 0 && (
+          <div className="px-4 py-6 text-sm text-muted-foreground">No components configured yet.</div>
+        )}
+        {components.map((c) => (
+          <div
+            key={c.key}
+            className="flex items-start justify-between gap-3 px-4 py-3"
+            data-testid={`status-component-${c.key}`}
+          >
+            <div className="min-w-0">
               <div className="font-medium text-sm">{c.name}</div>
-              {c.note && <div className="text-xs text-muted-foreground">{c.note}</div>}
+              <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 mt-0.5">
+                <span>24h uptime: <span className="font-medium text-foreground" data-testid={`text-uptime-24h-${c.key}`}>{fmtUptime(c.uptime24h)}</span></span>
+                <span>30d uptime: <span className="font-medium text-foreground" data-testid={`text-uptime-30d-${c.key}`}>{fmtUptime(c.uptime30d)}</span></span>
+                <span>Last probe: {fmtRelative(c.lastCheckedAt, now)}</span>
+              </div>
+              {c.lastError && c.status !== "operational" && (
+                <div className="text-xs text-red-600 dark:text-red-400 mt-1" data-testid={`text-component-error-${c.key}`}>
+                  {c.lastError}
+                </div>
+              )}
             </div>
-            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[c.level].cls}`}>
-              {STATUS_STYLES[c.level].label}
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLES[c.status].cls}`} data-testid={`status-pill-${c.key}`}>
+              {STATUS_STYLES[c.status].label}
             </span>
           </div>
         ))}
@@ -304,21 +519,40 @@ export function StatusPage() {
       <section className="mt-10">
         <h2 className="text-lg font-semibold mb-2" data-testid="heading-uptime">Uptime target</h2>
         <p className="text-sm text-muted-foreground">
-          Our target uptime is 99.9% measured monthly, excluding announced maintenance. Incidents are posted here and
-          updated at least every 60 minutes until resolved. Customers are notified by email for any incident affecting
-          their organization.
+          Our target uptime is 99.9% measured monthly, excluding announced maintenance. Component health above is
+          driven by automated probes that run every minute. Incidents are posted here and updated at least every 60
+          minutes until resolved.
         </p>
       </section>
 
       <section className="mt-8">
-        <h2 className="text-lg font-semibold mb-2" data-testid="heading-incidents">Recent incidents</h2>
-        <div className="rounded-lg border border-border px-4 py-6 text-sm text-muted-foreground" data-testid="text-no-incidents">
-          No incidents reported in the last 30 days.
-        </div>
+        <SubscribeForm />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-lg font-semibold mb-3" data-testid="heading-incidents">Past incidents</h2>
+        {isLoading ? (
+          <div className="rounded-lg border border-border px-4 py-6 text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+          </div>
+        ) : incidents.filter((i) => i.id !== activeIncident?.id).length === 0 ? (
+          <div className="rounded-lg border border-border px-4 py-6 text-sm text-muted-foreground" data-testid="text-no-incidents">
+            No incidents reported in the last 90 days.
+          </div>
+        ) : (
+          <div className="space-y-3" data-testid="list-incidents">
+            {incidents
+              .filter((i) => i.id !== activeIncident?.id)
+              .map((incident) => (
+                <IncidentCard key={incident.id} incident={incident} />
+              ))}
+          </div>
+        )}
       </section>
 
       <div className="mt-8 text-xs text-muted-foreground">
-        For a real-time programmatic feed of status, contact{" "}
+        For a programmatic feed, hit{" "}
+        <code className="rounded bg-muted px-1.5 py-0.5">GET /api/public/status/summary</code>. Questions? Email{" "}
         <a href="mailto:support@smartmanage.ai" className="underline" data-testid="link-status-support">support@smartmanage.ai</a>.
       </div>
     </PageShell>

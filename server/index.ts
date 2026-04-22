@@ -17,6 +17,7 @@ import { startCrmCsvImportWorker } from "./crmCsvImportWorker";
 import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
+import { startStatusProbeScheduler, runProbeSweep } from "./statusProbeScheduler";
 import {
   onGanttPdfQueueFull,
   onGanttPdfBrowserDisconnected,
@@ -305,6 +306,19 @@ app.use((req, res, next) => {
     logError("Failed to initialize Gantt PDF render history", {}, err instanceof Error ? err : new Error(String(err)));
   });
 
+  // Task #805 — populate status component health on every cold start so the
+  // /status page has data immediately even when the cron scheduler is off
+  // (e.g. local dev without ENABLE_SCHEDULERS=true). When the scheduler is
+  // enabled it owns its own startup sweep, so we only kick one here in dev
+  // to avoid duplicate probe rows.
+  if (!isProduction && process.env.ENABLE_SCHEDULERS !== "true") {
+    setTimeout(() => {
+      runProbeSweep().catch((err) =>
+        logError("Initial status probe sweep failed", {}, err instanceof Error ? err : new Error(String(err))),
+      );
+    }, 8_000).unref?.();
+  }
+
   // DOT pay item libraries: seed AFTER startup migrations so the dot_* tables
   // are guaranteed to exist on cold start.
   try {
@@ -393,6 +407,12 @@ app.use((req, res, next) => {
         startCrmCsvImportWorker();
       } catch (error) {
         logError('Failed to start CRM CSV Import worker:', {}, error instanceof Error ? error : new Error(String(error)));
+      }
+
+      try {
+        startStatusProbeScheduler();
+      } catch (error) {
+        logError('Failed to start Status Probe scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
       logInfo(`Background schedulers ENABLED (${isProduction ? 'production' : 'ENABLE_SCHEDULERS=true'})`);

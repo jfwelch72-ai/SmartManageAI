@@ -223,6 +223,7 @@ import emailCampaignRoutes from "./emailCampaignRoutes";
 import savedViewsRoutes from "./savedViewsRoutes";
 import myDayRoutes from "./myDayRoutes";
 import devEmailRoutes from "./devEmailRoutes";
+import statusPageRoutes from "./statusPageRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -597,6 +598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(crmQuotesRoutes);
   app.use(crmAssignmentRulesRoutes);
   app.use(publicLeadsRoutes);
+  app.use(statusPageRoutes);
   app.use(crmCatalogRoutes);
   app.use(crmCustomFieldsRoutes);
   app.use(crmAnalyticsRoutes);

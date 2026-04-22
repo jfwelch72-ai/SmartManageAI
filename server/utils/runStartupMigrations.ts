@@ -62,6 +62,7 @@ import { ensureUsersJobMetricAlertQuietHoursDigestColumns } from "./ensureUsersJ
 import { ensurePendingContactReassignmentTable } from "./ensurePendingContactReassignmentTable";
 import { ensureCrmOrganisationOwnerColumn } from "./ensureCrmOrganisationOwnerColumn";
 import { ensureSchedulingModuleEnhancements } from "./ensureSchedulingModuleEnhancements";
+import { ensureStatusPageTables } from "./ensureStatusPageTables";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -133,6 +134,7 @@ const migrations: MigrationStep[] = [
   { name: "pending_contact_reassignment_notifications_table", category: "CREATE_TABLE", fn: ensurePendingContactReassignmentTable },
   { name: "crm_organisation_owner_column", category: "ADD_COLUMN", fn: ensureCrmOrganisationOwnerColumn },
   { name: "scheduling_module_enhancements", category: "CREATE_TABLE", fn: ensureSchedulingModuleEnhancements },
+  { name: "status_page_tables", category: "CREATE_TABLE", fn: ensureStatusPageTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
