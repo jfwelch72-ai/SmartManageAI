@@ -40,7 +40,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support.
 *   **Account Settings Hub**: Unified settings page with URL-based sidebar routing.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
-*   **Platform Monitoring & Observability**: Super Admin dashboard with API usage tracking, AI usage analytics, object storage usage, platform integration health checks, and cross-organization audit log viewer.
+*   **Platform Monitoring & Observability**: Super Admin dashboard with API usage tracking, AI usage analytics, object storage usage, platform integration health checks, and cross-organization audit log viewer. The `/status` page probes components from multiple vantage points; production runs with `STATUS_ENABLE_REMOTE_PROBES=true` so a regional CDN/DNS outage must be confirmed by a majority of vantage points before flipping a component. Vantage point configuration is documented in `docs/runbooks/status-probe-vantage-points.md`.
 *   **Feature Permissions System**: Granular per-user feature access control via boolean flags and role-based defaults.
 *   **BIM & LiDAR Integration**: Client-side IFC file parsing for quantity extraction, 3D BIM Viewer, and LiDAR Scanner Module for point cloud analysis.
 *   **Risk Management Module**: Full risk register per project with category/probability/impact scoring, risk matrix heat map visualization, and AI-powered risk suggestions.
