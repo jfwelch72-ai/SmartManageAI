@@ -381,6 +381,174 @@ router.post("/api/dot/pay-items/bulk-upload", requireAuth, requireRole("SUPER_AD
 });
 
 // =========================
+// DOT Pay Items — auto-match (fuzzy + alias-aware) suggestions
+// =========================
+const matchSchema = z.object({
+  description: z.string().min(1).max(2000),
+  unit: z.string().max(32).optional().nullable(),
+  category: z.string().max(128).optional().nullable(),
+  agencyIds: z.array(z.string()).optional(),
+  specBookId: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(8),
+});
+
+const MATCH_STOPWORDS = new Set([
+  "the","and","for","with","of","a","an","to","in","on","per","or","by","from","at","as","is","be","this","that","each","one","all","any","not","no",
+]);
+
+function tokenizeForMatch(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !MATCH_STOPWORDS.has(t));
+}
+
+router.post(
+  "/api/dot/pay-items/match",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(matchSchema, req.body, res);
+    if (!data) return;
+    const orgId = req.user?.organizationId ?? null;
+    const qTokensList = tokenizeForMatch(data.description);
+    if (qTokensList.length === 0) return res.json({ matches: [] });
+    const qTokens = new Set(qTokensList);
+
+    // Resolve preferred agencies if caller didn't pass one
+    let agencyIds = data.agencyIds && data.agencyIds.length > 0 ? data.agencyIds : null;
+    if (!agencyIds && orgId) {
+      const prefs = await db
+        .select({ agencyId: organizationDotPreferences.agencyId })
+        .from(organizationDotPreferences)
+        .where(eq(organizationDotPreferences.organizationId, orgId));
+      if (prefs.length > 0) agencyIds = prefs.map((p) => p.agencyId);
+    }
+
+    // Org alias overrides — strongest signal
+    const aliasMatchByItem = new Map<string, string>();
+    if (orgId) {
+      const overrides = await db
+        .select()
+        .from(dotPayItemOverrides)
+        .where(eq(dotPayItemOverrides.organizationId, orgId));
+      const descLower = data.description.toLowerCase().trim();
+      for (const ov of overrides) {
+        const alias = (ov.internalAlias ?? "").toLowerCase().trim();
+        const custom = (ov.customDescription ?? "").toLowerCase().trim();
+        let aliasText: string | null = null;
+        if (alias && (descLower.includes(alias) || alias.includes(descLower))) {
+          aliasText = ov.internalAlias ?? "";
+        } else if (custom && (descLower.includes(custom) || custom.includes(descLower))) {
+          aliasText = ov.customDescription ?? "";
+        }
+        if (aliasText) aliasMatchByItem.set(ov.payItemId, aliasText);
+      }
+    }
+
+    // Candidate fetch — narrow with ilike on the longest tokens
+    const conds: SQL[] = [eq(dotPayItems.isActive, true)];
+    if (agencyIds && agencyIds.length > 0) conds.push(inArray(dotPayItems.agencyId, agencyIds));
+    if (data.specBookId) conds.push(eq(dotPayItems.specBookId, data.specBookId));
+    const topTokens = [...qTokensList].sort((a, b) => b.length - a.length).slice(0, 6);
+    const orExpr = or(
+      ...topTokens.flatMap((t) => [
+        ilike(dotPayItems.description, `%${t}%`),
+        ilike(dotPayItems.searchTokens, `%${t}%`),
+        ilike(dotPayItems.itemNumber, `%${t}%`),
+      ]),
+    );
+    if (orExpr) conds.push(orExpr);
+
+    const candidates = await db.select().from(dotPayItems).where(and(...conds)).limit(500);
+
+    // Always fold in alias-matched items even if the token filter missed them
+    const aliasIds = [...aliasMatchByItem.keys()];
+    if (aliasIds.length > 0) {
+      const have = new Set(candidates.map((c) => c.id));
+      const missing = aliasIds.filter((id) => !have.has(id));
+      if (missing.length > 0) {
+        const more = await db.select().from(dotPayItems).where(inArray(dotPayItems.id, missing));
+        candidates.push(...more);
+      }
+    }
+
+    const unitLower = (data.unit ?? "").toLowerCase().trim();
+    const categoryLower = (data.category ?? "").toLowerCase().trim();
+    const descLower = data.description.toLowerCase();
+
+    const scored = candidates
+      .map((p) => {
+        const text = `${p.itemNumber} ${p.description} ${p.searchTokens ?? ""} ${p.category ?? ""}`;
+        const pTokens = new Set(tokenizeForMatch(text));
+        let inter = 0;
+        for (const t of qTokens) if (pTokens.has(t)) inter++;
+        const overlap = inter / qTokens.size;
+        let score = overlap;
+        if (unitLower && p.unit && p.unit.toLowerCase() === unitLower) score += 0.15;
+        if (categoryLower && p.category && p.category.toLowerCase().includes(categoryLower)) score += 0.1;
+        if (p.itemNumber && descLower.includes(p.itemNumber.toLowerCase())) score += 0.25;
+        const aliasText = aliasMatchByItem.get(p.id);
+        if (aliasText) score += 1.0;
+        return {
+          payItem: p,
+          score,
+          matchReason: (aliasText ? "alias" : "fuzzy") as "alias" | "fuzzy",
+          aliasText: aliasText ?? null,
+          matchedTokens: [...qTokens].filter((t) => pTokens.has(t)),
+        };
+      })
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, data.limit);
+
+    if (scored.length === 0) return res.json({ matches: [] });
+
+    const aIds = [...new Set(scored.map((s) => s.payItem.agencyId))];
+    const sbIds = [...new Set(scored.map((s) => s.payItem.specBookId))];
+    const [ags, sbs, ovs] = await Promise.all([
+      aIds.length ? db.select().from(dotAgencies).where(inArray(dotAgencies.id, aIds)) : Promise.resolve([] as (typeof dotAgencies.$inferSelect)[]),
+      sbIds.length ? db.select().from(dotSpecBooks).where(inArray(dotSpecBooks.id, sbIds)) : Promise.resolve([] as (typeof dotSpecBooks.$inferSelect)[]),
+      orgId
+        ? db.select().from(dotPayItemOverrides).where(and(
+            eq(dotPayItemOverrides.organizationId, orgId),
+            inArray(dotPayItemOverrides.payItemId, scored.map((s) => s.payItem.id)),
+          ))
+        : Promise.resolve([] as (typeof dotPayItemOverrides.$inferSelect)[]),
+    ]);
+    const agencyById = Object.fromEntries(ags.map((a) => [a.id, a]));
+    const specBookById = Object.fromEntries(sbs.map((s) => [s.id, s]));
+    const overrideById = new Map(ovs.map((o) => [o.payItemId, o]));
+
+    const matches = scored
+      .map((s) => {
+        const ov = overrideById.get(s.payItem.id);
+        const agency = agencyById[s.payItem.agencyId];
+        const specBook = specBookById[s.payItem.specBookId];
+        if (!agency || !specBook) return null;
+        return {
+          payItem: {
+            ...s.payItem,
+            description: ov?.customDescription ?? s.payItem.description,
+            unit: ov?.customUnit ?? s.payItem.unit,
+            category: ov?.customCategory ?? s.payItem.category,
+          },
+          agency,
+          specBook,
+          score: Math.round(s.score * 100) / 100,
+          matchReason: s.matchReason,
+          aliasText: s.aliasText,
+          matchedTokens: s.matchedTokens,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+
+    return res.json({ matches });
+  },
+);
+
+// =========================
 // Org-scoped DOT preferences
 // =========================
 router.get(

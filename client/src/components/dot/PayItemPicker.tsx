@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Sparkles, Tag } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 export interface DotAgency {
   id: string;
@@ -34,14 +35,36 @@ export interface SelectedPayItem {
   specBook: DotSpecBook;
 }
 
+interface MatchSuggestion {
+  payItem: DotPayItem;
+  agency: DotAgency;
+  specBook: DotSpecBook;
+  score: number;
+  matchReason: "alias" | "fuzzy";
+  aliasText: string | null;
+  matchedTokens: string[];
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (selected: SelectedPayItem) => void;
   defaultAgencyId?: string;
+  /** Seed text used to auto-suggest DOT pay items (typically the line description). */
+  seedDescription?: string;
+  seedUnit?: string | null;
+  seedCategory?: string | null;
 }
 
-export function PayItemPicker({ open, onOpenChange, onSelect, defaultAgencyId }: Props) {
+export function PayItemPicker({
+  open,
+  onOpenChange,
+  onSelect,
+  defaultAgencyId,
+  seedDescription,
+  seedUnit,
+  seedCategory,
+}: Props) {
   const [agencyId, setAgencyId] = useState<string | undefined>(defaultAgencyId);
   const [specBookId, setSpecBookId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
@@ -72,6 +95,33 @@ export function PayItemPicker({ open, onOpenChange, onSelect, defaultAgencyId }:
     },
   });
 
+  // Auto-match suggestions seeded from the line item description
+  const seedKey = (seedDescription ?? "").trim();
+  const {
+    data: matchData,
+    isLoading: matchLoading,
+  } = useQuery<{ matches: MatchSuggestion[] }>({
+    queryKey: ["/api/dot/pay-items/match", { description: seedKey, unit: seedUnit ?? null, category: seedCategory ?? null }],
+    enabled: open && seedKey.length >= 3,
+    queryFn: async () => {
+      const r = await apiRequest("POST", "/api/dot/pay-items/match", {
+        description: seedKey,
+        unit: seedUnit ?? null,
+        category: seedCategory ?? null,
+        limit: 6,
+      });
+      return r.json();
+    },
+  });
+  const suggestions = matchData?.matches ?? [];
+
+  // If user hasn't picked an agency yet, default to the first suggestion's agency for browse context.
+  useEffect(() => {
+    if (open && !agencyId && suggestions.length > 0) {
+      setAgencyId(suggestions[0].agency.id);
+    }
+  }, [open, agencyId, suggestions]);
+
   const agencyById = useMemo(() => Object.fromEntries(agencies.map((a) => [a.id, a])), [agencies]);
   const specBookById = useMemo(() => Object.fromEntries(specBooks.map((s) => [s.id, s])), [specBooks]);
 
@@ -81,6 +131,56 @@ export function PayItemPicker({ open, onOpenChange, onSelect, defaultAgencyId }:
         <DialogHeader>
           <DialogTitle>Select DOT Pay Item</DialogTitle>
         </DialogHeader>
+
+        {seedKey.length >= 3 && (
+          <div className="border rounded-md bg-primary/5" data-testid="section-pay-item-suggestions">
+            <div className="flex items-center gap-2 px-3 py-2 border-b bg-primary/10">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">Suggested matches for "{seedKey.slice(0, 80)}{seedKey.length > 80 ? "…" : ""}"</span>
+              {matchLoading && <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />}
+            </div>
+            {!matchLoading && suggestions.length === 0 ? (
+              <div className="p-3 text-sm text-muted-foreground" data-testid="text-no-suggestions">
+                No automatic matches yet — try searching below.
+              </div>
+            ) : (
+              <div className="divide-y max-h-56 overflow-y-auto">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.payItem.id}
+                    onClick={() => onSelect({ payItem: s.payItem, agency: s.agency, specBook: s.specBook })}
+                    className="w-full text-left p-3 hover-elevate active-elevate-2 flex items-start justify-between gap-3"
+                    data-testid={`button-suggestion-${s.payItem.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-medium">{s.payItem.itemNumber}</span>
+                        <Badge variant="outline" className="text-xs">{s.agency.code}{s.agency.stateCode ? ` · ${s.agency.stateCode}` : ""}</Badge>
+                        {s.matchReason === "alias" && (
+                          <Badge variant="secondary" className="text-xs gap-1">
+                            <Tag className="h-3 w-3" /> Your alias
+                          </Badge>
+                        )}
+                        <span className="ml-auto text-xs text-muted-foreground" data-testid={`text-suggestion-score-${s.payItem.id}`}>
+                          {Math.round(s.score * 100)}% match
+                        </span>
+                      </div>
+                      <div className="text-sm mt-0.5 truncate">{s.payItem.description}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {s.payItem.category ?? "Uncategorized"}
+                        {s.payItem.specSection ? ` · §${s.payItem.specSection}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="outline">{s.payItem.unit}</Badge>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Select value={agencyId} onValueChange={(v) => { setAgencyId(v); setSpecBookId(undefined); }}>
             <SelectTrigger data-testid="select-agency"><SelectValue placeholder="Choose agency" /></SelectTrigger>

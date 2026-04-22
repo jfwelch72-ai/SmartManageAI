@@ -192,6 +192,9 @@ function PayItemRow({ form, testPrefix }: { form: UseFormReturn<LineItemFormValu
   const payItemNumber = form.watch("payItemNumber");
   const specSection = form.watch("specSection");
   const dotPayItemId = form.watch("dotPayItemId");
+  const seedDescription = form.watch("description");
+  const seedUnit = form.watch("unit");
+  const seedCategory = form.watch("category");
 
   // Hide DOT pay-item picker entirely when the org has the flag off, but keep
   // showing existing linkage on legacy lines so users can clear or replace it.
@@ -268,7 +271,14 @@ function PayItemRow({ form, testPrefix }: { form: UseFormReturn<LineItemFormValu
         </Button>
       )}
       <span className="text-xs text-muted-foreground ml-auto">Optional — required for DOT/heavy-civil bids</span>
-      <PayItemPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={handleSelect} />
+      <PayItemPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={handleSelect}
+        seedDescription={seedDescription ?? ""}
+        seedUnit={seedUnit ?? null}
+        seedCategory={seedCategory ?? null}
+      />
     </div>
   );
 }
