@@ -1324,14 +1324,21 @@ export async function resumeOrReapBackfillJobsOnBoot() {
 
         // Keep the job's existing id, startedAt, startedById, and counters
         // (they were loaded via rowToState above) so the admin's progress
-        // bar continues from where it left off.
-        void runTranscriptBackfill(job, eligible, BACKFILL_RESUME_CONCURRENCY, null);
+        // bar continues from where it left off. Task #992: honor the
+        // originally-requested concurrency and maxRecords if they were
+        // persisted; older rows (pre-Task #992) fall back to the prior
+        // defaults so behavior is unchanged for in-flight jobs.
+        const resumeConcurrency = row.concurrency ?? BACKFILL_RESUME_CONCURRENCY;
+        const resumeMaxRecords = row.maxRecords ?? null;
+        void runTranscriptBackfill(job, eligible, resumeConcurrency, resumeMaxRecords);
         resumed += 1;
         logInfo("crmCalls: resumed interrupted transcript backfill on boot", {
           jobId: job.id,
           orgId: job.orgId,
           processed: job.processed,
           total: job.total,
+          concurrency: resumeConcurrency,
+          maxRecords: resumeMaxRecords,
           heartbeatAgeMs,
         });
       } catch (e) {
@@ -1497,6 +1504,11 @@ router.post(
         failedRecordingIds: [],
         completedAt: null,
         startedById: req.user!.id,
+        // Task #992 — persist the admin's chosen speed and safety cap so a
+        // resume after a server restart honors them instead of falling back
+        // to hardcoded defaults.
+        concurrency,
+        maxRecords,
       });
       const job = rowToState(persistedRow);
 

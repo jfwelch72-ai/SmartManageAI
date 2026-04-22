@@ -1773,6 +1773,11 @@ export const crmTranscriptBackfillJobs = pgTable("crm_transcript_backfill_jobs",
   completedAt: timestamp("completed_at"),
   heartbeatAt: timestamp("heartbeat_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // Task #992 — remember the admin's originally-requested run knobs so a
+  // resumed run after a server restart honors the same speed (concurrency)
+  // and safety cap (maxRecords) instead of silently falling back to defaults.
+  concurrency: integer("concurrency"),
+  maxRecords: integer("max_records"),
 }, (table) => ({
   orgIdx: index("crm_transcript_backfill_jobs_org_idx").on(table.organizationId),
   statusIdx: index("crm_transcript_backfill_jobs_status_idx").on(table.status),
