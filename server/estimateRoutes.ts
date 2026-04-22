@@ -2219,6 +2219,251 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
     }
   });
 
+  // Helper: fetch a line item photo buffer for embedding in exports.
+  // Only resolves internal `/api/estimates/line-item-photos/...` URLs to prevent SSRF.
+  const resolveLineItemPhotoBuffer = async (
+    photoUrl: string,
+    user: AuthRequest["user"],
+  ): Promise<{ buffer: Buffer; contentType?: string } | null> => {
+    try {
+      const match = photoUrl.match(/^\/api\/estimates\/line-item-photos\/([^/]+)\/([^/]+)\/(.+)$/);
+      if (!match) return null;
+      const [, orgId, lineItemId, fileName] = match;
+      if (user!.organizationId && user!.organizationId !== orgId) return null;
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const objectId = `line-item-photos/${orgId}/${lineItemId}/${fileName}`;
+      const fullPath = `${privateDir}/${objectId}`;
+      const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      const [exists] = await objectFile.exists();
+      if (!exists) return null;
+      const [metadata] = await objectFile.getMetadata();
+      const [buffer] = await objectFile.download();
+      return { buffer, contentType: (metadata.metadata?.contentType as string) || undefined };
+    } catch {
+      logWarn("estimate export: failed to resolve photo");
+      return null;
+    }
+  };
+
+  const loadEstimateExportContext = async (estimateId: string, user: AuthRequest["user"]) => {
+    const estimate = await verifyEstimateOrgAccess(estimateId, user);
+    if (!estimate) return null;
+    const lineItems = await db
+      .select()
+      .from(estimateLineItems)
+      .where(eq(estimateLineItems.estimateId, estimateId))
+      .orderBy(estimateLineItems.createdAt);
+    const totals = lineItems.reduce(
+      (acc, item) => ({
+        materialCost: acc.materialCost + Number(item.materialCost || 0),
+        laborCost: acc.laborCost + Number(item.laborCost || 0),
+        equipmentCost: acc.equipmentCost + Number(item.equipmentCost || 0),
+        consumablesCost: acc.consumablesCost + Number(item.consumablesCost || 0),
+        subcontractCost: acc.subcontractCost + Number(item.subcontractCost || 0),
+        overheadAllocation: acc.overheadAllocation + Number(item.overheadAllocation || 0),
+        profitAllocation: acc.profitAllocation + Number(item.profitAllocation || 0),
+        totalCost: acc.totalCost + Number(item.totalCost || 0),
+      }),
+      {
+        materialCost: 0,
+        laborCost: 0,
+        equipmentCost: 0,
+        consumablesCost: 0,
+        subcontractCost: 0,
+        overheadAllocation: 0,
+        profitAllocation: 0,
+        totalCost: 0,
+      },
+    );
+    let title = "Project Estimate";
+    let subtitle: string | undefined;
+    let code: string | undefined;
+    let clientName: string | undefined;
+    if (estimate.bidId) {
+      const bid = await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) });
+      if (bid) {
+        title = `Bid Estimate — ${bid.name}`;
+        subtitle = bid.code;
+        code = bid.code;
+        clientName = bid.clientName ?? undefined;
+      }
+    } else if (estimate.projectId) {
+      const project = await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) });
+      if (project) {
+        title = `Project Estimate — ${project.name}`;
+        subtitle = project.code;
+        code = project.code;
+        clientName = project.clientName ?? undefined;
+      }
+    }
+    let branding: { organizationName?: string; primaryColor?: string } | undefined;
+    if (user!.organizationId) {
+      const org = await db.query.organizations.findFirst({
+        where: eq(organizations.id, user!.organizationId),
+      });
+      if (org) {
+        branding = {
+          organizationName: org.name,
+          primaryColor: org.primaryColor ?? undefined,
+        };
+      }
+    }
+    return { estimate, lineItems, totals, context: { title, subtitle, code, clientName }, branding };
+  };
+
+  // Export estimate as PDF (with embedded line item photos)
+  router.get("/api/estimates/:estimateId/export/pdf", requireAuth, async (req: AuthRequest, res, next) => {
+    try {
+      if (!hasManagementAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions to export estimates" });
+      }
+      const { estimateId } = req.params;
+      const ctx = await loadEstimateExportContext(estimateId, req.user);
+      if (!ctx) return res.status(404).json({ error: "Estimate not found" });
+
+      const { generateEstimatePdf } = await import("./estimate-pdf-service");
+      const pdfBuffer = await generateEstimatePdf({
+        estimate: {
+          id: ctx.estimate.id,
+          versionNumber: ctx.estimate.versionNumber,
+          status: ctx.estimate.status,
+          notes: ctx.estimate.notes,
+        },
+        context: ctx.context,
+        lineItems: ctx.lineItems.map((li) => ({
+          id: li.id,
+          description: li.description,
+          category: li.category,
+          quantity: li.quantity,
+          unit: li.unit,
+          totalCost: li.totalCost,
+          materialCost: li.materialCost,
+          laborCost: li.laborCost,
+          equipmentCost: li.equipmentCost,
+          subcontractCost: li.subcontractCost,
+          notes: li.notes,
+          photoUrls: Array.isArray(li.photoUrls) ? li.photoUrls : [],
+          photoUrl: li.photoUrl ?? null,
+        })),
+        totals: ctx.totals,
+        branding: ctx.branding,
+        resolvePhoto: (url) => resolveLineItemPhotoBuffer(url, req.user),
+      });
+
+      const filename = `estimate-${ctx.context.code || ctx.estimate.id}-v${ctx.estimate.versionNumber}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(pdfBuffer);
+    } catch (error) {
+      logError("estimate pdf export failed", error);
+      next(error);
+    }
+  });
+
+  // Export estimate as Excel (XLSX) with per-line-item photo URLs
+  router.get("/api/estimates/:estimateId/export/excel", requireAuth, async (req: AuthRequest, res, next) => {
+    try {
+      if (!hasManagementAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions to export estimates" });
+      }
+      const { estimateId } = req.params;
+      const ctx = await loadEstimateExportContext(estimateId, req.user);
+      if (!ctx) return res.status(404).json({ error: "Estimate not found" });
+
+      const XLSX = await import("xlsx");
+
+      const protocol = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+      const host = req.get("host") || "";
+      const baseUrl = host ? `${protocol}://${host}` : "";
+
+      const rows = ctx.lineItems.map((li) => {
+        const urls: string[] = [
+          ...(li.photoUrl ? [li.photoUrl] : []),
+          ...(li.photoUrls ?? []),
+        ];
+        const unique: string[] = [];
+        for (const u of urls) if (u && !unique.includes(u)) unique.push(u);
+        const absolute = unique.map((u) => (u.startsWith("http") ? u : `${baseUrl}${u}`));
+        return {
+          Description: li.description,
+          Category: li.category,
+          Quantity: Number(li.quantity || 0),
+          Unit: li.unit || "",
+          "Material Cost": Number(li.materialCost || 0),
+          "Labor Cost": Number(li.laborCost || 0),
+          "Equipment Cost": Number(li.equipmentCost || 0),
+          "Subcontract Cost": Number(li.subcontractCost || 0),
+          "Overhead": Number(li.overheadAllocation || 0),
+          "Profit": Number(li.profitAllocation || 0),
+          "Total Cost": Number(li.totalCost || 0),
+          Notes: li.notes || "",
+          "Photo Count": unique.length,
+          "Photo URLs": absolute.join("\n"),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const itemsSheet = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, itemsSheet, "Line Items");
+
+      const summaryRows = [
+        ["Estimate", ctx.estimate.id],
+        ["Version", ctx.estimate.versionNumber],
+        ["Status", ctx.estimate.status],
+        ["Title", ctx.context.title],
+        ["Code", ctx.context.code || ""],
+        ["Client", ctx.context.clientName || ""],
+        ["Generated", new Date().toISOString()],
+        [],
+        ["Material Cost", ctx.totals.materialCost],
+        ["Labor Cost", ctx.totals.laborCost],
+        ["Equipment Cost", ctx.totals.equipmentCost],
+        ["Subcontract Cost", ctx.totals.subcontractCost],
+        ["Overhead", ctx.totals.overheadAllocation],
+        ["Profit", ctx.totals.profitAllocation],
+        ["Total", ctx.totals.totalCost],
+      ];
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+
+      const photoRows: Array<{ "Line Item": string; Category: string; "Photo URL": string }> = [];
+      for (const li of ctx.lineItems) {
+        const urls: string[] = [
+          ...(li.photoUrl ? [li.photoUrl] : []),
+          ...(li.photoUrls ?? []),
+        ];
+        const unique: string[] = [];
+        for (const u of urls) if (u && !unique.includes(u)) unique.push(u);
+        for (const u of unique) {
+          photoRows.push({
+            "Line Item": li.description,
+            Category: li.category,
+            "Photo URL": u.startsWith("http") ? u : `${baseUrl}${u}`,
+          });
+        }
+      }
+      if (photoRows.length > 0) {
+        const photosSheet = XLSX.utils.json_to_sheet(photoRows);
+        XLSX.utils.book_append_sheet(wb, photosSheet, "Photos");
+      }
+
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+      const filename = `estimate-${ctx.context.code || ctx.estimate.id}-v${ctx.estimate.versionNumber}.xlsx`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(buf);
+    } catch (error) {
+      logError("estimate excel export failed", error);
+      next(error);
+    }
+  });
+
   // Get subcontractor assignments for a line item
   router.get("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, async (req: AuthRequest, res, next) => {
     try {
