@@ -17,6 +17,7 @@
 import { isValidSlackWebhookUrl } from "./slackService";
 import { sendEmail } from "./emailService";
 import { logInfo, logWarn } from "../utils/logger";
+import { createHash } from "crypto";
 import {
   aggregateRecentCrmTranscriptBackfillAlertFailures,
   getCrmTranscriptBackfillAlertDelivery,
@@ -25,7 +26,10 @@ import {
   getCrmTranscriptBackfillOperatorContact,
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminsForAlertFailureFallback,
+  recordAlertFallbackSent,
   recordCrmTranscriptBackfillAlertDelivery,
+  wasAlertFallbackSentSince,
+  type AlertFallbackSentKey,
   type CrmTranscriptBackfillAlertDelivery,
   type CrmTranscriptBackfillAlertFailureDigestEntry,
   type CrmTranscriptBackfillOperatorContact,
@@ -222,10 +226,13 @@ export async function resolveBackfillNotificationDestinations(
 // Identical failures are de-duplicated within `FAILURE_FALLBACK_DEDUPE_MS`
 // (default: 1 hour) keyed by org + channel + recipient summary + error
 // message, so a continuously-broken webhook can't mailbomb every admin
-// every retry. The dedupe map is in-memory and per-process, which matches
-// the granularity we need (operational pager-style alerts) without a new
-// DB table — losing the cache across deploys/restarts at worst means a
-// single extra email after a deploy, which is acceptable.
+// every retry.
+//
+// Task #1067 — the dedupe state is persisted in `alert_fallback_sent` so a
+// deploy or restart can't reset the window: every process consults the same
+// ledger before fan-out. The in-memory Map is kept as a fast-path so the
+// common case (a webhook that's been broken for 5 minutes already) avoids
+// a DB round-trip on every retry.
 // ---------------------------------------------------------------------------
 
 const FAILURE_FALLBACK_DEDUPE_MS = 60 * 60 * 1000; // 1 hour
@@ -236,17 +243,46 @@ export function _resetAlertFailureFallbackDedupeForTests(): void {
   failureFallbackDedupe.clear();
 }
 
-function buildFallbackDedupeKey(input: {
+type NormalizedFallbackInput = {
+  orgId: string;
+  channel: "slack" | "email";
+  recipientSummary: string;
+  errorMessage: string;
+};
+
+function normalizeFallbackInput(input: {
   orgId: string;
   channel: "slack" | "email";
   recipientSummary: string;
   errorMessage: string | null;
-}): string {
-  const err = (input.errorMessage ?? "").trim().slice(0, 200);
-  return `${input.orgId}|${input.channel}|${input.recipientSummary.trim().slice(0, 200)}|${err}`;
+}): NormalizedFallbackInput {
+  return {
+    orgId: input.orgId,
+    channel: input.channel,
+    recipientSummary: input.recipientSummary.trim().slice(0, 200),
+    errorMessage: (input.errorMessage ?? "").trim().slice(0, 200),
+  };
 }
 
-function isFailureFallbackDeduped(
+function buildInProcessDedupeKey(n: NormalizedFallbackInput): string {
+  return `${n.orgId}|${n.channel}|${n.recipientSummary}|${n.errorMessage}`;
+}
+
+function buildPersistedDedupeKey(n: NormalizedFallbackInput): AlertFallbackSentKey {
+  // Hashing keeps the row narrow even for very long error messages, and
+  // means the lookup index can use a fixed-length char column.
+  const errorHash = createHash("sha256")
+    .update(n.errorMessage)
+    .digest("hex");
+  return {
+    orgId: n.orgId,
+    channel: n.channel,
+    recipientSummary: n.recipientSummary,
+    errorHash,
+  };
+}
+
+function isFailureFallbackDedupedInMemory(
   key: string,
   now: number = Date.now(),
 ): boolean {
@@ -259,7 +295,10 @@ function isFailureFallbackDeduped(
   return last !== undefined && now - last < FAILURE_FALLBACK_DEDUPE_MS;
 }
 
-function markFailureFallbackSent(key: string, now: number = Date.now()): void {
+function markFailureFallbackSentInMemory(
+  key: string,
+  now: number = Date.now(),
+): void {
   failureFallbackDedupe.set(key, now);
 }
 
@@ -353,10 +392,41 @@ export async function notifyOrgAdminsOfAlertDeliveryFailure(
     // Check (don't yet record) the dedupe key first so a transient lookup or
     // transport failure on the first try doesn't suppress the next hour of
     // genuine alerts. We only mark the key after a successful send below.
-    const key = buildFallbackDedupeKey(input);
-    if (isFailureFallbackDeduped(key)) {
+    //
+    // Task #1067 — consult the in-memory cache first as a fast-path, then
+    // fall back to the persisted ledger so a deploy/restart can't reset the
+    // dedupe window. A DB read failure must never suppress the alert.
+    const normalized = normalizeFallbackInput(input);
+    const memKey = buildInProcessDedupeKey(normalized);
+    if (isFailureFallbackDedupedInMemory(memKey)) {
       logInfo(
-        "transcriptBackfillNotifications: fallback email suppressed (deduped)",
+        "transcriptBackfillNotifications: fallback email suppressed (deduped, in-memory)",
+        { orgId: input.orgId, channel: input.channel, jobId: input.jobId },
+      );
+      return 0;
+    }
+    const persistedKey = buildPersistedDedupeKey(normalized);
+    const since = new Date(Date.now() - FAILURE_FALLBACK_DEDUPE_MS);
+    let dedupedByDb = false;
+    try {
+      dedupedByDb = await wasAlertFallbackSentSince(persistedKey, since);
+    } catch (err) {
+      logWarn(
+        "transcriptBackfillNotifications: persisted dedupe lookup failed; proceeding with send",
+        {
+          orgId: input.orgId,
+          channel: input.channel,
+          jobId: input.jobId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
+    if (dedupedByDb) {
+      // Mirror into the in-memory cache so subsequent checks in this process
+      // don't have to round-trip again.
+      markFailureFallbackSentInMemory(memKey);
+      logInfo(
+        "transcriptBackfillNotifications: fallback email suppressed (deduped, persisted)",
         { orgId: input.orgId, channel: input.channel, jobId: input.jobId },
       );
       return 0;
@@ -392,7 +462,24 @@ export async function notifyOrgAdminsOfAlertDeliveryFailure(
       );
       return 0;
     }
-    markFailureFallbackSent(key);
+    markFailureFallbackSentInMemory(memKey);
+    // Task #1067 — persist the dedupe key so other processes (and this
+    // process after a restart) see the same window. Best-effort: a write
+    // failure is logged but must never bubble up; the in-memory cache
+    // still suppresses repeats within this process.
+    try {
+      await recordAlertFallbackSent(persistedKey);
+    } catch (err) {
+      logWarn(
+        "transcriptBackfillNotifications: failed to persist fallback dedupe key",
+        {
+          orgId: input.orgId,
+          channel: input.channel,
+          jobId: input.jobId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
     logInfo("transcriptBackfillNotifications: fallback email dispatched", {
       orgId: input.orgId,
       channel: input.channel,

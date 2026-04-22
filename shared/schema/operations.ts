@@ -3536,3 +3536,41 @@ export const insertCrmTranscriptBackfillNotificationSchema = createInsertSchema(
 });
 export type InsertCrmTranscriptBackfillNotification = z.infer<typeof insertCrmTranscriptBackfillNotificationSchema>;
 export type CrmTranscriptBackfillNotification = typeof crmTranscriptBackfillNotifications.$inferSelect;
+
+// ============================================
+// ALERT FALLBACK SENT (Task #1067)
+// Persisted dedupe ledger for the alert-failure fan-out emails dispatched by
+// `notifyOrgAdminsOfAlertDeliveryFailure`. The 1-hour de-duplication window
+// previously lived in an in-memory Map per process, so a restart or fresh
+// pod could let a continuously-broken webhook produce one extra fan-out
+// email per deploy. Persisting (org, channel, recipient summary, error
+// hash) -> sent_at lets every process consult the same ledger before it
+// fans out, capping the noise to one email per dedupe window across the
+// fleet. The in-memory cache is kept as a fast-path so the common case
+// avoids a DB round-trip.
+// ============================================
+export const alertFallbackSent = pgTable(
+  "alert_fallback_sent",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    orgId: varchar("org_id").notNull(),
+    channel: text("channel").notNull(),
+    recipientSummary: text("recipient_summary").notNull().default(""),
+    errorHash: varchar("error_hash", { length: 64 }).notNull(),
+    sentAt: timestamp("sent_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    lookupIdx: index("alert_fallback_sent_lookup_idx").on(
+      table.orgId,
+      table.channel,
+      table.errorHash,
+      table.sentAt,
+    ),
+  }),
+);
+export const insertAlertFallbackSentSchema = createInsertSchema(alertFallbackSent).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertAlertFallbackSent = z.infer<typeof insertAlertFallbackSentSchema>;
+export type AlertFallbackSent = typeof alertFallbackSent.$inferSelect;

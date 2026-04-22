@@ -6,6 +6,7 @@ import {
   crmTranscriptBackfillNotifications,
   crmTranscriptBackfillTestAlerts,
   crmTranscriptBackfillAlertDeliveries,
+  alertFallbackSent,
   notificationChannelPrefs,
   organizations,
   users,
@@ -1184,6 +1185,64 @@ export async function aggregateRecentCrmTranscriptBackfillAlertFailures(
     }
   }
   return Array.from(byOrg.values());
+}
+
+// ---------------------------------------------------------------------------
+// Task #1067 — persisted dedupe ledger for alert-failure fan-out emails.
+//
+// `notifyOrgAdminsOfAlertDeliveryFailure` previously kept its 1-hour dedupe
+// window in an in-memory Map per process. A deploy/restart wiped the map,
+// so a continuously-broken webhook could produce one extra fan-out email
+// per process per deploy. These helpers persist the "last sent" timestamp
+// keyed by (org, channel, recipient summary, error hash) so every process
+// (across deploys/pods) consults the same ledger before fanning out.
+// ---------------------------------------------------------------------------
+export type AlertFallbackSentKey = {
+  orgId: string;
+  channel: string;
+  recipientSummary: string;
+  errorHash: string;
+};
+
+export async function wasAlertFallbackSentSince(
+  key: AlertFallbackSentKey,
+  since: Date,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ sentAt: alertFallbackSent.sentAt })
+    .from(alertFallbackSent)
+    .where(
+      and(
+        eq(alertFallbackSent.orgId, key.orgId),
+        eq(alertFallbackSent.channel, key.channel),
+        eq(alertFallbackSent.errorHash, key.errorHash),
+        eq(alertFallbackSent.recipientSummary, key.recipientSummary),
+        gte(alertFallbackSent.sentAt, since),
+      ),
+    )
+    .orderBy(desc(alertFallbackSent.sentAt))
+    .limit(1);
+  return !!row;
+}
+
+export async function recordAlertFallbackSent(
+  key: AlertFallbackSentKey,
+): Promise<void> {
+  await db.insert(alertFallbackSent).values({
+    orgId: key.orgId,
+    channel: key.channel,
+    recipientSummary: key.recipientSummary,
+    errorHash: key.errorHash,
+  });
+}
+
+/**
+ * Best-effort housekeeping so the ledger doesn't grow unbounded. Callers can
+ * invoke this opportunistically (e.g. inside the dispatcher after a real send)
+ * without blocking on the result. Keeps the table to recent history only.
+ */
+export async function pruneAlertFallbackSentBefore(cutoff: Date): Promise<void> {
+  await db.delete(alertFallbackSent).where(lte(alertFallbackSent.sentAt, cutoff));
 }
 
 export const storage = {};

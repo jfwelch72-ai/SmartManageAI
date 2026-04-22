@@ -18,6 +18,8 @@ const {
   mockFetch,
   mockSendEmail,
   mockListOrgAdmins,
+  mockWasFallbackSent,
+  mockRecordFallbackSent,
 } = vi.hoisted(() => ({
   mockGetSettings: vi.fn(),
   mockRecordDelivery: vi.fn().mockResolvedValue({}),
@@ -30,11 +32,17 @@ const {
   // tests don't accidentally trigger fan-out emails; the new dedicated
   // describe block overrides this per case.
   mockListOrgAdmins: vi.fn().mockResolvedValue([]),
+  // Task #1067 — persisted dedupe ledger. Default to "never sent" so the
+  // existing in-memory dedupe tests behave the same as before.
+  mockWasFallbackSent: vi.fn().mockResolvedValue(false),
+  mockRecordFallbackSent: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../storage", () => ({
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
   recordCrmTranscriptBackfillAlertDelivery: mockRecordDelivery,
   listOrgAdminsForAlertFailureFallback: mockListOrgAdmins,
+  wasAlertFallbackSentSince: mockWasFallbackSent,
+  recordAlertFallbackSent: mockRecordFallbackSent,
 }));
 vi.mock("../services/slackService", () => ({
   isValidSlackWebhookUrl: (u: string) => /^https:\/\/hooks\.slack\.com\//.test(u),
@@ -571,6 +579,10 @@ describe("notifyOrgAdminsOfAlertDeliveryFailure (Task #1051)", () => {
     mockListOrgAdmins.mockReset();
     mockSendEmail.mockReset();
     mockSendEmail.mockResolvedValue(true);
+    mockWasFallbackSent.mockReset();
+    mockWasFallbackSent.mockResolvedValue(false);
+    mockRecordFallbackSent.mockReset();
+    mockRecordFallbackSent.mockResolvedValue(undefined);
     _resetAlertFailureFallbackDedupeForTests();
   });
 
@@ -724,6 +736,114 @@ describe("notifyOrgAdminsOfAlertDeliveryFailure (Task #1051)", () => {
     ).resolves.toBe(0);
     expect(mockSendEmail).not.toHaveBeenCalled();
   });
+
+  // Task #1067 — cross-process dedupe via the persisted ledger. The first
+  // batch of cases simulates a fresh process (cold in-memory cache) seeing
+  // a key that another process / a previous instance has already sent
+  // within the dedupe window.
+  it("respects the persisted dedupe ledger after a restart (in-memory cache cold)", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    mockWasFallbackSent.mockResolvedValueOnce(true);
+    const sent = await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    });
+    expect(sent).toBe(0);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockListOrgAdmins).not.toHaveBeenCalled();
+    // The ledger lookup must have been keyed off org + channel + a SHA-256
+    // hash of the (trimmed/truncated) error message so very long messages
+    // can't blow up the row width.
+    expect(mockWasFallbackSent).toHaveBeenCalledTimes(1);
+    const [keyArg, sinceArg] = mockWasFallbackSent.mock.calls[0];
+    expect(keyArg).toMatchObject({
+      orgId: "org-1",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+    });
+    expect(keyArg.errorHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(sinceArg).toBeInstanceOf(Date);
+  });
+
+  it("persists the dedupe key after a successful send so other processes see it", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    const sent = await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    });
+    expect(sent).toBe(1);
+    expect(mockRecordFallbackSent).toHaveBeenCalledTimes(1);
+    const persistedKey = mockRecordFallbackSent.mock.calls[0][0];
+    expect(persistedKey).toMatchObject({
+      orgId: "org-1",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+    });
+    expect(persistedKey.errorHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("does not persist the dedupe key when the send fails", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    mockSendEmail.mockResolvedValueOnce(false);
+    const sent = await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 500",
+    });
+    expect(sent).toBe(0);
+    expect(mockRecordFallbackSent).not.toHaveBeenCalled();
+  });
+
+  it("still sends when the persisted dedupe lookup throws (DB read fails open)", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    mockWasFallbackSent.mockRejectedValueOnce(new Error("db down"));
+    const sent = await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 500",
+    });
+    expect(sent).toBe(1);
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("still returns the admin count when persisting the dedupe key fails", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    mockRecordFallbackSent.mockRejectedValueOnce(new Error("db write failed"));
+    const sent = await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 500",
+    });
+    expect(sent).toBe(1);
+  });
+
+  it("uses the in-memory cache as a fast-path and skips the DB lookup on repeats", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    const input = {
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack" as const,
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    };
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(1);
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(0);
+    // First call hit the ledger; second call short-circuited on the cache.
+    expect(mockWasFallbackSent).toHaveBeenCalledTimes(1);
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("notifyBackfillCompletion fallback wiring (Task #1051)", () => {
@@ -743,6 +863,10 @@ describe("notifyBackfillCompletion fallback wiring (Task #1051)", () => {
     ]);
     mockFetch.mockReset();
     mockFetch.mockResolvedValue(new Response("ok", { status: 200 }));
+    mockWasFallbackSent.mockReset();
+    mockWasFallbackSent.mockResolvedValue(false);
+    mockRecordFallbackSent.mockReset();
+    mockRecordFallbackSent.mockResolvedValue(undefined);
     _resetAlertFailureFallbackDedupeForTests();
   });
 
