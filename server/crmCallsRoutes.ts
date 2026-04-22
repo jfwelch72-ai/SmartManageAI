@@ -916,6 +916,294 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
+// Transcript backfill (admin) — Task #949. Iterates over recordings whose
+// transcript is missing (transcriptStatus PENDING or FAILED) and runs them
+// through Whisper with a small concurrency cap to respect rate limits. Runs
+// in the background so the HTTP request returns immediately; progress and
+// failures are tracked in-memory and surfaced via a polling endpoint.
+// ---------------------------------------------------------------------------
+type BackfillJob = {
+  id: string;
+  orgId: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  errors: Array<{ recordingId: string; error: string }>;
+  startedAt: string;
+  completedAt: string | null;
+  startedById: string;
+};
+
+const transcriptBackfillJobs = new Map<string, BackfillJob>();
+const MAX_BACKFILL_ERROR_SAMPLES = 50;
+const BACKFILL_JOB_TTL_MS = 60 * 60 * 1000; // keep finished jobs for 1h
+
+function pruneBackfillJobs() {
+  const now = Date.now();
+  for (const [id, job] of transcriptBackfillJobs) {
+    if (
+      job.status !== "RUNNING" &&
+      job.completedAt &&
+      now - new Date(job.completedAt).getTime() > BACKFILL_JOB_TTL_MS
+    ) {
+      transcriptBackfillJobs.delete(id);
+    }
+  }
+}
+
+const BACKFILL_BATCH_SIZE = 100;
+
+async function fetchEligibleRecordingBatch(
+  orgId: string,
+  excludeIds: Set<string>,
+  batchSize: number,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: crmCallRecordings.id })
+    .from(crmCallRecordings)
+    .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+    .where(
+      and(
+        eq(crmCalls.organizationId, orgId),
+        sql`${crmCallRecordings.transcript} IS NULL`,
+        inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+      ),
+    )
+    .orderBy(desc(crmCallRecordings.createdAt))
+    // Pull a few extra rows so we can skip ones we've already attempted in
+    // this run (e.g. failures that stay PENDING/FAILED in the table).
+    .limit(batchSize + excludeIds.size);
+  return rows.map((r) => r.id).filter((id) => !excludeIds.has(id)).slice(0, batchSize);
+}
+
+async function runTranscriptBackfill(
+  job: BackfillJob,
+  initialRecordingIds: string[],
+  concurrency: number,
+  maxRecords: number | null,
+) {
+  // Track every recording id we've attempted (succeeded or failed) so we can
+  // page forward without re-processing rows whose status didn't flip out of
+  // PENDING/FAILED (e.g. transient Whisper errors).
+  const attempted = new Set<string>();
+  let queue: string[] = [...initialRecordingIds];
+
+  const takeNext = (): string | null => {
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (!attempted.has(id)) {
+        attempted.add(id);
+        return id;
+      }
+    }
+    return null;
+  };
+
+  const worker = async () => {
+    while (true) {
+      if (maxRecords !== null && job.processed >= maxRecords) return;
+      const recordingId = takeNext();
+      if (!recordingId) return;
+      try {
+        const result = await transcribeCallRecording(recordingId);
+        if (result.ok) {
+          job.succeeded += 1;
+        } else {
+          job.failed += 1;
+          if (job.errors.length < MAX_BACKFILL_ERROR_SAMPLES) {
+            job.errors.push({ recordingId, error: result.error || "Unknown error" });
+          }
+          logWarn("crmCalls: transcript backfill recording failed", {
+            jobId: job.id,
+            recordingId,
+            error: result.error,
+          });
+        }
+      } catch (e) {
+        job.failed += 1;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (job.errors.length < MAX_BACKFILL_ERROR_SAMPLES) {
+          job.errors.push({ recordingId, error: msg.slice(0, 500) });
+        }
+        logError(
+          "crmCalls: transcript backfill threw",
+          { jobId: job.id, recordingId },
+          e instanceof Error ? e : new Error(String(e)),
+        );
+      } finally {
+        job.processed += 1;
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      if (maxRecords !== null && job.processed >= maxRecords) break;
+      const workers = Array.from({ length: Math.max(1, concurrency) }, () => worker());
+      await Promise.all(workers);
+      if (maxRecords !== null && job.processed >= maxRecords) break;
+
+      // After draining the current queue, look for any newly-discovered or
+      // still-eligible recordings. Successful runs flip status to COMPLETED
+      // and fall out of the filter; failures stay eligible but are excluded
+      // via `attempted` so we don't loop forever on the same row.
+      const remaining = maxRecords !== null ? maxRecords - job.processed : BACKFILL_BATCH_SIZE;
+      const batchSize = Math.min(BACKFILL_BATCH_SIZE, Math.max(1, remaining));
+      const next = await fetchEligibleRecordingBatch(job.orgId, attempted, batchSize);
+      if (next.length === 0) break;
+      queue = next;
+      // job.total was initialized from the full up-front eligible count, so
+      // we don't add the batch size here (that would double-count rows we
+      // already accounted for). If new recordings arrived mid-run and push
+      // processed past the initial estimate, bump total to keep the
+      // displayed total >= processed for accurate progress percentages.
+      if (job.processed + queue.length > job.total) {
+        job.total = job.processed + queue.length;
+      }
+    }
+    job.status = "COMPLETED";
+  } catch (e) {
+    job.status = "FAILED";
+    logError(
+      "crmCalls: transcript backfill job failed",
+      { jobId: job.id },
+      e instanceof Error ? e : new Error(String(e)),
+    );
+  } finally {
+    job.completedAt = new Date().toISOString();
+    logInfo("crmCalls: transcript backfill finished", {
+      jobId: job.id,
+      orgId: job.orgId,
+      total: job.total,
+      succeeded: job.succeeded,
+      failed: job.failed,
+    });
+  }
+}
+
+router.post(
+  "/api/crm/calls/transcripts/backfill",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const schema = z.object({
+        // By default the backfill processes ALL eligible recordings via
+        // pagination. `maxRecords` is an optional safety cap for one-off
+        // partial runs (e.g. a small dry run before processing everything).
+        maxRecords: z.number().int().min(1).optional(),
+        concurrency: z.number().int().min(1).max(4).optional(),
+      });
+      const parsed = schema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const maxRecords = parsed.data.maxRecords ?? null;
+      const concurrency = parsed.data.concurrency ?? 2;
+
+      pruneBackfillJobs();
+
+      // Don't allow two concurrent backfills for the same org — they would
+      // race over the same PENDING/FAILED rows.
+      for (const job of transcriptBackfillJobs.values()) {
+        if (job.orgId === orgId && job.status === "RUNNING") {
+          return res.status(409).json({
+            error: "A transcript backfill is already running for this organization",
+            jobId: job.id,
+          });
+        }
+      }
+
+      // Seed the worker queue with the first batch. The job will keep paging
+      // forward until no more eligible recordings exist (or maxRecords hit).
+      const firstBatchSize =
+        maxRecords !== null ? Math.min(BACKFILL_BATCH_SIZE, maxRecords) : BACKFILL_BATCH_SIZE;
+      const eligible = await fetchEligibleRecordingBatch(orgId, new Set(), firstBatchSize);
+
+      // Also count total eligible rows up front so admins see a meaningful
+      // initial total in the progress endpoint. The number can grow if new
+      // recordings arrive mid-run; the worker loop tops `job.total` up as it
+      // discovers them.
+      const [{ count: totalEligibleRaw }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(crmCallRecordings)
+        .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+        .where(
+          and(
+            eq(crmCalls.organizationId, orgId),
+            sql`${crmCallRecordings.transcript} IS NULL`,
+            inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+          ),
+        );
+      const totalEligible = Number(totalEligibleRaw) || 0;
+      const initialTotal = maxRecords !== null ? Math.min(totalEligible, maxRecords) : totalEligible;
+
+      const jobId = `backfill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const job: BackfillJob = {
+        id: jobId,
+        orgId,
+        status: "RUNNING",
+        total: initialTotal,
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+        errors: [],
+        startedAt: new Date().toISOString(),
+        completedAt: null,
+        startedById: req.user!.id,
+      };
+      transcriptBackfillJobs.set(jobId, job);
+
+      logInfo("crmCalls: transcript backfill started", {
+        jobId,
+        orgId,
+        total: job.total,
+        concurrency,
+        startedById: job.startedById,
+      });
+
+      if (eligible.length === 0) {
+        job.status = "COMPLETED";
+        job.completedAt = new Date().toISOString();
+        return res.status(200).json({ jobId, total: 0, message: "No recordings to backfill" });
+      }
+
+      // Fire-and-forget; the request returns immediately. The worker keeps
+      // paginating through eligible recordings until none remain.
+      void runTranscriptBackfill(job, eligible, concurrency, maxRecords);
+
+      res.status(202).json({ jobId, total: job.total });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.get(
+  "/api/crm/calls/transcripts/backfill/:jobId",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const job = transcriptBackfillJobs.get(req.params.jobId);
+      if (!job || job.orgId !== orgId) {
+        return res.status(404).json({ error: "Backfill job not found" });
+      }
+      res.json(job);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Transcript search — full-text-ish ILIKE match across an opportunity/contact/
 // crmOrganisation's call transcripts. Returns the matching call rows so the
 // client can deep-link into the activity timeline.
