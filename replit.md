@@ -50,6 +50,9 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Heavy Civil & Nationwide DOT Coverage**: Foundation schema for FHWA + all 50 state DOTs with global reference data and org-scoped overrides, supporting entities like DBE goals, surety bonds, haul tickets, and material certifications.
 *   **Gantt PDF Export**: Server-side PDF export for large schedules using headless Chromium.
 
+## Testing
+*   **Auto-Synced Test Database**: Vitest runs `server/__tests__/globalSetup.ts` before any test suites, which executes `drizzle-kit push --force` against `DATABASE_URL` so the schema in `shared/schema/**` is always in sync with the test database. This prevents "missing column" failures caused by forgetting to run `npm run db:push`. Set `SKIP_TEST_DB_PUSH=1` to bypass (not recommended; only useful for offline runs against a known-synced DB).
+
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)

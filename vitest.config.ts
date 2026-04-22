@@ -7,6 +7,7 @@ export default defineConfig({
     environment: 'node',
     include: ['shared/**/*.test.ts', 'server/**/*.test.ts'],
     exclude: ['node_modules', 'dist', '.cache', '**/node_modules/**'],
+    globalSetup: ['./server/__tests__/globalSetup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
