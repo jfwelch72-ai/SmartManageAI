@@ -45,7 +45,10 @@ import {
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   updateCrmTranscriptBackfillJob,
 } from "./storage";
-import { notifyBackfillCompletion } from "./services/transcriptBackfillNotifications";
+import {
+  notifyBackfillCompletion,
+  sendTestBackfillAlert,
+} from "./services/transcriptBackfillNotifications";
 import {
   requireAuth,
   requireRole,
@@ -1912,6 +1915,32 @@ router.post(
       void runTranscriptBackfill(job, eligible, concurrency, maxRecords);
 
       res.status(202).json({ jobId, total: job.total });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1018 — admin "send test alert" endpoint. Dispatches a sample
+// completion + failure notification through whichever Slack/email
+// destinations are configured so admins can verify their setup without
+// waiting for a real backfill to finish or fail. Returns per-channel
+// success/failure so the UI can show distinct toasts.
+router.post(
+  "/api/crm/calls/transcripts/backfill/test-alert",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const operator = req.user?.id
+        ? await getCrmTranscriptBackfillOperatorContact(req.user.id)
+        : null;
+
+      const result = await sendTestBackfillAlert(orgId, operator);
+      res.json(result);
     } catch (e) {
       next(e);
     }

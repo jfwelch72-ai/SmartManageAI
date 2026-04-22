@@ -218,3 +218,192 @@ export async function notifyBackfillCompletion(
     operator: formatted.operatorDisplay,
   });
 }
+
+/**
+ * Task #1018 — admin "send test alert" support. Dispatches a sample
+ * COMPLETED and a sample FAILED notification using the same formatter as
+ * the real run-completed dispatcher, so admins can verify their Slack
+ * webhook / email recipient list end-to-end without waiting for a real
+ * backfill. Returns per-channel results so the UI can show a separate
+ * toast for Slack and email.
+ *
+ * Unlike `notifyBackfillCompletion`, this helper performs the Slack POST
+ * itself so it can surface a real success/failure status per channel
+ * (the shared `sendSlackMessage` swallows transport errors via logging).
+ */
+export type TestAlertChannelResult = {
+  configured: boolean;
+  ok: boolean;
+  error?: string;
+  recipients?: string[];
+};
+
+export type TestAlertResult = {
+  slack: TestAlertChannelResult;
+  email: TestAlertChannelResult;
+  operatorDisplay: string;
+};
+
+function buildSampleJobs(orgId: string): BackfillNotificationJob[] {
+  const now = new Date();
+  const startedAt = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  const completedAt = now.toISOString();
+  const baseId = `test-alert-${now.getTime()}`;
+  return [
+    {
+      id: `${baseId}-completed`,
+      orgId,
+      status: "COMPLETED",
+      total: 12,
+      processed: 12,
+      succeeded: 12,
+      failed: 0,
+      startedAt,
+      completedAt,
+      parentJobId: null,
+    },
+    {
+      id: `${baseId}-failed`,
+      orgId,
+      status: "FAILED",
+      total: 12,
+      processed: 12,
+      succeeded: 9,
+      failed: 3,
+      startedAt,
+      completedAt,
+      parentJobId: null,
+    },
+  ];
+}
+
+async function postSlackTest(
+  webhookUrl: string,
+  formatted: FormattedBackfillNotification,
+): Promise<void> {
+  const payload = {
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `[TEST] ${formatted.title}`,
+          emoji: true,
+        },
+      },
+      { type: "section", text: { type: "mrkdwn", text: formatted.slackBody } },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text:
+              ":test_tube: This is a *test* alert dispatched from the admin transcript backfill page.",
+          },
+        ],
+      },
+    ],
+  };
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Slack webhook returned ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+  }
+}
+
+export async function sendTestBackfillAlert(
+  orgId: string,
+  operator: CrmTranscriptBackfillOperatorContact | null,
+): Promise<TestAlertResult> {
+  const slackWebhook = (process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK || "").trim();
+  const emailTo = (process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO || "").trim();
+
+  const [completedJob, failedJob] = buildSampleJobs(orgId);
+  const completedFormatted = formatBackfillCompletionNotification(completedJob, operator);
+  const failedFormatted = formatBackfillCompletionNotification(failedJob, operator);
+
+  const slackResult: TestAlertChannelResult = { configured: false, ok: false };
+  if (slackWebhook) {
+    slackResult.configured = true;
+    if (!isValidSlackWebhookUrl(slackWebhook)) {
+      slackResult.error = "Invalid Slack webhook URL (must be https://hooks.slack.com/...)";
+    } else {
+      try {
+        await postSlackTest(slackWebhook, completedFormatted);
+        await postSlackTest(slackWebhook, failedFormatted);
+        slackResult.ok = true;
+      } catch (err) {
+        slackResult.error = err instanceof Error ? err.message : String(err);
+        logWarn("transcriptBackfillNotifications: test slack dispatch failed", {
+          orgId,
+          error: slackResult.error,
+        });
+      }
+    }
+  }
+
+  const emailResult: TestAlertChannelResult = { configured: false, ok: false };
+  if (emailTo) {
+    emailResult.configured = true;
+    const recipients = emailTo
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    emailResult.recipients = recipients;
+    if (recipients.length === 0) {
+      emailResult.error = "CRM_BACKFILL_NOTIFY_EMAIL_TO is set but contains no addresses";
+    } else {
+      try {
+        const subjects = [completedFormatted, failedFormatted].map((f) => ({
+          ...f,
+          emailSubject: `[TEST] ${f.emailSubject}`,
+          emailText:
+            `(Test alert dispatched from the admin transcript backfill page.)\n\n` +
+            f.emailText,
+          emailHtml:
+            `<p style="font-family:-apple-system,system-ui,sans-serif;font-size:12px;color:#666;">` +
+            `Test alert dispatched from the admin transcript backfill page.</p>` +
+            f.emailHtml,
+        }));
+        const results = await Promise.all(
+          subjects.map((f) =>
+            sendEmail({
+              to: recipients,
+              subject: f.emailSubject,
+              text: f.emailText,
+              html: f.emailHtml,
+            }),
+          ),
+        );
+        if (results.every(Boolean)) {
+          emailResult.ok = true;
+        } else {
+          emailResult.error = "Email transport returned a non-success result (check server logs)";
+        }
+      } catch (err) {
+        emailResult.error = err instanceof Error ? err.message : String(err);
+        logWarn("transcriptBackfillNotifications: test email dispatch failed", {
+          orgId,
+          error: emailResult.error,
+        });
+      }
+    }
+  }
+
+  logInfo("transcriptBackfillNotifications: test alert dispatched", {
+    orgId,
+    operator: completedFormatted.operatorDisplay,
+    slack: { configured: slackResult.configured, ok: slackResult.ok },
+    email: { configured: emailResult.configured, ok: emailResult.ok },
+  });
+
+  return {
+    slack: slackResult,
+    email: emailResult,
+    operatorDisplay: completedFormatted.operatorDisplay,
+  };
+}

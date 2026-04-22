@@ -37,6 +37,7 @@ import {
   ListChecks,
   ExternalLink,
   ArrowRight,
+  Send,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -361,6 +362,67 @@ export default function AdminTranscriptBackfillPage() {
     },
   });
 
+  const testAlertMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        "/api/crm/calls/transcripts/backfill/test-alert",
+        {},
+      );
+      return (await res.json()) as {
+        slack: { configured: boolean; ok: boolean; error?: string };
+        email: {
+          configured: boolean;
+          ok: boolean;
+          error?: string;
+          recipients?: string[];
+        };
+        operatorDisplay: string;
+      };
+    },
+    onSuccess: (data) => {
+      const { slack, email } = data;
+      if (!slack.configured && !email.configured) {
+        toast({
+          title: "No alert destinations configured",
+          description:
+            "Set CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK or CRM_BACKFILL_NOTIFY_EMAIL_TO and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (slack.configured) {
+        toast({
+          title: slack.ok ? "Slack test alert sent" : "Slack test alert failed",
+          description: slack.ok
+            ? "Check your Slack channel for two sample alerts (completed + failed)."
+            : slack.error ?? "Unknown error.",
+          variant: slack.ok ? "default" : "destructive",
+        });
+      }
+      if (email.configured) {
+        const recipientText =
+          email.recipients && email.recipients.length > 0
+            ? ` to ${email.recipients.join(", ")}`
+            : "";
+        toast({
+          title: email.ok ? "Email test alert sent" : "Email test alert failed",
+          description: email.ok
+            ? `Sent two sample alerts (completed + failed)${recipientText}.`
+            : email.error ?? "Unknown error.",
+          variant: email.ok ? "default" : "destructive",
+        });
+      }
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to send test alert",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const startMutation = useMutation({
     mutationFn: async () => {
       const body: { maxRecords?: number; concurrency?: number } = {};
@@ -526,18 +588,38 @@ export default function AdminTranscriptBackfillPage() {
               />
             </div>
           </div>
-          <Button
-            onClick={() => startMutation.mutate()}
-            disabled={startMutation.isPending || isRunning || pending === 0}
-            data-testid="button-start-backfill"
-          >
-            {startMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4 mr-2" />
-            )}
-            {isRunning ? "Backfill running…" : "Start backfill"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => startMutation.mutate()}
+              disabled={startMutation.isPending || isRunning || pending === 0}
+              data-testid="button-start-backfill"
+            >
+              {startMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              {isRunning ? "Backfill running…" : "Start backfill"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => testAlertMutation.mutate()}
+              disabled={testAlertMutation.isPending}
+              data-testid="button-send-test-alert"
+              title="Dispatch sample completion + failure notifications using the configured Slack/email destinations"
+            >
+              {testAlertMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 mr-2" />
+              )}
+              Send test alert
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground" data-testid="text-test-alert-help">
+            Sends a sample completion + failure alert to whichever Slack webhook /
+            email recipients are configured, so you can confirm they arrive.
+          </p>
           {pending === 0 && !isRunning && (
             <p className="text-xs text-muted-foreground" data-testid="text-no-pending">
               Nothing to backfill — all recordings already have transcripts.
