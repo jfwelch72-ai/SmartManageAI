@@ -1561,10 +1561,13 @@ export async function summarizeOrgAdminAlertFailureFallbackMutes(
 // stream, since a misconfigured webhook would then only be noticed via
 // the next day's digest.
 //
-// We deliberately do NOT apply the Task #1066 mute / Task #1051 fallback
-// disable filters here: an admin who fully opted out via those switches
-// is still useful to surface ("everybody muted us") and the per-row mode
-// badge stays meaningful regardless. Callers that want the actual fan-out
+// Task #1102 — also surface the Task #1051 `crmAlertFailureFallbackEnabled`
+// "silence all fallbacks" toggle and the Task #1066
+// `crmAlertFailureFallbackMutedChannels` per-channel mute list so admins
+// can verify coverage when a teammate mutes a channel. We still deliberately
+// do NOT apply those filters as exclusions here: an admin who fully opted
+// out is still useful to surface ("everybody muted us") and the per-row
+// badges stay meaningful regardless. Callers that want the actual fan-out
 // recipient list should keep using `listOrgAdminsForAlertFailureFallback`.
 export type OrgAdminAlertFailureMode = {
   id: string;
@@ -1572,6 +1575,8 @@ export type OrgAdminAlertFailureMode = {
   firstName: string | null;
   lastName: string | null;
   alertFailureEmailMode: "both" | "realtime" | "digest" | "none";
+  fallbackEnabled: boolean;
+  fallbackMutedChannels: ("slack" | "email")[];
 };
 
 export async function listOrgAdminAlertFailureModes(
@@ -1584,6 +1589,8 @@ export async function listOrgAdminAlertFailureModes(
       firstName: users.firstName,
       lastName: users.lastName,
       alertFailureEmailMode: users.alertFailureEmailMode,
+      fallbackEnabled: users.crmAlertFailureFallbackEnabled,
+      fallbackMutedChannels: users.crmAlertFailureFallbackMutedChannels,
     })
     .from(users)
     .where(
@@ -1607,12 +1614,27 @@ export async function listOrgAdminAlertFailureModes(
     const raw = r.alertFailureEmailMode ?? "both";
     const mode: OrgAdminAlertFailureMode["alertFailureEmailMode"] =
       raw === "realtime" || raw === "digest" || raw === "none" ? raw : "both";
+    // Task #1102 — normalise the per-channel mute list to the two known
+    // channels and drop anything else so the UI can rely on the shape.
+    const rawMuted = Array.isArray(r.fallbackMutedChannels)
+      ? r.fallbackMutedChannels
+      : [];
+    const fallbackMutedChannels: ("slack" | "email")[] = [];
+    for (const ch of rawMuted) {
+      if ((ch === "slack" || ch === "email") && !fallbackMutedChannels.includes(ch)) {
+        fallbackMutedChannels.push(ch);
+      }
+    }
     out.push({
       id: r.id,
       email,
       firstName: r.firstName ?? null,
       lastName: r.lastName ?? null,
       alertFailureEmailMode: mode,
+      // Treat null as the legacy default "true" (receives fallbacks) so
+      // unmigrated rows aren't misrepresented as opted-out.
+      fallbackEnabled: r.fallbackEnabled !== false,
+      fallbackMutedChannels,
     });
   }
   // Stable, predictable ordering for the admin UI: "missing realtime"

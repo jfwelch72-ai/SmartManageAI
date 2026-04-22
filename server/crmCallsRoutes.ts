@@ -2967,11 +2967,41 @@ router.get(
           a.alertFailureEmailMode === "both" ||
           a.alertFailureEmailMode === "realtime",
       ).length;
+      // Task #1102 — aggregate "who would actually be paged" counts so the
+      // UI can warn when nobody is left covering a channel after Task #1051
+      // / Task #1066 opt-outs are applied. An admin counts as a recipient
+      // for a channel when they:
+      //   - aren't fully opted out via crmAlertFailureFallbackEnabled,
+      //   - haven't muted that specific channel, AND
+      //   - are on a stream that includes real-time pages
+      //     (mode === "both" | "realtime"); the per-failure fallback only
+      //     fires for the realtime stream.
+      const isRealtime = (
+        m: (typeof admins)[number]["alertFailureEmailMode"],
+      ) => m === "both" || m === "realtime";
+      const slackRecipientCount = admins.filter(
+        (a) =>
+          a.fallbackEnabled &&
+          !a.fallbackMutedChannels.includes("slack") &&
+          isRealtime(a.alertFailureEmailMode),
+      ).length;
+      const emailRecipientCount = admins.filter(
+        (a) =>
+          a.fallbackEnabled &&
+          !a.fallbackMutedChannels.includes("email") &&
+          isRealtime(a.alertFailureEmailMode),
+      ).length;
+      const fullyOptedOutCount = admins.filter(
+        (a) => !a.fallbackEnabled,
+      ).length;
       res.json({
         admins,
         realtimeRecipientCount,
         noRealtimeRecipients:
           admins.length > 0 && realtimeRecipientCount === 0,
+        slackRecipientCount,
+        emailRecipientCount,
+        fullyOptedOutCount,
       });
     } catch (e) {
       next(e);

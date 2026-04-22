@@ -4350,12 +4350,23 @@ interface BackfillAdminAlertFailureModeRow {
   firstName: string | null;
   lastName: string | null;
   alertFailureEmailMode: "both" | "realtime" | "digest" | "none";
+  // Task #1102 — also surface the Task #1051 "silence all fallbacks" toggle
+  // and the Task #1066 per-channel mute list so admins can confirm coverage
+  // when a teammate mutes a channel.
+  fallbackEnabled: boolean;
+  fallbackMutedChannels: ("slack" | "email")[];
 }
 
 interface BackfillAdminAlertFailureModesResponse {
   admins: BackfillAdminAlertFailureModeRow[];
   realtimeRecipientCount: number;
   noRealtimeRecipients: boolean;
+  // Task #1102 — aggregate "who would actually be paged on this channel"
+  // counts after applying the realtime + per-channel mute + fully-disabled
+  // filters. Optional so older API responses don't break the typing.
+  slackRecipientCount?: number;
+  emailRecipientCount?: number;
+  fullyOptedOutCount?: number;
 }
 
 const ADMIN_ALERT_FAILURE_MODES_PATH =
@@ -4407,14 +4418,26 @@ function adminDisplayName(row: BackfillAdminAlertFailureModeRow): string {
   return parts.length > 0 ? parts.join(" ") : row.email;
 }
 
+// Task #1102 — the card auto-refreshes every 30s so when an admin updates
+// their fallback / digest preferences in another tab the recipient list on
+// this page reflects the change without requiring a manual reload. Window
+// focus also triggers a refetch via the React Query default. The polling
+// is intentionally cheap (a small JOIN against `users`).
+const ADMIN_ALERT_FAILURE_MODES_REFETCH_INTERVAL_MS = 30_000;
+
 export function BackfillAdminAlertFailureModesCard() {
   const query = useQuery<BackfillAdminAlertFailureModesResponse>({
     queryKey: [ADMIN_ALERT_FAILURE_MODES_PATH],
+    refetchInterval: ADMIN_ALERT_FAILURE_MODES_REFETCH_INTERVAL_MS,
+    refetchOnWindowFocus: true,
   });
 
   const data = query.data;
   const admins = data?.admins ?? [];
   const noRealtime = data?.noRealtimeRecipients ?? false;
+  const slackRecipientCount = data?.slackRecipientCount ?? 0;
+  const emailRecipientCount = data?.emailRecipientCount ?? 0;
+  const fullyOptedOutCount = data?.fullyOptedOutCount ?? 0;
 
   return (
     <Card data-testid="card-admin-alert-failure-modes">
@@ -4472,6 +4495,42 @@ export function BackfillAdminAlertFailureModesCard() {
           </div>
         ) : (
           <div className="space-y-3">
+            {/* Task #1102 — at-a-glance "who would actually be paged" tally
+                across the org, after applying every opt-out the recipients
+                have configured. Lets ops leads spot a coverage gap (e.g.
+                "0 admins on Slack") without scanning every row. */}
+            <div
+              className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs"
+              data-testid="summary-admin-alert-failure-coverage"
+            >
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <div className="text-muted-foreground">Slack page recipients</div>
+                <div
+                  className="text-sm font-medium"
+                  data-testid="text-coverage-slack-count"
+                >
+                  {slackRecipientCount} of {admins.length}
+                </div>
+              </div>
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <div className="text-muted-foreground">Email page recipients</div>
+                <div
+                  className="text-sm font-medium"
+                  data-testid="text-coverage-email-count"
+                >
+                  {emailRecipientCount} of {admins.length}
+                </div>
+              </div>
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <div className="text-muted-foreground">Fully silenced</div>
+                <div
+                  className="text-sm font-medium"
+                  data-testid="text-coverage-fully-opted-out-count"
+                >
+                  {fullyOptedOutCount} of {admins.length}
+                </div>
+              </div>
+            </div>
             {noRealtime && (
               <div
                 className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200 flex items-start gap-2"
@@ -4508,13 +4567,31 @@ export function BackfillAdminAlertFailureModesCard() {
                 const onRealtime =
                   row.alertFailureEmailMode === "both" ||
                   row.alertFailureEmailMode === "realtime";
+                // Task #1102 — show explicit badges when an admin has
+                // silenced fallbacks entirely or muted a specific channel,
+                // so coverage can be verified at a glance. Default the
+                // new row-level fields defensively so a partial-rollout
+                // response (older API, newer client) doesn't render every
+                // admin as fully opted out.
+                const fallbackEnabled = row.fallbackEnabled ?? true;
+                const mutedChannels = Array.isArray(row.fallbackMutedChannels)
+                  ? row.fallbackMutedChannels
+                  : [];
+                const fullyOptedOut = !fallbackEnabled;
+                const slackMuted = mutedChannels.includes("slack");
+                const emailMuted = mutedChannels.includes("email");
+                // Treat "both channels muted" the same as a full opt-out
+                // for the bell-icon affordance: no real-time channel is
+                // actually reachable for this admin even though the mode
+                // says they want pages.
+                const allChannelsMuted = slackMuted && emailMuted;
                 return (
                   <li
                     key={row.id}
                     className="px-3 py-2 flex items-start gap-3"
                     data-testid={`row-admin-alert-failure-mode-${row.id}`}
                   >
-                    {onRealtime ? (
+                    {onRealtime && !fullyOptedOut && !allChannelsMuted ? (
                       <Bell
                         className="h-4 w-4 mt-0.5 text-green-600 shrink-0"
                         aria-hidden="true"
@@ -4539,25 +4616,93 @@ export function BackfillAdminAlertFailureModesCard() {
                         {row.email}
                       </div>
                     </div>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex">
-                          <Badge
-                            variant={badge.variant}
-                            data-testid={`badge-admin-alert-failure-mode-${row.id}`}
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {fullyOptedOut && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Badge
+                                variant="destructive"
+                                data-testid={`badge-admin-fallback-opted-out-${row.id}`}
+                              >
+                                Fallbacks off
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="left"
+                            className="max-w-xs text-xs leading-snug"
                           >
-                            {badge.label}
-                          </Badge>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="left"
-                        className="max-w-xs text-xs leading-snug"
-                        data-testid={`tooltip-admin-alert-failure-mode-${row.id}`}
-                      >
-                        {badge.description}
-                      </TooltipContent>
-                    </Tooltip>
+                            This admin turned off all transcript-backfill
+                            failure fallback emails (the per-failure page
+                            and the daily digest are both suppressed).
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {!fullyOptedOut && slackMuted && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Badge
+                                variant="outline"
+                                data-testid={`badge-admin-fallback-muted-slack-${row.id}`}
+                              >
+                                Slack muted
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="left"
+                            className="max-w-xs text-xs leading-snug"
+                          >
+                            This admin still receives email pages but muted
+                            the Slack-channel fallback for transcript
+                            backfill failures.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {!fullyOptedOut && emailMuted && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Badge
+                                variant="outline"
+                                data-testid={`badge-admin-fallback-muted-email-${row.id}`}
+                              >
+                                Email muted
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="left"
+                            className="max-w-xs text-xs leading-snug"
+                          >
+                            This admin still receives Slack pages but muted
+                            the email-channel fallback for transcript
+                            backfill failures.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex">
+                            <Badge
+                              variant={badge.variant}
+                              data-testid={`badge-admin-alert-failure-mode-${row.id}`}
+                            >
+                              {badge.label}
+                            </Badge>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="left"
+                          className="max-w-xs text-xs leading-snug"
+                          data-testid={`tooltip-admin-alert-failure-mode-${row.id}`}
+                        >
+                          {badge.description}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </li>
                 );
               })}

@@ -84,6 +84,8 @@ describe("BackfillAdminAlertFailureModesCard", () => {
           firstName: "Ops",
           lastName: "Lead",
           alertFailureEmailMode: "realtime",
+          fallbackEnabled: true,
+          fallbackMutedChannels: [],
         },
         {
           id: "u-both",
@@ -91,6 +93,8 @@ describe("BackfillAdminAlertFailureModesCard", () => {
           firstName: "Alex",
           lastName: null,
           alertFailureEmailMode: "both",
+          fallbackEnabled: true,
+          fallbackMutedChannels: [],
         },
         {
           id: "u-digest",
@@ -98,10 +102,15 @@ describe("BackfillAdminAlertFailureModesCard", () => {
           firstName: null,
           lastName: null,
           alertFailureEmailMode: "digest",
+          fallbackEnabled: true,
+          fallbackMutedChannels: [],
         },
       ],
       realtimeRecipientCount: 2,
       noRealtimeRecipients: false,
+      slackRecipientCount: 2,
+      emailRecipientCount: 2,
+      fullyOptedOutCount: 0,
     });
 
     renderCard();
@@ -139,6 +148,8 @@ describe("BackfillAdminAlertFailureModesCard", () => {
           firstName: null,
           lastName: null,
           alertFailureEmailMode: "digest",
+          fallbackEnabled: true,
+          fallbackMutedChannels: [],
         },
         {
           id: "u-none",
@@ -146,10 +157,15 @@ describe("BackfillAdminAlertFailureModesCard", () => {
           firstName: null,
           lastName: null,
           alertFailureEmailMode: "none",
+          fallbackEnabled: true,
+          fallbackMutedChannels: [],
         },
       ],
       realtimeRecipientCount: 0,
       noRealtimeRecipients: true,
+      slackRecipientCount: 0,
+      emailRecipientCount: 0,
+      fullyOptedOutCount: 0,
     });
 
     renderCard();
@@ -166,6 +182,9 @@ describe("BackfillAdminAlertFailureModesCard", () => {
       admins: [],
       realtimeRecipientCount: 0,
       noRealtimeRecipients: false,
+      slackRecipientCount: 0,
+      emailRecipientCount: 0,
+      fullyOptedOutCount: 0,
     });
 
     renderCard();
@@ -189,6 +208,98 @@ describe("BackfillAdminAlertFailureModesCard", () => {
     expect(
       screen.getByTestId("status-loading-admin-alert-failure-modes"),
     ).toBeTruthy();
+  });
+
+  // Task #1102 — verify the per-row Slack-muted / email-muted / fallbacks-off
+  // badges and the aggregate coverage tally render so admins can confirm
+  // who is still on the page list after their teammates' opt-outs.
+  it("surfaces fallback opt-outs, per-channel mutes, and the coverage tally (Task #1102)", () => {
+    setData({
+      admins: [
+        {
+          id: "u-opt-out",
+          email: "silent@example.com",
+          firstName: "Sil",
+          lastName: "Ent",
+          alertFailureEmailMode: "both",
+          fallbackEnabled: false,
+          fallbackMutedChannels: [],
+        },
+        {
+          id: "u-slack-muted",
+          email: "noslack@example.com",
+          firstName: null,
+          lastName: null,
+          alertFailureEmailMode: "realtime",
+          fallbackEnabled: true,
+          fallbackMutedChannels: ["slack"],
+        },
+        {
+          id: "u-email-muted",
+          email: "noemail@example.com",
+          firstName: null,
+          lastName: null,
+          alertFailureEmailMode: "both",
+          fallbackEnabled: true,
+          fallbackMutedChannels: ["email"],
+        },
+        {
+          id: "u-clean",
+          email: "page@example.com",
+          firstName: null,
+          lastName: null,
+          alertFailureEmailMode: "both",
+          fallbackEnabled: true,
+          fallbackMutedChannels: [],
+        },
+      ],
+      realtimeRecipientCount: 3,
+      noRealtimeRecipients: false,
+      slackRecipientCount: 2,
+      emailRecipientCount: 2,
+      fullyOptedOutCount: 1,
+    });
+
+    renderCard();
+
+    expect(
+      screen.getByTestId("badge-admin-fallback-opted-out-u-opt-out").textContent,
+    ).toMatch(/fallbacks off/i);
+    expect(
+      screen.getByTestId("badge-admin-fallback-muted-slack-u-slack-muted").textContent,
+    ).toMatch(/slack muted/i);
+    expect(
+      screen.getByTestId("badge-admin-fallback-muted-email-u-email-muted").textContent,
+    ).toMatch(/email muted/i);
+    // The fully opted-out admin shouldn't ALSO get a per-channel mute badge —
+    // the global opt-out supersedes them.
+    expect(
+      screen.queryByTestId("badge-admin-fallback-muted-slack-u-opt-out"),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("badge-admin-fallback-muted-email-u-opt-out"),
+    ).toBeNull();
+    // Clean admin only carries the mode badge, no opt-out / mute badges.
+    expect(
+      screen.queryByTestId("badge-admin-fallback-opted-out-u-clean"),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("badge-admin-fallback-muted-slack-u-clean"),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("badge-admin-fallback-muted-email-u-clean"),
+    ).toBeNull();
+
+    // Aggregate tally renders the channel-by-channel coverage counts.
+    expect(
+      screen.getByTestId("text-coverage-slack-count").textContent,
+    ).toMatch(/2 of 4/);
+    expect(
+      screen.getByTestId("text-coverage-email-count").textContent,
+    ).toMatch(/2 of 4/);
+    expect(
+      screen.getByTestId("text-coverage-fully-opted-out-count").textContent,
+    ).toMatch(/1 of 4/);
   });
 
   it("renders an error message when the query fails", () => {

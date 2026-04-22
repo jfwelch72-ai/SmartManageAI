@@ -36,6 +36,10 @@ type SeedOpts = {
   role?: "ADMIN" | "FIELD_WORKER";
   isActive?: boolean;
   alertFailureEmailMode?: "both" | "realtime" | "digest" | "none";
+  // Task #1102 — also seed the Task #1051 / #1066 opt-out fields so the
+  // storage helper can be asserted to surface them on each row.
+  fallbackEnabled?: boolean;
+  fallbackMutedChannels?: ("slack" | "email")[];
 };
 
 async function seedUser(opts: SeedOpts): Promise<string> {
@@ -51,6 +55,8 @@ async function seedUser(opts: SeedOpts): Promise<string> {
       role: opts.role ?? "ADMIN",
       isActive: opts.isActive ?? true,
       alertFailureEmailMode: opts.alertFailureEmailMode ?? "both",
+      crmAlertFailureFallbackEnabled: opts.fallbackEnabled ?? true,
+      crmAlertFailureFallbackMutedChannels: opts.fallbackMutedChannels ?? [],
     })
     .returning();
   return u.id;
@@ -124,5 +130,45 @@ describe("listOrgAdminAlertFailureModes (Task #1085)", () => {
     // alpha-* sorts ahead of charlie-*.
     expect(rows[1].email).toBe(`${TEST_PREFIX}alpha-digest@test.invalid`);
     expect(rows[2].email).toBe(`${TEST_PREFIX}charlie-digest@test.invalid`);
+  });
+
+  // Task #1102 — surface fallbackEnabled / fallbackMutedChannels per row
+  // so the admin UI can render coverage state alongside the digest mode.
+  it("returns each admin's Task #1051 fallback toggle and Task #1066 per-channel mutes", async () => {
+    await seedUser({
+      label: "page-clean",
+      alertFailureEmailMode: "both",
+      fallbackEnabled: true,
+      fallbackMutedChannels: [],
+    });
+    await seedUser({
+      label: "page-no-slack",
+      alertFailureEmailMode: "realtime",
+      fallbackEnabled: true,
+      fallbackMutedChannels: ["slack"],
+    });
+    await seedUser({
+      label: "page-fully-off",
+      alertFailureEmailMode: "both",
+      fallbackEnabled: false,
+      fallbackMutedChannels: ["email"],
+    });
+
+    const rows = await listOrgAdminAlertFailureModes(orgId);
+    const byEmail = new Map(rows.map((r) => [r.email, r]));
+
+    const clean = byEmail.get(`${TEST_PREFIX}page-clean@test.invalid`)!;
+    expect(clean.fallbackEnabled).toBe(true);
+    expect(clean.fallbackMutedChannels).toEqual([]);
+
+    const noSlack = byEmail.get(`${TEST_PREFIX}page-no-slack@test.invalid`)!;
+    expect(noSlack.fallbackEnabled).toBe(true);
+    expect(noSlack.fallbackMutedChannels).toEqual(["slack"]);
+
+    const fullyOff = byEmail.get(`${TEST_PREFIX}page-fully-off@test.invalid`)!;
+    expect(fullyOff.fallbackEnabled).toBe(false);
+    // Per-channel mutes are still surfaced even when the global fallback
+    // is disabled — the UI decides how to combine them.
+    expect(fullyOff.fallbackMutedChannels).toEqual(["email"]);
   });
 });
