@@ -44,6 +44,10 @@ interface BackfillJob {
   succeeded: number;
   failed: number;
   errors: Array<{ recordingId: string; error: string }>;
+  // Task #1003 — full set of failed recordingIds. May be longer than `errors`
+  // (which is capped at 50 samples) so we use this when surfacing the true
+  // retry count in the UI (Task #1013).
+  failedRecordingIds: string[];
   startedAt: string;
   completedAt: string | null;
   parentJobId?: string | null;
@@ -458,7 +462,21 @@ export default function AdminTranscriptBackfillPage() {
             </div>
             {job.errors.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs">Recent error samples ({job.errors.length})</Label>
+                <Label className="text-xs" data-testid="label-job-error-samples">
+                  {/* Use the larger of the unbounded failedRecordingIds list
+                      (Task #1003) and the bounded errors sample. Falling back
+                      keeps the label sensible for legacy job rows that don't
+                      yet populate failedRecordingIds. */}
+                  {(() => {
+                    const totalFailed = Math.max(
+                      job.failedRecordingIds.length,
+                      job.errors.length,
+                    );
+                    return totalFailed > job.errors.length
+                      ? `Recent error samples (showing ${job.errors.length.toLocaleString()} of ${totalFailed.toLocaleString()} total failures)`
+                      : `Recent error samples (${job.errors.length.toLocaleString()})`;
+                  })()}
+                </Label>
                 <ScrollArea className="h-[200px] rounded-md border p-3">
                   <ul className="space-y-2 text-xs font-mono" data-testid="list-errors">
                     {job.errors.map((err, i) => (
@@ -647,8 +665,16 @@ export default function AdminTranscriptBackfillPage() {
                 const duration = entry.completedAt
                   ? formatDistanceStrict(new Date(entry.completedAt), new Date(entry.startedAt))
                   : null;
+                // Prefer the unbounded failedRecordingIds count (Task #1003),
+                // but fall back to the bounded errors sample so legacy history
+                // rows persisted before #1003 still expose a working Retry
+                // button. The server-side retry endpoint also unions both
+                // sources, so this matches what the backend will actually
+                // re-run.
+                const retryCount =
+                  entry.failedRecordingIds.length || entry.errors.length;
                 const canRetry =
-                  entry.status !== "RUNNING" && entry.errors.length > 0 && !isRunning;
+                  entry.status !== "RUNNING" && retryCount > 0 && !isRunning;
                 const retryingThisRow =
                   retryMutation.isPending && retryMutation.variables === entry.id;
                 return (
@@ -720,14 +746,14 @@ export default function AdminTranscriptBackfillPage() {
                         onClick={() => retryMutation.mutate(entry.id)}
                         disabled={retryMutation.isPending || isRunning}
                         data-testid={`button-history-retry-${entry.id}`}
-                        title="Re-run transcription for the recordings that failed in this run"
+                        title={`Re-run transcription for ${retryCount.toLocaleString()} recording${retryCount === 1 ? "" : "s"} that failed in this run`}
                       >
                         {retryingThisRow ? (
                           <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
                         ) : (
                           <RotateCcw className="h-4 w-4 mr-1.5" />
                         )}
-                        Retry failed
+                        Retry {retryCount.toLocaleString()} failed
                       </Button>
                     )}
                     </div>
@@ -744,7 +770,14 @@ export default function AdminTranscriptBackfillPage() {
                           </div>
                         ) : (
                           <div className="space-y-2">
-                            <Label className="text-xs">Error samples ({entry.errors.length})</Label>
+                            <Label
+                              className="text-xs"
+                              data-testid={`label-history-error-samples-${entry.id}`}
+                            >
+                              {retryCount > entry.errors.length
+                                ? `Error samples (showing ${entry.errors.length.toLocaleString()} of ${retryCount.toLocaleString()} total failures)`
+                                : `Error samples (${entry.errors.length.toLocaleString()})`}
+                            </Label>
                             <ScrollArea className="h-[180px] rounded-md border p-3">
                               <ul className="space-y-2 text-xs font-mono" data-testid={`list-history-errors-${entry.id}`}>
                                 {entry.errors.map((err, i) => (
