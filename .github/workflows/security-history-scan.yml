@@ -1,0 +1,162 @@
+name: Weekly Secret History Scan
+
+# Scheduled gitleaks scan over the FULL git history of `main`.
+#
+# The PR-time Security Gate (`.github/workflows/ci.yml` -> `security` job,
+# `scripts/ci-security.sh`) only scans the working tree on each pull request.
+# Our SDLC policy (`docs/compliance/policies/09-sdlc-policy.md`, section 2,
+# "Build / CI") additionally commits us to scanning the full `main` history
+# weekly for any historical secret leak. This workflow is the evidence for
+# that commitment and supports SOC 2 controls CC7.1 and CC8.1.
+#
+# Findings:
+#   - Always uploaded as the `gitleaks-history-report` artifact (90-day
+#     retention) so auditors can review the evidence.
+#   - On any finding, an issue is opened (or updated) and assigned to the
+#     security owner so the leak can be triaged and rotated per the policy
+#     #11 SLAs.
+
+on:
+  schedule:
+    # Every Monday at 07:00 UTC.
+    - cron: '0 7 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  history-scan:
+    name: gitleaks (full history of main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout full history of main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # fetch-depth: 0 pulls the entire git history so gitleaks can walk
+          # every commit, not just the working tree.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Run gitleaks against full git history
+        id: gitleaks
+        run: |
+          set +e
+          mkdir -p security-reports
+          gitleaks detect \
+            --no-banner \
+            --redact \
+            --log-opts="--all" \
+            --report-format sarif \
+            --report-path security-reports/gitleaks-history.sarif \
+            --exit-code 1 \
+            2>&1 | tee security-reports/gitleaks-history.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          # Don't fail the job here — we want the artifact upload and the
+          # follow-up "open issue" step to run regardless. The final step
+          # below re-exits with the gitleaks status.
+          exit 0
+
+      - name: Publish job summary
+        if: always()
+        run: |
+          {
+            echo "# Weekly Secret History Scan"
+            echo ""
+            echo "Tool: \`gitleaks detect --log-opts=--all\` over the full history of \`main\`."
+            echo "Policy: \`docs/compliance/policies/09-sdlc-policy.md\` (SDLC, Build/CI)."
+            echo "SOC 2 controls: **CC7.1**, **CC8.1**."
+            echo ""
+            if [ "${{ steps.gitleaks.outputs.exit_code }}" = "0" ]; then
+              echo "**Status:** PASSED — no secrets detected in the history of \`main\`."
+            else
+              echo "**Status:** FAILED (exit code ${{ steps.gitleaks.outputs.exit_code }}) — secrets detected. Rotate immediately and remove from history."
+            fi
+            echo ""
+            echo "<details><summary>Scanner output (redacted)</summary>"
+            echo ""
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' security-reports/gitleaks-history.log | tail -c 60000
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload gitleaks history report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-history-report
+          path: security-reports/
+          retention-days: 90
+
+      - name: Open or update tracking issue on finding
+        if: always() && steps.gitleaks.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let log = '';
+            try {
+              log = fs.readFileSync('security-reports/gitleaks-history.log', 'utf8')
+                .replace(/\x1b\[[0-9;]*m/g, '');
+            } catch (e) {
+              log = '(no log captured)';
+            }
+            const trimmed = log.length > 12000 ? '…(truncated)…\n' + log.slice(-12000) : log;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const marker = '<!-- weekly-gitleaks-history-finding -->';
+            const title = '[security] Weekly gitleaks history scan detected secrets in `main`';
+            const body = [
+              marker,
+              '## Weekly gitleaks history scan — secrets detected',
+              '',
+              `Workflow run: ${runUrl}`,
+              '',
+              'A scheduled gitleaks scan over the full history of `main` found one or more potential secrets.',
+              'Per policies #09 (SDLC) and #11 (Vulnerability Management):',
+              '',
+              '1. Treat any matched credential as compromised and **rotate it immediately**.',
+              '2. Remove the secret from history (e.g. `git filter-repo`) and force-push with security owner approval.',
+              '3. File the rotation evidence in the GRC platform.',
+              '',
+              '<details><summary>Scanner output (redacted)</summary>',
+              '',
+              '```',
+              trimmed,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'security', per_page: 100,
+            });
+            const existing = issues.find(i => i.body && i.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `New weekly history scan also failed — see ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title, body,
+                labels: ['security', 'gitleaks', 'priority:high'],
+              });
+            }
+
+      - name: Fail job if gitleaks found secrets
+        if: steps.gitleaks.outputs.exit_code != '0'
+        run: |
+          echo "gitleaks reported findings (exit code ${{ steps.gitleaks.outputs.exit_code }})."
+          exit 1

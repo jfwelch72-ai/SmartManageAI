@@ -43,7 +43,16 @@ merge on:
    - **Dependency audit** — `npm audit --audit-level=high` blocks merge
    - **SAST** — Semgrep `p/owasp-top-ten` + `p/javascript`
    - **Secret scan** — gitleaks against the working tree; `main` is also
-     scanned weekly for any historical leak
+     scanned weekly for any historical leak by the
+     `Weekly Secret History Scan` workflow
+     (`.github/workflows/security-history-scan.yml`), which runs
+     `gitleaks detect --log-opts=--all` over the full git history of
+     `main`. The workflow uploads the redacted SARIF + log as the
+     `gitleaks-history-report` artifact (90-day retention) and, on any
+     finding, opens (or updates) a `security`-labelled tracking issue
+     for the security owner to triage so the credential is rotated and
+     removed from history per the policy #11 SLAs. The artifact is the auditor-facing
+     evidence for the weekly history-scan commitment.
    - **IaC scan** — checkov, where IaC files exist
 
    Any Critical/High finding fails the job and blocks merge. The job
