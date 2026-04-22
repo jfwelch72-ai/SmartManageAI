@@ -84,6 +84,7 @@ import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCr
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
+import { ensureUsersCrmBackfillSummaryPreferenceColumns } from "./ensureUsersCrmBackfillSummaryPreferenceColumns";
 import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscriptBackfillTestAlertsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
@@ -187,6 +188,10 @@ const migrations: MigrationStep[] = [
   { name: "users_crm_alert_failure_fallback_columns", category: "ADD_COLUMN", fn: ensureUsersCrmAlertFailureFallbackColumns },
   // Task #1076 — per-admin opt-in for real-time vs digest alert-failure emails.
   { name: "users_alert_failure_email_mode_column", category: "ADD_COLUMN", fn: ensureUsersAlertFailureEmailModeColumn },
+  // Task #1089 — mirrors migrations/0037_backfill_summary_preferences.sql so
+  // fresh dev DBs get the `crm_backfill_summary_channel` enum/column and the
+  // `crm_backfill_summary_on_failure_only` flag without needing manual psql.
+  { name: "users_crm_backfill_summary_preference_columns", category: "ADD_COLUMN", fn: ensureUsersCrmBackfillSummaryPreferenceColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
