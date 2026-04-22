@@ -1010,7 +1010,7 @@ const MAX_BACKFILL_ERROR_SAMPLES = 50;
 const DEFAULT_BACKFILL_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 const MIN_BACKFILL_HEARTBEAT_STALE_MS = 30 * 1000;
 const MAX_BACKFILL_HEARTBEAT_STALE_MS = 60 * 60 * 1000;
-function resolveBackfillHeartbeatStaleMs(): number {
+export function resolveBackfillHeartbeatStaleMs(): number {
   const raw = process.env.CRM_BACKFILL_HEARTBEAT_STALE_SECONDS;
   if (!raw || !raw.trim()) return DEFAULT_BACKFILL_HEARTBEAT_STALE_MS;
   const parsed = Number(raw.trim());
