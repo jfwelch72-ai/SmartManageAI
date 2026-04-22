@@ -13,6 +13,7 @@ import { setCsrfToken, validateCsrf } from "./csrf";
 import { initializeAIScheduler } from "./ai/scheduler";
 import { aiNotesScheduler } from "./aiNotesScheduler";
 import { crmTaskReminderScheduler } from "./crmTaskReminderScheduler";
+import { crmBackfillAlertDigestScheduler } from "./crmBackfillAlertDigestScheduler";
 import { startCrmCsvImportWorker } from "./crmCsvImportWorker";
 import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
@@ -449,6 +450,12 @@ app.use((req, res, next) => {
         crmTaskReminderScheduler.start();
       } catch (error) {
         logError('Failed to start CRM Task Reminder Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
+      }
+
+      try {
+        crmBackfillAlertDigestScheduler.start();
+      } catch (error) {
+        logError('Failed to start CRM Backfill Alert Digest Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
       try {

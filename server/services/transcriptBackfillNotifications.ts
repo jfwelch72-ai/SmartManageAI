@@ -18,6 +18,7 @@ import { isValidSlackWebhookUrl } from "./slackService";
 import { sendEmail } from "./emailService";
 import { logInfo, logWarn } from "../utils/logger";
 import {
+  aggregateRecentCrmTranscriptBackfillAlertFailures,
   getCrmTranscriptBackfillAlertDelivery,
   getCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillNotificationSettings,
@@ -26,6 +27,7 @@ import {
   listOrgAdminsForAlertFailureFallback,
   recordCrmTranscriptBackfillAlertDelivery,
   type CrmTranscriptBackfillAlertDelivery,
+  type CrmTranscriptBackfillAlertFailureDigestEntry,
   type CrmTranscriptBackfillOperatorContact,
   type OrgAdminFailureFallbackRecipient,
 } from "../storage";
@@ -928,4 +930,216 @@ export async function resendBackfillAlertDelivery(
     };
   }
   return { ok: true, delivery: newRow };
+}
+
+// ---------------------------------------------------------------------------
+// Task #1065 — daily digest of alert delivery failures.
+//
+// Task #1051 already fans out a real-time email on every individual failure,
+// but a transient hiccup followed by a recovery still produces a one-off
+// email with no overall context. This digest aggregates the previous 24h
+// of `crm_transcript_backfill_alert_deliveries` failure rows per org and
+// sends one summary email per day to the same admins the real-time
+// fallback uses (so admin opt-outs still apply). Orgs with zero failures
+// in the window are skipped entirely — the digest is silent on quiet days.
+// ---------------------------------------------------------------------------
+
+export type AlertFailureDigestContent = {
+  subject: string;
+  text: string;
+  html: string;
+  /** One-line human summary used at the top of both bodies. */
+  summary: string;
+  historyUrl: string;
+};
+
+export type AlertFailureDigestInput = {
+  entry: CrmTranscriptBackfillAlertFailureDigestEntry;
+  /** Window length in hours (e.g. 24). Used in the summary wording. */
+  windowHours: number;
+};
+
+function pluralizeFailures(n: number): string {
+  return n === 1 ? "1 alert delivery failed" : `${n} alert deliveries failed`;
+}
+
+function describeChannelBreakdown(slack: number, email: number): string {
+  const parts: string[] = [];
+  if (slack > 0) parts.push(slack === 1 ? "1 Slack" : `${slack} Slack`);
+  if (email > 0) parts.push(email === 1 ? "1 email" : `${email} email`);
+  return parts.join(", ");
+}
+
+export function buildAlertFailureDigestContent(
+  input: AlertFailureDigestInput,
+): AlertFailureDigestContent {
+  const baseUrl = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
+  const historyUrl = baseUrl
+    ? `${baseUrl}/admin/transcript-backfill`
+    : "/admin/transcript-backfill";
+  const { entry, windowHours } = input;
+  const breakdown = describeChannelBreakdown(entry.slackCount, entry.emailCount);
+  const summary =
+    `${pluralizeFailures(entry.total)} in the last ${windowHours}h` +
+    (breakdown ? ` — ${breakdown}.` : ".");
+  const subject = `[CRM] Daily transcript backfill alert digest — ${pluralizeFailures(entry.total)}`;
+
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const recentLines = entry.recentFailures.map((f) => {
+    const when = f.attemptedAt.toISOString();
+    const channel = f.channel === "slack" ? "Slack" : "email";
+    const job = f.jobId ? ` (job ${f.jobId})` : "";
+    const err = f.errorMessage ? ` — ${f.errorMessage}` : "";
+    return `  • ${when}  ${channel} → ${f.recipientSummary || "(none)"}${job}${err}`;
+  });
+
+  const text = [
+    summary,
+    "",
+    `Failures by channel:`,
+    `  Slack: ${entry.slackCount}`,
+    `  Email: ${entry.emailCount}`,
+    "",
+    entry.recentFailures.length > 0
+      ? `Most recent failures (up to ${entry.recentFailures.length}):`
+      : null,
+    ...recentLines,
+    "",
+    `Open the admin transcript-backfill page to review delivery history:`,
+    historyUrl,
+  ]
+    .filter((l): l is string => l !== null)
+    .join("\n");
+
+  const recentRows = entry.recentFailures
+    .map(
+      (f) => `
+        <tr>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;white-space:nowrap;">${escape(f.attemptedAt.toISOString())}</td>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${escape(f.channel === "slack" ? "Slack" : "email")}</td>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${escape(f.recipientSummary || "(none)")}</td>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${escape(f.errorMessage ?? "")}</td>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${f.jobId ? `<code>${escape(f.jobId)}</code>` : ""}</td>
+        </tr>`,
+    )
+    .join("");
+
+  const html = `
+    <div style="font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#111;">
+      <p style="margin:0 0 12px;"><strong>${escape(summary)}</strong></p>
+      <table cellspacing="0" cellpadding="4" style="border-collapse:collapse;margin-bottom:12px;">
+        <tr><td><strong>Slack failures</strong></td><td>${entry.slackCount}</td></tr>
+        <tr><td><strong>Email failures</strong></td><td>${entry.emailCount}</td></tr>
+        <tr><td><strong>Total</strong></td><td>${entry.total}</td></tr>
+      </table>
+      ${
+        entry.recentFailures.length > 0
+          ? `<p style="margin:0 0 4px;"><strong>Most recent failures</strong></p>
+        <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f3f4f6;text-align:left;">
+              <th style="padding:4px 8px;">When</th>
+              <th style="padding:4px 8px;">Channel</th>
+              <th style="padding:4px 8px;">Recipient</th>
+              <th style="padding:4px 8px;">Error</th>
+              <th style="padding:4px 8px;">Job</th>
+            </tr>
+          </thead>
+          <tbody>${recentRows}</tbody>
+        </table>`
+          : ""
+      }
+      <p style="margin:16px 0 0;">
+        <a href="${escape(historyUrl)}" style="color:#2563eb;">Open the admin transcript-backfill page</a>
+        to review delivery history.
+      </p>
+    </div>
+  `.trim();
+
+  return { subject, text, html, summary, historyUrl };
+}
+
+export type AlertFailureDigestRunSummary = {
+  windowHours: number;
+  orgsWithFailures: number;
+  orgsNotified: number;
+  emailsSent: number;
+  totalFailures: number;
+};
+
+/**
+ * Runs the digest: fetches the previous `windowHours` of failures, groups
+ * them by org, and emails each org's eligible admins one summary message.
+ * Best-effort per org — a failure for one org never blocks the others.
+ * Returns counters useful for logs and tests.
+ */
+export async function runAlertFailureDigest(
+  options: { now?: Date; windowHours?: number; recentSampleLimit?: number } = {},
+): Promise<AlertFailureDigestRunSummary> {
+  const windowHours = options.windowHours ?? 24;
+  const now = options.now ?? new Date();
+  const since = new Date(now.getTime() - windowHours * 60 * 60 * 1000);
+
+  const aggregates = await aggregateRecentCrmTranscriptBackfillAlertFailures(
+    since,
+    { recentSampleLimit: options.recentSampleLimit ?? 10 },
+  );
+
+  let orgsNotified = 0;
+  let emailsSent = 0;
+  let totalFailures = 0;
+
+  for (const entry of aggregates) {
+    totalFailures += entry.total;
+    try {
+      const admins = await listOrgAdminsForAlertFailureFallback(
+        entry.organizationId,
+      );
+      if (admins.length === 0) {
+        logInfo(
+          "transcriptBackfillNotifications: digest skipped (no eligible admins)",
+          { orgId: entry.organizationId, total: entry.total },
+        );
+        continue;
+      }
+      const content = buildAlertFailureDigestContent({ entry, windowHours });
+      const ok = await sendEmail({
+        to: admins.map((a) => a.email),
+        subject: content.subject,
+        text: content.text,
+        html: content.html,
+      });
+      if (!ok) {
+        logWarn(
+          "transcriptBackfillNotifications: digest email transport returned non-success",
+          { orgId: entry.organizationId, total: entry.total },
+        );
+        continue;
+      }
+      orgsNotified += 1;
+      emailsSent += admins.length;
+      logInfo("transcriptBackfillNotifications: digest dispatched", {
+        orgId: entry.organizationId,
+        total: entry.total,
+        slackCount: entry.slackCount,
+        emailCount: entry.emailCount,
+        adminCount: admins.length,
+      });
+    } catch (err) {
+      logWarn("transcriptBackfillNotifications: digest dispatch threw", {
+        orgId: entry.organizationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return {
+    windowHours,
+    orgsWithFailures: aggregates.length,
+    orgsNotified,
+    emailsSent,
+    totalFailures,
+  };
 }

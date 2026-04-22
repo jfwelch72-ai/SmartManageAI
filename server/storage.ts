@@ -1088,4 +1088,83 @@ export async function listOrgAdminsForAlertFailureFallback(
   return out;
 }
 
+// Task #1065 — daily digest of recent alert delivery failures.
+//
+// Aggregates the last N hours of `crm_transcript_backfill_alert_deliveries`
+// rows where status='failure', grouped by organization. Returns one entry
+// per org that had at least one failure, with per-channel counts plus a
+// short list of recent failure rows for the email body. Orgs with zero
+// failures in the window are omitted so the digest scheduler can simply
+// iterate the result without filtering. The internal "recent failures"
+// cap keeps the email body bounded for orgs with hundreds of failures.
+export type CrmTranscriptBackfillAlertFailureDigestRow = {
+  jobId: string | null;
+  channel: "slack" | "email";
+  recipientSummary: string;
+  errorMessage: string | null;
+  attemptedAt: Date;
+};
+
+export type CrmTranscriptBackfillAlertFailureDigestEntry = {
+  organizationId: string;
+  total: number;
+  slackCount: number;
+  emailCount: number;
+  recentFailures: CrmTranscriptBackfillAlertFailureDigestRow[];
+};
+
+export async function aggregateRecentCrmTranscriptBackfillAlertFailures(
+  since: Date,
+  options: { recentSampleLimit?: number } = {},
+): Promise<CrmTranscriptBackfillAlertFailureDigestEntry[]> {
+  const sampleLimit = Math.max(1, Math.min(options.recentSampleLimit ?? 10, 50));
+  const rows = await db
+    .select({
+      organizationId: crmTranscriptBackfillAlertDeliveries.organizationId,
+      jobId: crmTranscriptBackfillAlertDeliveries.jobId,
+      channel: crmTranscriptBackfillAlertDeliveries.channel,
+      recipientSummary: crmTranscriptBackfillAlertDeliveries.recipientSummary,
+      errorMessage: crmTranscriptBackfillAlertDeliveries.errorMessage,
+      attemptedAt: crmTranscriptBackfillAlertDeliveries.attemptedAt,
+    })
+    .from(crmTranscriptBackfillAlertDeliveries)
+    .where(
+      and(
+        eq(crmTranscriptBackfillAlertDeliveries.status, "failure"),
+        gte(crmTranscriptBackfillAlertDeliveries.attemptedAt, since),
+      ),
+    )
+    .orderBy(desc(crmTranscriptBackfillAlertDeliveries.attemptedAt));
+
+  const byOrg = new Map<string, CrmTranscriptBackfillAlertFailureDigestEntry>();
+  for (const r of rows) {
+    let entry = byOrg.get(r.organizationId);
+    if (!entry) {
+      entry = {
+        organizationId: r.organizationId,
+        total: 0,
+        slackCount: 0,
+        emailCount: 0,
+        recentFailures: [],
+      };
+      byOrg.set(r.organizationId, entry);
+    }
+    entry.total += 1;
+    const channel: "slack" | "email" =
+      r.channel === "slack" ? "slack" : "email";
+    if (channel === "slack") entry.slackCount += 1;
+    else entry.emailCount += 1;
+    if (entry.recentFailures.length < sampleLimit) {
+      entry.recentFailures.push({
+        jobId: r.jobId,
+        channel,
+        recipientSummary: r.recipientSummary,
+        errorMessage: r.errorMessage,
+        attemptedAt: r.attemptedAt,
+      });
+    }
+  }
+  return Array.from(byOrg.values());
+}
+
 export const storage = {};
