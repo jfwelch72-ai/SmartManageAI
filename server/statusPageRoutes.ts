@@ -629,6 +629,64 @@ const subscriberRemovalSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+const bulkDeleteSubscribersSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).max(5000).optional(),
+    emails: z.array(z.string().email().max(200)).max(5000).optional(),
+    reason: z.string().trim().max(500).optional(),
+  })
+  .refine((d) => (d.ids && d.ids.length > 0) || (d.emails && d.emails.length > 0), {
+    message: "Provide at least one id or email",
+  });
+
+router.post("/api/admin/status/subscribers/bulk-delete", ...adminGuard, async (req: any, res, next) => {
+  try {
+    const data = bulkDeleteSubscribersSchema.parse(req.body);
+    const ids = Array.from(new Set((data.ids ?? []).filter(Boolean)));
+    const emails = Array.from(
+      new Set((data.emails ?? []).map((e) => e.toLowerCase().trim()).filter(Boolean)),
+    );
+    const reason = data.reason && data.reason.length > 0 ? data.reason : null;
+    const actorUserId = req.user?.id ?? null;
+
+    const conditions: any[] = [];
+    if (ids.length > 0) {
+      conditions.push(sql`id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`);
+    }
+    if (emails.length > 0) {
+      conditions.push(sql`email IN (${sql.join(emails.map((e) => sql`${e}`), sql`, `)})`);
+    }
+    if (conditions.length === 0) return res.json({ ok: true, removed: 0, removedEmails: [] });
+
+    const removed = await db.transaction(async (tx) => {
+      const result = await tx.execute(sql`
+        DELETE FROM "status_subscribers"
+        WHERE ${sql.join(conditions, sql` OR `)}
+        RETURNING id, email
+      `);
+      const rows = result.rows as Array<{ id: string; email: string }>;
+      for (const row of rows) {
+        await tx.execute(sql`
+          INSERT INTO "status_subscriber_removals" (email, removed_by_user_id, reason)
+          VALUES (${row.email}, ${actorUserId}, ${reason})
+        `);
+      }
+      return rows;
+    });
+
+    logInfo("Status subscribers bulk-removed by admin", {
+      count: removed.length,
+      requestedIds: ids.length,
+      requestedEmails: emails.length,
+      actorUserId,
+      reason,
+    });
+    res.json({ ok: true, removed: removed.length, removedEmails: removed.map((r) => r.email) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.delete("/api/admin/status/subscribers/:id", ...adminGuard, async (req: any, res, next) => {
   try {
     const parsed = subscriberRemovalSchema.safeParse(req.body ?? {});

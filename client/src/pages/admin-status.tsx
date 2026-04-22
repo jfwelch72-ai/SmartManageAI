@@ -1354,6 +1354,83 @@ function SubscribersSection({
   subscribers: Subscriber[];
   isLoading: boolean;
 }) {
+  const { toast } = useToast();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteValue, setPasteValue] = useState("");
+  const [bulkReason, setBulkReason] = useState("Bounced email");
+  const [pasteReason, setPasteReason] = useState("Bounced email");
+
+  const subscriberIds = useMemo(() => subscribers.map((s) => s.id), [subscribers]);
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const valid = new Set(subscriberIds);
+      const next = new Set<string>();
+      for (const id of prev) if (valid.has(id)) next.add(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [subscriberIds]);
+
+  const bulkDelete = useMutation<
+    { ok: boolean; removed: number; removedEmails: string[] },
+    Error,
+    { ids?: string[]; emails?: string[]; reason?: string }
+  >({
+    mutationFn: async (body) => {
+      const res = await apiRequest("POST", "/api/admin/status/subscribers/bulk-delete", body);
+      return (await res.json()) as { ok: boolean; removed: number; removedEmails: string[] };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: SUBSCRIBERS_KEY });
+      queryClient.invalidateQueries({ queryKey: SUBSCRIBER_REMOVALS_KEY });
+      setSelectedIds(new Set());
+      setBulkConfirmOpen(false);
+      setPasteOpen(false);
+      setPasteValue("");
+      toast({
+        title: data.removed === 1 ? "1 subscriber removed" : `${data.removed} subscribers removed`,
+        description:
+          data.removed === 0
+            ? "No matching subscribers were found."
+            : data.removedEmails.slice(0, 3).join(", ") +
+              (data.removedEmails.length > 3 ? ` +${data.removedEmails.length - 3} more` : ""),
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Bulk remove failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const allSelected = subscribers.length > 0 && selectedIds.size === subscribers.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
+  const toggleAll = () => {
+    if (allSelected || someSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(subscriberIds));
+  };
+
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const parsedPasteEmails = useMemo(() => {
+    return Array.from(
+      new Set(
+        pasteValue
+          .split(/[\s,;]+/)
+          .map((e) => e.trim().toLowerCase())
+          .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)),
+      ),
+    );
+  }, [pasteValue]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1372,19 +1449,179 @@ function SubscribersSection({
     );
   }
   const confirmed = subscribers.filter((s) => s.confirmed).length;
+
   return (
-    <Card>
-      <CardContent className="p-0">
-        <div className="px-4 py-3 border-b border-border text-sm text-muted-foreground" data-testid="text-subscriber-count">
+    <>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="text-sm text-muted-foreground" data-testid="text-subscriber-count">
           {confirmed} confirmed of {subscribers.length} total
+          {selectedIds.size > 0 && (
+            <span className="ml-2" data-testid="text-subscribers-selected">
+              · {selectedIds.size} selected
+            </span>
+          )}
         </div>
-        <div className="divide-y divide-border">
-          {subscribers.map((s) => (
-            <SubscriberRow key={s.id} subscriber={s} />
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPasteOpen(true)}
+            data-testid="button-remove-by-list"
+          >
+            Remove by email list
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={selectedIds.size === 0 || bulkDelete.isPending}
+            onClick={() => setBulkConfirmOpen(true)}
+            data-testid="button-remove-selected-subscribers"
+          >
+            {bulkDelete.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4 mr-2" />
+            )}
+            Remove selected
+          </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              ref={(el) => {
+                if (el) el.indeterminate = someSelected;
+              }}
+              checked={allSelected}
+              onChange={toggleAll}
+              aria-label="Select all subscribers"
+              data-testid="checkbox-select-all-subscribers"
+            />
+            <span>Select all on this page</span>
+          </div>
+          <div className="divide-y divide-border">
+            {subscribers.map((s) => (
+              <SubscriberRow
+                key={s.id}
+                subscriber={s}
+                selected={selectedIds.has(s.id)}
+                onToggle={() => toggleOne(s.id)}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove {selectedIds.size} subscriber{selectedIds.size === 1 ? "" : "s"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The selected subscribers will stop receiving incident emails. They can resubscribe
+              from the public status page if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label htmlFor="bulk-removal-reason">Reason (recorded in audit log)</Label>
+            <Input
+              id="bulk-removal-reason"
+              value={bulkReason}
+              onChange={(e) => setBulkReason(e.target.value)}
+              maxLength={500}
+              placeholder="e.g. Bounced email"
+              data-testid="input-bulk-removal-reason"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-bulk-remove">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                bulkDelete.mutate({
+                  ids: Array.from(selectedIds),
+                  reason: bulkReason.trim() || undefined,
+                });
+              }}
+              disabled={bulkDelete.isPending}
+              data-testid="button-confirm-bulk-remove"
+            >
+              {bulkDelete.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Removing
+                </>
+              ) : (
+                "Remove"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Remove subscribers by email list</DialogTitle>
+            <DialogDescription>
+              Paste a list of email addresses (one per line, or separated by commas / spaces). Any
+              that match a current subscriber will be removed. Unmatched addresses are ignored.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Textarea
+              value={pasteValue}
+              onChange={(e) => setPasteValue(e.target.value)}
+              rows={8}
+              placeholder={"bouncing@example.com\nabuse@example.com\n…"}
+              data-testid="input-paste-emails"
+            />
+            <div className="text-xs text-muted-foreground" data-testid="text-paste-email-count">
+              {parsedPasteEmails.length} valid email
+              {parsedPasteEmails.length === 1 ? "" : "s"} detected
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="paste-removal-reason">Reason (recorded in audit log)</Label>
+              <Input
+                id="paste-removal-reason"
+                value={pasteReason}
+                onChange={(e) => setPasteReason(e.target.value)}
+                maxLength={500}
+                placeholder="e.g. Bounced email"
+                data-testid="input-paste-removal-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPasteOpen(false)}
+              data-testid="button-cancel-paste-remove"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={parsedPasteEmails.length === 0 || bulkDelete.isPending}
+              onClick={() =>
+                bulkDelete.mutate({
+                  emails: parsedPasteEmails,
+                  reason: pasteReason.trim() || undefined,
+                })
+              }
+              data-testid="button-confirm-paste-remove"
+            >
+              {bulkDelete.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Remove {parsedPasteEmails.length || ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1397,7 +1634,15 @@ const REMOVAL_REASON_LABELS: Record<RemovalReason, string> = {
   other: "Other",
 };
 
-function SubscriberRow({ subscriber }: { subscriber: Subscriber }) {
+function SubscriberRow({
+  subscriber,
+  selected,
+  onToggle,
+}: {
+  subscriber: Subscriber;
+  selected: boolean;
+  onToggle: () => void;
+}) {
   const { toast } = useToast();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reasonKind, setReasonKind] = useState<RemovalReason>("user_request");
@@ -1428,8 +1673,17 @@ function SubscriberRow({ subscriber }: { subscriber: Subscriber }) {
       className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
       data-testid={`subscriber-row-${subscriber.id}`}
     >
-      <div className="font-medium truncate" data-testid={`text-subscriber-email-${subscriber.id}`}>
-        {subscriber.email}
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggle}
+          aria-label={`Select subscriber ${subscriber.email}`}
+          data-testid={`checkbox-subscriber-${subscriber.id}`}
+        />
+        <div className="font-medium truncate" data-testid={`text-subscriber-email-${subscriber.id}`}>
+          {subscriber.email}
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <Badge variant={subscriber.confirmed ? "secondary" : "outline"}>
