@@ -547,6 +547,27 @@ describe("notifyBackfillCompletion (Task #1017)", () => {
       }),
     );
   });
+
+  // Task #1103 — pin the default-provenance contract so the worker's
+  // automatic dispatch never accidentally writes a row that looks like a
+  // human-triggered resend. Every recorded delivery (success or failure,
+  // Slack or email) must carry source='automatic' and triggeredById=null
+  // when the caller doesn't pass an explicit provenance.
+  it("tags every automatic dispatch row with source='automatic' and triggeredById=null", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockRecordDelivery).toHaveBeenCalledTimes(2);
+    for (const [arg] of mockRecordDelivery.mock.calls) {
+      expect(arg.source).toBe("automatic");
+      expect(arg.triggeredById).toBeNull();
+    }
+  });
 });
 
 /**
@@ -1482,5 +1503,158 @@ describe("resendBackfillAlertDelivery cooldown (Task #1098)", () => {
       { orgId: "org-1", jobId: "job-1", channel: "slack" },
       reservedAt,
     );
+  });
+});
+
+/**
+ * Task #1103 — end-to-end coverage for the provenance plumbing Task #1069
+ * added so the in-app history can render "Resent by Jane".
+ *
+ * The resend route is a thin wrapper that calls
+ * `resendBackfillAlertDelivery(orgId, deliveryId, req.user.id)`, so driving
+ * the service with a stubbed-out storage layer exercises the same code path
+ * that the HTTP handler runs in production. The assertions pin two halves
+ * of the contract:
+ *
+ *   1. When an admin clicks Resend, the brand-new delivery row that the
+ *      dispatcher writes via `recordCrmTranscriptBackfillAlertDelivery`
+ *      MUST carry `source='resend'` and `triggeredById=<admin id>`.
+ *   2. When the regular backfill worker dispatches a completion alert
+ *      (no provenance argument), the new row MUST carry
+ *      `source='automatic'` and `triggeredById=null` — i.e. the resend
+ *      tagging is opt-in and never bleeds into the worker path.
+ */
+describe("Resend records the acting admin end-to-end (Task #1103)", () => {
+  beforeEach(() => {
+    mockGetAlertDelivery.mockReset();
+    mockGetBackfillJob.mockReset();
+    mockListAlertDeliveries.mockReset();
+    mockGetOperatorContact.mockReset();
+    mockTryReserveResendCooldown.mockReset();
+    mockReleaseResendCooldown.mockReset();
+    mockGetSettings.mockReset();
+    mockFetch.mockReset();
+    mockSendEmail.mockReset();
+    mockRecordDelivery.mockReset();
+    mockListOrgAdmins.mockReset();
+    mockListOrgAdmins.mockResolvedValue([]);
+    _resetAlertFailureFallbackDedupeForTests();
+
+    // The original failing delivery row the admin is resending.
+    mockGetAlertDelivery.mockResolvedValue({
+      id: "del-original",
+      orgId: "org-1",
+      jobId: "job-1",
+      channel: "slack",
+      status: "failure",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "boom",
+      attemptedAt: new Date("2026-04-22T12:00:00.000Z"),
+      source: "automatic",
+      triggeredById: null,
+    });
+    mockGetBackfillJob.mockResolvedValue({
+      id: "job-1",
+      organizationId: "org-1",
+      status: "FAILED",
+      total: 1,
+      processed: 1,
+      succeeded: 0,
+      failed: 1,
+      startedAt: new Date("2026-04-22T11:55:00.000Z"),
+      completedAt: new Date("2026-04-22T12:00:00.000Z"),
+      parentJobId: null,
+      startedById: null,
+    });
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/T/B/X",
+      emailRecipients: [],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    // Stand in for the brand-new row the dispatcher will write back. The
+    // resend service looks this up via `listCrmTranscriptBackfillAlertDeliveries`
+    // to return the fresh row to the caller.
+    mockListAlertDeliveries.mockResolvedValue([
+      {
+        id: "del-new",
+        orgId: "org-1",
+        jobId: "job-1",
+        channel: "slack",
+        status: "success",
+        recipientSummary: "hooks.slack.com",
+        errorMessage: null,
+        attemptedAt: new Date("2026-04-22T12:00:30.000Z"),
+        source: "resend",
+        triggeredById: "admin-jane",
+      },
+      {
+        id: "del-original",
+        orgId: "org-1",
+        jobId: "job-1",
+        channel: "slack",
+        status: "failure",
+        recipientSummary: "hooks.slack.com",
+        errorMessage: "boom",
+        attemptedAt: new Date("2026-04-22T12:00:00.000Z"),
+        source: "automatic",
+        triggeredById: null,
+      },
+    ]);
+    mockFetch.mockResolvedValue(new Response("ok", { status: 200 }));
+    mockSendEmail.mockResolvedValue(true);
+    mockRecordDelivery.mockResolvedValue({});
+    mockTryReserveResendCooldown.mockResolvedValue({
+      ok: true,
+      reservedAt: new Date("2026-04-22T12:00:05.000Z"),
+    });
+  });
+
+  it("writes the new delivery row with source='resend' and the acting admin's id", async () => {
+    const result = await resendBackfillAlertDelivery(
+      "org-1",
+      "del-original",
+      "admin-jane",
+      new Date("2026-04-22T12:00:05.000Z").getTime(),
+    );
+
+    expect(result.ok).toBe(true);
+    // The dispatcher wrote exactly one new row (Slack channel only — the
+    // resend never re-fires the unrelated email channel).
+    expect(mockRecordDelivery).toHaveBeenCalledTimes(1);
+    const recorded = mockRecordDelivery.mock.calls[0][0];
+    expect(recorded).toMatchObject({
+      organizationId: "org-1",
+      jobId: "job-1",
+      channel: "slack",
+      status: "success",
+      source: "resend",
+      triggeredById: "admin-jane",
+    });
+
+    // Sanity: the row returned to the caller (which the route hands to
+    // the UI) carries the same provenance fields.
+    if (result.ok) {
+      expect(result.delivery).toMatchObject({
+        id: "del-new",
+        source: "resend",
+        triggeredById: "admin-jane",
+      });
+    }
+  });
+
+  it("preserves source='automatic' / triggeredById=null when the worker dispatches without an admin", async () => {
+    // Same per-org settings as the resend case so the dispatch surface is
+    // identical — the only thing that differs is the absence of a
+    // provenance argument, which is exactly how the backfill worker
+    // calls `notifyBackfillCompletion` from its `finally` block.
+    await notifyBackfillCompletion(baseJob, null);
+
+    expect(mockRecordDelivery).toHaveBeenCalled();
+    for (const [arg] of mockRecordDelivery.mock.calls) {
+      expect(arg.source).toBe("automatic");
+      expect(arg.triggeredById).toBeNull();
+    }
   });
 });
