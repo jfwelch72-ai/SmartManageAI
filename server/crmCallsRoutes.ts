@@ -40,6 +40,7 @@ import {
   createCrmTranscriptBackfillJob,
   createCrmTranscriptBackfillTestAlert,
   getCrmTranscriptBackfillJob,
+  getCrmTranscriptBackfillJobByIdAcrossOrgs,
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
@@ -1671,6 +1672,22 @@ export async function __runTranscriptBackfillForTests(
   return runTranscriptBackfill(job, initialRecordingIds, concurrency, maxRecords);
 }
 
+// Task #1036 — cooperative cancellation. The cancel endpoint adds the job id
+// to this set; the worker checks it on every iteration (and between batches)
+// and bails out, marking the job FAILED. In-memory is sufficient because
+// every backfill worker runs in the same Node process that owns the job
+// (a different process won't see the in-memory active worker either, in
+// which case the cancel endpoint reaps the row directly).
+const cancelRequestedJobIds = new Set<string>();
+
+export function __resetBackfillCancelRequestsForTests() {
+  cancelRequestedJobIds.clear();
+}
+
+export function __requestBackfillCancelForTests(jobId: string) {
+  cancelRequestedJobIds.add(jobId);
+}
+
 async function runTranscriptBackfill(
   job: BackfillJobState,
   initialRecordingIds: string[],
@@ -1697,6 +1714,9 @@ async function runTranscriptBackfill(
   const worker = async () => {
     while (true) {
       if (maxRecords !== null && job.processed >= maxRecords) return;
+      // Task #1036 — cooperative cancel check on every iteration so we stop
+      // before kicking off another transcription when an admin clicked Cancel.
+      if (cancelRequestedJobIds.has(job.id)) return;
       const recordingId = takeNext();
       if (!recordingId) return;
       try {
@@ -1748,9 +1768,13 @@ async function runTranscriptBackfill(
   try {
     while (true) {
       if (maxRecords !== null && job.processed >= maxRecords) break;
+      // Task #1036 — bail out before spawning another batch of workers if a
+      // cancel was requested while the previous batch was draining.
+      if (cancelRequestedJobIds.has(job.id)) break;
       const workers = Array.from({ length: Math.max(1, concurrency) }, () => worker());
       await Promise.all(workers);
       if (maxRecords !== null && job.processed >= maxRecords) break;
+      if (cancelRequestedJobIds.has(job.id)) break;
 
       // After draining the current queue, look for any newly-discovered or
       // still-eligible recordings. Successful runs flip status to COMPLETED
@@ -1770,7 +1794,21 @@ async function runTranscriptBackfill(
         job.total = job.processed + queue.length;
       }
     }
-    job.status = "COMPLETED";
+    // Task #1036 — if cancellation was requested, surface FAILED so admins
+    // can distinguish a cancelled run from a clean completion. Clear the
+    // request flag so a future job id reuse (impossible in practice but
+    // cheap insurance) starts with a fresh slate.
+    if (cancelRequestedJobIds.has(job.id)) {
+      cancelRequestedJobIds.delete(job.id);
+      job.status = "FAILED";
+      logInfo("crmCalls: transcript backfill cancelled by admin", {
+        jobId: job.id,
+        orgId: job.orgId,
+        processed: job.processed,
+      });
+    } else {
+      job.status = "COMPLETED";
+    }
   } catch (e) {
     job.status = "FAILED";
     logError(
@@ -1779,6 +1817,10 @@ async function runTranscriptBackfill(
       e instanceof Error ? e : new Error(String(e)),
     );
   } finally {
+    // Task #1036 — ensure the cancellation flag is always cleared on a
+    // terminal exit (including the catch path above), so a stale entry
+    // can never linger in the in-memory Set after the worker is gone.
+    cancelRequestedJobIds.delete(job.id);
     job.completedAt = new Date().toISOString();
     try {
       await persistJobProgress(job);
@@ -2376,15 +2418,17 @@ router.post(
   requireRole("ADMIN"),
   async (req: AuthRequest, res, next) => {
     try {
-      const orgId = resolveOrg(req, res);
-      if (!orgId) return;
-
       const schema = z.object({
         // By default the backfill processes ALL eligible recordings via
         // pagination. `maxRecords` is an optional safety cap for one-off
         // partial runs (e.g. a small dry run before processing everything).
         maxRecords: z.number().int().min(1).optional(),
         concurrency: z.number().int().min(1).max(4).optional(),
+        // Task #1036 — SUPER_ADMINs may target a specific tenant from the
+        // platform admin page (e.g. to start a corrective run after cancelling
+        // a runaway backfill). Org-scoped admins are still locked to their
+        // own org via resolveOrg below regardless of this field.
+        organizationId: z.string().min(1).optional(),
       });
       const parsed = schema.safeParse(req.body ?? {});
       if (!parsed.success) {
@@ -2392,6 +2436,18 @@ router.post(
       }
       const maxRecords = parsed.data.maxRecords ?? null;
       const concurrency = parsed.data.concurrency ?? 2;
+
+      // Task #1036 — resolve target org. Super admins may pick any tenant via
+      // body.organizationId; org-scoped admins are forced to their own org
+      // (any organizationId in the body is ignored, matching the existing
+      // tenant-isolation guarantees).
+      let orgId: string | null;
+      if (isSuperAdmin(req.user) && parsed.data.organizationId) {
+        orgId = parsed.data.organizationId;
+      } else {
+        orgId = resolveOrg(req, res);
+        if (!orgId) return;
+      }
 
       // Don't allow two concurrent backfills for the same org — they would
       // race over the same PENDING/FAILED rows. A RUNNING row whose heartbeat
@@ -3357,6 +3413,90 @@ router.post(
       void runTranscriptBackfill(job, eligibleIds, concurrency, eligibleIds.length);
 
       res.status(202).json({ jobId, total: job.total, parentJobId: parent.id });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1036 — cancel a running transcript backfill. Lets super admins stop
+// a runaway job in any tenant from the platform admin page (the only place
+// the cross-org running list is surfaced) without having to log into that
+// tenant. Org-scoped admins can also cancel their own org's RUNNING job.
+//
+// Implementation notes:
+//   - The worker lives in this same Node process, so we signal cancellation
+//     by adding the job id to a module-level Set that the worker checks on
+//     every iteration / between batches. The worker then transitions the
+//     persisted row to FAILED through its existing finalisation path (which
+//     also fires the completion notifications).
+//   - When the worker is gone (process restart, heartbeat stale) we mark
+//     the row FAILED directly so the cross-org banner clears immediately.
+router.post(
+  "/api/crm/calls/transcripts/backfill/:jobId/cancel",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const superAdmin = isSuperAdmin(req.user);
+      let row: CrmTranscriptBackfillJob | null;
+      if (superAdmin) {
+        row = await getCrmTranscriptBackfillJobByIdAcrossOrgs(req.params.jobId);
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        row = await getCrmTranscriptBackfillJob(req.params.jobId, orgId);
+      }
+      if (!row) {
+        return res.status(404).json({ error: "Backfill job not found" });
+      }
+      if (row.status !== "RUNNING") {
+        return res.status(409).json({
+          error: `Backfill is already ${row.status.toLowerCase()}; nothing to cancel.`,
+          jobId: row.id,
+          status: row.status,
+        });
+      }
+
+      const heartbeatAgeMs = Date.now() - new Date(row.heartbeatAt).getTime();
+      if (heartbeatAgeMs > BACKFILL_HEARTBEAT_STALE_MS) {
+        // Worker is dead (process restart since last heartbeat). Mark the
+        // row FAILED directly so the banner clears on the next refresh.
+        const reaped = await updateCrmTranscriptBackfillJob(row.id, {
+          status: "FAILED",
+          completedAt: new Date(),
+        });
+        scheduleBackfillCompletionEmail(row.id);
+        logInfo("crmCalls: cancelled stale transcript backfill (worker dead)", {
+          jobId: row.id,
+          orgId: row.organizationId,
+          heartbeatAgeMs,
+          cancelledBy: req.user!.id,
+          superAdmin,
+        });
+        return res.json({
+          jobId: row.id,
+          status: reaped?.status ?? "FAILED",
+          reaped: true,
+        });
+      }
+
+      // Worker is alive — signal cooperative cancellation. The worker will
+      // flip the row to FAILED and fire the completion notification on its
+      // next iteration / batch boundary.
+      cancelRequestedJobIds.add(row.id);
+      logInfo("crmCalls: transcript backfill cancellation requested", {
+        jobId: row.id,
+        orgId: row.organizationId,
+        cancelledBy: req.user!.id,
+        superAdmin,
+      });
+      res.status(202).json({
+        jobId: row.id,
+        status: "CANCELLING",
+        reaped: false,
+        message: "Cancellation requested; the job will stop after the current recording finishes.",
+      });
     } catch (e) {
       next(e);
     }

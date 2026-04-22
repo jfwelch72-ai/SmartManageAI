@@ -99,6 +99,21 @@ export async function getCrmTranscriptBackfillJob(
   return row || null;
 }
 
+// Task #1036 — super-admin lookup for cross-tenant cancellation. Unlike
+// `getCrmTranscriptBackfillJob`, this does NOT filter by organizationId so
+// platform support can address a runaway job in any tenant. Callers MUST
+// gate this on isSuperAdmin(req.user) before invoking.
+export async function getCrmTranscriptBackfillJobByIdAcrossOrgs(
+  id: string,
+): Promise<CrmTranscriptBackfillJob | null> {
+  const [row] = await db
+    .select()
+    .from(crmTranscriptBackfillJobs)
+    .where(eq(crmTranscriptBackfillJobs.id, id))
+    .limit(1);
+  return row || null;
+}
+
 export type CrmTranscriptBackfillJobWithOperator = CrmTranscriptBackfillJob & {
   startedByFirstName: string | null;
   startedByLastName: string | null;

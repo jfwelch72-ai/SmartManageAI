@@ -217,6 +217,11 @@ export default function AdminTranscriptBackfillPage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [maxRecords, setMaxRecords] = useState<string>("");
   const [concurrency, setConcurrency] = useState<string>("2");
+  // Task #1036 — SUPER_ADMINs choose which tenant a new backfill targets when
+  // launching from the platform admin view. Defaults to the super admin's own
+  // org so the existing single-org workflow keeps behaving identically. The
+  // value is a real organization id; org-scoped admins never see this picker.
+  const [startTargetOrgId, setStartTargetOrgId] = useState<string>("");
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   // Task #1015 — when the user clicks an off-page lineage chip we ask the
   // server which page that run lives on, navigate there (clearing conflicting
@@ -253,6 +258,15 @@ export default function AdminTranscriptBackfillPage() {
     const t = setTimeout(() => setAppliedOperator(operatorInput.trim()), 300);
     return () => clearTimeout(t);
   }, [operatorInput]);
+
+  // Task #1036 — initialise the start-target org picker to the super admin's
+  // own organization so launching a backfill behaves identically to before
+  // unless they explicitly pick another tenant.
+  useEffect(() => {
+    if (isSuperAdmin && !startTargetOrgId && user?.organizationId) {
+      setStartTargetOrgId(user.organizationId);
+    }
+  }, [isSuperAdmin, startTargetOrgId, user?.organizationId]);
 
   // Reset to the first page whenever filters change so users don't end up
   // staring at an empty page because their previous offset is past the new
@@ -686,12 +700,23 @@ export default function AdminTranscriptBackfillPage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: async () => {
-      const body: { maxRecords?: number; concurrency?: number } = {};
+    mutationFn: async (overrideTargetOrgId?: string) => {
+      const body: {
+        maxRecords?: number;
+        concurrency?: number;
+        organizationId?: string;
+      } = {};
       const max = parseInt(maxRecords, 10);
       if (Number.isFinite(max) && max > 0) body.maxRecords = max;
       const c = parseInt(concurrency, 10);
       if (Number.isFinite(c) && c > 0) body.concurrency = c;
+      // Task #1036 — only super admins can target a different tenant. The
+      // server ignores `organizationId` from org-scoped admins regardless,
+      // so this is purely defence-in-depth on the client side.
+      if (isSuperAdmin) {
+        const targetId = overrideTargetOrgId ?? startTargetOrgId;
+        if (targetId) body.organizationId = targetId;
+      }
       const res = await apiRequest("POST", "/api/crm/calls/transcripts/backfill", body);
       return (await res.json()) as { jobId: string; total: number; message?: string };
     },
@@ -710,6 +735,50 @@ export default function AdminTranscriptBackfillPage() {
     },
     onError: (err: Error) => {
       toast({ title: "Failed to start backfill", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Task #1036 — cancel a running transcript backfill. Used by:
+  //   * the Cancel button on each cross-org running-jobs row (super admin)
+  //   * the Cancel button on the active job card (any admin, own org)
+  // The server returns immediately (HTTP 202) and the worker flips the row
+  // to FAILED on its next iteration, so we just refresh the summary/history
+  // and let polling pick up the new status.
+  const cancelMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/crm/calls/transcripts/backfill/${jobId}/cancel`,
+        {},
+      );
+      return (await res.json()) as {
+        jobId: string;
+        status: string;
+        reaped?: boolean;
+        message?: string;
+      };
+    },
+    onSuccess: (data) => {
+      toast({
+        title: data.reaped ? "Backfill marked as failed" : "Cancellation requested",
+        description:
+          data.message ??
+          (data.reaped
+            ? "The worker had already stopped — the run is now marked as failed."
+            : "The job will stop after the current recording finishes."),
+      });
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY_BASE });
+      queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/crm/calls/transcripts/backfill", data.jobId],
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to cancel backfill",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -1000,6 +1069,83 @@ export default function AdminTranscriptBackfillPage() {
                         {rj.failed.toLocaleString()} failed
                       </span>
                     </div>
+                    {/* Task #1036 — per-row super-admin actions: cancel a
+                        runaway backfill in any tenant, or kick off a fresh
+                        run directly against that tenant. The start action
+                        is disabled while this row is still RUNNING (the
+                        server would 409 anyway) — once cancellation lands
+                        the row drops off and the start button on the next
+                        refresh of the list (or the start-controls card) is
+                        usable. We also offer a passive "Target this tenant"
+                        shortcut that just pre-selects the org in the
+                        Run-a-backfill picker for admins who want to set
+                        maxRecords/concurrency before starting. */}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => cancelMutation.mutate(rj.id)}
+                        disabled={
+                          cancelMutation.isPending &&
+                          cancelMutation.variables === rj.id
+                        }
+                        data-testid={`button-cross-org-cancel-${rj.id}`}
+                        title={`Stop the running transcript backfill in ${orgLabel}`}
+                      >
+                        {cancelMutation.isPending &&
+                        cancelMutation.variables === rj.id ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4 mr-1.5" />
+                        )}
+                        Cancel backfill
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Reflect the chosen tenant in the start picker
+                          // too so subsequent edits to maxRecords /
+                          // concurrency stay scoped to the right org.
+                          setStartTargetOrgId(rj.organization.id);
+                          startMutation.mutate(rj.organization.id);
+                        }}
+                        disabled={startMutation.isPending}
+                        data-testid={`button-cross-org-start-${rj.id}`}
+                        title={`Start a fresh transcript backfill in ${orgLabel} (cancel the running one first to avoid a 409).`}
+                      >
+                        {startMutation.isPending &&
+                        startMutation.variables === rj.organization.id ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4 mr-1.5" />
+                        )}
+                        Start backfill here
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setStartTargetOrgId(rj.organization.id);
+                          requestAnimationFrame(() => {
+                            const el = document.querySelector(
+                              '[data-testid="card-controls"]',
+                            );
+                            if (el && "scrollIntoView" in el) {
+                              (el as HTMLElement).scrollIntoView({
+                                behavior: "smooth",
+                                block: "start",
+                              });
+                            }
+                          });
+                        }}
+                        data-testid={`button-cross-org-target-${rj.id}`}
+                        title={`Pre-select ${orgLabel} in the Run-a-backfill controls below`}
+                      >
+                        <ArrowRight className="h-4 w-4 mr-1.5" />
+                        Target this tenant
+                      </Button>
+                    </div>
                   </li>
                 );
               })}
@@ -1015,9 +1161,59 @@ export default function AdminTranscriptBackfillPage() {
           <CardDescription>
             Leave the limit blank to process every eligible recording. Concurrency caps how many
             transcriptions run in parallel (max 4).
+            {isSuperAdmin && (
+              <>
+                {" "}
+                As a super admin you can target any tenant from the picker below.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Task #1036 — SUPER_ADMIN-only target-tenant picker. Defaults to
+              the super admin's own org so the existing single-org workflow
+              keeps working unchanged; switching it scopes the next "Start
+              backfill" click to the chosen tenant. Org-scoped admins never
+              see this control and the server ignores the field for them. */}
+          {isSuperAdmin && (
+            <div className="space-y-1.5">
+              <Label htmlFor="start-target-organization" className="text-xs">
+                Target organization
+              </Label>
+              <Select
+                value={startTargetOrgId}
+                onValueChange={(v) => setStartTargetOrgId(v)}
+                disabled={orgsQuery.isLoading}
+              >
+                <SelectTrigger
+                  id="start-target-organization"
+                  data-testid="select-start-target-organization"
+                >
+                  <SelectValue placeholder="Pick a tenant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(orgsQuery.data ?? []).map((org) => (
+                    <SelectItem
+                      key={org.id}
+                      value={org.id}
+                      data-testid={`select-start-target-organization-option-${org.id}`}
+                    >
+                      {org.name}
+                      {org.id === user?.organizationId ? " (your org)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p
+                className="text-[11px] text-muted-foreground"
+                data-testid="text-start-target-help"
+              >
+                The start button below targets the tenant selected here. The
+                pending count and cross-org running list above are scoped by
+                the separate History organization picker.
+              </p>
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="max-records" className="text-xs">Max records (optional)</Label>
@@ -1046,9 +1242,20 @@ export default function AdminTranscriptBackfillPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              onClick={() => startMutation.mutate()}
-              disabled={startMutation.isPending || isRunning || pending === 0}
+              onClick={() => startMutation.mutate(undefined)}
+              disabled={
+                startMutation.isPending ||
+                isRunning ||
+                (isSuperAdmin
+                  ? !startTargetOrgId
+                  : pending === 0)
+              }
               data-testid="button-start-backfill"
+              title={
+                isSuperAdmin && !startTargetOrgId
+                  ? "Pick a target organization first."
+                  : undefined
+              }
             >
               {startMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1115,6 +1322,30 @@ export default function AdminTranscriptBackfillPage() {
                   )}
                 </CardDescription>
               </div>
+              {/* Task #1036 — Cancel button on the active job card. Available
+                  to any admin for their own org's RUNNING job; super admins
+                  also get per-row cancel buttons in the cross-org list above. */}
+              {job.status === "RUNNING" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => cancelMutation.mutate(job.id)}
+                  disabled={
+                    cancelMutation.isPending &&
+                    cancelMutation.variables === job.id
+                  }
+                  data-testid="button-cancel-active-backfill"
+                  title="Stop this backfill after the current recording finishes"
+                >
+                  {cancelMutation.isPending &&
+                  cancelMutation.variables === job.id ? (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <X className="h-4 w-4 mr-1.5" />
+                  )}
+                  Cancel backfill
+                </Button>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
