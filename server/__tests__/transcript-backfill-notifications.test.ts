@@ -64,6 +64,7 @@ import {
   notifyOrgAdminsOfAlertDeliveryFailure,
   buildAlertFailureFallbackContent,
   resolveBackfillNotificationDestinations,
+  getBackfillNotificationConfig,
   sendTestBackfillAlert,
   _resetAlertFailureFallbackDedupeForTests,
   type BackfillNotificationJob,
@@ -972,5 +973,131 @@ describe("buildAlertFailureFallbackContent (Task #1051)", () => {
     });
     expect(content.html).not.toContain("<script>alert");
     expect(content.html).toContain("&lt;script&gt;");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #1072 — regression coverage for the env-var inline last-test panel.
+// `getBackfillNotificationConfig` powers the admin transcript-backfill page's
+// "Notification destinations" card; the new `usingEnvFallback` +
+// `lastTestAt` / `lastTestResult` fields decide whether the inline panel is
+// rendered. These tests pin the field values for the three scenarios the UI
+// branches on: no per-org row, an empty per-org row written by the test
+// endpoint in env-fallback mode, and a fully-populated per-org row.
+// ---------------------------------------------------------------------------
+describe("getBackfillNotificationConfig (Task #1063 / #1072)", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    mockGetSettings.mockReset();
+    process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK =
+      "https://hooks.slack.com/services/T000/B000/abc";
+    process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO = "ops@example.com";
+  });
+
+  afterEach(() => {
+    process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK =
+      ORIGINAL_ENV.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK;
+    process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO =
+      ORIGINAL_ENV.CRM_BACKFILL_NOTIFY_EMAIL_TO;
+  });
+
+  it("flags usingEnvFallback=true with null lastTest fields when no per-org row exists", async () => {
+    mockGetSettings.mockResolvedValue(null);
+
+    const cfg = await getBackfillNotificationConfig("org-1");
+
+    expect(cfg.slack).toEqual({ configured: true, valid: true });
+    expect(cfg.email).toEqual({
+      configured: true,
+      recipients: ["ops@example.com"],
+    });
+    expect(cfg.usingEnvFallback).toBe(true);
+    expect(cfg.lastTestAt).toBeNull();
+    expect(cfg.lastTestResult).toBeNull();
+  });
+
+  it("flags usingEnvFallback=true and surfaces persisted lastTest fields when the per-org row has empty destinations", async () => {
+    const testedAt = new Date("2026-04-22T12:00:00.000Z");
+    const lastTestResult = {
+      slack: { configured: true, ok: true },
+      email: {
+        configured: true,
+        ok: false,
+        error: "550 Recipient mailbox unavailable",
+        recipients: ["ops@example.com"],
+      },
+      operatorDisplay: "Site Admin <admin@test.invalid>",
+    };
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "",
+      emailRecipients: [],
+      updatedById: null,
+      updatedAt: testedAt,
+      lastTestAt: testedAt,
+      lastTestResult,
+    });
+
+    const cfg = await getBackfillNotificationConfig("org-1");
+
+    // The per-org row exists, so the destination summary reflects its
+    // (empty) destinations rather than the env-var values — but
+    // `usingEnvFallback` still holds because nothing per-org is saved, so
+    // the inline lastTest panel needs to render in the env-var card.
+    expect(cfg.slack.configured).toBe(false);
+    expect(cfg.email.configured).toBe(false);
+    expect(cfg.email.recipients).toEqual([]);
+    expect(cfg.usingEnvFallback).toBe(true);
+    expect(cfg.lastTestAt).toBe(testedAt.toISOString());
+    expect(cfg.lastTestResult).toEqual(lastTestResult);
+  });
+
+  it("flags usingEnvFallback=false when a per-org row has saved destinations, and still surfaces lastTest fields", async () => {
+    const testedAt = new Date("2026-04-22T13:00:00.000Z");
+    const lastTestResult = {
+      slack: { configured: true, ok: true },
+      email: { configured: true, ok: true, recipients: ["team@example.com"] },
+      operatorDisplay: "Site Admin <admin@test.invalid>",
+    };
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/T111/B111/xyz",
+      emailRecipients: ["team@example.com"],
+      updatedById: "user-1",
+      updatedAt: testedAt,
+      lastTestAt: testedAt,
+      lastTestResult,
+    });
+
+    const cfg = await getBackfillNotificationConfig("org-1");
+
+    // Per-org destinations win over the env vars now that the row has them.
+    expect(cfg.slack).toEqual({ configured: true, valid: true });
+    expect(cfg.email).toEqual({
+      configured: true,
+      recipients: ["team@example.com"],
+    });
+    expect(cfg.usingEnvFallback).toBe(false);
+    expect(cfg.lastTestAt).toBe(testedAt.toISOString());
+    expect(cfg.lastTestResult).toEqual(lastTestResult);
+  });
+
+  it("flags usingEnvFallback=true when the per-org row exists with empty destinations and no lastTest data", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: null,
+      emailRecipients: [],
+      updatedById: null,
+      updatedAt: new Date("2026-04-22T11:00:00.000Z"),
+      lastTestAt: null,
+      lastTestResult: null,
+    });
+
+    const cfg = await getBackfillNotificationConfig("org-1");
+
+    expect(cfg.usingEnvFallback).toBe(true);
+    expect(cfg.lastTestAt).toBeNull();
+    expect(cfg.lastTestResult).toBeNull();
   });
 });
