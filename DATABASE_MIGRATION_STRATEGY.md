@@ -98,37 +98,87 @@ ALTER TABLE "projects" ADD COLUMN "estimated_completion_date" timestamp;
 ## Test Database Sync
 
 The vitest suite ships its own schema-sync bootstrap so tests do not fail
-in fresh environments where the local database is missing recently-added
-columns or enum values.
+in fresh environments. As of April 2026 it uses a **schema-export
+rebuild** strategy that fully replaces the older two-step "idempotent
+migrations + `drizzle-kit push --force`" path.
 
 **File**: `server/__tests__/globalSetup.ts`
 
-What it does, in order, before any test file is loaded:
+### Why we no longer use `drizzle-kit push --force` for tests
 
-1. **Apply idempotent SQL migrations** (always runs, even when
-   `SKIP_TEST_DB_PUSH=1`). These are listed in
-   `REQUIRED_IDEMPOTENT_MIGRATIONS` and live under `migrations/`. They
-   exist to capture schema fixes that would otherwise have to be
-   hand-applied with `ALTER TABLE` / `ALTER TYPE` (e.g. new enum values,
-   new nullable columns) so a fresh DB has them without waiting for the
-   slower full `drizzle-kit push` to finish.
-2. **Run `drizzle-kit push --force`** to bring the rest of the schema in
-   line with `shared/schema/*` (skipped when the cached schema hash is
-   unchanged or `SKIP_TEST_DB_PUSH=1` is set).
+`drizzle-kit push` introspects the live database and diffs it against
+`shared/schema/*`. Against this project's ~470-table schema that
+introspection step takes well over two minutes per run and routinely
+times out, which is why the previous bootstrap maintained a hand-curated
+list of "idempotent migration" SQL files (`REQUIRED_IDEMPOTENT_MIGRATIONS`)
+as a fallback whenever push didn't complete. Every schema change
+invalidated the cached hash and triggered another slow push attempt.
 
-When you patch the local DB with a manual `ALTER TABLE` / `ALTER TYPE` to
-unblock a test, you **must** also:
+### What it does now
 
-1. Add the same change to the appropriate file under `shared/schema/`.
-2. Add an idempotent SQL file under `migrations/` (use `IF NOT EXISTS`,
-   `ADD VALUE IF NOT EXISTS`, `CREATE TYPE ... EXCEPTION WHEN
-   duplicate_object`).
-3. Append the new file to `REQUIRED_IDEMPOTENT_MIGRATIONS` in
-   `server/__tests__/globalSetup.ts` and to the matching list inside
-   `scripts/post-merge.sh`.
+On every vitest run, before any test file is loaded:
 
-This guarantees that the next contributor / CI run picks up the change
-without anyone having to know it existed.
+1. **Compute a hash of `shared/schema/*` and `drizzle.config.ts`.**
+2. **Read `_test_schema_meta.schema_hash` from the test database.** This
+   marker table is created/updated by the bootstrap itself, so the cache
+   and the actual schema state always stay in lock-step (wiping the DB
+   automatically forces a rebuild on the next run).
+3. **If the hashes match, skip everything** (~1.5s warm path).
+4. **Otherwise rebuild the schema** by:
+   - Running `npx drizzle-kit export --sql` to dump the full schema as
+     SQL straight from `shared/schema/*` (~3s, no DB introspection).
+   - `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` on the test DB.
+   - Applying the exported SQL as a single multi-statement `pg.Client`
+     query.
+   - Stamping the new hash into `_test_schema_meta`.
+
+End-to-end this completes in **~12s on a cold DB** and **~1.5s when the
+schema hasn't changed**, replacing what used to be a 2+ minute push.
+
+### Environment variables
+
+- `SKIP_TEST_DB_PUSH=1` — skip the bootstrap entirely.
+- `FORCE_TEST_DB_REBUILD=1` (alias `FORCE_TEST_DB_PUSH=1`) — force a
+  rebuild even when the cached hash matches.
+- `ALLOW_DESTRUCTIVE_TEST_DB_REBUILD=1` — opt in to the destructive
+  rebuild against a `DATABASE_URL` whose database name/host doesn't
+  contain the substring "test". Only set this when you are certain the
+  target DB is dedicated to testing.
+
+### Destructive-rebuild safety gate
+
+Because the bootstrap runs `DROP SCHEMA public CASCADE` it refuses to
+proceed unless **either**:
+
+1. The connection string clearly identifies a test database — the
+   substring `"test"` appears in the database name or in the host (e.g.
+   `postgresql://.../my_app_test` or `postgresql://test-db.../...`), **or**
+2. The operator has explicitly opted in via
+   `ALLOW_DESTRUCTIVE_TEST_DB_REBUILD=1`.
+
+`NODE_ENV=test` is intentionally **not** sufficient on its own — vitest
+sets it automatically on every run, so it would not protect against a
+mispointed `DATABASE_URL`. If you keep your test DB on a name like
+`heliumdb` (no `"test"` substring), export
+`ALLOW_DESTRUCTIVE_TEST_DB_REBUILD=1` in your local shell / CI config.
+
+### When you change `shared/schema/*`
+
+Just commit the schema change. The next vitest run will detect the hash
+mismatch, regenerate the export SQL on the fly, and rebuild the test DB
+in seconds. **No more hand-written idempotent SQL files are needed for
+test-DB sync.** (The `migrations/` directory is still used by
+`scripts/post-merge.sh` to patch the populated dev DB without a
+destructive rebuild.)
+
+### Safety
+
+`globalSetup` is destructive: it drops the `public` schema on the
+database pointed to by `DATABASE_URL`. This matches the prior behaviour
+of `drizzle-kit push --force` and is only safe because the test
+`DATABASE_URL` is expected to point at a dedicated test database.
+**Never point `DATABASE_URL` at a database with data you care about
+when running vitest.**
 
 ---
 

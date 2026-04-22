@@ -51,7 +51,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Gantt PDF Export**: Server-side PDF export for large schedules using headless Chromium.
 
 ## Testing
-*   **Auto-Synced Test Database**: Vitest runs `server/__tests__/globalSetup.ts` before any test suites, which executes `drizzle-kit push --force` against `DATABASE_URL` so the schema in `shared/schema/**` is always in sync with the test database. This prevents "missing column" failures caused by forgetting to run `npm run db:push`. Set `SKIP_TEST_DB_PUSH=1` to bypass (not recommended; only useful for offline runs against a known-synced DB).
+*   **Auto-Synced Test Database**: Vitest runs `server/__tests__/globalSetup.ts` before any test suites. It hashes `shared/schema/**` + `drizzle.config.ts`, compares against a hash stored in `_test_schema_meta` inside the test DB, and — only when they differ — rebuilds the schema by running `drizzle-kit export --sql`, dropping `public`, and reapplying the exported SQL in one query. Cold rebuild is ~12s; warm path is ~1.5s. Set `SKIP_TEST_DB_PUSH=1` to bypass entirely or `FORCE_TEST_DB_REBUILD=1` to force a rebuild. See `DATABASE_MIGRATION_STRATEGY.md` for details.
 
 ## External Dependencies
 *   PostgreSQL (Neon)

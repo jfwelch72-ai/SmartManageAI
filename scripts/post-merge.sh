@@ -3,11 +3,12 @@ set -e
 npm install
 timeout 30 npx tsx scripts/scrub-legacy-roles.ts 2>&1 || echo "[post-merge] legacy role scrub skipped"
 
-# Apply the small set of idempotent SQL migrations that capture schema fixes
+# Apply a small set of idempotent SQL migrations that capture schema fixes
 # the Drizzle schema relies on but which `drizzle-kit push` may skip when it
-# times out. These mirror the list in `server/__tests__/globalSetup.ts`
-# (REQUIRED_IDEMPOTENT_MIGRATIONS) so both test runs and post-merge stay in
-# sync. Each file MUST be safe to run repeatedly.
+# times out against this dev DB. The vitest globalSetup no longer needs
+# these (it rebuilds the test DB from `drizzle-kit export`), but they are
+# still useful here to keep the populated dev DB in sync without waiting
+# for a full destructive rebuild. Each file MUST be safe to run repeatedly.
 if [ -n "$DATABASE_URL" ] && command -v psql >/dev/null 2>&1; then
   for f in \
     migrations/add_users_quiet_hours_digest_locale_format.sql \
