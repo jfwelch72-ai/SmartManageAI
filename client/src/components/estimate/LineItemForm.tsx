@@ -347,8 +347,12 @@ function LineItemPhotoGallery({
 }) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<
+    Array<{ id: string; name: string; size: number; status: "pending" | "uploading" | "done" | "error"; progress: number; error?: string }>
+  >([]);
+  const dragCounter = useRef(0);
 
   const allUrls = (() => {
     const set = new Set<string>();
@@ -357,35 +361,141 @@ function LineItemPhotoGallery({
     return Array.from(set);
   })();
 
-  const handleUpload = async (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "File too large. Maximum size is 10MB.", variant: "destructive" });
-      return;
-    }
-    setIsUploading(true);
-    try {
+  const isUploading = uploadQueue.some((q) => q.status === "pending" || q.status === "uploading");
+
+  const uploadOne = (
+    file: File,
+    onProgress: (pct: number) => void,
+  ): Promise<{ photoUrl: string; photoUrls?: string[] }> => {
+    return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append("photo", file);
-      const res = await fetch(`/api/estimates/${estimateId}/line-items/${lineItemId}/upload-photo`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Upload failed" }));
-        throw new Error(err.error || "Upload failed");
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/estimates/${estimateId}/line-items/${lineItemId}/upload-photo`);
+      xhr.withCredentials = true;
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new Error("Invalid server response"));
+          }
+        } else {
+          let msg = "Upload failed";
+          try {
+            const parsed = JSON.parse(xhr.responseText);
+            if (parsed?.error) msg = parsed.error;
+          } catch {}
+          reject(new Error(msg));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Network error"));
+      xhr.send(formData);
+    });
+  };
+
+  const handleFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+    const MAX_SIZE = 10 * 1024 * 1024;
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+
+    const items = files.map((f) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file: f,
+      name: f.name,
+      size: f.size,
+    }));
+
+    setUploadQueue((prev) => [
+      ...prev,
+      ...items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        size: it.size,
+        status: "pending" as const,
+        progress: 0,
+      })),
+    ]);
+
+    let currentLegacy = legacyPhotoUrl;
+    let currentUrls = allUrls.slice();
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const it of items) {
+      if (!allowedTypes.includes(it.file.type)) {
+        setUploadQueue((prev) =>
+          prev.map((q) =>
+            q.id === it.id ? { ...q, status: "error", error: "Unsupported file type" } : q,
+          ),
+        );
+        failCount++;
+        continue;
       }
-      const data = await res.json();
-      const nextUrls: string[] = Array.isArray(data.photoUrls) ? data.photoUrls : [...allUrls, data.photoUrl];
-      const nextLegacy: string | null = data.photoUrl ?? legacyPhotoUrl;
-      onChange(nextUrls, nextLegacy);
-      toast({ title: "Photo attached successfully" });
-    } catch (err: any) {
-      toast({ title: err?.message || "Photo upload failed", variant: "destructive" });
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (it.size > MAX_SIZE) {
+        setUploadQueue((prev) =>
+          prev.map((q) => (q.id === it.id ? { ...q, status: "error", error: "Larger than 10MB" } : q)),
+        );
+        failCount++;
+        continue;
+      }
+
+      setUploadQueue((prev) =>
+        prev.map((q) => (q.id === it.id ? { ...q, status: "uploading", progress: 0 } : q)),
+      );
+
+      try {
+        const data = await uploadOne(it.file, (pct) => {
+          setUploadQueue((prev) => prev.map((q) => (q.id === it.id ? { ...q, progress: pct } : q)));
+        });
+        const nextUrls: string[] = Array.isArray(data.photoUrls)
+          ? data.photoUrls
+          : [...currentUrls, data.photoUrl];
+        const nextLegacy: string | null = data.photoUrl ?? currentLegacy;
+        currentUrls = nextUrls;
+        currentLegacy = nextLegacy;
+        onChange(nextUrls, nextLegacy);
+        setUploadQueue((prev) =>
+          prev.map((q) => (q.id === it.id ? { ...q, status: "done", progress: 100 } : q)),
+        );
+        successCount++;
+      } catch (err: any) {
+        setUploadQueue((prev) =>
+          prev.map((q) =>
+            q.id === it.id ? { ...q, status: "error", error: err?.message || "Upload failed" } : q,
+          ),
+        );
+        failCount++;
+      }
     }
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (successCount > 0 && failCount === 0) {
+      toast({
+        title:
+          successCount === 1
+            ? "Photo attached successfully"
+            : `${successCount} photos attached successfully`,
+      });
+    } else if (successCount > 0 && failCount > 0) {
+      toast({
+        title: `${successCount} uploaded, ${failCount} failed`,
+        variant: "destructive",
+      });
+    } else if (failCount > 0) {
+      toast({
+        title: failCount === 1 ? "Photo upload failed" : `${failCount} photo uploads failed`,
+        variant: "destructive",
+      });
+    }
+
+    window.setTimeout(() => {
+      setUploadQueue((prev) => prev.filter((q) => q.status !== "done"));
+    }, 2500);
   };
 
   const handleRemove = async (url: string) => {
@@ -453,40 +563,158 @@ function LineItemPhotoGallery({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isUploading) return;
+          dragCounter.current += 1;
+          if (e.dataTransfer?.types?.includes("Files")) setIsDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isUploading) return;
+          dragCounter.current -= 1;
+          if (dragCounter.current <= 0) {
+            dragCounter.current = 0;
+            setIsDragOver(false);
+          }
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = isUploading ? "none" : "copy";
+        }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter.current = 0;
+          setIsDragOver(false);
+          if (isUploading) {
+            toast({
+              title: "Please wait for the current upload batch to finish",
+              variant: "destructive",
+            });
+            return;
+          }
+          const all = Array.from(e.dataTransfer?.files || []);
+          const dropped = all.filter((f) => f.type.startsWith("image/"));
+          const skipped = all.length - dropped.length;
+          if (skipped > 0) {
+            toast({
+              title:
+                skipped === 1
+                  ? "Skipped 1 non-image file"
+                  : `Skipped ${skipped} non-image files`,
+              variant: "destructive",
+            });
+          }
+          if (dropped.length > 0) await handleFiles(dropped);
+        }}
+        className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
+          isDragOver ? "border-primary bg-primary/5" : "border-border bg-muted/30"
+        }`}
+        data-testid={`dropzone-${testPrefix}line-item-photos`}
+      >
         <input
           ref={fileInputRef}
           type="file"
           accept="image/jpeg,image/png,image/gif,image/webp"
+          multiple
           className="hidden"
           data-testid={`input-${testPrefix}photo-file`}
           onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            await handleUpload(file);
+            const files = Array.from(e.target.files || []);
+            if (files.length === 0) return;
+            await handleFiles(files);
           }}
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={isUploading}
-          onClick={() => fileInputRef.current?.click()}
-          data-testid={`button-${testPrefix}upload-photo`}
-        >
-          {isUploading ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Camera className="h-4 w-4 mr-2" />
+        <Upload className="h-5 w-5 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
+          {isDragOver ? "Drop images to upload" : "Drag & drop images here, or click to select"}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isUploading}
+            onClick={() => fileInputRef.current?.click()}
+            data-testid={`button-${testPrefix}upload-photo`}
+          >
+            {isUploading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Camera className="h-4 w-4 mr-2" />
+            )}
+            {isUploading
+              ? "Uploading..."
+              : allUrls.length > 0
+                ? "Add More Photos"
+                : "Select Photos"}
+          </Button>
+          {allUrls.length > 0 && (
+            <span className="text-xs text-muted-foreground" data-testid={`text-${testPrefix}photo-count`}>
+              {allUrls.length} photo{allUrls.length === 1 ? "" : "s"}
+            </span>
           )}
-          {isUploading ? "Uploading..." : allUrls.length > 0 ? "Add Another Photo" : "Attach Photo"}
-        </Button>
-        {allUrls.length > 0 && (
-          <span className="text-xs text-muted-foreground" data-testid={`text-${testPrefix}photo-count`}>
-            {allUrls.length} photo{allUrls.length === 1 ? "" : "s"}
-          </span>
-        )}
+        </div>
+        <p className="text-xs text-muted-foreground">JPEG, PNG, GIF, or WebP up to 10MB each</p>
       </div>
+
+      {uploadQueue.length > 0 && (
+        <div
+          className="space-y-2 rounded-md border border-border bg-card p-2"
+          data-testid={`list-${testPrefix}upload-progress`}
+        >
+          {uploadQueue.map((q) => (
+            <div
+              key={q.id}
+              className="flex items-center gap-2 text-xs"
+              data-testid={`row-${testPrefix}upload-${q.id}`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate" title={q.name}>
+                    {q.name}
+                  </span>
+                  <span
+                    className={
+                      q.status === "error"
+                        ? "text-destructive shrink-0"
+                        : q.status === "done"
+                          ? "text-green-600 shrink-0"
+                          : "text-muted-foreground shrink-0"
+                    }
+                    data-testid={`status-${testPrefix}upload-${q.id}`}
+                  >
+                    {q.status === "error"
+                      ? q.error || "Failed"
+                      : q.status === "done"
+                        ? "Uploaded"
+                        : q.status === "uploading"
+                          ? `${q.progress}%`
+                          : "Queued"}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-muted">
+                  <div
+                    className={`h-full transition-all ${
+                      q.status === "error"
+                        ? "bg-destructive"
+                        : q.status === "done"
+                          ? "bg-green-600"
+                          : "bg-primary"
+                    }`}
+                    style={{ width: `${q.status === "error" ? 100 : q.progress}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <Dialog open={lightboxUrl !== null} onOpenChange={(open) => !open && setLightboxUrl(null)}>
         <DialogContent
