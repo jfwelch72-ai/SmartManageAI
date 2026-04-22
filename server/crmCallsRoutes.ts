@@ -955,6 +955,10 @@ export type BackfillJobState = {
   completedAt: string | null;
   startedById: string;
   parentJobId: string | null;
+  // Task #1011 — surface the speed/cap chosen when the job was launched so the
+  // history list and active-job UI can display them for auditing.
+  concurrency: number | null;
+  maxRecords: number | null;
 };
 
 const MAX_BACKFILL_ERROR_SAMPLES = 50;
@@ -981,6 +985,8 @@ function rowToState(row: CrmTranscriptBackfillJob): BackfillJobState {
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     startedById: row.startedById ?? "",
     parentJobId: row.parentJobId ?? null,
+    concurrency: row.concurrency ?? null,
+    maxRecords: row.maxRecords ?? null,
   };
 }
 
@@ -2023,6 +2029,12 @@ router.post(
         completedAt: null,
         startedById: req.user!.id,
         parentJobId: parent.id,
+        // Task #1011 — persist the speed/cap so the history UI shows the
+        // actual settings for retry runs instead of falling back to
+        // "default" / "no cap". The worker below is invoked with
+        // `eligibleIds.length` as the cap, so record that as maxRecords.
+        concurrency,
+        maxRecords: eligibleIds.length,
       });
       const job = rowToState(persistedRow);
 

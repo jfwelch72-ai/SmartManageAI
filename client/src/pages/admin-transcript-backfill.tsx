@@ -52,6 +52,8 @@ interface BackfillJob {
   startedAt: string;
   completedAt: string | null;
   parentJobId?: string | null;
+  concurrency: number | null;
+  maxRecords: number | null;
 }
 
 interface BackfillHistoryEntry extends BackfillJob {
@@ -499,6 +501,19 @@ export default function AdminTranscriptBackfillPage() {
               <Stat label="Succeeded" value={job.succeeded} testId="stat-succeeded" tone="success" />
               <Stat label="Failed" value={job.failed} testId="stat-failed" tone="error" />
             </div>
+            <div
+              className="text-xs text-muted-foreground"
+              data-testid="text-job-settings"
+            >
+              Concurrency{" "}
+              <span className="font-medium text-foreground" data-testid="text-job-concurrency">
+                {job.concurrency ?? "default"}
+              </span>{" "}
+              · Record cap{" "}
+              <span className="font-medium text-foreground" data-testid="text-job-max-records">
+                {job.maxRecords !== null ? job.maxRecords.toLocaleString() : "no cap"}
+              </span>
+            </div>
             {job.errors.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-xs" data-testid="label-job-error-samples">
@@ -801,6 +816,25 @@ export default function AdminTranscriptBackfillPage() {
                           {entry.processed.toLocaleString()} / {entry.total.toLocaleString()} processed ·{" "}
                           <span className="text-green-600 dark:text-green-500">{entry.succeeded.toLocaleString()} ok</span> ·{" "}
                           <span className="text-destructive">{entry.failed.toLocaleString()} failed</span>
+                        </div>
+                        <div
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-history-settings-${entry.id}`}
+                        >
+                          Concurrency{" "}
+                          <span
+                            className="font-medium text-foreground"
+                            data-testid={`text-history-concurrency-${entry.id}`}
+                          >
+                            {entry.concurrency ?? "default"}
+                          </span>{" "}
+                          · Record cap{" "}
+                          <span
+                            className="font-medium text-foreground"
+                            data-testid={`text-history-max-records-${entry.id}`}
+                          >
+                            {entry.maxRecords !== null ? entry.maxRecords.toLocaleString() : "no cap"}
+                          </span>
                         </div>
                         <div className="text-xs text-muted-foreground" data-testid={`text-history-operator-${entry.id}`}>
                           Started by {operatorName} · <code className="text-[10px]">{entry.id}</code>

@@ -182,6 +182,8 @@ export async function listCrmTranscriptBackfillJobs(
       completedAt: crmTranscriptBackfillJobs.completedAt,
       heartbeatAt: crmTranscriptBackfillJobs.heartbeatAt,
       updatedAt: crmTranscriptBackfillJobs.updatedAt,
+      concurrency: crmTranscriptBackfillJobs.concurrency,
+      maxRecords: crmTranscriptBackfillJobs.maxRecords,
       startedByFirstName: users.firstName,
       startedByLastName: users.lastName,
       startedByEmail: users.email,
