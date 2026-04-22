@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { dotAgencies, dotSpecBooks, dotPayItems } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
-import { readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 interface AgencyJson {
@@ -24,10 +24,90 @@ interface PayItemJson {
   category?: string;
 }
 
-interface SamplePayItemSet {
+interface PayItemSet {
   specBook: { edition: string; title: string };
   source?: string;
   items: PayItemJson[];
+}
+
+const PAY_ITEMS_DIR = join(process.cwd(), "server/data/dot/pay-items");
+const LEGACY_SAMPLE_FILE = join(process.cwd(), "server/data/dot/sample-pay-items.json");
+// Larger batch sizes overwhelm Postgres parameter limits; 500 rows × 8 cols
+// keeps us well under the 65k bound parameter cap.
+const INSERT_BATCH = 500;
+
+// Per-agency expected catalog size thresholds. Each entry is the minimum
+// number of items the catalog should contain for the listed spec edition.
+// Values come from the agency's published master pay-item list (real data
+// for FHWA/NCDOT) or a defensible lower bound matching the agency's spec
+// book size (templated data for other agencies). On boot, if a loaded
+// catalog falls below the threshold, the seeder logs a warning so coverage
+// regressions are visible.
+const AGENCY_MIN_ITEMS: Record<string, number> = {
+  FHWA: 3500,     // FP-14 master list publishes ~3,985 items
+  NCDOT: 1400,    // 2024 Master Pay Item List publishes ~1,463 items
+  TXDOT: 3000,
+  CALTRANS: 2400,
+  FDOT: 3000,
+  NYSDOT: 2500,
+  PENNDOT: 2700,
+  ODOT: 2700,
+  IDOT: 2400,
+  GDOT: 2400,
+  VDOT: 2400,
+};
+
+function loadAgencies(): AgencyJson[] {
+  return JSON.parse(readFileSync(join(process.cwd(), "server/data/dot/agencies.json"), "utf8"));
+}
+
+/**
+ * Loads pay-item sets keyed by agency code. Per-agency files in
+ * `server/data/dot/pay-items/<CODE>.json` take precedence; the legacy
+ * combined `sample-pay-items.json` is used as a fallback for any agency
+ * that doesn't have a dedicated file yet.
+ */
+function loadPayItemSets(): Record<string, PayItemSet> {
+  const sets: Record<string, PayItemSet> = {};
+  if (existsSync(LEGACY_SAMPLE_FILE)) {
+    try {
+      const legacy = JSON.parse(readFileSync(LEGACY_SAMPLE_FILE, "utf8")) as Record<string, PayItemSet>;
+      Object.assign(sets, legacy);
+    } catch (err) {
+      console.warn("[DOTSeed] Failed to parse legacy sample-pay-items.json:", err);
+    }
+  }
+  if (existsSync(PAY_ITEMS_DIR)) {
+    for (const file of readdirSync(PAY_ITEMS_DIR)) {
+      if (!file.endsWith(".json")) continue;
+      const code = file.replace(/\.json$/, "");
+      try {
+        const data = JSON.parse(readFileSync(join(PAY_ITEMS_DIR, file), "utf8")) as PayItemSet;
+        if (data && Array.isArray(data.items) && data.specBook?.edition) {
+          sets[code] = data; // per-agency file wins over legacy
+        }
+      } catch (err) {
+        console.warn(`[DOTSeed] Failed to parse ${file}:`, err);
+      }
+    }
+  }
+  // Validate per-agency catalog sizes against AGENCY_MIN_ITEMS so coverage
+  // regressions (e.g. a fetch script breaking, or a hand-edit deleting items)
+  // surface as warnings on every boot.
+  for (const [code, expectedMin] of Object.entries(AGENCY_MIN_ITEMS)) {
+    const set = sets[code];
+    if (!set) {
+      console.warn(`[DOTSeed] Missing pay-item catalog for ${code} (expected >=${expectedMin} items).`);
+      continue;
+    }
+    if (set.items.length < expectedMin) {
+      console.warn(
+        `[DOTSeed] ${code} catalog has only ${set.items.length} items; expected >=${expectedMin}. ` +
+        `Investigate the fetcher/generator for this agency.`,
+      );
+    }
+  }
+  return sets;
 }
 
 export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted: number; specBooksInserted: number; payItemsInserted: number }> {
@@ -36,10 +116,10 @@ export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted:
   let payItemsInserted = 0;
 
   let agenciesData: AgencyJson[];
-  let sampleData: Record<string, SamplePayItemSet>;
+  let payItemSets: Record<string, PayItemSet>;
   try {
-    agenciesData = JSON.parse(readFileSync(join(process.cwd(), "server/data/dot/agencies.json"), "utf8"));
-    sampleData = JSON.parse(readFileSync(join(process.cwd(), "server/data/dot/sample-pay-items.json"), "utf8"));
+    agenciesData = loadAgencies();
+    payItemSets = loadPayItemSets();
   } catch (err) {
     console.error("[DOTSeed] Failed to read agency seed files:", err);
     return { agenciesInserted, specBooksInserted, payItemsInserted };
@@ -83,8 +163,10 @@ export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted:
     }
   }
 
-  // Seed sample pay items for agencies that have items in sample-pay-items.json
-  for (const [agencyCode, set] of Object.entries(sampleData)) {
+  // Seed pay items for every agency that has a catalog file (per-agency file
+  // or legacy sample). Uses batched inserts with onConflictDoNothing to stay
+  // idempotent across boots and fast on first boot for large catalogs.
+  for (const [agencyCode, set] of Object.entries(payItemSets)) {
     const agency = await db.select().from(dotAgencies).where(eq(dotAgencies.code, agencyCode)).limit(1);
     if (agency.length === 0) continue;
     let sb = await db.select().from(dotSpecBooks)
@@ -107,23 +189,32 @@ export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted:
     }
     const specBookId = sb[0].id;
 
-    for (const item of set.items) {
-      const existing = await db.select().from(dotPayItems)
-        .where(and(eq(dotPayItems.specBookId, specBookId), eq(dotPayItems.itemNumber, item.itemNumber)))
-        .limit(1);
-      if (existing.length === 0) {
-        await db.insert(dotPayItems).values({
-          specBookId,
-          agencyId: agency[0].id,
-          itemNumber: item.itemNumber,
-          description: item.description,
-          unit: item.unit,
-          specSection: item.specSection ?? null,
-          category: item.category ?? null,
-          searchTokens: `${item.itemNumber} ${item.description}`.toLowerCase(),
-        });
-        payItemsInserted++;
-      }
+    // Skip the work if the catalog is already fully loaded (idempotency
+    // fast-path: avoids re-batching every boot once seeded).
+    const [{ count: existingCount }] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(dotPayItems)
+      .where(eq(dotPayItems.specBookId, specBookId));
+    if (Number(existingCount) >= set.items.length) continue;
+
+    const rows = set.items.map((item) => ({
+      specBookId,
+      agencyId: agency[0].id,
+      itemNumber: item.itemNumber,
+      description: item.description,
+      unit: item.unit,
+      specSection: item.specSection ?? null,
+      category: item.category ?? null,
+      searchTokens: `${item.itemNumber} ${item.description}`.toLowerCase(),
+    }));
+    for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+      const slice = rows.slice(i, i + INSERT_BATCH);
+      const result = await db
+        .insert(dotPayItems)
+        .values(slice)
+        .onConflictDoNothing({ target: [dotPayItems.specBookId, dotPayItems.itemNumber] })
+        .returning({ id: dotPayItems.id });
+      payItemsInserted += result.length;
     }
     // Update count
     await db.update(dotSpecBooks).set({
