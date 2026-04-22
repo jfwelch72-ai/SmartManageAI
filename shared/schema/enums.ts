@@ -75,6 +75,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "CRM_OPPORTUNITY_REASSIGNED",
   "PROJECT_REASSIGNED",
   "CRM_ORGANIZATION_REASSIGNED",
+  "SCHEDULE_TASK_RESCHEDULED",
+  "SCHEDULE_BASELINE_SLIP",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);
@@ -525,6 +527,7 @@ export const aiTakeoffModeEnum = pgEnum("ai_takeoff_mode", ["QUICK", "DETAILED"]
 
 export const scheduleGeneratedByEnum = pgEnum("schedule_generated_by", ["AI", "MANUAL"]);
 export const scheduleTaskStatusEnum = pgEnum("schedule_task_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "DELAYED", "ON_HOLD"]);
+export const scheduleDependencyTypeEnum = pgEnum("schedule_dependency_type", ["FS", "SS", "FF", "SF"]);
 
 export const jobsiteAnalysisStatusEnum = pgEnum("jobsite_analysis_status", ["PENDING", "PROCESSING", "COMPLETE", "PARTIAL", "FAILED"]);
 export const safetySeverityEnum = pgEnum("safety_severity", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);

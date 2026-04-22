@@ -204,11 +204,12 @@
 import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
-import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, scheduleBaselines, projects, changeOrders, projectDelays, crews, aiGanttRecommendations, users } from "@shared/schema";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, scheduleBaselines, projects, changeOrders, projectDelays, crews, aiGanttRecommendations, users, scheduleTaskDependencies } from "@shared/schema";
+import { eq, and, desc, sql, inArray, lte, gte } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { recalculateSchedule, computeScheduleImpact, detectCycle } from "./cpmEngine";
+import { recalculateSchedule, computeScheduleImpact, detectCycle, loadTypedDependencyMap, type DependencyType } from "./cpmEngine";
+import { parseMSProjectXml, buildMSProjectXml } from "./scheduleImportExport";
 import {
   renderGanttPdf,
   GanttPdfQueueFullError,
@@ -1601,6 +1602,344 @@ router.delete(
         olderThanMs ? { olderThanMs } : undefined,
       );
       res.json({ ok: true, removed, olderThanMs: olderThanMs ?? null });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ============================================================================
+// Typed dependencies (FS / SS / FF / SF + lag)
+// ============================================================================
+
+const typedDepCreateSchema = z.object({
+  predecessorTaskId: z.string().min(1),
+  successorTaskId: z.string().min(1),
+  dependencyType: z.enum(["FS", "SS", "FF", "SF"]).default("FS"),
+  lagDays: z.number().int().default(0),
+});
+
+router.get(
+  "/projects/:code/schedule/dependencies",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+      const schedule = await getActiveSchedule(project.id);
+      if (!schedule) return res.json({ dependencies: [] });
+      const rows = await db.select().from(scheduleTaskDependencies)
+        .where(eq(scheduleTaskDependencies.scheduleId, schedule.id));
+      res.json({ dependencies: rows });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  "/projects/:code/schedule/dependencies",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+      const parsed = typedDepCreateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+      if (parsed.data.predecessorTaskId === parsed.data.successorTaskId) {
+        return res.status(400).json({ error: "Task cannot depend on itself" });
+      }
+      const schedule = await getActiveSchedule(project.id);
+      if (!schedule) return res.status(404).json({ error: "No active schedule" });
+
+      const allTasks = await db.select().from(projectScheduleTasks)
+        .where(eq(projectScheduleTasks.scheduleId, schedule.id));
+      const taskIds = new Set(allTasks.map(t => t.id));
+      if (!taskIds.has(parsed.data.predecessorTaskId) || !taskIds.has(parsed.data.successorTaskId)) {
+        return res.status(400).json({ error: "Predecessor or successor not in this schedule" });
+      }
+
+      const existingTyped = await db.select().from(scheduleTaskDependencies)
+        .where(eq(scheduleTaskDependencies.scheduleId, schedule.id));
+      const extraEdges = existingTyped
+        .map(d => ({ successorId: d.successorTaskId, predecessorId: d.predecessorTaskId }))
+        .concat({ successorId: parsed.data.successorTaskId, predecessorId: parsed.data.predecessorTaskId });
+      if (detectCycle(
+        parsed.data.successorTaskId,
+        [],
+        allTasks.map(t => ({ id: t.id, dependencies: t.dependencies })),
+        extraEdges,
+      )) {
+        return res.status(400).json({ error: "Circular dependency detected" });
+      }
+
+      const [row] = await db.insert(scheduleTaskDependencies).values({
+        scheduleId: schedule.id,
+        predecessorTaskId: parsed.data.predecessorTaskId,
+        successorTaskId: parsed.data.successorTaskId,
+        dependencyType: parsed.data.dependencyType,
+        lagDays: parsed.data.lagDays,
+      }).onConflictDoUpdate({
+        target: [scheduleTaskDependencies.successorTaskId, scheduleTaskDependencies.predecessorTaskId],
+        set: {
+          dependencyType: parsed.data.dependencyType,
+          lagDays: parsed.data.lagDays,
+        },
+      }).returning();
+
+      await recalculateSchedule(schedule.id);
+      res.status(201).json({ dependency: row });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  "/projects/:code/schedule/dependencies/:depId",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+      const schedule = await getActiveSchedule(project.id);
+      if (!schedule) return res.status(404).json({ error: "No active schedule" });
+      const result = await db.delete(scheduleTaskDependencies)
+        .where(and(
+          eq(scheduleTaskDependencies.id, req.params.depId),
+          eq(scheduleTaskDependencies.scheduleId, schedule.id),
+        ))
+        .returning();
+      if (result.length === 0) return res.status(404).json({ error: "Dependency not found" });
+      await recalculateSchedule(schedule.id);
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ============================================================================
+// Look-ahead view (next N weeks of in-progress / upcoming tasks)
+// ============================================================================
+
+router.get(
+  "/projects/:code/schedule/look-ahead",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+      const schedule = await getActiveSchedule(project.id);
+      if (!schedule) return res.json({ horizonWeeks: 0, windowStart: null, windowEnd: null, tasks: [] });
+
+      const requestedWeeks = Number(req.query.weeks);
+      const horizonWeeks = Number.isFinite(requestedWeeks) && requestedWeeks > 0
+        ? Math.min(Math.floor(requestedWeeks), 26)
+        : (schedule.lookAheadHorizonWeeks || 3);
+
+      const today = new Date();
+      const windowStart = today.toISOString().split("T")[0];
+      const windowEndDate = new Date(today.getTime() + horizonWeeks * 7 * 86400000);
+      const windowEnd = windowEndDate.toISOString().split("T")[0];
+
+      const tasks = await db.select().from(projectScheduleTasks)
+        .where(eq(projectScheduleTasks.scheduleId, schedule.id));
+
+      const inWindow = tasks.filter(t => {
+        if (t.status === "COMPLETE") return false;
+        const start = t.plannedStartDate;
+        const end = t.plannedEndDate;
+        if (!start && !end) return false;
+        const taskStart = start || end!;
+        const taskEnd = end || start!;
+        return taskStart <= windowEnd && taskEnd >= windowStart;
+      }).sort((a, b) => (a.plannedStartDate || "").localeCompare(b.plannedStartDate || ""));
+
+      res.json({
+        horizonWeeks,
+        windowStart,
+        windowEnd,
+        tasks: inWindow,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ============================================================================
+// MS Project XML import / export
+// ============================================================================
+
+const importBodySchema = z.object({
+  format: z.enum(["msp-xml"]).default("msp-xml"),
+  xml: z.string().min(1),
+  replaceExisting: z.boolean().default(false),
+});
+
+router.post(
+  "/projects/:code/schedule/import",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+      const parsed = importBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+
+      let imported;
+      try {
+        imported = parseMSProjectXml(parsed.data.xml);
+      } catch (err) {
+        return res.status(400).json({ error: err instanceof Error ? err.message : "Failed to parse XML" });
+      }
+
+      let schedule = await getActiveSchedule(project.id);
+      if (!schedule) {
+        const [created] = await db.insert(projectSchedules).values({
+          projectId: project.id,
+          name: imported.projectName || `${project.name} Schedule`,
+          baselineStartDate: imported.startDate || new Date().toISOString().split("T")[0],
+          baselineEndDate: imported.finishDate,
+          isActive: true,
+        }).returning();
+        schedule = created;
+      } else if (parsed.data.replaceExisting) {
+        await db.delete(scheduleTaskDependencies).where(eq(scheduleTaskDependencies.scheduleId, schedule.id));
+        await db.delete(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
+      }
+
+      const externalIdToTaskId = new Map<string, string>();
+      let sortOrder = 0;
+      for (const t of imported.tasks) {
+        const [inserted] = await db.insert(projectScheduleTasks).values({
+          scheduleId: schedule.id,
+          name: t.name,
+          description: "",
+          durationDays: t.durationDays,
+          dependencies: [],
+          isMilestone: t.isMilestone,
+          plannedStartDate: t.plannedStartDate,
+          plannedEndDate: t.plannedEndDate,
+          percentComplete: t.percentComplete,
+          sortOrder: sortOrder++,
+          wbsCode: t.wbsCode || null,
+          outlineLevel: t.outlineLevel,
+          externalSourceRef: t.externalId,
+        }).returning();
+        externalIdToTaskId.set(t.externalId, inserted.id);
+      }
+
+      // Link parents in a second pass
+      for (const t of imported.tasks) {
+        if (!t.parentExternalId) continue;
+        const childId = externalIdToTaskId.get(t.externalId);
+        const parentId = externalIdToTaskId.get(t.parentExternalId);
+        if (childId && parentId) {
+          await db.update(projectScheduleTasks)
+            .set({ parentTaskId: parentId, updatedAt: new Date() })
+            .where(eq(projectScheduleTasks.id, childId));
+        }
+      }
+
+      let depCount = 0;
+      for (const d of imported.dependencies) {
+        const predId = externalIdToTaskId.get(d.predecessorExternalId);
+        const succId = externalIdToTaskId.get(d.successorExternalId);
+        if (!predId || !succId) continue;
+        await db.insert(scheduleTaskDependencies).values({
+          scheduleId: schedule.id,
+          predecessorTaskId: predId,
+          successorTaskId: succId,
+          dependencyType: d.type,
+          lagDays: d.lagDays,
+        }).onConflictDoNothing();
+        depCount++;
+      }
+
+      await recalculateSchedule(schedule.id);
+
+      res.status(201).json({
+        scheduleId: schedule.id,
+        tasksImported: externalIdToTaskId.size,
+        dependenciesImported: depCount,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/projects/:code/schedule/export",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+      const format = String(req.query.format || "msp-xml");
+      if (format !== "msp-xml") return res.status(400).json({ error: "Unsupported format. Supported: msp-xml" });
+
+      const schedule = await getActiveSchedule(project.id);
+      if (!schedule) return res.status(404).json({ error: "No active schedule" });
+
+      const tasks = await db.select().from(projectScheduleTasks)
+        .where(eq(projectScheduleTasks.scheduleId, schedule.id));
+      const deps = await db.select().from(scheduleTaskDependencies)
+        .where(eq(scheduleTaskDependencies.scheduleId, schedule.id));
+
+      const startDate = schedule.baselineStartDate
+        || tasks.reduce<string | null>((min, t) => {
+          if (!t.plannedStartDate) return min;
+          return !min || t.plannedStartDate < min ? t.plannedStartDate : min;
+        }, null)
+        || new Date().toISOString().split("T")[0];
+      const finishDate = schedule.projectedCompletionDate
+        || schedule.baselineEndDate
+        || tasks.reduce<string | null>((max, t) => {
+          if (!t.plannedEndDate) return max;
+          return !max || t.plannedEndDate > max ? t.plannedEndDate : max;
+        }, null)
+        || startDate;
+
+      const xml = buildMSProjectXml({
+        projectName: project.name || schedule.name || "Schedule",
+        startDate,
+        finishDate,
+        tasks: tasks.map(t => ({
+          id: t.id,
+          name: t.name,
+          outlineLevel: t.outlineLevel ?? 1,
+          wbsCode: t.wbsCode,
+          durationDays: t.durationDays,
+          plannedStartDate: t.plannedStartDate,
+          plannedEndDate: t.plannedEndDate,
+          percentComplete: t.percentComplete || 0,
+          isMilestone: t.isMilestone || false,
+          parentTaskId: t.parentTaskId,
+        })),
+        dependencies: deps.map(d => ({
+          predecessorTaskId: d.predecessorTaskId,
+          successorTaskId: d.successorTaskId,
+          type: d.dependencyType as DependencyType,
+          lagDays: d.lagDays || 0,
+        })),
+      });
+
+      const filename = `${(project.code || "schedule").replace(/[^a-z0-9_-]/gi, "_")}-schedule.xml`;
+      res.setHeader("Content-Type", "application/xml; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(xml);
     } catch (error) {
       next(error);
     }

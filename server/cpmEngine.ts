@@ -1,7 +1,20 @@
 import { logError } from "./utils/logger";
 import { db } from "./db";
-import { projectScheduleTasks, projectSchedules, scheduleForecastSnapshots } from "@shared/schema";
+import {
+  projectScheduleTasks,
+  projectSchedules,
+  scheduleForecastSnapshots,
+  scheduleTaskDependencies,
+} from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+
+export type DependencyType = "FS" | "SS" | "FF" | "SF";
+
+export interface TypedDependency {
+  predecessorId: string;
+  type: DependencyType;
+  lagDays: number;
+}
 
 interface TaskNode {
   id: string;
@@ -10,7 +23,7 @@ interface TaskNode {
   plannedEndDate: string | null;
   actualStartDate: string | null;
   actualEndDate: string | null;
-  dependencies: string[];
+  dependencies: TypedDependency[];
   status: string;
   percentComplete: number;
   earlyStart: number;
@@ -96,17 +109,27 @@ export function runCPM(
     percentComplete: number;
   }>,
   projectStartDate: string,
-  workingDaysList?: number[]
+  workingDaysList?: number[],
+  typedDependenciesByTask?: Map<string, TypedDependency[]>,
 ): CPMResult {
   if (tasks.length === 0) {
     return { tasks: [], projectedCompletionDate: projectStartDate, criticalPathDaysRemaining: 0 };
   }
 
+  const taskIdSet = new Set(tasks.map(t => t.id));
   const taskMap = new Map<string, TaskNode>();
   const successorMap = new Map<string, string[]>();
 
   for (const t of tasks) {
-    const deps = (t.dependencies || []).filter(d => tasks.some(task => task.id === d));
+    const typedDeps = typedDependenciesByTask?.get(t.id);
+    let deps: TypedDependency[];
+    if (typedDeps && typedDeps.length > 0) {
+      deps = typedDeps.filter(d => taskIdSet.has(d.predecessorId));
+    } else {
+      deps = (t.dependencies || [])
+        .filter(d => taskIdSet.has(d))
+        .map(predecessorId => ({ predecessorId, type: "FS" as DependencyType, lagDays: 0 }));
+    }
     taskMap.set(t.id, {
       id: t.id,
       durationDays: t.durationDays || 1,
@@ -128,8 +151,8 @@ export function runCPM(
 
   for (const [id, node] of taskMap) {
     for (const dep of node.dependencies) {
-      if (!successorMap.has(dep)) successorMap.set(dep, []);
-      successorMap.get(dep)!.push(id);
+      if (!successorMap.has(dep.predecessorId)) successorMap.set(dep.predecessorId, []);
+      successorMap.get(dep.predecessorId)!.push(id);
     }
   }
 
@@ -137,18 +160,33 @@ export function runCPM(
 
   for (const id of sorted) {
     const node = taskMap.get(id)!;
-    if (node.dependencies.length === 0) {
-      node.earlyStart = 0;
-    } else {
-      let maxPredFinish = 0;
-      for (const dep of node.dependencies) {
-        const pred = taskMap.get(dep);
-        if (pred) {
-          maxPredFinish = Math.max(maxPredFinish, pred.earlyFinish);
-        }
+    let earliest = 0;
+    let constrained = false;
+    for (const dep of node.dependencies) {
+      const pred = taskMap.get(dep.predecessorId);
+      if (!pred) continue;
+      let candidate: number;
+      switch (dep.type) {
+        case "SS":
+          candidate = pred.earlyStart + dep.lagDays;
+          break;
+        case "FF":
+          candidate = pred.earlyFinish + dep.lagDays - node.durationDays;
+          break;
+        case "SF":
+          candidate = pred.earlyStart + dep.lagDays - node.durationDays;
+          break;
+        case "FS":
+        default:
+          candidate = pred.earlyFinish + dep.lagDays;
+          break;
       }
-      node.earlyStart = maxPredFinish;
+      if (!constrained || candidate > earliest) {
+        earliest = candidate;
+        constrained = true;
+      }
     }
+    node.earlyStart = constrained ? Math.max(0, earliest) : 0;
 
     if (node.status === "COMPLETE" && node.actualStartDate && node.actualEndDate) {
       const actualDuration = dateToDay(node.actualEndDate, projectStartDate, workingDaysList) - dateToDay(node.actualStartDate, projectStartDate, workingDaysList) + 1;
@@ -171,38 +209,95 @@ export function runCPM(
   for (let i = sorted.length - 1; i >= 0; i--) {
     const id = sorted[i];
     const node = taskMap.get(id)!;
-    const succs = successorMap.get(id) || [];
+    const succIds = successorMap.get(id) || [];
 
-    if (succs.length === 0) {
+    if (succIds.length === 0) {
       node.lateFinish = projectDuration;
-    } else {
-      let minSuccStart = Infinity;
-      for (const succId of succs) {
-        const succ = taskMap.get(succId);
-        if (succ) {
-          minSuccStart = Math.min(minSuccStart, succ.lateStart);
+      node.lateStart = node.lateFinish - (node.earlyFinish - node.earlyStart);
+      continue;
+    }
+
+    let latestStart = Infinity;
+    let latestFinish = Infinity;
+    for (const succId of succIds) {
+      const succ = taskMap.get(succId);
+      if (!succ) continue;
+      const dep = succ.dependencies.find(d => d.predecessorId === id);
+      if (!dep) continue;
+      switch (dep.type) {
+        case "SS": {
+          const ls = succ.lateStart - dep.lagDays;
+          latestStart = Math.min(latestStart, ls);
+          break;
+        }
+        case "FF": {
+          const lf = succ.lateFinish - dep.lagDays;
+          latestFinish = Math.min(latestFinish, lf);
+          break;
+        }
+        case "SF": {
+          const lf = succ.lateFinish - dep.lagDays;
+          // SF: predecessor start to successor finish
+          const lsFromSf = lf - (node.earlyFinish - node.earlyStart);
+          latestStart = Math.min(latestStart, lsFromSf + (node.earlyFinish - node.earlyStart));
+          break;
+        }
+        case "FS":
+        default: {
+          const lf = succ.lateStart - dep.lagDays;
+          latestFinish = Math.min(latestFinish, lf);
+          break;
         }
       }
-      node.lateFinish = minSuccStart;
     }
-    node.lateStart = node.lateFinish - (node.earlyFinish - node.earlyStart);
+    const duration = node.earlyFinish - node.earlyStart;
+    if (latestStart === Infinity && latestFinish === Infinity) {
+      node.lateFinish = projectDuration;
+    } else if (latestStart !== Infinity && latestFinish !== Infinity) {
+      node.lateFinish = Math.min(latestFinish, latestStart + duration);
+    } else if (latestFinish !== Infinity) {
+      node.lateFinish = latestFinish;
+    } else {
+      node.lateFinish = latestStart + duration;
+    }
+    node.lateStart = node.lateFinish - duration;
   }
 
   for (const [id, node] of taskMap) {
     node.totalFloat = node.lateStart - node.earlyStart;
 
-    const succs = successorMap.get(id) || [];
-    if (succs.length === 0) {
+    const succIds = successorMap.get(id) || [];
+    if (succIds.length === 0) {
       node.freeFloat = projectDuration - node.earlyFinish;
     } else {
-      let minSuccES = Infinity;
-      for (const succId of succs) {
+      // Free float = minimum slack across each successor edge, respecting type+lag.
+      // For each successor, compute the earliest moment by which this predecessor
+      // must finish (or start, for SS/SF) without delaying the successor's ES.
+      let minSlack = Infinity;
+      for (const succId of succIds) {
         const succ = taskMap.get(succId);
-        if (succ) {
-          minSuccES = Math.min(minSuccES, succ.earlyStart);
+        if (!succ) continue;
+        const dep = succ.dependencies.find(d => d.predecessorId === id);
+        if (!dep) continue;
+        let slack: number;
+        switch (dep.type) {
+          case "SS":
+            slack = (succ.earlyStart - dep.lagDays) - node.earlyStart;
+            break;
+          case "FF":
+            slack = (succ.earlyFinish - dep.lagDays) - node.earlyFinish;
+            break;
+          case "SF":
+            slack = (succ.earlyFinish - dep.lagDays) - node.earlyStart;
+            break;
+          case "FS":
+          default:
+            slack = (succ.earlyStart - dep.lagDays) - node.earlyFinish;
+            break;
         }
+        if (slack < minSlack) minSlack = slack;
       }
-      node.freeFloat = minSuccES - node.earlyFinish;
+      node.freeFloat = minSlack === Infinity ? 0 : Math.max(0, minSlack);
     }
   }
 
@@ -262,8 +357,8 @@ function topologicalSort(taskMap: Map<string, TaskNode>): string[] {
     const node = taskMap.get(id);
     if (node) {
       for (const dep of node.dependencies) {
-        if (taskMap.has(dep)) {
-          visit(dep);
+        if (taskMap.has(dep.predecessorId)) {
+          visit(dep.predecessorId);
         }
       }
     }
@@ -279,10 +374,22 @@ function topologicalSort(taskMap: Map<string, TaskNode>): string[] {
   return result;
 }
 
-export function detectCycle(taskId: string, dependencies: string[], allTasks: Array<{ id: string; dependencies: string[] | null }>): boolean {
+export function detectCycle(
+  taskId: string,
+  dependencies: string[],
+  allTasks: Array<{ id: string; dependencies: string[] | null }>,
+  extraEdges?: Array<{ successorId: string; predecessorId: string }>,
+): boolean {
   const graph = new Map<string, string[]>();
   for (const t of allTasks) {
     graph.set(t.id, t.id === taskId ? dependencies : (t.dependencies || []));
+  }
+  if (extraEdges) {
+    for (const edge of extraEdges) {
+      if (!graph.has(edge.successorId)) graph.set(edge.successorId, []);
+      const arr = graph.get(edge.successorId)!;
+      if (!arr.includes(edge.predecessorId)) arr.push(edge.predecessorId);
+    }
   }
 
   const visited = new Set<string>();
@@ -303,6 +410,20 @@ export function detectCycle(taskId: string, dependencies: string[], allTasks: Ar
   return hasCycle(taskId);
 }
 
+export async function loadTypedDependencyMap(scheduleId: string): Promise<Map<string, TypedDependency[]>> {
+  const rows = await db.select().from(scheduleTaskDependencies).where(eq(scheduleTaskDependencies.scheduleId, scheduleId));
+  const map = new Map<string, TypedDependency[]>();
+  for (const r of rows) {
+    if (!map.has(r.successorTaskId)) map.set(r.successorTaskId, []);
+    map.get(r.successorTaskId)!.push({
+      predecessorId: r.predecessorTaskId,
+      type: r.dependencyType as DependencyType,
+      lagDays: r.lagDays || 0,
+    });
+  }
+  return map;
+}
+
 export async function recalculateSchedule(scheduleId: string): Promise<CPMResult | null> {
   const [schedule] = await db.select().from(projectSchedules).where(eq(projectSchedules.id, scheduleId));
   if (!schedule) return null;
@@ -312,7 +433,9 @@ export async function recalculateSchedule(scheduleId: string): Promise<CPMResult
 
   const projectStart = schedule.baselineStartDate || tasks[0].plannedStartDate || new Date().toISOString().split("T")[0];
   const workingDaysList = schedule.workingDays ? (schedule.workingDays as number[]) : undefined;
-  const result = runCPM(tasks, projectStart, workingDaysList);
+  const typedDepsMap = await loadTypedDependencyMap(scheduleId);
+  const previousTaskDates = new Map(tasks.map(t => [t.id, { start: t.plannedStartDate, end: t.plannedEndDate }]));
+  const result = runCPM(tasks, projectStart, workingDaysList, typedDepsMap);
 
   for (const cpmTask of result.tasks) {
     await db.update(projectScheduleTasks)
@@ -369,6 +492,30 @@ export async function recalculateSchedule(scheduleId: string): Promise<CPMResult
     });
   } catch (e) {
     logError("Failed to save forecast snapshot:", {}, e instanceof Error ? e : new Error(String(e)));
+  }
+
+  try {
+    const reschedules: Array<{ taskId: string; previousEnd: string | null; newEnd: string | null; deltaDays: number }> = [];
+    for (const cpmTask of result.tasks) {
+      const prev = previousTaskDates.get(cpmTask.id);
+      if (prev?.end && cpmTask.plannedEndDate && prev.end !== cpmTask.plannedEndDate) {
+        const deltaDays = Math.round(
+          (new Date(cpmTask.plannedEndDate).getTime() - new Date(prev.end).getTime()) / 86400000,
+        );
+        if (deltaDays !== 0) {
+          reschedules.push({ taskId: cpmTask.id, previousEnd: prev.end, newEnd: cpmTask.plannedEndDate, deltaDays });
+        }
+      }
+    }
+    const baselineVariance = schedule.baselineEndDate && result.projectedCompletionDate
+      ? Math.round((new Date(result.projectedCompletionDate).getTime() - new Date(schedule.baselineEndDate).getTime()) / 86400000)
+      : null;
+    if (reschedules.length > 0 || (baselineVariance !== null && baselineVariance >= 1)) {
+      const { notifyScheduleChange } = await import("./services/scheduleNotificationService");
+      await notifyScheduleChange({ scheduleId, reschedules, baselineVarianceDays: baselineVariance });
+    }
+  } catch (e) {
+    logError("Failed to emit schedule change notifications", {}, e instanceof Error ? e : new Error(String(e)));
   }
 
   return result;
