@@ -42,10 +42,13 @@ vi.mock("../emailRoutes", () => ({
   outlookApiFetch: vi.fn(),
 }));
 
+const logInfoMock = vi.fn();
+const logWarnMock = vi.fn();
+const logErrorMock = vi.fn();
 vi.mock("../utils/logger", () => ({
-  logInfo: vi.fn(),
-  logWarn: vi.fn(),
-  logError: vi.fn(),
+  logInfo: (...args: unknown[]) => logInfoMock(...args),
+  logWarn: (...args: unknown[]) => logWarnMock(...args),
+  logError: (...args: unknown[]) => logErrorMock(...args),
 }));
 
 const SHARED_SECRET = "shared-token-value";
@@ -84,6 +87,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   dbExecute.mockClear();
+  logInfoMock.mockClear();
+  logWarnMock.mockClear();
+  logErrorMock.mockClear();
   process.env.RESEND_WEBHOOK_SECRET = SHARED_SECRET;
 });
 
@@ -142,6 +148,65 @@ describe("Resend webhook route", () => {
       .set(headers)
       .send(rawBody);
     expect(res.status).toBe(202);
+  });
+
+  it("logs a per-request WARN when an svix-signed delivery arrives but the signing secret is unset (Task #879)", async () => {
+    delete process.env.RESEND_WEBHOOK_SIGNING_SECRET;
+    // Shared secret stays configured so the request still authenticates.
+    const rawBody = JSON.stringify(SAMPLE_EVENT);
+    const headers = buildSvixHeaders(rawBody, RAW_SIGNING_SECRET_B64);
+
+    const res = await request(app)
+      .post(`/api/webhooks/email/resend?token=${SHARED_SECRET}`)
+      .set("Content-Type", "application/json")
+      .set(headers)
+      .send(rawBody);
+    expect(res.status).toBe(202);
+    const sawSigningWarn = logWarnMock.mock.calls.some((c) =>
+      String(c[0] ?? "").includes("RESEND_WEBHOOK_SIGNING_SECRET"),
+    );
+    expect(sawSigningWarn).toBe(true);
+  });
+
+  it("emits a boot-time ERROR when neither secret is configured (Task #879)", async () => {
+    delete process.env.RESEND_WEBHOOK_SECRET;
+    delete process.env.RESEND_WEBHOOK_SIGNING_SECRET;
+    delete process.env.EMAIL_WEBHOOK_SECRET;
+    const { warnIfResendWebhookSigningSecretMissing, __resetResendBootWarningForTests } =
+      await import("../emailWebhookRoutes");
+    // The boot-warning is idempotent across the process; reset its internal
+    // latch via the test-only reset hook so this assertion is deterministic.
+    __resetResendBootWarningForTests();
+    warnIfResendWebhookSigningSecretMissing();
+    expect(logErrorMock).toHaveBeenCalled();
+    const sawError = logErrorMock.mock.calls.some((c) =>
+      String(c[0] ?? "").includes("RESEND_WEBHOOK_SIGNING_SECRET"),
+    );
+    expect(sawError).toBe(true);
+  });
+
+  it("emits a boot-time WARN when only the shared-secret fallback is configured (Task #879)", async () => {
+    process.env.RESEND_WEBHOOK_SECRET = SHARED_SECRET;
+    delete process.env.RESEND_WEBHOOK_SIGNING_SECRET;
+    const { warnIfResendWebhookSigningSecretMissing, __resetResendBootWarningForTests } =
+      await import("../emailWebhookRoutes");
+    __resetResendBootWarningForTests();
+    warnIfResendWebhookSigningSecretMissing();
+    const sawWarn = logWarnMock.mock.calls.some((c) =>
+      String(c[0] ?? "").includes("RESEND_WEBHOOK_SIGNING_SECRET"),
+    );
+    expect(sawWarn).toBe(true);
+  });
+
+  it("stays silent at boot when the signing secret is configured (Task #879)", async () => {
+    process.env.RESEND_WEBHOOK_SIGNING_SECRET = SIGNING_SECRET_ENV;
+    const { warnIfResendWebhookSigningSecretMissing, __resetResendBootWarningForTests } =
+      await import("../emailWebhookRoutes");
+    __resetResendBootWarningForTests();
+    warnIfResendWebhookSigningSecretMissing();
+    const sawSecretLog = [...logWarnMock.mock.calls, ...logErrorMock.mock.calls]
+      .some((c) => String(c[0] ?? "").includes("RESEND_WEBHOOK_SIGNING_SECRET"));
+    expect(sawSecretLog).toBe(false);
   });
 
   it("rejects a Svix delivery whose body has been tampered with after signing", async () => {

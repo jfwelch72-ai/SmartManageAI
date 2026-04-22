@@ -238,6 +238,23 @@ The endpoint accepts **either** of two auth modes — pick one:
 If both are configured the endpoint will accept whichever proof the
 incoming request presents.
 
+> **Boot-time guard (Task #879).** On startup the server checks for
+> `RESEND_WEBHOOK_SIGNING_SECRET` and emits a prominent log line if it
+> is not set:
+>
+> - **WARN** — signing secret missing but a shared-secret fallback is
+>   configured. Deliveries are still authenticated via `?token=`, but
+>   payload integrity is not cryptographically verified.
+> - **ERROR** — *neither* secret is configured. Every Resend delivery
+>   will be rejected with `401 unauthorized` and bounces/complaints
+>   will silently stop being recorded until a secret is provided.
+>
+> If you see either line in startup logs, set the appropriate secret
+> in the platform secrets manager and restart the app. Additionally,
+> any incoming delivery that carries `svix-*` headers while the
+> signing secret is missing logs a per-request WARN so the
+> misconfiguration shows up in production traffic too.
+
 ### 3.2 Create the webhook in the Resend dashboard
 
 1. Sign in to <https://resend.com> and open **Webhooks** in the side

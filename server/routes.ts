@@ -106,7 +106,9 @@ import socialRoutes from "./socialRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import procurementModuleRoutes from "./procurementModuleRoutes";
 import emailRoutes from "./emailRoutes";
-import emailWebhookRoutes from "./emailWebhookRoutes";
+import emailWebhookRoutes, {
+  warnIfResendWebhookSigningSecretMissing,
+} from "./emailWebhookRoutes";
 import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
 import dashboardRoutes from "./dashboardRoutes";
@@ -364,6 +366,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Email routes (consolidated)
   app.use("/api/email", emailRoutes);
   app.use("/api/webhooks/email", emailWebhookRoutes);
+  // Boot-time check (Task #879): make a missing Resend signing secret loud
+  // so it surfaces in startup logs instead of silently breaking signature
+  // verification.
+  warnIfResendWebhookSigningSecretMissing();
   app.use("/api/kpis", kpiRoutes);
 
   app.use(libraryRoutes);

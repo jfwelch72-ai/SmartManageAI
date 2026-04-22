@@ -372,10 +372,25 @@ function hasValidResendSharedSecret(req: Request): boolean {
 
 function verifyResendSvixSignature(req: Request): boolean {
   const signingSecret = (process.env.RESEND_WEBHOOK_SIGNING_SECRET || "").trim();
-  if (!signingSecret) return false;
   const svixId = req.header("svix-id");
   const svixTimestamp = req.header("svix-timestamp");
   const svixSignature = req.header("svix-signature");
+  const looksSvixSigned = !!(svixId || svixTimestamp || svixSignature);
+  if (!signingSecret) {
+    // A delivery that carries Svix headers means Resend is trying to prove
+    // authenticity but we have no key to check it. Log loudly so operators
+    // notice the misconfiguration instead of relying on the (optional) shared
+    // secret silently. We *don't* return 401 here because the route may still
+    // be intentionally protected by RESEND_WEBHOOK_SECRET only — but the boot
+    // warning + this per-request warning together make the gap visible.
+    if (looksSvixSigned) {
+      logWarn(
+        "Resend webhook delivery carried Svix signature headers but RESEND_WEBHOOK_SIGNING_SECRET is not set; skipping signature verification",
+        { hasSvixId: !!svixId, hasSvixSig: !!svixSignature },
+      );
+    }
+    return false;
+  }
   if (!svixId || !svixTimestamp || !svixSignature) return false;
 
   // Reject deliveries with skewed timestamps (5 minute window) to mitigate replay.
@@ -491,6 +506,44 @@ function extractReason(eventType: string, data: any): string | null {
     if (typeof data.feedback_type === "string") return data.feedback_type.slice(0, 500);
   }
   return null;
+}
+
+/**
+ * Boot-time check: emit a prominent warning if the Resend webhook signing
+ * secret isn't configured. Without it, the route falls back to the (optional)
+ * shared-secret token in the query string — and if that's also missing, we
+ * would silently accept unverified payloads. Loud logging here means the
+ * misconfiguration is caught at startup rather than the next time someone
+ * notices bounces stopped flowing into the Subscribers tab.
+ *
+ * Idempotent: safe to call multiple times (e.g. from tests).
+ */
+let resendSecretBootWarningEmitted = false;
+/** Test-only: clear the boot-warning latch so unit tests can re-trigger it. */
+export function __resetResendBootWarningForTests(): void {
+  resendSecretBootWarningEmitted = false;
+}
+export function warnIfResendWebhookSigningSecretMissing(): void {
+  if (resendSecretBootWarningEmitted) return;
+  const signingSecret = (process.env.RESEND_WEBHOOK_SIGNING_SECRET || "").trim();
+  if (signingSecret) return;
+  resendSecretBootWarningEmitted = true;
+  const sharedSecret = (
+    process.env.RESEND_WEBHOOK_SECRET ||
+    process.env.EMAIL_WEBHOOK_SECRET ||
+    ""
+  ).trim();
+  if (sharedSecret) {
+    logWarn(
+      "RESEND_WEBHOOK_SIGNING_SECRET is not set — Resend webhook deliveries will only be authenticated by the shared-secret query token (no Svix signature verification). Configure the signing secret to verify payload authenticity.",
+    );
+  } else {
+    logError(
+      "RESEND_WEBHOOK_SIGNING_SECRET is not set AND no shared-secret fallback (RESEND_WEBHOOK_SECRET / EMAIL_WEBHOOK_SECRET) is configured — Resend bounce/complaint webhook deliveries will be REJECTED until one is provided. Bounces and complaints will not be recorded.",
+      {},
+      new Error("Missing Resend webhook signing secret"),
+    );
+  }
 }
 
 router.post("/resend", async (req: Request, res: Response) => {
