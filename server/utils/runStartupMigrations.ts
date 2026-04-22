@@ -83,6 +83,7 @@ import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCr
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
+import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscriptBackfillTestAlertsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -175,6 +176,10 @@ const migrations: MigrationStep[] = [
   // Task #1022 — must run AFTER the jobs table since it FK-references it.
   { name: "crm_transcript_backfill_notifications_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationsTable },
   { name: "crm_transcript_backfill_alert_deliveries_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillAlertDeliveriesTable },
+  // Task #1062 — mirrors migrations/0037_crm_transcript_backfill_test_alerts.sql
+  // which was not being auto-applied, leaving the test-alert latest/history
+  // endpoints returning 500s on fresh environments.
+  { name: "crm_transcript_backfill_test_alerts_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillTestAlertsTable },
   // Task #1066 — per-admin mute for the alert delivery failure fallback
   // emails (Task #1051). Adds two columns to `users`.
   { name: "users_crm_alert_failure_fallback_columns", category: "ADD_COLUMN", fn: ensureUsersCrmAlertFailureFallbackColumns },
