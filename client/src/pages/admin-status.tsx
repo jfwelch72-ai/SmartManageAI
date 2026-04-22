@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -73,7 +74,7 @@ type AdminIncident = {
   title: string;
   status: IncidentStatus;
   impact: IncidentImpact;
-  affectedComponents: string[];
+  affectedComponents: Array<{ id: string; key: string; name: string }>;
   startedAt: string;
   resolvedAt: string | null;
   postmortemUrl: string | null;
@@ -139,7 +140,7 @@ type IncidentCreatePayload = {
   title: string;
   status: IncidentStatus;
   impact: IncidentImpact;
-  affectedComponents: string[];
+  affectedComponentIds: string[];
   initialUpdate?: string;
   postmortemUrl?: string;
 };
@@ -147,7 +148,7 @@ type IncidentCreatePayload = {
 type IncidentEditPayload = {
   title: string;
   impact: IncidentImpact;
-  affectedComponents: string[];
+  affectedComponentIds: string[];
   postmortem: string | null;
   postmortemUrl: string | null;
 };
@@ -359,12 +360,6 @@ function IncidentRow({
   const [updateOpen, setUpdateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const componentNameByKey = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const c of components) m.set(c.key, c.name);
-    return m;
-  }, [components]);
-
   const deleteMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("DELETE", `/api/admin/status/incidents/${incident.id}`);
@@ -404,11 +399,12 @@ function IncidentRow({
           </div>
         </div>
         {incident.affectedComponents.length > 0 && (
-          <div className="text-xs text-muted-foreground mt-2">
-            Affected:{" "}
-            {incident.affectedComponents
-              .map((k) => componentNameByKey.get(k) ?? k)
-              .join(", ")}
+          <div className="mt-2 flex flex-wrap gap-1" data-testid={`row-incident-components-${incident.id}`}>
+            {incident.affectedComponents.map((c) => (
+              <Badge key={c.id} variant="secondary" data-testid={`badge-incident-${incident.id}-component-${c.key}`}>
+                {c.name}
+              </Badge>
+            ))}
           </div>
         )}
       </CardHeader>
@@ -531,7 +527,7 @@ function CreateIncidentDialog({
   const [impact, setImpact] = useState<IncidentImpact>("MINOR");
   const [initialUpdate, setInitialUpdate] = useState("");
   const [postmortemUrl, setPostmortemUrl] = useState("");
-  const [affected, setAffected] = useState<string[]>([]);
+  const [affectedIds, setAffectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -540,7 +536,7 @@ function CreateIncidentDialog({
       setImpact("MINOR");
       setInitialUpdate("");
       setPostmortemUrl("");
-      setAffected([]);
+      setAffectedIds([]);
     }
   }, [open]);
 
@@ -550,7 +546,7 @@ function CreateIncidentDialog({
         title,
         status,
         impact,
-        affectedComponents: affected,
+        affectedComponentIds: affectedIds,
       };
       if (initialUpdate.trim()) body.initialUpdate = initialUpdate.trim();
       if (postmortemUrl.trim()) body.postmortemUrl = postmortemUrl.trim();
@@ -571,8 +567,8 @@ function CreateIncidentDialog({
     },
   });
 
-  const toggleAffected = (key: string) => {
-    setAffected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  const toggleAffected = (id: string) => {
+    setAffectedIds((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
   };
 
   return (
@@ -654,11 +650,14 @@ function CreateIncidentDialog({
               <Label>Affected components</Label>
               <div className="rounded-md border border-border p-2 space-y-1 max-h-40 overflow-y-auto">
                 {components.map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={affected.includes(c.key)}
-                      onChange={() => toggleAffected(c.key)}
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 text-sm cursor-pointer"
+                    data-testid={`label-affected-${c.key}`}
+                  >
+                    <Checkbox
+                      checked={affectedIds.includes(c.id)}
+                      onCheckedChange={() => toggleAffected(c.id)}
                       data-testid={`checkbox-affected-${c.key}`}
                     />
                     <span>{c.name}</span>
@@ -803,7 +802,7 @@ function EditIncidentDialog({
   const [impact, setImpact] = useState<IncidentImpact>(incident.impact);
   const [postmortem, setPostmortem] = useState(incident.postmortem ?? "");
   const [postmortemUrl, setPostmortemUrl] = useState(incident.postmortemUrl ?? "");
-  const [affected, setAffected] = useState<string[]>(incident.affectedComponents);
+  const [affectedIds, setAffectedIds] = useState<string[]>(incident.affectedComponents.map((c) => c.id));
 
   useEffect(() => {
     if (open) {
@@ -811,7 +810,7 @@ function EditIncidentDialog({
       setImpact(incident.impact);
       setPostmortem(incident.postmortem ?? "");
       setPostmortemUrl(incident.postmortemUrl ?? "");
-      setAffected(incident.affectedComponents);
+      setAffectedIds(incident.affectedComponents.map((c) => c.id));
     }
   }, [open, incident]);
 
@@ -820,7 +819,7 @@ function EditIncidentDialog({
       const body: IncidentEditPayload = {
         title,
         impact,
-        affectedComponents: affected,
+        affectedComponentIds: affectedIds,
         postmortem: postmortem.trim() ? postmortem : null,
         postmortemUrl: postmortemUrl.trim() ? postmortemUrl : null,
       };
@@ -838,8 +837,8 @@ function EditIncidentDialog({
     },
   });
 
-  const toggleAffected = (key: string) => {
-    setAffected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  const toggleAffected = (id: string) => {
+    setAffectedIds((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
   };
 
   return (
@@ -903,11 +902,14 @@ function EditIncidentDialog({
               <Label>Affected components</Label>
               <div className="rounded-md border border-border p-2 space-y-1 max-h-40 overflow-y-auto">
                 {components.map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={affected.includes(c.key)}
-                      onChange={() => toggleAffected(c.key)}
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 text-sm cursor-pointer"
+                    data-testid={`label-edit-affected-${c.key}`}
+                  >
+                    <Checkbox
+                      checked={affectedIds.includes(c.id)}
+                      onCheckedChange={() => toggleAffected(c.id)}
                       data-testid={`checkbox-edit-affected-${c.key}`}
                     />
                     <span>{c.name}</span>

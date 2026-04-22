@@ -190,7 +190,7 @@ async function fetchRecentIncidents(days = 90) {
   // window, or it is still open, or it resolved inside the window. This keeps
   // long-running incidents that began before the window visible on the strip.
   const incRes = await db.execute(sql`
-    SELECT id, title, status, impact, affected_components, started_at, resolved_at, postmortem_url, postmortem
+    SELECT id, title, status, impact, started_at, resolved_at, postmortem_url, postmortem
     FROM "status_incidents"
     WHERE started_at >= NOW() - (${days} || ' days')::interval
        OR resolved_at IS NULL
@@ -201,30 +201,64 @@ async function fetchRecentIncidents(days = 90) {
   const incidents = incRes.rows as any[];
   if (incidents.length === 0) return [];
   const ids = incidents.map((i) => i.id);
-  const updRes = await db.execute(sql`
-    SELECT id, incident_id, status, body, created_at
-    FROM "status_incident_updates"
-    WHERE incident_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
-    ORDER BY created_at ASC
-  `);
+  const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
+  const [updRes, compRes] = await Promise.all([
+    db.execute(sql`
+      SELECT id, incident_id, status, body, created_at
+      FROM "status_incident_updates"
+      WHERE incident_id IN (${idList})
+      ORDER BY created_at ASC
+    `),
+    db.execute(sql`
+      SELECT sic.incident_id, c.id, c.key, c.name
+      FROM "status_incident_components" sic
+      JOIN "status_components" c ON c.id = sic.component_id
+      WHERE sic.incident_id IN (${idList})
+      ORDER BY c.sort_order, c.name
+    `),
+  ]);
   const updatesByIncident = new Map<string, any[]>();
   for (const u of updRes.rows as any[]) {
     const arr = updatesByIncident.get(u.incident_id) || [];
     arr.push({ id: u.id, status: u.status, body: u.body, createdAt: u.created_at });
     updatesByIncident.set(u.incident_id, arr);
   }
+  const componentsByIncident = new Map<string, Array<{ id: string; key: string; name: string }>>();
+  for (const r of compRes.rows as any[]) {
+    const arr = componentsByIncident.get(r.incident_id) || [];
+    arr.push({ id: r.id, key: r.key, name: r.name });
+    componentsByIncident.set(r.incident_id, arr);
+  }
   return incidents.map((i) => ({
     id: i.id,
     title: i.title,
     status: i.status,
     impact: i.impact,
-    affectedComponents: i.affected_components,
+    affectedComponents: componentsByIncident.get(i.id) || [],
     startedAt: i.started_at,
     resolvedAt: i.resolved_at,
     postmortemUrl: i.postmortem_url,
     postmortem: i.postmortem,
     updates: updatesByIncident.get(i.id) || [],
   }));
+}
+
+async function replaceIncidentComponents(incidentId: string, componentIds: string[]): Promise<void> {
+  await db.execute(sql`DELETE FROM "status_incident_components" WHERE incident_id = ${incidentId}`);
+  const unique = Array.from(new Set(componentIds.filter((id) => typeof id === "string" && id.length > 0)));
+  if (unique.length === 0) return;
+  // Validate all IDs exist before inserting
+  const valid = await db.execute(sql`
+    SELECT id FROM "status_components"
+    WHERE id IN (${sql.join(unique.map((id) => sql`${id}`), sql`, `)})
+  `);
+  const validIds = (valid.rows as Array<{ id: string }>).map((r) => r.id);
+  if (validIds.length === 0) return;
+  await db.execute(sql`
+    INSERT INTO "status_incident_components" (incident_id, component_id)
+    VALUES ${sql.join(validIds.map((cid) => sql`(${incidentId}, ${cid})`), sql`, `)}
+    ON CONFLICT DO NOTHING
+  `);
 }
 
 function publicBaseUrl(req: any): string {
@@ -478,7 +512,7 @@ const incidentSchema = z.object({
   title: z.string().min(3).max(200),
   status: incidentStatusEnum.default("INVESTIGATING"),
   impact: incidentImpactEnum.default("MINOR"),
-  affectedComponents: z.array(z.string()).default([]),
+  affectedComponentIds: z.array(z.string().uuid()).default([]),
   initialUpdate: z.string().max(4000).optional(),
   postmortemUrl: z.string().url().max(500).optional().nullable(),
   postmortem: z.string().max(20000).optional().nullable(),
@@ -497,11 +531,12 @@ router.post("/api/admin/status/incidents", ...adminGuard, async (req: any, res, 
   try {
     const data = incidentSchema.parse(req.body);
     const ins = await db.execute(sql`
-      INSERT INTO "status_incidents" (title, status, impact, affected_components, postmortem_url, postmortem, created_by_user_id)
-      VALUES (${data.title}, ${data.status}, ${data.impact}, ${JSON.stringify(data.affectedComponents)}::jsonb, ${data.postmortemUrl ?? null}, ${data.postmortem ?? null}, ${req.user?.id ?? null})
+      INSERT INTO "status_incidents" (title, status, impact, postmortem_url, postmortem, created_by_user_id)
+      VALUES (${data.title}, ${data.status}, ${data.impact}, ${data.postmortemUrl ?? null}, ${data.postmortem ?? null}, ${req.user?.id ?? null})
       RETURNING id
     `);
     const incidentId = (ins.rows[0] as { id: string }).id;
+    await replaceIncidentComponents(incidentId, data.affectedComponentIds);
     let updateId: string | null = null;
     if (data.initialUpdate) {
       const upd = await db.execute(sql`
@@ -552,7 +587,7 @@ router.patch("/api/admin/status/incidents/:id", ...adminGuard, async (req, res, 
       .object({
         title: z.string().min(3).max(200).optional(),
         impact: incidentImpactEnum.optional(),
-        affectedComponents: z.array(z.string()).optional(),
+        affectedComponentIds: z.array(z.string().uuid()).optional(),
         postmortemUrl: z.string().url().max(500).nullable().optional(),
         postmortem: z.string().max(20000).nullable().optional(),
       })
@@ -560,10 +595,12 @@ router.patch("/api/admin/status/incidents/:id", ...adminGuard, async (req, res, 
     const sets: any[] = [sql`updated_at = NOW()`];
     if (data.title !== undefined) sets.push(sql`title = ${data.title}`);
     if (data.impact !== undefined) sets.push(sql`impact = ${data.impact}`);
-    if (data.affectedComponents !== undefined) sets.push(sql`affected_components = ${JSON.stringify(data.affectedComponents)}::jsonb`);
     if (data.postmortemUrl !== undefined) sets.push(sql`postmortem_url = ${data.postmortemUrl}`);
     if (data.postmortem !== undefined) sets.push(sql`postmortem = ${data.postmortem}`);
     await db.execute(sql`UPDATE "status_incidents" SET ${sql.join(sets, sql`, `)} WHERE id = ${req.params.id}`);
+    if (data.affectedComponentIds !== undefined) {
+      await replaceIncidentComponents(req.params.id, data.affectedComponentIds);
+    }
     res.json({ ok: true });
   } catch (err) {
     next(err);

@@ -273,7 +273,7 @@ type Incident = {
   title: string;
   status: "INVESTIGATING" | "IDENTIFIED" | "MONITORING" | "RESOLVED";
   impact: "NONE" | "MINOR" | "MAJOR" | "CRITICAL";
-  affectedComponents: string[];
+  affectedComponents: Array<{ id: string; key: string; name: string }>;
   startedAt: string;
   resolvedAt: string | null;
   postmortemUrl: string | null;
@@ -413,7 +413,7 @@ function IncidentCard({ incident }: { incident: Incident }) {
 
       {incident.affectedComponents.length > 0 && (
         <div className="text-xs text-muted-foreground mt-2">
-          Affected: {incident.affectedComponents.join(", ")}
+          Affected: {incident.affectedComponents.map((c) => c.name).join(", ")}
         </div>
       )}
 
@@ -481,7 +481,7 @@ function incidentsOnDay(component: StatusComponent, dateIso: string, allIncident
     const resolvedAt = inc.resolvedAt ? new Date(inc.resolvedAt).getTime() : Date.now();
     if (resolvedAt <= dayStart || startedAt >= dayEnd) return false;
     if (!inc.affectedComponents || inc.affectedComponents.length === 0) return true;
-    return inc.affectedComponents.some((ac) => ac === component.key || ac === component.name || ac === component.id);
+    return inc.affectedComponents.some((ac) => ac.id === component.id);
   });
 }
 

@@ -82,6 +82,15 @@ export async function ensureStatusPageTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_incidents_started_idx" ON "status_incidents" ("started_at" DESC)`);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "status_incident_components" (
+      "incident_id" varchar NOT NULL REFERENCES "status_incidents"("id") ON DELETE CASCADE,
+      "component_id" varchar NOT NULL REFERENCES "status_components"("id") ON DELETE CASCADE,
+      PRIMARY KEY ("incident_id", "component_id")
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_incident_components_component_idx" ON "status_incident_components" ("component_id")`);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "status_incident_updates" (
       "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
       "incident_id" varchar NOT NULL REFERENCES "status_incidents"("id") ON DELETE CASCADE,
@@ -183,6 +192,26 @@ export async function ensureStatusPageTables(): Promise<void> {
     UPDATE "status_components"
     SET probe_kind = 'http_public'
     WHERE key = 'web' AND probe_kind = 'http_self'
+  `);
+
+  // Backfill legacy free-text affected_components into the structured join table.
+  // Match each string value by component id, key, or name (case-insensitive on name).
+  // Safe to re-run: ON CONFLICT DO NOTHING.
+  await db.execute(sql`
+    INSERT INTO "status_incident_components" (incident_id, component_id)
+    SELECT i.id, c.id
+    FROM "status_incidents" i
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+      CASE
+        WHEN jsonb_typeof(i.affected_components) = 'array' THEN i.affected_components
+        ELSE '[]'::jsonb
+      END
+    ) AS ac(value)
+    JOIN "status_components" c
+      ON c.id = ac.value
+      OR c.key = ac.value
+      OR lower(c.name) = lower(ac.value)
+    ON CONFLICT DO NOTHING
   `);
 
   console.log("[migration] status_page — tables ready");
