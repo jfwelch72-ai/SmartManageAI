@@ -1,5 +1,5 @@
 import { logInfo, logError, logWarn } from "./logger";
-import { detectSchemaDrift } from "./schemaDriftDetector";
+import { reconcileSchemaDrift } from "./schemaDriftDetector";
 
 import { ensureVideoCallTables } from "./ensureVideoCallTables";
 import { ensureEstimateSubcontractorTables } from "./ensureEstimateSubcontractorTables";
@@ -247,9 +247,25 @@ export async function runStartupMigrations(): Promise<void> {
     logInfo(`[migrations] ${total} checks complete in ${elapsed}ms — ${appliedCount} applied, ${skipped} up-to-date — breakdown: ${categoryBreakdown}`);
   }
 
+  // Task #1075: detect schema drift (missing tables AND missing columns) and,
+  // in dev, auto-apply the safe append-only fixes (ADD COLUMN IF NOT EXISTS)
+  // so a freshly-pulled checkout doesn't 500 on /api/dev/test-login because
+  // of new columns like `users.crm_backfill_summary_channel`. Anything not
+  // safely auto-fixable (missing tables, ambiguous renames) is surfaced as a
+  // loud, actionable banner pointing at `npx drizzle-kit push`. In production
+  // we never auto-mutate the schema — `reconcileSchemaDrift` throws so the
+  // deploy fails loudly with the same banner.
   try {
-    await detectSchemaDrift();
-  } catch {
-    logWarn("[migrations] Schema drift detection skipped due to error");
+    await reconcileSchemaDrift();
+  } catch (err) {
+    if (process.env.NODE_ENV === "production") {
+      logError(
+        "[migrations] Schema drift reconcile failed in production — exiting.",
+        {},
+        err instanceof Error ? err : new Error(String(err)),
+      );
+      process.exit(1);
+    }
+    logWarn("[migrations] Schema drift reconcile failed (non-fatal in dev)");
   }
 }

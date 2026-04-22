@@ -1,67 +1,330 @@
 import { db } from "../db";
-import { sql, getTableName } from "drizzle-orm";
-import { PgTable } from "drizzle-orm/pg-core";
-import { logInfo, logWarn } from "./logger";
+import { sql, getTableName, getTableColumns, SQL } from "drizzle-orm";
+import { PgTable, PgColumn, isPgEnum } from "drizzle-orm/pg-core";
+import { logInfo, logWarn, logError } from "./logger";
 import * as schema from "@shared/schema";
 
-function extractDrizzleTableNames(): string[] {
-  const names: string[] = [];
+export interface SchemaDriftResult {
+  missingTables: string[];
+  missingColumns: { table: string; column: string }[];
+  hasDrift: boolean;
+}
+
+interface DrizzleTableMeta {
+  name: string;
+  columns: Map<string, PgColumn>;
+}
+
+function extractDrizzleSchema(): Map<string, DrizzleTableMeta> {
+  const result = new Map<string, DrizzleTableMeta>();
   for (const value of Object.values(schema)) {
     if (value instanceof PgTable) {
       try {
-        const name = getTableName(value);
-        if (name) names.push(name);
+        const tableName = getTableName(value);
+        if (!tableName) continue;
+        const cols = getTableColumns(value) as Record<string, PgColumn>;
+        const colMap = new Map<string, PgColumn>();
+        for (const c of Object.values(cols)) {
+          if (c?.name) colMap.set(c.name, c);
+        }
+        result.set(tableName, { name: tableName, columns: colMap });
       } catch {
+        // ignore individual table errors
       }
     }
   }
-  return [...new Set(names)].sort();
+  return result;
 }
 
-export async function detectSchemaDrift(): Promise<void> {
+export async function detectSchemaDrift(): Promise<SchemaDriftResult> {
+  const empty: SchemaDriftResult = { missingTables: [], missingColumns: [], hasDrift: false };
   try {
-    const drizzleTableNames = extractDrizzleTableNames();
+    const drizzleSchema = extractDrizzleSchema();
 
-    if (drizzleTableNames.length === 0) {
+    if (drizzleSchema.size === 0) {
       logWarn("[schema-drift] Could not extract table names from Drizzle schema — skipping drift detection");
-      return;
+      return empty;
     }
 
-    const result = await db.execute(sql`
+    const tableResult = await db.execute(sql`
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema = 'public'
         AND table_type = 'BASE TABLE'
       ORDER BY table_name
     `);
+    const dbTables = new Set((tableResult.rows as { table_name: string }[]).map(r => r.table_name));
 
-    const dbTables = new Set((result.rows as { table_name: string }[]).map(r => r.table_name));
-    const drizzleTables = new Set(drizzleTableNames);
+    const columnResult = await db.execute(sql`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+    `);
+    const dbColumns = new Map<string, Set<string>>();
+    for (const row of columnResult.rows as { table_name: string; column_name: string }[]) {
+      let set = dbColumns.get(row.table_name);
+      if (!set) {
+        set = new Set<string>();
+        dbColumns.set(row.table_name, set);
+      }
+      set.add(row.column_name);
+    }
 
-    const missingFromDb: string[] = [];
-    for (const table of drizzleTables) {
-      if (!dbTables.has(table)) {
-        missingFromDb.push(table);
+    const missingTables: string[] = [];
+    const missingColumns: { table: string; column: string }[] = [];
+
+    const sortedTableEntries = [...drizzleSchema.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [tableName, meta] of sortedTableEntries) {
+      if (!dbTables.has(tableName)) {
+        missingTables.push(tableName);
+        continue;
+      }
+      const actualCols = dbColumns.get(tableName) ?? new Set<string>();
+      for (const colName of meta.columns.keys()) {
+        if (!actualCols.has(colName)) {
+          missingColumns.push({ table: tableName, column: colName });
+        }
       }
     }
 
     let untrackedCount = 0;
     for (const table of dbTables) {
-      if (!drizzleTables.has(table)) {
-        untrackedCount++;
+      if (!drizzleSchema.has(table)) untrackedCount++;
+    }
+
+    if (missingTables.length > 0) {
+      logWarn(`[schema-drift] ${missingTables.length} table(s) defined in Drizzle schema but MISSING from database: ${missingTables.join(", ")}`);
+    }
+    if (missingColumns.length > 0) {
+      const sample = missingColumns.slice(0, 10).map(c => `${c.table}.${c.column}`).join(", ");
+      const more = missingColumns.length > 10 ? ` (and ${missingColumns.length - 10} more)` : "";
+      logWarn(`[schema-drift] ${missingColumns.length} column(s) defined in Drizzle schema but MISSING from database: ${sample}${more}`);
+    }
+
+    if (missingTables.length === 0 && missingColumns.length === 0) {
+      logInfo(`[schema-drift] All ${drizzleSchema.size} schema tables/columns present in DB — no drift detected (${untrackedCount} additional DB-only tables)`);
+    } else {
+      logInfo(`[schema-drift] Check complete: ${drizzleSchema.size} schema tables, ${dbTables.size} DB tables, ${missingTables.length} missing tables, ${missingColumns.length} missing columns, ${untrackedCount} DB-only`);
+    }
+
+    return {
+      missingTables,
+      missingColumns,
+      hasDrift: missingTables.length > 0 || missingColumns.length > 0,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (process.env.NODE_ENV === "production") {
+      // In production, an introspection failure must not be silently treated
+      // as "no drift" — that would defeat the fail-loudly contract. Surface
+      // it so the startup wrapper can exit.
+      throw new Error(`[schema-drift] Detection failed in production: ${msg}`);
+    }
+    logWarn(`[schema-drift] Detection failed (non-blocking in dev): ${msg}`);
+    return empty;
+  }
+}
+
+const SYNC_COMMAND = "npx drizzle-kit push";
+
+interface DrizzleEnumMeta {
+  name: string;
+  values: readonly string[];
+}
+
+function extractDrizzleEnums(): DrizzleEnumMeta[] {
+  const result: DrizzleEnumMeta[] = [];
+  for (const value of Object.values(schema)) {
+    if (isPgEnum(value)) {
+      const name = value.enumName;
+      const values = value.enumValues;
+      if (name && Array.isArray(values)) {
+        result.push({ name, values });
       }
     }
+  }
+  return result;
+}
 
-    if (missingFromDb.length > 0) {
-      logWarn(`[schema-drift] ${missingFromDb.length} table(s) defined in Drizzle schema but MISSING from database: ${missingFromDb.join(", ")}`);
+async function ensureMissingEnums(): Promise<{ created: number; failed: number }> {
+  const enums = extractDrizzleEnums();
+  if (enums.length === 0) return { created: 0, failed: 0 };
+
+  const result = await db.execute(sql`
+    SELECT typname FROM pg_type WHERE typtype = 'e'
+  `);
+  const existing = new Set((result.rows as { typname: string }[]).map(r => r.typname));
+
+  let created = 0;
+  let failed = 0;
+  for (const e of enums) {
+    if (existing.has(e.name)) continue;
+    try {
+      const valuesList = e.values.map(v => `'${v.replace(/'/g, "''")}'`).join(",");
+      await db.execute(sql.raw(`CREATE TYPE "${e.name}" AS ENUM (${valuesList})`));
+      created++;
+      logInfo(`[schema-drift] Auto-created missing enum ${e.name}`);
+    } catch (err) {
+      failed++;
+      logWarn(`[schema-drift] Failed to auto-create enum ${e.name}: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+  return { created, failed };
+}
 
-    if (missingFromDb.length === 0) {
-      logInfo(`[schema-drift] All ${drizzleTables.size} schema tables present in DB — no drift detected (${untrackedCount} additional DB-only tables)`);
+function literalDefault(def: unknown, sqlType: string): string | null {
+  // PostgreSQL `DEFAULT` clauses require a constant expression, not a bind
+  // parameter, so we render primitive defaults as inlined SQL literals.
+  if (typeof def === "string") return `'${def.replace(/'/g, "''")}'`;
+  if (typeof def === "boolean") return def ? "TRUE" : "FALSE";
+  if (typeof def === "number") return Number.isFinite(def) ? String(def) : null;
+  if (Array.isArray(def)) {
+    if (def.length === 0) return `'{}'::${sqlType}`;
+    if (def.every(v => typeof v === "string")) {
+      const items = def.map(v => `"${(v as string).replace(/"/g, '\\"')}"`).join(",");
+      return `'{${items}}'::${sqlType}`;
+    }
+    if (def.every(v => typeof v === "number" && Number.isFinite(v))) {
+      return `'{${def.join(",")}}'::${sqlType}`;
+    }
+    return null;
+  }
+  return null;
+}
+
+function buildAddColumnSql(tableName: string, column: PgColumn): SQL | null {
+  const sqlType = column.getSQLType();
+  const parts: SQL[] = [];
+  parts.push(sql`ALTER TABLE ${sql.identifier(tableName)} ADD COLUMN IF NOT EXISTS ${sql.identifier(column.name)} ${sql.raw(sqlType)}`);
+  if (column.notNull) parts.push(sql.raw("NOT NULL"));
+  if (column.hasDefault && column.default !== undefined) {
+    const def = column.default;
+    if (def instanceof SQL) {
+      parts.push(sql`DEFAULT ${def}`);
     } else {
-      logInfo(`[schema-drift] Check complete: ${drizzleTables.size} schema tables, ${dbTables.size} DB tables, ${missingFromDb.length} missing, ${untrackedCount} DB-only`);
+      const literal = literalDefault(def, sqlType);
+      if (literal !== null) {
+        parts.push(sql.raw(`DEFAULT ${literal}`));
+      } else if (column.notNull) {
+        // Can't synthesize a default for a NOT NULL column — adding it would
+        // fail on a non-empty table. Bail and surface in the drift banner.
+        return null;
+      }
     }
-  } catch (err) {
-    logWarn(`[schema-drift] Detection failed (non-blocking): ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return sql.join(parts, sql` `);
+}
+
+/**
+ * Task #1075: when schema drift is detected at startup, automatically apply
+ * the safe, append-only fixes (ADD COLUMN IF NOT EXISTS) so a freshly-pulled
+ * checkout doesn't 500 on /api/dev/test-login because of new columns like
+ * `users.crm_backfill_summary_channel`.
+ *
+ * For drift that we can't auto-apply safely (missing tables, columns whose
+ * default we can't synthesize, or any failure), we print a loud banner with
+ * the exact one-line repro command (`npx drizzle-kit push`) so the next
+ * contributor doesn't lose an hour to a mysterious 500.
+ *
+ * In production we never auto-mutate the schema — instead we throw so the
+ * deploy fails loudly with the same banner.
+ *
+ * Set `DISABLE_AUTO_DB_SYNC=true` to opt out of the auto-add in dev.
+ */
+export async function reconcileSchemaDrift(): Promise<void> {
+  const drift = await detectSchemaDrift();
+  if (!drift.hasDrift) return;
+
+  const isProduction = process.env.NODE_ENV === "production";
+  const optOut = process.env.DISABLE_AUTO_DB_SYNC === "true";
+  const drizzleSchema = extractDrizzleSchema();
+
+  const printBanner = (kind: "warn" | "error", lines: string[]) => {
+    const banner = ["", "============================================================", ...lines, "============================================================", ""].join("\n");
+    if (kind === "error") logError(banner);
+    else logWarn(banner);
+  };
+
+  if (isProduction) {
+    printBanner("error", [
+      `[schema-drift] DRIFT DETECTED in production — refusing to auto-mutate schema.`,
+      `[schema-drift] Missing tables: ${drift.missingTables.length}; missing columns: ${drift.missingColumns.length}`,
+      `[schema-drift] Run this against the production DB before retrying deploy:`,
+      `[schema-drift]   ${SYNC_COMMAND}`,
+    ]);
+    throw new Error(`Schema drift detected in production. Run \`${SYNC_COMMAND}\` before starting the server.`);
+  }
+
+  if (optOut) {
+    printBanner("warn", [
+      `[schema-drift] DRIFT DETECTED and auto-sync is disabled (DISABLE_AUTO_DB_SYNC=true).`,
+      `[schema-drift] Missing tables: ${drift.missingTables.length}; missing columns: ${drift.missingColumns.length}`,
+      `[schema-drift] Run this to sync your dev database:`,
+      `[schema-drift]   ${SYNC_COMMAND}`,
+    ]);
+    return;
+  }
+
+  // Auto-add missing columns via append-only ALTER TABLE statements. This is
+  // the actual reported pain point (Task #1075) — drizzle-kit push is
+  // interactive and can prompt for ambiguous renames, so we don't shell out
+  // to it; instead we apply the safe subset directly. First make sure any
+  // missing enum types exist, since column ADDs that reference them would
+  // otherwise fail with `type "<enum>" does not exist`.
+  const enumStats = await ensureMissingEnums();
+  if (enumStats.created > 0) {
+    logInfo(`[schema-drift] Auto-created ${enumStats.created} missing enum type(s).`);
+  }
+
+  const failedColumns: { table: string; column: string; reason: string }[] = [];
+  let appliedColumns = 0;
+  for (const { table, column } of drift.missingColumns) {
+    const meta = drizzleSchema.get(table);
+    const colDef = meta?.columns.get(column);
+    if (!colDef) {
+      failedColumns.push({ table, column, reason: "column metadata not found in Drizzle schema" });
+      continue;
+    }
+    try {
+      const stmt = buildAddColumnSql(table, colDef);
+      if (!stmt) {
+        const reason = colDef.notNull && !colDef.hasDefault
+          ? "NOT NULL column with no default — cannot be safely auto-added"
+          : "unsupported column definition for auto-add";
+        failedColumns.push({ table, column, reason });
+        logWarn(`[schema-drift] Skipping auto-add for ${table}.${column}: ${reason}`);
+        continue;
+      }
+      await db.execute(stmt);
+      appliedColumns++;
+      logInfo(`[schema-drift] Auto-added missing column ${table}.${column}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      failedColumns.push({ table, column, reason: msg });
+      logWarn(`[schema-drift] Failed to auto-add ${table}.${column}: ${msg}`);
+    }
+  }
+
+  if (appliedColumns > 0) {
+    logInfo(`[schema-drift] Auto-added ${appliedColumns} missing column(s) to dev DB.`);
+  }
+
+  // Re-check to confirm the auto-add actually closed the column gap.
+  const after = await detectSchemaDrift();
+  const stillMissingColumns = after.missingColumns.length;
+  const stillMissingTables = after.missingTables.length;
+
+  if (stillMissingTables > 0 || stillMissingColumns > 0 || failedColumns.length > 0) {
+    const lines = [
+      `[schema-drift] Auto-sync handled ${appliedColumns} column(s) but drift remains.`,
+      `[schema-drift] Missing tables: ${stillMissingTables}; missing columns: ${stillMissingColumns}; failed adds: ${failedColumns.length}`,
+      `[schema-drift] Run this to fully sync your dev database:`,
+      `[schema-drift]   ${SYNC_COMMAND}`,
+    ];
+    if (failedColumns.length > 0) {
+      const sample = failedColumns.slice(0, 5).map(f => `${f.table}.${f.column} (${f.reason})`).join("; ");
+      lines.push(`[schema-drift] First failures: ${sample}`);
+    }
+    printBanner("warn", lines);
   }
 }
