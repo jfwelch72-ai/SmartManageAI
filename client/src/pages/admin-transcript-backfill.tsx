@@ -38,6 +38,7 @@ import {
   ExternalLink,
   ArrowRight,
   Send,
+  Bell,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -116,6 +117,13 @@ interface BackfillOperator {
 
 interface BackfillOperatorsResponse {
   operators: BackfillOperator[];
+}
+
+// Task #1032 — read-only summary of which alert destinations are wired up
+// server-side. The Slack webhook URL is intentionally NOT included.
+interface NotificationConfig {
+  slack: { configured: boolean; valid: boolean };
+  email: { configured: boolean; recipients: string[] };
 }
 
 interface PendingRecording {
@@ -292,6 +300,19 @@ export default function AdminTranscriptBackfillPage() {
   const operatorsQuery = useQuery<BackfillOperatorsResponse>({
     queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
   });
+
+  // Task #1032 — current notification destination configuration (Slack
+  // webhook + email recipients). Surfaced in its own panel so admins can see
+  // the setup state without clicking "Send test alert" first.
+  const notificationConfigQuery = useQuery<NotificationConfig>({
+    queryKey: ["/api/crm/calls/transcripts/backfill/notification-config"],
+    staleTime: 60_000,
+  });
+  const notificationConfig = notificationConfigQuery.data;
+  const noDestinationsConfigured =
+    !!notificationConfig &&
+    !notificationConfig.slack.configured &&
+    !notificationConfig.email.configured;
 
   // Set of job ids visible on the current history page. Used by the lineage
   // chain so we can disable jump links pointing to jobs that aren't on this
@@ -590,6 +611,109 @@ export default function AdminTranscriptBackfillPage() {
         onPageChange={setPendingPage}
       />
 
+      <Card data-testid="card-notification-destinations">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Notification destinations
+          </CardTitle>
+          <CardDescription>
+            Where run-completed and run-failed alerts are sent. Configured server-side via
+            <code className="mx-1">CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK</code>
+            and
+            <code className="mx-1">CRM_BACKFILL_NOTIFY_EMAIL_TO</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {notificationConfigQuery.isLoading ? (
+            <Loader2
+              className="h-5 w-5 animate-spin text-muted-foreground"
+              data-testid="status-loading-notification-config"
+            />
+          ) : notificationConfigQuery.isError || !notificationConfig ? (
+            <div
+              className="text-sm text-destructive"
+              data-testid="text-notification-config-error"
+            >
+              Failed to load notification destination configuration.
+            </div>
+          ) : (
+            <dl className="space-y-3 text-sm">
+              <div className="flex items-start gap-3" data-testid="row-notification-slack">
+                <dt className="w-32 shrink-0 font-medium">Slack webhook</dt>
+                <dd className="flex flex-wrap items-center gap-2">
+                  {notificationConfig.slack.configured ? (
+                    notificationConfig.slack.valid ? (
+                      <Badge
+                        variant="secondary"
+                        className="gap-1"
+                        data-testid="badge-slack-status"
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        Configured
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="destructive"
+                        className="gap-1"
+                        data-testid="badge-slack-status"
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        Configured but invalid URL
+                      </Badge>
+                    )
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-muted-foreground"
+                      data-testid="badge-slack-status"
+                    >
+                      Not configured
+                    </Badge>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-start gap-3" data-testid="row-notification-email">
+                <dt className="w-32 shrink-0 font-medium">Email recipients</dt>
+                <dd className="flex flex-wrap items-center gap-2">
+                  {notificationConfig.email.configured ? (
+                    <>
+                      <Badge variant="secondary" className="gap-1" data-testid="badge-email-status">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Configured
+                      </Badge>
+                      <span
+                        className="text-muted-foreground break-all"
+                        data-testid="text-email-recipients"
+                      >
+                        {notificationConfig.email.recipients.join(", ")}
+                      </span>
+                    </>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-muted-foreground"
+                      data-testid="badge-email-status"
+                    >
+                      Not configured
+                    </Badge>
+                  )}
+                </dd>
+              </div>
+              {noDestinationsConfigured && (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-no-destinations-hint"
+                >
+                  No alert destinations are configured — run-completed and run-failed
+                  notifications will be silently skipped until either env var is set.
+                </p>
+              )}
+            </dl>
+          )}
+        </CardContent>
+      </Card>
+
       <Card data-testid="card-controls">
         <CardHeader className="pb-3">
           <CardTitle>Run a backfill</CardTitle>
@@ -656,6 +780,15 @@ export default function AdminTranscriptBackfillPage() {
           <p className="text-xs text-muted-foreground" data-testid="text-test-alert-help">
             Sends a sample completion + failure alert to whichever Slack webhook /
             email recipients are configured, so you can confirm they arrive.
+            {noDestinationsConfigured && (
+              <span
+                className="ml-1 text-amber-600 dark:text-amber-500"
+                data-testid="text-test-alert-no-destinations-hint"
+              >
+                No destinations are currently configured — clicking this will be a
+                no-op until either env var is set.
+              </span>
+            )}
           </p>
           {pending === 0 && !isRunning && (
             <p className="text-xs text-muted-foreground" data-testid="text-no-pending">

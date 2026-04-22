@@ -286,6 +286,48 @@ export type TestAlertResult = {
   operatorDisplay: string;
 };
 
+/**
+ * Task #1032 — read-only summary of which alert destinations are wired up,
+ * for the admin transcript backfill page. Intentionally never returns the
+ * Slack webhook URL itself (it's a credential); we only surface whether
+ * one is configured and whether it parses as a valid Slack URL.
+ *
+ * Email recipients are safe to surface so admins can see exactly who would
+ * receive a real alert.
+ */
+export type BackfillNotificationConfig = {
+  slack: {
+    configured: boolean;
+    /** False when CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK is set but malformed. */
+    valid: boolean;
+  };
+  email: {
+    configured: boolean;
+    recipients: string[];
+  };
+};
+
+export function getBackfillNotificationConfig(): BackfillNotificationConfig {
+  const slackWebhook = (process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK || "").trim();
+  const emailTo = (process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO || "").trim();
+  const recipients = emailTo
+    ? emailTo
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+  return {
+    slack: {
+      configured: slackWebhook.length > 0,
+      valid: slackWebhook.length > 0 ? isValidSlackWebhookUrl(slackWebhook) : false,
+    },
+    email: {
+      configured: recipients.length > 0,
+      recipients,
+    },
+  };
+}
+
 function buildSampleJobs(orgId: string): BackfillNotificationJob[] {
   const now = new Date();
   const startedAt = new Date(now.getTime() - 5 * 60 * 1000).toISOString();

@@ -50,6 +50,7 @@ import {
 import {
   notifyBackfillCompletion,
   sendTestBackfillAlert,
+  getBackfillNotificationConfig,
 } from "./services/transcriptBackfillNotifications";
 import { isValidSlackWebhookUrl } from "./services/slackService";
 import {
@@ -2012,6 +2013,24 @@ router.post(
       void runTranscriptBackfill(job, eligible, concurrency, maxRecords);
 
       res.status(202).json({ jobId, total: job.total });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1032 — admin "notification destinations" panel. Returns whether
+// the Slack webhook and email recipient list env vars are configured so the
+// admin page can show the current setup state up front (instead of forcing
+// admins to click "Send test alert" to find out). The Slack webhook URL
+// itself is intentionally NOT returned — only a configured/valid summary.
+router.get(
+  "/api/crm/calls/transcripts/backfill/notification-config",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (_req: AuthRequest, res, next) => {
+    try {
+      res.json(getBackfillNotificationConfig());
     } catch (e) {
       next(e);
     }
