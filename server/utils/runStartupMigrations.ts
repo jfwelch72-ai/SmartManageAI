@@ -87,6 +87,7 @@ import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailur
 import { ensureUsersCrmBackfillSummaryPreferenceColumns } from "./ensureUsersCrmBackfillSummaryPreferenceColumns";
 import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscriptBackfillTestAlertsTable";
 import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
+import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -199,6 +200,11 @@ const migrations: MigrationStep[] = [
   // `npx drizzle-kit push` by hand. This batched ensure-* migration mirrors
   // the Drizzle schema so a clean `npm run dev` reports zero missing tables.
   { name: "crm_and_reporting_tables", category: "CREATE_TABLE", fn: ensureCrmAndReportingTables },
+  // Task #1092 — final missing Drizzle table flagged by the schema-drift audit.
+  // Mirrors `crmTranscriptBackfillAlertResendCooldowns` in
+  // `shared/schema/operations.ts` so fresh checkouts don't 500 the moment the
+  // transcript-backfill notification service tries to reserve a cooldown.
+  { name: "crm_transcript_backfill_alert_resend_cooldowns_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillAlertResendCooldownsTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
