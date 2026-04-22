@@ -44,3 +44,58 @@ below need a manual artifact filed here.
 > Do **not** check in raw evidence that contains customer PII or
 > production secrets. Reference the artifact in the GRC platform
 > instead, or redact before committing.
+
+## Vendor review runbook
+
+Use this checklist when running an annual vendor review for a
+Critical- or High-tier sub-processor. Schedule, owners, and policy due
+dates are tracked in `2027-vendor-review-schedule.md`. Attestation
+re-issuances and bridge-letter expiries between annual reviews are
+tracked in `../vendor-attestation-tracker.md`.
+
+The 2026 vendor review files
+(`2026-vendor-review-replit.md`, `…-neon.md`, `…-google-cloud-storage.md`,
+`…-openai.md`, `…-sendgrid.md`, `…-stripe.md`) are the canonical
+templates. Copy the closest one and edit in place.
+
+### Before you start
+
+1. Confirm the vendor is still in `../sub-processors.md` and that the
+   tier in the policy (`../policies/05-vendor-management-policy.md` §4)
+   matches the tier in the previous review.
+2. Open the vendor's record in the GRC platform and pull the latest
+   attestations, DPA, and sub-processor list.
+3. Check `../vendor-attestation-tracker.md` for any attestation that
+   expired since the last review and confirm it was refreshed.
+
+### Fields to refresh in the review file
+
+- **Date / Author** — set to today and the SOC 2 program owner.
+- **Vendor record table** — confirm service, tier, owner, region,
+  set "Date of last review" to today, set "Date of next review" to
+  today + 1 year.
+- **Attestations on file** — for each attestation: update period
+  covered, expiry, and bridge-letter window from the GRC vendor record.
+- **Data shared with this vendor** — confirm the data set has not
+  expanded; if it has, escalate before completing the review.
+- **Contract / DPA review** — re-verify each row (MSA, DPA, SCCs,
+  sub-processor list, breach SLA, residency, commercial terms).
+- **Incidents during the review period** — query the incident log and
+  the vendor's status page / security advisories for the window since
+  the previous review.
+- **Findings** — list any material findings or write
+  "**None material.**" If anything material, open a remediation-plan
+  entry and link it.
+- **Outcome** — `PASS`, `PASS with conditions`, or `FAIL`. Set the
+  next review date.
+- **Sign-off** — Internal owner + SOC 2 program owner are always
+  required; CTO is required for Critical- and High-tier vendors per
+  policy §3.
+
+### After filing
+
+1. Update "Last reviewed" for the vendor in `../sub-processors.md`.
+2. Update `../vendor-attestation-tracker.md` with the new periods,
+   expiries, and reminder dates from the refreshed attestations.
+3. Mark the review task complete in the GRC platform and confirm the
+   next year's recurring task is scheduled.
