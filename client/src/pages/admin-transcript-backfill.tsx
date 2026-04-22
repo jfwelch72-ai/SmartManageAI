@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -185,6 +185,16 @@ export default function AdminTranscriptBackfillPage() {
   const [maxRecords, setMaxRecords] = useState<string>("");
   const [concurrency, setConcurrency] = useState<string>("2");
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+  // Task #1015 — when the user clicks an off-page lineage chip we ask the
+  // server which page that run lives on, navigate there (clearing conflicting
+  // filters), and remember the id so the row gets expanded + scrolled into
+  // view as soon as it appears in the next history fetch.
+  const [pendingJumpId, setPendingJumpId] = useState<string | null>(null);
+  const [isJumping, setIsJumping] = useState(false);
+  // The filter-change effect below resets `page` to 0 whenever filters change.
+  // When we're in the middle of a jump that auto-clears filters we still want
+  // to land on the target page, so we briefly suppress that reset.
+  const suppressFilterPageReset = useRef(false);
 
   // History filters. `appliedOperator` is debounced from the input field so we
   // don't fire a request on every keystroke. Status/date changes apply
@@ -215,6 +225,10 @@ export default function AdminTranscriptBackfillPage() {
   // staring at an empty page because their previous offset is past the new
   // total.
   useEffect(() => {
+    if (suppressFilterPageReset.current) {
+      suppressFilterPageReset.current = false;
+      return;
+    }
     setPage(0);
   }, [statusFilter, appliedOperator, operatorId, startedAfter, startedBefore, orgFilter]);
 
@@ -361,20 +375,7 @@ export default function AdminTranscriptBackfillPage() {
     [historyQuery.data],
   );
 
-  // Clicking a chip in the lineage chain expands that row and scrolls it into
-  // view. We rely on the `history-row-${id}` data-testid set on each <li>.
-  const handleJumpToHistoryRow = (jobId: string) => {
-    if (!visibleHistoryIds.has(jobId)) {
-      toast({
-        title: "Run not on this page",
-        description:
-          "That related run isn't visible with the current filters or page. Clear filters or page through the history to find it.",
-      });
-      return;
-    }
-    setExpandedHistoryId(jobId);
-    // Wait a tick so the row has finished re-rendering in its expanded state
-    // before scrolling, otherwise we land mid-collapse.
+  const scrollHistoryRowIntoView = (jobId: string) => {
     requestAnimationFrame(() => {
       const el = document.querySelector(`[data-testid="history-row-${jobId}"]`);
       if (el && "scrollIntoView" in el) {
@@ -418,6 +419,127 @@ export default function AdminTranscriptBackfillPage() {
       queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
     },
   });
+
+  // Reset the filter UI back to defaults. Used when the locate endpoint tells
+  // us the target run doesn't satisfy the current filters and we need to
+  // clear them before we can navigate the user.
+  const clearAllFilters = () => {
+    setStatusFilter("ALL");
+    setOperatorInput("");
+    setAppliedOperator("");
+    setOperatorId("ALL");
+    setStartedAfter(undefined);
+    setStartedBefore(undefined);
+  };
+
+  // Clicking a chip in the lineage chain expands that row and scrolls it into
+  // view. When the related run isn't on the current page we ask the server
+  // which page (under the current filters) contains it, auto-clear any
+  // conflicting filters / switch the org scope if needed, and let the
+  // post-fetch effect below expand the row once it appears.
+  const handleJumpToHistoryRow = async (jobId: string) => {
+    if (visibleHistoryIds.has(jobId)) {
+      setExpandedHistoryId(jobId);
+      scrollHistoryRowIntoView(jobId);
+      return;
+    }
+
+    setIsJumping(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("jobId", jobId);
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
+      if (operatorId !== "ALL") {
+        params.set("startedById", operatorId);
+      } else if (appliedOperator) {
+        params.set("operator", appliedOperator);
+      }
+      if (startedAfter) params.set("startedAfter", startedAfter.toISOString());
+      if (startedBefore) {
+        const end = new Date(startedBefore);
+        end.setHours(23, 59, 59, 999);
+        params.set("startedBefore", end.toISOString());
+      }
+      if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+        params.set("organizationId", orgFilter);
+      }
+      const res = await apiRequest(
+        "GET",
+        `/api/crm/calls/transcripts/backfill/history/locate?${params.toString()}`,
+      );
+      const data = (await res.json()) as {
+        found: boolean;
+        offset: number;
+        organizationId: string | null;
+        filteredOut: boolean;
+        orgScopeChanged: boolean;
+        pageSize: number;
+      };
+      if (!data.found) {
+        toast({
+          title: "Run not found",
+          description: "That related run is no longer available.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Switch the org picker for super admins when the target lives in a
+      // different org than the one currently selected.
+      if (isSuperAdmin && data.orgScopeChanged) {
+        // Switching to the cross-org view always resolves the mismatch and
+        // matches the existing default behavior; that keeps the picker stable
+        // even when the target's org isn't loaded in the dropdown yet.
+        setOrgFilter(CROSS_ORG_VALUE);
+      }
+      const pageSize = data.pageSize > 0 ? data.pageSize : PAGE_SIZE;
+      const targetPage = Math.max(0, Math.floor(data.offset / pageSize));
+      // Set the suppress flag *before* mutating filters so the filter-change
+      // effect skips its page-reset and our setPage(targetPage) wins.
+      if (data.filteredOut || (isSuperAdmin && data.orgScopeChanged)) {
+        suppressFilterPageReset.current = true;
+      }
+      if (data.filteredOut) {
+        clearAllFilters();
+      }
+      setPendingJumpId(jobId);
+      setPage(targetPage);
+    } catch (err) {
+      toast({
+        title: "Couldn't jump to that run",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsJumping(false);
+    }
+  };
+
+  // Once the history fetch settles, expand and scroll to the pending jump
+  // target. We wait for `isFetching` to become false so the effect runs after
+  // the new page's rows have actually rendered.
+  useEffect(() => {
+    if (!pendingJumpId) return;
+    if (historyQuery.isFetching) return;
+    if (visibleHistoryIds.has(pendingJumpId)) {
+      setExpandedHistoryId(pendingJumpId);
+      scrollHistoryRowIntoView(pendingJumpId);
+      setPendingJumpId(null);
+    } else {
+      // The target didn't materialize (e.g. it was deleted between the
+      // locate call and the page fetch). Surface a toast and bail rather
+      // than silently leaving the jump marker hanging.
+      toast({
+        title: "Run no longer available",
+        description: "The related run couldn't be located on the destination page.",
+        variant: "destructive",
+      });
+      setPendingJumpId(null);
+    }
+    // visibleHistoryIds is derived from historyQuery.data; depending on it
+    // ensures we re-check after the new page is loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingJumpId, historyQuery.isFetching, visibleHistoryIds]);
 
   const retryMutation = useMutation({
     mutationFn: async (parentJobId: string) => {
@@ -1351,6 +1473,7 @@ export default function AdminTranscriptBackfillPage() {
                           currentId={entry.id}
                           visibleIds={visibleHistoryIds}
                           onJump={handleJumpToHistoryRow}
+                          isJumping={isJumping}
                         />
                       </div>
                     )}
@@ -1760,11 +1883,13 @@ function RetryLineageChain({
   currentId,
   visibleIds,
   onJump,
+  isJumping,
 }: {
   lineage: BackfillLineageNode[];
   currentId: string;
   visibleIds: Set<string>;
   onJump: (id: string) => void;
+  isJumping: boolean;
 }) {
   return (
     <div
@@ -1784,7 +1909,11 @@ function RetryLineageChain({
             ? "border-destructive/40 text-destructive"
             : "border-muted-foreground/40 text-muted-foreground";
         const currentTone = isCurrent ? "bg-muted font-medium" : "";
-        const interactive = !isCurrent && onPage;
+        // Off-page chips used to be disabled. Task #1015 — they're now
+        // clickable too; the page handler asks the server which page the
+        // run lives on, clears any conflicting filters, and navigates to
+        // it. Only the current row stays non-interactive.
+        const interactive = !isCurrent && !isJumping;
         return (
           <span key={node.id} className="flex items-center gap-1">
             {idx > 0 && (
@@ -1799,7 +1928,7 @@ function RetryLineageChain({
                   ? `${label} (this run) · ${node.status}`
                   : onPage
                   ? `Jump to ${label} · ${node.status}`
-                  : `${label} · ${node.status} · not on this page`
+                  : `Jump to ${label} · ${node.status} · on another page`
               }
               className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${statusTone} ${currentTone} ${
                 interactive ? "hover-elevate active-elevate-2 cursor-pointer" : "cursor-default opacity-80"

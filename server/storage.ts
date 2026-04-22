@@ -197,7 +197,10 @@ export async function listCrmTranscriptBackfillJobs(
     .leftJoin(organizations, eq(organizations.id, crmTranscriptBackfillJobs.organizationId));
 
   const rows = await (whereClause ? baseRows.where(whereClause) : baseRows)
-    .orderBy(desc(crmTranscriptBackfillJobs.startedAt))
+    // The id tiebreaker keeps pagination deterministic when two jobs share a
+    // started_at timestamp — without it the locate-by-job-id helper below
+    // could return an offset that points at the wrong row.
+    .orderBy(desc(crmTranscriptBackfillJobs.startedAt), desc(crmTranscriptBackfillJobs.id))
     .limit(limit)
     .offset(offset);
 
@@ -400,6 +403,167 @@ export async function getCrmTranscriptBackfillLineages(
   }
 
   return { jobToRoot, lineagesByRoot };
+}
+
+// Task #1015 — given a job id, return the 0-based row index it occupies in the
+// history listing under the supplied filters. Used so the admin UI can jump
+// directly to the page that contains a related backfill run when the user
+// clicks an off-page lineage chip.
+//
+// The org scoping mirrors the history endpoint:
+//   - Org-scoped admins must pass their own org id; targets in other orgs are
+//     reported as not-found.
+//   - SUPER_ADMINs may pass `scopedOrgId: undefined` to look across all orgs.
+//
+// When the target row does not match the supplied filters, the helper retries
+// without those filters (still respecting the org scope) and reports
+// `filteredOut: true` so the UI can clear the offending filters before it
+// navigates the user. The offset is computed against the same ordering as
+// `listCrmTranscriptBackfillJobs` (started_at DESC, id DESC) so it lines up
+// with `Math.floor(offset / pageSize)`.
+export type LocateCrmTranscriptBackfillJobResult = {
+  found: boolean;
+  /** 0-based row index in the listing, or null when not found. */
+  offset: number | null;
+  /** The org the target run belongs to. Useful for SUPER_ADMIN cross-org navigation. */
+  organizationId: string | null;
+  /** True when the target exists but did not satisfy the supplied non-org filters. */
+  filteredOut: boolean;
+};
+
+export type LocateCrmTranscriptBackfillJobFilters = Omit<
+  ListCrmTranscriptBackfillJobsFilters,
+  "limit" | "offset"
+>;
+
+export async function locateCrmTranscriptBackfillJobPage(
+  jobId: string,
+  filters: LocateCrmTranscriptBackfillJobFilters = {},
+): Promise<LocateCrmTranscriptBackfillJobResult> {
+  // 1. Look up the target row (org-scoped if the caller is restricted).
+  const targetWhere: SQL[] = [eq(crmTranscriptBackfillJobs.id, jobId)];
+  if (filters.organizationId) {
+    targetWhere.push(eq(crmTranscriptBackfillJobs.organizationId, filters.organizationId));
+  }
+  const [target] = await db
+    .select({
+      id: crmTranscriptBackfillJobs.id,
+      organizationId: crmTranscriptBackfillJobs.organizationId,
+      startedAt: crmTranscriptBackfillJobs.startedAt,
+    })
+    .from(crmTranscriptBackfillJobs)
+    .where(targetWhere.length === 1 ? targetWhere[0] : and(...targetWhere))
+    .limit(1);
+
+  if (!target) {
+    return { found: false, offset: null, organizationId: null, filteredOut: false };
+  }
+
+  // 2. Build the count-of-newer query under the same WHERE clause used by the
+  //    history listing, plus the strict-newer-row predicate. The result is
+  //    the 0-based index of the target row in that ordering.
+  const newerPredicate = or(
+    sql`${crmTranscriptBackfillJobs.startedAt} > ${target.startedAt}`,
+    and(
+      eq(crmTranscriptBackfillJobs.startedAt, target.startedAt),
+      sql`${crmTranscriptBackfillJobs.id} > ${target.id}`,
+    ),
+  )!;
+
+  const buildWhere = (includeNonOrgFilters: boolean): SQL => {
+    const conds: SQL[] = [newerPredicate];
+    if (filters.organizationId) {
+      conds.push(eq(crmTranscriptBackfillJobs.organizationId, filters.organizationId));
+    }
+    if (includeNonOrgFilters) {
+      if (filters.statuses && filters.statuses.length > 0) {
+        conds.push(inArray(crmTranscriptBackfillJobs.status, filters.statuses));
+      }
+      if (filters.startedById) {
+        conds.push(eq(crmTranscriptBackfillJobs.startedById, filters.startedById));
+      }
+      if (filters.operator && filters.operator.trim().length > 0) {
+        const pattern = `%${filters.operator.trim()}%`;
+        const operatorClause = or(
+          ilike(users.firstName, pattern),
+          ilike(users.lastName, pattern),
+          ilike(users.email, pattern),
+          sql`(coalesce(${users.firstName}, '') || ' ' || coalesce(${users.lastName}, '')) ILIKE ${pattern}`,
+        );
+        if (operatorClause) conds.push(operatorClause);
+      }
+      if (filters.startedAfter) {
+        conds.push(gte(crmTranscriptBackfillJobs.startedAt, filters.startedAfter));
+      }
+      if (filters.startedBefore) {
+        conds.push(lte(crmTranscriptBackfillJobs.startedAt, filters.startedBefore));
+      }
+    }
+    return conds.length === 1 ? conds[0] : and(...conds)!;
+  };
+
+  // 3. Does the target itself satisfy the non-org filters? If not, the row
+  //    won't appear on any page under those filters and we have to fall back
+  //    to the unfiltered (org-scoped) listing.
+  const hasNonOrgFilters =
+    (filters.statuses && filters.statuses.length > 0) ||
+    !!filters.startedById ||
+    !!filters.startedAfter ||
+    !!filters.startedBefore ||
+    !!(filters.operator && filters.operator.trim().length > 0);
+
+  let targetMatchesFilters = true;
+  if (hasNonOrgFilters) {
+    const matchConds: SQL[] = [eq(crmTranscriptBackfillJobs.id, jobId)];
+    if (filters.organizationId) {
+      matchConds.push(eq(crmTranscriptBackfillJobs.organizationId, filters.organizationId));
+    }
+    if (filters.statuses && filters.statuses.length > 0) {
+      matchConds.push(inArray(crmTranscriptBackfillJobs.status, filters.statuses));
+    }
+    if (filters.startedById) {
+      matchConds.push(eq(crmTranscriptBackfillJobs.startedById, filters.startedById));
+    }
+    if (filters.startedAfter) {
+      matchConds.push(gte(crmTranscriptBackfillJobs.startedAt, filters.startedAfter));
+    }
+    if (filters.startedBefore) {
+      matchConds.push(lte(crmTranscriptBackfillJobs.startedAt, filters.startedBefore));
+    }
+    if (filters.operator && filters.operator.trim().length > 0) {
+      const pattern = `%${filters.operator.trim()}%`;
+      const operatorClause = or(
+        ilike(users.firstName, pattern),
+        ilike(users.lastName, pattern),
+        ilike(users.email, pattern),
+        sql`(coalesce(${users.firstName}, '') || ' ' || coalesce(${users.lastName}, '')) ILIKE ${pattern}`,
+      );
+      if (operatorClause) matchConds.push(operatorClause);
+    }
+    const matched = await db
+      .select({ id: crmTranscriptBackfillJobs.id })
+      .from(crmTranscriptBackfillJobs)
+      .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+      .where(matchConds.length === 1 ? matchConds[0] : and(...matchConds))
+      .limit(1);
+    targetMatchesFilters = matched.length > 0;
+  }
+
+  const useFilters = targetMatchesFilters;
+  const countQuery = db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(crmTranscriptBackfillJobs)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+    .where(buildWhere(useFilters));
+  const [{ count: rawCount }] = await countQuery;
+  const offset = Number(rawCount) || 0;
+
+  return {
+    found: true,
+    offset,
+    organizationId: target.organizationId,
+    filteredOut: !targetMatchesFilters,
+  };
 }
 
 export async function getRunningCrmTranscriptBackfillJob(

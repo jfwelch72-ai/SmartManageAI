@@ -42,6 +42,7 @@ import {
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
   listCrmTranscriptBackfillOperators,
+  locateCrmTranscriptBackfillJobPage,
   getCrmTranscriptBackfillLineages,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   listRunningCrmTranscriptBackfillJobsWithOrg,
@@ -2339,6 +2340,114 @@ router.put(
         slackWebhookUrl: saved.slackWebhookUrl ?? "",
         emailRecipients: saved.emailRecipients ?? [],
         updatedAt: saved.updatedAt,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1015 — given a job id, tell the admin UI which page of the history
+// listing contains that job so a click on an off-page lineage chip can jump
+// directly to it. Mirrors the org scoping and filter parsing of the history
+// endpoint so the offset matches the user's current view; if the target row
+// doesn't satisfy the supplied filters, the helper falls back to the
+// unfiltered listing and reports `filteredOut: true` so the UI can clear
+// those filters before navigating.
+router.get(
+  "/api/crm/calls/transcripts/backfill/history/locate",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const jobId = typeof req.query.jobId === "string" ? req.query.jobId.trim() : "";
+      if (!jobId) {
+        return res.status(400).json({ error: "jobId query parameter is required" });
+      }
+
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | undefined;
+      if (superAdmin) {
+        const requestedOrg = typeof req.query.organizationId === "string"
+          ? req.query.organizationId.trim()
+          : "";
+        scopedOrgId = requestedOrg.length > 0 ? requestedOrg : undefined;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
+
+      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED"];
+      const rawStatus = req.query.status;
+      const statusList = Array.isArray(rawStatus)
+        ? rawStatus.map(String)
+        : typeof rawStatus === "string" && rawStatus.length > 0
+        ? rawStatus.split(",")
+        : [];
+      const statuses = statusList
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => ALLOWED_STATUSES.includes(s));
+
+      const operatorRaw = typeof req.query.operator === "string" ? req.query.operator.trim() : "";
+      const operator = operatorRaw.length > 0 ? operatorRaw.slice(0, 200) : undefined;
+
+      const startedByIdRaw =
+        typeof req.query.startedById === "string" ? req.query.startedById.trim() : "";
+      const startedById =
+        startedByIdRaw.length > 0 ? startedByIdRaw.slice(0, 200) : undefined;
+
+      const parseDate = (v: unknown): Date | undefined => {
+        if (typeof v !== "string" || v.length === 0) return undefined;
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? undefined : d;
+      };
+      const startedAfter = parseDate(req.query.startedAfter);
+      const startedBefore = parseDate(req.query.startedBefore);
+
+      // First attempt: scope to the user's currently-selected org (or all orgs
+      // for super admins with no org filter). If the target lives in a
+      // different org and the caller is a super admin, retry without the org
+      // scope so cross-org lineage chips still resolve.
+      let result = await locateCrmTranscriptBackfillJobPage(jobId, {
+        organizationId: scopedOrgId,
+        statuses: statuses.length > 0 ? statuses : undefined,
+        operator,
+        startedById,
+        startedAfter,
+        startedBefore,
+      });
+
+      let orgScopeChanged = false;
+      if (!result.found && superAdmin && scopedOrgId) {
+        const fallback = await locateCrmTranscriptBackfillJobPage(jobId, {
+          statuses: statuses.length > 0 ? statuses : undefined,
+          operator,
+          startedById,
+          startedAfter,
+          startedBefore,
+        });
+        if (fallback.found) {
+          result = fallback;
+          orgScopeChanged = true;
+        }
+      }
+
+      if (!result.found) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+
+      res.json({
+        found: true,
+        offset: result.offset,
+        organizationId: result.organizationId,
+        filteredOut: result.filteredOut,
+        // True when the user's currently-selected org doesn't match the
+        // target's org. The UI uses this (alongside `organizationId`) to
+        // either switch the org picker to the target's org or to the
+        // cross-org view before navigating.
+        orgScopeChanged,
+        pageSize: 20,
       });
     } catch (e) {
       next(e);
