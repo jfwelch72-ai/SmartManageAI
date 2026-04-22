@@ -106,9 +106,8 @@ import socialRoutes from "./socialRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import procurementModuleRoutes from "./procurementModuleRoutes";
 import emailRoutes from "./emailRoutes";
-import emailWebhookRoutes, {
-  warnIfResendWebhookSigningSecretMissing,
-} from "./emailWebhookRoutes";
+import emailWebhookRoutes from "./emailWebhookRoutes";
+import { auditWebhookSecretsAtBoot } from "./webhookSecretsAudit";
 import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
 import dashboardRoutes from "./dashboardRoutes";
@@ -366,10 +365,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Email routes (consolidated)
   app.use("/api/email", emailRoutes);
   app.use("/api/webhooks/email", emailWebhookRoutes);
-  // Boot-time check (Task #879): make a missing Resend signing secret loud
-  // so it surfaces in startup logs instead of silently breaking signature
-  // verification.
-  warnIfResendWebhookSigningSecretMissing();
+  // Boot-time audit (Task #883): inventory every webhook signing/shared
+  // secret the app relies on (Resend Svix, generic EMAIL_WEBHOOK_SECRET,
+  // Gmail Pub/Sub OIDC audience, ...) and emit one summary WARN/ERROR
+  // line per missing secret so silent webhook misconfigs surface in
+  // startup logs instead of the next "bounces stopped flowing" incident.
+  auditWebhookSecretsAtBoot();
   app.use("/api/kpis", kpiRoutes);
 
   app.use(libraryRoutes);

@@ -255,6 +255,29 @@ incoming request presents.
 > signing secret is missing logs a per-request WARN so the
 > misconfiguration shows up in production traffic too.
 
+> **Webhook secrets audit (Task #883).** The Resend boot guard above is
+> one entry in a single startup audit
+> (`server/webhookSecretsAudit.ts`, wired into `registerRoutes`) that
+> inventories every webhook signing/shared secret the app depends on
+> and emits one `[webhook-secrets-audit] …` log line per missing
+> secret. Today it covers:
+>
+> | Env var | Severity when missing | Impact |
+> | --- | --- | --- |
+> | `RESEND_WEBHOOK_SIGNING_SECRET` | WARN if a shared-secret fallback is set, ERROR otherwise | See guard above. |
+> | `EMAIL_WEBHOOK_SECRET` | WARN | Gmail Pub/Sub push and Outlook subscription push are disabled; the system falls back to background polling alone. |
+> | `GMAIL_PUBSUB_AUDIENCE` (only when `GMAIL_PUBSUB_TOPIC` is set) | WARN | Gmail Pub/Sub deliveries are authenticated only by the shared-secret URL token, so a leaked URL is enough to forge pushes. |
+>
+> Outlook subscription deliveries are additionally authorised by
+> per-subscription rotating tokens stored in the `email_accounts`
+> table (Task #548), which are not env-configured and therefore not
+> part of the boot audit.
+>
+> When you add a new third-party webhook integration, add its required
+> signing/shared secret to `collectWebhookSecretFindings` in
+> `server/webhookSecretsAudit.ts` so the next missing-secret incident
+> surfaces in startup logs instead of in user-visible breakage.
+
 ### 3.2 Create the webhook in the Resend dashboard
 
 1. Sign in to <https://resend.com> and open **Webhooks** in the side
