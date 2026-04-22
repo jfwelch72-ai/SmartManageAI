@@ -13,6 +13,9 @@ import { aashtowareProvider } from "./aashtoware";
 import { dolDavisBaconProvider } from "./dol_davis_bacon";
 import { dbeDirectoryProvider } from "./dbe_directory";
 import { suretyVerificationProvider } from "./surety_verification";
+import { sageProvider } from "./sage";
+import { bluebeamProvider } from "./bluebeam";
+import { autodeskProvider } from "./autodesk";
 
 export function registerAllProviders() {
   registerProvider(qboProvider);
@@ -29,4 +32,7 @@ export function registerAllProviders() {
   registerProvider(dolDavisBaconProvider);
   registerProvider(dbeDirectoryProvider);
   registerProvider(suretyVerificationProvider);
+  registerProvider(sageProvider);
+  registerProvider(bluebeamProvider);
+  registerProvider(autodeskProvider);
 }

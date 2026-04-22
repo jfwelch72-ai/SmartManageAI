@@ -4,6 +4,7 @@ import { getAllProviders, getProvider } from "./integrations/registry";
 import * as connectionService from "./integrations/connectionService";
 import * as importExportService from "./integrations/importExportService";
 import { logIntegrationAudit, getSecurityAuditLog } from "./integrations/audit";
+import { getConnectionHealth } from "./integrations/healthService";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
@@ -201,6 +202,22 @@ router.get("/audit", requireAuth, async (req, res, next) => {
     }
     const events = await outboxService.getOutboxEvents(user.organizationId, 200);
     res.json(events);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/health", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const rows = await getConnectionHealth(user.organizationId);
+    const summary = {
+      total: rows.length,
+      ok: rows.filter(r => r.severity === "ok").length,
+      warning: rows.filter(r => r.severity === "warning").length,
+      error: rows.filter(r => r.severity === "error").length,
+    };
+    res.json({ summary, connections: rows });
   } catch (err) {
     next(err);
   }

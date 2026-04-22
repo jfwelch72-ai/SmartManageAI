@@ -3,7 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Link2, FileText, Loader2, Settings, Zap, HardHat, Plus } from "lucide-react";
+import { Link2, FileText, Loader2, Settings, Zap, HardHat, Plus, Key } from "lucide-react";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Provider, Connection } from "@/components/integrations/types";
@@ -153,11 +154,29 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
   return (
     <div className={embedded ? "space-y-6" : "px-3 sm:px-6 py-4 sm:py-6 space-y-6"}>
       {!embedded && (
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-integrations-title">Integrations Hub</h1>
-          <p className="text-muted-foreground" data-testid="text-integrations-description">
-            Connect your favorite tools and services to streamline your workflow
-          </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-integrations-title">Integrations Hub</h1>
+            <p className="text-muted-foreground" data-testid="text-integrations-description">
+              Connect your favorite tools and services to streamline your workflow
+            </p>
+          </div>
+          <Link href="/developer-portal">
+            <Button variant="outline" data-testid="link-developer-portal">
+              <Key className="h-4 w-4 mr-2" />
+              Developer Portal
+            </Button>
+          </Link>
+        </div>
+      )}
+      {embedded && (
+        <div className="flex justify-end">
+          <Link href="/developer-portal">
+            <Button variant="outline" size="sm" data-testid="link-developer-portal-embedded">
+              <Key className="h-4 w-4 mr-2" />
+              Developer Portal
+            </Button>
+          </Link>
         </div>
       )}
 

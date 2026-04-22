@@ -18,6 +18,10 @@ export const FEATURE_FLAG_KEYS = [
   "PRIVACY_COMPLIANCE",
   "SESSION_MANAGEMENT",
   "INTEGRATION_ZAPIER",
+  "INTEGRATION_SAGE",
+  "INTEGRATION_BLUEBEAM",
+  "INTEGRATION_AUTODESK",
+  "PUBLIC_API",
   "AI_GOVERNANCE",
   "APPROVALS_FRAMEWORK",
   "DOCUMENT_CONTROL",
@@ -57,6 +61,10 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   INTEGRATION_MICROSOFT: "Microsoft 365",
   INTEGRATION_ESIGN: "E-Signature (DocuSign)",
   INTEGRATION_ZAPIER: "Zapier",
+  INTEGRATION_SAGE: "Sage Intacct Construction",
+  INTEGRATION_BLUEBEAM: "Bluebeam Studio",
+  INTEGRATION_AUTODESK: "Autodesk Construction Cloud",
+  PUBLIC_API: "Public API & Developer Portal",
   SSO: "Single Sign-On (SAML)",
   AUDIT_EXPORT: "Audit Log Export",
   DATA_RETENTION: "Data Retention Policies",
@@ -98,6 +106,10 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   INTEGRATION_MICROSOFT: "Connect Outlook Mail and Calendar for messaging, scheduling, and email-to-task.",
   INTEGRATION_ESIGN: "Send contracts, change orders, and lien waivers through DocuSign for signature.",
   INTEGRATION_ZAPIER: "Trigger Zapier automations from project, bid, and CRM events.",
+  INTEGRATION_SAGE: "Export job cost, AP, and AR to Sage Intacct Construction.",
+  INTEGRATION_BLUEBEAM: "Round-trip drawings and markups with Bluebeam Studio Sessions.",
+  INTEGRATION_AUTODESK: "Two-way sync of drawings, RFIs, and submittals with Autodesk Construction Cloud.",
+  PUBLIC_API: "Issue API keys, manage webhook subscriptions, and access the developer portal.",
   SSO: "Let your team sign in with your corporate SAML identity provider (Okta, Azure AD, Google).",
   AUDIT_EXPORT: "Export the full audit log to CSV or JSON for compliance reviews.",
   DATA_RETENTION: "Define how long to keep records before automatic archival or deletion.",
@@ -156,6 +168,10 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   INTEGRATION_MICROSOFT: "Integrations",
   INTEGRATION_ESIGN: "Integrations",
   INTEGRATION_ZAPIER: "Integrations",
+  INTEGRATION_SAGE: "Integrations",
+  INTEGRATION_BLUEBEAM: "Integrations",
+  INTEGRATION_AUTODESK: "Integrations",
+  PUBLIC_API: "Integrations",
 
   SSO: "Enterprise & Compliance",
   AUDIT_EXPORT: "Enterprise & Compliance",
@@ -6880,6 +6896,84 @@ export const ZAPIER_EVENT_TYPES = [
 ] as const;
 
 export type ZapierEventType = typeof ZAPIER_EVENT_TYPES[number];
+
+// ============ Public API: API Keys + Request Log ============
+
+export const PUBLIC_API_SCOPES = [
+  "projects:read",
+  "projects:write",
+  "bids:read",
+  "bids:write",
+  "change_orders:read",
+  "change_orders:write",
+  "rfis:read",
+  "rfis:write",
+  "submittals:read",
+  "submittals:write",
+  "documents:read",
+  "documents:write",
+  "webhooks:manage",
+] as const;
+export type PublicApiScope = typeof PUBLIC_API_SCOPES[number];
+
+export const PUBLIC_API_EVENT_TYPES = [
+  "project.created",
+  "project.updated",
+  "bid.created",
+  "bid.status_changed",
+  "change_order.created",
+  "change_order.approved",
+  "change_order.rejected",
+  "rfi.created",
+  "rfi.answered",
+  "submittal.created",
+  "submittal.approved",
+  "document.uploaded",
+] as const;
+export type PublicApiEventType = typeof PUBLIC_API_EVENT_TYPES[number];
+
+export const integrationApiKeys = pgTable("integration_api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  prefix: varchar("prefix", { length: 16 }).notNull(),
+  keyHash: text("key_hash").notNull(),
+  scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
+  rateLimitPerMinute: integer("rate_limit_per_minute").notNull().default(120),
+  isActive: boolean("is_active").notNull().default(true),
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+}, (table) => ({
+  orgIdx: index("integration_api_keys_org_idx").on(table.organizationId),
+  prefixIdx: index("integration_api_keys_prefix_idx").on(table.prefix),
+}));
+
+export const insertIntegrationApiKeySchema = createInsertSchema(integrationApiKeys).omit({ id: true, createdAt: true, lastUsedAt: true, revokedAt: true, keyHash: true, prefix: true });
+export type InsertIntegrationApiKey = z.infer<typeof insertIntegrationApiKeySchema>;
+export type IntegrationApiKey = typeof integrationApiKeys.$inferSelect;
+
+export const integrationApiRequestLog = pgTable("integration_api_request_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  apiKeyId: varchar("api_key_id").references(() => integrationApiKeys.id, { onDelete: "set null" }),
+  method: varchar("method", { length: 10 }).notNull(),
+  path: text("path").notNull(),
+  statusCode: integer("status_code").notNull(),
+  durationMs: integer("duration_ms"),
+  scopeUsed: text("scope_used"),
+  errorMessage: text("error_message"),
+  ip: text("ip"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("integration_api_log_org_idx").on(table.organizationId),
+  keyIdx: index("integration_api_log_key_idx").on(table.apiKeyId),
+  createdIdx: index("integration_api_log_created_idx").on(table.createdAt),
+}));
+
+export type IntegrationApiRequestLog = typeof integrationApiRequestLog.$inferSelect;
 
 // Table 5: ai_action_audit
 export const aiActionAudit = pgTable("ai_action_audit", {

@@ -32,6 +32,30 @@ const swaggerOptions: swaggerJsdoc.Options = {
           description:
             "JWT authentication token stored in an httpOnly cookie. Obtained via POST /api/auth/login.",
         },
+        publicApiKey: {
+          type: "http",
+          scheme: "bearer",
+          description:
+            "Public API key (format: ckp_xxxx.yyyy) issued via the Developer Portal. Send as 'Authorization: Bearer <key>' or 'X-API-Key: <key>'.",
+        },
+        publicApiOAuth: {
+          type: "oauth2",
+          description:
+            "OAuth 2.0 client credentials. POST /api/v1/public/oauth/token with grant_type=client_credentials and your API key as client credentials to obtain a short-lived bearer token.",
+          flows: {
+            clientCredentials: {
+              tokenUrl: "/api/v1/public/oauth/token",
+              scopes: {
+                "projects:read": "Read projects",
+                "bids:read": "Read bids",
+                "change_orders:read": "Read change orders",
+                "rfis:read": "Read RFIs",
+                "submittals:read": "Read submittals",
+                "webhooks:manage": "Manage webhook subscriptions",
+              },
+            },
+          },
+        },
       },
       schemas: componentSchemas,
       parameters: {
@@ -72,6 +96,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
       { name: "Billing", description: "AIA G702/G703 billing, pay applications, retention releases, and stored materials" },
       { name: "Reports", description: "Takeoff reports, estimate reports, and KPI dashboards" },
       { name: "Integrations", description: "Third-party integrations and webhooks" },
+      { name: "Public API", description: "External Public API at /api/v1/public — API key or OAuth2 client_credentials authentication, scoped permissions, per-key rate limits, HMAC-signed outbound webhooks" },
       { name: "Operations", description: "Health checks and operational endpoints" },
     ],
   },
@@ -106,6 +131,8 @@ const swaggerOptions: swaggerJsdoc.Options = {
     "./server/changeOrderExportRoutes.ts",
     "./server/notificationPreferencesRoutes.ts",
     "./server/aiaBillingRoutes.ts",
+    "./server/publicApi/routes.ts",
+    "./server/publicApi/oauthRoutes.ts",
   ],
 };
 

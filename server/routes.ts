@@ -126,6 +126,8 @@ import unifiedPortalRoutes from "./unifiedPortalRoutes";
 import subChatRoutes from "./subChatRoutes";
 import clientChatRoutes from "./clientChatRoutes";
 import integrationRoutes from "./integrationRoutes";
+import publicApiRoutes from "./publicApi/routes";
+import devPortalRoutes from "./publicApi/devPortalRoutes";
 import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
 import workflowRoutes from "./workflowRoutes";
@@ -385,6 +387,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   registerAllProviders();
   app.use("/api/integrations", integrationRoutes);
+  app.use("/api/v1/public", publicApiRoutes);
+  app.use("/api/integrations/dev-portal", devPortalRoutes);
 
   app.use("/api/weather", weatherRoutes);
 

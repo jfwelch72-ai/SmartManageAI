@@ -68,7 +68,10 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   Google Workspace (Gmail, Calendar)
 *   Microsoft 365 (Mail, Calendar)
 *   DocuSign
+*   Sage Intacct, Bluebeam, Autodesk Construction Cloud (OAuth integration scaffolds)
+*   Public API at `/api/v1/public` (Bearer/X-API-Key auth, scoped permissions, per-key rate limits, request logging, HMAC-signed outbound webhooks). Developer Portal UI at `/developer-portal`.
 *   @node-saml/node-saml
+
 ## Native Mobile Field App
 - `mobile/` — Expo + React Native (TypeScript) field app: offline-first SQLite cache + outbox, sync coordinator against `mobileSyncRoutes`, push tokens via Expo, SSO with the same `auth_token` cookie. Screens: daily reports, time clock (GPS), photos, punch list, RFI, inspections, drawings, conflicts.
 - `server/services/nativePushService.ts` — sends Expo push to all `mobileDevices.pushToken` for a user. Wired into `notificationDelivery.deliverPush` so any event that already triggers web push also reaches native.

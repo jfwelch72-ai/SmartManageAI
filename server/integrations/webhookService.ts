@@ -3,6 +3,8 @@ import { integrationWebhookSubscriptions } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
 import crypto from "crypto";
+import dns from "dns/promises";
+import net from "net";
 
 const BLOCKED_IP_RANGES = [
   /^127\./,
@@ -18,7 +20,59 @@ const BLOCKED_IP_RANGES = [
   /^localhost$/i,
 ];
 
-function isBlockedUrl(urlString: string): { blocked: boolean; reason?: string } {
+function isPrivateIp(ip: string): boolean {
+  const v = net.isIP(ip);
+  if (v === 4) {
+    const parts = ip.split(".").map((p) => parseInt(p, 10));
+    if (parts[0] === 10) return true;
+    if (parts[0] === 127) return true;
+    if (parts[0] === 0) return true;
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    if (parts[0] >= 224) return true; // multicast/reserved
+    if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true; // CGNAT
+    return false;
+  }
+  if (v === 6) {
+    const lower = ip.toLowerCase();
+    if (lower === "::1" || lower === "::") return true;
+    if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA
+    if (lower.startsWith("fe80")) return true; // link-local
+    if (lower.startsWith("ff")) return true; // multicast
+    if (lower.startsWith("::ffff:")) {
+      // IPv4-mapped
+      const v4 = lower.replace("::ffff:", "");
+      if (net.isIP(v4) === 4) return isPrivateIp(v4);
+    }
+    return false;
+  }
+  return true;
+}
+
+export async function assertWebhookUrlSafe(urlString: string): Promise<void> {
+  const initial = isBlockedUrl(urlString);
+  if (initial.blocked) throw new Error(initial.reason || "Invalid webhook URL");
+  const hostname = new URL(urlString).hostname;
+  if (net.isIP(hostname)) {
+    if (isPrivateIp(hostname)) throw new Error("Webhook URL resolves to a private network");
+    return;
+  }
+  let addrs: { address: string; family: number }[] = [];
+  try {
+    addrs = await dns.lookup(hostname, { all: true });
+  } catch {
+    throw new Error("Webhook URL hostname could not be resolved");
+  }
+  if (addrs.length === 0) throw new Error("Webhook URL hostname could not be resolved");
+  for (const a of addrs) {
+    if (isPrivateIp(a.address)) {
+      throw new Error("Webhook URL resolves to a private/internal address");
+    }
+  }
+}
+
+export function isBlockedUrl(urlString: string): { blocked: boolean; reason?: string } {
   try {
     const parsed = new URL(urlString);
     if (parsed.protocol !== "https:") {
@@ -66,10 +120,7 @@ export async function createSubscription(
   eventType: string,
   targetUrl: string
 ) {
-  const urlCheck = isBlockedUrl(targetUrl);
-  if (urlCheck.blocked) {
-    throw new Error(urlCheck.reason || "Invalid webhook URL");
-  }
+  await assertWebhookUrlSafe(targetUrl);
 
   const secret = crypto.randomBytes(32).toString("hex");
   const [sub] = await db.insert(integrationWebhookSubscriptions).values({
@@ -84,17 +135,15 @@ export async function createSubscription(
 }
 
 export async function deliverWebhook(targetUrl: string, payload: Record<string, any>, secret: string) {
-  const urlCheck = isBlockedUrl(targetUrl);
-  if (urlCheck.blocked) {
-    throw new Error(urlCheck.reason || "Blocked webhook URL");
-  }
+  // Re-validate at delivery time (DNS rebind protection) and block redirects.
+  await assertWebhookUrlSafe(targetUrl);
 
   const body = JSON.stringify(payload);
   const signature = signPayload(body, secret);
-  
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
-  
+
   try {
     const response = await fetch(targetUrl, {
       method: "POST",
@@ -105,6 +154,7 @@ export async function deliverWebhook(targetUrl: string, payload: Record<string, 
       },
       body,
       signal: controller.signal,
+      redirect: "error",
     });
     clearTimeout(timeout);
     return { ok: response.ok, status: response.status };
