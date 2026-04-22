@@ -13,6 +13,7 @@ below need a manual artifact filed here.
 | Auditor engaged | Insight Assurance — see `2026-04-22-auditor-kickoff.md` |
 | Gap assessment delivered | 2026-05-20 — see `2026-05-20-gap-assessment.md` |
 | Gaps identified | 0 Critical / 2 High / 3 Medium / 1 Low — tracked in `../remediation-plan.md` |
+| Annual penetration test executed | 2026-07-13 → 2026-07-31 — see `2026-pentest-summary.md` (0 Critical / 0 High) |
 
 ## Required artifacts and cadence
 

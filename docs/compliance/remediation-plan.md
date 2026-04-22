@@ -38,7 +38,12 @@ The findings below were lifted from the gap report at
 | GAP-006 | CC7.5 / A1.3 | Low    | Next quarterly restore drill is due inside the observation window.                                   | Execute the drill using `runbooks/backup-restore-drill.md` and file at `evidence/2026-MM-DD-restore-drill.md`.                  | Engineering on-call  | 2026-09-30  | Open        | `evidence/2026-MM-DD-restore-drill.md`                  |
 
 (Add new rows with the next sequential ID — `GAP-007`, `GAP-008`, etc.
-— if the auditor identifies additional findings during fieldwork.)
+— if the auditor identifies additional findings during fieldwork, or if
+the annual penetration test produces any Critical or High finding —
+see `evidence/2026-pentest-summary.md`. The 2026 pentest produced
+0 Critical and 0 High findings, so no new rows were added from it;
+its Medium and Low items are tracked in the GRC platform issue tracker
+with IDs `PEN-2026-*`.)
 
 ## Risk acceptance
 
