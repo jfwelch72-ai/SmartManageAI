@@ -20,12 +20,19 @@ type DailyUptime = {
   ok: number;
 };
 
+type RegionMinute = {
+  minute: string; // ISO timestamp at minute precision (UTC)
+  total: number;
+  ok: number;
+};
+
 type RegionStatus = {
   region: string;
   ok: boolean;
   lastCheckedAt: string;
   lastError: string | null;
   responseMs: number | null;
+  history: RegionMinute[];
 };
 
 type ComponentSummary = {
@@ -69,8 +76,31 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
       lastCheckedAt: new Date(r.checked_at).toISOString(),
       lastError: r.ok ? null : r.error,
       responseMs: r.response_ms ?? null,
+      history: [],
     });
     regionsByComp.set(r.component_id, arr);
+  }
+
+  // Per-minute per-region history for the last 60 minutes — used to render a
+  // short timeline strip on the status page so a single-region outage trend
+  // is visible before consensus flips the component status.
+  const minuteRes = await db.execute(sql`
+    SELECT
+      component_id,
+      region,
+      to_char(date_trunc('minute', checked_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS minute,
+      COUNT(*)::int AS total,
+      SUM(CASE WHEN ok THEN 1 ELSE 0 END)::int AS ok
+    FROM "status_probes"
+    WHERE checked_at >= NOW() - INTERVAL '60 minutes'
+    GROUP BY component_id, region, minute
+  `);
+  const minutesByCompRegion = new Map<string, RegionMinute[]>();
+  for (const r of minuteRes.rows as any[]) {
+    const key = `${r.component_id}::${r.region || "local"}`;
+    const arr = minutesByCompRegion.get(key) || [];
+    arr.push({ minute: r.minute, total: Number(r.total), ok: Number(r.ok) });
+    minutesByCompRegion.set(key, arr);
   }
 
   // Aggregate uptime — last 1h windows for status determination + 24h/30d (across all regions)
@@ -107,7 +137,12 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
   }
 
   return comps.map((c) => {
-    const regions = (regionsByComp.get(c.id) || []).sort((a, b) => a.region.localeCompare(b.region));
+    const regions = (regionsByComp.get(c.id) || [])
+      .map((r) => ({
+        ...r,
+        history: minutesByCompRegion.get(`${c.id}::${r.region}`) ?? [],
+      }))
+      .sort((a, b) => a.region.localeCompare(b.region));
     const agg = aggByComp.get(c.id);
 
     // Region-consensus status: only flip to outage when a majority of regions agree.

@@ -242,12 +242,15 @@ type StatusLevel = "operational" | "degraded" | "outage" | "maintenance" | "unkn
 
 type DailyUptime = { date: string; total: number; ok: number };
 
+type RegionMinute = { minute: string; total: number; ok: number };
+
 type RegionStatus = {
   region: string;
   ok: boolean;
   lastCheckedAt: string;
   lastError: string | null;
   responseMs: number | null;
+  history?: RegionMinute[];
 };
 
 type StatusComponent = {
@@ -482,6 +485,102 @@ function incidentsOnDay(component: StatusComponent, dateIso: string, allIncident
   });
 }
 
+function buildRegionMinuteStrip(history: RegionMinute[], now: Date): Array<{ minute: string; total: number; ok: number }> {
+  const map = new Map<string, RegionMinute>();
+  for (const m of history) {
+    // Normalize incoming minute to a stable UTC ISO key at minute precision.
+    const t = new Date(m.minute);
+    if (Number.isNaN(t.getTime())) continue;
+    const key = new Date(Date.UTC(
+      t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(),
+      t.getUTCHours(), t.getUTCMinutes(), 0,
+    )).toISOString();
+    map.set(key, m);
+  }
+  const minutes: Array<{ minute: string; total: number; ok: number }> = [];
+  const currentMinute = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+    now.getUTCHours(), now.getUTCMinutes(), 0,
+  ));
+  for (let i = 59; i >= 0; i--) {
+    const m = new Date(currentMinute.getTime() - i * 60_000);
+    const key = m.toISOString();
+    const entry = map.get(key);
+    minutes.push({ minute: key, total: entry?.total ?? 0, ok: entry?.ok ?? 0 });
+  }
+  return minutes;
+}
+
+function minuteBoxClass(total: number): string {
+  if (total === 0) return "bg-muted/60 dark:bg-muted/40";
+  return "bg-emerald-500";
+}
+
+function minuteBoxFailClass(): string {
+  return "bg-red-500";
+}
+
+function RegionHistoryStrip({
+  componentKey,
+  region,
+  history,
+  now,
+}: {
+  componentKey: string;
+  region: string;
+  history: RegionMinute[];
+  now: Date;
+}) {
+  const minutes = buildRegionMinuteStrip(history, now);
+  const totalProbes = minutes.reduce((s, m) => s + m.total, 0);
+  const okProbes = minutes.reduce((s, m) => s + m.ok, 0);
+  const uptime60 = totalProbes > 0 ? okProbes / totalProbes : null;
+  const summary =
+    uptime60 == null
+      ? `No probe data for ${region} in the last hour`
+      : `${region}: ${(uptime60 * 100).toFixed(1)}% over the last 60 minutes (${okProbes}/${totalProbes} probes ok)`;
+
+  return (
+    <div
+      className="flex items-center gap-1"
+      role="img"
+      aria-label={summary}
+      tabIndex={0}
+      data-testid={`region-history-${componentKey}-${region}`}
+    >
+      <span className="sr-only">{summary}</span>
+      <div className="flex items-end gap-[1px] h-3" aria-hidden="true">
+        {minutes.map((m) => {
+          const cls =
+            m.total === 0
+              ? minuteBoxClass(m.total)
+              : m.ok < m.total
+              ? minuteBoxFailClass()
+              : minuteBoxClass(m.total);
+          const time = new Date(m.minute).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+          const title =
+            m.total === 0
+              ? `${time} — no probe`
+              : m.ok === m.total
+              ? `${time} — all ${m.total} probe${m.total === 1 ? "" : "s"} ok`
+              : `${time} — ${m.total - m.ok}/${m.total} failing`;
+          return (
+            <div
+              key={m.minute}
+              title={title}
+              className={`w-[3px] h-full rounded-[1px] ${cls}`}
+              data-testid={`region-history-box-${componentKey}-${region}-${m.minute}`}
+            />
+          );
+        })}
+      </div>
+      <span className="text-[10px] text-muted-foreground" data-testid={`region-history-summary-${componentKey}-${region}`}>
+        {uptime60 == null ? "—" : `${(uptime60 * 100).toFixed(1)}% / 60m`}
+      </span>
+    </div>
+  );
+}
+
 function UptimeStrip({ component, incidents }: { component: StatusComponent; incidents: Incident[] }) {
   const now = new Date();
   const days = build90DayStrip(component.daily ?? [], now);
@@ -604,25 +703,27 @@ export function StatusPage() {
                   </div>
                 )}
                 {c.regions && c.regions.length > 1 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`regions-${c.key}`}>
+                  <div className="mt-2 space-y-1.5" data-testid={`regions-${c.key}`}>
                     {c.regions.map((r) => (
-                      <span
-                        key={r.region}
-                        title={
-                          r.ok
-                            ? `${r.region}: OK${r.responseMs != null ? ` · ${r.responseMs}ms` : ""}`
-                            : `${r.region}: ${r.lastError ?? "failing"}`
-                        }
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                          r.ok
-                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
-                            : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30"
-                        }`}
-                        data-testid={`region-pill-${c.key}-${r.region}`}
-                      >
-                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${r.ok ? "bg-emerald-500" : "bg-red-500"}`} />
-                        {r.region}
-                      </span>
+                      <div key={r.region} className="flex items-center gap-2 flex-wrap">
+                        <span
+                          title={
+                            r.ok
+                              ? `${r.region}: OK${r.responseMs != null ? ` · ${r.responseMs}ms` : ""}`
+                              : `${r.region}: ${r.lastError ?? "failing"}`
+                          }
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                            r.ok
+                              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                              : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30"
+                          }`}
+                          data-testid={`region-pill-${c.key}-${r.region}`}
+                        >
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${r.ok ? "bg-emerald-500" : "bg-red-500"}`} />
+                          {r.region}
+                        </span>
+                        <RegionHistoryStrip componentKey={c.key} region={r.region} history={r.history ?? []} now={now} />
+                      </div>
                     ))}
                   </div>
                 )}
