@@ -1073,6 +1073,22 @@ function KanbanBoard({
         window.scrollBy(0, delta);
       }
     };
+    const handleBucketTransition = (next: Bucket | null) => {
+      if (next === dragOverRef.current) return;
+      if (
+        next != null &&
+        dragOverRef.current != null &&
+        typeof navigator !== "undefined" &&
+        typeof navigator.vibrate === "function"
+      ) {
+        try {
+          navigator.vibrate(10);
+        } catch {
+          // ignore — some browsers throw when vibration is blocked
+        }
+      }
+      setDragOverCol(next);
+    };
     const tick = () => {
       rafId = null;
       const { xStart, xEnd, yStart, yEnd } = getRanges();
@@ -1085,7 +1101,7 @@ function KanbanBoard({
       const el = document.elementFromPoint(lastX, lastY) as HTMLElement | null;
       const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
       const bucket = (colEl?.dataset.bucket ?? null) as Bucket | null;
-      if (bucket && bucket !== dragOverRef.current) setDragOverCol(bucket);
+      if (bucket) handleBucketTransition(bucket);
       rafId = requestAnimationFrame(tick);
     };
     const ensureTick = () => {
@@ -1110,7 +1126,7 @@ function KanbanBoard({
       const el = document.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null;
       const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
       const bucket = (colEl?.dataset.bucket ?? null) as Bucket | null;
-      if (bucket !== dragOverRef.current) setDragOverCol(bucket);
+      handleBucketTransition(bucket);
       const { xStart, xEnd, yStart, yEnd } = getRanges();
       const dx = computeDelta(lastX, xStart, xEnd);
       const dy = computeDelta(lastY, yStart, yEnd);
