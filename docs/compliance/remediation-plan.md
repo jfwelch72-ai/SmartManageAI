@@ -34,7 +34,7 @@ The findings below were lifted from the gap report at
 | GAP-002 | CC7.3      | High     | Annual incident-response tabletop drill has not yet been performed within the observation window.    | Execute the tabletop using `runbooks/incident-response-tabletop.md` and file results at `evidence/2026-MM-DD-ir-tabletop.md`.   | Security Lead        | 2026-07-15  | Open        | `evidence/2026-MM-DD-ir-tabletop.md`                    |
 | GAP-003 | CC5.4      | Medium   | Quarterly access review has not yet been performed for the current quarter, per system.              | Run Q2 access review for every in-scope system; file at `evidence/2026-Q2-access-review-<system>.md`. Track ongoing in calendar.| Security Lead        | 2026-07-01  | Open        | `evidence/2026-Q2-access-review-<system>.md` (per system) |
 | GAP-004 | CC6.8      | Medium   | Endpoint encryption attestation is reported for 92% of staff laptops; target is 100%.                | Identify the 8% gap via the GRC platform endpoint inventory; remediate or revoke; reach 100% encryption attestation.            | IT / Security Lead   | 2026-07-15  | Open        | GRC platform endpoint inventory snapshot (link in row)  |
-| GAP-005 | CC9.2      | Medium   | Annual vendor reviews for Critical/High-tier sub-processors have not yet been filed for the year.    | Complete vendor reviews for every Critical/High-tier vendor in `sub-processors.md`; file each at `evidence/2026-vendor-review-<vendor>.md`. | SOC 2 program owner  | 2026-08-31  | Open        | `evidence/2026-vendor-review-<vendor>.md` (per vendor)  |
+| GAP-005 | CC9.2      | Medium   | Annual vendor reviews for Critical/High-tier sub-processors had not yet been filed for the year as of the start of the observation window; reviews were completed on 2026-04-22 and the auditor accepted the artifacts when writing up the gap. | Complete vendor reviews for every Critical/High-tier vendor in `sub-processors.md`; file each at `evidence/2026-vendor-review-<vendor>.md`. | SOC 2 program owner  | 2026-08-31  | Closed (2026-04-22) | `evidence/2026-vendor-review-replit.md`, `evidence/2026-vendor-review-neon.md`, `evidence/2026-vendor-review-google-cloud-storage.md`, `evidence/2026-vendor-review-openai.md`, `evidence/2026-vendor-review-sendgrid.md`, `evidence/2026-vendor-review-stripe.md` — all PASS, no material findings, no new remediation rows required |
 | GAP-006 | CC7.5 / A1.3 | Low    | Next quarterly restore drill is due inside the observation window.                                   | Execute the drill using `runbooks/backup-restore-drill.md` and file at `evidence/2026-MM-DD-restore-drill.md`.                  | Engineering on-call  | 2026-09-30  | Open        | `evidence/2026-MM-DD-restore-drill.md`                  |
 
 (Add new rows with the next sequential ID — `GAP-007`, `GAP-008`, etc.
@@ -60,13 +60,17 @@ to confirm the risk acceptance is still valid.
 
 ## Status summary
 
-Snapshot as of 2026-05-20 (date the gap report was filed):
+Snapshot as of 2026-05-20 (date the gap report was filed). One row
+(GAP-005, Medium) is shown closed because the annual vendor reviews
+were already completed on 2026-04-22 — before the formal gap report
+was issued — and the auditor accepted those pre-existing artifacts as
+remediation when the gap was written up:
 
 | Severity      | Open | In progress | In review | Closed | Accepted (risk) |
 | ------------- | ---- | ----------- | --------- | ------ | --------------- |
 | Critical      | 0    | 0           | 0         | 0      | 0               |
 | High          | 2    | 0           | 0         | 0      | 0               |
-| Medium        | 3    | 0           | 0         | 0      | 0               |
+| Medium        | 2    | 0           | 0         | 1      | 0               |
 | Low           | 1    | 0           | 0         | 0      | 0               |
 | Informational | 0    | 0           | 0         | 0      | 0               |
 
